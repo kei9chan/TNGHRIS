@@ -1,0 +1,605 @@
+
+import React, { useMemo, useState, useEffect } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import Card from '../ui/Card';
+import { mockOtRequests, mockAttendanceExceptions, mockResolutions, mockPANs, mockJobRequisitions, mockEvaluations, mockNotifications, mockEvaluationSubmissions, mockTickets, mockEmployeeAwards, mockUsers, mockOnboardingChecklists, mockAssetRequests, mockIncidentReports, mockNTEs, mockAssetAssignments, mockManpowerRequests, mockOnboardingTemplates, mockCOERequests, mockEnvelopes, mockBenefitRequests, mockCoachingSessions } from '../../services/mockData';
+import { OTStatus, Role, ResolutionStatus, ApproverStatus, PANStatus, PANStepStatus, JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, NotificationType, TicketStatus, OnboardingTaskStatus, PANActionTaken, AssetRequest, AssetRequestStatus, NTEStatus, PAN, Resolution, NTE, JobRequisition, OTRequest, AttendanceExceptionRecord, EmployeeAward, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, Envelope, EnvelopeStatus, RoutingStepStatus, BenefitRequest, BenefitRequestStatus, CoachingStatus } from '../../types';
+import { usePermissions } from '../../hooks/usePermissions';
+import { useAuth } from '../../hooks/useAuth';
+import ActionItemCard from './ActionItemCard';
+import QuickAnalyticsPreview from './QuickAnalyticsPreview';
+import UpcomingEventsWidget from './UpcomingEventsWidget';
+import QuickLinks from './QuickLinks';
+import Button from '../ui/Button';
+import ManpowerRequestModal from '../payroll/ManpowerRequestModal';
+import ManpowerReviewModal from '../payroll/ManpowerReviewModal';
+import RequestCOEModal from '../employees/RequestCOEModal';
+import { logActivity } from '../../services/auditService';
+
+const InboxIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" /></svg>;
+const ClipboardListIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>;
+const UserGroupIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.653-.122-1.28-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.653.122-1.28.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>;
+const DocumentMagnifyingGlassIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m5.231 13.5h-8.021a1.125 1.125 0 0 1-1.125-1.125v-1.5A1.125 1.125 0 0 1 5.625 15h12.75a1.125 1.125 0 0 1 1.125 1.125v1.5a1.125 1.125 0 0 1-1.125 1.125H13.5m-3.031-1.125a3 3 0 1 0-5.962 0 3 3 0 0 0 5.962 0ZM15 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" /></svg>);
+const BriefcaseIcon = ({ className }: { className?: string }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" /></svg>);
+const ShieldExclamationIcon = ({ className }: { className?: string }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>);
+const DocumentTextIcon = ({ className }: { className?: string }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>);
+const AcademicCapIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.26 10.147a60.436 60.436 0 0 0-.491 6.347A48.627 48.627 0 0 1 12 20.904a48.627 48.627 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.57 50.57 0 0 0-2.658-.813A59.905 59.905 0 0 1 12 3.493a59.902 59.902 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5" /></svg>);
+const TicketIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 6v.75m0 3v.75m0 3v.75m0 3V18m-9-12v.75m0 3v.75m0 3v.75m0 3V18m-3 .75h18A2.25 2.25 0 0021 16.5V7.5A2.25 2.25 0 0018.75 5.25H5.25A2.25 2.25 0 003 7.5v9A2.25 2.25 0 005.25 18.75h1.5M12 4.5v15" /></svg>);
+const TrophyIcon = ({ className }: { className?: string }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 18.75h-9a9 9 0 0 0 9 0Zm0 0a9 9 0 0 0-9 0m9 0h-9M9 11.25V7.5A3 3 0 0 1 12 4.5h0A3 3 0 0 1 15 7.5v3.75m-3 6.75h.01M12 12h.01M12 6h.01M12 18h.01M7.5 15h.01M16.5 15h.01M19.5 12h.01M4.5 12h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>);
+const ClipboardCheckIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M10.125 2.25h-4.5c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125v-9M10.125 2.25h.375a9 9 0 0 1 9 9v.375M10.125 2.25A3.375 3.375 0 0 1 13.5 5.625v1.5c0 .621.504 1.125 1.125 1.125h1.5a3.375 3.375 0 0 1 3.375 3.375M9 15l2.25 2.25L15 12" /></svg>);
+const CalendarDaysIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0h18" /></svg>);
+const GavelIcon: React.FC<{className?: string}> = ({className}) => <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>;
+const ArchiveBoxArrowDownIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>);
+const TagIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6Z" /></svg>);
+const SunIcon = ({ className }: { className?: string }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" /></svg>);
+const PencilSquareIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg>);
+const GiftIcon = ({ className }: { className?: string }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 00-2-2v-7" /></svg>);
+const SparklesIcon = ({ className }: { className?: string }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z" /></svg>);
+
+
+const getActionType = (action: PANActionTaken) => {
+    if (!action) return 'N/A';
+    const actions = [];
+    if (action.changeOfStatus) actions.push('Status Change');
+    if (action.promotion) actions.push('Promotion');
+    if (action.transfer) actions.push('Transfer');
+    if (action.salaryIncrease) actions.push('Salary Increase');
+    if (action.changeOfJobTitle) actions.push('Job Title Change');
+    if (action.others) actions.push(action.others);
+    return actions.join(', ') || 'Update';
+};
+
+const ManagerDashboard: React.FC = () => {
+    const { user } = useAuth();
+    const { getVisibleEmployeeIds, isUserEligibleEvaluator } = usePermissions();
+    const location = useLocation();
+    const navigate = useNavigate();
+    
+    // Local state to track updates from mock data
+    const [requests, setRequests] = useState<AssetRequest[]>(mockAssetRequests);
+    const [pans, setPans] = useState<PAN[]>(mockPANs);
+    const [otRequests, setOtRequests] = useState<OTRequest[]>(mockOtRequests);
+    const [exceptions, setExceptions] = useState<AttendanceExceptionRecord[]>(mockAttendanceExceptions);
+    const [requisitions, setRequisitions] = useState<JobRequisition[]>(mockJobRequisitions);
+    const [resolutions, setResolutions] = useState<Resolution[]>(mockResolutions);
+    const [ntes, setNTEs] = useState<NTE[]>(mockNTEs);
+    const [awards, setAwards] = useState<EmployeeAward[]>(mockEmployeeAwards);
+    const [assignments, setAssignments] = useState<AssetAssignment[]>(mockAssetAssignments);
+    const [manpowerRequests, setManpowerRequests] = useState<ManpowerRequest[]>(mockManpowerRequests);
+    const [checklists, setChecklists] = useState<OnboardingChecklist[]>(mockOnboardingChecklists);
+    const [templates, setTemplates] = useState<OnboardingChecklistTemplate[]>(mockOnboardingTemplates);
+    const [envelopes, setEnvelopes] = useState<Envelope[]>(mockEnvelopes);
+    const [benefitRequests, setBenefitRequests] = useState<BenefitRequest[]>(mockBenefitRequests);
+    const [coachingSessions, setCoachingSessions] = useState(mockCoachingSessions);
+    const [evaluationSubmissions, setEvaluationSubmissions] = useState(mockEvaluationSubmissions);
+
+    const [isManpowerModalOpen, setIsManpowerModalOpen] = useState(false);
+    const [isManpowerReviewModalOpen, setIsManpowerReviewModalOpen] = useState(false);
+    const [selectedManpowerRequest, setSelectedManpowerRequest] = useState<ManpowerRequest | null>(null);
+
+    const [isRequestCOEModalOpen, setIsRequestCOEModalOpen] = useState(false);
+
+    useEffect(() => {
+        if (location.state?.openManpowerModal) {
+            setIsManpowerModalOpen(true);
+            navigate(location.pathname, { replace: true, state: {} });
+        }
+        if (location.state?.openRequestCOE) {
+            setIsRequestCOEModalOpen(true);
+            navigate(location.pathname, { replace: true, state: {} });
+        }
+    }, [location.state, navigate]);
+
+    // Robust polling interval to sync local state with global mock data
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setRequests([...mockAssetRequests]);
+            setPans([...mockPANs]);
+            setOtRequests([...mockOtRequests]);
+            setExceptions([...mockAttendanceExceptions]);
+            setRequisitions([...mockJobRequisitions]);
+            setResolutions([...mockResolutions]);
+            setNTEs([...mockNTEs]);
+            setAwards([...mockEmployeeAwards]);
+            setAssignments([...mockAssetAssignments]);
+            setManpowerRequests([...mockManpowerRequests]);
+            setChecklists([...mockOnboardingChecklists]);
+            setTemplates([...mockOnboardingTemplates]);
+            setEnvelopes([...mockEnvelopes]);
+            setBenefitRequests([...mockBenefitRequests]);
+            setCoachingSessions([...mockCoachingSessions]);
+            setEvaluationSubmissions([...mockEvaluationSubmissions]);
+        }, 1000);
+        return () => clearInterval(interval);
+    }, []);
+
+    // Updated to include all visible employees (BU or subordinates)
+    const visibleEmployeeIds = useMemo(() => {
+         if (!user) return [];
+         return getVisibleEmployeeIds();
+    }, [user, getVisibleEmployeeIds]);
+
+    // Filter direct subordinates for specific approvals (like OT/Exceptions where direct management applies)
+    const subordinateIds = useMemo(() => {
+        if (!user) return [];
+        return visibleEmployeeIds.filter(id => id !== user.id);
+    }, [user, visibleEmployeeIds]);
+    
+    const isApprover = user && (user.role === Role.GeneralManager || user.role === Role.OperationsDirector || user.role === Role.BOD);
+    // Check if Business Unit Manager to allow broader approvals
+    const isBusinessUnitManager = user && user.role === Role.BusinessUnitManager;
+
+    const handleSaveManpowerRequest = (request: ManpowerRequest) => {
+        mockManpowerRequests.unshift(request);
+        setManpowerRequests([...mockManpowerRequests]);
+        
+        if (user) {
+            logActivity(user, 'CREATE', 'ManpowerRequest', request.id, `Created On-Call Request for ${request.date}`);
+        }
+        alert("Request submitted for approval.");
+        setIsManpowerModalOpen(false); 
+    };
+    
+    const handleSaveCOERequest = (request: Partial<COERequest>) => {
+        const newRequest: COERequest = {
+            id: `COE-${Date.now()}`,
+            ...request
+        } as COERequest;
+        mockCOERequests.unshift(newRequest);
+        if (user) {
+            logActivity(user, 'CREATE', 'COERequest', newRequest.id, `Requested COE for ${newRequest.purpose}`);
+        }
+        setIsRequestCOEModalOpen(false);
+        alert("Certificate of Employment request submitted.");
+    };
+
+    const handleApproveManpower = (requestId: string) => {
+        const index = mockManpowerRequests.findIndex(r => r.id === requestId);
+        if (index > -1) {
+            mockManpowerRequests[index].status = ManpowerRequestStatus.Approved;
+            mockManpowerRequests[index].approvedBy = user?.id;
+            mockManpowerRequests[index].approvedAt = new Date();
+            setManpowerRequests([...mockManpowerRequests]);
+            setIsManpowerReviewModalOpen(false);
+            alert("Manpower Request Approved.");
+        } else {
+             alert("Error: Request not found.");
+        }
+    };
+
+    const handleRejectManpower = (requestId: string, reason: string) => {
+        const index = mockManpowerRequests.findIndex(r => r.id === requestId);
+        if (index > -1) {
+            mockManpowerRequests[index].status = ManpowerRequestStatus.Rejected;
+            mockManpowerRequests[index].rejectionReason = reason;
+            setManpowerRequests([...mockManpowerRequests]);
+            setIsManpowerReviewModalOpen(false);
+            alert("Manpower Request Rejected.");
+        } else {
+             alert("Error: Request not found.");
+        }
+    };
+
+    const openReviewModal = (req: ManpowerRequest) => {
+        setSelectedManpowerRequest(req);
+        setIsManpowerReviewModalOpen(true);
+    };
+
+
+    const actionItems = useMemo(() => {
+        if (!user) return [];
+        const items: any[] = [];
+        const iconProps = { className: "h-6 w-6 text-white" };
+        
+        // Helper for countdown logic
+        const getCountdownString = (deadline: Date) => {
+            const now = new Date();
+            const diff = new Date(deadline).getTime() - now.getTime();
+            if (diff < 0) return "Overdue";
+            const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            return `${days}d ${hours}h remaining`;
+        };
+
+        // 0. NTE Responses for ME (Manager as Employee)
+        const myPendingNTEs = ntes.filter(n => n.employeeId === user.id && n.status === NTEStatus.Issued);
+        myPendingNTEs.forEach(nte => {
+            const isOverdue = new Date(nte.deadline) < new Date();
+            items.push({
+                id: `nte-response-${nte.id}`,
+                icon: <DocumentTextIcon {...iconProps} />,
+                title: "Response Required: Notice to Explain",
+                subtitle: isOverdue ? `OVERDUE! Deadline passed.` : `Deadline: ${getCountdownString(new Date(nte.deadline))}`,
+                date: new Date(nte.issuedDate).toLocaleDateString(),
+                link: `/feedback/nte/${nte.id}`,
+                colorClass: isOverdue ? 'bg-red-600 animate-pulse' : 'bg-red-500',
+                priority: 0
+            });
+        });
+
+        // 0.1 Scheduled Coaching Sessions where I am the Coach
+        const myCoachingSessions = coachingSessions.filter(s => s.coachId === user.id && s.status === CoachingStatus.Scheduled);
+        myCoachingSessions.forEach(session => {
+             items.push({
+                id: `coaching-conduct-${session.id}`,
+                icon: <SparklesIcon {...iconProps} />,
+                title: "Conduct Coaching Session",
+                subtitle: `With ${session.employeeName} on ${new Date(session.date).toLocaleDateString()}.`,
+                date: new Date(session.date).toLocaleDateString(),
+                link: '/feedback/coaching',
+                colorClass: 'bg-blue-500',
+                priority: 0
+            });
+        });
+
+        // 1. Employee Lifecycle Checklists (Onboarding / Offboarding)
+        const myChecklists = checklists.filter(c => c.employeeId === user.id && c.status === 'InProgress');
+        
+        myChecklists.forEach(checklist => {
+            const template = templates.find(t => t.id === checklist.templateId);
+            const templateType = template?.templateType || 'Onboarding';
+            const taskLabel = templateType === 'Offboarding' ? 'Offboarding Task' : 'Onboarding Task';
+            
+            const pendingTasks = checklist.tasks
+                .filter(t => t.status === OnboardingTaskStatus.Pending)
+                .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+
+            if (pendingTasks.length > 0) {
+                const nextTask = pendingTasks[0];
+                items.push({
+                    id: `checklist-task-${nextTask.id}`,
+                    icon: <ClipboardCheckIcon {...iconProps} />,
+                    title: `${taskLabel}: ${template?.name || 'Checklist'}`,
+                    subtitle: `Pending Task: "${nextTask.name}"`,
+                    date: new Date(nextTask.dueDate).toLocaleDateString(),
+                    link: `/employees/onboarding/task/${nextTask.id}`,
+                    colorClass: templateType === 'Offboarding' ? 'bg-orange-500' : 'bg-cyan-500',
+                    priority: 1
+                });
+            } else if (checklist.tasks.length > 0 && checklist.tasks.every(t => t.status === OnboardingTaskStatus.Completed)) {
+                 // If ALL tasks are completed but checklist is still InProgress (meaning pending sign-off)
+                 items.push({
+                    id: `checklist-sign-${checklist.id}`,
+                    icon: <ClipboardCheckIcon {...iconProps} />,
+                    title: `Finalize ${templateType} Checklist`,
+                    subtitle: `All tasks completed. Please review and sign.`,
+                    date: new Date().toLocaleDateString(),
+                    link: `/employees/onboarding/sign/${checklist.id}`,
+                    colorClass: 'bg-green-500',
+                    priority: 0
+                });
+            }
+        });
+
+        // 2. Pending Asset Acceptance (Manager as Employee)
+        const pendingAssetAcceptance = assignments.filter(a => a.employeeId === user.id && !a.isAcknowledged && !a.dateReturned);
+        pendingAssetAcceptance.forEach(assignment => {
+            items.push({
+                id: `asset-accept-${assignment.id}`,
+                icon: <TagIcon {...iconProps} />,
+                title: 'Pending Asset Acceptance',
+                subtitle: `You have been assigned an asset that requires your acknowledgment.`,
+                date: new Date(assignment.dateAssigned).toLocaleDateString(),
+                link: '/my-profile', 
+                colorClass: 'bg-indigo-500',
+                priority: 0 
+            });
+        });
+        
+        // 3. Pending Asset Returns (Manager as Employee)
+        const pendingAssetReturns = requests.filter(req =>
+            req.employeeId === user.id &&
+            req.requestType === 'Return' &&
+            req.status === AssetRequestStatus.Pending
+        );
+
+        if (pendingAssetReturns.length > 0) {
+            items.push({
+                id: `asset-return-${pendingAssetReturns[0].id}`,
+                icon: <ArchiveBoxArrowDownIcon {...iconProps} />,
+                title: 'Asset Return Requested',
+                subtitle: `HR has requested the return of: ${pendingAssetReturns[0].assetDescription}`,
+                date: new Date(pendingAssetReturns[0].requestedAt).toLocaleDateString(),
+                link: '/employees/asset-management/asset-requests',
+                colorClass: 'bg-orange-500',
+                priority: 0
+            });
+        }
+        
+        // 4. Manpower Request Approvals (For Approvers)
+        if (isApprover || isBusinessUnitManager) {
+            // IMPORTANT: Filter by scope. Only show requests from employees I can see (subordinates or BU members)
+            // OR if I am the one who needs to approve it.
+            const pendingManpower = manpowerRequests.filter(r => 
+                r.status === ManpowerRequestStatus.Pending && 
+                visibleEmployeeIds.includes(r.requestedBy)
+            );
+            
+            pendingManpower.forEach(req => {
+                items.push({
+                    id: `manpower-${req.id}`,
+                    icon: <UserGroupIcon />,
+                    title: "On-Call Staff Request",
+                    subtitle: `For ${req.businessUnitName} on ${new Date(req.date).toLocaleDateString()}`,
+                    date: new Date(req.createdAt).toLocaleDateString(),
+                    onClick: () => openReviewModal(req),
+                    link: '#',
+                    colorClass: 'bg-pink-500',
+                    priority: 0
+                });
+            });
+        }
+
+        // 5. PAN Acknowledgement (Manager as Employee)
+        const pendingPANsForAcknowledgement = pans.filter(p => p.employeeId === user.id && p.status === PANStatus.PendingEmployee);
+        pendingPANsForAcknowledgement.forEach(pan => {
+            items.push({
+                id: `pan-ack-${pan.id}`,
+                icon: <DocumentTextIcon {...iconProps} />,
+                title: 'PAN for Acknowledgement',
+                subtitle: `Action: ${getActionType(pan.actionTaken)}`,
+                date: new Date(pan.effectiveDate).toLocaleDateString(),
+                link: '/employees/pan',
+                colorClass: 'bg-purple-500',
+                priority: 1
+            });
+        });
+
+        // 6. OT Approval (Manager Approving)
+        const otForApproval = otRequests.filter(r => subordinateIds.includes(r.employeeId) && r.status === OTStatus.Submitted);
+        otForApproval.forEach(req => {
+            items.push({
+                id: req.id,
+                icon: <BriefcaseIcon {...iconProps} />,
+                title: "Overtime Request",
+                subtitle: `From ${req.employeeName} for ${new Date(req.date).toLocaleDateString()}`,
+                date: new Date(req.submittedAt!).toLocaleDateString(),
+                link: '/payroll/overtime-requests',
+                colorClass: "bg-blue-500",
+            });
+        });
+        
+        // 7. Attendance Exceptions (Manager Reviewing)
+        const exceptionsForApproval = exceptions.filter(e => subordinateIds.includes(e.employeeId) && e.status === 'Pending');
+        exceptionsForApproval.forEach(ex => {
+            items.push({
+                id: ex.id,
+                icon: <ShieldExclamationIcon {...iconProps} />,
+                title: `Attendance Exception: ${ex.type}`,
+                subtitle: `For ${ex.employeeName} on ${new Date(ex.date).toLocaleDateString()}`,
+                date: new Date(ex.date).toLocaleDateString(),
+                link: '/payroll/exceptions',
+                colorClass: "bg-yellow-500",
+            });
+        });
+        
+        // 8. PAN Approval (Manager Approving)
+        const pendingPans = pans.filter(pan =>
+            [PANStatus.PendingApproval, PANStatus.PendingEndorser, PANStatus.PendingRecommender].includes(pan.status) &&
+            pan.routingSteps.some(s => s.userId === user.id && s.status === PANStepStatus.Pending)
+        );
+        pendingPans.forEach(pan => {
+             items.push({
+                id: pan.id,
+                icon: <DocumentTextIcon {...iconProps} />,
+                title: `PAN for Approval`,
+                subtitle: `For ${pan.employeeName}, effective ${new Date(pan.effectiveDate).toLocaleDateString()}`,
+                date: new Date(pan.effectiveDate).toLocaleDateString(),
+                link: '/employees/pan',
+                colorClass: "bg-purple-500",
+            });
+        });
+
+        // 9. Job Requisition Final Approval
+        const pendingFinalRequisitions = requisitions.filter(req => 
+            req.status === JobRequisitionStatus.PendingApproval &&
+            req.routingSteps.some(step => 
+                step.role === JobRequisitionRole.Final &&
+                step.status === JobRequisitionStepStatus.Pending &&
+                step.userId === user.id
+            )
+        );
+         pendingFinalRequisitions.forEach(req => {
+            items.push({
+                id: `req-final-${req.id}`,
+                icon: <DocumentMagnifyingGlassIcon {...iconProps} />,
+                title: "Requisition for Final Approval",
+                subtitle: `${req.title} for ${req.headcount} position(s)`,
+                date: new Date(req.createdAt).toLocaleDateString(),
+                link: '/recruitment/requisitions',
+                colorClass: 'bg-blue-500'
+            });
+        });
+
+        // 10. Resolution Approval
+        const pendingResolutionsForMe = resolutions.filter(res =>
+            res.status === ResolutionStatus.PendingApproval &&
+            res.approverSteps.some(step => step.userId === user.id && step.status === ApproverStatus.Pending)
+        );
+        pendingResolutionsForMe.forEach(res => {
+            const ir = mockIncidentReports.find(ir => ir.id === res.incidentReportId);
+            items.push({
+                id: `res-approve-${res.id}`,
+                icon: <GavelIcon className="h-6 w-6 text-white" />, 
+                title: "Resolution for Approval",
+                subtitle: `For Case: ${res.incidentReportId} (${ir?.category || 'Unknown'})`,
+                date: new Date(res.decisionDate).toLocaleDateString(),
+                link: '/feedback/cases?filter=pending_my_approval',
+                colorClass: 'bg-orange-500',
+                priority: 0
+            });
+        });
+
+        // 11. NTE Approval
+        const pendingNTEs = ntes.filter(nte =>
+            nte.status === NTEStatus.PendingApproval &&
+            nte.approverSteps?.some(step => step.userId === user.id && step.status === ApproverStatus.Pending)
+        );
+
+        pendingNTEs.forEach(nte => {
+            items.push({
+                id: `nte-approve-${nte.id}`,
+                icon: <DocumentTextIcon {...iconProps} />,
+                title: "NTE for Approval",
+                subtitle: `For ${nte.employeeName}`,
+                date: new Date(nte.issuedDate).toLocaleDateString(),
+                link: `/feedback/nte/${nte.id}`,
+                colorClass: 'bg-orange-500',
+                priority: 0
+            });
+        });
+        
+        // 12. Contract/Envelope Approval
+        const pendingEnvelopes = envelopes.filter(env => 
+            (env.status === EnvelopeStatus.PendingApproval || env.status === EnvelopeStatus.OutForSignature) &&
+            env.routingSteps.some(step => step.userId === user.id && step.status === RoutingStepStatus.Pending)
+        );
+
+        pendingEnvelopes.forEach(env => {
+            const myStep = env.routingSteps.find(s => s.userId === user.id && s.status === RoutingStepStatus.Pending);
+            const actionLabel = myStep?.role === 'Approver' ? 'Approval Required' : 'Signature Required';
+            
+            items.push({
+                id: `env-${env.id}`,
+                icon: <PencilSquareIcon {...iconProps} />,
+                title: `Contract ${actionLabel}`,
+                subtitle: `${env.title} for ${env.employeeName}`,
+                date: new Date(env.createdAt).toLocaleDateString(),
+                link: `/employees/contracts/${env.id}`,
+                colorClass: 'bg-pink-500',
+                priority: 0
+            });
+        });
+
+        // 13. Benefit Approval (BOD/GM only)
+        const isBOD = user?.role === Role.BOD || user?.role === Role.GeneralManager;
+        if (isBOD) {
+            const pendingBenefits = benefitRequests.filter(r => r.status === BenefitRequestStatus.PendingBOD);
+            pendingBenefits.forEach(req => {
+               items.push({
+                   id: `ben-bod-${req.id}`,
+                   icon: <GiftIcon className="h-6 w-6 text-white" />,
+                   title: "Benefit Approval Required",
+                   subtitle: `${req.employeeName} - ${req.benefitTypeName}`,
+                   date: new Date(req.dateNeeded).toLocaleDateString(),
+                   link: '/employees/benefits?tab=approvals',
+                   colorClass: 'bg-orange-500',
+                   priority: 0
+               });
+           });
+       }
+
+       // 14. UPDATED: Evaluation Pending (Manager/GM as Evaluator)
+        const mySubmissions = evaluationSubmissions.filter(sub => sub.raterId === user.id);
+        const evaluationsToPerform = mockEvaluations.filter(e => e.status === 'InProgress');
+
+        const evaluationItems = evaluationsToPerform.map(evaluation => {
+            // Find who this user needs to evaluate for this evaluation cycle using the robust helper
+            const eligibleTargets = evaluation.targetEmployeeIds.filter(targetId => 
+                isUserEligibleEvaluator(user, evaluation, targetId)
+            );
+
+            // Count how many of these have already been submitted
+            const submittedTargets = mySubmissions
+                .filter(s => s.evaluationId === evaluation.id && eligibleTargets.includes(s.subjectEmployeeId))
+                .map(s => s.subjectEmployeeId);
+            
+            const remainingCount = eligibleTargets.length - submittedTargets.length;
+
+            if (remainingCount > 0) {
+                return {
+                    id: `eval-perform-${evaluation.id}`,
+                    icon: <AcademicCapIcon {...iconProps} />,
+                    title: "Evaluation Pending",
+                    subtitle: `You have ${remainingCount} submission(s) to complete for "${evaluation.name}".`,
+                    date: new Date(evaluation.createdAt).toLocaleDateString(),
+                    link: `/evaluation/perform/${evaluation.id}`,
+                    colorClass: 'bg-teal-500'
+                };
+            }
+            return null;
+        }).filter(Boolean);
+        items.push(...evaluationItems);
+
+        return items.sort((a,b) => (a.priority ?? 99) - (b.priority ?? 99) || new Date(b.date).getTime() - new Date(a.date).getTime());
+    }, [user, requests, assignments, checklists, templates, pans, otRequests, exceptions, requisitions, resolutions, ntes, awards, manpowerRequests, isApprover, isBusinessUnitManager, subordinateIds, envelopes, benefitRequests, coachingSessions, evaluationSubmissions, isUserEligibleEvaluator, visibleEmployeeIds]);
+
+    return (
+        <div className="space-y-6">
+            <QuickLinks />
+            <UpcomingEventsWidget />
+
+            {actionItems.length > 0 ? (
+                 <Card title="Action Items">
+                    <div className="space-y-4">
+                        {actionItems.map(item => {
+                            if (item.onClick) {
+                                 return (
+                                    <div key={item.id} onClick={item.onClick} className="cursor-pointer">
+                                        <div className="bg-white dark:bg-slate-800 shadow-md rounded-lg overflow-hidden transition-all hover:shadow-lg hover:ring-2 hover:ring-indigo-500">
+                                            <div className="flex items-center p-4">
+                                                <div className={`flex-shrink-0 p-3 rounded-full ${item.colorClass}`}>
+                                                    {item.icon}
+                                                </div>
+                                                <div className="flex-grow ml-4 min-w-0">
+                                                    <h3 className="font-semibold text-gray-800 dark:text-gray-200 truncate">{item.title}</h3>
+                                                    <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{item.subtitle}</p>
+                                                </div>
+                                                <div className="flex-shrink-0 ml-4 flex flex-col items-end">
+                                                    <span className="text-xs text-gray-500 dark:text-gray-400">{item.date}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )
+                            }
+                            return (
+                                <ActionItemCard
+                                    key={item.id}
+                                    icon={item.icon}
+                                    title={item.title}
+                                    subtitle={item.subtitle}
+                                    date={item.date}
+                                    link={item.link}
+                                    colorClass={item.colorClass}
+                                />
+                            )
+                        })}
+                    </div>
+                </Card>
+            ) : (
+                <Card>
+                    <div className="text-center py-8">
+                        <h3 className="text-lg font-medium text-gray-900 dark:text-white">You're all caught up!</h3>
+                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">There are no pending actions for you.</p>
+                    </div>
+                </Card>
+            )}
+            
+            <QuickAnalyticsPreview />
+            
+             <ManpowerReviewModal
+                isOpen={isManpowerReviewModalOpen}
+                onClose={() => setIsManpowerReviewModalOpen(false)}
+                request={selectedManpowerRequest}
+                onApprove={handleApproveManpower}
+                onReject={handleRejectManpower}
+                canApprove={true}
+            />
+            
+            <ManpowerRequestModal
+                isOpen={isManpowerModalOpen}
+                onClose={() => setIsManpowerModalOpen(false)}
+                onSave={handleSaveManpowerRequest}
+            />
+
+            <RequestCOEModal
+                isOpen={isRequestCOEModalOpen}
+                onClose={() => setIsRequestCOEModalOpen(false)}
+                onSave={handleSaveCOERequest}
+            />
+        </div>
+    );
+};
+
+export default ManagerDashboard;

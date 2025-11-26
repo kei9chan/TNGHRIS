@@ -1,0 +1,7 @@
+{
+  "name": "TNG HRIS System",
+  "description": "The backbone for an HR system, featuring Employee 201 File, Onboarding, and an Incident Resolution System with role-based access control.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
