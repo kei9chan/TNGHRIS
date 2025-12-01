@@ -9,7 +9,7 @@
 
 
 import React, { useEffect } from 'react';
-import { HashRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { SettingsProvider } from './context/SettingsContext';
 import { useAuth } from './hooks/useAuth';
@@ -296,9 +296,9 @@ const App: React.FC = () => {
   return (
     <AuthProvider>
       <SettingsProvider>
-        <HashRouter>
+        <BrowserRouter>
           <AppRoutes />
-        </HashRouter>
+        </BrowserRouter>
       </SettingsProvider>
     </AuthProvider>
   );
