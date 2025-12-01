@@ -429,6 +429,7 @@ export type EmploymentStatus = 'Regular' | 'Probationary' | 'Contractual';
 
 export interface User {
   id: string;
+  authUserId?: string;
   name: string;
   email: string;
   role: Role;

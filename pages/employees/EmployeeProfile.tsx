@@ -50,7 +50,22 @@ const EmployeeProfile: React.FC = () => {
 
     const userToView = useMemo(() => {
         const targetId = employeeId || currentUser?.id;
-        return users.find(u => u.id === targetId);
+        // Prefer direct id match
+        let found = users.find(u => u.id === targetId);
+        // If not found, try authUserId (Supabase) or email match to align Supabase logins to legacy mock data
+        if (!found && currentUser?.authUserId) {
+            found = users.find(u => u.authUserId === currentUser.authUserId);
+        }
+        if (!found && currentUser?.email) {
+            found = users.find(
+                u => u.email.toLowerCase() === currentUser.email.toLowerCase()
+            );
+        }
+        // As a last resort, show the current user object even if not in mock data so the page renders
+        if (!found && currentUser && !employeeId) {
+            return currentUser;
+        }
+        return found;
     }, [employeeId, currentUser, users]);
 
     const userHistory = useMemo(() => {
@@ -64,10 +79,10 @@ const EmployeeProfile: React.FC = () => {
     }, [userToView, drafts]);
     
     useEffect(() => {
-        if (!userToView && (employeeId || currentUser)) { // check if user was looked for but not found
+        if (!userToView && employeeId) { // Only redirect when an explicit employeeId was requested
             navigate('/employees/list', { replace: true });
         }
-    }, [userToView, navigate, employeeId, currentUser]);
+    }, [userToView, navigate, employeeId]);
     
     if (!userToView) {
         return <div>Loading profile...</div>;
