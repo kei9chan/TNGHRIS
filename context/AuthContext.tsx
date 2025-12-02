@@ -118,7 +118,7 @@ const buildAppUserFromSupabase = async (
   const { data, error } = await supabase
     .from('hris_users')
     .select(
-      'id, full_name, role, status, department, business_unit, position, date_hired, is_photo_enrolled, email'
+      'id, full_name, role, status, department, business_unit, position, date_hired, is_photo_enrolled, email, business_unit_id, department_id'
     )
     .eq('auth_user_id', sbUser.id)
     .maybeSingle();
@@ -159,7 +159,9 @@ const buildAppUserFromSupabase = async (
     role: mappedRole ?? Role.Employee,
     status: data.status ?? 'Active',
     department: data.department ?? '',
+    departmentId: (data as any)?.department_id ?? undefined,
     businessUnit: data.business_unit ?? '',
+    businessUnitId: (data as any)?.business_unit_id ?? undefined,
     position: data.position ?? '',
     dateHired: data.date_hired ? new Date(data.date_hired) : new Date(),
     isPhotoEnrolled: data.is_photo_enrolled ?? false,

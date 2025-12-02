@@ -1,10 +1,9 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { mockWFHRequests } from '../../services/mockData';
-import { WFHRequest, WFHRequestStatus } from '../../types';
+import { WFHRequest, WFHRequestStatus, Role } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
-import { usePermissions } from '../../hooks/usePermissions';
+import { supabase } from '../../services/supabaseClient';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import WFHRequestModal from '../../components/payroll/WFHRequestModal';
@@ -24,24 +23,81 @@ const getStatusColor = (status: WFHRequestStatus) => {
 
 const WFHRequests: React.FC = () => {
   const { user } = useAuth();
-  const { can } = usePermissions();
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [requests, setRequests] = useState<WFHRequest[]>(mockWFHRequests);
+  const [requests, setRequests] = useState<WFHRequest[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<WFHRequest | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
-  // Sync with mock data
+  const loadRequests = async () => {
+    if (!user) return;
+
+    const role = user.role as Role;
+    let query = supabase.from('wfh_requests').select('*').order('date', { ascending: false });
+
+    switch (role) {
+      case Role.Admin:
+      case Role.HRManager:
+      case Role.HRStaff:
+        // full visibility
+        break;
+      case Role.BOD:
+        // view all
+        break;
+      case Role.GeneralManager:
+        if (user.businessUnitId) query = query.eq('business_unit_id', user.businessUnitId);
+        break;
+      case Role.OperationsDirector:
+        if (user.businessUnitId) query = query.eq('business_unit_id', user.businessUnitId);
+        break;
+      case Role.BusinessUnitManager:
+        if (user.businessUnitId) query = query.eq('business_unit_id', user.businessUnitId);
+        break;
+      case Role.Manager:
+        if (user.departmentId) query = query.eq('department_id', user.departmentId);
+        else query = query.eq('employee_id', user.id);
+        break;
+      case Role.Employee:
+        query = query.eq('employee_id', user.id);
+        break;
+      case Role.Auditor:
+        // logs: allow view all
+        break;
+      case Role.FinanceStaff:
+      case Role.Recruiter:
+      case Role.IT:
+      default:
+        // none or not allowed -> show only own (or nothing if you prefer strict)
+        query = query.eq('employee_id', user.id);
+        break;
+    }
+
+    const { data, error } = await query;
+    if (!error && data) {
+      setRequests(
+        data.map(r => ({
+          id: r.id,
+          employeeId: r.employee_id,
+          employeeName: r.employee_name,
+          date: new Date(r.date),
+          reason: r.reason,
+          status: r.status as WFHRequestStatus,
+          reportLink: r.report_link || undefined,
+          approvedBy: r.approved_by || undefined,
+          approvedAt: r.approved_at ? new Date(r.approved_at) : undefined,
+          rejectionReason: r.rejection_reason || undefined,
+          createdAt: r.created_at ? new Date(r.created_at) : new Date(),
+        }))
+      );
+    }
+  };
+
   useEffect(() => {
-      const interval = setInterval(() => {
-          if (mockWFHRequests.length !== requests.length) {
-              setRequests([...mockWFHRequests]);
-          }
-      }, 1000);
-      return () => clearInterval(interval);
-  }, [requests.length]);
+    loadRequests();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   useEffect(() => {
     if (location.state?.openNewModal) {
@@ -52,12 +108,13 @@ const WFHRequests: React.FC = () => {
 
   const myRequests = useMemo(() => {
       if (!user) return [];
-      let filtered = requests.filter(r => r.employeeId === user.id);
-      
+      let filtered = requests;
+      if (user.role === Role.Employee) {
+        filtered = filtered.filter(r => r.employeeId === user.id);
+      }
       if (statusFilter !== 'all') {
           filtered = filtered.filter(r => r.status === statusFilter);
       }
-      
       return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [requests, user, statusFilter]);
 
@@ -66,39 +123,40 @@ const WFHRequests: React.FC = () => {
       setIsModalOpen(true);
   };
 
-  const handleSave = (data: Partial<WFHRequest>) => {
+  const handleSave = async (data: Partial<WFHRequest>) => {
       if (!user) return;
 
       if (data.id) {
-          // Update existing
-          const index = mockWFHRequests.findIndex(r => r.id === data.id);
-          if (index > -1) {
-              const updatedReq = { ...mockWFHRequests[index], ...data };
-              mockWFHRequests[index] = updatedReq;
-              setRequests([...mockWFHRequests]);
-              
-              // Log if report link was added
-              if (data.reportLink && data.reportLink !== requests[index].reportLink) {
-                  logActivity(user, 'UPDATE', 'WFHRequest', updatedReq.id, 'Added accomplishment report link.');
-              }
+          const { error } = await supabase
+            .from('wfh_requests')
+            .update({
+              reason: data.reason,
+              report_link: data.reportLink,
+              status: data.status,
+            })
+            .eq('id', data.id);
+
+          if (!error && data.reportLink) {
+              logActivity(user, 'UPDATE', 'WFHRequest', data.id, 'Added accomplishment report link.');
           }
       } else {
-          // Create New
-          const newRequest: WFHRequest = {
-              id: `WFH-${Date.now()}`,
-              employeeId: user.id,
-              employeeName: user.name,
-              date: data.date!,
-              reason: data.reason!,
-              reportLink: data.reportLink,
-              status: WFHRequestStatus.Pending,
-              createdAt: new Date()
+          const payload = {
+            employee_id: user.id,
+            employee_name: user.name,
+            date: data.date,
+            reason: data.reason,
+            report_link: data.reportLink,
+            status: WFHRequestStatus.Pending,
+            business_unit_id: user.businessUnitId || null,
+            department_id: user.departmentId || null,
           };
-          mockWFHRequests.unshift(newRequest);
-          setRequests([...mockWFHRequests]);
-          logActivity(user, 'CREATE', 'WFHRequest', newRequest.id, `Requested WFH for ${newRequest.date.toLocaleDateString()}`);
+          const { data: inserted, error } = await supabase.from('wfh_requests').insert(payload).select().single();
+          if (!error && inserted) {
+            logActivity(user, 'CREATE', 'WFHRequest', inserted.id, `Requested WFH for ${new Date(inserted.date).toLocaleDateString()}`);
+          }
       }
       setIsModalOpen(false);
+      loadRequests();
   };
 
   return (

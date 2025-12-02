@@ -41,6 +41,7 @@ const SignUp: React.FC = () => {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [hasCompletedStep1, setHasCompletedStep1] = useState(false);
   const [submitIntent, setSubmitIntent] = useState(false); // ensures submit only fires from the final button
+  const roleOptions = Object.values(Role);
 
   const normalizeEmail = (raw?: string) => (raw || '').trim().toLowerCase();
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -56,7 +57,7 @@ const SignUp: React.FC = () => {
       !confirmPassword ||
       !formData.businessUnit ||
       !formData.department ||
-      !formData.position
+      !formData.role
     ) {
       errors.general = 'Please fill in all required fields to proceed.';
     }
@@ -94,8 +95,8 @@ const SignUp: React.FC = () => {
     } else if (!mockDepartments.some(d => d.name === formData.department)) {
       errors.department = 'Choose a valid department.';
     }
-    if (!formData.position || !formData.position.trim()) {
-      errors.position = 'Position is required.';
+    if (!formData.role) {
+      errors.role = 'Role is required.';
     }
 
     setFieldErrors(errors);
@@ -671,18 +672,21 @@ const SignUp: React.FC = () => {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Position / Job Title</label>
-                    <input
-                      className="glass-input w-full px-4 py-3 rounded-xl text-gray-900"
-                      type="text"
-                      name="position"
-                      value={formData.position || ''}
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Role / Position / Job Title</label>
+                    <select
+                      name="role"
+                      value={formData.role || Role.Employee}
                       onChange={handleChange}
-                      placeholder="e.g. Marketing Specialist"
                       required
-                      aria-invalid={!!fieldErrors.position}
-                    />
-                    {fieldErrors.position && <p className="mt-1 text-xs text-red-600">{fieldErrors.position}</p>}
+                      className="glass-input w-full px-4 py-3 rounded-xl text-gray-900 appearance-none cursor-pointer"
+                    >
+                      {roleOptions.map(r => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                    </select>
+                    {fieldErrors.role && <p className="mt-1 text-xs text-red-600">{fieldErrors.role}</p>}
                   </div>
                 </div>
               </div>

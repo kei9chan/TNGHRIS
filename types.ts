@@ -436,6 +436,8 @@ export interface User {
   role: Role;
   department: string;
   businessUnit: string;
+  departmentId?: string;
+  businessUnitId?: string;
   status: 'Active' | 'Inactive';
   employmentStatus?: EmploymentStatus; // New Field
   isPhotoEnrolled: boolean;
