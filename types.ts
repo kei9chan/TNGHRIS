@@ -26,6 +26,7 @@ export enum Role {
   FinanceStaff = 'Finance Staff',
   Auditor = 'Auditor',
   Recruiter = 'Recruiter',
+  IT = 'IT',
 }
 
 export type Resource =
