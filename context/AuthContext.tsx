@@ -211,7 +211,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
           setUser(null);
           return;
         }
-        hydrateSupabaseUser(session.user as SupabaseUser);
+        hydrateSupabaseUser(session.user as SupabaseUser, true);
       }
     );
 
@@ -225,7 +225,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
    * Immediately set a minimal Supabase-backed user (merged with mock if present),
    * then hydrate from hris_users in the background to avoid blocking login UI.
    */
-  const hydrateSupabaseUser = async (sbUser: SupabaseUser) => {
+  const hydrateSupabaseUser = async (sbUser: SupabaseUser, preserveExisting = false) => {
     const minimal: User = mergeSupabaseWithLegacyMock(sbUser, {
       id: sbUser.id,
       name: sbUser.email ?? 'User',
@@ -239,7 +239,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       isPhotoEnrolled: false,
     } as User);
 
-    setUser(minimal);
+    if (!preserveExisting) {
+      setUser(minimal);
+    }
 
     try {
       const hydrated = await buildAppUserFromSupabase(sbUser);
