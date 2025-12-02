@@ -1,10 +1,7 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
-// FIX: Added 'Permission' and 'Role' to import.
-import { LeaveRequest, LeaveRequestStatus, LeaveBalance, Permission, Role } from '../../types';
-import { mockLeaveTypes, mockUsers } from '../../services/mockData';
+import React, { useState, useEffect } from 'react';
+import { LeaveRequest, LeaveRequestStatus } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
-import { usePermissions } from '../../hooks/usePermissions';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
@@ -15,38 +12,37 @@ interface LeaveRequestModalProps {
   isOpen: boolean;
   onClose: () => void;
   request: LeaveRequest | null;
-  balances: (LeaveBalance & { available: number; name: string })[];
+  leaveTypes: { id: string; name: string }[];
   onSave: (request: Partial<LeaveRequest>, status: LeaveRequestStatus) => void;
   onApprove: (request: LeaveRequest, approved: boolean, notes: string) => void;
 }
 
-const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({ isOpen, onClose, request, balances, onSave, onApprove }) => {
+const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({ isOpen, onClose, request, leaveTypes, onSave, onApprove }) => {
     const { user } = useAuth();
-    const { can, hasDirectReports } = usePermissions();
     const [current, setCurrent] = useState<Partial<LeaveRequest>>(request || {});
     const [managerNotes, setManagerNotes] = useState('');
 
     const isNewRequest = !request;
     const isManagerView = request && request.employeeId !== user?.id && request.status === LeaveRequestStatus.Pending;
     const canEdit = isNewRequest || request?.status === LeaveRequestStatus.Draft;
-    
-    // Check permission or relationship
-    const canApprove = can('Leave', Permission.Approve) || hasDirectReports();
-
-    const isBOD = user?.role === Role.BOD;
-    const manager = useMemo(() => mockUsers.find(u => u.id === user?.managerId), [user]);
 
     useEffect(() => {
         if (isOpen) {
             setCurrent(request || {
-                leaveTypeId: mockLeaveTypes[0]?.id || '',
+                leaveTypeId: leaveTypes[0]?.id || '',
                 startDate: new Date(),
                 endDate: new Date(),
                 status: LeaveRequestStatus.Draft
             });
             setManagerNotes('');
         }
-    }, [request, isOpen]);
+    }, [request, isOpen, leaveTypes]);
+
+    useEffect(() => {
+        if (!current.leaveTypeId && leaveTypes.length > 0) {
+            setCurrent(prev => ({ ...prev, leaveTypeId: leaveTypes[0].id }));
+        }
+    }, [leaveTypes, current.leaveTypeId]);
     
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
@@ -63,7 +59,7 @@ const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({ isOpen, onClose, 
     };
     
     const footer = () => {
-        if (isManagerView && canApprove) {
+        if (isManagerView) {
             return (
                 <div className="flex w-full justify-between items-center">
                     <Textarea label="Manager Notes (Required for Rejection)" value={managerNotes} onChange={e => setManagerNotes(e.target.value)} rows={1} />
@@ -75,7 +71,6 @@ const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({ isOpen, onClose, 
             );
         }
         if (canEdit) {
-            const isSubmittable = isBOD || !!manager;
             return (
                 <div className="flex w-full justify-end space-x-2">
                     <Button variant="secondary" onClick={onClose}>Cancel</Button>
@@ -83,8 +78,6 @@ const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({ isOpen, onClose, 
                     <Button 
                         onClick={() => onSave(current, LeaveRequestStatus.Pending)} 
                         variant="primary"
-                        disabled={!isSubmittable}
-                        title={!isSubmittable ? "Cannot submit: No manager assigned." : ""}
                     >
                         Submit
                     </Button>
@@ -99,25 +92,21 @@ const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({ isOpen, onClose, 
             isOpen={isOpen}
             onClose={onClose}
             title={isNewRequest ? 'Request Leave' : 'Leave Request Details'}
+            size="3xl"
             footer={footer()}
         >
             <div className="space-y-4">
-                 {request && (
+                {request && (
                     <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-md">
                         <p><span className="font-semibold">Employee:</span> {request.employeeName}</p>
                     </div>
                  )}
-                 
-                 {/* Approver Display Logic */}
+
                  {isNewRequest && (
                     <div className="p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-md mb-4">
-                        {isBOD ? (
-                            <p className="text-sm text-blue-800 dark:text-blue-200 font-medium">
-                                Note: As a Board Member, your leave request will be automatically approved upon submission.
-                            </p>
-                        ) : manager ? (
+                        {user?.managerId ? (
                             <p className="text-sm text-blue-800 dark:text-blue-200">
-                                <span className="font-bold">Approver:</span> {manager.name} ({manager.position})
+                                <span className="font-bold">Approver:</span> Your assigned manager will review this request.
                             </p>
                         ) : (
                             <p className="text-sm text-red-600 dark:text-red-400 font-bold">
@@ -126,11 +115,17 @@ const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({ isOpen, onClose, 
                         )}
                     </div>
                  )}
-
+                 
                 <div>
                     <label className="block text-sm font-medium">Leave Type</label>
-                    <select name="leaveTypeId" value={current.leaveTypeId || ''} onChange={handleChange} disabled={!canEdit} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:bg-gray-200 dark:disabled:bg-gray-800">
-                        {balances.map(b => <option key={b.leaveTypeId} value={b.leaveTypeId}>{b.name} ({b.available} days left)</option>)}
+                    <select
+                      name="leaveTypeId"
+                      value={current.leaveTypeId || ''}
+                      onChange={handleChange}
+                      disabled={!canEdit || leaveTypes.length === 0}
+                      className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:bg-gray-200 dark:disabled:bg-gray-800"
+                    >
+                        {leaveTypes.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                     </select>
                 </div>
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

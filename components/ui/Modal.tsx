@@ -47,17 +47,17 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer,
 
   return (
     <div 
-        className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 sm:p-6 overflow-hidden"
+        className="fixed inset-0 z-[9999] flex items-start justify-center bg-black/60 backdrop-blur-sm p-4 sm:p-6 pt-10 sm:pt-12 overflow-hidden"
         onClick={onClose}
     >
       <div 
         className={`
             bg-white dark:bg-slate-800 rounded-xl shadow-2xl 
-            w-full flex flex-col 
+            w-full flex flex-col mt-4
             ${sizeClasses[size]}
         `}
         onClick={(e) => e.stopPropagation()}
-        style={{ maxHeight: 'calc(100vh - 2rem)' }}
+        style={{ maxHeight: 'calc(100vh - 4rem)' }}
       >
         {/* Header - Fixed */}
         <div className="flex-shrink-0 flex justify-between items-center p-5 border-b border-gray-200 dark:border-slate-700">

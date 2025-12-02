@@ -1205,6 +1205,8 @@ export interface LeaveRequest {
   id: string;
   employeeId: string;
   employeeName: string;
+  businessUnitId?: string;
+  departmentId?: string;
   leaveTypeId: string;
   startDate: Date;
   endDate: Date;

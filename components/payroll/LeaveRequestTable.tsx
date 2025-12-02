@@ -29,6 +29,12 @@ const XIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" 
 const LeaveRequestTable: React.FC<LeaveRequestTableProps> = ({ requests, onSelectRequest, isManagerView = false, onApprove, onReject }) => {
     
     const getLeaveTypeName = (id: string) => mockLeaveTypes.find(lt => lt.id === id)?.name || 'Unknown';
+    const getRejectionNote = (req: LeaveRequest) => {
+        const history = req.historyLog || [];
+        const rejected = history.filter(h => h.action === 'Rejected');
+        const latest = rejected.length > 0 ? rejected[rejected.length - 1] : history[history.length - 1];
+        return latest?.details || '';
+    };
 
     return (
         <div className="overflow-x-auto">
@@ -44,7 +50,9 @@ const LeaveRequestTable: React.FC<LeaveRequestTableProps> = ({ requests, onSelec
                     </tr>
                 </thead>
                 <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                    {requests.map(req => (
+                    {requests.map(req => {
+                        const rejectionNote = getRejectionNote(req);
+                        return (
                         <tr key={req.id}>
                             {isManagerView && <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{req.employeeName}</td>}
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{getLeaveTypeName(req.leaveTypeId)}</td>
@@ -53,9 +61,17 @@ const LeaveRequestTable: React.FC<LeaveRequestTableProps> = ({ requests, onSelec
                             </td>
                             <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate" title={req.reason}>{req.reason}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(req.status)}`}>
+                                <span
+                                  className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full cursor-pointer ${getStatusColor(req.status)}`}
+                                  title={rejectionNote || req.status}
+                                >
                                     {req.status}
                                 </span>
+                                {(req.status === LeaveRequestStatus.Rejected || req.status === LeaveRequestStatus.Cancelled) && rejectionNote && (
+                                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-xs truncate cursor-pointer" title={rejectionNote}>
+                                        {rejectionNote}
+                                    </div>
+                                )}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                 <div className="flex justify-end space-x-2">
@@ -71,7 +87,8 @@ const LeaveRequestTable: React.FC<LeaveRequestTableProps> = ({ requests, onSelec
                                 </div>
                             </td>
                         </tr>
-                    ))}
+                        );
+                    })}
                     {requests.length === 0 && (
                         <tr>
                             <td colSpan={isManagerView ? 6 : 5} className="text-center py-10 text-gray-500 dark:text-gray-400">
