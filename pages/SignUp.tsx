@@ -224,6 +224,36 @@ const SignUp: React.FC = () => {
     setIsSubmitting(true);
 
     try {
+      // Resolve Business Unit / Department IDs from Supabase based on the selected names
+      let businessUnitId: string | null = null;
+      let departmentId: string | null = null;
+
+      if (formData.businessUnit) {
+        const { data: buRow } = await supabase
+          .from('business_units')
+          .select('id')
+          .ilike('name', formData.businessUnit)
+          .maybeSingle();
+        businessUnitId = buRow?.id ?? null;
+      }
+
+      if (formData.department) {
+        const deptQuery = supabase
+          .from('departments')
+          .select('id, business_unit_id')
+          .ilike('name', formData.department)
+          .limit(1);
+
+        const { data: deptRow } = businessUnitId
+          ? await deptQuery.eq('business_unit_id', businessUnitId).maybeSingle()
+          : await deptQuery.maybeSingle();
+
+        departmentId = deptRow?.id ?? null;
+        if (!businessUnitId && deptRow?.business_unit_id) {
+          businessUnitId = deptRow.business_unit_id;
+        }
+      }
+
       // 1) Create Supabase Auth user (auth.users)
       const emailRedirectTo =
         typeof window !== 'undefined' ? `${window.location.origin}/login` : undefined;
@@ -264,7 +294,9 @@ const SignUp: React.FC = () => {
         is_photo_enrolled: formData.isPhotoEnrolled ?? false,
 
         business_unit: formData.businessUnit || null,
+        business_unit_id: businessUnitId,
         department: formData.department || null,
+        department_id: departmentId,
         position: formData.position || null,
         date_hired: new Date().toISOString().slice(0, 10), // YYYY-MM-DD
 
