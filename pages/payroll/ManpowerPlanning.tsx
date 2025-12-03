@@ -1,14 +1,13 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { ManpowerRequest, ManpowerRequestStatus, Role, Permission } from '../../types';
-import { mockManpowerRequests, mockBusinessUnits } from '../../services/mockData';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { ManpowerRequest, ManpowerRequestStatus, Role } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
-import { usePermissions } from '../../hooks/usePermissions';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import ManpowerRequestModal from '../../components/payroll/ManpowerRequestModal';
 import ManpowerReviewModal from '../../components/payroll/ManpowerReviewModal';
 import { logActivity } from '../../services/auditService';
+import { supabase } from '../../services/supabaseClient';
 
 const getStatusColor = (status: ManpowerRequestStatus) => {
     switch (status) {
@@ -21,89 +20,160 @@ const getStatusColor = (status: ManpowerRequestStatus) => {
 
 const ManpowerPlanning: React.FC = () => {
     const { user } = useAuth();
-    const { can, getAccessibleBusinessUnits } = usePermissions();
-    const canCreate = can('Manpower', Permission.Create);
-    const canApprove = can('Manpower', Permission.Approve);
-    const canViewAll = can('Manpower', Permission.Manage) || [Role.HRManager, Role.HRStaff, Role.Admin].includes(user?.role as Role);
 
-    const [requests, setRequests] = useState<ManpowerRequest[]>(mockManpowerRequests);
+    const [requests, setRequests] = useState<ManpowerRequest[]>([]);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
     const [selectedRequest, setSelectedRequest] = useState<ManpowerRequest | null>(null);
     
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+    const role = user?.role as Role | undefined;
+
+    const canCreate = useMemo(() => {
+        if (!role) return false;
+        return [
+            Role.Admin,
+            Role.HRManager,
+            Role.HRStaff,
+            Role.OperationsDirector,
+            Role.BusinessUnitManager,
+            Role.Manager,
+        ].includes(role);
+    }, [role]);
+
+    const canApprove = useMemo(() => {
+        if (!role) return false;
+        return [
+            Role.Admin,
+            Role.HRManager,
+            Role.HRStaff,
+            Role.OperationsDirector,
+            Role.BusinessUnitManager,
+            Role.Manager,
+        ].includes(role);
+    }, [role]);
+
+    const loadRequests = useCallback(async () => {
+        if (!user || !role) return;
+
+        let query = supabase.from('manpower_requests').select('*').order('created_at', { ascending: false });
+
+        switch (role) {
+            case Role.Admin:
+            case Role.HRManager:
+            case Role.HRStaff:
+                // full visibility
+                break;
+            case Role.BOD:
+                // view all
+                break;
+            case Role.GeneralManager:
+            case Role.OperationsDirector:
+            case Role.BusinessUnitManager:
+                if (user.businessUnitId) {
+                    query = query.eq('business_unit_id', user.businessUnitId);
+                } else {
+                    query = query.eq('requester_id', user.id);
+                }
+                break;
+            case Role.Manager:
+                if (user.departmentId) {
+                    query = query.eq('department_id', user.departmentId);
+                } else if (user.businessUnitId) {
+                    query = query.eq('business_unit_id', user.businessUnitId);
+                } else {
+                    query = query.eq('requester_id', user.id);
+                }
+                break;
+            case Role.Employee:
+                query = query.eq('requester_id', user.id);
+                break;
+            case Role.FinanceStaff:
+            case Role.Auditor:
+                // logs: view all
+                break;
+            case Role.Recruiter:
+            case Role.IT:
+            default:
+                // No access
+                query = query.eq('requester_id', '__none__');
+                break;
+        }
+
+        const { data, error } = await query;
+        if (error) {
+            console.error('Failed to load manpower requests', error);
+            setRequests([]);
+            return;
+        }
+
+            const mapped = (data || []).map((r: any) => ({
+                id: r.id,
+                businessUnitId: r.business_unit_id || '',
+                departmentId: r.department_id || undefined,
+                businessUnitName: r.business_unit_name || 'Unknown BU',
+                requestedBy: r.requester_id,
+            requesterName: r.requester_name,
+            date: r.date_needed ? new Date(r.date_needed) : new Date(),
+            forecastedPax: r.forecasted_pax || 0,
+            generalNote: r.general_note || '',
+            items: Array.isArray(r.items) ? r.items : (r.items ? JSON.parse(r.items) : []),
+            grandTotal: r.grand_total || 0,
+                status: r.status as ManpowerRequestStatus,
+                createdAt: r.created_at ? new Date(r.created_at) : new Date(),
+            approvedBy: r.approved_by || undefined,
+            approvedAt: r.approved_at ? new Date(r.approved_at) : undefined,
+            rejectionReason: r.rejection_reason || undefined,
+        })) as ManpowerRequest[];
+
+        setRequests(mapped);
+    }, [role, user]);
 
     useEffect(() => {
-        const interval = setInterval(() => {
-            if (JSON.stringify(mockManpowerRequests) !== JSON.stringify(requests)) {
-                setRequests([...mockManpowerRequests]);
-            }
-        }, 1000);
-        return () => clearInterval(interval);
-    }, [requests]);
+        loadRequests();
+    }, [loadRequests]);
 
     const filteredRequests = useMemo(() => {
-        if (!user) return [];
-        
-        let filtered = requests;
-        
-        // Scope Filter: Only show requests for BUs the user has access to
-        const accessibleBuIds = new Set(accessibleBus.map(b => b.id));
-        filtered = filtered.filter(r => accessibleBuIds.has(r.businessUnitId));
+        return requests.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    }, [requests]);
 
-        // Role Filter: If user is NOT an Admin/HR/Approver, they only see their own requests
-        if (!canViewAll && !canApprove) {
-            filtered = filtered.filter(r => r.requestedBy === user.id);
-        }
-        
-        return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    }, [requests, user, canViewAll, canApprove, accessibleBus]);
-
-    const handleSaveRequest = (request: ManpowerRequest) => {
-        mockManpowerRequests.unshift(request);
-        setRequests([...mockManpowerRequests]);
-        if (user) {
-            logActivity(user, 'CREATE', 'ManpowerRequest', request.id, `Created On-Call Request for ${request.date}`);
-        }
-        alert("Request submitted for approval.");
+    const handleSaveRequest = () => {
+        // After modal insert we reload from Supabase
+        loadRequests();
         setIsCreateModalOpen(false);
     };
 
-    const handleApprove = (requestId: string) => {
-        const index = mockManpowerRequests.findIndex(r => r.id === requestId);
-        if (index > -1) {
-            mockManpowerRequests[index].status = ManpowerRequestStatus.Approved;
-            mockManpowerRequests[index].approvedBy = user?.id;
-            mockManpowerRequests[index].approvedAt = new Date();
-            setRequests([...mockManpowerRequests]);
-            setIsReviewModalOpen(false);
-            
-             if (user) {
-                logActivity(user, 'APPROVE', 'ManpowerRequest', requestId, `Approved On-Call Request`);
-            }
-            alert("Manpower Request Approved.");
-        } else {
-            console.error("Request ID not found:", requestId);
-            alert("Error: Could not find the request to approve.");
+    const handleApprove = async (requestId: string) => {
+        if (!user) return;
+        const { error } = await supabase
+            .from('manpower_requests')
+            .update({ status: ManpowerRequestStatus.Approved, approved_by: user.id, approved_at: new Date().toISOString() })
+            .eq('id', requestId);
+
+        if (error) {
+            alert('Error approving request. Please try again.');
+            return;
         }
+
+        logActivity(user, 'APPROVE', 'ManpowerRequest', requestId, 'Approved On-Call Request');
+        setIsReviewModalOpen(false);
+        loadRequests();
     };
 
-    const handleReject = (requestId: string, reason: string) => {
-        const index = mockManpowerRequests.findIndex(r => r.id === requestId);
-        if (index > -1) {
-            mockManpowerRequests[index].status = ManpowerRequestStatus.Rejected;
-            mockManpowerRequests[index].rejectionReason = reason;
-            setRequests([...mockManpowerRequests]);
-            setIsReviewModalOpen(false);
-            
-            if (user) {
-                logActivity(user, 'REJECT', 'ManpowerRequest', requestId, `Rejected On-Call Request. Reason: ${reason}`);
-            }
-            alert("Manpower Request Rejected.");
-        } else {
-             console.error("Request ID not found:", requestId);
-             alert("Error: Could not find the request to reject.");
+    const handleReject = async (requestId: string, reason: string) => {
+        if (!user) return;
+        const { error } = await supabase
+            .from('manpower_requests')
+            .update({ status: ManpowerRequestStatus.Rejected, rejection_reason: reason })
+            .eq('id', requestId);
+
+        if (error) {
+            alert('Error rejecting request. Please try again.');
+            return;
         }
+
+        logActivity(user, 'REJECT', 'ManpowerRequest', requestId, `Rejected On-Call Request. Reason: ${reason}`);
+        setIsReviewModalOpen(false);
+        loadRequests();
     };
 
     const openReview = (req: ManpowerRequest) => {

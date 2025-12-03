@@ -348,6 +348,7 @@ export interface ManpowerRequestItem {
 export interface ManpowerRequest {
   id: string;
   businessUnitId: string;
+  departmentId?: string;
   businessUnitName: string;
   requestedBy: string;
   requesterName: string;

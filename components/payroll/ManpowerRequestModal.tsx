@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { ManpowerRequest, ManpowerRequestStatus, ManpowerRequestItem, Role } from '../../types';
-import { mockBusinessUnits, mockUsers, mockShiftAssignments } from '../../services/mockData';
+import { mockUsers, mockShiftAssignments } from '../../services/mockData';
+import { supabase } from '../../services/supabaseClient';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
 import Button from '../ui/Button';
@@ -26,28 +27,39 @@ const ManpowerRequestModal: React.FC<ManpowerRequestModalProps> = ({ isOpen, onC
     const [generalNote, setGeneralNote] = useState('');
     const [items, setItems] = useState<ManpowerRequestItem[]>([]);
     const [selectedBuId, setSelectedBuId] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [businessUnits, setBusinessUnits] = useState<{ id: string; name: string }[]>([]);
 
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+    // For now expose all business units; if you want to reintroduce scoping, reapply getAccessibleBusinessUnits here.
+    const accessibleBus = businessUnits;
+
+    useEffect(() => {
+        const loadBus = async () => {
+            const { data, error } = await supabase.from('business_units').select('id, name').order('name');
+            if (!error && data) {
+                setBusinessUnits(data.map(d => ({ id: d.id, name: d.name })));
+            } else {
+                setBusinessUnits([]);
+            }
+        };
+        loadBus();
+    }, []);
     const isPrivileged = user && [Role.Admin, Role.HRManager, Role.HRStaff].includes(user.role);
 
     useEffect(() => {
-        if (isOpen && user) {
-            setDate(new Date().toISOString().split('T')[0]);
-            setForecastedPax(0);
-            setGeneralNote('');
-            setItems([{ id: `item-${Date.now()}`, role: '', currentFte: 0, requestedCount: 0, costPerHead: 0, totalItemCost: 0, shiftTime: '', justification: '' }]);
-            
-            // Default BU Selection based on scope
-            // If user is privileged or has multiple BUs, default to the first one in the accessible list
-            // If they have only one (e.g. BU Manager), use that one.
-            if (accessibleBus.length > 0) {
-                const userHomeBu = accessibleBus.find(b => b.name === user.businessUnit);
-                setSelectedBuId(userHomeBu?.id || accessibleBus[0].id);
-            } else {
-                 setSelectedBuId('');
-            }
+        if (!isOpen || !user) return;
+        setDate(new Date().toISOString().split('T')[0]);
+        setForecastedPax(0);
+        setGeneralNote('');
+        setItems([{ id: `item-${Date.now()}`, role: '', currentFte: 0, requestedCount: 0, costPerHead: 0, totalItemCost: 0, shiftTime: '', justification: '' }]);
+        
+        if (accessibleBus.length > 0) {
+            const userHomeBu = accessibleBus.find(b => b.name === user.businessUnit);
+            setSelectedBuId(userHomeBu?.id || accessibleBus[0].id);
+        } else {
+            setSelectedBuId('');
         }
-    }, [isOpen, user, isPrivileged, accessibleBus]);
+    }, [isOpen, user]); 
 
     // Function to estimate daily rate based on role name from existing employees
     const getEstimatedRate = (roleName: string) => {
@@ -89,85 +101,99 @@ const ManpowerRequestModal: React.FC<ManpowerRequestModalProps> = ({ isOpen, onC
     };
 
     const handleAddItem = () => {
-        setItems([...items, { id: `item-${Date.now()}`, role: '', currentFte: 0, requestedCount: 0, costPerHead: 0, totalItemCost: 0, shiftTime: '', justification: '' }]);
+        setItems(prev => [
+            ...prev,
+            { id: `item-${Date.now()}`, role: '', currentFte: 0, requestedCount: 0, costPerHead: 0, totalItemCost: 0, shiftTime: '', justification: '' },
+        ]);
     };
 
     const handleRemoveItem = (index: number) => {
-        setItems(items.filter((_, i) => i !== index));
+        setItems(prev => prev.filter((_, i) => i !== index));
     };
 
     const handleDateChange = (newDate: string) => {
         setDate(newDate);
-        // Recalculate FTE for all existing items based on new date
-        const updatedItems = items.map(item => ({
-            ...item,
-            currentFte: calculateFteForRole(item.role, newDate)
-        }));
-        setItems(updatedItems);
     };
 
     const handleBuChange = (newBuId: string) => {
         setSelectedBuId(newBuId);
-        // Recalculate FTE when BU changes as well
-        const updatedItems = items.map(item => ({
-            ...item,
-            currentFte: calculateFteForRole(item.role, date)
-        }));
-        setItems(updatedItems);
     };
 
     const handleItemChange = (index: number, field: keyof ManpowerRequestItem, value: string | number) => {
-        const newItems = [...items];
-        (newItems[index] as any)[field] = value;
+        setItems(prev => {
+            const next = [...prev];
+            const current = { ...next[index], [field]: value };
 
-        // Logic to auto-calculate costs and FTE
-        if (field === 'role') {
-            const roleName = value as string;
-            const rate = getEstimatedRate(roleName);
-            const fte = calculateFteForRole(roleName, date);
+            if (field === 'requestedCount' || field === 'costPerHead') {
+                const count = field === 'requestedCount' ? (value as number) : current.requestedCount;
+                const rate = field === 'costPerHead' ? (value as number) : current.costPerHead;
+                current.totalItemCost = count * rate;
+            }
 
-            newItems[index].costPerHead = rate;
-            newItems[index].currentFte = fte;
-            newItems[index].totalItemCost = rate * newItems[index].requestedCount;
-        }
-        
-        if (field === 'requestedCount' || field === 'costPerHead') {
-            const count = field === 'requestedCount' ? (value as number) : newItems[index].requestedCount;
-            const rate = field === 'costPerHead' ? (value as number) : newItems[index].costPerHead;
-            newItems[index].totalItemCost = count * rate;
-        }
-
-        setItems(newItems);
+            next[index] = current;
+            return next;
+        });
     };
 
-    const handleSubmit = () => {
-        if (!user) return;
-        
-        const validItems = items.filter(i => i.role && i.requestedCount > 0);
-        if (validItems.length === 0) {
-            alert("Please add at least one valid request item (Role and Count required).");
+    const handleSubmit = async () => {
+        if (!user) {
+            alert('You must be signed in to submit a request.');
+            return;
+        }
+        setIsSubmitting(true);
+
+        // All rows must have a role; keep all rows (including count 0) to avoid dropping items.
+        if (items.some(i => !i.role)) {
+            alert('Please fill in a role/area for each row or remove empty rows.');
+            setIsSubmitting(false);
             return;
         }
 
-        const bu = mockBusinessUnits.find(b => b.id === selectedBuId);
-        const grandTotal = validItems.reduce((sum, item) => sum + item.totalItemCost, 0);
+        const bu = businessUnits.find(b => b.id === selectedBuId);
+        const grandTotal = items.reduce((sum, item) => sum + (Number(item.totalItemCost) || 0), 0);
+
+        const payload = {
+            business_unit_id: selectedBuId || null,
+            business_unit_name: bu?.name || user.businessUnit || null,
+            department_id: user.departmentId || null,
+            requester_id: user.id,
+            requester_name: user.name,
+            date_needed: date,
+            forecasted_pax: forecastedPax,
+            general_note: generalNote,
+            justification: generalNote,
+            items,
+            grand_total: grandTotal,
+            status: ManpowerRequestStatus.Pending,
+        };
+
+        const { data, error } = await supabase.from('manpower_requests').insert(payload).select().single();
+        if (error) {
+            alert('Failed to submit request. Please try again.');
+            setIsSubmitting(false);
+            return;
+        }
 
         const newRequest: ManpowerRequest = {
-            id: `MPR-${Date.now()}`,
-            businessUnitId: bu?.id || 'unknown',
-            businessUnitName: bu?.name || 'Unknown BU',
-            requestedBy: user.id,
-            requesterName: user.name,
-            date: new Date(date),
-            forecastedPax,
-            generalNote,
-            items: validItems,
-            grandTotal,
-            status: ManpowerRequestStatus.Pending,
-            createdAt: new Date()
+            id: data.id,
+            businessUnitId: data.business_unit_id || selectedBuId || '',
+            businessUnitName: data.business_unit_name || bu?.name || user.businessUnit || 'Unknown BU',
+            requestedBy: data.requester_id || user.id,
+            requesterName: data.requester_name || user.name,
+            date: data.date_needed ? new Date(data.date_needed) : new Date(date),
+            forecastedPax: data.forecasted_pax || forecastedPax,
+            generalNote: data.general_note || generalNote,
+            items: (data.items as ManpowerRequestItem[]) || items,
+            grandTotal: data.grand_total || grandTotal,
+            status: (data.status as ManpowerRequestStatus) || ManpowerRequestStatus.Pending,
+            createdAt: data.created_at ? new Date(data.created_at) : new Date(),
+            approvedBy: data.approved_by || undefined,
+            approvedAt: data.approved_at ? new Date(data.approved_at) : undefined,
+            rejectionReason: data.rejection_reason || undefined,
         };
 
         onSave(newRequest);
+        setIsSubmitting(false);
         onClose();
     };
 
@@ -183,7 +209,9 @@ const ManpowerRequestModal: React.FC<ManpowerRequestModalProps> = ({ isOpen, onC
             footer={
                 <div className="flex justify-end w-full space-x-2">
                     <Button variant="secondary" onClick={onClose}>Cancel</Button>
-                    <Button onClick={handleSubmit}>Submit Request</Button>
+                    <Button onClick={handleSubmit} disabled={isSubmitting}>
+                        {isSubmitting ? 'Submitting...' : 'Submit Request'}
+                    </Button>
                 </div>
             }
         >

@@ -141,9 +141,9 @@ const AppRoutes: React.FC = () => {
       <Route path="/signup" element={<SignUp />} />
       <Route path="/apply" element={<Apply />} />
       <Route path="/apply/:jobPostId" element={<Apply />} />
-      <Route path="/thank-you" element={<ThankYou />} />
-      {/* Public Career Pages */}
-      <Route path="/careers/:slug" element={<CareerPagePreview isPublic={true} />} />
+        <Route path="/thank-you" element={<ThankYou />} />
+        {/* Public Career Pages */}
+        <Route path="/careers/:slug" element={<CareerPagePreview isPublic={true} />} />
       
       <Route
         path="/"
