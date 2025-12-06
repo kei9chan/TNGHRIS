@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { ManpowerRequest, ManpowerRequestStatus, ManpowerRequestItem, Role } from '../../types';
-import { mockUsers, mockShiftAssignments } from '../../services/mockData';
+import { mockUsers, mockShiftAssignments, mockBusinessUnits } from '../../services/mockData';
 import { supabase } from '../../services/supabaseClient';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
