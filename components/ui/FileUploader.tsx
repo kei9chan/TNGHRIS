@@ -5,7 +5,7 @@ import { MAX_FILE_SIZE, ALLOWED_FILE_TYPES, ALLOWED_FILE_EXTENSIONS } from '../.
 import Button from './Button';
 
 interface FileUploaderProps {
-  onFileUpload: (file: File) => void;
+  onFileUpload: (file: File) => void | Promise<void>;
   maxSize?: number; // in bytes
 }
 

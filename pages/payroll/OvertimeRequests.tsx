@@ -14,6 +14,7 @@ import OTCalendar from '../../components/payroll/OTCalendar';
 import OTLedger from '../../components/payroll/OTLedger';
 import EditableDescription from '../../components/ui/EditableDescription';
 import { logActivity } from '../../services/auditService';
+import { fetchOtRequests, saveOtRequest, approveRejectOtRequest } from '../../services/otService';
 
 type Tab = 'my_ot' | 'team_approvals' | 'calendar' | 'ledger';
 
@@ -39,19 +40,31 @@ const SuccessToast: React.FC<{ message: string; show: boolean; onClose: () => vo
 
 const OvertimeRequests: React.FC = () => {
     const { user } = useAuth();
-    const { can, hasDirectReports, getAccessibleBusinessUnits } = usePermissions();
+    const { hasDirectReports, getAccessibleBusinessUnits, getOtAccess } = usePermissions();
     const location = useLocation();
     const navigate = useNavigate();
     
-    const [requests, setRequests] = useState<OTRequest[]>(mockOtRequests);
+    const [requests, setRequests] = useState<OTRequest[]>([]);
     
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedRequest, setSelectedRequest] = useState<OTRequest | null>(null);
     const [showSuccessToast, setShowSuccessToast] = useState(false);
 
-    const canApprove = can('OT', Permission.Approve) || hasDirectReports();
-    // Only Admins, HR, and Managers (approvers) can see the Ledger
-    const canViewLedger = canApprove; 
+    const otAccess = getOtAccess();
+    const canApprove = otAccess.canApprove || hasDirectReports();
+    const canViewLedger = canApprove;
+    
+    useEffect(() => {
+        const loadRequests = async () => {
+            try {
+                const data = await fetchOtRequests();
+                setRequests(data);
+            } catch (error) {
+                console.error('Failed to load OT requests', error);
+            }
+        };
+        loadRequests();
+    }, []);
     
     // Dashboard State
     const [activeTab, setActiveTab] = useState<Tab>('my_ot');
@@ -61,6 +74,7 @@ const OvertimeRequests: React.FC = () => {
     const [selectedBuFilter, setSelectedBuFilter] = useState<string>('all');
     
     const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+    const scopedRequests = useMemo(() => otAccess.filterRequests(requests), [otAccess, requests]);
 
     useEffect(() => {
          // Default to first accessible BU if limited scope and not "all"
@@ -98,7 +112,7 @@ const OvertimeRequests: React.FC = () => {
         const accessibleBuIds = new Set(accessibleBus.map(b => b.id));
         
         // Filter down to accessible BUs first
-        let filtered = requests.filter(r => {
+        let filtered = scopedRequests.filter(r => {
              const employee = mockUsers.find(u => u.id === r.employeeId);
              const employeeBuId = mockBusinessUnits.find(b => b.name === employee?.businessUnit)?.id;
              return employeeBuId && accessibleBuIds.has(employeeBuId);
@@ -120,19 +134,17 @@ const OvertimeRequests: React.FC = () => {
     // 1. "My OT" Data
     const myRequests = useMemo(() => {
         if (!user) return [];
-        return requests.filter(r => r.employeeId === user.id);
-    }, [requests, user]);
+        return scopedRequests.filter(r => r.employeeId === user.id);
+    }, [scopedRequests, user]);
 
     // 2. "Team Approvals" Data
     const teamRequests = useMemo(() => {
         if (!user || !canApprove) return [];
         if (isPrivilegedViewer) {
-            // For privileged users, show submitted requests filtered by the selected BU (and scope)
              return buFilteredRequests.filter(r => r.status === OTStatus.Submitted);
         }
-        // For regular managers, show requests from others (direct reports logic handled by mockData limitations usually, but here we assume 'others')
-        return requests.filter(r => r.status === OTStatus.Submitted && r.employeeId !== user.id);
-    }, [requests, user, canApprove, isPrivilegedViewer, buFilteredRequests]);
+        return scopedRequests.filter(r => r.status === OTStatus.Submitted && r.employeeId !== user.id);
+    }, [scopedRequests, user, canApprove, isPrivilegedViewer, buFilteredRequests]);
 
     // 3. Calendar Data Source
     const calendarRequests = useMemo(() => {
@@ -141,10 +153,10 @@ const OvertimeRequests: React.FC = () => {
              if (isPrivilegedViewer) {
                  return buFilteredRequests;
              }
-             return requests.filter(r => r.employeeId === user.id || r.status === OTStatus.Submitted); 
+             return scopedRequests.filter(r => r.employeeId === user.id || r.status === OTStatus.Submitted); 
         }
         return myRequests;
-    }, [requests, user, canApprove, myRequests, isPrivilegedViewer, buFilteredRequests]);
+    }, [scopedRequests, user, canApprove, myRequests, isPrivilegedViewer, buFilteredRequests]);
     
     // 4. Ledger Data Source (All Requests available to the viewer)
     const ledgerRequests = useMemo(() => {
@@ -152,10 +164,8 @@ const OvertimeRequests: React.FC = () => {
         if (isPrivilegedViewer) {
             return buFilteredRequests;
         }
-        // Managers see their team + self (Simplified: Showing all related to their scope. 
-        // Real implementation would filter by hierarchy service)
-        return requests.filter(r => r.employeeId === user.id || r.status === OTStatus.Submitted); 
-    }, [requests, user, canViewLedger, isPrivilegedViewer, buFilteredRequests]);
+        return scopedRequests.filter(r => r.employeeId === user.id || r.status === OTStatus.Submitted); 
+    }, [scopedRequests, user, canViewLedger, isPrivilegedViewer, buFilteredRequests]);
 
 
     // 5. Data for Stats Cards
@@ -225,8 +235,12 @@ const OvertimeRequests: React.FC = () => {
         logActivity(user, 'UPDATE', 'OTRequest', requestId, 'Withdrew OT request.');
     };
 
-    const handleSaveRequest = (requestToSave: Partial<OTRequest>, status: OTStatus) => {
+    const handleSaveRequest = async (requestToSave: Partial<OTRequest>, status: OTStatus) => {
         if (!user) return;
+        if (!otAccess.canRequest) {
+            alert('You do not have permission to file an OT request.');
+            return;
+        }
 
         const newHistoryEntry: OTRequestHistory = {
             userId: user.id,
@@ -236,46 +250,42 @@ const OvertimeRequests: React.FC = () => {
             details: status === OTStatus.Submitted ? `Submitted for approval.` : `Saved as draft.`
         };
 
-        const updatedRequestData = { 
+        const updatedRequestData: Partial<OTRequest> = { 
             ...requestToSave, 
             status,
-            historyLog: [...(requestToSave.historyLog || []), newHistoryEntry]
+            historyLog: [...(requestToSave.historyLog || []), newHistoryEntry],
+            submittedAt: status === OTStatus.Submitted ? (requestToSave.submittedAt || new Date()) : requestToSave.submittedAt
         };
 
-        if (status === OTStatus.Submitted && !requestToSave.submittedAt) {
-            updatedRequestData.submittedAt = new Date();
-        }
-
-        if (requestToSave.id) {
-            setRequests(prev => prev.map(r => r.id === requestToSave.id ? { ...r, ...updatedRequestData } as OTRequest : r));
-             const idx = mockOtRequests.findIndex(r => r.id === requestToSave.id);
-             if (idx > -1) mockOtRequests[idx] = { ...mockOtRequests[idx], ...updatedRequestData } as OTRequest;
-             
-             logActivity(user, 'UPDATE', 'OTRequest', requestToSave.id, `Updated OT request status to ${status}`);
-        } else {
-            const newRequest: OTRequest = {
-                id: `OT-${Date.now()}`,
-                employeeId: user.id,
-                employeeName: user.name,
-                ...updatedRequestData
-            } as OTRequest;
-            setRequests(prev => [...prev, newRequest]);
-            mockOtRequests.push(newRequest);
-            
-            logActivity(user, 'CREATE', 'OTRequest', newRequest.id, `Created new OT request (Status: ${status})`);
-        }
-        setIsModalOpen(false);
-        if (status === OTStatus.Submitted) {
-            setShowSuccessToast(true);
+        try {
+            const saved = await saveOtRequest(updatedRequestData, status, user);
+            setRequests(prev => {
+                const existing = prev.find(r => r.id === saved.id);
+                if (existing) {
+                    return prev.map(r => r.id === saved.id ? saved : r);
+                }
+                return [...prev, saved];
+            });
+            logActivity(user, requestToSave.id ? 'UPDATE' : 'CREATE', 'OTRequest', saved.id, `Set OT request status to ${status}`);
+            setIsModalOpen(false);
+            if (status === OTStatus.Submitted) {
+                setShowSuccessToast(true);
+            }
+        } catch (error: any) {
+            alert(error?.message || 'Failed to save OT request.');
         }
     };
 
-    const handleApprovalAction = (
+    const handleApprovalAction = async (
         requestToUpdate: Partial<OTRequest>,
         newStatus: OTStatus.Approved | OTStatus.Rejected,
         details: { approvedHours?: number, managerNote?: string }
     ) => {
         if (!user) return;
+        if (!otAccess.canActOn(requestToUpdate as OTRequest)) {
+            alert('You do not have permission to act on this request.');
+            return;
+        }
         const action = newStatus === OTStatus.Approved ? 'Approved' : 'Rejected';
         const detailText = `${action}${details.approvedHours ? ` ${details.approvedHours.toFixed(2)} hours.` : '.'} Note: ${details.managerNote || 'N/A'}`;
 
@@ -291,14 +301,16 @@ const OvertimeRequests: React.FC = () => {
                 ? { ...r, status: newStatus, approvedHours: details.approvedHours, managerNote: details.managerNote, historyLog: [...(r.historyLog || []), newHistoryEntry] }
                 : r;
 
-        setRequests(prev => prev.map(updater));
-        const idx = mockOtRequests.findIndex(r => r.id === requestToUpdate.id);
-        if (idx > -1) mockOtRequests[idx] = updater(mockOtRequests[idx]) as OTRequest;
-
-        const actionType = newStatus === OTStatus.Approved ? 'APPROVE' : 'REJECT';
-        logActivity(user, actionType, 'OTRequest', requestToUpdate.id!, `${action} OT request for ${requestToUpdate.employeeName}`);
-
-        setIsModalOpen(false);
+        try {
+            const updated = await approveRejectOtRequest(requestToUpdate.id!, newStatus, details);
+            updated.historyLog = [...(updated.historyLog || []), newHistoryEntry];
+            setRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
+            const actionType = newStatus === OTStatus.Approved ? 'APPROVE' : 'REJECT';
+            logActivity(user, actionType, 'OTRequest', requestToUpdate.id!, `${action} OT request for ${requestToUpdate.employeeName}`);
+            setIsModalOpen(false);
+        } catch (error: any) {
+            alert(error?.message || 'Failed to update OT request.');
+        }
     };
 
     const getTabClass = (tabName: Tab) => {

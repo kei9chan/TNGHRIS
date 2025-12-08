@@ -2,7 +2,7 @@
 import { useAuth } from './useAuth';
 import { useSettings } from '../context/SettingsContext';
 import { mockPermissions, mockUsers, mockBusinessUnits, mockDepartments } from '../services/mockData';
-import { Resource, Permission, Role, IncidentReport, Ticket, BusinessUnit, Evaluation, EvaluatorType, User, COERequest } from '../types';
+import { Resource, Permission, Role, IncidentReport, Ticket, BusinessUnit, Evaluation, EvaluatorType, User, COERequest, OTRequest, OTStatus } from '../types';
 
 export const usePermissions = () => {
     const { user: sessionUser } = useAuth();
@@ -307,6 +307,125 @@ export const usePermissions = () => {
         return { canRequest, canApprove, canView, scope, filterRequests, canActOn };
     };
 
+    const getOtAccess = () => {
+        const user = getCurrentUser();
+        if (!user) {
+            return {
+                canRequest: false,
+                canApprove: false,
+                canView: false,
+                scope: 'none' as const,
+                filterRequests: (_reqs: OTRequest[]) => [],
+                canActOn: (_req: OTRequest) => false,
+            };
+        }
 
-    return { can, getVisibleEmployeeIds, filterByScope, filterIncidentReportsByScope, filterTicketsByScope, hasDirectReports, getAccessibleBusinessUnits, isUserEligibleEvaluator, getCoeAccess };
+        let canRequest = false;
+        let canApprove = false;
+        let canView = false;
+        let scope: 'global' | 'bu' | 'team' | 'self' | 'dept' | 'none' = 'none';
+
+        switch (user.role) {
+            case Role.Admin:
+            case Role.HRManager:
+            case Role.HRStaff:
+                canRequest = true;
+                canApprove = true;
+                canView = true;
+                scope = 'global';
+                break;
+            case Role.BOD:
+                canView = true;
+                scope = 'global';
+                break;
+            case Role.GeneralManager:
+                canView = true;
+                scope = 'dept';
+                break;
+            case Role.OperationsDirector:
+                canApprove = true;
+                canView = true;
+                scope = 'bu';
+                break;
+            case Role.BusinessUnitManager:
+                canRequest = true;
+                canView = true;
+                scope = 'bu';
+                break;
+            case Role.Manager:
+                canRequest = true;
+                canApprove = true;
+                canView = true;
+                scope = 'team';
+                break;
+            case Role.Employee:
+                canRequest = true;
+                canView = true;
+                scope = 'self';
+                break;
+            case Role.Auditor:
+                canView = true; // view logs
+                scope = 'global';
+                break;
+            default:
+                scope = 'none';
+        }
+
+        const filterRequests = (requests: OTRequest[]): OTRequest[] => {
+            if (!canView) return [];
+            if (scope === 'global') return requests;
+            if (scope === 'self') return requests.filter(r => r.employeeId === user.id);
+            if (scope === 'team') {
+                const teamIds = mockUsers.filter(u => u.managerId === user.id).map(u => u.id);
+                const deptId = user.departmentId;
+                const buIds = new Set([
+                    ...(getAccessibleBusinessUnits(mockBusinessUnits).map(bu => bu.id)),
+                    user.businessUnitId
+                ].filter(Boolean) as string[]);
+                return requests.filter(r => {
+                    const employee = mockUsers.find(u => u.id === r.employeeId);
+                    const isTeam = teamIds.includes(r.employeeId);
+                    const isSelf = r.employeeId === user.id;
+                    const sameBu = employee?.businessUnitId ? buIds.has(employee.businessUnitId) : true;
+                    const sameDept = deptId && employee?.departmentId ? deptId === employee.departmentId : true;
+                    return isSelf || isTeam || (sameBu && sameDept);
+                });
+            }
+            if (scope === 'dept') {
+                const deptId = user.departmentId;
+                const buIds = new Set([
+                    ...(getAccessibleBusinessUnits(mockBusinessUnits).map(bu => bu.id)),
+                    user.businessUnitId
+                ].filter(Boolean) as string[]);
+                return requests.filter(r => {
+                    const target = mockUsers.find(u => u.id === r.employeeId);
+                    const matchesDept = deptId && target?.departmentId ? deptId === target.departmentId : true;
+                    const matchesBu = target?.businessUnitId ? buIds.has(target.businessUnitId) : true;
+                    return matchesDept && matchesBu;
+                });
+            }
+            if (scope === 'bu') {
+                const buIds = new Set([
+                    ...(getAccessibleBusinessUnits(mockBusinessUnits).map(bu => bu.id)),
+                    user.businessUnitId
+                ].filter(Boolean) as string[]);
+                return requests.filter(r => {
+                    const target = mockUsers.find(u => u.id === r.employeeId);
+                    return target?.businessUnitId ? buIds.has(target.businessUnitId) : true;
+                });
+            }
+            return [];
+        };
+
+        const canActOn = (request: OTRequest) => {
+            if (!canApprove) return false;
+            if (request.status === OTStatus.Approved || request.status === OTStatus.Rejected) return false;
+            return filterRequests([request]).length > 0;
+        };
+
+        return { canRequest, canApprove, canView, scope, filterRequests, canActOn };
+    };
+
+
+    return { can, getVisibleEmployeeIds, filterByScope, filterIncidentReportsByScope, filterTicketsByScope, hasDirectReports, getAccessibleBusinessUnits, isUserEligibleEvaluator, getCoeAccess, getOtAccess };
 };

@@ -8,6 +8,8 @@ import Textarea from '../ui/Textarea';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import FileUploader from '../ui/FileUploader';
+import { supabase } from '../../services/supabaseClient';
+import { useRef } from 'react';
 
 interface OTRequestModalProps {
     isOpen: boolean;
@@ -64,45 +66,67 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
     const [error, setError] = useState('');
     const [warnings, setWarnings] = useState<string[]>([]);
     const [shiftInfo, setShiftInfo] = useState<string>('');
+    const [attachmentPreviewUrl, setAttachmentPreviewUrl] = useState<string | null>(null);
+    const initializedRef = useRef<string | null>(null);
+
+    const openAttachment = () => {
+        if (!attachmentPreviewUrl) return;
+        window.open(attachmentPreviewUrl, '_blank', 'noopener,noreferrer');
+    };
 
     useEffect(() => {
-        if (isOpen) {
-            const initialRequest = requestToEdit || {
-                employeeId: user?.id,
-                employeeName: user?.name,
-                date: new Date(),
-                startTime: '', // Will be populated dynamically
-                endTime: '',
-                reason: '',
-                status: OTStatus.Draft,
-                historyLog: [],
-            };
-            setRequest(initialRequest);
-            setApprovedHours(requestToEdit?.approvedHours?.toString() || '');
-            setManagerNote(requestToEdit?.managerNote || '');
-            setError('');
-            setWarnings([]);
-            setShiftInfo('');
-            
-            // If creating new, try to auto-populate start time from shift
-            if (!requestToEdit && initialRequest.date && initialRequest.employeeId) {
-                 const dateStr = new Date(initialRequest.date).toDateString();
-                 const assignment = shiftAssignments.find(s => 
-                     s.employeeId === initialRequest.employeeId && 
-                     new Date(s.date).toDateString() === dateStr
-                 );
-                 
-                 if (assignment) {
-                     const template = shiftTemplates.find(t => t.id === assignment.shiftTemplateId);
-                     if (template) {
-                         setShiftInfo(`${template.name} (${template.startTime} - ${template.endTime})`);
-                         // Auto-set OT Start Time to Shift End Time
-                         setRequest(prev => ({ ...prev, startTime: template.endTime }));
-                     }
-                 }
-            }
+        if (!isOpen) return;
+
+        const currentKey = requestToEdit?.id || 'new';
+        if (initializedRef.current === currentKey) {
+            // Already initialized for this request; do not reset form.
+            return;
         }
-    }, [isOpen, requestToEdit, user]); // Removed shiftAssignments from dep to avoid reset loops, managed logic inside
+        initializedRef.current = currentKey;
+
+        const initialRequest = requestToEdit || {
+            employeeId: user?.id,
+            employeeName: user?.name,
+            date: new Date(),
+            startTime: '', // Will be populated dynamically
+            endTime: '',
+            reason: '',
+            status: OTStatus.Draft,
+            historyLog: [],
+        };
+        setRequest(initialRequest);
+        setApprovedHours(requestToEdit?.approvedHours?.toString() || '');
+        setManagerNote(requestToEdit?.managerNote || '');
+        setError('');
+        setWarnings([]);
+        setShiftInfo('');
+        setAttachmentPreviewUrl(null);
+        
+        // If creating new, try to auto-populate start time from shift
+        if (!requestToEdit && initialRequest.date && initialRequest.employeeId) {
+             const dateStr = new Date(initialRequest.date).toDateString();
+             const assignment = shiftAssignments.find(s => 
+                 s.employeeId === initialRequest.employeeId && 
+                 new Date(s.date).toDateString() === dateStr
+             );
+             
+             if (assignment) {
+                 const template = shiftTemplates.find(t => t.id === assignment.shiftTemplateId);
+                 if (template) {
+                     setShiftInfo(`${template.name} (${template.startTime} - ${template.endTime})`);
+                     // Auto-set OT Start Time to Shift End Time
+                     setRequest(prev => ({ ...prev, startTime: template.endTime }));
+                 }
+             }
+        }
+
+        // Build preview URL for existing attachment
+        if (requestToEdit?.attachmentUrl) {
+            getSignedAttachmentUrl(requestToEdit.attachmentUrl).then((signed) => {
+                if (signed) setAttachmentPreviewUrl(signed);
+            }).catch(() => {});
+        }
+    }, [isOpen, requestToEdit, user, shiftAssignments, shiftTemplates]); // allow shift lookups
     
     // Validation Logic
     useEffect(() => {
@@ -190,9 +214,38 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
         }
     };
     
-    const handleFile = (file: File) => {
-        console.log("Attachment uploaded:", file.name);
-        setRequest(prev => ({ ...prev, attachmentUrl: file.name }));
+    const getSignedAttachmentUrl = async (path: string): Promise<string | null> => {
+        const { data, error: signError } = await supabase.storage
+            .from('overtime_request_attachments')
+            .createSignedUrl(path, 60 * 60); // 1 hour
+        if (signError) {
+            console.error('Failed to sign attachment URL', signError);
+            return null;
+        }
+        return data?.signedUrl || null;
+    };
+
+    const handleFile = async (file: File) => {
+        if (!user) {
+            setError('You must be signed in to upload attachments.');
+            return;
+        }
+        setError('');
+        const ext = file.name.split('.').pop() || 'bin';
+        const key = `${user.id}/${crypto.randomUUID?.() || Date.now()}-${Date.now()}.${ext}`;
+
+        const { error: uploadError } = await supabase.storage
+            .from('overtime_request_attachments')
+            .upload(key, file, { upsert: false });
+
+        if (uploadError) {
+            setError(uploadError.message || 'Failed to upload attachment.');
+            return;
+        }
+
+        const signed = await getSignedAttachmentUrl(key);
+        if (signed) setAttachmentPreviewUrl(signed);
+        setRequest(prev => ({ ...prev, attachmentUrl: key }));
     };
 
     const handleSaveDraftOrSubmit = (status: OTStatus) => {
@@ -328,10 +381,38 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
                     disabled={isFinalized || isManagerReviewing}
                     placeholder="Why is overtime needed? (e.g. Critical report deadline)"
                 />
-                 <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Attach Note/File (Optional)</label>
-                    <FileUploader onFileUpload={handleFile} />
-                    {request.attachmentUrl && <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">Current attachment: {request.attachmentUrl}</p>}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Attachment</label>
+                    {isManagerReviewing || isFinalized ? (
+                        attachmentPreviewUrl ? (
+                            <div className="text-sm text-gray-600 dark:text-gray-400">
+                                <button
+                                    type="button"
+                                    className="text-indigo-600 hover:underline"
+                                    onClick={openAttachment}
+                                >
+                                    View submitted file
+                                </button>
+                            </div>
+                        ) : (
+                            <p className="text-sm text-gray-500 dark:text-gray-400">No attachment submitted.</p>
+                        )
+                    ) : (
+                        <>
+                            <FileUploader onFileUpload={handleFile} />
+                            {attachmentPreviewUrl && (
+                                <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                                    <button
+                                        type="button"
+                                        className="text-indigo-600 hover:underline"
+                                        onClick={openAttachment}
+                                    >
+                                        View file
+                                    </button>
+                                </div>
+                            )}
+                        </>
+                    )}
                 </div>
 
                  {warnings.length > 0 && (
