@@ -117,14 +117,66 @@ export const usePermissions = () => {
         );
     };
 
+    const getTicketAccess = () => {
+        const user = getCurrentUser();
+        if (!user) {
+            return {
+                canSubmit: false,
+                canRespond: false,
+                canView: false,
+                scope: 'none' as const,
+            };
+        }
+
+        switch (user.role) {
+            case Role.Admin:
+            case Role.HRManager:
+            case Role.HRStaff:
+                return { canSubmit: true, canRespond: true, canView: true, scope: 'global' as const }; // Full
+            case Role.BOD:
+                return { canSubmit: false, canRespond: false, canView: true, scope: 'global' as const }; // View
+            case Role.GeneralManager:
+            case Role.OperationsDirector:
+            case Role.BusinessUnitManager:
+                return { canSubmit: false, canRespond: true, canView: true, scope: 'bu' as const }; // View & Respond (BU)
+            case Role.FinanceStaff:
+            case Role.IT:
+                return { canSubmit: false, canRespond: true, canView: true, scope: 'global' as const }; // View & Respond
+            case Role.Employee:
+                return { canSubmit: true, canRespond: false, canView: true, scope: 'self' as const }; // Own
+            case Role.Auditor:
+                return { canSubmit: false, canRespond: false, canView: true, scope: 'global' as const }; // View Logs
+            case Role.Manager:
+            case Role.Recruiter:
+                return { canSubmit: false, canRespond: false, canView: false, scope: 'none' as const }; // None
+            default:
+                return { canSubmit: false, canRespond: false, canView: false, scope: 'none' as const };
+        }
+    };
+
     const filterTicketsByScope = (data: Ticket[]): Ticket[] => {
         const user = getCurrentUser();
         if (!user) return [];
-        const visibleIds = getVisibleEmployeeIds();
+        const access = getTicketAccess();
+        if (!access.canView && !access.canRespond) return [];
 
-        return data.filter(item => 
-            visibleIds.includes(item.requesterId) || item.assignedToId === user.id
-        );
+        return data.filter(item => {
+            if (item.assignedToId === user.id && access.canRespond) return true;
+
+            if (access.scope === 'global') return true;
+
+            if (access.scope === 'self') {
+                return item.requesterId === user.id;
+            }
+
+            if (access.scope === 'bu') {
+                const matchesBuId = item.businessUnitId && user.businessUnitId && item.businessUnitId === user.businessUnitId;
+                const matchesBuName = item.businessUnitName && user.businessUnit && item.businessUnitName === user.businessUnit;
+                return matchesBuId || matchesBuName || item.requesterId === user.id;
+            }
+
+            return false;
+        });
     };
 
     /**
@@ -427,5 +479,5 @@ export const usePermissions = () => {
     };
 
 
-    return { can, getVisibleEmployeeIds, filterByScope, filterIncidentReportsByScope, filterTicketsByScope, hasDirectReports, getAccessibleBusinessUnits, isUserEligibleEvaluator, getCoeAccess, getOtAccess };
+    return { can, getVisibleEmployeeIds, filterByScope, filterIncidentReportsByScope, filterTicketsByScope, hasDirectReports, getAccessibleBusinessUnits, isUserEligibleEvaluator, getCoeAccess, getOtAccess, getTicketAccess };
 };

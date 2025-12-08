@@ -1,8 +1,8 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { mockTickets, mockUsers, mockNotifications, mockBusinessUnits } from '../../services/mockData';
-import { Ticket, Permission, TicketStatus, TicketPriority, Role, NotificationType, ChatMessage, TicketCategory, BusinessUnit } from '../../types';
+import { mockBusinessUnits } from '../../services/mockData';
+import { Ticket, TicketStatus, TicketPriority, ChatMessage, TicketCategory } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import Card from '../../components/ui/Card';
@@ -13,6 +13,7 @@ import EditableDescription from '../../components/ui/EditableDescription';
 import { useSettings } from '../../context/SettingsContext';
 import Input from '../../components/ui/Input';
 import { logActivity } from '../../services/auditService';
+import { fetchTickets, saveTicket, fetchTicketById } from '../../services/ticketService';
 
 const PlusIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>;
 
@@ -26,10 +27,10 @@ const slaHours: Record<TicketPriority, number> = {
 
 const Tickets: React.FC = () => {
     const { user } = useAuth();
-    const { can, filterTicketsByScope, getAccessibleBusinessUnits } = usePermissions();
+    const { filterTicketsByScope, getAccessibleBusinessUnits, getTicketAccess } = usePermissions();
     const { settings, updateSettings } = useSettings();
 
-    const [tickets, setTickets] = useState<Ticket[]>(() => filterTicketsByScope(mockTickets));
+    const [tickets, setTickets] = useState<Ticket[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedTicket, setSelectedTicket] = useState<Partial<Ticket> | null>(null);
 
@@ -45,35 +46,57 @@ const Tickets: React.FC = () => {
     const descriptionKey = 'helpdeskTicketsDesc';
 
     const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+    const ticketAccess = useMemo(() => getTicketAccess(), [getTicketAccess]);
 
     const handleNewTicket = React.useCallback(() => {
+        if (!ticketAccess.canSubmit) {
+            alert('You do not have permission to submit tickets.');
+            return;
+        }
         setSelectedTicket(null);
         setIsModalOpen(true);
-    }, []);
+    }, [ticketAccess.canSubmit]);
 
     useEffect(() => {
         const params = new URLSearchParams(location.search);
         const ticketIdToView = params.get('ticketId');
         
-        if (ticketIdToView) {
-            const ticketFromSource = mockTickets.find(t => t.id === ticketIdToView);
+        if (!ticketIdToView) return;
 
-            if (ticketFromSource) {
-                const canView = filterTicketsByScope([ticketFromSource]).length > 0;
+        const tryLoad = async () => {
+            // first try from already loaded list
+            const fromState = tickets.find(t => t.id === ticketIdToView);
+            if (fromState) {
+                const canView = filterTicketsByScope([fromState]).length > 0;
                 if (canView) {
-                    setSelectedTicket(ticketFromSource);
+                    setSelectedTicket(fromState);
                     setIsModalOpen(true);
                 } else {
                     alert("You do not have permission to view this ticket.");
                 }
-            } else {
-                alert("The requested ticket was not found.");
+                navigate('/helpdesk/tickets', { replace: true });
+                return;
             }
-            
-            navigate('/helpdesk/tickets', { replace: true });
-        }
+
+            // fallback: fetch single ticket from supabase
+            try {
+                const remote = await fetchTicketById(ticketIdToView);
+                if (remote && filterTicketsByScope([remote]).length > 0) {
+                    setSelectedTicket(remote);
+                    setIsModalOpen(true);
+                } else {
+                    alert(remote ? "You do not have permission to view this ticket." : "The requested ticket was not found.");
+                }
+            } catch (err) {
+                alert("Failed to load ticket.");
+            } finally {
+                navigate('/helpdesk/tickets', { replace: true });
+            }
+        };
+
+        tryLoad();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [location.search, filterTicketsByScope, navigate]);
+    }, [location.search, tickets, filterTicketsByScope, navigate]);
     
     useEffect(() => {
         if (location.state?.openNewTicketModal) {
@@ -84,6 +107,18 @@ const Tickets: React.FC = () => {
     }, [location.state, navigate, handleNewTicket]);
 
     
+    useEffect(() => {
+        const loadTickets = async () => {
+            try {
+                const data = await fetchTickets();
+                setTickets(filterTicketsByScope(data));
+            } catch (error) {
+                console.error('Failed to load tickets', error);
+            }
+        };
+        loadTickets();
+    }, [filterTicketsByScope]);
+
     const filteredTickets = useMemo(() => {
         const lowercasedTerm = searchTerm.toLowerCase();
         
@@ -108,79 +143,70 @@ const Tickets: React.FC = () => {
         setIsModalOpen(true);
     };
 
-    const handleSaveTicket = (ticketToSave: Partial<Ticket>) => {
-        let updatedTicket: Ticket;
+    const handleSaveTicket = async (ticketToSave: Partial<Ticket>) => {
+        if (!user) {
+            alert('You must be logged in to submit a ticket.');
+            return;
+        }
+        if (!ticketToSave.id && !ticketAccess.canSubmit) {
+            alert('You do not have permission to submit tickets.');
+            return;
+        }
+
+        if (ticketToSave.id && !(ticketAccess.canRespond || ticketToSave.requesterId === user.id)) {
+            alert('You do not have permission to update this ticket.');
+            return;
+        }
+
+        let payload: Partial<Ticket> = { ...ticketToSave };
 
         if (ticketToSave.id) { 
-            const ticketIndex = mockTickets.findIndex(t => t.id === ticketToSave.id);
-            if (ticketIndex === -1) return;
-
-            const originalTicket = mockTickets[ticketIndex];
-            const newlyAssigned = ticketToSave.assignedToId && originalTicket.assignedToId !== ticketToSave.assignedToId;
-
-            updatedTicket = { ...originalTicket, ...ticketToSave } as Ticket;
+            const existing = tickets.find(t => t.id === ticketToSave.id);
+            const newlyAssigned = ticketToSave.assignedToId && existing?.assignedToId !== ticketToSave.assignedToId;
 
             if (newlyAssigned) {
-                updatedTicket.assignedAt = new Date();
-                updatedTicket.status = TicketStatus.Assigned;
-                const sla = slaHours[updatedTicket.priority as TicketPriority];
-                updatedTicket.slaDeadline = new Date(Date.now() + sla * 3600 * 1000);
-                const assignee = mockUsers.find(u => u.id === updatedTicket.assignedToId);
-                updatedTicket.assignedToName = assignee?.name;
-
-                const requester = mockUsers.find(u => u.id === updatedTicket.requesterId);
-                if (requester && assignee) {
-                    mockNotifications.unshift({
-                        id: `notif-${Date.now()}-${requester.id}`,
-                        userId: requester.id,
-                        type: NotificationType.TICKET_UPDATE_REQUESTER,
-                        message: `Your ticket #${updatedTicket.id} has been assigned to ${assignee.name}.`,
-                        link: `/helpdesk/tickets?ticketId=${updatedTicket.id}`,
-                        isRead: false,
-                        createdAt: new Date(),
-                        relatedEntityId: updatedTicket.id,
-                    });
-                    mockNotifications.unshift({
-                        id: `notif-${Date.now()}-${assignee.id}`,
-                        userId: assignee.id,
-                        type: NotificationType.TICKET_ASSIGNED_TO_YOU,
-                        message: `You've been assigned ticket #${updatedTicket.id} from ${requester.name}.`,
-                        link: `/helpdesk/tickets?ticketId=${updatedTicket.id}`,
-                        isRead: false,
-                        createdAt: new Date(),
-                        relatedEntityId: updatedTicket.id,
-                    });
-                }
+                payload.assignedAt = new Date();
+                payload.status = TicketStatus.Assigned;
+                const sla = slaHours[(ticketToSave.priority || TicketPriority.Medium) as TicketPriority];
+                payload.slaDeadline = new Date(Date.now() + sla * 3600 * 1000);
+                payload.assignedToName = ticketToSave.assignedToName || existing?.assignedToName;
             }
-            if (updatedTicket.status === TicketStatus.Resolved && !originalTicket.resolvedAt) {
-                updatedTicket.resolvedAt = new Date();
+            if (ticketToSave.status === TicketStatus.Resolved && !existing?.resolvedAt) {
+                payload.resolvedAt = new Date();
             }
-
-            mockTickets[ticketIndex] = updatedTicket;
-            logActivity(user, 'UPDATE', 'Ticket', updatedTicket.id, `Updated ticket status to ${updatedTicket.status}`);
 
         } else { 
             const bu = mockBusinessUnits.find(b => b.id === ticketToSave.businessUnitId);
-             updatedTicket = {
-                requesterId: user?.id || '',
-                requesterName: user?.name || '',
+            payload = {
+                requesterId: user.id,
+                requesterName: user.name,
                 chatThread: [],
-                ...ticketToSave,
-                businessUnitName: bu?.name || 'N/A',
-                id: `TICKET-${Date.now()}`,
-            } as Ticket;
-            const sla = slaHours[updatedTicket.priority as TicketPriority];
-            updatedTicket.slaDeadline = new Date(Date.now() + sla * 3600 * 1000);
-            
-            mockTickets.unshift(updatedTicket);
-            logActivity(user, 'CREATE', 'Ticket', updatedTicket.id, `Created new ticket: ${updatedTicket.description}`);
+                description: ticketToSave.description || '',
+                category: ticketToSave.category || TicketCategory.IT,
+                priority: ticketToSave.priority || TicketPriority.Medium,
+                status: TicketStatus.New,
+                businessUnitId: ticketToSave.businessUnitId,
+                businessUnitName: bu?.name,
+                attachments: ticketToSave.attachments || [],
+            };
+            const sla = slaHours[(payload.priority || TicketPriority.Medium) as TicketPriority];
+            payload.slaDeadline = new Date(Date.now() + sla * 3600 * 1000);
         }
         
-        setTickets(filterTicketsByScope([...mockTickets]));
-        setIsModalOpen(false);
+        try {
+            const saved = await saveTicket(payload);
+            setTickets(prev => {
+                const rest = prev.filter(t => t.id !== saved.id);
+                return filterTicketsByScope([...rest, saved]);
+            });
+            logActivity(user, ticketToSave.id ? 'UPDATE' : 'CREATE', 'Ticket', saved.id, `${ticketToSave.id ? 'Updated' : 'Created'} ticket ${saved.id}`);
+            setIsModalOpen(false);
+        } catch (error: any) {
+            alert(error?.message || 'Failed to save ticket.');
+        }
     };
 
-    const handleSendMessage = (text: string) => {
+    const handleSendMessage = async (text: string) => {
       if (!user || !selectedTicket?.id) return;
 
       const newMessage: ChatMessage = {
@@ -191,139 +217,141 @@ const Tickets: React.FC = () => {
         text,
       };
 
-      const ticketIndex = mockTickets.findIndex(t => t.id === selectedTicket.id);
-      if (ticketIndex === -1) return;
+      const current = tickets.find(t => t.id === selectedTicket.id);
+      if (!current) return;
 
-      const updatedTicket = { ...mockTickets[ticketIndex] };
-      updatedTicket.chatThread = [...updatedTicket.chatThread, newMessage];
+      const updated: Partial<Ticket> = {
+        ...current,
+        chatThread: [...(current.chatThread || []), newMessage],
+      };
 
-      if (updatedTicket.status === TicketStatus.Assigned) {
-          updatedTicket.status = TicketStatus.InProgress;
+      if (current.status === TicketStatus.Assigned) {
+        updated.status = TicketStatus.InProgress;
       }
-      
-      mockTickets[ticketIndex] = updatedTicket;
-      
-      setTickets(filterTicketsByScope([...mockTickets]));
-      setSelectedTicket(updatedTicket);
-    };
 
-    const handleResolveTicket = (ticketId: string) => {
-        if (!user) return;
-        const ticketIndex = mockTickets.findIndex(t => t.id === ticketId);
-        if (ticketIndex === -1) return;
-
-        const updatedTicket = { ...mockTickets[ticketIndex] };
-        updatedTicket.status = TicketStatus.PendingResolution;
-        
-        const systemMessage: ChatMessage = {
-          id: `msg-${Date.now()}`,
-          userId: 'system',
-          userName: 'System',
-          timestamp: new Date(),
-          text: `Case marked as pending resolution by ${user.name}.`,
-        };
-        updatedTicket.chatThread.push(systemMessage);
-        
-        mockTickets[ticketIndex] = updatedTicket;
-
-        mockNotifications.unshift({
-            id: `notif-${Date.now()}-${updatedTicket.requesterId}`,
-            userId: updatedTicket.requesterId,
-            type: NotificationType.TICKET_UPDATE_REQUESTER,
-            message: `Ticket #${updatedTicket.id} is marked as resolved. Please confirm.`,
-            link: `/helpdesk/tickets?ticketId=${updatedTicket.id}`,
-            isRead: false,
-            createdAt: new Date(),
-            relatedEntityId: updatedTicket.id,
+      try {
+        const saved = await saveTicket(updated);
+        setTickets(prev => {
+            const rest = prev.filter(t => t.id !== saved.id);
+            return filterTicketsByScope([...rest, saved]);
         });
-        
-        logActivity(user, 'UPDATE', 'Ticket', ticketId, `Marked ticket as Pending Resolution`);
-
-        setTickets(filterTicketsByScope([...mockTickets]));
-        setSelectedTicket(updatedTicket);
+        setSelectedTicket(saved);
+      } catch (error: any) {
+        alert(error?.message || 'Failed to send message.');
+      }
     };
 
-    const handleApproveResolution = (ticketId: string) => {
+    const handleResolveTicket = async (ticketId: string) => {
         if (!user) return;
-        const ticketIndex = mockTickets.findIndex(t => t.id === ticketId);
-        if (ticketIndex === -1) return;
+        if (!ticketAccess.canRespond) {
+            alert('You do not have permission to resolve this ticket.');
+            return;
+        }
+        const current = tickets.find(t => t.id === ticketId);
+        if (!current) return;
 
-        const updatedTicket = { ...mockTickets[ticketIndex] };
-        updatedTicket.status = TicketStatus.Resolved;
-        updatedTicket.resolvedAt = new Date();
-        
-        const systemMessage: ChatMessage = {
-          id: `msg-${Date.now()}`,
-          userId: 'system',
-          userName: 'System',
-          timestamp: new Date(),
-          text: `Resolution approved by ${user.name}. Ticket has been resolved.`,
+        const updated: Partial<Ticket> = {
+            ...current,
+            status: TicketStatus.Resolved,
+            resolvedAt: new Date(),
+            chatThread: [
+                ...(current.chatThread || []),
+                {
+                    id: `msg-${Date.now()}`,
+                    userId: 'system',
+                    userName: 'System',
+                    timestamp: new Date(),
+                    text: `Ticket marked resolved by ${user.name}.`,
+                } as ChatMessage,
+            ],
         };
-        updatedTicket.chatThread.push(systemMessage);
-        
-        mockTickets[ticketIndex] = updatedTicket;
-        
-        if (updatedTicket.assignedToId) {
-            mockNotifications.unshift({
-                id: `notif-${Date.now()}-${updatedTicket.assignedToId}`,
-                userId: updatedTicket.assignedToId,
-                type: NotificationType.TICKET_UPDATE_REQUESTER,
-                message: `The resolution for ticket #${updatedTicket.id} was approved.`,
-                link: `/helpdesk/tickets?ticketId=${updatedTicket.id}`,
-                isRead: false,
-                createdAt: new Date(),
-                relatedEntityId: updatedTicket.id,
+
+        try {
+            const saved = await saveTicket(updated);
+            setTickets(prev => {
+                const rest = prev.filter(t => t.id !== saved.id);
+                return filterTicketsByScope([...rest, saved]);
             });
+            logActivity(user, 'UPDATE', 'Ticket', ticketId, `Marked ticket as Resolved`);
+            setSelectedTicket(saved);
+        } catch (error: any) {
+            alert(error?.message || 'Failed to update ticket.');
         }
-
-        // Find and mark the user's "please confirm" notification as read
-        const notificationIndex = mockNotifications.findIndex(
-            n => n.relatedEntityId === ticketId && n.userId === user.id && n.type === NotificationType.TICKET_UPDATE_REQUESTER
-        );
-        if (notificationIndex > -1) {
-            mockNotifications[notificationIndex].isRead = true;
-        }
-
-        logActivity(user, 'APPROVE', 'Ticket', ticketId, `Approved resolution for ticket.`);
-        setTickets(filterTicketsByScope([...mockTickets]));
-        setIsModalOpen(false);
     };
 
-    const handleRejectResolution = (ticketId: string) => {
+    const handleApproveResolution = async (ticketId: string) => {
         if (!user) return;
-        const ticketIndex = mockTickets.findIndex(t => t.id === ticketId);
-        if (ticketIndex === -1) return;
-
-        const updatedTicket = { ...mockTickets[ticketIndex] };
-        updatedTicket.status = TicketStatus.InProgress;
-        
-        const systemMessage: ChatMessage = {
-          id: `msg-${Date.now()}`,
-          userId: 'system',
-          userName: 'System',
-          timestamp: new Date(),
-          text: `Resolution was not accepted by ${user.name}. Ticket has been reopened.`,
-        };
-        updatedTicket.chatThread.push(systemMessage);
-        
-        mockTickets[ticketIndex] = updatedTicket;
-        
-        if (updatedTicket.assignedToId) {
-            mockNotifications.unshift({
-                id: `notif-${Date.now()}-${updatedTicket.assignedToId}`,
-                userId: updatedTicket.assignedToId,
-                type: NotificationType.TICKET_UPDATE_REQUESTER,
-                message: `The resolution for #${updatedTicket.id} was rejected and reopened.`,
-                link: `/helpdesk/tickets?ticketId=${updatedTicket.id}`,
-                isRead: false,
-                createdAt: new Date(),
-                relatedEntityId: updatedTicket.id,
-            });
+        const current = tickets.find(t => t.id === ticketId);
+        if (!current) return;
+        if (!ticketAccess.canRespond && current.requesterId !== user.id) {
+            alert('You do not have permission to approve this ticket.');
+            return;
         }
 
-        logActivity(user, 'REJECT', 'Ticket', ticketId, `Rejected resolution for ticket.`);
-        setTickets(filterTicketsByScope([...mockTickets]));
-        setSelectedTicket(updatedTicket);
+        const updated: Partial<Ticket> = {
+            ...current,
+            status: TicketStatus.Resolved,
+            resolvedAt: current.resolvedAt || new Date(),
+            chatThread: [
+                ...(current.chatThread || []),
+                {
+                    id: `msg-${Date.now()}`,
+                    userId: 'system',
+                    userName: 'System',
+                    timestamp: new Date(),
+                    text: `Resolution approved by ${user.name}. Ticket has been resolved.`,
+                } as ChatMessage,
+            ],
+        };
+
+        try {
+            const saved = await saveTicket(updated);
+            setTickets(prev => {
+                const rest = prev.filter(t => t.id !== saved.id);
+                return filterTicketsByScope([...rest, saved]);
+            });
+            logActivity(user, 'APPROVE', 'Ticket', ticketId, `Approved resolution for ticket.`);
+            setIsModalOpen(false);
+        } catch (error: any) {
+            alert(error?.message || 'Failed to update ticket.');
+        }
+    };
+
+    const handleRejectResolution = async (ticketId: string) => {
+        if (!user) return;
+        const current = tickets.find(t => t.id === ticketId);
+        if (!current) return;
+        if (!ticketAccess.canRespond && current.requesterId !== user.id) {
+            alert('You do not have permission to reject this ticket.');
+            return;
+        }
+
+        const updated: Partial<Ticket> = {
+            ...current,
+            status: TicketStatus.InProgress,
+            chatThread: [
+                ...(current.chatThread || []),
+                {
+                    id: `msg-${Date.now()}`,
+                    userId: 'system',
+                    userName: 'System',
+                    timestamp: new Date(),
+                    text: `Resolution was not accepted by ${user.name}. Ticket has been reopened.`,
+                } as ChatMessage,
+            ],
+        };
+
+        try {
+            const saved = await saveTicket(updated);
+            setTickets(prev => {
+                const rest = prev.filter(t => t.id !== saved.id);
+                return filterTicketsByScope([...rest, saved]);
+            });
+            logActivity(user, 'REJECT', 'Ticket', ticketId, `Rejected resolution for ticket.`);
+            setSelectedTicket(saved);
+        } catch (error: any) {
+            alert(error?.message || 'Failed to update ticket.');
+        }
     };
     
     const selectClasses = "mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white";
@@ -392,6 +420,7 @@ const Tickets: React.FC = () => {
                 onResolve={handleResolveTicket}
                 onApproveResolution={handleApproveResolution}
                 onRejectResolution={handleRejectResolution}
+                access={ticketAccess}
             />
 
             <div className="fixed bottom-20 right-4 md:hidden z-20">
