@@ -6,24 +6,43 @@ import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import { useAuth } from '../../hooks/useAuth';
+import { supabase } from '../../services/supabaseClient';
 
 interface RequestCOEModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (request: Partial<COERequest>) => void;
+    onSave: (request: Partial<COERequest>) => void | Promise<void>;
 }
 
 const RequestCOEModal: React.FC<RequestCOEModalProps> = ({ isOpen, onClose, onSave }) => {
     const { user } = useAuth();
     const [purpose, setPurpose] = useState<COEPurpose>(COEPurpose.LoanApplication);
     const [otherPurpose, setOtherPurpose] = useState('');
+    const [positionLabel, setPositionLabel] = useState<string | undefined>(user?.role);
 
     useEffect(() => {
         if (isOpen) {
             setPurpose(COEPurpose.LoanApplication);
             setOtherPurpose('');
+            // Refresh position/role from hris_users for accuracy
+            if (user?.id) {
+                (async () => {
+                    try {
+                        const { data } = await supabase
+                            .from('hris_users')
+                            .select('role')
+                            .eq('id', user.id)
+                            .maybeSingle();
+                        setPositionLabel(data?.role || user?.role);
+                    } catch {
+                        setPositionLabel(user?.role);
+                    }
+                })();
+            } else {
+                setPositionLabel(user?.role);
+            }
         }
-    }, [isOpen]);
+    }, [isOpen, user]);
 
     const handleSave = () => {
         if (purpose === COEPurpose.Others && !otherPurpose.trim()) {
@@ -65,9 +84,9 @@ const RequestCOEModal: React.FC<RequestCOEModalProps> = ({ isOpen, onClose, onSa
                             <span className="block text-xs text-gray-500 dark:text-gray-400">Name</span>
                             <span className="font-medium text-gray-900 dark:text-white">{user?.name}</span>
                         </div>
-                         <div>
+                        <div>
                             <span className="block text-xs text-gray-500 dark:text-gray-400">Position</span>
-                            <span className="font-medium text-gray-900 dark:text-white">{user?.position}</span>
+                            <span className="font-medium text-gray-900 dark:text-white">{positionLabel || 'N/A'}</span>
                         </div>
                          <div className="col-span-2">
                             <span className="block text-xs text-gray-500 dark:text-gray-400">Business Unit</span>

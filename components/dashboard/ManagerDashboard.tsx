@@ -1,9 +1,10 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Card from '../ui/Card';
-import { mockOtRequests, mockAttendanceExceptions, mockResolutions, mockPANs, mockJobRequisitions, mockEvaluations, mockNotifications, mockEvaluationSubmissions, mockTickets, mockEmployeeAwards, mockUsers, mockOnboardingChecklists, mockAssetRequests, mockIncidentReports, mockNTEs, mockAssetAssignments, mockManpowerRequests, mockOnboardingTemplates, mockCOERequests, mockEnvelopes, mockBenefitRequests, mockCoachingSessions } from '../../services/mockData';
-import { OTStatus, Role, ResolutionStatus, ApproverStatus, PANStatus, PANStepStatus, JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, NotificationType, TicketStatus, OnboardingTaskStatus, PANActionTaken, AssetRequest, AssetRequestStatus, NTEStatus, PAN, Resolution, NTE, JobRequisition, OTRequest, AttendanceExceptionRecord, EmployeeAward, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, Envelope, EnvelopeStatus, RoutingStepStatus, BenefitRequest, BenefitRequestStatus, CoachingStatus } from '../../types';
+import { mockOtRequests, mockAttendanceExceptions, mockResolutions, mockPANs, mockJobRequisitions, mockEvaluations, mockNotifications, mockEvaluationSubmissions, mockTickets, mockEmployeeAwards, mockUsers, mockOnboardingChecklists, mockAssetRequests, mockIncidentReports, mockNTEs, mockAssetAssignments, mockManpowerRequests, mockOnboardingTemplates, mockEnvelopes, mockBenefitRequests, mockCoachingSessions } from '../../services/mockData';
+import { OTStatus, Role, ResolutionStatus, ApproverStatus, PANStatus, PANStepStatus, JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, NotificationType, TicketStatus, OnboardingTaskStatus, PANActionTaken, AssetRequest, AssetRequestStatus, NTEStatus, PAN, Resolution, NTE, JobRequisition, OTRequest, AttendanceExceptionRecord, EmployeeAward, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, Envelope, EnvelopeStatus, RoutingStepStatus, BenefitRequest, BenefitRequestStatus, CoachingStatus, COETemplate, User } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useAuth } from '../../hooks/useAuth';
 import ActionItemCard from './ActionItemCard';
@@ -14,7 +15,11 @@ import Button from '../ui/Button';
 import ManpowerRequestModal from '../payroll/ManpowerRequestModal';
 import ManpowerReviewModal from '../payroll/ManpowerReviewModal';
 import RequestCOEModal from '../employees/RequestCOEModal';
+import PrintableCOE from '../admin/PrintableCOE';
 import { logActivity } from '../../services/auditService';
+import { approveCoeRequest, createCoeRequest, fetchCoeRequests, rejectCoeRequest, fetchActiveCoeTemplates } from '../../services/coeService';
+import { supabase } from '../../services/supabaseClient';
+import COEQueue from './COEQueue';
 
 const InboxIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" /></svg>;
 const ClipboardListIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>;
@@ -51,7 +56,7 @@ const getActionType = (action: PANActionTaken) => {
 
 const ManagerDashboard: React.FC = () => {
     const { user } = useAuth();
-    const { getVisibleEmployeeIds, isUserEligibleEvaluator } = usePermissions();
+    const { getVisibleEmployeeIds, isUserEligibleEvaluator, getCoeAccess } = usePermissions();
     const location = useLocation();
     const navigate = useNavigate();
     
@@ -72,12 +77,20 @@ const ManagerDashboard: React.FC = () => {
     const [benefitRequests, setBenefitRequests] = useState<BenefitRequest[]>(mockBenefitRequests);
     const [coachingSessions, setCoachingSessions] = useState(mockCoachingSessions);
     const [evaluationSubmissions, setEvaluationSubmissions] = useState(mockEvaluationSubmissions);
+    const [coeRequests, setCoeRequests] = useState<COERequest[]>([]);
+    const [coeTemplates, setCoeTemplates] = useState<COETemplate[]>([]);
+    const [coeToPrint, setCoeToPrint] = useState<{ template: COETemplate, request: COERequest, employee: User } | null>(null);
+    const [isLoadingCoe, setIsLoadingCoe] = useState(false);
+
 
     const [isManpowerModalOpen, setIsManpowerModalOpen] = useState(false);
     const [isManpowerReviewModalOpen, setIsManpowerReviewModalOpen] = useState(false);
     const [selectedManpowerRequest, setSelectedManpowerRequest] = useState<ManpowerRequest | null>(null);
 
     const [isRequestCOEModalOpen, setIsRequestCOEModalOpen] = useState(false);
+    const coeAccess = getCoeAccess();
+    const scopedCOE = useMemo(() => coeAccess.filterRequests(coeRequests), [coeRequests, coeAccess]);
+    const pendingCOE = useMemo(() => scopedCOE.filter(r => r.status === 'Pending'), [scopedCOE]);
 
     useEffect(() => {
         if (location.state?.openManpowerModal) {
@@ -89,6 +102,25 @@ const ManagerDashboard: React.FC = () => {
             navigate(location.pathname, { replace: true, state: {} });
         }
     }, [location.state, navigate]);
+
+    useEffect(() => {
+        const loadCoe = async () => {
+            setIsLoadingCoe(true);
+            try {
+                const [requests, templates] = await Promise.all([
+                    fetchCoeRequests(),
+                    fetchActiveCoeTemplates()
+                ]);
+                setCoeRequests(requests);
+                setCoeTemplates(templates);
+            } catch (error: any) {
+                console.error('Failed to load COE requests', error);
+            } finally {
+                setIsLoadingCoe(false);
+            }
+        };
+        loadCoe();
+    }, []);
 
     // Robust polling interval to sync local state with global mock data
     useEffect(() => {
@@ -139,18 +171,95 @@ const ManagerDashboard: React.FC = () => {
         alert("Request submitted for approval.");
         setIsManpowerModalOpen(false); 
     };
-    
-    const handleSaveCOERequest = (request: Partial<COERequest>) => {
-        const newRequest: COERequest = {
-            id: `COE-${Date.now()}`,
-            ...request
-        } as COERequest;
-        mockCOERequests.unshift(newRequest);
-        if (user) {
-            logActivity(user, 'CREATE', 'COERequest', newRequest.id, `Requested COE for ${newRequest.purpose}`);
+
+    const handleSaveCOERequest = async (request: Partial<COERequest>) => {
+        if (!coeAccess.canRequest) {
+            alert('You do not have permission to request a COE.');
+            return;
         }
-        setIsRequestCOEModalOpen(false);
-        alert("Certificate of Employment request submitted.");
+        if (!user) {
+            alert('You must be signed in to submit a request.');
+            return;
+        }
+        try {
+            const saved = await createCoeRequest(request, user);
+            mockCOERequests.unshift(saved);
+            logActivity(user, 'CREATE', 'COERequest', saved.id, `Requested COE for ${saved.purpose}`);
+            alert("Certificate of Employment request submitted.");
+        } catch (error: any) {
+            alert(error?.message || 'Failed to submit COE request.');
+        } finally {
+            setIsRequestCOEModalOpen(false);
+        }
+    };
+
+    const handleApproveCOE = async (request: COERequest) => {
+        if (!user) return;
+        if (!coeAccess.canActOn(request)) {
+            alert('You do not have permission to approve this request.');
+            return;
+        }
+        const { data: employeeRow, error: employeeError } = await supabase
+            .from('hris_users')
+            .select('id,full_name,first_name,last_name,email,position,role,business_unit,business_unit_id,department,department_id,date_hired')
+            .eq('id', request.employeeId)
+            .single();
+        if (employeeError || !employeeRow) {
+            alert("Employee record not found.");
+            return;
+        }
+
+        const employee: User = {
+            id: employeeRow.id,
+            name: employeeRow.full_name || `${employeeRow.first_name || ''} ${employeeRow.last_name || ''}`.trim() || 'Employee',
+            email: employeeRow.email,
+            role: employeeRow.role || Role.Employee,
+            department: employeeRow.department || '',
+            businessUnit: employeeRow.business_unit || '',
+            departmentId: employeeRow.department_id || undefined,
+            businessUnitId: employeeRow.business_unit_id || undefined,
+            status: 'Active',
+            employmentStatus: undefined,
+            isPhotoEnrolled: false,
+            dateHired: employeeRow.date_hired ? new Date(employeeRow.date_hired) : new Date(),
+            position: employeeRow.role || employeeRow.position || '',
+            monthlySalary: undefined
+        };
+
+        const buId = request.businessUnitId || employee.businessUnitId || '';
+        const template = coeTemplates.find(t => t.businessUnitId === buId && t.isActive) || coeTemplates[0];
+        if (!template) {
+            alert("No active COE template found for this Business Unit. Please create one in Admin > COE Templates.");
+            return;
+        }
+
+        const generatedUrl = `generated_coe_${request.id}.pdf`;
+
+        try {
+            const updated = await approveCoeRequest(request.id, user.id, generatedUrl);
+            setCoeRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
+            logActivity(user, 'APPROVE', 'COERequest', request.id, `Approved COE request for ${request.employeeName}`);
+            setCoeToPrint({ template, request: updated, employee });
+        } catch (error: any) {
+            alert(error?.message || 'Failed to approve COE request.');
+        }
+    };
+
+    const handleRejectCOE = async (request: COERequest) => {
+        if (!user) return;
+        if (!coeAccess.canActOn(request)) {
+            alert('You do not have permission to reject this request.');
+            return;
+        }
+        const reason = prompt('Enter rejection reason:') || '';
+        if (!reason.trim()) return;
+        try {
+            const updated = await rejectCoeRequest(request.id, user.id, reason.trim());
+            setCoeRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
+            logActivity(user, 'REJECT', 'COERequest', request.id, `Rejected COE request. Reason: ${reason}`);
+        } catch (error: any) {
+            alert(error?.message || 'Failed to reject COE request.');
+        }
     };
 
     const handleApproveManpower = (requestId: string) => {
@@ -528,6 +637,16 @@ const ManagerDashboard: React.FC = () => {
         <div className="space-y-6">
             <QuickLinks />
             <UpcomingEventsWidget />
+            
+            <Card title="COE Requests">
+                <COEQueue 
+                    requests={pendingCOE}
+                    onApprove={handleApproveCOE}
+                    onReject={handleRejectCOE}
+                    canAct={coeAccess.canApprove}
+                    canActOn={coeAccess.canActOn}
+                />
+            </Card>
 
             {actionItems.length > 0 ? (
                  <Card title="Action Items">
@@ -598,6 +717,15 @@ const ManagerDashboard: React.FC = () => {
                 onClose={() => setIsRequestCOEModalOpen(false)}
                 onSave={handleSaveCOERequest}
             />
+            {coeToPrint && createPortal(
+                <PrintableCOE 
+                    template={coeToPrint.template}
+                    request={coeToPrint.request}
+                    employee={coeToPrint.employee}
+                    onClose={() => setCoeToPrint(null)}
+                />,
+                document.body
+            )}
         </div>
     );
 };

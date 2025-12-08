@@ -7,9 +7,11 @@ interface COEQueueProps {
     requests: COERequest[];
     onApprove: (request: COERequest) => void;
     onReject: (request: COERequest) => void;
+    canAct?: boolean;
+    canActOn?: (request: COERequest) => boolean;
 }
 
-const COEQueue: React.FC<COEQueueProps> = ({ requests, onApprove, onReject }) => {
+const COEQueue: React.FC<COEQueueProps> = ({ requests, onApprove, onReject, canAct = true, canActOn }) => {
     if (requests.length === 0) {
         return (
             <div className="p-6 text-center text-gray-500 dark:text-gray-400">
@@ -44,10 +46,14 @@ const COEQueue: React.FC<COEQueueProps> = ({ requests, onApprove, onReject }) =>
                                 {req.purpose === COEPurpose.Others ? req.otherPurposeDetail : '-'}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                <div className="flex justify-end space-x-2">
-                                    <Button size="sm" variant="danger" onClick={() => onReject(req)}>Reject</Button>
-                                    <Button size="sm" variant="success" onClick={() => onApprove(req)}>Approve</Button>
-                                </div>
+                                {canAct && (!canActOn || canActOn(req)) ? (
+                                    <div className="flex justify-end space-x-2">
+                                        <Button size="sm" variant="danger" onClick={() => onReject(req)}>Reject</Button>
+                                        <Button size="sm" variant="success" onClick={() => onApprove(req)}>Approve</Button>
+                                    </div>
+                                ) : (
+                                    <span className="text-xs text-gray-400">View only</span>
+                                )}
                             </td>
                         </tr>
                     ))}

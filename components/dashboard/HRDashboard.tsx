@@ -5,8 +5,9 @@ import { createPortal } from 'react-dom';
 import Card from '../ui/Card';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions'; // Import added
-import { mockJobRequisitions, mockNotifications, mockResignations, mockEvaluations, mockEvaluationSubmissions, mockTickets, mockUserDocuments, mockUsers, mockOnboardingChecklists, mockChangeHistory, mockPANs, mockAssetAssignments, mockManpowerRequests, mockOnboardingTemplates, mockCOERequests, mockCOETemplates, mockBenefitRequests, mockIncidentReports } from '../../services/mockData';
-import { JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, Role, NotificationType, ResignationStatus, Notification, TicketStatus, UserDocumentStatus, OnboardingTaskStatus, ChangeHistoryStatus, PANStatus, PANActionTaken, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, COERequestStatus, COETemplate, BenefitRequestStatus, IRStatus, IncidentReport } from '../../types';
+import { supabase } from '../../services/supabaseClient';
+import { mockJobRequisitions, mockNotifications, mockResignations, mockEvaluations, mockEvaluationSubmissions, mockTickets, mockUserDocuments, mockUsers, mockOnboardingChecklists, mockChangeHistory, mockPANs, mockAssetAssignments, mockManpowerRequests, mockOnboardingTemplates, mockBenefitRequests, mockIncidentReports } from '../../services/mockData';
+import { JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, Role, NotificationType, ResignationStatus, Notification, TicketStatus, UserDocumentStatus, OnboardingTaskStatus, ChangeHistoryStatus, PANStatus, PANActionTaken, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, COERequestStatus, COETemplate, BenefitRequestStatus, IRStatus, IncidentReport, User } from '../../types';
 import ActionItemCard from './ActionItemCard';
 import QuickAnalyticsPreview from './QuickAnalyticsPreview';
 import UpcomingEventsWidget from './UpcomingEventsWidget';
@@ -18,6 +19,7 @@ import COEQueue from './COEQueue';
 import PrintableCOE from '../admin/PrintableCOE';
 import RejectReasonModal from '../feedback/RejectReasonModal';
 import { logActivity } from '../../services/auditService';
+import { approveCoeRequest, createCoeRequest, rejectCoeRequest, fetchCoeRequests, fetchActiveCoeTemplates } from '../../services/coeService';
 
 
 const AcademicCapIcon: React.FC<{className?: string}> = ({className}) => <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.26 10.147a60.436 60.436 0 0 0-.491 6.347A48.627 48.627 0 0 1 12 20.904a48.627 48.627 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.57 50.57 0 0 0-2.658-.813A59.905 59.905 0 0 1 12 3.493a59.902 59.902 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5" /></svg>;
@@ -49,13 +51,14 @@ const getActionType = (action: PANActionTaken) => {
 
 const HRDashboard: React.FC = () => {
     const { user } = useAuth();
-    const { isUserEligibleEvaluator } = usePermissions(); // Added hook
+    const { isUserEligibleEvaluator, getCoeAccess } = usePermissions(); // Added hook
     const isHR = user && [Role.Admin, Role.HRManager, Role.HRStaff].includes(user.role);
     
     const [assignments, setAssignments] = useState<AssetAssignment[]>(mockAssetAssignments);
     const [checklists, setChecklists] = useState<OnboardingChecklist[]>(mockOnboardingChecklists);
     const [templates, setTemplates] = useState<OnboardingChecklistTemplate[]>(mockOnboardingTemplates);
-    const [coeRequests, setCoeRequests] = useState<COERequest[]>(mockCOERequests);
+    const [coeRequests, setCoeRequests] = useState<COERequest[]>([]);
+    const [coeTemplates, setCoeTemplates] = useState<COETemplate[]>([]);
     const [benefitRequests, setBenefitRequests] = useState(mockBenefitRequests);
     const [incidentReports, setIncidentReports] = useState<IncidentReport[]>(mockIncidentReports);
     const [evaluationSubmissions, setEvaluationSubmissions] = useState(mockEvaluationSubmissions);
@@ -69,6 +72,7 @@ const HRDashboard: React.FC = () => {
     const [coeToPrint, setCoeToPrint] = useState<{ template: COETemplate, request: COERequest, employee: any } | null>(null);
     const [coeToReject, setCoeToReject] = useState<COERequest | null>(null);
     const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
+    const [isLoadingCoe, setIsLoadingCoe] = useState(false);
 
     useEffect(() => {
         if (location.state?.openManpowerModal) {
@@ -82,11 +86,30 @@ const HRDashboard: React.FC = () => {
     }, [location.state, navigate]);
 
     useEffect(() => {
+        const loadCoeData = async () => {
+            setIsLoadingCoe(true);
+            try {
+                const [requests, templates] = await Promise.all([
+                    fetchCoeRequests(),
+                    fetchActiveCoeTemplates()
+                ]);
+                setCoeRequests(requests);
+                setCoeTemplates(templates);
+            } catch (error: any) {
+                console.error('Failed to load COE data', error);
+                alert(error?.message || 'Failed to load COE data.');
+            } finally {
+                setIsLoadingCoe(false);
+            }
+        };
+        loadCoeData();
+    }, []);
+
+    useEffect(() => {
         const interval = setInterval(() => {
              setAssignments([...mockAssetAssignments]);
              setChecklists([...mockOnboardingChecklists]);
              setTemplates([...mockOnboardingTemplates]);
-             setCoeRequests([...mockCOERequests]);
              setBenefitRequests([...mockBenefitRequests]);
              setIncidentReports([...mockIncidentReports]);
              setEvaluationSubmissions([...mockEvaluationSubmissions]);
@@ -115,9 +138,11 @@ const HRDashboard: React.FC = () => {
         return mockUsers.filter(u => u.status === 'Inactive' && u.role === Role.Employee);
     }, []);
     
+    const coeAccess = getCoeAccess();
+    const scopedCOE = useMemo(() => coeAccess.filterRequests(coeRequests), [coeRequests, coeAccess]);
     const pendingCOE = useMemo(() => {
-        return coeRequests.filter(r => r.status === COERequestStatus.Pending);
-    }, [coeRequests]);
+        return scopedCOE.filter(r => r.status === COERequestStatus.Pending);
+    }, [scopedCOE]);
 
     const pendingBenefitRequests = useMemo(() => {
         return benefitRequests.filter(r => r.status === BenefitRequestStatus.PendingHR);
@@ -132,45 +157,71 @@ const HRDashboard: React.FC = () => {
         setIsManpowerModalOpen(false);
     };
     
-    const handleSaveCOERequest = (request: Partial<COERequest>) => {
-        const newRequest: COERequest = {
-            id: `COE-${Date.now()}`,
-            ...request
-        } as COERequest;
-        mockCOERequests.unshift(newRequest);
-        if (user) {
-            logActivity(user, 'CREATE', 'COERequest', newRequest.id, `Requested COE for ${newRequest.purpose}`);
+    const handleSaveCOERequest = async (request: Partial<COERequest>) => {
+        if (!user) {
+            alert('You must be signed in to submit a request.');
+            return;
         }
-        setIsRequestCOEModalOpen(false);
-        alert("Certificate of Employment request submitted.");
+        try {
+            const saved = await createCoeRequest(request, user);
+            setCoeRequests(prev => [saved, ...prev]);
+            logActivity(user, 'CREATE', 'COERequest', saved.id, `Requested COE for ${saved.purpose}`);
+            alert("Certificate of Employment request submitted.");
+        } catch (error: any) {
+            alert(error?.message || 'Failed to submit COE request.');
+        } finally {
+            setIsRequestCOEModalOpen(false);
+        }
     };
 
     // --- COE Approval Logic ---
-    const handleApproveCOE = (request: COERequest) => {
+    const handleApproveCOE = async (request: COERequest) => {
         if (!user) return;
+        if (!coeAccess.canActOn(request)) {
+            alert('You do not have permission to approve this request.');
+            return;
+        }
 
-        const employee = mockUsers.find(u => u.id === request.employeeId);
-        if (!employee) {
+        const { data: employeeRow, error: employeeError } = await supabase
+            .from('hris_users')
+            .select('id,full_name,first_name,last_name,email,position,role,business_unit,business_unit_id,department,department_id,date_hired')
+            .eq('id', request.employeeId)
+            .single();
+        if (employeeError || !employeeRow) {
             alert("Employee record not found.");
             return;
         }
 
-        const template = mockCOETemplates.find(t => t.businessUnitId === request.businessUnitId && t.isActive);
+        const employee: User = {
+            id: employeeRow.id,
+            name: employeeRow.full_name || `${employeeRow.first_name || ''} ${employeeRow.last_name || ''}`.trim() || 'Employee',
+            email: employeeRow.email,
+            role: employeeRow.role || Role.Employee,
+            department: employeeRow.department || '',
+            businessUnit: employeeRow.business_unit || '',
+            departmentId: employeeRow.department_id || undefined,
+            businessUnitId: employeeRow.business_unit_id || undefined,
+            status: 'Active',
+            employmentStatus: undefined,
+            isPhotoEnrolled: false,
+            dateHired: employeeRow.date_hired ? new Date(employeeRow.date_hired) : new Date(),
+            position: employeeRow.role || employeeRow.position || '',
+            monthlySalary: undefined
+        };
+
+        const buId = request.businessUnitId || employee.businessUnitId || '';
+        const template = coeTemplates.find(t => t.businessUnitId === buId && t.isActive) || coeTemplates[0];
         if (!template) {
             alert("No active COE template found for this Business Unit. Please create one in Admin > COE Templates.");
             return;
         }
 
-        const index = mockCOERequests.findIndex(r => r.id === request.id);
-        if (index > -1) {
-            mockCOERequests[index] = {
-                ...mockCOERequests[index],
-                status: COERequestStatus.Approved,
-                approvedBy: user.id,
-                approvedAt: new Date(),
-                generatedDocumentUrl: `generated_coe_${request.id}.pdf` // Simulation
-            };
-            
+        const generatedUrl = `generated_coe_${request.id}.pdf`;
+
+        try {
+            const updated = await approveCoeRequest(request.id, user.id, generatedUrl);
+            setCoeRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
+
             logActivity(user, 'APPROVE', 'COERequest', request.id, `Approved COE request for ${request.employeeName}`);
             
             mockNotifications.unshift({
@@ -186,25 +237,27 @@ const HRDashboard: React.FC = () => {
             });
             
             // Trigger Print View immediately
-            setCoeToPrint({ template, request: mockCOERequests[index], employee });
+            setCoeToPrint({ template, request: updated, employee });
+        } catch (error: any) {
+            alert(error?.message || 'Failed to approve COE request.');
         }
     };
 
     const handleRejectCOE = (request: COERequest) => {
+        if (!coeAccess.canActOn(request)) {
+            alert('You do not have permission to reject this request.');
+            return;
+        }
         setCoeToReject(request);
         setIsRejectModalOpen(true);
     };
 
-    const confirmRejectCOE = (reason: string) => {
+    const confirmRejectCOE = async (reason: string) => {
         if (!user || !coeToReject) return;
         
-        const index = mockCOERequests.findIndex(r => r.id === coeToReject.id);
-        if (index > -1) {
-            mockCOERequests[index] = {
-                ...mockCOERequests[index],
-                status: COERequestStatus.Rejected,
-                rejectionReason: reason
-            };
+        try {
+            const updated = await rejectCoeRequest(coeToReject.id, user.id, reason);
+            setCoeRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
 
             logActivity(user, 'REJECT', 'COERequest', coeToReject.id, `Rejected COE request. Reason: ${reason}`);
              mockNotifications.unshift({
@@ -218,6 +271,8 @@ const HRDashboard: React.FC = () => {
                 createdAt: new Date(),
                 relatedEntityId: coeToReject.id
             });
+        } catch (error: any) {
+            alert(error?.message || 'Failed to reject COE request.');
         }
         
         setIsRejectModalOpen(false);
@@ -572,6 +627,8 @@ const HRDashboard: React.FC = () => {
                         requests={pendingCOE}
                         onApprove={handleApproveCOE}
                         onReject={handleRejectCOE}
+                        canAct={coeAccess.canApprove}
+                        canActOn={coeAccess.canActOn}
                     />
                 </Card>
             )}

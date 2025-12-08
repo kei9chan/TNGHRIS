@@ -2,7 +2,7 @@
 import { useAuth } from './useAuth';
 import { useSettings } from '../context/SettingsContext';
 import { mockPermissions, mockUsers, mockBusinessUnits, mockDepartments } from '../services/mockData';
-import { Resource, Permission, Role, IncidentReport, Ticket, BusinessUnit, Evaluation, EvaluatorType, User } from '../types';
+import { Resource, Permission, Role, IncidentReport, Ticket, BusinessUnit, Evaluation, EvaluatorType, User, COERequest } from '../types';
 
 export const usePermissions = () => {
     const { user: sessionUser } = useAuth();
@@ -174,6 +174,139 @@ export const usePermissions = () => {
         });
     };
 
+    const getCoeAccess = () => {
+        const user = getCurrentUser();
+        if (!user) {
+            return {
+                canRequest: false,
+                canApprove: false,
+                canView: false,
+                scope: 'none' as const,
+                filterRequests: (_reqs: COERequest[]) => [],
+                canActOn: (_req: COERequest) => false,
+            };
+        }
 
-    return { can, getVisibleEmployeeIds, filterByScope, filterIncidentReportsByScope, filterTicketsByScope, hasDirectReports, getAccessibleBusinessUnits, isUserEligibleEvaluator };
+        let canRequest = false;
+        let canApprove = false;
+        let canView = false;
+        let scope: 'global' | 'bu' | 'team' | 'self' | 'dept' | 'none' = 'none';
+
+        switch (user.role) {
+            case Role.Admin:
+            case Role.HRManager:
+            case Role.HRStaff:
+                canRequest = true;
+                canApprove = true;
+                canView = true;
+                scope = 'global';
+                break;
+            case Role.BOD:
+                canRequest = false;
+                canApprove = false;
+                canView = true;
+                scope = 'global';
+                break;
+            case Role.GeneralManager:
+                canRequest = false;
+                canApprove = false;
+                canView = true;
+                scope = 'dept'; // View BU/Department
+                break;
+            case Role.OperationsDirector:
+                canRequest = false;
+                canApprove = true;
+                canView = true;
+                scope = 'bu';
+                break;
+            case Role.BusinessUnitManager:
+                canRequest = true;
+                canApprove = false;
+                canView = true;
+                scope = 'bu';
+                break;
+            case Role.Manager:
+                canRequest = true;
+                canApprove = true; // Own team
+                canView = true;
+                scope = 'team';
+                break;
+            case Role.Employee:
+                canRequest = true;
+                canView = true;
+                scope = 'self';
+                break;
+            case Role.Auditor:
+                canRequest = false;
+                canApprove = false;
+                canView = false; // Logs only, not COE queue
+                scope = 'none';
+                break;
+            default:
+                scope = 'none';
+        }
+
+        const filterRequests = (requests: COERequest[]): COERequest[] => {
+            if (!canView) return [];
+            if (scope === 'global') return requests;
+
+            if (scope === 'self') {
+                return requests.filter(r => r.employeeId === user.id);
+            }
+
+            if (scope === 'team') {
+                const teamIds = mockUsers.filter(u => u.managerId === user.id).map(u => u.id);
+                const deptId = user.departmentId;
+                const buIds = new Set([
+                    ...(getAccessibleBusinessUnits(mockBusinessUnits).map(bu => bu.id)),
+                    user.businessUnitId
+                ].filter(Boolean) as string[]);
+
+                return requests.filter(r => {
+                    const isTeam = teamIds.includes(r.employeeId);
+                    const isSelf = r.employeeId === user.id;
+                    const sameBu = r.businessUnitId ? buIds.has(r.businessUnitId) : true; // allow if BU is missing
+                    const sameDept =
+                        deptId && r.employeeDepartmentId
+                            ? deptId === r.employeeDepartmentId
+                            : true; // if dept missing on either side, rely on BU
+                    return isSelf || isTeam || (sameBu && sameDept);
+                });
+            }
+
+            if (scope === 'dept') {
+                const targetDeptId = user.departmentId;
+                const targetBuIds = new Set([
+                    ...(getAccessibleBusinessUnits(mockBusinessUnits).map(bu => bu.id)),
+                    user.businessUnitId
+                ].filter(Boolean) as string[]);
+
+                return requests.filter(r => {
+                    const matchesDept = targetDeptId && r.employeeDepartmentId ? r.employeeDepartmentId === targetDeptId : false;
+                    const matchesBu = targetBuIds.has(r.businessUnitId);
+                    return matchesDept || matchesBu;
+                });
+            }
+
+            if (scope === 'bu') {
+                const accessibleBuIds = new Set([
+                    ...(getAccessibleBusinessUnits(mockBusinessUnits).map(bu => bu.id)),
+                    user.businessUnitId
+                ].filter(Boolean) as string[]);
+                return requests.filter(r => accessibleBuIds.has(r.businessUnitId));
+            }
+
+            return [];
+        };
+
+        const canActOn = (request: COERequest) => {
+            if (!canApprove) return false;
+            return filterRequests([request]).length > 0;
+        };
+
+        return { canRequest, canApprove, canView, scope, filterRequests, canActOn };
+    };
+
+
+    return { can, getVisibleEmployeeIds, filterByScope, filterIncidentReportsByScope, filterTicketsByScope, hasDirectReports, getAccessibleBusinessUnits, isUserEligibleEvaluator, getCoeAccess };
 };

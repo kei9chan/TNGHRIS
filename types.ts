@@ -275,7 +275,9 @@ export interface COERequest {
   id: string;
   employeeId: string;
   employeeName: string; // Helper for UI
+  employeePosition?: string; // Snapshot of role/title at request time
   businessUnitId: string; // Snapshot for filtering
+  employeeDepartmentId?: string; // Snapshot for dept-level filtering
   purpose: COEPurpose;
   otherPurposeDetail?: string;
   dateRequested: Date;

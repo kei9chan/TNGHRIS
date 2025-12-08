@@ -69,6 +69,7 @@ import Toast from '../ui/Toast';
 import QuickLinks from './QuickLinks';
 import RequestCOEModal from '../employees/RequestCOEModal';
 import { logActivity } from '../../services/auditService';
+import { createCoeRequest } from '../../services/coeService';
 import { usePermissions } from '../../hooks/usePermissions';
 
 
@@ -163,7 +164,7 @@ const AnniversaryBanner: React.FC = () => {
 
 const EmployeeDashboard: React.FC = () => {
     const { user } = useAuth();
-    const { isUserEligibleEvaluator } = usePermissions();
+    const { isUserEligibleEvaluator, getCoeAccess } = usePermissions();
     const location = useLocation();
     const navigate = useNavigate();
     const [refreshKey, setRefreshKey] = useState(0); 
@@ -281,17 +282,27 @@ const EmployeeDashboard: React.FC = () => {
         }
     };
     
-    const handleSaveCOERequest = (request: Partial<COERequest>) => {
-        const newRequest: COERequest = {
-            id: `COE-${Date.now()}`,
-            ...request
-        } as COERequest;
-        mockCOERequests.unshift(newRequest);
-        if (user) {
-            logActivity(user, 'CREATE', 'COERequest', newRequest.id, `Requested COE for ${newRequest.purpose}`);
+    const coeAccess = getCoeAccess();
+
+    const handleSaveCOERequest = async (request: Partial<COERequest>) => {
+        if (!coeAccess.canRequest) {
+            alert('You do not have permission to request a COE.');
+            return;
         }
-        setIsRequestCOEModalOpen(false);
-        alert("Certificate of Employment request submitted.");
+        if (!user) {
+            alert('You must be signed in to submit a request.');
+            return;
+        }
+        try {
+            const saved = await createCoeRequest(request, user);
+            mockCOERequests.unshift(saved);
+            logActivity(user, 'CREATE', 'COERequest', saved.id, `Requested COE for ${saved.purpose}`);
+            alert("Certificate of Employment request submitted.");
+        } catch (error: any) {
+            alert(error?.message || 'Failed to submit COE request.');
+        } finally {
+            setIsRequestCOEModalOpen(false);
+        }
     };
 
     // --- Actionable Tasks ---
