@@ -8,6 +8,7 @@ import { User, ChangeHistory, ChangeHistoryStatus, EmployeeDraft, EmployeeDraftS
 import { logActivity } from '../../services/auditService';
 import { F_SELF_SERVICE_ENABLED } from '../../constants';
 import { db } from '../../services/db';
+import { supabase } from '../../services/supabaseClient';
 
 import ProfileHeader from '../../components/employees/ProfileHeader';
 import PersonalInformationCard from '../../components/employees/PersonalInformationCard';
@@ -33,20 +34,78 @@ const EmployeeProfile: React.FC = () => {
 
     const [isEditModalOpen, setEditModalOpen] = useState(false);
 
-    // Polling to ensure Profile reflects changes made in other modules (like Leave Management or Admin)
+    const mapHrisUser = (row: any): User => {
+        const emergencyContact = row.emergency_contact
+            || (row.emergency_contact_name || row.emergency_contact_phone || row.emergency_contact_relationship
+                ? {
+                    name: row.emergency_contact_name || '',
+                    phone: row.emergency_contact_phone || '',
+                    relationship: row.emergency_contact_relationship || '',
+                }
+                : undefined);
+
+        const bankingDetails = row.banking_details
+            || (row.bank_name || row.bank_account_number || row.bank_account_type
+                ? {
+                    bankName: row.bank_name || '',
+                    accountNumber: row.bank_account_number || '',
+                    accountType: row.bank_account_type || '',
+                }
+                : undefined);
+
+        return {
+            id: row.id,
+            authUserId: row.auth_user_id || row.auth_userid || undefined,
+            name: row.full_name || row.name || `${row.first_name || ''} ${row.last_name || ''}`.trim(),
+            email: row.email || '',
+            role: row.role,
+            department: row.department || row.department_name || '',
+            businessUnit: row.business_unit || row.business_unit_name || '',
+            departmentId: row.department_id || undefined,
+            businessUnitId: row.business_unit_id || undefined,
+            status: (row.status as User['status']) || 'Active',
+            position: row.position || row.role || '',
+            dateHired: row.date_hired ? new Date(row.date_hired) : row.dateHired ? new Date(row.dateHired) : undefined,
+            isPhotoEnrolled: !!row.is_photo_enrolled,
+            signatureUrl: row.signature_url || undefined,
+            profilePictureUrl: row.profile_picture_url || undefined,
+            sssNo: row.sss_no || undefined,
+            pagibigNo: row.pagibig_no || undefined,
+            philhealthNo: row.philhealth_no || undefined,
+            tin: row.tin || undefined,
+            emergencyContact,
+            bankingDetails,
+            accessScope: row.access_scope || undefined,
+        } as User;
+    };
+
+    // Load user record from Supabase hris_users and merge into local state
     useEffect(() => {
-        const interval = setInterval(() => {
-            // We create a new array reference to force React to detect changes if deep properties changed
-            // This is a simple check, in real apps we'd use better state management or events
-            if (JSON.stringify(mockUsers) !== JSON.stringify(users)) {
-                setUsers([...mockUsers]);
+        const loadUser = async () => {
+            const targetId = employeeId || currentUser?.id;
+            const email = currentUser?.email;
+            if (!targetId && !email) return;
+
+            try {
+                let query = supabase.from('hris_users').select('*').limit(1);
+                if (targetId) {
+                    query = query.eq('id', targetId);
+                } else if (email) {
+                    query = query.eq('email', email);
+                }
+                const { data, error } = await query;
+                if (error || !data || data.length === 0) return;
+                const mapped = mapHrisUser(data[0]);
+                setUsers(prev => {
+                    const rest = prev.filter(u => u.id !== mapped.id);
+                    return [mapped, ...rest];
+                });
+            } catch (err) {
+                console.warn('Failed to load hris_users record', err);
             }
-            if (mockChangeHistory.length !== history.length) {
-                setHistory([...mockChangeHistory]);
-            }
-        }, 1000);
-        return () => clearInterval(interval);
-    }, [users, history]);
+        };
+        loadUser();
+    }, [employeeId, currentUser]);
 
     const userToView = useMemo(() => {
         const targetId = employeeId || currentUser?.id;
@@ -102,58 +161,64 @@ const EmployeeProfile: React.FC = () => {
         alert('Draft saved!');
     };
     
-    const handleSubmitForApproval = (updatedProfileData: Partial<User>) => {
+    const updateSupabaseUser = async (userId: string, data: Partial<User>) => {
+        const payload: Record<string, any> = {
+            full_name: data.name,
+            email: data.email,
+            role: data.role,
+            department: data.department,
+            position: data.position,
+            sss_no: data.sssNo,
+            pagibig_no: data.pagibigNo,
+            philhealth_no: data.philhealthNo,
+            tin: data.tin,
+            emergency_contact_name: data.emergencyContact?.name,
+            emergency_contact_relationship: data.emergencyContact?.relationship,
+            emergency_contact_phone: data.emergencyContact?.phone,
+            bank_name: data.bankingDetails?.bankName,
+            bank_account_number: data.bankingDetails?.accountNumber,
+            bank_account_type: data.bankingDetails?.accountType,
+            date_hired: data.dateHired ? new Date(data.dateHired).toISOString() : null,
+        };
+        const { data: updated, error } = await supabase.from('hris_users').update(payload).eq('id', userId).select().single();
+        if (error) throw error;
+        return updated ? mapHrisUser(updated) : null;
+    };
+    
+    const handleSubmitForApproval = async (updatedProfileData: Partial<User>) => {
         if (!userToView || !currentUser) return;
 
-        const changes: ChangeHistory[] = [];
-        const submissionId = `sub-${Date.now()}`;
-
-        Object.keys(updatedProfileData).forEach(key => {
-            const field = key as keyof User;
-            const oldValue = userToView[field];
-            const newValue = updatedProfileData[field];
-            if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
-                changes.push({
-                    id: `ch-${submissionId}-${field}`,
-                    employeeId: userToView.id,
-                    timestamp: new Date(),
-                    changedBy: currentUser.id,
-                    field: key,
-                    oldValue: JSON.stringify(oldValue),
-                    newValue: JSON.stringify(newValue),
-                    status: ChangeHistoryStatus.Pending,
-                    submissionId: submissionId,
+        try {
+            const updated = await updateSupabaseUser(userToView.id, updatedProfileData);
+            if (updated) {
+                setUsers(prev => {
+                    const rest = prev.filter(u => u.id !== updated.id);
+                    return [updated, ...rest];
                 });
             }
-        });
-
-        if (changes.length > 0) {
-            mockChangeHistory.unshift(...changes);
-            setHistory([...mockChangeHistory]);
-            
-            db.drafts.createOrUpdate(
-                currentUser, 
-                userToView.id, 
-                updatedProfileData, 
-                EmployeeDraftStatus.Submitted,
-                submissionId
-            );
-
-            setDrafts([...mockEmployeeDrafts]);
-            logActivity(currentUser, 'UPDATE', 'EmployeeProfile', userToView.id, 'Submitted profile changes for approval.');
-            alert('Your changes have been submitted for HR approval.');
+            logActivity(currentUser, 'UPDATE', 'EmployeeProfile', userToView.id, 'Updated profile.');
+            alert('Your changes have been submitted.');
+        } catch (err: any) {
+            alert(err?.message || 'Failed to submit changes.');
         }
-
         setEditModalOpen(false);
     };
 
-    const handleAdminSave = (updatedProfileData: Partial<User>) => {
+    const handleAdminSave = async (updatedProfileData: Partial<User>) => {
         if (!userToView || !currentUser) return;
         
-        db.users.update(currentUser, userToView.id, updatedProfileData);
-        
-        setUsers([...mockUsers]);
-        alert('Profile updated successfully.');
+        try {
+            const updated = await updateSupabaseUser(userToView.id, updatedProfileData);
+            if (updated) {
+                setUsers(prev => {
+                    const rest = prev.filter(u => u.id !== updated.id);
+                    return [updated, ...rest];
+                });
+            }
+            alert('Profile updated successfully.');
+        } catch (err: any) {
+            alert(err?.message || 'Failed to update profile.');
+        }
         setEditModalOpen(false);
     };
 
