@@ -124,7 +124,7 @@ const accessMatrix: Record<Role, Record<QuickLinkId, AccessScope>> = {
     overtime: 'view',
     ticket: 'view',
     ir: 'none',
-    jobreq: 'view',
+    jobreq: 'viewBu',
     announcements: 'view',
     achievements: 'view',
   },

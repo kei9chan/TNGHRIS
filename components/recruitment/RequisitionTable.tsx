@@ -6,6 +6,8 @@ import { mockDepartments, mockBusinessUnits, mockApplications } from '../../serv
 interface RequisitionTableProps {
     requisitions: JobRequisition[];
     onEdit: (requisition: JobRequisition) => void;
+    businessUnits?: { id: string; name: string }[];
+    departments?: { id: string; name: string; businessUnitId: string }[];
 }
 
 const getStatusColor = (status: JobRequisitionStatus) => {
@@ -19,10 +21,12 @@ const getStatusColor = (status: JobRequisitionStatus) => {
     }
 };
 
-const RequisitionTable: React.FC<RequisitionTableProps> = ({ requisitions, onEdit }) => {
-    
-    const getDepartmentName = (id: string) => mockDepartments.find(d => d.id === id)?.name || 'N/A';
-    const getBuName = (id: string) => mockBusinessUnits.find(bu => bu.id === id)?.name || 'N/A';
+const RequisitionTable: React.FC<RequisitionTableProps> = ({ requisitions, onEdit, businessUnits, departments }) => {
+    const deptSource = departments && departments.length ? departments : mockDepartments;
+    const buSource = businessUnits && businessUnits.length ? businessUnits : mockBusinessUnits;
+
+    const getDepartmentName = (id: string) => deptSource.find(d => d.id === id)?.name || 'N/A';
+    const getBuName = (id: string) => buSource.find(bu => bu.id === id)?.name || 'N/A';
 
     return (
         <div className="overflow-x-auto">

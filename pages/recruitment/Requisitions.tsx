@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { JobRequisition, JobRequisitionStatus, Permission, Role, JobRequisitionRole, JobRequisitionStepStatus } from '../../types';
-import { mockJobRequisitions, mockUsers, mockBusinessUnits, mockDepartments, mockApplications } from '../../services/mockData';
+import { mockJobRequisitions, mockUsers, mockBusinessUnits, mockDepartments } from '../../services/mockData';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import Card from '../../components/ui/Card';
@@ -13,18 +13,22 @@ import RequisitionTable from '../../components/recruitment/RequisitionTable';
 import RequisitionModal from '../../components/recruitment/RequisitionModal';
 import RejectReasonModal from '../../components/feedback/RejectReasonModal';
 import { logActivity } from '../../services/auditService';
+import { fetchJobRequisitions, saveJobRequisition } from '../../services/jobRequisitionService';
+import { supabase } from '../../services/supabaseClient';
 
 const Requisitions: React.FC = () => {
     const { user } = useAuth();
-    const { can, getAccessibleBusinessUnits } = usePermissions();
+    const { can } = usePermissions();
     const canCreate = can('Requisitions', Permission.Create) || can('Requisitions', Permission.Manage);
     const location = useLocation();
     const navigate = useNavigate();
 
-    const [requisitions, setRequisitions] = useState<JobRequisition[]>(mockJobRequisitions);
+    const [requisitions, setRequisitions] = useState<JobRequisition[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedRequisition, setSelectedRequisition] = useState<JobRequisition | null>(null);
     const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
+    const [businessUnits, setBusinessUnits] = useState(mockBusinessUnits);
+    const [departments, setDepartments] = useState(mockDepartments);
     
     // State for filters
     const [searchTerm, setSearchTerm] = useState('');
@@ -35,14 +39,43 @@ const Requisitions: React.FC = () => {
     const [monthFilter, setMonthFilter] = useState('all');
     const [statusFilter, setStatusFilter] = useState('all');
 
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
-    
     useEffect(() => {
-        // If user has limited access, default to their first accessible BU
-        if (accessibleBus.length === 1 && !buFilter) {
-            setBuFilter(accessibleBus[0].id);
-        }
-    }, [accessibleBus, buFilter]);
+        const loadReqs = async () => {
+            try {
+                const data = await fetchJobRequisitions();
+                setRequisitions(data);
+            } catch (err) {
+                console.error('Failed to load job requisitions', err);
+                setRequisitions(mockJobRequisitions);
+            }
+        };
+        loadReqs();
+    }, []);
+
+    useEffect(() => {
+        const loadMeta = async () => {
+            try {
+                const { data: buData, error: buErr } = await supabase.from('business_units').select('id, name, code');
+                if (!buErr && buData && buData.length > 0) {
+                    setBusinessUnits(buData.map((b: any) => ({ id: b.id, name: b.name, code: b.code || '' })));
+                } else {
+                    setBusinessUnits(mockBusinessUnits);
+                }
+
+                const { data: deptData, error: deptErr } = await supabase.from('departments').select('id, name, business_unit_id');
+                if (!deptErr && deptData && deptData.length > 0) {
+                    setDepartments(deptData.map((d: any) => ({ id: d.id, name: d.name, businessUnitId: d.business_unit_id })));
+                } else {
+                    setDepartments(mockDepartments);
+                }
+            } catch (err) {
+                console.warn('Failed to load BU/Departments for requisitions filters', err);
+                setBusinessUnits(mockBusinessUnits);
+                setDepartments(mockDepartments);
+            }
+        };
+        loadMeta();
+    }, []);
 
     const handleOpenModal = React.useCallback((req: JobRequisition | null) => {
         setSelectedRequisition(req);
@@ -59,9 +92,9 @@ const Requisitions: React.FC = () => {
 
 
     const departmentsForBU = useMemo(() => {
-        if (!buFilter) return mockDepartments;
-        return mockDepartments.filter(d => d.businessUnitId === buFilter);
-    }, [buFilter]);
+        if (!buFilter) return departments;
+        return departments.filter(d => d.businessUnitId === buFilter);
+    }, [buFilter, departments]);
 
     const yearOptions = useMemo(() => {
         const years = new Set(mockJobRequisitions.map(r => new Date(r.createdAt).getFullYear()));
@@ -80,44 +113,39 @@ const Requisitions: React.FC = () => {
     const statusOptions = Object.values(JobRequisitionStatus);
 
     const filteredRequisitions = useMemo(() => {
-        const accessibleBuIds = new Set(accessibleBus.map(b => b.id));
-
         return requisitions.filter(req => {
-            // Scope Check
-            if (!accessibleBuIds.has(req.businessUnitId)) return false;
-
             const searchMatch = req.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                                 req.reqCode.toLowerCase().includes(searchTerm.toLowerCase());
             const buMatch = !buFilter || req.businessUnitId === buFilter;
             const deptMatch = !departmentFilter || req.departmentId === departmentFilter;
             const urgencyMatch = urgencyFilter === 'all' || (urgencyFilter === 'urgent' && req.isUrgent);
             
-            const reqDate = new Date(req.createdAt);
+            const reqDate = req.createdAt ? new Date(req.createdAt) : new Date();
             const yearMatch = yearFilter === 'all' || reqDate.getFullYear().toString() === yearFilter;
             const monthMatch = monthFilter === 'all' || (reqDate.getMonth() + 1).toString() === monthFilter;
             const statusMatch = statusFilter === 'all' || req.status === statusFilter;
 
             return searchMatch && buMatch && deptMatch && urgencyMatch && yearMatch && monthMatch && statusMatch;
         });
-    }, [requisitions, searchTerm, buFilter, departmentFilter, urgencyFilter, yearFilter, monthFilter, statusFilter, accessibleBus]);
+    }, [requisitions, searchTerm, buFilter, departmentFilter, urgencyFilter, yearFilter, monthFilter, statusFilter]);
 
     const handleCloseModal = () => {
         setSelectedRequisition(null);
         setIsModalOpen(false);
     };
 
-    const handleSaveRequisition = (reqToSave: JobRequisition) => {
-        if (reqToSave.id) { // Editing existing
-            const index = mockJobRequisitions.findIndex(r => r.id === reqToSave.id);
-            if (index > -1) mockJobRequisitions[index] = reqToSave;
-            logActivity(user, 'UPDATE', 'JobRequisition', reqToSave.id, `Updated requisition ${reqToSave.reqCode}`);
-        } else { // Creating new
-            const newReq = { ...reqToSave, id: `REQ-${Date.now()}`, reqCode: `REQ-${String(Date.now()).slice(-4)}`};
-            mockJobRequisitions.unshift(newReq);
-            logActivity(user, 'CREATE', 'JobRequisition', newReq.id, `Created requisition ${newReq.reqCode} for ${newReq.title}`);
+    const handleSaveRequisition = async (reqToSave: JobRequisition) => {
+        try {
+            const saved = await saveJobRequisition(reqToSave);
+            setRequisitions(prev => {
+                const rest = prev.filter(r => r.id !== saved.id);
+                return [saved, ...rest];
+            });
+            logActivity(user, reqToSave.id ? 'UPDATE' : 'CREATE', 'JobRequisition', saved.id, `${reqToSave.id ? 'Updated' : 'Created'} requisition ${saved.reqCode || saved.id}`);
+            handleCloseModal();
+        } catch (err: any) {
+            alert(err?.message || 'Failed to save requisition.');
         }
-        setRequisitions([...mockJobRequisitions]);
-        handleCloseModal();
     };
 
     const handleApprove = (requisitionId: string) => {
@@ -234,8 +262,8 @@ const Requisitions: React.FC = () => {
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
                         <select value={buFilter} onChange={e => { setBuFilter(e.target.value); setDepartmentFilter(''); }} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                            <option value="">All Accessible</option>
-                            {accessibleBus.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
+                            <option value="">All Business Units</option>
+                            {businessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
                         </select>
                     </div>
                     <div>
@@ -274,7 +302,12 @@ const Requisitions: React.FC = () => {
                         </select>
                     </div>
                 </div>
-                <RequisitionTable requisitions={filteredRequisitions} onEdit={handleOpenModal} />
+                <RequisitionTable 
+                    requisitions={filteredRequisitions} 
+                    onEdit={handleOpenModal} 
+                    businessUnits={businessUnits}
+                    departments={departments}
+                />
             </Card>
 
             {isModalOpen && (

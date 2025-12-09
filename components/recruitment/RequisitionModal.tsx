@@ -8,6 +8,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { mockDepartments, mockBusinessUnits, mockUsers, mockApplications } from '../../services/mockData';
 import EmployeeMultiSelect from '../feedback/EmployeeMultiSelect';
+import { supabase } from '../../services/supabaseClient';
 
 interface RequisitionModalProps {
     isOpen: boolean;
@@ -73,28 +74,78 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
     const { getAccessibleBusinessUnits } = usePermissions();
     const [current, setCurrent] = useState<Partial<JobRequisition>>({});
     const [finalApprovers, setFinalApprovers] = useState<User[]>([]);
+    const [businessUnits, setBusinessUnits] = useState(mockBusinessUnits);
+    const [departments, setDepartments] = useState(mockDepartments);
+    const initializedRef = React.useRef(false);
 
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+    const accessibleBus = useMemo(() => {
+        const allowed = getAccessibleBusinessUnits(businessUnits);
+        return allowed.length ? allowed : businessUnits;
+    }, [getAccessibleBusinessUnits, businessUnits]);
+    // Show full BU list for selection (not just accessible), since creation may target any BU
+    const buOptions = businessUnits.length ? businessUnits : accessibleBus;
 
     useEffect(() => {
-        if (isOpen) {
-            const initialData = requisition || {
-                status: JobRequisitionStatus.Draft,
-                headcount: 1,
-                employmentType: 'Full-Time',
-                locationType: 'Onsite',
-                isUrgent: false,
-                createdByUserId: user?.id,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-                routingSteps: [],
-                // If creating new, default to the first accessible BU if available
-                businessUnitId: !requisition && accessibleBus.length > 0 ? accessibleBus[0].id : undefined
-            };
-            setCurrent(initialData);
-            setFinalApprovers([]);
+        const loadMeta = async () => {
+            try {
+                const { data: buData, error: buErr } = await supabase.from('business_units').select('id, name, code');
+                if (buErr || !buData || buData.length === 0) {
+                    setBusinessUnits(mockBusinessUnits);
+                } else {
+                    setBusinessUnits(buData.map((b: any) => ({ id: b.id, name: b.name, code: b.code || '' })));
+                }
+                const { data: deptData, error: deptErr } = await supabase.from('departments').select('id, name, business_unit_id');
+                if (deptErr || !deptData || deptData.length === 0) {
+                    setDepartments(mockDepartments);
+                } else {
+                    setDepartments(deptData.map((d: any) => ({ id: d.id, name: d.name, businessUnitId: d.business_unit_id })));
+                }
+            } catch (err) {
+                console.warn('Failed to load BU/Departments for requisition', err);
+                setBusinessUnits(mockBusinessUnits);
+                setDepartments(mockDepartments);
+            }
+        };
+        loadMeta();
+    }, []);
+
+    useEffect(() => {
+        if (!isOpen) {
+            initializedRef.current = false;
+            return;
         }
-    }, [requisition, isOpen, user, accessibleBus]);
+        if (initializedRef.current) return;
+        const initialData = requisition || {
+            status: JobRequisitionStatus.Draft,
+            headcount: 1,
+            employmentType: 'Full-Time',
+            locationType: 'Onsite',
+            isUrgent: false,
+            createdByUserId: user?.id,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            routingSteps: [],
+            businessUnitId: !requisition && buOptions.length > 0 ? buOptions[0].id : undefined
+        };
+        setCurrent(initialData);
+        setFinalApprovers([]);
+        initializedRef.current = true;
+    }, [requisition, isOpen, user, buOptions.length]);
+
+    // If no BU is selected and we have loaded options, set a default
+    useEffect(() => {
+        if (!isOpen) return;
+        if (!current.businessUnitId && buOptions.length > 0) {
+            setCurrent(prev => ({ ...prev, businessUnitId: buOptions[0].id }));
+        }
+        // Auto-select department if only one matches BU
+        if (current.businessUnitId && !current.departmentId) {
+            const matchingDepts = departments.filter(d => d.businessUnitId === current.businessUnitId);
+            if (matchingDepts.length === 1) {
+                setCurrent(prev => ({ ...prev, departmentId: matchingDepts[0].id }));
+            }
+        }
+    }, [isOpen, buOptions, current.businessUnitId, current.departmentId, departments]);
     
     const approverPool = useMemo(() => mockUsers.filter(u => u.role === Role.BOD || u.role === Role.GeneralManager), []);
 
@@ -105,6 +156,16 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
         if (type === 'checkbox') {
             const { checked } = e.target as HTMLInputElement;
             setCurrent(prev => ({...prev, [name]: checked }));
+            return;
+        }
+
+        // Changing BU should clear department to avoid mismatched options
+        if (name === 'businessUnitId') {
+            setCurrent(prev => ({
+                ...prev,
+                businessUnitId: value || undefined,
+                departmentId: undefined
+            }));
             return;
         }
 
@@ -144,7 +205,9 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
     };
 
     const isDraft = !current.id || current.status === JobRequisitionStatus.Draft;
-    const isSubmitted = !!current.id && !isDraft;
+    // Allow edits only while draft; otherwise read-only
+    const isReadOnly = !!current.status && current.status !== JobRequisitionStatus.Draft;
+    const isSubmitted = !isDraft;
 
     const currentUserStep = requisition?.routingSteps.find(s => s.userId === user?.id && s.status === JobRequisitionStepStatus.Pending);
     const canApprove = !!currentUserStep;
@@ -216,32 +279,32 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
                         <LifecycleTracker requisition={current as JobRequisition} />
                     </div>
                 )}
-                <Input label="Job Title" name="title" value={current.title || ''} onChange={handleChange} disabled={isSubmitted} required />
+                <Input label="Job Title" name="title" value={current.title || ''} onChange={handleChange} disabled={isReadOnly} required />
                  <div className="flex items-center">
-                    <input type="checkbox" id="isUrgent" name="isUrgent" checked={current.isUrgent || false} onChange={handleChange} disabled={isSubmitted} className="h-4 w-4 text-red-600 border-gray-300 rounded focus:ring-red-500" />
+                    <input type="checkbox" id="isUrgent" name="isUrgent" checked={current.isUrgent || false} onChange={handleChange} disabled={isReadOnly} className="h-4 w-4 text-red-600 border-gray-300 rounded focus:ring-red-500" />
                     <label htmlFor="isUrgent" className="ml-2 text-sm font-medium text-red-600 dark:text-red-400">Mark as Urgent</label>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
-                        <select name="businessUnitId" value={current.businessUnitId || ''} onChange={handleChange} disabled={isSubmitted} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        <select name="businessUnitId" value={current.businessUnitId || ''} onChange={handleChange} disabled={isReadOnly} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
                             <option value="">Select BU</option>
-                            {accessibleBus.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
+                            {buOptions.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
                         </select>
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Department</label>
-                        <select name="departmentId" value={current.departmentId || ''} onChange={handleChange} disabled={isSubmitted || !current.businessUnitId} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        <select name="departmentId" value={current.departmentId || ''} onChange={handleChange} disabled={isReadOnly || !current.businessUnitId} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
                             <option value="">Select Department</option>
-                            {mockDepartments.filter(d => d.businessUnitId === current.businessUnitId).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                            {departments.filter(d => d.businessUnitId === current.businessUnitId).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                         </select>
                     </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                     <Input label="Headcount" name="headcount" type="number" min="1" value={current.headcount || 1} onChange={handleChange} disabled={isSubmitted} required />
+                     <Input label="Headcount" name="headcount" type="number" min="1" value={current.headcount || 1} onChange={handleChange} disabled={isReadOnly} required />
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Employment Type</label>
-                        <select name="employmentType" value={current.employmentType || ''} onChange={handleChange} disabled={isSubmitted} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        <select name="employmentType" value={current.employmentType || ''} onChange={handleChange} disabled={isReadOnly} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
                             <option>Full-Time</option>
                             <option>Part-Time</option>
                             <option>Contract</option>
@@ -251,19 +314,19 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Location Type</label>
-                        <select name="locationType" value={current.locationType || ''} onChange={handleChange} disabled={isSubmitted} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        <select name="locationType" value={current.locationType || ''} onChange={handleChange} disabled={isReadOnly} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
                             <option>Onsite</option>
                             <option>Hybrid</option>
                             <option>Remote</option>
                         </select>
                     </div>
-                     <Input label="Work Location" name="workLocation" value={current.workLocation || ''} onChange={handleChange} disabled={isSubmitted} />
+                     <Input label="Work Location" name="workLocation" value={current.workLocation || ''} onChange={handleChange} disabled={isReadOnly} />
                 </div>
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Input label="Budgeted Salary (Min)" name="budgetedSalaryMin" type="number" min="0" value={current.budgetedSalaryMin || ''} onChange={handleChange} disabled={isSubmitted} />
-                    <Input label="Budgeted Salary (Max)" name="budgetedSalaryMax" type="number" min="0" value={current.budgetedSalaryMax || ''} onChange={handleChange} disabled={isSubmitted} />
+                    <Input label="Budgeted Salary (Min)" name="budgetedSalaryMin" type="number" min="0" value={current.budgetedSalaryMin || ''} onChange={handleChange} disabled={isReadOnly} />
+                    <Input label="Budgeted Salary (Max)" name="budgetedSalaryMax" type="number" min="0" value={current.budgetedSalaryMax || ''} onChange={handleChange} disabled={isReadOnly} />
                  </div>
-                 <Textarea label="Justification" name="justification" value={current.justification || ''} onChange={handleChange} disabled={isSubmitted} rows={4} required/>
+                 <Textarea label="Justification" name="justification" value={current.justification || ''} onChange={handleChange} disabled={isReadOnly} rows={4} required/>
 
                  {isSubmitted && current.routingSteps && (
                     <div className="pt-4 border-t dark:border-gray-700">
