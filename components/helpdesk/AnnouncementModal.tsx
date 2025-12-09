@@ -8,20 +8,28 @@ import Textarea from '../ui/Textarea';
 import Button from '../ui/Button';
 import FileUploader from '../ui/FileUploader';
 import { usePermissions } from '../../hooks/usePermissions';
+import { supabase } from '../../services/supabaseClient';
+import { useAuth } from '../../hooks/useAuth';
 
 interface AnnouncementModalProps {
   isOpen: boolean;
   onClose: () => void;
   announcement: Partial<Announcement> | null;
   onSave: (announcement: Partial<Announcement>) => void;
+  businessUnits?: { id: string; name: string; code?: string }[];
 }
 
-const AnnouncementModal: React.FC<AnnouncementModalProps> = ({ isOpen, onClose, announcement, onSave }) => {
+const AnnouncementModal: React.FC<AnnouncementModalProps> = ({ isOpen, onClose, announcement, onSave, businessUnits }) => {
   const { getAccessibleBusinessUnits } = usePermissions();
+  const { user } = useAuth();
   const [current, setCurrent] = useState<Partial<Announcement>>(announcement || {});
+  const [uploading, setUploading] = useState(false);
 
   // Get BUs accessible to the creator (usually admin/HR)
-  const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+  const accessibleBus = useMemo(
+    () => getAccessibleBusinessUnits(businessUnits && businessUnits.length ? businessUnits : mockBusinessUnits),
+    [getAccessibleBusinessUnits, businessUnits]
+  );
 
   useEffect(() => {
     if (isOpen) {
@@ -42,9 +50,24 @@ const AnnouncementModal: React.FC<AnnouncementModalProps> = ({ isOpen, onClose, 
     setCurrent(prev => ({ ...prev, type: e.target.value as AnnouncementType }));
   }
 
-  const handleFile = (file: File) => {
-    console.log("Attachment uploaded for announcement:", file.name);
-    setCurrent(prev => ({ ...prev, attachmentUrl: file.name }));
+  const handleFile = async (file: File) => {
+    if (!user) return;
+    setUploading(true);
+    try {
+      const path = `${user.id}/${crypto.randomUUID?.() || Date.now()}-${file.name.replace(/\s+/g, '-')}`;
+      const { error } = await supabase.storage.from('announcements_attachments').upload(path, file, {
+        upsert: true,
+        contentType: file.type || `application/octet-stream`
+      });
+      if (error) throw error;
+      // Store the storage path; we'll sign when rendering
+      setCurrent(prev => ({ ...prev, attachmentUrl: path }));
+    } catch (err: any) {
+      console.error('Announcement attachment upload failed', err);
+      alert(err?.message || 'Failed to upload attachment.');
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleSave = () => {
@@ -115,8 +138,9 @@ const AnnouncementModal: React.FC<AnnouncementModalProps> = ({ isOpen, onClose, 
 
         <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Attachment (Optional)</label>
-            <FileUploader onFileUpload={handleFile} />
-             {current.attachmentUrl && <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">Current attachment: {current.attachmentUrl}</p>}
+            <FileUploader onFileUpload={handleFile} disabled={uploading} />
+             {current.attachmentUrl && <p className="mt-2 text-sm text-gray-600 dark:text-gray-400 break-all">Current attachment: {current.attachmentUrl}</p>}
+             {uploading && <p className="text-sm text-gray-500 mt-1">Uploading...</p>}
         </div>
       </div>
     </Modal>

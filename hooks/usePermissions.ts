@@ -537,6 +537,38 @@ export const usePermissions = () => {
         }
     };
 
+    const getAnnouncementAccess = () => {
+        const user = getCurrentUser();
+        if (!user) {
+            return { canView: false, canManage: false, scope: 'none' as const };
+        }
+        switch (user.role) {
+            case Role.Admin:
+            case Role.HRManager:
+            case Role.HRStaff:
+            case Role.Recruiter: // Full
+                return { canView: true, canManage: true, scope: 'global' as const };
+            case Role.BOD:
+                return { canView: true, canManage: false, scope: 'global' as const };
+            case Role.GeneralManager:
+                return { canView: true, canManage: false, scope: 'buDept' as const };
+            case Role.OperationsDirector:
+                return { canView: true, canManage: false, scope: 'bu' as const };
+            case Role.BusinessUnitManager:
+                return { canView: true, canManage: false, scope: 'ownBu' as const };
+            case Role.Manager:
+                return { canView: true, canManage: false, scope: 'team' as const };
+            case Role.Employee:
+                return { canView: true, canManage: false, scope: 'ownBu' as const };
+            case Role.Auditor:
+                return { canView: true, canManage: false, scope: 'logs' as const };
+            case Role.FinanceStaff:
+            case Role.IT:
+            default:
+                return { canView: false, canManage: false, scope: 'none' as const };
+        }
+    };
 
-    return { can, getVisibleEmployeeIds, filterByScope, filterIncidentReportsByScope, filterTicketsByScope, hasDirectReports, getAccessibleBusinessUnits, isUserEligibleEvaluator, getCoeAccess, getOtAccess, getTicketAccess, getIrAccess, getJobRequisitionAccess };
+
+    return { can, getVisibleEmployeeIds, filterByScope, filterIncidentReportsByScope, filterTicketsByScope, hasDirectReports, getAccessibleBusinessUnits, isUserEligibleEvaluator, getCoeAccess, getOtAccess, getTicketAccess, getIrAccess, getJobRequisitionAccess, getAnnouncementAccess };
 };
