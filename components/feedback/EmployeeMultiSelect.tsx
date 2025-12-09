@@ -28,12 +28,17 @@ const EmployeeMultiSelect: React.FC<EmployeeMultiSelectProps> = ({ label, allUse
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   const filteredUsers = useMemo(() => {
-    if (!searchTerm) return [];
-    const lowerSearch = searchTerm.toLowerCase();
     const selectedIds = new Set(selectedUsers.map(u => u.id));
-    return allUsers.filter(user => 
-        !selectedIds.has(user.id) &&
-        (user.name.toLowerCase().includes(lowerSearch) || user.email.toLowerCase().includes(lowerSearch))
+    const pool = allUsers.filter(u => !selectedIds.has(u.id));
+    if (!searchTerm) {
+        return pool
+            .slice()
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .slice(0, 20); // show first 20 by default
+    }
+    const lowerSearch = searchTerm.toLowerCase();
+    return pool.filter(user => 
+        user.name.toLowerCase().includes(lowerSearch) || user.email.toLowerCase().includes(lowerSearch)
     );
   }, [searchTerm, allUsers, selectedUsers]);
 
@@ -73,7 +78,7 @@ const EmployeeMultiSelect: React.FC<EmployeeMultiSelectProps> = ({ label, allUse
           className="w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed"
           disabled={disabled}
         />
-        {isDropdownOpen && searchTerm && !disabled && (
+        {isDropdownOpen && !disabled && (
           <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-auto">
             {filteredUsers.length > 0 ? (
               filteredUsers.map(user => (

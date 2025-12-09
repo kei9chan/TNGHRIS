@@ -38,23 +38,34 @@ const NTEPreview: React.FC<NTEPreviewProps> = ({ template, employeeName, nteNumb
     }
 
     const processBody = (body: string) => {
-        // This is a simple replacement. A more robust solution might use a templating library.
-        let processed = body.replace(/{{allegations}}/g, allegations || '[Allegations to be filled]');
-        
+        let processed = body;
+
         const deadlineDate = new Date(deadline);
         const now = new Date();
         const diffTime = Math.abs(deadlineDate.getTime() - now.getTime());
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        
-        // A simple number to word converter
+
         const numToWord = (num: number) => {
             if (num === 3) return "three (3)";
             if (num === 5) return "five (5)";
             if (num === 7) return "seven (7)";
             return `${num}`;
-        }
+        };
 
-        processed = processed.replace(/{{response_deadline_days}}/g, numToWord(diffDays));
+        const replacements: Record<string, string> = {
+            '{{allegations}}': allegations || '[Allegations to be filled]',
+            '{{employee_name}}': employeeName || '[Employee Name]',
+            '{{employee}}': employeeName || '[Employee Name]',
+            '{{nte_number}}': nteNumber || '[NTE Number]',
+            '{{response_deadline_days}}': numToWord(diffDays),
+            '{{response_deadline}}': deadlineDate.toLocaleString(),
+            '{{evidence_url}}': evidenceUrl || '[Supporting link]',
+        };
+
+        Object.entries(replacements).forEach(([key, value]) => {
+            processed = processed.replace(new RegExp(key, 'gi'), value);
+        });
+
         return processed;
     };
 

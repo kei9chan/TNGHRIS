@@ -9,6 +9,8 @@ import { useAuth } from '../../hooks/useAuth';
 import EmployeeMultiSelect from './EmployeeMultiSelect';
 import { mockUsers, mockCodeOfDiscipline, mockBusinessUnits } from '../../services/mockData';
 import SignaturePad, { SignaturePadRef } from '../ui/SignaturePad';
+import { supabase } from '../../services/supabaseClient';
+import FileUploader from '../ui/FileUploader';
 
 interface IncidentReportModalProps {
   isOpen: boolean;
@@ -47,41 +49,162 @@ const DetailItem: React.FC<{label: string; children: React.ReactNode}> = ({ labe
 const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClose, report, onSave, onGenerateNTE, onMarkNoAction, onConvertToCoaching, onDownloadPdf, isEmployeeView = false }) => {
   const { user } = useAuth();
   const [currentReport, setCurrentReport] = useState<Partial<IncidentReport>>({});
+  const [allUsers, setAllUsers] = useState<User[]>([]);
   const [involvedEmployees, setInvolvedEmployees] = useState<User[]>([]);
   const [witnesses, setWitnesses] = useState<User[]>([]);
   const signaturePadRef = useRef<SignaturePadRef>(null);
+  const [attachmentPreview, setAttachmentPreview] = useState<string | null>(null);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [uploadingSignature, setUploadingSignature] = useState(false);
+  const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
+  const signaturePathRef = useRef<string | null>(null);
+  const signatureCacheRef = useRef<Map<string, string>>(new Map());
+
+  const loadSignatureCache = () => {
+    if (signatureCacheRef.current.size > 0) return;
+    try {
+      const raw = localStorage.getItem('ir_signature_cache');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          Object.entries(parsed).forEach(([k, v]) => {
+            if (typeof v === 'string') signatureCacheRef.current.set(k, v);
+          });
+        }
+      }
+    } catch {
+      // ignore cache load errors
+    }
+  };
+
+  const persistSignatureCache = () => {
+    try {
+      const obj: Record<string, string> = {};
+      signatureCacheRef.current.forEach((v, k) => {
+        obj[k] = v;
+      });
+      localStorage.setItem('ir_signature_cache', JSON.stringify(obj));
+    } catch {
+      // ignore cache save errors
+    }
+  };
+
+  const resolveStorageUrl = async (path?: string | null) => {
+    if (!path) return null;
+    // If already an absolute URL or data URL, just use it
+    if (/^(https?:)?data:/i.test(path)) return path;
+    if (/^https?:\/\//i.test(path)) return path;
+    loadSignatureCache();
+    const cached = signatureCacheRef.current.get(path);
+    if (cached) return cached;
+    const { data, error } = await supabase.storage.from('incident_reports_attachments').createSignedUrl(path, 60 * 60);
+    if (!error && data?.signedUrl) return data.signedUrl;
+    const { data: pub } = supabase.storage.from('incident_reports_attachments').getPublicUrl(path);
+    return pub?.publicUrl || null;
+  };
 
   const categories = useMemo(() => {
     return [...new Set(mockCodeOfDiscipline.entries.map(e => e.category))].sort();
   }, []);
   
   const potentialHandlers = useMemo(() => {
-    return mockUsers.filter(u => [Role.HRManager, Role.HRStaff, Role.Admin].includes(u.role) && u.status === 'Active');
-  }, []);
+    const pool = allUsers.length ? allUsers : mockUsers;
+    return pool.filter(u => [Role.HRManager, Role.HRStaff, Role.Admin].includes(u.role) && u.status === 'Active');
+  }, [allUsers]);
 
   const canAssign = user?.role === Role.Admin || user?.role === Role.HRManager;
 
+  // Load users from Supabase for selectors
+  useEffect(() => {
+    if (!isOpen) return;
+    supabase
+      .from('hris_users')
+      .select('id, full_name, email, role, department, business_unit, business_unit_id, department_id, position, status')
+      .order('full_name', { ascending: true })
+      .then(({ data, error }) => {
+        if (error) {
+          console.warn('Failed to load users for IR modal', error);
+          return;
+        }
+        if (data) {
+          const mapped = data.map((u: any) => ({
+            id: u.id,
+            name: u.full_name || 'User',
+            email: u.email || '',
+            role: u.role,
+            department: u.department || '',
+            businessUnit: u.business_unit || '',
+            businessUnitId: u.business_unit_id || undefined,
+            departmentId: u.department_id || undefined,
+            status: u.status || 'Active',
+            isPhotoEnrolled: false,
+            dateHired: new Date(),
+            position: u.position || '',
+          })) as User[];
+          setAllUsers(mapped);
+        }
+      })
+      .catch((err) => console.warn('IR modal user fetch error', err));
+  }, [isOpen]);
+
   useEffect(() => {
     if (isOpen) {
+        const pool = allUsers.length ? allUsers : mockUsers;
         if (report) {
             setCurrentReport(report);
-            setInvolvedEmployees(mockUsers.filter(u => report.involvedEmployeeIds.includes(u.id)));
-            setWitnesses(mockUsers.filter(u => report.witnessIds.includes(u.id)));
+            setInvolvedEmployees(pool.filter(u => report.involvedEmployeeIds.includes(u.id)));
+            setWitnesses(pool.filter(u => report.witnessIds.includes(u.id)));
+            setAttachmentPreview(report.attachmentUrl || null);
+            signaturePathRef.current = report.signatureDataUrl || null;
+            setSignaturePreview(report.signatureDataUrl || null);
         } else {
-            // New Report
             setCurrentReport({
                 status: IRStatus.Submitted,
                 pipelineStage: 'ir-review',
                 dateTime: new Date(),
                 category: '',
-                businessUnitId: '', 
-                // REMOVED: Default assignment. Reports start unassigned.
+                businessUnitId: '',
             });
             setInvolvedEmployees([]);
             setWitnesses([]);
+            setAttachmentPreview(null);
+            setSignaturePreview(null);
         }
     }
-  }, [report, isOpen, user]);
+  }, [report, isOpen, user, allUsers]);
+
+  // Build signed URLs for attachment/signature when viewing an existing report
+  useEffect(() => {
+    const buildSignedUrls = async () => {
+        if (!report || !isOpen) return;
+        const [attUrl, sigUrl] = await Promise.all([
+            resolveStorageUrl(report.attachmentUrl),
+            resolveStorageUrl(report.signatureDataUrl),
+        ]);
+        if (attUrl) setAttachmentPreview(attUrl);
+        if (sigUrl) {
+            setSignaturePreview(sigUrl);
+            if (signaturePathRef.current) {
+              signatureCacheRef.current.set(signaturePathRef.current, sigUrl);
+              persistSignatureCache();
+            }
+        } else if (report.signatureDataUrl) {
+            setSignaturePreview(report.signatureDataUrl);
+        }
+    };
+    buildSignedUrls();
+  }, [report, isOpen]);
+
+  const handleSignatureError = async () => {
+    const path = signaturePathRef.current;
+    if (!path) return;
+    const refreshed = await resolveStorageUrl(path);
+    if (refreshed) {
+      signatureCacheRef.current.set(path, refreshed);
+      persistSignatureCache();
+      setSignaturePreview(refreshed);
+    }
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -98,7 +221,27 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
     }
   };
 
-  const handleCreateReport = () => {
+  const handleAttachmentUpload = async (file: File) => {
+    if (!user) return;
+    setUploadingAttachment(true);
+    try {
+      const ext = file.name.split('.').pop() || 'bin';
+      const key = `${user.id}/attachments/${crypto.randomUUID?.() || Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from('incident_reports_attachments').upload(key, file, { upsert: false });
+      if (error) throw error;
+      const { data, error: signErr } = await supabase.storage.from('incident_reports_attachments').createSignedUrl(key, 60 * 60);
+      if (signErr) throw signErr;
+      const url = data?.signedUrl || key;
+      setCurrentReport(prev => ({ ...prev, attachmentUrl: key }));
+      setAttachmentPreview(url);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to upload attachment.');
+    } finally {
+      setUploadingAttachment(false);
+    }
+  };
+
+  const handleCreateReport = async () => {
     if (!user) return;
 
     const errors: string[] = [];
@@ -124,6 +267,25 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
         return;
     }
     
+    let signaturePath: string | undefined = currentReport.signatureDataUrl;
+    if (signaturePadRef.current && !signaturePadRef.current.isEmpty()) {
+        setUploadingSignature(true);
+        try {
+            const dataUrl = signaturePadRef.current.getSignatureDataUrl();
+            const res = await fetch(dataUrl);
+            const blob = await res.blob();
+            const key = `${user.id}/signatures/${crypto.randomUUID?.() || Date.now()}.png`;
+            const { error } = await supabase.storage.from('incident_reports_attachments').upload(key, blob, { contentType: 'image/png', upsert: true });
+            if (error) throw error;
+            signaturePath = key;
+        } catch (err: any) {
+            alert(err?.message || 'Failed to upload signature.');
+            setUploadingSignature(false);
+            return;
+        }
+        setUploadingSignature(false);
+    }
+
     const reportToSave: Partial<IncidentReport> = {
       ...currentReport,
       reportedBy: user.id,
@@ -133,7 +295,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
       witnessNames: witnesses.map(u => u.name),
       status: IRStatus.Submitted,
       pipelineStage: 'ir-review',
-      signatureDataUrl: signaturePadRef.current?.getSignatureDataUrl() ?? undefined,
+      signatureDataUrl: signaturePath,
     };
     onSave(reportToSave);
   };
@@ -203,16 +365,25 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     <div>
                         <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Attachments</h3>
-                        {report.attachmentUrl ? (
-                            <a href="#" onClick={(e) => e.preventDefault()} className="mt-1 text-indigo-600 dark:text-indigo-400 hover:underline">
-                                {report.attachmentUrl}
+                        {attachmentPreview ? (
+                            <a href={attachmentPreview} target="_blank" rel="noopener noreferrer" className="mt-1 text-indigo-600 dark:text-indigo-400 hover:underline">
+                                View attachment
                             </a>
+                        ) : report.attachmentUrl ? (
+                            <p className="mt-1 text-xs text-gray-500 break-all">{report.attachmentUrl}</p>
                         ) : <p className="mt-1 text-sm text-gray-500">No attachments.</p>}
                     </div>
                      <div>
                         <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Reporter's Signature</h3>
-                        {report.signatureDataUrl ? (
-                            <img src={report.signatureDataUrl} alt="Signature" className="mt-1 border rounded-md p-2 bg-gray-100 dark:bg-gray-700 max-h-24" />
+                        {signaturePreview ? (
+                            <img
+                              src={signaturePreview}
+                              alt="Signature"
+                              className="mt-1 border rounded-md p-2 bg-gray-100 dark:bg-gray-700 max-h-24"
+                              onError={handleSignatureError}
+                            />
+                        ) : report.signatureDataUrl ? (
+                            <p className="mt-1 text-xs text-gray-500 break-all">{report.signatureDataUrl}</p>
                         ) : <p className="mt-1 text-sm text-gray-500">No signature provided.</p>}
                     </div>
                 </div>
@@ -287,7 +458,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
             <div className="md:col-span-2">
               <EmployeeMultiSelect
                   label="Involved Employees*"
-                  allUsers={mockUsers}
+                  allUsers={allUsers.length ? allUsers : mockUsers}
                   selectedUsers={involvedEmployees}
                   onSelectionChange={setInvolvedEmployees}
               />
@@ -297,7 +468,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
             <div className="md:col-span-2">
               <EmployeeMultiSelect
                   label="Witnesses"
-                  allUsers={mockUsers}
+                  allUsers={allUsers.length ? allUsers : mockUsers}
                   selectedUsers={witnesses}
                   onSelectionChange={setWitnesses}
               />
@@ -319,14 +490,15 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
 
             {/* Row 6: Attachments */}
             <div className="md:col-span-2">
-                <Input 
-                    label="Attachments" 
-                    id="attachmentUrl" 
-                    name="attachmentUrl" 
-                    value={currentReport.attachmentUrl || ''} 
-                    onChange={handleChange} 
-                    placeholder="Paste link to external file (e.g., Google Drive)"
-                />
+                <div className="space-y-2">
+                    <FileUploader onFileUpload={handleAttachmentUpload} maxSize={5 * 1024 * 1024} disabled={uploadingAttachment} />
+                    {attachmentPreview && (
+                        <a className="text-indigo-600 hover:underline text-sm" href={attachmentPreview} target="_blank" rel="noopener noreferrer">
+                            View uploaded attachment
+                        </a>
+                    )}
+                    {uploadingAttachment && <p className="text-xs text-gray-500">Uploading...</p>}
+                </div>
             </div>
             
             <div className="md:col-span-2">
@@ -340,7 +512,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
   
   const renderFooter = () => {
       if (report) {
-        const isClosed = report.status === IRStatus.Closed || report.status === IRStatus.NoAction || report.status === IRStatus.Converted;
+        const isClosed = report.status === IRStatus.Closed || report.status === IRStatus.NoAction;
         return (
             <div className="flex justify-between items-center w-full">
                  <div className="flex space-x-2">

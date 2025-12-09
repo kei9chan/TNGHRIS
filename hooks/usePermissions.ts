@@ -478,6 +478,33 @@ export const usePermissions = () => {
         return { canRequest, canApprove, canView, scope, filterRequests, canActOn };
     };
 
+    const getIrAccess = () => {
+        const user = getCurrentUser();
+        if (!user) {
+            return { canCreate: false, canView: false, scope: 'none' as const };
+        }
 
-    return { can, getVisibleEmployeeIds, filterByScope, filterIncidentReportsByScope, filterTicketsByScope, hasDirectReports, getAccessibleBusinessUnits, isUserEligibleEvaluator, getCoeAccess, getOtAccess, getTicketAccess };
+        switch (user.role) {
+            case Role.Admin:
+            case Role.HRManager:
+            case Role.HRStaff:
+                return { canCreate: true, canView: true, scope: 'global' as const };
+            case Role.BOD:
+                return { canCreate: false, canView: true, scope: 'global' as const };
+            case Role.GeneralManager:
+                return { canCreate: false, canView: true, scope: 'bu' as const };
+            case Role.BusinessUnitManager:
+            case Role.Manager:
+                return { canCreate: true, canView: true, scope: 'self' as const };
+            case Role.Employee:
+                return { canCreate: true, canView: true, scope: 'self' as const };
+            case Role.Auditor:
+                return { canCreate: false, canView: true, scope: 'global' as const };
+            default:
+                return { canCreate: false, canView: false, scope: 'none' as const };
+        }
+    };
+
+
+    return { can, getVisibleEmployeeIds, filterByScope, filterIncidentReportsByScope, filterTicketsByScope, hasDirectReports, getAccessibleBusinessUnits, isUserEligibleEvaluator, getCoeAccess, getOtAccess, getTicketAccess, getIrAccess };
 };

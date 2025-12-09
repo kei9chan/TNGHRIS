@@ -3,6 +3,7 @@ import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import Card from '../ui/Card';
 import { useAuth } from '../../hooks/useAuth';
+import { usePermissions } from '../../hooks/usePermissions';
 import { Role } from '../../types';
 
 // Icons
@@ -122,7 +123,7 @@ const accessMatrix: Record<Role, Record<QuickLinkId, AccessScope>> = {
     leave: 'view',
     overtime: 'view',
     ticket: 'view',
-    ir: 'view',
+    ir: 'none',
     jobreq: 'view',
     announcements: 'view',
     achievements: 'view',
@@ -136,7 +137,7 @@ const accessMatrix: Record<Role, Record<QuickLinkId, AccessScope>> = {
     leave: 'viewBu',
     overtime: 'viewBu',
     ticket: 'respond',
-    ir: 'viewBu',
+    ir: 'none',
     jobreq: 'viewBu',
     announcements: 'viewBu',
     achievements: 'none',
@@ -164,7 +165,7 @@ const accessMatrix: Record<Role, Record<QuickLinkId, AccessScope>> = {
     leave: 'ownBu',
     overtime: 'ownBu',
     ticket: 'respond',
-    ir: 'ownRequest',
+    ir: 'full',
     jobreq: 'ownBu',
     announcements: 'ownBu',
     achievements: 'none',
@@ -178,7 +179,7 @@ const accessMatrix: Record<Role, Record<QuickLinkId, AccessScope>> = {
     leave: 'ownTeam',
     overtime: 'ownTeam',
     ticket: 'none',
-    ir: 'ownRequest',
+    ir: 'full',
     jobreq: 'ownTeam',
     announcements: 'ownTeam',
     achievements: 'none',
@@ -192,7 +193,7 @@ const accessMatrix: Record<Role, Record<QuickLinkId, AccessScope>> = {
     leave: 'own',
     overtime: 'own',
     ticket: 'own',
-    ir: 'own',
+    ir: 'full',
     jobreq: 'none',
     announcements: 'ownBu',
     achievements: 'own',
@@ -220,7 +221,7 @@ const accessMatrix: Record<Role, Record<QuickLinkId, AccessScope>> = {
     leave: 'logs',
     overtime: 'logs',
     ticket: 'logs',
-    ir: 'logs',
+    ir: 'none',
     jobreq: 'logs',
     announcements: 'logs',
     achievements: 'logs',
@@ -257,6 +258,8 @@ const accessMatrix: Record<Role, Record<QuickLinkId, AccessScope>> = {
 
 const QuickLinks: React.FC = () => {
     const { user } = useAuth();
+    const { getIrAccess } = usePermissions();
+    const irAccess = useMemo(() => getIrAccess(), [getIrAccess]);
 
     const visibleLinks = useMemo(() => {
         const allQuickLinks: (QuickLinkCardProps & { id: QuickLinkId; scope: AccessScope })[] = [
@@ -280,10 +283,13 @@ const QuickLinks: React.FC = () => {
 
         return allQuickLinks.filter(link => {
           const scope = roleMap[link.id] || 'none';
+          if (link.id === 'ir') {
+            return irAccess.canCreate;
+          }
           return scope !== 'none';
         });
 
-    }, [user]);
+    }, [user, irAccess, getIrAccess]);
 
     if (visibleLinks.length === 0) return null;
 

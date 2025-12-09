@@ -9,6 +9,7 @@ import Input from '../ui/Input';
 import NTEPreview from './NTEPreview';
 import { useAuth } from '../../hooks/useAuth';
 import EmployeeMultiSelect from './EmployeeMultiSelect';
+import { supabase } from '../../services/supabaseClient';
 
 interface NTEModalProps {
   isOpen: boolean;
@@ -39,6 +40,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
   const [evidenceUrl, setEvidenceUrl] = useState('');
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(mockFeedbackTemplates[0]?.id || '');
   const [selectedApprovers, setSelectedApprovers] = useState<User[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
 
   // State for adding new recipients
   const [searchTerm, setSearchTerm] = useState('');
@@ -52,18 +54,55 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
     return mockFeedbackTemplates.find(t => t.id === selectedTemplateId);
   }, [selectedTemplateId]);
 
-    const approverPool = useMemo(() => {
-        return mockUsers.filter(u =>
-            u.role === Role.BOD ||
-            u.role === Role.GeneralManager ||
-            u.role === Role.OperationsDirector
-        );
-    }, []);
+  // Show all users to allow search; validation still enforces at least one BOD
+  const approverPool = useMemo(() => {
+        return allUsers.length ? allUsers : mockUsers;
+    }, [allUsers]);
+  const approverDisplay = useMemo(() => {
+        return approverPool.map(u => ({
+            ...u,
+            name: `${u.name} (${u.role})`,
+        }));
+    }, [approverPool]);
+
+  // Load users from Supabase for recipients/approvers
+  useEffect(() => {
+    if (!isOpen) return;
+    supabase
+      .from('hris_users')
+      .select('id, full_name, email, role, department, business_unit, business_unit_id, department_id, position, status')
+      .order('full_name', { ascending: true })
+      .then(({ data, error }) => {
+        if (error) {
+          console.warn('Failed to load users for NTE', error);
+          return;
+        }
+        if (data) {
+          const mapped = data.map((u: any) => ({
+            id: u.id,
+            name: u.full_name || 'User',
+            email: u.email || '',
+            role: u.role,
+            department: u.department || '',
+            businessUnit: u.business_unit || '',
+            businessUnitId: u.business_unit_id || undefined,
+            departmentId: u.department_id || undefined,
+            status: u.status || 'Active',
+            isPhotoEnrolled: false,
+            dateHired: new Date(),
+            position: u.position || '',
+          })) as User[];
+          setAllUsers(mapped);
+        }
+      })
+      .catch(err => console.warn('NTE user fetch error', err));
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {
+        const pool = allUsers.length ? allUsers : mockUsers;
         if (isNewNTE) {
-            const involved = mockUsers.filter(u => incidentReport.involvedEmployeeIds.includes(u.id));
+            const involved = pool.filter(u => incidentReport.involvedEmployeeIds.includes(u.id));
             setRecipientList(involved);
             setSelectedEmployeeIds(involved.map(u => u.id));
             
@@ -80,13 +119,13 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
             setCurrentNTE(nte);
             if (nte?.approverSteps) {
                 const approverUsers = nte.approverSteps
-                    .map(step => mockUsers.find(u => u.id === step.userId))
+                    .map(step => pool.find(u => u.id === step.userId))
                     .filter((u): u is User => !!u);
                 setSelectedApprovers(approverUsers);
             }
         }
     }
-  }, [nte, incidentReport, isOpen, isNewNTE]);
+  }, [nte, incidentReport, isOpen, isNewNTE, allUsers]);
   
   const memoItems: SearchableItem[] = useMemo(() => mockMemos.map(memo => ({ id: memo.id, label: memo.title })), []);
   const disciplineItems: SearchableItem[] = useMemo(() => mockCodeOfDiscipline.entries.map(entry => ({ id: entry.id, label: entry.description, subLabel: entry.category, tag: entry.code })), []);
@@ -145,15 +184,12 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
     // Priority: IncidentReport BU -> Employee BU -> GEN
     const irBu = mockBusinessUnits.find(b => b.id === incidentReport.businessUnitId);
 
-    const newNTEs: NTE[] = selectedEmployeeIds.map((employeeId, index) => {
+    const newNTEs: Partial<NTE>[] = selectedEmployeeIds.map((employeeId, index) => {
         const employee = recipientList.find(u => u.id === employeeId)!;
         const employeeBu = mockBusinessUnits.find(b => b.name === employee.businessUnit);
         const buCode = irBu?.code || employeeBu?.code || 'GEN';
 
-        const nteNumber = `NTE-${new Date().getFullYear()}-${buCode}-${String(mockNTEs.length + 1 + index).padStart(3, '0')}`;
-        
         return {
-            id: nteNumber,
             incidentReportId: incidentReport.id,
             employeeId: employee.id,
             employeeName: employee.name,
@@ -203,11 +239,12 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
     if (!searchTerm) return [];
     const lowerSearch = searchTerm.toLowerCase();
     const recipientIds = new Set(recipientList.map(u => u.id));
-    return mockUsers.filter(u => 
+    const pool = allUsers.length ? allUsers : mockUsers;
+    return pool.filter(u => 
         !recipientIds.has(u.id) &&
         u.name.toLowerCase().includes(lowerSearch)
     );
-  }, [searchTerm, recipientList]);
+  }, [searchTerm, recipientList, allUsers]);
 
   const handleAddRecipient = (user: User) => {
     setRecipientList(prev => [...prev, user]);
@@ -342,7 +379,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
                     />
                     <EmployeeMultiSelect
                         label="Request Approval From (at least one BOD required)"
-                        allUsers={approverPool}
+                        allUsers={approverDisplay}
                         selectedUsers={selectedApprovers}
                         onSelectionChange={setSelectedApprovers}
                     />

@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { IncidentReport, ChatMessage, NTE, Resolution, IRStatus, Permission, NTEStatus, PipelineStage, Role, BusinessUnit, ResolutionType, ResolutionStatus, ApproverStep, ApproverStatus, Notification, NotificationType, CoachingSession, CoachingStatus, CoachingTrigger } from '../../types';
-import { mockIncidentReports, mockNTEs, mockResolutions, mockPipelineStages, mockUsers, mockBusinessUnits, mockNotifications, mockCoachingSessions } from '../../services/mockData';
+import { mockNTEs, mockResolutions, mockPipelineStages, mockUsers, mockBusinessUnits, mockNotifications, mockCoachingSessions } from '../../services/mockData';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import KanbanBoard from '../../components/feedback/KanbanBoard';
@@ -15,6 +15,8 @@ import Card from '../../components/ui/Card';
 import PrintableIncidentReport from '../../components/feedback/PrintableIncidentReport';
 import CaseListTable from '../../components/feedback/CaseListTable';
 import { logActivity } from '../../services/auditService';
+import { fetchIncidentReports, saveIncidentReport, addIncidentReportMessage } from '../../services/incidentReportService';
+import { saveNTEs, updateNTE } from '../../services/nteService';
 
 const SearchIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>;
 const ChevronDownIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>;
@@ -75,13 +77,13 @@ const getDerivedPipelineStage = (nte: NTE, allResolutions: Resolution[]): string
 
 const DisciplinaryCases: React.FC = () => {
   const { user } = useAuth();
-  const { can, filterIncidentReportsByScope, getAccessibleBusinessUnits } = usePermissions();
+  const { can, getIrAccess, getAccessibleBusinessUnits } = usePermissions();
   const navigate = useNavigate();
   const location = useLocation();
   const queryParams = new URLSearchParams(location.search);
   const specialFilter = queryParams.get('filter');
   
-  const [allReports, setAllReports] = useState<IncidentReport[]>(mockIncidentReports);
+  const [allReports, setAllReports] = useState<IncidentReport[]>([]);
   const [stages] = useState<PipelineStage[]>(mockPipelineStages);
   const [ntes, setNTEs] = useState<NTE[]>(mockNTEs);
   const [resolutions, setResolutions] = useState<Resolution[]>(mockResolutions);
@@ -105,8 +107,46 @@ const DisciplinaryCases: React.FC = () => {
   const [reportToPrint, setReportToPrint] = useState<IncidentReport | null>(null);
   
   const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+  const irAccess = useMemo(() => getIrAccess(), [getIrAccess]);
+
+  const filterByIrAccess = useMemo(() => {
+    const userRef = user;
+    return (reports: IncidentReport[]) => {
+      if (!userRef) return [];
+      if (!irAccess.canView) return [];
+      if (irAccess.scope === 'global') return reports;
+      if (irAccess.scope === 'self') {
+        return reports.filter(r => r.reportedBy === userRef.id);
+      }
+      if (irAccess.scope === 'bu') {
+        return reports.filter(r => {
+          const matchesId = r.businessUnitId && userRef.businessUnitId && r.businessUnitId === userRef.businessUnitId;
+          const matchesName = r.businessUnitName && userRef.businessUnit && r.businessUnitName === userRef.businessUnit;
+          return matchesId || matchesName;
+        });
+      }
+      return [];
+    };
+  }, [irAccess, user]);
+
+  useEffect(() => {
+    const loadReports = async () => {
+      try {
+        const data = await fetchIncidentReports();
+        setAllReports(filterByIrAccess(data));
+      } catch (err) {
+        console.error('Failed to load incident reports', err);
+        setAllReports([]);
+      }
+    };
+    loadReports();
+  }, [filterByIrAccess]);
 
   const handleOpenNewReportModal = () => {
+    if (!irAccess.canCreate) {
+        alert('You do not have permission to file a new incident report.');
+        return;
+    }
     setSelectedReport(null);
     setReportModalOpen(true);
   };
@@ -157,7 +197,7 @@ const DisciplinaryCases: React.FC = () => {
   };
 
   const reports = useMemo(() => {
-    let baseReports = filterIncidentReportsByScope(allReports);
+    let baseReports = filterByIrAccess(allReports);
 
     if (specialFilter === 'pending_my_approval' && user) {
         const myPendingIRIds = new Set<string>();
@@ -270,7 +310,7 @@ const DisciplinaryCases: React.FC = () => {
             r.category.toLowerCase().includes(lowerSearch) ||
             r.involvedEmployeeNames.some(name => name.toLowerCase().includes(lowerSearch));
     });
-  }, [allReports, searchTerm, ntes, buFilter, yearFilter, monthFilter, quarterFilter, statusFilter, handlerFilter, specialFilter, user, resolutions, filterIncidentReportsByScope]);
+  }, [allReports, searchTerm, ntes, buFilter, yearFilter, monthFilter, quarterFilter, statusFilter, handlerFilter, specialFilter, user, resolutions, filterByIrAccess]);
 
   const stats = useMemo(() => {
     const activeCases = reports.length;
@@ -356,103 +396,63 @@ const DisciplinaryCases: React.FC = () => {
     setSelectedReport(null);
   };
 
-  const handleSaveReport = (reportToSave: Partial<IncidentReport>) => {
+  const handleSaveReport = async (reportToSave: Partial<IncidentReport>) => {
     if (!user) return;
-    if (reportToSave.id) { // Editing existing
-      // Sync with Mock Data so Dashboard sees it immediately
-      const index = mockIncidentReports.findIndex(r => r.id === reportToSave.id);
-      if (index !== -1) {
-          mockIncidentReports[index] = { ...mockIncidentReports[index], ...reportToSave } as IncidentReport;
-      }
-      
-      setAllReports(prev => prev.map(r => r.id === reportToSave.id ? {...r, ...reportToSave} as IncidentReport : r));
-    } else { // Creating new
-      const newReport: IncidentReport = {
-          id: `IR-${Date.now()}`,
-          chatThread: [],
-          category: 'Uncategorized',
-          description: '',
-          location: '',
-          dateTime: new Date(),
-          involvedEmployeeIds: [],
-          involvedEmployeeNames: [],
-          witnessIds: [],
-          witnessNames: [],
-          reportedBy: user.id,
-          status: IRStatus.Submitted,
-          pipelineStage: 'ir-review',
-          nteIds: [],
-          assignedToId: undefined, // Explicitly unassigned for new reports
-          assignedToName: undefined,
-          ...reportToSave,
-      };
-      
-      // Mock Sync
-      mockIncidentReports.unshift(newReport);
-      
-      setAllReports(prev => [newReport, ...prev]);
+    if (!reportToSave.id && !irAccess.canCreate) {
+        alert('You do not have permission to file a new incident report.');
+        return;
+    }
+    if (reportToSave.id && !(irAccess.canCreate || reportToSave.reportedBy === user.id)) {
+        alert('You do not have permission to update this report.');
+        return;
+    }
+
+    const current = reportToSave.id ? allReports.find(r => r.id === reportToSave.id) : null;
+    const currentStage = current?.pipelineStage || reportToSave.pipelineStage || 'ir-review';
+    const hasHandler = !!reportToSave.assignedToId;
+    const handlerChanged = hasHandler && (!current || current.assignedToId !== reportToSave.assignedToId);
+    if (hasHandler && (currentStage === 'ir-review' || currentStage === 'hr-review-response')) {
+      reportToSave.pipelineStage = 'nte-for-approval';
+      reportToSave.status = IRStatus.Converted;
+    } else if (handlerChanged && currentStage === 'nte-for-approval') {
+      // keep it in approval if already there
+      reportToSave.pipelineStage = 'nte-for-approval';
+    }
+
+    try {
+      const saved = await saveIncidentReport(reportToSave, user);
+      setAllReports(prev => {
+        const rest = prev.filter(r => r.id !== saved.id);
+        return filterByIrAccess([saved, ...rest]);
+      });
+    } catch (err: any) {
+      alert(err?.message || 'Failed to save incident report');
     }
     handleCloseModals();
   };
   
-  const handleSaveNTE = (data: NTE | NTE[]) => {
-      if (Array.isArray(data)) {
-        const newNTEs = data;
-        mockNTEs.unshift(...newNTEs);
-        setNTEs(prev => [...newNTEs, ...prev]);
-        
-        const incidentReportId = newNTEs[0]?.incidentReportId;
-        if (incidentReportId && user) {
-            const reportIndex = mockIncidentReports.findIndex(r => r.id === incidentReportId);
-            if (reportIndex > -1) {
-                const originalReport = mockIncidentReports[reportIndex];
-                const newEmployeeIds = newNTEs.map(n => n.employeeId);
-                const newNteIds = newNTEs.map(n => n.id);
-                const allEmployeeIds = [...new Set([...originalReport.involvedEmployeeIds, ...newEmployeeIds])];
-                const allNteIds = [...new Set([...originalReport.nteIds, ...newNteIds])];
-                const allEmployeeNames = allEmployeeIds
-                    .map(id => mockUsers.find(u => u.id === id)?.name)
-                    .filter((name): name is string => !!name);
-
-                const updatedReport: IncidentReport = {
-                    ...originalReport,
-                    nteIds: allNteIds,
-                    status: IRStatus.Converted,
-                    pipelineStage: 'nte-for-approval', // New NTEs must be approved
-                    involvedEmployeeIds: allEmployeeIds,
-                    involvedEmployeeNames: allEmployeeNames,
-                    assignedToId: user.id,
-                    assignedToName: user.name,
-                };
-                mockIncidentReports[reportIndex] = updatedReport;
+  const handleSaveNTE = async (data: NTE | NTE[]) => {
+      if (!user) return;
+      try {
+        if (Array.isArray(data)) {
+            const saved = await saveNTEs(data, user);
+            setNTEs(prev => [...saved, ...prev]);
+            const incidentReportId = saved[0]?.incidentReportId;
+            if (incidentReportId) {
+                // Move IR to NTE sent once NTE is issued
+                const irUpdate: Partial<IncidentReport> = { id: incidentReportId, pipelineStage: 'nte-sent', status: IRStatus.Converted };
+                await saveIncidentReport(irUpdate, user);
+                setAllReports(prev => prev.map(r => r.id === incidentReportId ? { ...r, pipelineStage: 'nte-sent', status: IRStatus.Converted } : r));
             }
-            setAllReports([...mockIncidentReports]);
+            alert(`${saved.length} NTE(s) submitted for approval.`);
+        } else {
+            const saved = await updateNTE(data);
+            setNTEs(prev => prev.map(n => n.id === saved.id ? saved : n));
         }
-        
-        // Create notifications for each employee receiving an NTE
-        newNTEs.forEach(nte => {
-            nte.approverSteps?.forEach(step => {
-                mockNotifications.unshift({
-                    id: `notif-nte-approve-${nte.id}-${step.userId}`,
-                    userId: step.userId,
-                    type: NotificationType.NTE_ISSUED, // Re-using, but contextually for approval
-                    message: `Please review and approve the NTE for ${nte.employeeName}.`,
-                    link: `/feedback/nte/${nte.id}`,
-                    isRead: false,
-                    createdAt: new Date(),
-                    relatedEntityId: nte.id
-                });
-            });
-        });
-
-        alert(`(Mock) ${newNTEs.length} NTE(s) have been submitted for approval.`);
-      } else {
-        const nteToSave = data;
-        const index = mockNTEs.findIndex(n => n.id === nteToSave.id);
-        if (index > -1) mockNTEs[index] = nteToSave;
-        setNTEs(prev => prev.map(n => n.id === nteToSave.id ? nteToSave : n));
+      } catch (err: any) {
+        alert(err?.message || 'Failed to save NTE.');
       }
-      handleCloseModals();
+      handleCloseNteModal(false);
   };
   
   const handleSaveResolution = (
@@ -519,7 +519,7 @@ const DisciplinaryCases: React.FC = () => {
     if(allApproved) {
       updatedResolution.status = ResolutionStatus.PendingAcknowledgement;
 
-      const ir = mockIncidentReports.find(ir => ir.id === updatedResolution.incidentReportId);
+      const ir = allReports.find(ir => ir.id === updatedResolution.incidentReportId);
       const nte = mockNTEs.find(n => n.incidentReportId === ir?.id && n.employeeId === updatedResolution.employeeId);
 
       if (nte) {
@@ -565,11 +565,7 @@ const DisciplinaryCases: React.FC = () => {
 
     // Find the parent incident report and move its pipeline stage back to HR review.
     // This is crucial for single-employee cases that don't use the derived stage logic.
-    const irIndex = mockIncidentReports.findIndex(ir => ir.id === updatedResolution.incidentReportId);
-    if (irIndex > -1) {
-        mockIncidentReports[irIndex].pipelineStage = 'hr-review-response';
-        setAllReports([...mockIncidentReports]); // This will trigger the board to re-render with the correct stage
-    }
+    setAllReports(prev => prev.map(r => r.id === updatedResolution.incidentReportId ? { ...r, pipelineStage: 'hr-review-response' } : r));
 
     logActivity(user, 'REJECT', 'Resolution', updatedResolution.id, `Rejected resolution for IR ${updatedResolution.incidentReportId}. Reason: ${reason}`);
     handleCloseModals();
@@ -588,8 +584,10 @@ const DisciplinaryCases: React.FC = () => {
     handleCloseModals();
   };
 
-  const handleSendMessage = (reportId: string, text: string) => {
+  const handleSendMessage = async (reportId: string, text: string) => {
     if (!user) return;
+    const target = allReports.find(r => r.id === reportId);
+    if (!target) return;
     const newMessage: ChatMessage = {
       id: `chat-${Date.now()}`,
       userId: user.id,
@@ -597,78 +595,119 @@ const DisciplinaryCases: React.FC = () => {
       timestamp: new Date(),
       text,
     };
-    const updatedReports = allReports.map(r => {
-      if (r.id === reportId) {
-        return { ...r, chatThread: [...r.chatThread, newMessage] };
+    try {
+      const saved = await addIncidentReportMessage(target, newMessage, user);
+      setAllReports(prev => {
+        const rest = prev.filter(r => r.id !== saved.id);
+        return filterByIrAccess([saved, ...rest]);
+      });
+      if (selectedReport?.id === reportId) {
+        setSelectedReport(saved);
       }
-      return r;
-    });
-    setAllReports(updatedReports);
-    if (selectedReport?.id === reportId) {
-      setSelectedReport(prev => prev ? { ...prev, chatThread: [...prev.chatThread, newMessage] } : null);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to post message');
     }
   };
 
-  const handleMarkNoAction = (reportId: string) => {
-    setAllReports(prev => prev.map(r => 
-        r.id === reportId 
-            ? { ...r, status: IRStatus.NoAction, pipelineStage: 'closed' } 
-            : r
-    ));
+  const handleMarkNoAction = async (reportId: string) => {
+    if (!user) return;
+    const target = allReports.find(r => r.id === reportId);
+    if (!target) return;
+    try {
+      const saved = await saveIncidentReport({ ...target, status: IRStatus.NoAction, pipelineStage: 'closed' }, user);
+      setAllReports(prev => {
+        const rest = prev.filter(r => r.id !== saved.id);
+        return filterByIrAccess([saved, ...rest]);
+      });
+    } catch (err: any) {
+      alert(err?.message || 'Failed to update incident report');
+    }
     handleCloseModals();
   };
 
+  const handleCloseNteModal = () => {
+    setNTEModalOpen(false);
+    setSelectedReport(null);
+  };
+
   const handleGenerateNTE = (report: IncidentReport) => {
-    setSelectedReport(report);
-    setReportModalOpen(false);
-    setNTEModalOpen(true);
+    if (!user) return;
+    if (!report.assignedToId) {
+      alert('Assign a case handler before moving to NTE approval.');
+      return;
+    }
+
+    const needsUpdate = report.pipelineStage !== 'nte-for-approval';
+    const doUpdate = needsUpdate
+      ? saveIncidentReport({ ...report, pipelineStage: 'nte-for-approval', status: IRStatus.Converted }, user)
+      : Promise.resolve(report);
+
+    doUpdate
+      .then(saved => {
+        if (needsUpdate) {
+          setAllReports(prev => {
+            const rest = prev.filter(r => r.id !== saved.id);
+            return filterByIrAccess([saved, ...rest]);
+          });
+        }
+        setSelectedReport(saved);
+        setReportModalOpen(false);
+        setNTEModalOpen(true);
+      })
+      .catch(err => {
+        alert(err?.message || 'Failed to move IR to NTE approval stage.');
+      });
   };
 
   const handleConvertToCoaching = (report: IncidentReport) => {
       if (!report || !user) return;
       
       const originalReportId = report.id.split('_VIRTUAL_')[0];
-      const irIndex = mockIncidentReports.findIndex(r => r.id === originalReportId);
-      
-      // Use the original report from source to ensure we have all data (especially full employee list if we were looking at a view)
-      const originalReport = irIndex > -1 ? mockIncidentReports[irIndex] : report;
+      const originalReport = allReports.find(r => r.id === originalReportId) || report;
 
-      if (irIndex > -1) {
-          mockIncidentReports[irIndex].status = IRStatus.Converted;
-          mockIncidentReports[irIndex].pipelineStage = 'converted-coaching';
-          setAllReports([...mockIncidentReports]);
-      }
-      
-      // Create coaching sessions for ALL involved employees
-      const newSessions: CoachingSession[] = [];
-      
-      originalReport.involvedEmployeeIds.forEach((empId, index) => {
-          const empName = originalReport.involvedEmployeeNames[index];
-          
-          let trigger = CoachingTrigger.Behavior; // Default fallback
-          if (originalReport.category === 'Attendance') trigger = CoachingTrigger.Attendance;
-          else if (originalReport.category === 'Performance') trigger = CoachingTrigger.Performance;
-          
-          const newSession: CoachingSession = {
-              id: `CS-${originalReportId}-${empId}-${Date.now()}`,
-              employeeId: empId,
-              employeeName: empName,
-              coachId: user.id,
-              coachName: user.name,
-              trigger: trigger,
-              context: `[From IR-${originalReportId}]: ${originalReport.description}`,
-              date: new Date(),
-              status: CoachingStatus.Draft 
-          };
-          
-          newSessions.push(newSession);
-          mockCoachingSessions.unshift(newSession);
-      });
+      const updated: Partial<IncidentReport> = {
+        ...originalReport,
+        status: IRStatus.Converted,
+        pipelineStage: 'converted-coaching',
+      };
 
-      logActivity(user, 'UPDATE', 'IncidentReport', originalReportId, `Converted IR to ${newSessions.length} Coaching Session(s).`);
-      
-      alert(`Successfully converted IR to ${newSessions.length} coaching draft(s). Redirecting to Coaching Log...`);
-      navigate('/feedback/coaching');
+      saveIncidentReport(updated, user)
+        .then(saved => {
+          setAllReports(prev => {
+            const rest = prev.filter(r => r.id !== saved.id);
+            return filterByIrAccess([saved, ...rest]);
+          });
+          
+          // Create coaching sessions for ALL involved employees (local placeholder)
+          const newSessions: CoachingSession[] = [];
+          
+          saved.involvedEmployeeIds.forEach((empId, index) => {
+              const empName = saved.involvedEmployeeNames[index];
+              
+              let trigger = CoachingTrigger.Behavior; // Default fallback
+              if (saved.category === 'Attendance') trigger = CoachingTrigger.Attendance;
+              else if (saved.category === 'Performance') trigger = CoachingTrigger.Performance;
+              
+              const newSession: CoachingSession = {
+                  id: `CS-${saved.id}-${empId}-${Date.now()}`,
+                  employeeId: empId,
+                  employeeName: empName,
+                  coachId: user.id,
+                  coachName: user.name,
+                  trigger: trigger,
+                  context: `[From IR-${saved.id}]: ${saved.description}`,
+                  date: new Date(),
+                  status: CoachingStatus.Draft 
+              };
+              
+              newSessions.push(newSession);
+              mockCoachingSessions.unshift(newSession);
+          });
+
+          logActivity(user, 'UPDATE', 'IncidentReport', saved.id, `Converted IR to ${newSessions.length} Coaching Session(s).`);
+          alert(`Converted to ${newSessions.length} coaching draft(s).`);
+        })
+        .catch(err => alert(err?.message || 'Failed to convert to coaching'));
   };
 
   const viewButtonClass = (buttonView: typeof view) => `flex items-center px-4 py-2 text-sm font-medium rounded-md transition-colors ${view === buttonView ? 'bg-indigo-100 text-indigo-700 dark:bg-slate-700 dark:text-indigo-300 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`;
@@ -844,7 +883,7 @@ const DisciplinaryCases: React.FC = () => {
       {isNTEModalOpen && selectedReport && (
          <NTEModal
             isOpen={isNTEModalOpen}
-            onClose={handleCloseModals}
+            onClose={handleCloseNteModal}
             incidentReport={selectedReport}
             nte={selectedNTE}
             onSave={handleSaveNTE}
