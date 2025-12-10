@@ -73,6 +73,7 @@ const AwardTemplateModal: React.FC<AwardTemplateModalProps> = ({ isOpen, onClose
                     <AwardTemplateBuilder 
                         initialDesign={design} 
                         onChange={setDesign} 
+                        userId={current.createdByUserId as string | undefined}
                     />
                 </div>
             </div>

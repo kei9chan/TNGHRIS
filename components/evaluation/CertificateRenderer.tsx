@@ -10,10 +10,10 @@ interface CertificateRendererProps {
         awardTitle: string;
         citation?: string;
     };
-    scale?: number;
+    scale?: number; // no-op kept for backward compat
 }
 
-const CertificateRenderer: React.FC<CertificateRendererProps> = ({ design, data, scale = 1 }) => {
+const CertificateRenderer: React.FC<CertificateRendererProps> = ({ design, data }) => {
     const containerStyle: React.CSSProperties = {
         width: '1000px',
         height: '700px', // roughly A4 landscape ratio
@@ -31,8 +31,6 @@ const CertificateRenderer: React.FC<CertificateRendererProps> = ({ design, data,
         justifyContent: 'center',
         padding: '60px',
         boxSizing: 'border-box',
-        transform: `scale(${scale})`,
-        transformOrigin: 'top left',
         overflow: 'hidden' // Ensure content doesn't spill out during scaling
     };
 
@@ -41,7 +39,8 @@ const CertificateRenderer: React.FC<CertificateRendererProps> = ({ design, data,
             .replace(/{{employee_name}}/g, data.employeeName)
             .replace(/{{date}}/g, data.date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }))
             .replace(/{{award_title}}/g, data.awardTitle)
-            .replace(/{{citation}}/g, data.citation || '');
+            .replace(/{{citation}}/g, data.citation || '')
+            .replace(/{{reason}}/g, data.citation || '');
     };
 
     return (

@@ -15,6 +15,27 @@ import Textarea from '../../components/ui/Textarea';
 import EmployeeMultiSelect from '../../components/feedback/EmployeeMultiSelect';
 import RejectReasonModal from '../../components/feedback/RejectReasonModal';
 import { logActivity } from '../../services/auditService';
+import { fetchAwardTemplates, fetchEmployeeAwards, createEmployeeAward, updateEmployeeAwardStatus, saveAwardTemplate } from '../../services/awardService';
+import { supabase } from '../../services/supabaseClient';
+import CertificateRenderer from '../../components/evaluation/CertificateRenderer';
+import html2canvas from 'html2canvas';
+
+const FALLBACK_DESIGN = {
+  backgroundColor: '#ffffff',
+  backgroundImageUrl: '',
+  borderWidth: 8,
+  borderColor: '#1f2937',
+  fontFamily: '"Times New Roman", serif',
+  titleColor: '#1f2937',
+  textColor: '#111827',
+  headerText: 'CERTIFICATE OF ACHIEVEMENT',
+  bodyText: 'This certificate is proudly presented to\n\n{{employee_name}}\n\nfor: {{citation}}\n\nAwarded on {{date}}.',
+  signatories: [
+    { name: 'HR Manager', title: 'HR Manager' },
+    { name: 'CEO', title: 'Chief Executive Officer' },
+  ],
+  logoUrl: '',
+};
 
 type EnrichedEmployeeAward = EmployeeAward & { 
     employeeName: string, 
@@ -27,11 +48,14 @@ type EnrichedEmployeeAward = EmployeeAward & {
 
 const Awards: React.FC = () => {
   const { user } = useAuth();
-  const { can } = usePermissions();
+  const { can, getAwardsAccess } = usePermissions();
   const canManage = can('Evaluation', Permission.Manage);
+  const awardsAccess = getAwardsAccess();
 
-  const [awards, setAwards] = React.useState<Award[]>(mockAwards);
-  const [employeeAwards, setEmployeeAwards] = React.useState<EmployeeAward[]>(mockEmployeeAwards);
+  const [awards, setAwards] = React.useState<Award[]>([]);
+  const [employeeAwards, setEmployeeAwards] = React.useState<EmployeeAward[]>([]);
+  const [users, setUsers] = React.useState<User[]>(mockUsers);
+  const [businessUnits, setBusinessUnits] = React.useState<BusinessUnit[]>(mockBusinessUnits);
   
   const [isAssignModalOpen, setIsAssignModalOpen] = React.useState(false);
   
@@ -49,11 +73,90 @@ const Awards: React.FC = () => {
   const [reviewAward, setReviewAward] = React.useState<EnrichedEmployeeAward | null>(null);
   const [isRejectModalOpen, setIsRejectModalOpen] = React.useState(false);
   const [awardToReject, setAwardToReject] = React.useState<EnrichedEmployeeAward | null>(null);
+  const [downloadTarget, setDownloadTarget] = React.useState<EnrichedEmployeeAward | null>(null);
+  const downloadRef = React.useRef<HTMLDivElement>(null);
 
   const approverPool = React.useMemo(() => 
-    mockUsers.filter(u => [Role.GeneralManager, Role.BOD].includes(u.role)), []);
+    users.filter(u => [Role.GeneralManager, Role.BOD].includes(u.role)), [users]);
 
-  const submitAwardForApproval = (
+  React.useEffect(() => {
+    const load = async () => {
+      try {
+        const tpl = await fetchAwardTemplates();
+        setAwards(tpl);
+      } catch {
+        setAwards(mockAwards);
+      }
+      try {
+        const ea = await fetchEmployeeAwards();
+        const mapped: EmployeeAward[] = ea.map(a => ({
+          id: a.id,
+          employeeId: a.employeeId,
+          awardId: a.awardTemplateId,
+          notes: a.notes || '',
+          dateAwarded: a.dateAwarded || new Date(),
+          createdByUserId: a.createdByUserId || '',
+          level: a.level || BadgeLevel.Bronze,
+          businessUnitId: a.businessUnitId,
+          status: a.status,
+          approverSteps: [],
+          rejectionReason: a.rejectionReason,
+          certificateSnapshotUrl: a.certificateUrl,
+          approverId: a.approverId,
+          approverName: a.approverName,
+        }));
+        setEmployeeAwards(mapped);
+      } catch {
+        setEmployeeAwards(mockEmployeeAwards);
+      }
+      // load users & business units
+      try {
+        const { data: userRows } = await supabase
+          .from('hris_users')
+          .select('id, full_name, email, role, position, business_unit, business_unit_id, department, department_id, status');
+        if (userRows) {
+          setUsers(userRows.map((u: any) => ({
+            id: u.id,
+            authUserId: undefined,
+            name: u.full_name || u.email,
+            email: u.email,
+            role: (u.role as Role) || Role.Employee,
+            department: u.department || '',
+            businessUnit: u.business_unit || '',
+            departmentId: u.department_id || undefined,
+            businessUnitId: u.business_unit_id || undefined,
+            status: (u.status as 'Active' | 'Inactive') || 'Active',
+            isPhotoEnrolled: false,
+            dateHired: new Date(),
+            position: u.position || '',
+          })));
+        } else {
+          setUsers(mockUsers);
+        }
+      } catch {
+        setUsers(mockUsers);
+      }
+
+      try {
+        const { data: buRows } = await supabase.from('business_units').select('id, name, code, color');
+        if (buRows) {
+          setBusinessUnits(buRows.map((b: any) => ({
+            id: b.id,
+            name: b.name,
+            code: b.code,
+            color: b.color || '#4F46E5',
+          })));
+        } else {
+          setBusinessUnits(mockBusinessUnits);
+        }
+      } catch {
+        setBusinessUnits(mockBusinessUnits);
+      }
+    };
+    load();
+  }, []);
+
+  const submitAwardForApproval = async (
       employeeId: string, 
       awardId: string, 
       notes: string, 
@@ -62,85 +165,126 @@ const Awards: React.FC = () => {
       certificateUrl: string
   ) => {
     if (!user) return;
+    try {
+      const created = await createEmployeeAward({
+        employeeId,
+        awardTemplateId: awardId,
+        notes,
+        businessUnitId,
+        certificateUrl,
+        createdByUserId: user.id,
+        approverId: approvers[0]?.id,
+      });
+      const mapped: EmployeeAward = {
+        id: created.id,
+        employeeId,
+        awardId,
+        notes,
+        dateAwarded: created.dateAwarded || new Date(),
+        createdByUserId: user.id,
+        level: created.level || BadgeLevel.Bronze,
+        businessUnitId,
+        status: created.status,
+        approverSteps: [],
+        rejectionReason: created.rejectionReason,
+        certificateSnapshotUrl: created.certificateUrl,
+      };
+      setEmployeeAwards(prev => [mapped, ...prev]);
+      setIsAssignModalOpen(false);
+      const employee = users.find(u => u.id === employeeId);
+      logActivity(user, 'CREATE', 'EmployeeAward', mapped.id, `Nominated ${employee?.name || employeeId} for award.`);
+      setToastInfo({
+        show: true,
+        title: 'Award Submitted',
+        message: 'Award nomination submitted.',
+      });
+    } catch (err: any) {
+      alert(err?.message || 'Failed to submit award.');
+    }
+  };
 
-    const approverSteps: ApproverStep[] = approvers.map(approver => ({
-        userId: approver.id,
-        userName: approver.name,
-        status: ApproverStatus.Pending
-    }));
+  const handleSaveAwardTemplate = async (award: Award) => {
+    try {
+      const saved = await saveAwardTemplate({
+        id: award.id,
+        title: award.title,
+        description: award.description,
+        badgeIconUrl: award.badgeIconUrl,
+        isActive: award.isActive,
+        design: award.design,
+        createdByUserId: user?.id,
+      });
+        setAwards(prev => {
+          const exists = prev.find(a => a.id === saved.id);
+          return exists ? prev.map(a => a.id === saved.id ? saved : a) : [saved, ...prev];
+        });
+        setIsTemplateModalOpen(false);
+      } catch (err: any) {
+        alert(err?.message || 'Failed to save template.');
+      }
+  };
 
-    const newEmployeeAward: EmployeeAward = {
-      id: `emp-award-${Date.now()}`,
-      employeeId,
-      awardId,
-      notes,
-      dateAwarded: new Date(),
-      createdByUserId: user.id,
-      level: BadgeLevel.Bronze,
-      businessUnitId,
-      status: ResolutionStatus.PendingApproval,
-      approverSteps,
-      certificateSnapshotUrl: certificateUrl // Store the snapshot
+  // Download a clean certificate image for a given award row
+  React.useEffect(() => {
+    const runDownload = async () => {
+      if (!downloadTarget) return;
+      const node = downloadRef.current;
+      const tpl = awards.find(a => a.id === downloadTarget.awardId);
+      if (!node || !tpl) {
+        setDownloadTarget(null);
+        return;
+      }
+      // Allow render cycle to paint hidden renderer
+      await new Promise(requestAnimationFrame);
+      try {
+        const canvas = await html2canvas(node, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+        });
+        const url = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `Certificate_${downloadTarget.employeeName || 'Employee'}.png`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      } catch (err) {
+        console.error('Failed to download certificate', err);
+        alert('Failed to download certificate.');
+      } finally {
+        setDownloadTarget(null);
+      }
     };
-
-    mockEmployeeAwards.unshift(newEmployeeAward);
-    setEmployeeAwards([...mockEmployeeAwards]);
-    setIsAssignModalOpen(false);
-
-    // Log the action
-    const employee = mockUsers.find(u => u.id === employeeId);
-    logActivity(user, 'CREATE', 'EmployeeAward', newEmployeeAward.id, `Nominated ${employee?.name} for award. Generated certificate snapshot.`);
-
-    // Simulate Email Sending
-    if (employee?.email) {
-        console.log(`[EMAIL SIMULATION] To: ${employee.email}, Subject: Award Nomination, Attachment: Certificate.png (Base64 len: ${certificateUrl.length})`);
-        setToastInfo({
-            show: true,
-            title: "Award Submitted",
-            message: "Award nomination submitted and certificate draft emailed to system.",
-        });
-    }
-
-    approvers.forEach(approver => {
-        mockNotifications.unshift({
-            id: `notif-award-req-${Date.now()}-${approver.id}`,
-            userId: approver.id,
-            type: NotificationType.AWARD_APPROVAL_REQUEST,
-            message: `${user.name} submitted an award for your approval.`,
-            link: '/evaluation/awards',
-            isRead: false,
-            createdAt: new Date(),
-            relatedEntityId: newEmployeeAward.id,
-        });
-    });
-  };
-
-  const handleSaveAwardTemplate = (award: Award) => {
-    if (award.id) {
-        setAwards(prev => prev.map(a => a.id === award.id ? award : a));
-    } else {
-        const newAward = { ...award, id: `award-${Date.now()}` };
-        setAwards(prev => [...prev, newAward]);
-    }
-    setIsTemplateModalOpen(false);
-  };
+    runDownload();
+  }, [downloadTarget, awards]);
   
   const enrichedEmployeeAwards = React.useMemo(() => {
-    return employeeAwards.map(ea => {
-      const employee = mockUsers.find(u => u.id === ea.employeeId);
+    const base = employeeAwards.map(ea => {
+      const employee = users.find(u => u.id === ea.employeeId);
       const award = awards.find(a => a.id === ea.awardId);
-      const createdBy = mockUsers.find(u => u.id === ea.createdByUserId);
-      const businessUnit = mockBusinessUnits.find(bu => bu.id === ea.businessUnitId);
+      const createdBy = users.find(u => u.id === ea.createdByUserId);
+      const businessUnit = businessUnits.find(bu => bu.id === ea.businessUnitId);
+      const approverName = (ea as any).approverName || users.find(u => u.id === ea.approverId)?.name;
       return {
         ...ea,
-        employeeName: employee?.name || 'Unknown',
+        employeeName: (employee as any)?.name || (ea as any).employeeName || 'Unknown',
         awardTitle: award?.title || 'Unknown Award',
         badgeIconUrl: award?.badgeIconUrl,
-        createdByName: createdBy?.name || 'System',
+        createdByName: approverName || createdBy?.name || 'System',
         businessUnitName: businessUnit?.name || 'N/A',
       };
-    }).sort((a, b) => new Date(b.dateAwarded).getTime() - new Date(a.dateAwarded).getTime());
-  }, [employeeAwards, awards]);
+    });
+
+    const filteredByScope = base.filter(ea => {
+      if (!awardsAccess.canView) return false;
+      if (awardsAccess.scope === 'global' || awardsAccess.scope === 'logs') return true;
+      if (awardsAccess.scope === 'self' && user) return ea.employeeId === user.id;
+      return false;
+    });
+
+    return filteredByScope.sort((a, b) => new Date(b.dateAwarded).getTime() - new Date(a.dateAwarded).getTime());
+  }, [employeeAwards, awards, users, businessUnits, awardsAccess, user]);
 
   const availableYears = React.useMemo(() => {
     const years = new Set(enrichedEmployeeAwards.map(ea => new Date(ea.dateAwarded).getFullYear()));
@@ -158,71 +302,21 @@ const Awards: React.FC = () => {
     });
   }, [enrichedEmployeeAwards, buFilter, monthFilter, yearFilter, statusFilter]);
 
-    const handleApproveAward = (award: EnrichedEmployeeAward) => {
+    const handleApproveAward = async (award: EnrichedEmployeeAward) => {
         if (!user) return;
-
-        const awardIndex = mockEmployeeAwards.findIndex(ea => ea.id === award.id);
-        if (awardIndex === -1) return;
-
-        const updatedAward = { ...mockEmployeeAwards[awardIndex] };
-        
-        const stepIndex = updatedAward.approverSteps.findIndex(s => s.userId === user.id && s.status === ApproverStatus.Pending);
-        if (stepIndex > -1) {
-            updatedAward.approverSteps[stepIndex].status = ApproverStatus.Approved;
-            updatedAward.approverSteps[stepIndex].timestamp = new Date();
+        try {
+            const updated = await updateEmployeeAwardStatus(award.id, ResolutionStatus.Approved);
+            setEmployeeAwards(prev => prev.map(a => a.id === award.id ? { ...a, status: ResolutionStatus.Approved, dateAwarded: updated.dateAwarded || new Date() } : a));
+            setShowConfetti(true);
+            setToastInfo({
+                show: true,
+                title: "Award Approved!",
+                message: `${award.employeeName || 'Employee'} has officially received the ${award.awardTitle || 'Award'}! 🌟`,
+            });
+            setTimeout(() => setShowConfetti(false), 4000);
+        } catch (err: any) {
+            alert(err?.message || 'Failed to approve award.');
         }
-        
-        const allApproved = updatedAward.approverSteps.every(s => s.status === ApproverStatus.Approved);
-
-        if (allApproved) {
-            updatedAward.status = ResolutionStatus.Approved;
-            updatedAward.dateAwarded = new Date(); // Update date on final approval
-            updatedAward.isAcknowledgedByEmployee = false;
-            
-            const existingAwardsCount = mockEmployeeAwards.filter(
-                ea => ea.employeeId === updatedAward.employeeId && ea.awardId === updatedAward.awardId && ea.status === ResolutionStatus.Approved
-            ).length;
-            
-            let newLevel: BadgeLevel;
-            if (existingAwardsCount === 0) newLevel = BadgeLevel.Bronze;
-            else if (existingAwardsCount === 1) newLevel = BadgeLevel.Silver;
-            else newLevel = BadgeLevel.Gold;
-            updatedAward.level = newLevel;
-            
-            mockEmployeeAwards[awardIndex] = updatedAward;
-            
-            const awardDetails = awards.find(a => a.id === updatedAward.awardId);
-            const employee = mockUsers.find(e => e.id === updatedAward.employeeId);
-            
-            if (awardDetails && employee) {
-                setShowConfetti(true);
-                setToastInfo({
-                    show: true,
-                    title: "Award Approved!",
-                    message: `${employee.name} has officially received the ${awardDetails.title}! 🌟`,
-                    icon: <img src={employee.profilePictureUrl || `https://i.pravatar.cc/150?u=${employee.id}`} alt={employee.name} className="h-10 w-10 rounded-full" />
-                });
-                setTimeout(() => setShowConfetti(false), 4000);
-                
-                mockNotifications.unshift({
-                    id: `notif-award-${Date.now()}`,
-                    userId: employee.id,
-                    type: NotificationType.AWARD_RECEIVED,
-                    message: `You've been awarded the '${award.awardTitle}'!`,
-                    link: '/my-profile#achievements',
-                    isRead: false,
-                    createdAt: new Date(),
-                    relatedEntityId: updatedAward.id,
-                });
-                
-                // Email the final certificate
-                console.log(`[EMAIL SIMULATION] To: ${employee.email}, Subject: Congratulations! You have received an award. Attachment: [Certificate Image]`);
-            }
-        } else {
-            mockEmployeeAwards[awardIndex] = updatedAward;
-        }
-        
-        setEmployeeAwards([...mockEmployeeAwards]);
         setReviewAward(null);
     };
 
@@ -232,25 +326,25 @@ const Awards: React.FC = () => {
         setIsRejectModalOpen(true);
     };
     
-    const handleConfirmReject = (reason: string) => {
+    const handleConfirmReject = async (reason: string) => {
         if (!user || !awardToReject) return;
-        
-        const awardIndex = mockEmployeeAwards.findIndex(ea => ea.id === awardToReject.id);
-        if (awardIndex === -1) return;
-        
-        const updatedAward = { ...mockEmployeeAwards[awardIndex] };
-        updatedAward.status = ResolutionStatus.Rejected;
-        updatedAward.rejectionReason = reason;
-
-        const stepIndex = updatedAward.approverSteps.findIndex(s => s.userId === user.id);
-        if (stepIndex > -1) {
-            updatedAward.approverSteps[stepIndex].status = ApproverStatus.Rejected;
-            updatedAward.approverSteps[stepIndex].timestamp = new Date();
-            updatedAward.approverSteps[stepIndex].rejectionReason = reason;
+        try {
+            const updated = await updateEmployeeAwardStatus(awardToReject.id, ResolutionStatus.Rejected, reason);
+            setEmployeeAwards(prev =>
+                prev.map(a =>
+                    a.id === awardToReject.id
+                        ? { ...a, status: ResolutionStatus.Rejected, rejectionReason: reason, dateAwarded: updated.dateAwarded || a.dateAwarded }
+                        : a
+                )
+            );
+            setToastInfo({
+                show: true,
+                title: 'Award Rejected',
+                message: `${awardToReject.employeeName || 'Employee'} nomination was rejected.`,
+            });
+        } catch (err: any) {
+            alert(err?.message || 'Failed to reject award.');
         }
-        
-        mockEmployeeAwards[awardIndex] = updatedAward;
-        setEmployeeAwards([...mockEmployeeAwards]);
 
         setAwardToReject(null);
         setIsRejectModalOpen(false);
@@ -258,7 +352,9 @@ const Awards: React.FC = () => {
 
     const handleRowClick = (award: EnrichedEmployeeAward) => {
         if (!user) return;
-        const isApprover = award.approverSteps.some(step => step.userId === user.id);
+        const isApprover =
+          (award.approverId && award.approverId === user.id) ||
+          award.approverSteps.some(step => step.userId === user.id);
         if (isApprover && award.status === ResolutionStatus.PendingApproval) {
             setReviewAward(award);
         }
@@ -275,6 +371,12 @@ const Awards: React.FC = () => {
 
     const renderReviewModal = () => {
         if (!reviewAward) return null;
+        const reviewTemplate = awards.find(a => a.id === reviewAward.awardId);
+        const previewDesign = {
+          ...FALLBACK_DESIGN,
+          ...(reviewTemplate?.design || {}),
+        };
+        const previewTitle = reviewTemplate?.title || reviewAward.awardTitle || 'Award';
         return (
             <Modal
                 isOpen={!!reviewAward}
@@ -288,21 +390,40 @@ const Awards: React.FC = () => {
                 }
             >
                 <div className="space-y-4">
-                    {reviewAward.certificateSnapshotUrl && (
-                         <div>
-                            <p className="font-bold mb-2">Certificate Preview</p>
-                            <div className="border p-2 bg-gray-100 rounded flex justify-center">
-                                <img src={reviewAward.certificateSnapshotUrl} alt="Certificate Preview" className="max-w-full h-auto shadow-sm" />
+                    <div>
+                        <p className="font-bold mb-2">Certificate Preview</p>
+                        <div className="border p-2 bg-gray-100 rounded flex justify-center min-h-[320px] overflow-auto">
+                            <div className="flex justify-center w-full">
+                                <div
+                                  style={{
+                                    width: '1000px',
+                                    height: '700px',
+                                    transform: 'scale(0.6)',
+                                    transformOrigin: 'top center',
+                                    border: '1px solid #e5e7eb',
+                                    background: '#fff',
+                                  }}
+                                >
+                                    <CertificateRenderer
+                                      design={previewDesign as any}
+                                      data={{
+                                        employeeName: reviewAward.employeeName,
+                                        date: reviewAward.dateAwarded || new Date(),
+                                        awardTitle: previewTitle,
+                                        citation: reviewAward.notes || '',
+                                      }}
+                                    />
+                                </div>
                             </div>
-                         </div>
-                    )}
+                        </div>
+                    </div>
                     <p><strong>Award:</strong> {reviewAward.awardTitle}</p>
                     <p><strong>Business Unit:</strong> {reviewAward.businessUnitName}</p>
                     <p><strong>Reason:</strong> {reviewAward.notes}</p>
                     <p><strong>Submitted by:</strong> {reviewAward.createdByName}</p>
                 </div>
             </Modal>
-        )
+        );
     };
 
   return (
@@ -319,11 +440,18 @@ const Awards: React.FC = () => {
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Awards & Recognition</h1>
         {canManage && (
             <div className="flex space-x-2">
-                <Button variant="secondary" onClick={() => { setSelectedAward(null); setIsTemplateModalOpen(true); }}>Create Award</Button>
-                <Button onClick={() => setIsAssignModalOpen(true)}>Assign Award</Button>
+                {awardsAccess.canAssign && (
+                  <Button variant="secondary" onClick={() => { setSelectedAward(null); setIsTemplateModalOpen(true); }}>Create Award</Button>
+                )}
+                {awardsAccess.canAssign && (
+                  <Button onClick={() => setIsAssignModalOpen(true)}>Assign Award</Button>
+                )}
             </div>
         )}
       </div>
+      {!awardsAccess.canView ? (
+        <p className="text-red-600 dark:text-red-400">You do not have permission to view awards.</p>
+      ) : null}
       <p className="text-gray-600 dark:text-gray-400">
         Create and manage company awards, and recognize employees for their achievements.
       </p>
@@ -342,6 +470,7 @@ const Awards: React.FC = () => {
          </div>
       </Card>
       
+      {awardsAccess.canView && (
       <Card title="Recognition Wall">
         <div className="p-4 border-b dark:border-gray-700 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
@@ -404,10 +533,15 @@ const Awards: React.FC = () => {
                             <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{ea.createdByName}</td>
                             <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{ea.businessUnitName}</td>
                              <td className="px-4 py-4 whitespace-nowrap text-sm">
-                                {ea.certificateSnapshotUrl ? (
-                                    <a href={ea.certificateSnapshotUrl} download={`Certificate_${ea.employeeName}.png`} onClick={(e) => e.stopPropagation()} className="text-indigo-600 hover:underline">Download</a>
+                                {awardsAccess.canView ? (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setDownloadTarget(ea); }}
+                                    className="text-indigo-600 hover:underline"
+                                  >
+                                    Download
+                                  </button>
                                 ) : (
-                                    <span className="text-gray-400">-</span>
+                                  <span className="text-gray-400">-</span>
                                 )}
                             </td>
                         </tr>
@@ -423,11 +557,41 @@ const Awards: React.FC = () => {
             </table>
         </div>
       </Card>
+      )}
+      
+      {/* Hidden renderer for clean certificate download */}
+      {downloadTarget && (
+        <div
+          style={{
+            position: 'absolute',
+            left: '-12000px',
+            top: 0,
+            width: '1000px',
+            height: '700px',
+            background: '#fff',
+            pointerEvents: 'none',
+          }}
+          ref={downloadRef}
+        >
+          <CertificateRenderer
+            design={(awards.find(a => a.id === downloadTarget.awardId)?.design as any) || FALLBACK_DESIGN}
+            data={{
+              employeeName: downloadTarget.employeeName,
+              date: downloadTarget.dateAwarded || new Date(),
+              awardTitle: awards.find(a => a.id === downloadTarget.awardId)?.title || downloadTarget.awardTitle,
+              citation: downloadTarget.notes || '',
+            }}
+          />
+        </div>
+      )}
       
       <AssignAwardModal 
         isOpen={isAssignModalOpen} 
         onClose={() => setIsAssignModalOpen(false)} 
         onAssign={submitAwardForApproval} 
+        employees={users}
+        businessUnits={businessUnits}
+        awardTemplates={awards}
       />
       
       {renderReviewModal()}

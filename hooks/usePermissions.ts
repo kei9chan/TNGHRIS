@@ -505,6 +505,26 @@ export const usePermissions = () => {
         }
     };
 
+    const getAwardsAccess = () => {
+        const user = getCurrentUser();
+        if (!user) return { canAssign: false, canApprove: false, canView: false, scope: 'none' as const };
+        switch (user.role) {
+            case Role.Admin:
+            case Role.HRManager:
+            case Role.HRStaff:
+                return { canAssign: true, canApprove: true, canView: true, scope: 'global' as const };
+            case Role.BOD:
+                return { canAssign: false, canApprove: false, canView: true, scope: 'global' as const };
+            case Role.Auditor:
+                return { canAssign: false, canApprove: false, canView: true, scope: 'logs' as const };
+            case Role.Employee:
+                return { canAssign: false, canApprove: false, canView: true, scope: 'self' as const };
+            default:
+                // GM, Ops Director, BUM, Manager, Finance, Recruiter, IT -> no access per matrix
+                return { canAssign: false, canApprove: false, canView: false, scope: 'none' as const };
+        }
+    };
+
     const getJobRequisitionAccess = () => {
         const user = getCurrentUser();
         if (!user) {
@@ -570,5 +590,5 @@ export const usePermissions = () => {
     };
 
 
-    return { can, getVisibleEmployeeIds, filterByScope, filterIncidentReportsByScope, filterTicketsByScope, hasDirectReports, getAccessibleBusinessUnits, isUserEligibleEvaluator, getCoeAccess, getOtAccess, getTicketAccess, getIrAccess, getJobRequisitionAccess, getAnnouncementAccess };
+    return { can, getVisibleEmployeeIds, filterByScope, filterIncidentReportsByScope, filterTicketsByScope, hasDirectReports, getAccessibleBusinessUnits, isUserEligibleEvaluator, getCoeAccess, getOtAccess, getTicketAccess, getIrAccess, getJobRequisitionAccess, getAnnouncementAccess, getAwardsAccess };
 };

@@ -6,10 +6,12 @@ import Button from '../ui/Button';
 import Textarea from '../ui/Textarea';
 import FileUploader from '../ui/FileUploader';
 import CertificateRenderer from './CertificateRenderer';
+import { uploadTemplateAsset } from '../../services/awardService';
 
 interface AwardTemplateBuilderProps {
     initialDesign?: AwardDesign;
     onChange: (design: AwardDesign) => void;
+    userId?: string;
 }
 
 const defaultDesign: AwardDesign = {
@@ -21,7 +23,7 @@ const defaultDesign: AwardDesign = {
     titleColor: '#1e3a8a',
     textColor: '#374151',
     headerText: 'CERTIFICATE OF ACHIEVEMENT',
-    bodyText: 'This certificate is proudly presented to\n\n{{employee_name}}\n\nfor outstanding performance and dedication.\n\nAwarded on {{date}}.',
+    bodyText: 'This certificate is proudly presented to\n\n{{employee_name}}\n\nfor: {{citation}}\n\nAwarded on {{date}}.',
     signatories: [
         { name: 'Signatory Name', title: 'Title' }
     ],
@@ -30,9 +32,10 @@ const defaultDesign: AwardDesign = {
 
 const fonts = ['serif', 'sans-serif', 'monospace', 'cursive', 'fantasy'];
 
-const AwardTemplateBuilder: React.FC<AwardTemplateBuilderProps> = ({ initialDesign, onChange }) => {
+const AwardTemplateBuilder: React.FC<AwardTemplateBuilderProps> = ({ initialDesign, onChange, userId }) => {
     const [design, setDesign] = useState<AwardDesign>(initialDesign || defaultDesign);
     const [activeTab, setActiveTab] = useState<'content' | 'style' | 'signatories'>('style');
+    const [uploadingField, setUploadingField] = useState<string | null>(null);
 
     useEffect(() => {
         onChange(design);
@@ -62,22 +65,30 @@ const AwardTemplateBuilder: React.FC<AwardTemplateBuilderProps> = ({ initialDesi
         }));
     };
 
-    const handleFileUpload = (field: keyof AwardDesign, file: File) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            handleDesignChange(field, reader.result as string);
-        };
-        reader.readAsDataURL(file);
+    const handleFileUpload = async (field: keyof AwardDesign, file: File) => {
+        try {
+            setUploadingField(field);
+            const { signedUrl } = await uploadTemplateAsset(file, userId);
+            handleDesignChange(field, signedUrl);
+        } catch (err) {
+            alert((err as any)?.message || 'Upload failed.');
+        } finally {
+            setUploadingField(null);
+        }
     };
 
-    const handleSignatureUpload = (index: number, file: File) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-             const newSignatories = [...design.signatories];
-             newSignatories[index].signatureUrl = reader.result as string;
-             setDesign(prev => ({ ...prev, signatories: newSignatories }));
-        };
-        reader.readAsDataURL(file);
+    const handleSignatureUpload = async (index: number, file: File) => {
+        try {
+            setUploadingField(`sig-${index}`);
+            const { signedUrl } = await uploadTemplateAsset(file, userId);
+            const newSignatories = [...design.signatories];
+            newSignatories[index].signatureUrl = signedUrl;
+            setDesign(prev => ({ ...prev, signatories: newSignatories }));
+        } catch (err) {
+            alert((err as any)?.message || 'Upload failed.');
+        } finally {
+            setUploadingField(null);
+        }
     };
 
     return (
@@ -104,6 +115,7 @@ const AwardTemplateBuilder: React.FC<AwardTemplateBuilderProps> = ({ initialDesi
                                 <label className="block text-sm font-medium mb-1">Background Image</label>
                                 <FileUploader onFileUpload={(f) => handleFileUpload('backgroundImageUrl', f)} />
                                 {design.backgroundImageUrl && <button onClick={() => handleDesignChange('backgroundImageUrl', '')} className="text-xs text-red-500 mt-1">Remove Image</button>}
+                                {uploadingField === 'backgroundImageUrl' && <p className="text-xs text-gray-500 mt-1">Uploading...</p>}
                             </div>
                              <div className="space-y-2">
                                 <label className="block text-sm font-medium">Border</label>
@@ -140,6 +152,7 @@ const AwardTemplateBuilder: React.FC<AwardTemplateBuilderProps> = ({ initialDesi
                                 <label className="block text-sm font-medium mb-1">Logo</label>
                                 <FileUploader onFileUpload={(f) => handleFileUpload('logoUrl', f)} />
                                 {design.logoUrl && <img src={design.logoUrl} alt="logo" className="h-10 mt-2" />}
+                                {uploadingField === 'logoUrl' && <p className="text-xs text-gray-500 mt-1">Uploading...</p>}
                             </div>
                             <Input label="Header Text" value={design.headerText} onChange={e => handleDesignChange('headerText', e.target.value)} />
                             <div>
@@ -161,6 +174,7 @@ const AwardTemplateBuilder: React.FC<AwardTemplateBuilderProps> = ({ initialDesi
                                         <div>
                                             <label className="block text-xs font-medium mb-1">Signature Image</label>
                                             <FileUploader onFileUpload={(f) => handleSignatureUpload(idx, f)} />
+                                            {uploadingField === `sig-${idx}` && <p className="text-xs text-gray-500 mt-1">Uploading...</p>}
                                         </div>
                                     </div>
                                 </div>

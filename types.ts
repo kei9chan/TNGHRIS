@@ -2107,9 +2107,9 @@ export interface Award {
 }
 
 export enum BadgeLevel {
-    Bronze = 'bronze',
-    Silver = 'silver',
-    Gold = 'gold',
+    Bronze = 'Bronze',
+    Silver = 'Silver',
+    Gold = 'Gold',
 }
 
 export interface EmployeeAward {
@@ -2126,6 +2126,8 @@ export interface EmployeeAward {
     rejectionReason?: string;
     isAcknowledgedByEmployee?: boolean;
     certificateSnapshotUrl?: string; // NEW: Stores the Base64 image of the certificate
+    approverId?: string;
+    approverName?: string;
 }
 
 export type UserDocumentType = 
