@@ -5,6 +5,7 @@ import { mockLeaveTypes } from '../../services/mockData';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
+import { supabase } from '../../services/supabaseClient';
 
 interface ProfileEditModalProps {
   isOpen: boolean;
@@ -21,6 +22,22 @@ type Tab = 'personal' | 'gov' | 'emergency' | 'banking' | 'compensation' | 'leav
 const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, user, onSave, onSaveDraft, draft, isAdminEdit = false }) => {
   const [activeTab, setActiveTab] = useState<Tab>('personal');
   const [formData, setFormData] = useState<Partial<User>>({});
+  const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
+  const [computedLeaves, setComputedLeaves] = useState<{
+    usedVacation: number;
+    usedSick: number;
+    balanceVacation: number;
+    balanceSick: number;
+    accrualRate: number;
+    lastCreditDate: Date | null;
+  }>({
+    usedVacation: 0,
+    usedSick: 0,
+    balanceVacation: 0,
+    balanceSick: 0,
+    accrualRate: 0,
+    lastCreditDate: null,
+  });
 
   useEffect(() => {
     if (isOpen) {
@@ -30,12 +47,18 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
             birthDate: user.birthDate,
             endDate: user.endDate,
             department: user.department,
+            departmentId: user.departmentId,
+            businessUnit: user.businessUnit,
+            businessUnitId: user.businessUnitId,
             position: user.position,
             employmentStatus: user.employmentStatus || 'Probationary',
             rateType: user.rateType || RateType.Monthly,
-            rateAmount: user.rateAmount,
+            rateAmount: user.rateAmount ?? user.salary?.basic ?? 0,
             taxStatus: user.taxStatus || TaxStatus.Single,
-            salary: user.salary || { basic: 0, deminimis: 0, reimbursable: 0 },
+            salary: user.salary || { basic: user.rateAmount ?? 0, deminimis: 0, reimbursable: 0 },
+            leaveQuotaVacation: user.leaveQuotaVacation || 0,
+            leaveQuotaSick: user.leaveQuotaSick || 0,
+            leaveLastCreditDate: user.leaveLastCreditDate,
             sssNo: user.sssNo,
             pagibigNo: user.pagibigNo,
             philhealthNo: user.philhealthNo,
@@ -49,12 +72,104 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
         };
       setFormData(initialData);
       setActiveTab('personal');
+
+      // Load leave requests for this employee to prefill Leave tab
+      supabase
+        .from('leave_requests')
+        .select('id, leave_type_id, start_date, end_date, status, reason, duration_days, created_at, leave_types(name)')
+        .eq('employee_id', user.id)
+        .order('created_at', { ascending: false })
+        .then(({ data }) => {
+            if (data) {
+                setLeaveRequests(data.map((row: any) => ({
+                    id: row.id,
+                    typeName: row.leave_types?.name || 'Leave',
+                    startDate: row.start_date,
+                    endDate: row.end_date,
+                    status: row.status,
+                    reason: row.reason,
+                    duration: row.duration_days,
+                })));
+                // Compute balances and accrual rate from approved leaves
+                const approved = data.filter((r: any) => r.status === 'Approved');
+                let usedVac = 0, usedSick = 0;
+                let firstDate: Date | null = null;
+                let lastDate: Date | null = null;
+                approved.forEach((r: any) => {
+                    const d = r.duration_days || 0;
+                    const name = (r.leave_types?.name || '').toLowerCase();
+                    if (name.includes('vacation')) usedVac += d;
+                    if (name.includes('sick')) usedSick += d;
+                    const start = r.start_date ? new Date(r.start_date) : null;
+                    if (start) firstDate = firstDate ? (start < firstDate ? start : firstDate) : start;
+                    const end = r.end_date ? new Date(r.end_date) : null;
+                    if (end) lastDate = lastDate ? (end > lastDate ? end : lastDate) : end;
+                });
+                const monthsActive = firstDate ? Math.max(1, ((new Date().getFullYear() - firstDate.getFullYear()) * 12 + (new Date().getMonth() - firstDate.getMonth()) + 1)) : 1;
+                const accrualRate = (usedVac + usedSick) / monthsActive;
+                const quotaVac = initialData.leaveQuotaVacation || 0;
+                const quotaSick = initialData.leaveQuotaSick || 0;
+                const balanceVacation = quotaVac - usedVac;
+                const balanceSick = quotaSick - usedSick;
+                setComputedLeaves({ usedVacation: usedVac, usedSick, balanceVacation, balanceSick, accrualRate, lastCreditDate: lastDate });
+                setFormData(prev => ({
+                  ...prev,
+                  leaveInfo: {
+                    ...(prev.leaveInfo || { balances: { vacation: 0, sick: 0 }, accrualRate: 0 }),
+                    balances: { vacation: balanceVacation, sick: balanceSick },
+                    accrualRate: accrualRate || 0,
+                    lastCreditDate: prev.leaveLastCreditDate || lastDate || prev.leaveInfo?.lastCreditDate,
+                  },
+                  leaveLastCreditDate: prev.leaveLastCreditDate || lastDate || prev.leaveInfo?.lastCreditDate,
+                }));
+            } else {
+                setLeaveRequests([]);
+                setComputedLeaves({
+                  usedVacation: 0,
+                  usedSick: 0,
+                  balanceVacation: initialData.leaveQuotaVacation || 0,
+                  balanceSick: initialData.leaveQuotaSick || 0,
+                  accrualRate: 0,
+                  lastCreditDate: initialData.leaveLastCreditDate || null,
+                });
+            }
+        })
+        .catch(() => {
+            setLeaveRequests([]);
+            setComputedLeaves({
+              usedVacation: 0,
+              usedSick: 0,
+              balanceVacation: initialData.leaveQuotaVacation || 0,
+              balanceSick: initialData.leaveQuotaSick || 0,
+              accrualRate: 0,
+              lastCreditDate: initialData.leaveLastCreditDate || null,
+            });
+        });
     }
   }, [isOpen, user, draft]);
 
+  // Keep leaveInfo balances in sync with editable quotas and computed usage
+  useEffect(() => {
+    setFormData(prev => ({
+      ...prev,
+      leaveInfo: {
+        ...(prev.leaveInfo || { balances: { vacation: 0, sick: 0 }, accrualRate: 0 }),
+        balances: {
+          vacation: Math.max(0, (prev.leaveQuotaVacation ?? 0) - (computedLeaves.usedVacation || 0)),
+          sick: Math.max(0, (prev.leaveQuotaSick ?? 0) - (computedLeaves.usedSick || 0)),
+        },
+        accrualRate: computedLeaves.accrualRate || 0,
+        lastCreditDate: prev.leaveLastCreditDate || computedLeaves.lastCreditDate || prev.leaveInfo?.lastCreditDate,
+      },
+    }));
+  }, [computedLeaves, formData.leaveQuotaVacation, formData.leaveQuotaSick]);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    if (name === 'birthDate' || name === 'endDate') {
+    if (name === 'birthDate') {
+        // keep as plain YYYY-MM-DD string for reliable DB writes
+        setFormData(prev => ({ ...prev, [name]: value }));
+    } else if (name === 'endDate') {
         const date = new Date(value);
         const userTimezoneOffset = date.getTimezoneOffset() * 60000;
         setFormData(prev => ({ ...prev, [name]: new Date(date.getTime() + userTimezoneOffset) }));
@@ -102,16 +217,21 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
         } else { // root
             (newLeaveInfo as any)[name] = finalValue;
         }
-        return { ...prev, leaveInfo: newLeaveInfo };
+        const base = { ...prev, leaveInfo: newLeaveInfo };
+        if (name === 'lastCreditDate') {
+          return { ...base, leaveLastCreditDate: finalValue };
+        }
+        return base;
     });
   };
 
-  // Helper to get current balance based on config ID mapping
+  // Compute balances from quotas minus approved usage
   const getBalanceValue = (typeId: string) => {
-      const balances = formData.leaveInfo?.balances;
-      if (!balances) return '';
-      if (typeId === 'lt1') return balances.vacation;
-      if (typeId === 'lt2') return balances.sick;
+      const quotaVac = formData.leaveQuotaVacation ?? 0;
+      const quotaSick = formData.leaveQuotaSick ?? 0;
+      const { usedVacation = 0, usedSick = 0 } = computedLeaves;
+      if (typeId === 'lt1') return Math.max(0, quotaVac - usedVacation);
+      if (typeId === 'lt2') return Math.max(0, quotaSick - usedSick);
       return '';
   };
 
@@ -171,7 +291,7 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
           <div className="space-y-4">
             <Input label="Full Name" name="name" value={formData.name || ''} onChange={handleChange} />
             <Input label="Email Address" name="email" type="email" value={formData.email || ''} onChange={handleChange} />
-            <Input label="Birth Date" name="birthDate" type="date" value={formData.birthDate ? new Date(formData.birthDate).toISOString().split('T')[0] : ''} onChange={handleChange} />
+            <Input label="Birth Date" name="birthDate" type="date" value={formData.birthDate ? (typeof formData.birthDate === 'string' ? formData.birthDate : new Date(formData.birthDate).toISOString().split('T')[0]) : ''} onChange={handleChange} />
             <Input label="Department" name="department" value={formData.department || ''} onChange={handleChange} disabled={!isAdminEdit} />
             <Input label="Position" name="position" value={formData.position || ''} onChange={handleChange} disabled={!isAdminEdit}/>
             {isAdminEdit && (
@@ -218,24 +338,84 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
         )}
         {activeTab === 'leave' && isAdminEdit && (
           <div className="space-y-4">
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white">Leave Balances (in days)</h3>
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white">Leave Quotas</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {mockLeaveTypes.map(type => (
-                    <Input 
-                        key={type.id}
-                        label={type.name} 
-                        name={type.id} // Used as key for mapping
-                        type="number" 
-                        step="0.01" 
-                        value={getBalanceValue(type.id)} 
-                        onChange={(e) => handleLeaveChange('balances', getBalanceKey(type.id), e.target.value)} 
-                    />
-                ))}
+              <Input
+                label="Vacation Leave Quota (days)"
+                name="leaveQuotaVacation"
+                type="number"
+                step="0.01"
+                value={formData.leaveQuotaVacation ?? ''}
+                onChange={handleChange}
+              />
+              <Input
+                label="Sick Leave Quota (days)"
+                name="leaveQuotaSick"
+                type="number"
+                step="0.01"
+                value={formData.leaveQuotaSick ?? ''}
+                onChange={handleChange}
+              />
+            </div>
+            {leaveRequests.length > 0 && (
+              <div>
+                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">Recent Leave Requests</h3>
+                <div className="border rounded-md divide-y dark:border-gray-700">
+                  {leaveRequests.slice(0, 5).map(lr => (
+                    <div key={lr.id} className="p-3 text-sm text-gray-700 dark:text-gray-200">
+                      <div className="font-semibold">{lr.typeName} &middot; {lr.status}</div>
+                      <div>{lr.startDate} to {lr.endDate} ({lr.duration} days)</div>
+                      {lr.reason && <div className="text-gray-500 dark:text-gray-400">Reason: {lr.reason}</div>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white">Leave Balances (computed, days)</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {mockLeaveTypes.map(type => (
+                <Input
+                  key={type.id}
+                  label={`${type.name} Balance`}
+                  name={type.id}
+                  type="number"
+                  step="0.01"
+                  value={getBalanceValue(type.id)}
+                  onChange={() => {}}
+                  disabled
+                />
+              ))}
             </div>
             <div className="pt-4 border-t dark:border-gray-700 space-y-4">
               <h3 className="text-lg font-medium text-gray-900 dark:text-white">Accrual Details</h3>
-              <Input label="Leave Accrual Rate (days/month)" name="accrualRate" type="number" step="0.01" value={formData.leaveInfo?.accrualRate ?? ''} onChange={(e) => handleLeaveChange('root', 'accrualRate', e.target.value)} />
-              <Input label="Last Leave Credit Date" name="lastCreditDate" type="date" value={formData.leaveInfo?.lastCreditDate ? new Date(formData.leaveInfo.lastCreditDate).toISOString().split('T')[0] : ''} onChange={(e) => handleLeaveChange('root', 'lastCreditDate', e.target.value)} />
+              <Input
+                label="Leave Accrual Rate (days/month)"
+                name="accrualRate"
+                type="number"
+                step="0.01"
+                value={formData.leaveInfo?.accrualRate ?? computedLeaves.accrualRate ?? ''}
+                onChange={() => {}}
+                disabled
+              />
+              <Input
+                label="Last Leave Credit Date"
+                name="lastCreditDate"
+                type="date"
+                value={
+                  (formData.leaveLastCreditDate ||
+                    formData.leaveInfo?.lastCreditDate ||
+                    computedLeaves.lastCreditDate)
+                    ? new Date(
+                        (formData.leaveLastCreditDate as any) ||
+                        (formData.leaveInfo?.lastCreditDate as any) ||
+                        (computedLeaves.lastCreditDate as any)
+                      )
+                        .toISOString()
+                        .split('T')[0]
+                    : ''
+                }
+                onChange={(e) => handleLeaveChange('root', 'lastCreditDate', e.target.value)}
+              />
             </div>
           </div>
         )}

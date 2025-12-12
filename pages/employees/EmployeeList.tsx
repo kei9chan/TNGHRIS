@@ -11,7 +11,7 @@ import ProfileEditModal from '../../components/employees/ProfileEditModal';
 import { useAuth } from '../../hooks/useAuth';
 import HRReviewQueue from '../admin/HRReviewQueue';
 import EditableDescription from '../../components/ui/EditableDescription';
-import { db } from '../../services/db'; // Import the new DB service
+import { supabase } from '../../services/supabaseClient';
 
 const EmployeeList: React.FC = () => {
   const navigate = useNavigate();
@@ -30,7 +30,8 @@ const EmployeeList: React.FC = () => {
   const initialTab = queryParams.get('tab') === 'review' ? 'review' : 'list';
   const [activeTab, setActiveTab] = useState(initialTab);
 
-  const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+  const [businessUnits, setBusinessUnits] = useState(mockBusinessUnits);
+  const accessibleBus = useMemo(() => getAccessibleBusinessUnits(businessUnits), [getAccessibleBusinessUnits, businessUnits]);
 
   useEffect(() => {
       const params = new URLSearchParams(location.search);
@@ -43,43 +44,148 @@ const EmployeeList: React.FC = () => {
   }, [location.search]);
   
   // State to ensure reactivity to mock data changes
-  const [changeHistory, setChangeHistory] = useState<ChangeHistory[]>(mockChangeHistory);
-  const [users, setUsers] = useState<User[]>(mockUsers);
-  const [userDocuments, setUserDocuments] = useState<UserDocument[]>(mockUserDocuments);
-   
-  useEffect(() => {
-    const interval = setInterval(() => {
-        // A simple polling mechanism to check for changes in the mock data
-        if (mockChangeHistory.length !== changeHistory.length) {
-            setChangeHistory([...mockChangeHistory]);
-        }
-        if (mockUsers.length !== users.length) {
-            setUsers([...mockUsers]);
-        }
-        if (mockUserDocuments.length !== userDocuments.length) {
-            setUserDocuments([...mockUserDocuments]);
-        }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [changeHistory.length, users.length, userDocuments.length]);
+  const [changeHistory] = useState<ChangeHistory[]>(mockChangeHistory);
+  const [users, setUsers] = useState<User[]>([]);
+  const [userDocuments] = useState<UserDocument[]>(mockUserDocuments);
 
-  const departments = useMemo(() => [...new Set(mockUsers.map(u => u.department))].sort(), []);
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const { data } = await supabase
+          .from('hris_users')
+          .select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position, birth_date, date_hired, sss_no, pagibig_no, philhealth_no, tin, emergency_contact_name, emergency_contact_relationship, emergency_contact_phone, bank_name, bank_account_number, bank_account_type, leave_quota_vacation, leave_quota_sick, leave_last_credit_date, employment_status, rate_type, rate_amount, tax_status, salary_basic, salary_deminimis, salary_reimbursable');
+        if (data) {
+          const mapped: User[] = data.map((u: any) => ({
+            id: u.id,
+            name: u.full_name || u.email,
+            email: u.email,
+            role: (u.role as Role) || Role.Employee,
+            department: u.department || '',
+            businessUnit: u.business_unit || '',
+            departmentId: u.department_id || undefined,
+            businessUnitId: u.business_unit_id || undefined,
+            status: (u.status as 'Active' | 'Inactive') || 'Active',
+            isPhotoEnrolled: false,
+            birthDate: u.birth_date ? new Date(u.birth_date) : undefined,
+            dateHired: u.date_hired ? new Date(u.date_hired) : new Date(),
+            position: u.position || '',
+            leaveQuotaVacation: u.leave_quota_vacation ?? undefined,
+            leaveQuotaSick: u.leave_quota_sick ?? undefined,
+            leaveLastCreditDate: u.leave_last_credit_date ? new Date(u.leave_last_credit_date) : undefined,
+            employmentStatus: u.employment_status || undefined,
+            rateType: u.rate_type || undefined,
+            rateAmount: u.rate_amount !== null && u.rate_amount !== undefined ? Number(u.rate_amount) : undefined,
+            taxStatus: u.tax_status || undefined,
+            salary: {
+              basic: u.salary_basic !== null && u.salary_basic !== undefined ? Number(u.salary_basic) : 0,
+              deminimis: u.salary_deminimis !== null && u.salary_deminimis !== undefined ? Number(u.salary_deminimis) : 0,
+              reimbursable: u.salary_reimbursable !== null && u.salary_reimbursable !== undefined ? Number(u.salary_reimbursable) : 0,
+            },
+            sssNo: u.sss_no || '',
+            pagibigNo: u.pagibig_no || '',
+            philhealthNo: u.philhealth_no || '',
+            tin: u.tin || '',
+            emergencyContact: {
+              name: u.emergency_contact_name || '',
+              relationship: u.emergency_contact_relationship || '',
+              phone: u.emergency_contact_phone || '',
+            },
+            bankingDetails: {
+              bankName: u.bank_name || '',
+              accountNumber: u.bank_account_number || '',
+              accountType: (u.bank_account_type as any) || 'Savings',
+            },
+          }));
+          setUsers(mapped);
+        } else {
+          setUsers(mockUsers);
+        }
+      } catch {
+        setUsers(mockUsers);
+      }
+
+      try {
+        const { data: buRows } = await supabase.from('business_units').select('id, name, code, color');
+        if (buRows) {
+          setBusinessUnits(buRows.map((b: any) => ({
+            id: b.id,
+            name: b.name,
+            code: b.code,
+            color: b.color || '#4F46E5',
+          })));
+        } else {
+          setBusinessUnits(mockBusinessUnits);
+        }
+      } catch {
+        setBusinessUnits(mockBusinessUnits);
+      }
+    };
+    load();
+  }, []);
+
+  const departments = useMemo(() => [...new Set(users.map(u => u.department))].sort(), [users]);
+
+  const accessControl = useMemo(() => {
+    const role = currentUser?.role;
+    const base = { canView: false, canEdit: false, scope: 'none' as 'none' | 'global' | 'buDept' | 'bu' | 'team' | 'logs' };
+    switch (role) {
+      case Role.Admin:
+      case Role.HRManager:
+      case Role.HRStaff:
+      case Role.Recruiter:
+        return { canView: true, canEdit: true, scope: 'global' as const };
+      case Role.BOD:
+        return { canView: true, canEdit: false, scope: 'global' as const };
+      case Role.GeneralManager:
+        return { canView: true, canEdit: false, scope: 'buDept' as const };
+      case Role.OperationsDirector:
+      case Role.BusinessUnitManager:
+        return { canView: true, canEdit: false, scope: 'bu' as const };
+      case Role.Manager:
+        return { canView: true, canEdit: false, scope: 'team' as const };
+      case Role.Auditor:
+        return { canView: true, canEdit: false, scope: 'logs' as const };
+      default:
+        return base; // Employee, Finance, IT, etc. -> no view
+    }
+  }, [currentUser]);
   
-  // Filter users based on accessible BUs + UI filters
+  // Filter users based on RBAC scope + UI filters
   const filteredUsers = useMemo(() => {
     const accessibleBuNames = new Set(accessibleBus.map(b => b.name));
+    const scope = accessControl.scope;
 
-    return mockUsers.filter(user => {
-        // Scope Check
-        if (!accessibleBuNames.has(user.businessUnit)) return false;
+    const withinScope = (user: User) => {
+      if (!accessControl.canView) return false;
+      if (scope === 'global' || scope === 'logs') return true;
+      if (scope === 'buDept') {
+        const buOk = !currentUser?.businessUnit || user.businessUnit === currentUser.businessUnit;
+        const deptOk = !currentUser?.department || user.department === currentUser.department;
+        return buOk && deptOk;
+      }
+      if (scope === 'bu') {
+        return !currentUser?.businessUnit || user.businessUnit === currentUser.businessUnit;
+      }
+      if (scope === 'team') {
+        // Prefer explicit managerId; fallback to same dept
+        if (user.managerId && currentUser?.id) return user.managerId === currentUser.id;
+        return !!currentUser?.department && user.department === currentUser.department;
+      }
+      return false;
+    };
 
+    return users
+      .filter(user => accessibleBuNames.has(user.businessUnit))
+      .filter(withinScope)
+      .filter(user => {
         const nameMatch = user.name.toLowerCase().includes(searchTerm.toLowerCase());
         const buMatch = !buFilter || user.businessUnit === buFilter;
         const deptMatch = !departmentFilter || user.department === departmentFilter;
         const statusMatch = !statusFilter || user.status === statusFilter;
         return nameMatch && buMatch && deptMatch && statusMatch;
-    }).sort((a, b) => a.name.localeCompare(b.name));
-  }, [searchTerm, buFilter, departmentFilter, statusFilter, accessibleBus]);
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [searchTerm, buFilter, departmentFilter, statusFilter, accessibleBus, users, accessControl, currentUser]);
 
   const pendingReviewCount = useMemo(() => {
     const pendingChangeSubmissions = new Set(
@@ -104,7 +210,7 @@ const EmployeeList: React.FC = () => {
   };
 
   const handleEdit = (user: User) => {
-    if (can('Employees', Permission.Edit)) {
+    if (can('Employees', Permission.Edit) && accessControl.canEdit) {
         setUserToEdit(user);
         setEditModalOpen(true);
     } else {
@@ -117,12 +223,146 @@ const EmployeeList: React.FC = () => {
       setUserToEdit(null);
   };
   
-  const handleAdminSave = (updatedProfileData: Partial<User>) => {
-      if (!userToEdit || !currentUser) return;
-      
-      // REFACTORED: Use DB Service
-      db.users.update(currentUser, userToEdit.id, updatedProfileData);
-      
+  const handleAdminSave = async (updatedProfileData: Partial<User>) => {
+      if (!userToEdit) return;
+
+      const formatDateOnly = (d?: Date | string | null) => {
+        if (!d) return null;
+        if (typeof d === 'string') {
+          const clean = d.split('T')[0]?.trim();
+          if (!clean) return null;
+          // Support dd/mm/yyyy or mm/dd/yyyy if user types it
+          if (clean.includes('/')) {
+            const parts = clean.split('/');
+            if (parts.length === 3) {
+              const [p1, p2, p3] = parts;
+              // assume dd/mm/yyyy
+              const normalized = `${p3}-${p2.padStart(2, '0')}-${p1.padStart(2, '0')}`;
+              return normalized;
+            }
+          }
+          return clean;
+        }
+        return new Date(d).toISOString().split('T')[0];
+      };
+      const birthDateValue = updatedProfileData.birthDate ?? userToEdit.birthDate ?? null;
+      const hireDateValue = updatedProfileData.dateHired ?? userToEdit.dateHired ?? null;
+
+      const payload: any = {
+        full_name: updatedProfileData.name,
+        email: updatedProfileData.email,
+        department: updatedProfileData.department,
+        department_id: updatedProfileData.departmentId,
+        business_unit: updatedProfileData.businessUnit,
+        business_unit_id: updatedProfileData.businessUnitId,
+        position: updatedProfileData.position,
+        birth_date: formatDateOnly(birthDateValue),
+        date_hired: formatDateOnly(hireDateValue),
+        status: updatedProfileData.status,
+        employment_status: updatedProfileData.employmentStatus,
+        rate_type: updatedProfileData.rateType,
+        rate_amount: updatedProfileData.rateAmount,
+        tax_status: updatedProfileData.taxStatus,
+        salary_basic: updatedProfileData.salary?.basic,
+        salary_deminimis: updatedProfileData.salary?.deminimis,
+        salary_reimbursable: updatedProfileData.salary?.reimbursable,
+        sss_no: updatedProfileData.sssNo,
+        pagibig_no: updatedProfileData.pagibigNo,
+        philhealth_no: updatedProfileData.philhealthNo,
+        tin: updatedProfileData.tin,
+        emergency_contact_name: updatedProfileData.emergencyContact?.name,
+        emergency_contact_relationship: updatedProfileData.emergencyContact?.relationship,
+        emergency_contact_phone: updatedProfileData.emergencyContact?.phone,
+        bank_name: updatedProfileData.bankingDetails?.bankName,
+        bank_account_number: updatedProfileData.bankingDetails?.accountNumber,
+        bank_account_type: updatedProfileData.bankingDetails?.accountType,
+        leave_quota_vacation: updatedProfileData.leaveQuotaVacation ?? null,
+        leave_quota_sick: updatedProfileData.leaveQuotaSick ?? null,
+        leave_last_credit_date: formatDateOnly(updatedProfileData.leaveLastCreditDate ?? null),
+      };
+
+      // Remove undefined to avoid overwriting with null
+      Object.keys(payload).forEach((key) => {
+        if (payload[key] === undefined) delete payload[key];
+      });
+
+      const { error, data: updatedRows } = await supabase
+        .from('hris_users')
+        .update(payload)
+        .eq('id', userToEdit.id)
+        .select('*');
+
+      if (error) {
+        console.error('Error updating user', error);
+        alert('Failed to update profile.');
+        return;
+      }
+      if (!updatedRows || updatedRows.length === 0) {
+        console.warn('No rows returned from update; check RLS or payload', payload);
+      }
+
+      // Refresh list to reflect updates
+      const refreshed = await supabase
+        .from('hris_users')
+        .select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position, birth_date, date_hired, sss_no, pagibig_no, philhealth_no, tin, emergency_contact_name, emergency_contact_relationship, emergency_contact_phone, bank_name, bank_account_number, bank_account_type, leave_quota_vacation, leave_quota_sick, leave_last_credit_date, employment_status, rate_type, rate_amount, tax_status, salary_basic, salary_deminimis, salary_reimbursable');
+      if (!refreshed.error && refreshed.data) {
+        const mapped: User[] = refreshed.data.map((u: any) => ({
+          id: u.id,
+          name: u.full_name || u.email,
+          email: u.email,
+          role: (u.role as Role) || Role.Employee,
+          department: u.department || '',
+          businessUnit: u.business_unit || '',
+          departmentId: u.department_id || undefined,
+          businessUnitId: u.business_unit_id || undefined,
+          status: (u.status as 'Active' | 'Inactive') || 'Active',
+          isPhotoEnrolled: false,
+          birthDate: u.birth_date ? new Date(u.birth_date) : undefined,
+          dateHired: u.date_hired ? new Date(u.date_hired) : new Date(),
+          position: u.position || '',
+            employmentStatus: u.employment_status || undefined,
+            rateType: u.rate_type || undefined,
+            rateAmount: u.rate_amount !== null && u.rate_amount !== undefined ? Number(u.rate_amount) : undefined,
+            taxStatus: u.tax_status || undefined,
+            salary: {
+            basic: u.salary_basic !== null && u.salary_basic !== undefined ? Number(u.salary_basic) : 0,
+            deminimis: u.salary_deminimis !== null && u.salary_deminimis !== undefined ? Number(u.salary_deminimis) : 0,
+            reimbursable: u.salary_reimbursable !== null && u.salary_reimbursable !== undefined ? Number(u.salary_reimbursable) : 0,
+            },
+          employmentStatus: u.employment_status || undefined,
+          rateType: u.rate_type || undefined,
+          rateAmount: u.rate_amount !== null && u.rate_amount !== undefined ? Number(u.rate_amount) : undefined,
+          taxStatus: u.tax_status || undefined,
+          salary: {
+            basic: u.salary_basic !== null && u.salary_basic !== undefined ? Number(u.salary_basic) : 0,
+            deminimis: u.salary_deminimis !== null && u.salary_deminimis !== undefined ? Number(u.salary_deminimis) : 0,
+            reimbursable: u.salary_reimbursable !== null && u.salary_reimbursable !== undefined ? Number(u.salary_reimbursable) : 0,
+          },
+          leaveQuotaVacation: u.leave_quota_vacation ?? undefined,
+          leaveQuotaSick: u.leave_quota_sick ?? undefined,
+          leaveLastCreditDate: u.leave_last_credit_date ? new Date(u.leave_last_credit_date) : undefined,
+          sssNo: u.sss_no || '',
+          pagibigNo: u.pagibig_no || '',
+          philhealthNo: u.philhealth_no || '',
+          tin: u.tin || '',
+          emergencyContact: {
+            name: u.emergency_contact_name || '',
+            relationship: u.emergency_contact_relationship || '',
+            phone: u.emergency_contact_phone || '',
+          },
+          bankingDetails: {
+            bankName: u.bank_name || '',
+            accountNumber: u.bank_account_number || '',
+            accountType: u.bank_account_type || 'Savings',
+          },
+          leaveInfo: {
+            balances: { vacation: 0, sick: 0 },
+            accrualRate: 0,
+          },
+        }));
+        setUsers(mapped);
+      }
+
       handleCloseModal();
       alert(`Profile for ${userToEdit.name} updated.`);
   };

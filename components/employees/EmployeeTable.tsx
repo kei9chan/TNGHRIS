@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { User, Permission } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
 import Button from '../ui/Button';
@@ -56,7 +57,13 @@ const EmployeeTable: React.FC<EmployeeTableProps> = ({ users, onView, onEdit }) 
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                     <div className="flex space-x-2 justify-end">
-                                        <Button size="sm" variant="secondary" onClick={() => onView(user.id)}>View</Button>
+                                        <Link
+                                          to={`/employees/view/${user.id}`}
+                                          onClick={(e) => { e.stopPropagation(); onView(user.id); }}
+                                          className="inline-flex items-center justify-center px-3 py-2 text-sm font-medium rounded-md bg-indigo-100 text-indigo-700 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                                        >
+                                          View
+                                        </Link>
                                         {canEdit && <Button size="sm" onClick={() => onEdit(user)}>Edit</Button>}
                                     </div>
                                 </td>

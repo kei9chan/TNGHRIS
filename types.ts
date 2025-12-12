@@ -478,6 +478,9 @@ export interface User {
   rateType?: RateType;
   rateAmount?: number;
   taxStatus?: TaxStatus;
+  leaveQuotaVacation?: number;
+  leaveQuotaSick?: number;
+  leaveLastCreditDate?: Date;
   leaveInfo?: {
       balances: {
           vacation: number;

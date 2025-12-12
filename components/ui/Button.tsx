@@ -15,6 +15,7 @@ const Button: React.FC<ButtonProps> = ({
   // FIX: Implement `size` prop to control button dimensions and resolve type errors.
   size = 'md',
   isLoading = false,
+  type = 'button',
   ...props
 }) => {
   const baseClasses = 'inline-flex items-center justify-center border border-transparent font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed';
@@ -43,6 +44,7 @@ const Button: React.FC<ButtonProps> = ({
     <button
       className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${className}`}
       disabled={isLoading || props.disabled}
+      type={type}
       {...props}
     >
       {isLoading && spinner}

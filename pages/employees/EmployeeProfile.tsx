@@ -65,6 +65,7 @@ const EmployeeProfile: React.FC = () => {
             businessUnitId: row.business_unit_id || undefined,
             status: (row.status as User['status']) || 'Active',
             position: row.position || row.role || '',
+            birthDate: row.birth_date ? new Date(row.birth_date) : undefined,
             dateHired: row.date_hired ? new Date(row.date_hired) : row.dateHired ? new Date(row.dateHired) : undefined,
             isPhotoEnrolled: !!row.is_photo_enrolled,
             signatureUrl: row.signature_url || undefined,
@@ -73,6 +74,18 @@ const EmployeeProfile: React.FC = () => {
             pagibigNo: row.pagibig_no || undefined,
             philhealthNo: row.philhealth_no || undefined,
             tin: row.tin || undefined,
+            employmentStatus: row.employment_status || undefined,
+            rateType: row.rate_type || undefined,
+            rateAmount: row.rate_amount !== null && row.rate_amount !== undefined ? Number(row.rate_amount) : undefined,
+            taxStatus: row.tax_status || undefined,
+            salary: {
+                basic: row.salary_basic !== null && row.salary_basic !== undefined ? Number(row.salary_basic) : 0,
+                deminimis: row.salary_deminimis !== null && row.salary_deminimis !== undefined ? Number(row.salary_deminimis) : 0,
+                reimbursable: row.salary_reimbursable !== null && row.salary_reimbursable !== undefined ? Number(row.salary_reimbursable) : 0,
+            },
+            leaveQuotaVacation: row.leave_quota_vacation ?? undefined,
+            leaveQuotaSick: row.leave_quota_sick ?? undefined,
+            leaveLastCreditDate: row.leave_last_credit_date ? new Date(row.leave_last_credit_date) : undefined,
             emergencyContact,
             bankingDetails,
             accessScope: row.access_scope || undefined,
@@ -162,25 +175,63 @@ const EmployeeProfile: React.FC = () => {
     };
     
     const updateSupabaseUser = async (userId: string, data: Partial<User>) => {
+        const formatDateOnly = (d?: Date | string | null) => {
+            if (!d) return null;
+            if (typeof d === 'string') {
+                const clean = d.split('T')[0]?.trim();
+                if (!clean) return null;
+                if (clean.includes('/')) {
+                    const parts = clean.split('/');
+                    if (parts.length === 3) {
+                        const [p1, p2, p3] = parts;
+                        const normalized = `${p3}-${p2.padStart(2, '0')}-${p1.padStart(2, '0')}`;
+                        return normalized;
+                    }
+                }
+                return clean;
+            }
+            return new Date(d).toISOString().split('T')[0];
+        };
+
         const payload: Record<string, any> = {
             full_name: data.name,
             email: data.email,
             role: data.role,
+            status: data.status,
             department: data.department,
+            department_id: data.departmentId,
+            business_unit: data.businessUnit,
+            business_unit_id: data.businessUnitId,
             position: data.position,
+            birth_date: formatDateOnly(data.birthDate ?? userToView.birthDate ?? null),
             sss_no: data.sssNo,
             pagibig_no: data.pagibigNo,
             philhealth_no: data.philhealthNo,
             tin: data.tin,
+            employment_status: data.employmentStatus,
+            rate_type: data.rateType,
+            rate_amount: data.rateAmount,
+            tax_status: data.taxStatus,
+            salary_basic: data.salary?.basic,
+            salary_deminimis: data.salary?.deminimis,
+            salary_reimbursable: data.salary?.reimbursable,
+            leave_quota_vacation: data.leaveQuotaVacation ?? null,
+            leave_quota_sick: data.leaveQuotaSick ?? null,
+            leave_last_credit_date: formatDateOnly(data.leaveLastCreditDate ?? userToView.leaveLastCreditDate ?? null),
             emergency_contact_name: data.emergencyContact?.name,
             emergency_contact_relationship: data.emergencyContact?.relationship,
             emergency_contact_phone: data.emergencyContact?.phone,
             bank_name: data.bankingDetails?.bankName,
             bank_account_number: data.bankingDetails?.accountNumber,
             bank_account_type: data.bankingDetails?.accountType,
-            date_hired: data.dateHired ? new Date(data.dateHired).toISOString() : null,
+            date_hired: formatDateOnly(data.dateHired ?? userToView.dateHired ?? null),
         };
-        const { data: updated, error } = await supabase.from('hris_users').update(payload).eq('id', userId).select().single();
+        const { data: updated, error } = await supabase
+            .from('hris_users')
+            .update(payload)
+            .eq('id', userId)
+            .select()
+            .single();
         if (error) throw error;
         return updated ? mapHrisUser(updated) : null;
     };
