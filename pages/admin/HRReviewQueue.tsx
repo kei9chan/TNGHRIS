@@ -9,6 +9,7 @@ import { logActivity } from '../../services/auditService';
 import RejectReasonModal from '../../components/admin/RejectReasonModal';
 import { usePermissions } from '../../hooks/usePermissions';
 import EditableDescription from '../../components/ui/EditableDescription';
+import { supabase } from '../../services/supabaseClient';
 
 interface SubmissionGroup {
     employeeName: string;
@@ -21,7 +22,7 @@ const HRReviewQueue: React.FC = () => {
     const { user } = useAuth();
     const { can } = usePermissions();
     const [pendingChanges, setPendingChanges] = useState<ChangeHistory[]>(() => mockChangeHistory.filter(c => c.status === ChangeHistoryStatus.Pending));
-    const [pendingUsers, setPendingUsers] = useState<User[]>(() => mockUsers.filter(u => u.status === 'Inactive' && u.role === Role.Employee));
+    const [pendingUsers, setPendingUsers] = useState<User[]>([]);
     const [pendingDocuments, setPendingDocuments] = useState<UserDocument[]>(() => mockUserDocuments.filter(d => d.status === UserDocumentStatus.Pending));
     
     const [filterName, setFilterName] = useState('');
@@ -57,6 +58,36 @@ const HRReviewQueue: React.FC = () => {
             employeeName: mockUsers.find(u => u.id === doc.employeeId)?.name || 'Unknown'
         })).filter(doc => doc.employeeName.toLowerCase().includes(filterName.toLowerCase()));
     }, [pendingDocuments, filterName]);
+
+    // Load new user registrations (email confirmed + inactive)
+    useEffect(() => {
+        const loadPendingUsers = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('hris_users')
+                    .select('id, full_name, email, role, status, position');
+                if (error) throw error;
+                if (data) {
+                    setPendingUsers(
+                        data.map((u: any) => ({
+                            id: u.id,
+                            name: u.full_name || u.email,
+                            email: u.email,
+                            role: u.role as Role,
+                            status: u.status as any,
+                            position: u.position || '',
+                            department: '',
+                            businessUnit: '',
+                        })) as User[]
+                    );
+                }
+            } catch (e) {
+                console.error('Failed to load pending users', e);
+                setPendingUsers([]);
+            }
+        };
+        loadPendingUsers();
+    }, []);
 
 
     const handleProfileApprovalAction = (submissionId: string, status: ChangeHistoryStatus.Approved | ChangeHistoryStatus.Rejected, reason?: string) => {
@@ -107,25 +138,32 @@ const HRReviewQueue: React.FC = () => {
         }
     };
 
-     const handleUserApproval = (userId: string) => {
+     const handleUserApproval = async (userId: string) => {
         if (!user) return;
-        const userIndex = mockUsers.findIndex(u => u.id === userId);
-        if (userIndex > -1) {
-            mockUsers[userIndex].status = 'Active';
-            logActivity(user, 'APPROVE', 'UserRegistration', userId, `Approved new user registration for ${mockUsers[userIndex].name}.`);
-            setPendingUsers(prev => prev.filter(u => u.id !== userId));
+        try {
+            const { error } = await supabase.from('hris_users').update({ status: 'Active' }).eq('id', userId);
+            if (error) throw error;
+            logActivity(user, 'APPROVE', 'UserRegistration', userId, `Approved new user registration.`);
+            setPendingUsers(prev =>
+                prev.map(u => (u.id === userId ? { ...u, status: 'Active' } : u))
+            );
+        } catch (e) {
+            console.error('Failed to approve user', e);
+            alert('Failed to approve user.');
         }
     };
 
-    const handleUserRejection = (userId: string) => {
+    const handleUserRejection = async (userId: string) => {
         if (!user) return;
         if (window.confirm('Are you sure you want to reject and delete this user registration? This cannot be undone.')) {
-            const userIndex = mockUsers.findIndex(u => u.id === userId);
-            if (userIndex > -1) {
-                const rejectedUser = mockUsers[userIndex];
-                mockUsers.splice(userIndex, 1);
-                logActivity(user, 'DELETE', 'UserRegistration', userId, `Rejected and deleted new user registration for ${rejectedUser.name}.`);
+            try {
+                const { error } = await supabase.from('hris_users').delete().eq('id', userId);
+                if (error) throw error;
+                logActivity(user, 'DELETE', 'UserRegistration', userId, `Rejected and deleted new user registration.`);
                 setPendingUsers(prev => prev.filter(u => u.id !== userId));
+            } catch (e) {
+                console.error('Failed to reject user', e);
+                alert('Failed to reject user.');
             }
         }
     };
@@ -172,11 +210,17 @@ const HRReviewQueue: React.FC = () => {
                                     <div><span className="font-semibold">Name:</span> {pendingUser.name}</div>
                                     <div><span className="font-semibold">Email:</span> {pendingUser.email}</div>
                                     <div><span className="font-semibold">Position:</span> {pendingUser.position}</div>
+                                    <div className="md:col-span-3"><span className="font-semibold">Status:</span> {pendingUser.status}</div>
                                 </div>
-                                {can('Employees', Permission.Edit) && (
+                                {can('Employees', Permission.Edit) && pendingUser.status !== 'Active' && (
                                     <div className="flex justify-end space-x-2 mt-4 pt-4 border-t dark:border-gray-600">
                                         <Button variant="danger" onClick={() => handleUserRejection(pendingUser.id)}>Reject</Button>
                                         <Button onClick={() => handleUserApproval(pendingUser.id)}>Approve</Button>
+                                    </div>
+                                )}
+                                {can('Employees', Permission.Edit) && pendingUser.status === 'Active' && (
+                                    <div className="flex justify-end mt-4 pt-4 border-t dark:border-gray-600">
+                                        <Button variant="success" disabled>Active</Button>
                                     </div>
                                 )}
                             </div>

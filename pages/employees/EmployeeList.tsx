@@ -388,14 +388,16 @@ const EmployeeList: React.FC = () => {
                 <button onClick={() => handleTabChange('list')} className={tabClass('list')}>
                     Employee List
                 </button>
-                <button onClick={() => handleTabChange('review')} className={tabClass('review')}>
-                    HR Review Queue
-                    {pendingReviewCount > 0 && (
-                        <span className="ml-2 inline-flex items-center justify-center h-6 w-6 rounded-full bg-red-500 text-xs font-bold text-white">
-                            {pendingReviewCount}
-                        </span>
-                    )}
-                </button>
+                {(currentUser?.role === Role.HRManager || currentUser?.role === Role.HRStaff) && (
+                  <button onClick={() => handleTabChange('review')} className={tabClass('review')}>
+                      HR Review Queue
+                      {pendingReviewCount > 0 && (
+                          <span className="ml-2 inline-flex items-center justify-center h-6 w-6 rounded-full bg-red-500 text-xs font-bold text-white">
+                              {pendingReviewCount}
+                          </span>
+                      )}
+                  </button>
+                )}
             </nav>
         </div>
 
