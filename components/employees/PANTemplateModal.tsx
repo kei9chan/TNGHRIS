@@ -5,6 +5,7 @@ import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
 import Button from '../ui/Button';
 import FileUploader from '../ui/FileUploader';
+import { supabase } from '../../services/supabaseClient';
 
 const emptyActions: PANActionTaken = { changeOfStatus: false, promotion: false, transfer: false, salaryIncrease: false, changeOfJobTitle: false, others: '' };
 
@@ -18,10 +19,14 @@ interface PANTemplateModalProps {
 
 const PANTemplateModal: React.FC<PANTemplateModalProps> = ({ isOpen, onClose, template, onSave }) => {
   const [current, setCurrent] = useState<Partial<PANTemplate>>({});
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [signatureFile, setSignatureFile] = useState<File | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       setCurrent(template || { name: '', actionTaken: {...emptyActions}, notes: '', logoUrl: '', preparerName: '', preparerSignatureUrl: '' });
+      setLogoFile(null);
+      setSignatureFile(null);
     }
   }, [template, isOpen]);
 
@@ -42,26 +47,45 @@ const PANTemplateModal: React.FC<PANTemplateModalProps> = ({ isOpen, onClose, te
   };
   
   const handleLogoFile = (file: File) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-        setCurrent(prev => ({...prev, logoUrl: reader.result as string}));
-    };
-    reader.readAsDataURL(file);
-  }
+    setLogoFile(file);
+    setCurrent(prev => ({ ...prev, logoUrl: URL.createObjectURL(file) }));
+  };
   
   const handleSignatureFile = (file: File) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-        setCurrent(prev => ({...prev, preparerSignatureUrl: reader.result as string}));
-    };
-    reader.readAsDataURL(file);
-  }
+    setSignatureFile(file);
+    setCurrent(prev => ({ ...prev, preparerSignatureUrl: URL.createObjectURL(file) }));
+  };
 
-  const handleSave = () => {
-    if (current.name) {
-      onSave(current as PANTemplate);
-    } else {
+  const uploadAttachment = async (file: File) => {
+    const path = `templates/${(crypto?.randomUUID ? crypto.randomUUID() : Date.now().toString())}-${file.name}`;
+    const { data, error } = await supabase.storage.from('pan_templates_attachments').upload(path, file);
+    if (error) throw error;
+    const { data: publicUrl } = supabase.storage.from('pan_templates_attachments').getPublicUrl(data.path);
+    return publicUrl.publicUrl;
+  };
+
+  const handleSave = async () => {
+    if (!current.name) {
       alert('Template Name is required.');
+      return;
+    }
+    try {
+      let logoUrl = current.logoUrl;
+      let signatureUrl = current.preparerSignatureUrl;
+      if (logoFile) {
+        logoUrl = await uploadAttachment(logoFile);
+      }
+      if (signatureFile) {
+        signatureUrl = await uploadAttachment(signatureFile);
+      }
+      onSave({
+        ...(current as PANTemplate),
+        logoUrl,
+        preparerSignatureUrl: signatureUrl,
+      });
+    } catch (err) {
+      console.error('Failed to upload attachments', err);
+      alert('Failed to upload attachments.');
     }
   };
 

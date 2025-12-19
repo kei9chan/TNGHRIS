@@ -525,6 +525,34 @@ export const usePermissions = () => {
         }
     };
 
+    const getPanAccess = () => {
+        const user = getCurrentUser();
+        if (!user) return { canView: false, canRespond: false, canCreate: false, scope: 'none' as const };
+        switch (user.role) {
+            case Role.Admin:
+            case Role.HRManager:
+            case Role.HRStaff:
+            case Role.Recruiter: // Full per matrix
+                return { canView: true, canRespond: true, canCreate: true, scope: 'global' as const };
+            case Role.BOD:
+                return { canView: true, canRespond: false, canCreate: false, scope: 'global' as const };
+            case Role.GeneralManager:
+            case Role.OperationsDirector:
+                return { canView: true, canRespond: true, canCreate: false, scope: 'buDept' as const };
+            case Role.BusinessUnitManager:
+                return { canView: true, canRespond: true, canCreate: false, scope: 'bu' as const };
+            case Role.Manager:
+                return { canView: true, canRespond: true, canCreate: false, scope: 'team' as const };
+            case Role.Employee:
+                return { canView: true, canRespond: false, canCreate: false, scope: 'self' as const };
+            case Role.Auditor:
+            case Role.FinanceStaff:
+            case Role.IT:
+            default:
+                return { canView: false, canRespond: false, canCreate: false, scope: 'none' as const };
+        }
+    };
+
     const getJobRequisitionAccess = () => {
         const user = getCurrentUser();
         if (!user) {
@@ -590,5 +618,5 @@ export const usePermissions = () => {
     };
 
 
-    return { can, getVisibleEmployeeIds, filterByScope, filterIncidentReportsByScope, filterTicketsByScope, hasDirectReports, getAccessibleBusinessUnits, isUserEligibleEvaluator, getCoeAccess, getOtAccess, getTicketAccess, getIrAccess, getJobRequisitionAccess, getAnnouncementAccess, getAwardsAccess };
+    return { can, getVisibleEmployeeIds, filterByScope, filterIncidentReportsByScope, filterTicketsByScope, hasDirectReports, getAccessibleBusinessUnits, isUserEligibleEvaluator, getCoeAccess, getOtAccess, getTicketAccess, getIrAccess, getJobRequisitionAccess, getAnnouncementAccess, getAwardsAccess, getPanAccess };
 };
