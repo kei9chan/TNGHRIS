@@ -1,56 +1,98 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { OnboardingChecklistTemplate, User, OnboardingChecklist, Role } from '../../types';
-import { mockUsers, mockOnboardingTemplates, mockOnboardingChecklists } from '../../services/mockData';
+import { OnboardingChecklistTemplate, User, Role } from '../../types';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import { useAuth } from '../../hooks/useAuth';
 import EmployeeMultiSelect from '../feedback/EmployeeMultiSelect';
+import { supabase } from '../../services/supabaseClient';
 
 interface AssignOnboardingModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (data: { employeeIds: string[]; templateId: string; startDate: Date; notify: boolean }) => void;
-  // FIX: Added optional `employeeId` prop to allow single-user assignment mode.
   employeeId?: string;
+  employees?: User[];
+  templates?: OnboardingChecklistTemplate[];
 }
 
-const AssignOnboardingModal: React.FC<AssignOnboardingModalProps> = ({ isOpen, onClose, onSave, employeeId }) => {
+const AssignOnboardingModal: React.FC<AssignOnboardingModalProps> = ({ isOpen, onClose, onSave, employeeId, employees: employeesProp, templates: templatesProp }) => {
   const { user } = useAuth();
   const [selectedUsers, setSelectedUsers] = useState<User[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [notify, setNotify] = useState(true);
+  const [employees, setEmployees] = useState<User[]>(employeesProp || []);
+  const [templates, setTemplates] = useState<OnboardingChecklistTemplate[]>(templatesProp || []);
+  const [loading, setLoading] = useState(false);
 
   const assignableUsers = useMemo(() => {
-    const assignedEmployeeIds = new Set(mockOnboardingChecklists.map(c => c.employeeId));
-    
-    let usersPool: User[] = [];
     if (!user) return [];
-    
-    // Updated to include HRStaff
-    if (user.role === Role.Admin || user.role === Role.HRManager || user.role === Role.HRStaff) {
-      usersPool = mockUsers.filter(u => u.status === 'Active');
-    } else if (user.role === Role.Manager) {
-      usersPool = mockUsers.filter(u => u.managerId === user.id && u.status === 'Active');
+    if (employeeId) {
+      return employees.filter(u => u.id === employeeId);
     }
-    
-    return usersPool.filter(u => !assignedEmployeeIds.has(u.id));
-  }, [user]);
+    return employees.filter(u => !u.status || u.status === 'Active');
+  }, [employees, user, employeeId]);
+
+  const fetchEmployeesAndTemplates = async () => {
+    if (!isOpen) return;
+    if (employeesProp && templatesProp) {
+      setEmployees(employeesProp);
+      setTemplates(templatesProp);
+      setSelectedTemplateId(templatesProp[0]?.id || '');
+      return;
+    }
+    try {
+      setLoading(true);
+      const [{ data: employeeRows, error: empError }, { data: templateRows, error: tmplError }] = await Promise.all([
+        supabase.from('hris_users').select('id, full_name, role, status').eq('status', 'Active'),
+        supabase.from('onboarding_checklist_templates').select('id, name, target_role, template_type, tasks'),
+      ]);
+
+      if (empError) throw empError;
+      if (tmplError) throw tmplError;
+
+      const mappedEmployees: User[] =
+        employeeRows?.map((r: any) => ({
+          id: r.id,
+          name: r.full_name,
+          role: (r.role as Role) || Role.Employee,
+          status: r.status || 'Active',
+        })) || [];
+      setEmployees(mappedEmployees);
+
+      const mappedTemplates: OnboardingChecklistTemplate[] =
+        templateRows?.map((t: any) => ({
+          id: t.id,
+          name: t.name,
+          targetRole: (t.target_role as Role) || Role.Employee,
+          templateType: t.template_type || 'Onboarding',
+          tasks: Array.isArray(t.tasks) ? t.tasks : [],
+        })) || [];
+      setTemplates(mappedTemplates);
+      setSelectedTemplateId((mappedTemplates[0]?.id || templatesProp?.[0]?.id) ?? '');
+    } catch (err) {
+      console.error('Failed to load onboarding modal data', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    if (isOpen) {
-      if (employeeId) {
-          const userToAssign = mockUsers.find(u => u.id === employeeId);
-          setSelectedUsers(userToAssign ? [userToAssign] : []);
-      } else {
-          setSelectedUsers([]);
-      }
-      setSelectedTemplateId(mockOnboardingTemplates[0]?.id || '');
-      setStartDate(new Date().toISOString().split('T')[0]);
-      setNotify(true);
+    fetchEmployeesAndTemplates();
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (employeeId) {
+      const userToAssign = assignableUsers.find(u => u.id === employeeId);
+      setSelectedUsers(userToAssign ? [userToAssign] : []);
+    } else {
+      setSelectedUsers([]);
     }
-  }, [isOpen, employeeId]);
+    setStartDate(new Date().toISOString().split('T')[0]);
+    setNotify(true);
+  }, [isOpen, employeeId, assignableUsers]);
 
   const handleSave = () => {
     if (selectedUsers.length === 0 || !selectedTemplateId || !startDate) {
@@ -88,12 +130,13 @@ const AssignOnboardingModal: React.FC<AssignOnboardingModalProps> = ({ isOpen, o
               allUsers={assignableUsers}
               selectedUsers={selectedUsers}
               onSelectionChange={setSelectedUsers}
+              disabled={loading}
             />
         )}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Lifecycle Template</label>
           <select value={selectedTemplateId} onChange={e => setSelectedTemplateId(e.target.value)} required className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-            {mockOnboardingTemplates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
         </div>
         <div>

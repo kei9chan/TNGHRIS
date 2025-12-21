@@ -8,6 +8,8 @@ import Input from '../ui/Input';
 
 interface OnboardingAdminDashboardProps {
   checklists: OnboardingChecklist[];
+  employees?: { id: string; name: string; role: Role; businessUnit?: string; dateHired?: Date | null }[];
+  templates?: { id: string; name: string }[];
 }
 
 const ProgressBar: React.FC<{ progress: number }> = ({ progress }) => (
@@ -16,7 +18,7 @@ const ProgressBar: React.FC<{ progress: number }> = ({ progress }) => (
     </div>
 );
 
-const OnboardingAdminDashboard: React.FC<OnboardingAdminDashboardProps> = ({ checklists }) => {
+const OnboardingAdminDashboard: React.FC<OnboardingAdminDashboardProps> = ({ checklists, employees = [], templates = [] }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [roleFilter, setRoleFilter] = useState('');
     const [buFilter, setBuFilter] = useState('');
@@ -32,8 +34,8 @@ const OnboardingAdminDashboard: React.FC<OnboardingAdminDashboardProps> = ({ che
 
     const enrichedChecklists = useMemo(() => {
         return checklists.map(checklist => {
-            const employee = mockUsers.find(u => u.id === checklist.employeeId);
-            const template = mockOnboardingTemplates.find(t => t.id === checklist.templateId);
+            const employee = employees.find(u => u.id === checklist.employeeId) || mockUsers.find(u => u.id === checklist.employeeId);
+            const template = templates.find(t => t.id === checklist.templateId) || mockOnboardingTemplates.find(t => t.id === checklist.templateId);
             const progress = calculateProgress(checklist);
             
             const overdueCount = checklist.tasks.filter(
@@ -49,8 +51,8 @@ const OnboardingAdminDashboard: React.FC<OnboardingAdminDashboardProps> = ({ che
                 ...checklist,
                 employeeName: employee?.name || 'N/A',
                 employeeRole: employee?.role,
-                employeeBU: employee?.businessUnit,
-                employeeHireDate: employee?.dateHired,
+                employeeBU: (employee as any)?.businessUnit,
+                employeeHireDate: (employee as any)?.dateHired,
                 templateName: template?.name || 'N/A',
                 progress,
                 overdueCount,
@@ -118,7 +120,7 @@ const OnboardingAdminDashboard: React.FC<OnboardingAdminDashboardProps> = ({ che
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-400">Filter by Business Unit</label>
                 <select value={buFilter} onChange={e => setBuFilter(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white">
                     <option value="">All BUs</option>
-                    {[...new Set(mockUsers.map(u => u.businessUnit))].map(bu => <option key={bu} value={bu}>{bu}</option>)}
+                    {[...new Set((employees.length ? employees : mockUsers).map(u => (u as any).businessUnit))].filter(Boolean).map(bu => <option key={bu} value={bu}>{bu}</option>)}
                 </select>
             </div>
             <Input label="Filter by Hire Month" type="month" value={monthFilter} onChange={e => setMonthFilter(e.target.value)} />

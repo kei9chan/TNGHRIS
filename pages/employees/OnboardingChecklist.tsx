@@ -5,7 +5,7 @@ import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import { OnboardingChecklistTemplate, Permission, Role, OnboardingChecklist, OnboardingTask, OnboardingTaskStatus, Resignation, OnboardingTaskType } from '../../types';
-import { mockOnboardingTemplates, mockOnboardingChecklists, mockUsers, mockResignations, mockAssetAssignments, mockAssets } from '../../services/mockData';
+import { mockOnboardingTemplates, mockUsers, mockResignations, mockAssetAssignments, mockAssets } from '../../services/mockData';
 import { usePermissions } from '../../hooks/usePermissions';
 import OnboardingTemplateModal from '../../components/employees/OnboardingTemplateModal';
 import { useAuth } from '../../hooks/useAuth';
@@ -17,6 +17,7 @@ import StatCard from '../../components/dashboard/StatCard';
 import ResignationListTable from '../../components/employees/ResignationListTable';
 import EditableDescription from '../../components/ui/EditableDescription';
 import ResignationLinkModal from '../../components/employees/ResignationLinkModal';
+import { supabase } from '../../services/supabaseClient';
 
 
 // Icons
@@ -55,10 +56,71 @@ const OnboardingChecklistPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [templateToEdit, setTemplateToEdit] = useState<OnboardingChecklistTemplate | null>(null);
-  const [checklists, setChecklists] = useState<OnboardingChecklist[]>(mockOnboardingChecklists);
+  const [checklists, setChecklists] = useState<OnboardingChecklist[]>([]);
+  const [employees, setEmployees] = useState<{ id: string; name: string; role: Role; managerId?: string }[]>([]);
   const [resignations, setResignations] = useState<Resignation[]>(mockResignations);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [isResignationEmailModalOpen, setIsResignationEmailModalOpen] = useState(false);
+
+  useEffect(() => {
+    const loadSupabaseData = async () => {
+      try {
+        const [
+          { data: templateRows, error: templateError },
+          { data: employeeRows, error: employeeError },
+          { data: checklistRows, error: checklistError },
+        ] = await Promise.all([
+          supabase.from('onboarding_checklist_templates').select('id, name, target_role, template_type, tasks'),
+          supabase.from('hris_users').select('id, full_name, role, status, business_unit'),
+          supabase.from('onboarding_checklists').select('id, employee_id, template_id, status, created_at, start_date'),
+        ]);
+        if (templateError) throw templateError;
+        if (employeeError) throw employeeError;
+        if (checklistError) throw checklistError;
+
+        if (templateRows) {
+          const mappedTemplates: OnboardingChecklistTemplate[] = templateRows.map((t: any) => ({
+            id: t.id,
+            name: t.name,
+            targetRole: (t.target_role as Role) || Role.Employee,
+            templateType: t.template_type || 'Onboarding',
+            tasks: Array.isArray(t.tasks) ? t.tasks : [],
+          }));
+          setTemplates(mappedTemplates);
+        }
+
+        if (employeeRows && employeeRows.length > 0) {
+          const mappedEmployees = employeeRows.map((e: any) => ({
+            id: e.id,
+            name: e.full_name,
+            role: (e.role as Role) || Role.Employee,
+            status: (e.status as string) || 'Active',
+            businessUnit: e.business_unit || '',
+            managerId: undefined,
+          }));
+          setEmployees(mappedEmployees);
+        }
+
+        if (checklistRows && checklistRows.length > 0) {
+          const mappedChecklists: OnboardingChecklist[] = checklistRows.map((c: any) => ({
+            id: c.id,
+            employeeId: c.employee_id,
+            templateId: c.template_id,
+            createdAt: c.created_at ? new Date(c.created_at) : new Date(),
+            status: (c.status as any) || 'InProgress',
+            tasks: [],
+            signedAt: undefined,
+          }));
+          setChecklists(mappedChecklists);
+        }
+      } catch (err) {
+        console.error('Failed to load onboarding data from Supabase', err);
+        // Keep whatever data is already in state; avoid overwriting with mock
+      }
+    };
+
+    loadSupabaseData();
+  }, []);
 
   const forceResignationUpdate = () => {
     setResignations([...mockResignations]);
@@ -69,7 +131,9 @@ const OnboardingChecklistPage: React.FC = () => {
   }, [templates, searchTerm]);
 
   const dashboardStats = useMemo(() => {
-    const activeChecklists = checklists.filter(c => c.status === 'InProgress');
+    const activeChecklists = checklists.filter(
+      c => c.status === 'InProgress' || c.status === 'Pending' || !c.status
+    );
     const completedChecklists = checklists.filter(c => c.status === 'Completed' && c.signedAt);
 
     const totalOverdueTasks = activeChecklists.reduce((total, checklist) => {
@@ -119,184 +183,185 @@ const OnboardingChecklistPage: React.FC = () => {
   };
 
   const handleDelete = (templateId: string) => {
-    if (window.confirm('Are you sure you want to delete this template?')) {
-      // Also delete from the mock data source so previews don't find it
-      const index = mockOnboardingTemplates.findIndex(t => t.id === templateId);
-      if (index > -1) {
-          mockOnboardingTemplates.splice(index, 1);
+    if (!window.confirm('Are you sure you want to delete this template?')) return;
+    (async () => {
+      try {
+        const { error } = await supabase.from('onboarding_checklist_templates').delete().eq('id', templateId);
+        if (error) throw error;
+        setTemplates(prev => prev.filter(t => t.id !== templateId));
+      } catch (err) {
+        console.error('Failed to delete template', err);
+        alert('Failed to delete template. Please try again.');
       }
-      setTemplates(prev => prev.filter(t => t.id !== templateId));
-    }
+    })();
   };
   
-  const handleSave = (templateData: OnboardingChecklistTemplate) => {
-    if (templateData.id) {
-      // Update local state
-      setTemplates(prev => prev.map(t => t.id === templateData.id ? templateData : t));
-      // Update mock data source so preview page can find it
-      const index = mockOnboardingTemplates.findIndex(t => t.id === templateData.id);
-        if (index > -1) {
-            mockOnboardingTemplates[index] = templateData;
-        }
-    } else {
-      const newTemplate = { ...templateData, id: `TEMPLATE-${Date.now()}` };
-      // Add to mock data source so preview page can find it
-      mockOnboardingTemplates.push(newTemplate);
-      // Update local state
-      setTemplates(prev => [newTemplate, ...prev]);
+  const handleSave = async (templateData: OnboardingChecklistTemplate) => {
+    try {
+      const payload: any = {
+        name: templateData.name,
+        target_role: templateData.targetRole,
+        template_type: templateData.templateType || 'Onboarding',
+        tasks: templateData.tasks || [],
+        created_by_user_id: user?.id || null,
+      };
+      if (templateData.id) {
+        payload.id = templateData.id;
+      }
+
+      const { data, error } = await supabase
+        .from('onboarding_checklist_templates')
+        .upsert(payload)
+        .select('id, name, target_role, template_type, tasks, created_by_user_id')
+        .single();
+
+      if (error) throw error;
+
+      if (data) {
+        const saved: OnboardingChecklistTemplate = {
+          id: data.id,
+          name: data.name,
+          targetRole: (data.target_role as Role) || Role.Employee,
+          templateType: data.template_type || 'Onboarding',
+          tasks: Array.isArray(data.tasks) ? data.tasks : [],
+        };
+        setTemplates(prev => {
+          const exists = prev.some(t => t.id === saved.id);
+          return exists ? prev.map(t => (t.id === saved.id ? saved : t)) : [saved, ...prev];
+        });
+      }
+
+      setIsTemplateModalOpen(false);
+      setTemplateToEdit(null);
+    } catch (err) {
+      console.error('Failed to save template', err);
+      alert('Failed to save template. Please try again.');
     }
-    setIsTemplateModalOpen(false);
-    setTemplateToEdit(null);
   };
 
-  const handleAssignOnboarding = ({ employeeIds, templateId, startDate, notify }: { employeeIds: string[]; templateId: string; startDate: Date; notify: boolean }) => {
+  const handleAssignOnboarding = async ({ employeeIds, templateId, startDate, notify }: { employeeIds: string[]; templateId: string; startDate: Date; notify: boolean }) => {
     if (!user) return;
 
-    const template = mockOnboardingTemplates.find(t => t.id === templateId);
+    let template = templates.find(t => t.id === templateId) || mockOnboardingTemplates.find(t => t.id === templateId);
     if (!template) {
-        alert("Selected template not found.");
+      template = templates[0] || mockOnboardingTemplates[0];
+      if (!template) {
+        alert('Selected template not found.');
         return;
+      }
     }
 
     const newChecklists: OnboardingChecklist[] = [];
-    let assignedCount = 0;
     const employeeNames: string[] = [];
 
     employeeIds.forEach(employeeId => {
-        const employee = mockUsers.find(u => u.id === employeeId);
-        if (!employee) return;
+      const employee =
+        employees.find(e => e.id === employeeId) ||
+        mockUsers.find(u => u.id === employeeId);
+      if (!employee) return;
 
-        // We allow multiple checklists (e.g. Onboarding AND Offboarding) but avoid duplicate active checklists of the SAME template.
-        if (mockOnboardingChecklists.some(c => c.employeeId === employeeId && c.templateId === templateId && c.status === 'InProgress')) {
-            console.warn(`Employee ${employee.name} already has this specific checklist active. Skipping.`);
-            return;
+      const checklistId = `ONBOARD-${employee.id}-${Date.now()}`;
+      const tasks = template.tasks.flatMap((taskTemplate: any) => {
+        let ownerUserId = '';
+        if (taskTemplate.ownerUserId) {
+          ownerUserId = taskTemplate.ownerUserId;
+        } else if (taskTemplate.ownerRole === Role.Manager && (employee as any).managerId) {
+          ownerUserId = (employee as any).managerId;
+        } else {
+          const owner = employees.find(u => u.role === taskTemplate.ownerRole) || mockUsers.find(u => u.role === taskTemplate.ownerRole);
+          if (owner) ownerUserId = owner.id;
         }
+        const ownerUser = employees.find(u => u.id === ownerUserId) || mockUsers.find(u => u.id === ownerUserId);
+        const ownerName = ownerUser ? ownerUser.name : 'System';
+        const dueDate = new Date(startDate);
+        dueDate.setDate(dueDate.getDate() + (taskTemplate.dueDays || 0));
 
-        const newChecklist: OnboardingChecklist = {
-            id: `ONBOARD-${employee.id}-${Date.now()}`,
-            employeeId: employee.id,
-            templateId: template.id,
-            createdAt: new Date(),
-            status: 'InProgress',
-            tasks: template.tasks.flatMap(taskTemplate => {
-                let ownerUserId = '';
-                if (taskTemplate.ownerUserId) {
-                    ownerUserId = taskTemplate.ownerUserId;
-                } else if (taskTemplate.ownerRole === Role.Manager && employee.managerId) {
-                    ownerUserId = employee.managerId;
-                } else {
-                    const owner = mockUsers.find(u => u.role === taskTemplate.ownerRole);
-                    if (owner) ownerUserId = owner.id;
-                }
-                const ownerUser = mockUsers.find(u => u.id === ownerUserId);
-                const ownerName = ownerUser ? ownerUser.name : 'System';
-                const dueDate = new Date(startDate);
-                dueDate.setDate(dueDate.getDate() + taskTemplate.dueDays);
-                
-                // Auto-generate tasks for ReturnAsset if assetId is missing (Auto Mode)
-                if (taskTemplate.taskType === OnboardingTaskType.ReturnAsset && !taskTemplate.assetId && !taskTemplate.assetDescription) {
-                    const employeeAssets = mockAssetAssignments.filter(a => a.employeeId === employee.id && !a.dateReturned);
-                    
-                    if (employeeAssets.length === 0) {
-                        // Create a generic placeholder task indicating no assets found, completed automatically
-                        return [{
-                            id: `ONBOARDTASK-${employee.id}-${taskTemplate.id}-NOASSETS`,
-                            templateTaskId: taskTemplate.id,
-                            employeeId: employee.id,
-                            name: `${taskTemplate.name} (No Assets Found)`,
-                            description: `System detected no active asset assignments for this employee.`,
-                            ownerUserId,
-                            ownerName,
-                            dueDate,
-                            status: OnboardingTaskStatus.Completed,
-                            points: 0,
-                            taskType: OnboardingTaskType.Read,
-                            completedAt: new Date(),
-                            isAcknowledged: true
-                        } as OnboardingTask];
-                    }
-                    
-                    return employeeAssets.map(assignment => {
-                        const asset = mockAssets.find(a => a.id === assignment.assetId);
-                        return {
-                            id: `ONBOARDTASK-${employee.id}-${taskTemplate.id}-${assignment.id}`,
-                            templateTaskId: taskTemplate.id,
-                            employeeId: employee.id,
-                            name: `Return: ${asset?.name || 'Unknown Asset'}`,
-                            description: `Please return asset: ${asset?.assetTag} - ${asset?.name}. \n\nOriginal Instruction: ${taskTemplate.description}`,
-                            ownerUserId,
-                            ownerName,
-                            dueDate,
-                            status: OnboardingTaskStatus.Pending,
-                            points: taskTemplate.points,
-                            taskType: taskTemplate.taskType,
-                            videoUrl: taskTemplate.videoUrl,
-                            readContent: taskTemplate.readContent,
-                            requiresApproval: taskTemplate.requiresApproval,
-                            assetId: asset?.id,
-                            assetDescription: `${asset?.assetTag} - ${asset?.name}`,
-                        } as OnboardingTask;
-                    });
-                }
-
-                // Standard task creation
-                const newTask: OnboardingTask = {
-                    id: `ONBOARDTASK-${employee.id}-${taskTemplate.id}`,
-                    templateTaskId: taskTemplate.id,
-                    employeeId: employee.id,
-                    name: taskTemplate.name,
-                    description: taskTemplate.description,
-                    ownerUserId: ownerUserId,
-                    ownerName: ownerName,
-                    videoUrl: taskTemplate.videoUrl,
-                    dueDate: dueDate,
-                    status: OnboardingTaskStatus.Pending,
-                    points: taskTemplate.points,
-                    taskType: taskTemplate.taskType,
-                    readContent: taskTemplate.readContent,
-                    requiresApproval: taskTemplate.requiresApproval,
-                    assetId: taskTemplate.assetId,
-                    assetDescription: taskTemplate.assetDescription,
-                };
-                return [newTask];
-            }),
+        const newTask: OnboardingTask = {
+          id: `ONBOARDTASK-${employee.id}-${taskTemplate.id || taskTemplate.name}-${Date.now()}`,
+          templateTaskId: taskTemplate.id || taskTemplate.name,
+          employeeId: employee.id,
+          name: taskTemplate.name,
+          description: taskTemplate.description,
+          ownerUserId,
+          ownerName,
+          videoUrl: taskTemplate.videoUrl,
+          dueDate,
+          status: OnboardingTaskStatus.Pending,
+          points: taskTemplate.points || 0,
+          taskType: taskTemplate.taskType,
+          readContent: taskTemplate.readContent,
+          requiresApproval: taskTemplate.requiresApproval,
+          assetId: taskTemplate.assetId,
+          assetDescription: taskTemplate.assetDescription,
         };
-        newChecklists.push(newChecklist);
-        assignedCount++;
-        employeeNames.push(employee.name);
+        return [newTask];
+      });
+
+      newChecklists.push({
+        id: checklistId,
+        employeeId: employee.id,
+        templateId: template.id,
+        createdAt: new Date(),
+        status: 'InProgress',
+        tasks,
+      });
+      employeeNames.push((employee as any).name || 'Employee');
     });
 
-    if (newChecklists.length > 0) {
-        mockOnboardingChecklists.push(...newChecklists);
+    try {
+      if (newChecklists.length > 0) {
+        const payload = employeeIds.map(empId => ({
+          employee_id: empId,
+          template_id: template.id,
+          start_date: startDate.toISOString().split('T')[0],
+          notify,
+        }));
+        const { data: inserted, error } = await supabase
+          .from('onboarding_checklists')
+          .insert(payload)
+          .select('id, employee_id, template_id, status, created_at, start_date');
+        if (error) throw error;
+
+        const mappedInserted: OnboardingChecklist[] =
+          inserted?.map((c: any) => ({
+            id: c.id,
+            employeeId: c.employee_id,
+            templateId: c.template_id,
+            createdAt: c.created_at ? new Date(c.created_at) : new Date(),
+            status: (c.status as any) || 'InProgress',
+            tasks: [],
+            signedAt: undefined,
+          })) || [];
 
         logActivity(
-            user,
-            'CREATE',
-            'OnboardingChecklist',
-            newChecklists.map(c => c.id).join(', '),
-            `Assigned template '${template.name}' to ${assignedCount} employee(s): ${employeeNames.join(', ')}.`
+          user,
+          'CREATE',
+          'OnboardingChecklist',
+          mappedInserted.map(c => c.id).join(', '),
+          `Assigned template '${template.name}' to ${employeeNames.length} employee(s): ${employeeNames.join(', ')}.`
         );
-
-        setChecklists([...mockOnboardingChecklists]);
+        setChecklists(prev => [...prev, ...mappedInserted]);
         setIsAssignModalOpen(false);
-        alert(`Assigned '${template.name}' to ${assignedCount} employee(s). ${notify ? '(Notifications sent)' : ''}`);
-    } else {
+        alert(`Assigned '${template.name}' to ${employeeNames.length} employee(s). ${notify ? '(Notifications sent)' : ''}`);
+      } else {
         alert('No new checklists were assigned. The selected employees may already have this specific checklist active.');
         setIsAssignModalOpen(false);
+      }
+    } catch (err) {
+      console.error('Failed to assign onboarding checklist', err);
+      alert('Failed to assign checklist. Please try again.');
     }
-};
+  };
 
+  // Keep resignation mock in sync for now (offboarding module still mock-driven)
   useEffect(() => {
     const interval = setInterval(() => {
-      if (mockOnboardingChecklists.length !== checklists.length) {
-        setChecklists([...mockOnboardingChecklists]);
-      }
       if (mockResignations.length !== resignations.length) {
         setResignations([...mockResignations]);
       }
     }, 1000);
     return () => clearInterval(interval);
-  }, [checklists.length, resignations.length]);
+  }, [resignations.length]);
 
   const handleUpdateTaskStatus = (taskId: string, status: OnboardingTaskStatus) => {
     const newChecklists = checklists.map(list => ({
@@ -396,7 +461,7 @@ const OnboardingChecklistPage: React.FC = () => {
                     <StatCard title="Avg. Completion Time" value={dashboardStats.avgCompletion} icon={<ClockIcon />} colorClass="bg-green-500" />
                 </div>
                 <Card>
-                    <OnboardingAdminDashboard checklists={checklists} />
+                    <OnboardingAdminDashboard checklists={checklists} employees={employees} templates={templates} />
                 </Card>
              </div>
         )}
@@ -445,6 +510,8 @@ const OnboardingChecklistPage: React.FC = () => {
             isOpen={isAssignModalOpen}
             onClose={() => setIsAssignModalOpen(false)}
             onSave={handleAssignOnboarding}
+            employees={employees}
+            templates={templates}
           />
         )}
         {isResignationEmailModalOpen && (

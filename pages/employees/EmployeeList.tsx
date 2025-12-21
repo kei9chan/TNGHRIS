@@ -152,7 +152,7 @@ const EmployeeList: React.FC = () => {
   
   // Filter users based on RBAC scope + UI filters
   const filteredUsers = useMemo(() => {
-    const accessibleBuNames = new Set(accessibleBus.map(b => b.name));
+    const accessibleBuNames = accessibleBus.length ? new Set(accessibleBus.map(b => b.name)) : null;
     const scope = accessControl.scope;
 
     const withinScope = (user: User) => {
@@ -175,7 +175,11 @@ const EmployeeList: React.FC = () => {
     };
 
     return users
-      .filter(user => accessibleBuNames.has(user.businessUnit))
+      .filter(user => {
+        if (!accessibleBuNames) return true;
+        if (!user.businessUnit) return true;
+        return accessibleBuNames.has(user.businessUnit);
+      })
       .filter(withinScope)
       .filter(user => {
         const nameMatch = user.name.toLowerCase().includes(searchTerm.toLowerCase());

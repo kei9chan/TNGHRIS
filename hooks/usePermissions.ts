@@ -617,6 +617,33 @@ export const usePermissions = () => {
         }
     };
 
+    const getLifecycleAccess = () => {
+        const user = getCurrentUser();
+        if (!user) return { canView: false, canManage: false, scope: 'none' as const };
+        switch (user.role) {
+            case Role.Admin:
+            case Role.HRManager:
+            case Role.HRStaff:
+            case Role.Recruiter:
+                return { canView: true, canManage: true, scope: 'global' as const };
+            case Role.BOD:
+                return { canView: true, canManage: false, scope: 'global' as const };
+            case Role.BusinessUnitManager:
+                return { canView: true, canManage: true, scope: 'bu' as const };
+            case Role.Manager:
+                return { canView: true, canManage: true, scope: 'team' as const };
+            case Role.Employee:
+                return { canView: true, canManage: false, scope: 'self' as const };
+            case Role.GeneralManager:
+            case Role.OperationsDirector:
+            case Role.FinanceStaff:
+            case Role.Auditor:
+            case Role.IT:
+            default:
+                return { canView: false, canManage: false, scope: 'none' as const };
+        }
+    };
 
-    return { can, getVisibleEmployeeIds, filterByScope, filterIncidentReportsByScope, filterTicketsByScope, hasDirectReports, getAccessibleBusinessUnits, isUserEligibleEvaluator, getCoeAccess, getOtAccess, getTicketAccess, getIrAccess, getJobRequisitionAccess, getAnnouncementAccess, getAwardsAccess, getPanAccess };
+
+    return { can, getVisibleEmployeeIds, filterByScope, filterIncidentReportsByScope, filterTicketsByScope, hasDirectReports, getAccessibleBusinessUnits, isUserEligibleEvaluator, getCoeAccess, getOtAccess, getTicketAccess, getIrAccess, getJobRequisitionAccess, getAnnouncementAccess, getAwardsAccess, getPanAccess, getLifecycleAccess };
 };
