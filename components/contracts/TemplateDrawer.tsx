@@ -34,7 +34,7 @@ const TemplateDrawer: React.FC<TemplateDrawerProps> = ({ isOpen, onClose, templa
         if (isOpen) {
             setCurrent(template || {
                 title: '',
-                owningBusinessUnitId: 'bu-tng', // Default
+                owningBusinessUnitId: '', // set explicitly when BU selector is added
                 isDefault: false,
                 logoPosition: 'left',
                 logoMaxWidth: 200,

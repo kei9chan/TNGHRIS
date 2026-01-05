@@ -4,6 +4,23 @@ import { useSettings } from '../context/SettingsContext';
 import { mockPermissions, mockUsers, mockBusinessUnits, mockDepartments } from '../services/mockData';
 import { Resource, Permission, Role, IncidentReport, Ticket, BusinessUnit, Evaluation, EvaluatorType, User, COERequest, OTRequest, OTStatus } from '../types';
 
+// Contracts RBAC matrix derived from user request
+const contractsPermissions: Record<Role, Permission[]> = {
+  [Role.Admin]: [Permission.Manage],
+  [Role.HRManager]: [Permission.Manage],
+  [Role.HRStaff]: [Permission.Manage],
+  [Role.BOD]: [Permission.View],
+  [Role.GeneralManager]: [], // None
+  [Role.OperationsDirector]: [], // None
+  [Role.BusinessUnitManager]: [], // None
+  [Role.Manager]: [], // None
+  [Role.Employee]: [], // None
+  [Role.FinanceStaff]: [], // None
+  [Role.Auditor]: [], // None
+  [Role.Recruiter]: [Permission.Manage], // Full per matrix
+  [Role.IT]: [], // None
+};
+
 export const usePermissions = () => {
     const { user: sessionUser } = useAuth();
     const { isRbacEnabled } = useSettings();
@@ -49,6 +66,17 @@ export const usePermissions = () => {
 
         if (!user) {
             return false;
+        }
+
+        // Contracts & Signing custom matrix (only if rbac enabled)
+        if (resource === 'Contracts & Signing' as Resource) {
+            const perms = contractsPermissions[user.role];
+            if (!perms || perms.length === 0) {
+                return false;
+            }
+            if (perms.includes(Permission.Manage)) return true;
+            if (permission === Permission.View && perms.length > 0) return true;
+            return perms.includes(permission);
         }
 
         const rolePermissions = mockPermissions[user.role];

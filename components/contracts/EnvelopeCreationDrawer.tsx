@@ -6,11 +6,14 @@ import Button from '../ui/Button';
 import Input from '../ui/Input';
 import RichTextEditor from '../ui/RichTextEditor';
 import EmployeeMultiSelect from '../feedback/EmployeeMultiSelect';
+import { supabase } from '../../services/supabaseClient';
 
 interface EnvelopeCreationDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (envelope: Partial<Envelope>, send: boolean) => void;
+  employees?: User[];
+  templates?: ContractTemplate[];
 }
 
 const fileToBase64 = (file: File): Promise<string> => {
@@ -24,7 +27,7 @@ const fileToBase64 = (file: File): Promise<string> => {
 
 const TrashIcon: React.FC = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>;
 
-const EnvelopeCreationDrawer: React.FC<EnvelopeCreationDrawerProps> = ({ isOpen, onClose, onSave }) => {
+const EnvelopeCreationDrawer: React.FC<EnvelopeCreationDrawerProps> = ({ isOpen, onClose, onSave, employees: employeesProp, templates: templatesProp }) => {
   const [templateId, setTemplateId] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [content, setContent] = useState<Partial<ContractTemplate>>({});
@@ -34,14 +37,17 @@ const EnvelopeCreationDrawer: React.FC<EnvelopeCreationDrawerProps> = ({ isOpen,
   const [selectedEmployee, setSelectedEmployee] = useState<User | null>(null);
   const [isEmployeeSearchOpen, setIsEmployeeSearchOpen] = useState(false);
   const [selectedApprovers, setSelectedApprovers] = useState<User[]>([]);
+  const [employees, setEmployees] = useState<User[]>(employeesProp || []);
 
   const searchWrapperRef = useRef<HTMLDivElement>(null);
   const logoUploadRef = useRef<HTMLInputElement>(null);
 
+  const templates = templatesProp && templatesProp.length ? templatesProp : mockContractTemplates;
+
   useEffect(() => {
     if (isOpen) {
-        const defaultTemplate = mockContractTemplates.find(t => t.isDefault);
-        const initialTemplateId = defaultTemplate?.id || (mockContractTemplates.length > 0 ? mockContractTemplates[0].id : '');
+        const defaultTemplate = templates.find(t => t.isDefault);
+        const initialTemplateId = defaultTemplate?.id || (templates.length > 0 ? templates[0].id : '');
         setTemplateId(initialTemplateId);
         
         const futureDate = new Date();
@@ -56,29 +62,60 @@ const EnvelopeCreationDrawer: React.FC<EnvelopeCreationDrawerProps> = ({ isOpen,
 
   useEffect(() => {
     if (templateId) {
-        const template = mockContractTemplates.find(t => t.id === templateId);
+        const template = templates.find(t => t.id === templateId);
         if (template) {
             setContent(template);
+            return;
         }
-    } else {
-        setContent({});
     }
-  }, [templateId]);
+    setContent({});
+  }, [templateId, templates]);
 
-   const approverPool = useMemo(() => {
-    return mockUsers.filter(u => 
-        [Role.Manager, Role.BusinessUnitManager, Role.OperationsDirector, Role.GeneralManager, Role.BOD].includes(u.role) && u.status === 'Active'
+  // Fetch employees for selection
+  useEffect(() => {
+    if (employeesProp && employeesProp.length) {
+      setEmployees(employeesProp);
+      return;
+    }
+    if (!isOpen) return;
+    const loadEmployees = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('hris_users')
+          .select('id, full_name, role, status');
+        if (error) throw error;
+        const mapped =
+          data?.map((u: any) => ({
+            id: u.id,
+            name: u.full_name,
+            email: '',
+            role: (u.role as Role) || Role.Employee,
+            status: (u.status as any) || 'Active',
+          })) || [];
+        setEmployees(mapped);
+      } catch (err) {
+        console.error('Failed to load employees for envelopes', err);
+        setEmployees(mockUsers);
+      }
+    };
+    loadEmployees();
+  }, [isOpen, employeesProp]);
+
+  const approverPool = useMemo(() => {
+    // Allow any non-employee active user to be an approver (Managers, HR, Admin, etc.)
+    return (employees.length ? employees : mockUsers).filter(u => 
+        (u as any).status === 'Active' && u.role !== Role.Employee
     );
-  }, []);
+  }, [employees]);
 
   const availableEmployees = useMemo(() => {
     if (!employeeSearch || employeeSearch === selectedEmployee?.name) return [];
     const lowerSearch = employeeSearch.toLowerCase();
-    return mockUsers.filter(u => 
-        u.status === 'Active' && 
+    return (employees.length ? employees : mockUsers).filter(u => 
+        (u as any).status === 'Active' && 
         u.name.toLowerCase().includes(lowerSearch)
     ).slice(0, 5); // Limit results
-  }, [employeeSearch, selectedEmployee]);
+  }, [employeeSearch, selectedEmployee, employees]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -120,7 +157,7 @@ const EnvelopeCreationDrawer: React.FC<EnvelopeCreationDrawerProps> = ({ isOpen,
         steps.push({ 
             id: `step-new-approver-${order}`, 
             userId: approver.id, 
-            name: approver.name, 
+            name: `${approver.name}${approver.role ? ` (${approver.role})` : ''}`, 
             role: 'Approver', 
             status: RoutingStepStatus.Pending, 
             order: order++, 
@@ -132,7 +169,7 @@ const EnvelopeCreationDrawer: React.FC<EnvelopeCreationDrawerProps> = ({ isOpen,
     steps.push({ 
         id: `step-new-signer-${order}`, 
         userId: selectedEmployee.id, 
-        name: selectedEmployee.name, 
+        name: `${selectedEmployee.name}${selectedEmployee.role ? ` (${selectedEmployee.role})` : ''}`, 
         role: 'Signer', 
         status: RoutingStepStatus.Pending, 
         order: order++, 
@@ -140,12 +177,12 @@ const EnvelopeCreationDrawer: React.FC<EnvelopeCreationDrawerProps> = ({ isOpen,
     });
     
     // Add final HR signer
-    const hrHead = mockUsers.find(u => u.id === '5'); // Assuming HR Head has ID '5'
+    const hrHead = (employees.length ? employees : mockUsers).find(u => u.id === '5'); // Assuming HR Head has ID '5'
     if (hrHead) {
          steps.push({ 
              id: `step-new-finalsigner-${order}`, 
              userId: hrHead.id, 
-             name: hrHead.name, 
+             name: `${hrHead.name}${hrHead.role ? ` (${hrHead.role})` : ''}`, 
              role: 'Signer', 
              status: RoutingStepStatus.Pending, 
              order: order++, 
@@ -225,7 +262,7 @@ const EnvelopeCreationDrawer: React.FC<EnvelopeCreationDrawerProps> = ({ isOpen,
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Contract Template</label>
               <select value={templateId} onChange={e => setTemplateId(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                {mockContractTemplates.map(t => <option key={t.id} value={t.id}>{t.title}{t.activeVersion ? ` (v${t.activeVersion})` : ''}</option>)}
+                {templates.map(t => <option key={t.id} value={t.id}>{t.title}{t.activeVersion ? ` (v${t.activeVersion})` : ''}</option>)}
               </select>
             </div>
             <Input label="Due Date" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
@@ -248,7 +285,10 @@ const EnvelopeCreationDrawer: React.FC<EnvelopeCreationDrawerProps> = ({ isOpen,
                     <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-md shadow-lg max-h-60 overflow-auto">
                         {availableEmployees.map(user => (
                             <div key={user.id} onClick={() => handleSelectEmployee(user)} className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer">
-                                <p className="text-sm font-medium">{user.name}</p>
+                                <p className="text-sm font-medium flex items-center gap-1">
+                                  <span>{user.name}</span>
+                                  {user.role && <span className="text-xs text-gray-500">[{user.role}]</span>}
+                                </p>
                                 <p className="text-xs text-gray-500">{user.position}</p>
                             </div>
                         ))}
