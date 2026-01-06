@@ -21,6 +21,23 @@ const contractsPermissions: Record<Role, Permission[]> = {
   [Role.IT]: [], // None
 };
 
+// Benefits RBAC matrix
+const benefitsPermissions: Record<Role, Permission[]> = {
+  [Role.Admin]: [Permission.Manage],
+  [Role.HRManager]: [Permission.Manage],
+  [Role.HRStaff]: [Permission.Manage],
+  [Role.BOD]: [Permission.View],
+  [Role.GeneralManager]: [Permission.Approve], // View + respond
+  [Role.OperationsDirector]: [Permission.Approve], // View + respond
+  [Role.BusinessUnitManager]: [], // None
+  [Role.Manager]: [], // None
+  [Role.Employee]: [], // None
+  [Role.FinanceStaff]: [Permission.Manage],
+  [Role.Auditor]: [Permission.View], // View logs
+  [Role.Recruiter]: [Permission.Manage],
+  [Role.IT]: [], // None
+};
+
 export const usePermissions = () => {
     const { user: sessionUser } = useAuth();
     const { isRbacEnabled } = useSettings();
@@ -71,6 +88,16 @@ export const usePermissions = () => {
         // Contracts & Signing custom matrix (only if rbac enabled)
         if (resource === 'Contracts & Signing' as Resource) {
             const perms = contractsPermissions[user.role];
+            if (!perms || perms.length === 0) {
+                return false;
+            }
+            if (perms.includes(Permission.Manage)) return true;
+            if (permission === Permission.View && perms.length > 0) return true;
+            return perms.includes(permission);
+        }
+
+        if (resource === 'Benefits') {
+            const perms = benefitsPermissions[user.role];
             if (!perms || perms.length === 0) {
                 return false;
             }

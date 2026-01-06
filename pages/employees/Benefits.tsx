@@ -7,6 +7,7 @@ import { BenefitType, BenefitRequest, Permission, Role, BenefitRequestStatus, Us
 import { mockBenefitTypes, mockBenefitRequests, mockUsers, mockNotifications } from '../../services/mockData';
 import { logActivity } from '../../services/auditService';
 import { useSettings } from '../../context/SettingsContext';
+import { supabase } from '../../services/supabaseClient';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
@@ -36,6 +37,66 @@ const getStatusColor = (status: BenefitRequestStatus) => {
     }
 };
 
+type BenefitTypeRow = {
+    id: string;
+    name: string;
+    description: string;
+    max_value?: number | null;
+    requires_bod_approval: boolean;
+    is_active: boolean;
+};
+
+type BenefitRequestRow = {
+    id: string;
+    employee_id: string;
+    employee_name: string;
+    benefit_type_id: string;
+    benefit_type_name: string;
+    amount?: number | null;
+    details: string;
+    date_needed: string;
+    status: BenefitRequestStatus | string;
+    submission_date: string;
+    hr_endorsed_by?: string | null;
+    hr_endorsed_at?: string | null;
+    bod_approved_by?: string | null;
+    bod_approved_at?: string | null;
+    fulfilled_by?: string | null;
+    fulfilled_at?: string | null;
+    voucher_code?: string | null;
+    rejection_reason?: string | null;
+};
+
+const mapBenefitTypeRow = (row: BenefitTypeRow): BenefitType => ({
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    maxValue: row.max_value ?? undefined,
+    requiresBodApproval: row.requires_bod_approval,
+    isActive: row.is_active,
+});
+
+const mapRequestRow = (row: BenefitRequestRow): BenefitRequest => ({
+    id: row.id,
+    employeeId: row.employee_id,
+    employeeName: row.employee_name,
+    benefitTypeId: row.benefit_type_id,
+    benefitTypeName: row.benefit_type_name,
+    amount: row.amount ?? undefined,
+    details: row.details,
+    dateNeeded: new Date(row.date_needed),
+    status: row.status as BenefitRequestStatus,
+    submissionDate: new Date(row.submission_date),
+    hrEndorsedBy: row.hr_endorsed_by ?? undefined,
+    hrEndorsedAt: row.hr_endorsed_at ? new Date(row.hr_endorsed_at) : undefined,
+    bodApprovedBy: row.bod_approved_by ?? undefined,
+    bodApprovedAt: row.bod_approved_at ? new Date(row.bod_approved_at) : undefined,
+    fulfilledBy: row.fulfilled_by ?? undefined,
+    fulfilledAt: row.fulfilled_at ? new Date(row.fulfilled_at) : undefined,
+    voucherCode: row.voucher_code ?? undefined,
+    rejectionReason: row.rejection_reason ?? undefined,
+});
+
 const Benefits: React.FC = () => {
     const { user } = useAuth();
     const { can } = usePermissions();
@@ -60,8 +121,9 @@ const Benefits: React.FC = () => {
         navigate(`?tab=${tab}`, { replace: true });
     };
 
-    // Mock Data State
-    const [benefitTypes, setBenefitTypes] = useState<BenefitType[]>(mockBenefitTypes);
+    // Data State
+    const [benefitTypes, setBenefitTypes] = useState<BenefitType[]>([]);
+    const [typesLoading, setTypesLoading] = useState(true);
     const [allRequests, setAllRequests] = useState<BenefitRequest[]>(mockBenefitRequests);
     const [myRequests, setMyRequests] = useState<BenefitRequest[]>([]);
     
@@ -95,15 +157,47 @@ const Benefits: React.FC = () => {
         return mockUsers.filter(u => u.role === Role.BOD || u.role === Role.GeneralManager);
     }, []);
 
-    // Keep local state in sync with mock data source
+    // Load benefit types from DB
     useEffect(() => {
-        const interval = setInterval(() => {
-            if (mockBenefitRequests.length !== allRequests.length) {
-                 setAllRequests([...mockBenefitRequests]);
+        const loadBenefitTypes = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('benefit_types')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+                if (error) throw error;
+                if (data) {
+                    setBenefitTypes((data as BenefitTypeRow[]).map(mapBenefitTypeRow));
+                }
+            } catch (err) {
+                console.error('Failed to load benefit types', err);
+                setBenefitTypes(mockBenefitTypes);
+            } finally {
+                setTypesLoading(false);
             }
-        }, 1000);
-        return () => clearInterval(interval);
-    }, [allRequests.length]);
+        };
+        loadBenefitTypes();
+    }, []);
+
+    // Load benefit requests from DB
+    useEffect(() => {
+        const loadRequests = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('benefit_requests')
+                    .select('*')
+                    .order('submission_date', { ascending: false });
+                if (error) throw error;
+                if (data) {
+                    setAllRequests((data as BenefitRequestRow[]).map(mapRequestRow));
+                }
+            } catch (err) {
+                console.error('Failed to load benefit requests', err);
+                setAllRequests(mockBenefitRequests);
+            }
+        };
+        loadRequests();
+    }, []);
 
     // Initial Load of My Requests
     useEffect(() => {
@@ -120,27 +214,52 @@ const Benefits: React.FC = () => {
     };
 
     const handleSaveBenefitType = (bt: BenefitType) => {
-        if (bt.id) {
-            // Update
-            const updated = benefitTypes.map(b => b.id === bt.id ? bt : b);
-            setBenefitTypes(updated);
-            // Update mock source
-            const idx = mockBenefitTypes.findIndex(b => b.id === bt.id);
-            if (idx > -1) mockBenefitTypes[idx] = bt;
-        } else {
-            // Create
-            const newBt = { ...bt, id: `bt-${Date.now()}` };
-            setBenefitTypes([...benefitTypes, newBt]);
-            mockBenefitTypes.push(newBt);
-        }
-        setIsConfigModalOpen(false);
+        const persist = async () => {
+            const payload = {
+                name: bt.name,
+                description: bt.description,
+                max_value: bt.maxValue ?? null,
+                requires_bod_approval: bt.requiresBodApproval,
+                is_active: bt.isActive,
+                updated_at: new Date().toISOString(),
+            };
+
+            const isEdit = !!bt.id;
+            const { data, error } = isEdit
+                ? await supabase
+                    .from('benefit_types')
+                    .update(payload)
+                    .eq('id', bt.id)
+                    .select('*')
+                    .single()
+                : await supabase
+                    .from('benefit_types')
+                    .insert(payload)
+                    .select('*')
+                    .single();
+            if (error) throw error;
+            const mapped = mapBenefitTypeRow(data as BenefitTypeRow);
+            setBenefitTypes(prev => isEdit ? prev.map(b => b.id === mapped.id ? mapped : b) : [mapped, ...prev]);
+        };
+
+        persist()
+            .catch(err => {
+                console.error('Failed to save benefit type', err);
+                alert('Failed to save benefit type. Please try again.');
+            })
+            .finally(() => setIsConfigModalOpen(false));
     };
 
     const handleDeleteBenefitType = (id: string) => {
         if (window.confirm('Are you sure you want to delete this benefit type?')) {
-            setBenefitTypes(prev => prev.filter(b => b.id !== id));
-            const idx = mockBenefitTypes.findIndex(b => b.id === id);
-            if (idx > -1) mockBenefitTypes.splice(idx, 1);
+            supabase.from('benefit_types').delete().eq('id', id).then(({ error }) => {
+                if (error) {
+                    console.error('Failed to delete benefit type', error);
+                    alert('Failed to delete benefit type.');
+                    return;
+                }
+                setBenefitTypes(prev => prev.filter(b => b.id !== id));
+            });
         }
     };
 
@@ -153,19 +272,39 @@ const Benefits: React.FC = () => {
     const handleSubmitRequest = (requestData: Partial<BenefitRequest>) => {
         if (!user) return;
         
-        const newRequest: BenefitRequest = {
-            ...requestData,
-            id: `BREQ-${Date.now()}`,
-        } as BenefitRequest;
+        const persist = async () => {
+            const payload = {
+                employee_id: user.id,
+                employee_name: user.name,
+                benefit_type_id: requestData.benefitTypeId,
+                benefit_type_name: requestData.benefitTypeName,
+                amount: requestData.amount ?? null,
+                details: requestData.details || '',
+                date_needed: requestData.dateNeeded ? requestData.dateNeeded.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                status: BenefitRequestStatus.PendingHR,
+                submission_date: new Date().toISOString(),
+            };
+            const { data, error } = await supabase
+                .from('benefit_requests')
+                .insert(payload)
+                .select('*')
+                .single();
+            if (error) throw error;
+            const mapped = mapRequestRow(data as BenefitRequestRow);
+            setAllRequests(prev => [mapped, ...prev]);
+            setMyRequests(prev => [mapped, ...prev]);
+            logActivity(user, 'CREATE', 'BenefitRequest', mapped.id, `Requested ${mapped.benefitTypeName}`);
+        };
 
-        mockBenefitRequests.unshift(newRequest);
-        setAllRequests(prev => [newRequest, ...prev]);
-        setMyRequests(prev => [newRequest, ...prev]);
-        
-        logActivity(user, 'CREATE', 'BenefitRequest', newRequest.id, `Requested ${newRequest.benefitTypeName}`);
-        
-        setIsRequestModalOpen(false);
-        alert("Benefit request submitted successfully!");
+        persist()
+            .then(() => {
+                setIsRequestModalOpen(false);
+                alert("Benefit request submitted successfully!");
+            })
+            .catch(err => {
+                console.error('Failed to submit benefit request', err);
+                alert('Failed to submit benefit request. Please try again.');
+            });
     };
 
     // --- Approval Handlers ---
@@ -214,39 +353,39 @@ const Benefits: React.FC = () => {
             setIsEndorseModalOpen(true);
         } else {
             // Direct Approval
-            const update = (r: BenefitRequest) => {
-                if (r.id === request.id) {
-                    return { 
-                        ...r, 
-                        status: BenefitRequestStatus.Approved,
-                        hrEndorsedBy: user.id,
-                        hrEndorsedAt: new Date()
-                    };
-                }
-                return r;
-            };
-
-            setAllRequests(prev => prev.map(update));
-            setMyRequests(prev => prev.map(update));
-            
-            const idx = mockBenefitRequests.findIndex(r => r.id === request.id);
-            if (idx > -1) mockBenefitRequests[idx] = update(mockBenefitRequests[idx]);
-
-            // Notify Employee
-             mockNotifications.unshift({
-                id: `notif-benefit-app-${Date.now()}`,
-                userId: request.employeeId,
-                type: NotificationType.AWARD_RECEIVED, // Generic positive
-                title: 'Benefit Approved',
-                message: `Your request for ${request.benefitTypeName} has been approved by HR.`,
-                link: '/employees/benefits',
-                isRead: false,
-                createdAt: new Date(),
-                relatedEntityId: request.id
-            });
-
-            logActivity(user, 'APPROVE', 'BenefitRequest', request.id, `HR approved request for ${request.benefitTypeName}`);
-            alert(`Request approved successfully.`);
+            supabase.from('benefit_requests')
+                .update({
+                    status: BenefitRequestStatus.Approved,
+                    hr_endorsed_by: user.id,
+                    hr_endorsed_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', request.id)
+                .select('*')
+                .single()
+                .then(({ data, error }) => {
+                    if (error) throw error;
+                    const mapped = mapRequestRow(data as BenefitRequestRow);
+                    setAllRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
+                    setMyRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
+                    mockNotifications.unshift({
+                        id: `notif-benefit-app-${Date.now()}`,
+                        userId: request.employeeId,
+                        type: NotificationType.AWARD_RECEIVED,
+                        title: 'Benefit Approved',
+                        message: `Your request for ${request.benefitTypeName} has been approved by HR.`,
+                        link: '/employees/benefits',
+                        isRead: false,
+                        createdAt: new Date(),
+                        relatedEntityId: request.id
+                    });
+                    logActivity(user, 'APPROVE', 'BenefitRequest', request.id, `HR approved request for ${request.benefitTypeName}`);
+                    alert(`Request approved successfully.`);
+                })
+                .catch(err => {
+                    console.error('Failed to approve request', err);
+                    alert('Failed to approve request. Please try again.');
+                });
         }
     };
 
@@ -258,100 +397,100 @@ const Benefits: React.FC = () => {
              return;
         }
 
-        const update = (r: BenefitRequest) => {
-            if (r.id === requestToEndorse.id) {
-                return { 
-                    ...r, 
-                    status: BenefitRequestStatus.PendingBOD,
-                    hrEndorsedBy: user.id,
-                    hrEndorsedAt: new Date()
-                };
-            }
-            return r;
-        };
-
-        setAllRequests(prev => prev.map(update));
-        setMyRequests(prev => prev.map(update));
-        
-        const idx = mockBenefitRequests.findIndex(r => r.id === requestToEndorse.id);
-        if (idx > -1) mockBenefitRequests[idx] = update(mockBenefitRequests[idx]);
-        
-        // Send notifications to selected approvers
-        selectedApprovers.forEach(approver => {
-             mockNotifications.unshift({
-                id: `notif-benefit-bod-${Date.now()}-${approver.id}`,
-                userId: approver.id,
-                type: NotificationType.AWARD_APPROVAL_REQUEST, // Generic approval type
-                title: 'Benefit Approval Required',
-                message: `HR has endorsed a benefit request from ${requestToEndorse.employeeName} for your approval.`,
-                link: '/employees/benefits?tab=approvals',
-                isRead: false,
-                createdAt: new Date(),
-                relatedEntityId: requestToEndorse.id
+        supabase.from('benefit_requests')
+            .update({
+                status: BenefitRequestStatus.PendingBOD,
+                hr_endorsed_by: user.id,
+                hr_endorsed_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', requestToEndorse.id)
+            .select('*')
+            .single()
+            .then(({ data, error }) => {
+                if (error) throw error;
+                const mapped = mapRequestRow(data as BenefitRequestRow);
+                setAllRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
+                setMyRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
+                selectedApprovers.forEach(approver => {
+                    mockNotifications.unshift({
+                        id: `notif-benefit-bod-${Date.now()}-${approver.id}`,
+                        userId: approver.id,
+                        type: NotificationType.AWARD_APPROVAL_REQUEST,
+                        title: 'Benefit Approval Required',
+                        message: `HR has endorsed a benefit request from ${requestToEndorse.employeeName} for your approval.`,
+                        link: '/employees/benefits?tab=approvals',
+                        isRead: false,
+                        createdAt: new Date(),
+                        relatedEntityId: requestToEndorse.id
+                    });
+                });
+                logActivity(user, 'APPROVE', 'BenefitRequest', requestToEndorse.id, `HR endorsed request for ${requestToEndorse.benefitTypeName} to Board.`);
+                alert(`Request endorsed to ${selectedApprovers.length} board member(s).`);
+            })
+            .catch(err => {
+                console.error('Failed to endorse request', err);
+                alert('Failed to endorse request. Please try again.');
+            })
+            .finally(() => {
+                setIsEndorseModalOpen(false);
+                setRequestToEndorse(null);
             });
-        });
-
-        logActivity(user, 'APPROVE', 'BenefitRequest', requestToEndorse.id, `HR endorsed request for ${requestToEndorse.benefitTypeName} to Board.`);
-        alert(`Request endorsed to ${selectedApprovers.length} board member(s).`);
-        
-        setIsEndorseModalOpen(false);
-        setRequestToEndorse(null);
     };
     
     const handleBODApprove = (request: BenefitRequest) => {
         if (!user) return;
         
-        const update = (r: BenefitRequest) => {
-            if (r.id === request.id) {
-                return { 
-                    ...r, 
-                    status: BenefitRequestStatus.Approved,
-                    bodApprovedBy: user.id,
-                    bodApprovedAt: new Date()
-                };
-            }
-            return r;
-        };
-        
-        setAllRequests(prev => prev.map(update));
-        setMyRequests(prev => prev.map(update));
+        supabase.from('benefit_requests')
+            .update({
+                status: BenefitRequestStatus.Approved,
+                bod_approved_by: user.id,
+                bod_approved_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', request.id)
+            .select('*')
+            .single()
+            .then(({ data, error }) => {
+                if (error) throw error;
+                const mapped = mapRequestRow(data as BenefitRequestRow);
+                setAllRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
+                setMyRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
 
-        const idx = mockBenefitRequests.findIndex(r => r.id === request.id);
-        if (idx > -1) {
-             mockBenefitRequests[idx] = update(mockBenefitRequests[idx]);
-        }
-        
-        // Notify Employee
-        mockNotifications.unshift({
-            id: `notif-benefit-bod-app-${Date.now()}`,
-            userId: request.employeeId,
-            type: NotificationType.AWARD_RECEIVED, 
-            title: 'Benefit Approved',
-            message: `Your request for ${request.benefitTypeName} has been approved by the Board.`,
-            link: '/employees/benefits',
-            isRead: false,
-            createdAt: new Date(),
-            relatedEntityId: request.id
-        });
+                mockNotifications.unshift({
+                    id: `notif-benefit-bod-app-${Date.now()}`,
+                    userId: request.employeeId,
+                    type: NotificationType.AWARD_RECEIVED, 
+                    title: 'Benefit Approved',
+                    message: `Your request for ${request.benefitTypeName} has been approved by the Board.`,
+                    link: '/employees/benefits',
+                    isRead: false,
+                    createdAt: new Date(),
+                    relatedEntityId: request.id
+                });
 
-        // Notify HR for Fulfillment
-        const hrUsers = mockUsers.filter(u => [Role.Admin, Role.HRManager, Role.HRStaff].includes(u.role));
-        hrUsers.forEach(hrUser => {
-             mockNotifications.unshift({
-                id: `notif-benefit-fulfill-${Date.now()}-${hrUser.id}`,
-                userId: hrUser.id,
-                type: NotificationType.AWARD_APPROVAL_REQUEST, // Using this type so it shows in HR action items potentially, or generic notification list
-                title: 'Benefit Ready for Fulfillment',
-                message: `Board approved benefit for ${request.employeeName}. Please fulfill.`,
-                link: '/employees/benefits?tab=fulfillment',
-                isRead: false,
-                createdAt: new Date(),
-                relatedEntityId: request.id
+                const hrUsers = mockUsers.filter(u => [Role.Admin, Role.HRManager, Role.HRStaff].includes(u.role));
+                hrUsers.forEach(hrUser => {
+                     mockNotifications.unshift({
+                        id: `notif-benefit-fulfill-${Date.now()}-${hrUser.id}`,
+                        userId: hrUser.id,
+                        type: NotificationType.AWARD_APPROVAL_REQUEST,
+                        title: 'Benefit Ready for Fulfillment',
+                        message: `Board approved benefit for ${request.employeeName}. Please fulfill.`,
+                        link: '/employees/benefits?tab=fulfillment',
+                        isRead: false,
+                        createdAt: new Date(),
+                        relatedEntityId: request.id
+                    });
+                });
+
+                logActivity(user, 'APPROVE', 'BenefitRequest', request.id, `Board approved request for ${request.benefitTypeName}`);
+                alert("Request approved by Board. HR has been notified for fulfillment.");
+            })
+            .catch(err => {
+                console.error('Failed to record board approval', err);
+                alert('Failed to approve request. Please try again.');
             });
-        });
-
-        logActivity(user, 'APPROVE', 'BenefitRequest', request.id, `Board approved request for ${request.benefitTypeName}`);
-        alert("Request approved by Board. HR has been notified for fulfillment.");
     };
 
     const handleReject = (request: BenefitRequest) => {
@@ -362,41 +501,43 @@ const Benefits: React.FC = () => {
     const handleConfirmReject = (reason: string) => {
         if (!user || !requestToReject) return;
         
-        const update = (r: BenefitRequest) => {
-            if (r.id === requestToReject.id) {
-                return { 
-                    ...r, 
-                    status: BenefitRequestStatus.Rejected,
-                    rejectionReason: reason
-                };
-            }
-            return r;
-        };
+        supabase.from('benefit_requests')
+            .update({
+                status: BenefitRequestStatus.Rejected,
+                rejection_reason: reason,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', requestToReject.id)
+            .select('*')
+            .single()
+            .then(({ data, error }) => {
+                if (error) throw error;
+                const mapped = mapRequestRow(data as BenefitRequestRow);
+                setAllRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
+                setMyRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
 
-        setAllRequests(prev => prev.map(update));
-        setMyRequests(prev => prev.map(update));
+                mockNotifications.unshift({
+                    id: `notif-benefit-rej-${Date.now()}`,
+                    userId: requestToReject.employeeId,
+                    type: NotificationType.TICKET_UPDATE_REQUESTER,
+                    title: 'Benefit Request Rejected',
+                    message: `Your request for ${requestToReject.benefitTypeName} was rejected. Reason: ${reason}`,
+                    link: '/employees/benefits',
+                    isRead: false,
+                    createdAt: new Date(),
+                    relatedEntityId: requestToReject.id
+                });
 
-        const idx = mockBenefitRequests.findIndex(r => r.id === requestToReject.id);
-        if (idx > -1) {
-             mockBenefitRequests[idx] = update(mockBenefitRequests[idx]);
-        }
-        
-         // Notify Employee
-         mockNotifications.unshift({
-            id: `notif-benefit-rej-${Date.now()}`,
-            userId: requestToReject.employeeId,
-            type: NotificationType.TICKET_UPDATE_REQUESTER, // Using generic alert icon
-            title: 'Benefit Request Rejected',
-            message: `Your request for ${requestToReject.benefitTypeName} was rejected. Reason: ${reason}`,
-            link: '/employees/benefits',
-            isRead: false,
-            createdAt: new Date(),
-            relatedEntityId: requestToReject.id
-        });
-
-        logActivity(user, 'REJECT', 'BenefitRequest', requestToReject.id, `Rejected request. Reason: ${reason}`);
-        setIsRejectModalOpen(false);
-        setRequestToReject(null);
+                logActivity(user, 'REJECT', 'BenefitRequest', requestToReject.id, `Rejected request. Reason: ${reason}`);
+            })
+            .catch(err => {
+                console.error('Failed to reject request', err);
+                alert('Failed to reject request. Please try again.');
+            })
+            .finally(() => {
+                setIsRejectModalOpen(false);
+                setRequestToReject(null);
+            });
     };
     
     // --- Fulfillment Handlers ---
@@ -408,44 +549,46 @@ const Benefits: React.FC = () => {
     const handleConfirmFulfillment = (voucherCode: string) => {
         if (!user || !requestToFulfill) return;
         
-         const update = (r: BenefitRequest) => {
-            if (r.id === requestToFulfill.id) {
-                return { 
-                    ...r, 
-                    status: BenefitRequestStatus.Fulfilled,
-                    fulfilledBy: user.id,
-                    fulfilledAt: new Date(),
-                    voucherCode: voucherCode
-                };
-            }
-            return r;
-        };
+        supabase.from('benefit_requests')
+            .update({
+                status: BenefitRequestStatus.Fulfilled,
+                fulfilled_by: user.id,
+                fulfilled_at: new Date().toISOString(),
+                voucher_code: voucherCode || null,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', requestToFulfill.id)
+            .select('*')
+            .single()
+            .then(({ data, error }) => {
+                if (error) throw error;
+                const mapped = mapRequestRow(data as BenefitRequestRow);
+                setAllRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
+                setMyRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
 
-        setAllRequests(prev => prev.map(update));
-        setMyRequests(prev => prev.map(update));
-
-        const idx = mockBenefitRequests.findIndex(r => r.id === requestToFulfill.id);
-        if (idx > -1) {
-             mockBenefitRequests[idx] = update(mockBenefitRequests[idx]);
-        }
-        
-        // Notify Employee
-         mockNotifications.unshift({
-            id: `notif-benefit-full-${Date.now()}`,
-            userId: requestToFulfill.employeeId,
-            type: NotificationType.AWARD_RECEIVED,
-            title: 'Benefit Fulfilled',
-            message: `Your benefit ${requestToFulfill.benefitTypeName} has been fulfilled! Check details for voucher/code.`,
-            link: '/employees/benefits',
-            isRead: false,
-            createdAt: new Date(),
-            relatedEntityId: requestToFulfill.id
-        });
-        
-        logActivity(user, 'UPDATE', 'BenefitRequest', requestToFulfill.id, `Fulfilled request. Code: ${voucherCode}`);
-        setIsFulfillmentModalOpen(false);
-        setRequestToFulfill(null);
-        alert("Request marked as fulfilled.");
+                mockNotifications.unshift({
+                    id: `notif-benefit-full-${Date.now()}`,
+                    userId: requestToFulfill.employeeId,
+                    type: NotificationType.AWARD_RECEIVED,
+                    title: 'Benefit Fulfilled',
+                    message: `Your benefit ${requestToFulfill.benefitTypeName} has been fulfilled! Check details for voucher/code.`,
+                    link: '/employees/benefits',
+                    isRead: false,
+                    createdAt: new Date(),
+                    relatedEntityId: requestToFulfill.id
+                });
+                
+                logActivity(user, 'UPDATE', 'BenefitRequest', requestToFulfill.id, `Fulfilled request. Code: ${voucherCode}`);
+                alert("Request marked as fulfilled.");
+            })
+            .catch(err => {
+                console.error('Failed to mark as fulfilled', err);
+                alert('Failed to mark as fulfilled. Please try again.');
+            })
+            .finally(() => {
+                setIsFulfillmentModalOpen(false);
+                setRequestToFulfill(null);
+            });
     };
 
 
@@ -496,6 +639,9 @@ const Benefits: React.FC = () => {
                 <div className="space-y-6">
                     <EditableDescription descriptionKey="benefitsDesc" className="text-sm" />
                     <Card title="Benefit Catalog">
+                        {typesLoading && (
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">Loading benefit types…</p>
+                        )}
                         <BenefitTypeTable 
                             benefitTypes={benefitTypes} 
                             onEdit={handleOpenConfigModal} 
@@ -531,7 +677,12 @@ const Benefits: React.FC = () => {
                                 </div>
                             </Card>
                         ))}
-                         {activeBenefitTypes.length === 0 && (
+                        {typesLoading && activeBenefitTypes.length === 0 && (
+                            <div className="col-span-full text-center py-12 text-gray-500">
+                                Loading benefits…
+                            </div>
+                        )}
+                        {!typesLoading && activeBenefitTypes.length === 0 && (
                             <div className="col-span-full text-center py-12 text-gray-500">
                                 No benefits are currently available.
                             </div>
