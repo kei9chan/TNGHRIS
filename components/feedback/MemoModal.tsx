@@ -12,7 +12,7 @@ interface MemoModalProps {
   isOpen: boolean;
   onClose: () => void;
   memo: Memo | null;
-  onSave: (memo: Memo) => void;
+  onSave: (memo: Partial<Memo>) => void;
 }
 
 const MemoModal: React.FC<MemoModalProps> = ({ isOpen, onClose, memo, onSave }) => {
@@ -41,6 +41,8 @@ const MemoModal: React.FC<MemoModalProps> = ({ isOpen, onClose, memo, onSave }) 
       attachments: [],
       acknowledgementTracker: [],
       body: '',
+      status: 'Draft',
+      effectiveDate: new Date(),
     });
   }, [memo, isOpen]);
 
@@ -81,7 +83,7 @@ const MemoModal: React.FC<MemoModalProps> = ({ isOpen, onClose, memo, onSave }) 
 
   const handleSave = () => {
     // Basic validation
-    if (currentMemo.title && currentMemo.body) {
+    if (currentMemo.title && currentMemo.body && currentMemo.effectiveDate) {
       onSave(currentMemo as Memo);
     }
   };
@@ -123,6 +125,7 @@ const MemoModal: React.FC<MemoModalProps> = ({ isOpen, onClose, memo, onSave }) 
         <Input label="Tags (comma-separated)" id="tags" name="tags" value={currentMemo.tags?.join(', ') || ''} onChange={handleTagsChange} />
         
         <RichTextEditor
+          key={memo?.id || 'new-memo'}
           label="Body"
           value={currentMemo.body || ''}
           onChange={(value) => setCurrentMemo(prev => ({ ...prev, body: value }))}

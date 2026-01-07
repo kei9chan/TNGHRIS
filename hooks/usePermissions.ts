@@ -72,6 +72,23 @@ const coachingPermissions: Record<Role, Permission[]> = {
   [Role.IT]: [], // None
 };
 
+// Memo Library RBAC matrix
+const memoPermissions: Record<Role, Permission[]> = {
+  [Role.Admin]: [Permission.Manage],
+  [Role.HRManager]: [Permission.Manage],
+  [Role.HRStaff]: [Permission.Manage],
+  [Role.BOD]: [Permission.View],
+  [Role.GeneralManager]: [Permission.View], // View BU/Departments (scope handled elsewhere)
+  [Role.OperationsDirector]: [Permission.View], // View BU only
+  [Role.BusinessUnitManager]: [Permission.View], // Own BU
+  [Role.Manager]: [Permission.View], // Own Team
+  [Role.Employee]: [Permission.View], // Own BU
+  [Role.FinanceStaff]: [], // None
+  [Role.Auditor]: [], // None
+  [Role.Recruiter]: [Permission.Manage], // Full
+  [Role.IT]: [], // None
+};
+
 export const usePermissions = () => {
     const { user: sessionUser } = useAuth();
     const { isRbacEnabled } = useSettings();
@@ -142,6 +159,16 @@ export const usePermissions = () => {
 
         if (resource === 'Assets') {
             const perms = assetManagementPermissions[user.role];
+            if (!perms || perms.length === 0) {
+                return false;
+            }
+            if (perms.includes(Permission.Manage)) return true;
+            if (permission === Permission.View && perms.length > 0) return true;
+            return perms.includes(permission);
+        }
+
+        if (resource === 'MemoLibrary') {
+            const perms = memoPermissions[user.role];
             if (!perms || perms.length === 0) {
                 return false;
             }
