@@ -1,7 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { AssetRequestStatus, Asset, AssetAssignment, AssetStatus, EnrichedAssetRequest } from '../../types';
-import { mockAssets, mockAssetAssignments } from '../../services/mockData';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Textarea from '../ui/Textarea';
@@ -15,9 +14,11 @@ interface AssetReturnConfirmationModalProps {
     request: EnrichedAssetRequest;
     onRejectRequest: () => void;
     isActionable: boolean;
+    assets: Asset[];
+    assignments: AssetAssignment[];
 }
 
-const AssetReturnConfirmationModal: React.FC<AssetReturnConfirmationModalProps> = ({ isOpen, onClose, onConfirm, request, onRejectRequest, isActionable }) => {
+const AssetReturnConfirmationModal: React.FC<AssetReturnConfirmationModalProps> = ({ isOpen, onClose, onConfirm, request, onRejectRequest, isActionable, assets, assignments }) => {
     const [returnCondition, setReturnCondition] = useState('');
     const [newStatus, setNewStatus] = useState<AssetStatus>(AssetStatus.Available);
     const [managerProofFile, setManagerProofFile] = useState<File | null>(null);
@@ -25,18 +26,18 @@ const AssetReturnConfirmationModal: React.FC<AssetReturnConfirmationModalProps> 
 
 
     const assignment = useMemo(() => {
-        return mockAssetAssignments.find(a => a.assetId === request.assetId && a.employeeId === request.employeeId && !a.dateReturned);
-    }, [request]);
+        return assignments.find(a => a.assetId === request.assetId && a.employeeId === request.employeeId && !a.dateReturned);
+    }, [request, assignments]);
 
     useEffect(() => {
         if (isOpen) {
             setReturnCondition(assignment?.conditionOnReturn || '');
-            const asset = mockAssets.find(a => a.id === request.assetId);
+            const asset = assets.find(a => a.id === request.assetId);
             setNewStatus(asset?.status || AssetStatus.Available);
             setManagerProofFile(null);
             setManagerProofLink('');
         }
-    }, [isOpen, request, assignment]);
+    }, [isOpen, request, assignment, assets]);
 
     const handleConfirm = () => {
         if (!assignment) {

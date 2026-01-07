@@ -38,6 +38,23 @@ const benefitsPermissions: Record<Role, Permission[]> = {
   [Role.IT]: [], // None
 };
 
+// Asset Management RBAC matrix
+const assetManagementPermissions: Record<Role, Permission[]> = {
+  [Role.Admin]: [Permission.Manage],
+  [Role.HRManager]: [Permission.Manage],
+  [Role.HRStaff]: [Permission.Manage],
+  [Role.BOD]: [Permission.View],
+  [Role.GeneralManager]: [Permission.View], // View BU/Departments (scope handled elsewhere)
+  [Role.OperationsDirector]: [Permission.View], // View BU/Departments
+  [Role.BusinessUnitManager]: [Permission.View], // Own BU
+  [Role.Manager]: [Permission.View], // Own Team
+  [Role.Employee]: [], // None
+  [Role.FinanceStaff]: [], // None
+  [Role.Auditor]: [], // None
+  [Role.Recruiter]: [Permission.Manage],
+  [Role.IT]: [Permission.Manage],
+};
+
 export const usePermissions = () => {
     const { user: sessionUser } = useAuth();
     const { isRbacEnabled } = useSettings();
@@ -98,6 +115,16 @@ export const usePermissions = () => {
 
         if (resource === 'Benefits') {
             const perms = benefitsPermissions[user.role];
+            if (!perms || perms.length === 0) {
+                return false;
+            }
+            if (perms.includes(Permission.Manage)) return true;
+            if (permission === Permission.View && perms.length > 0) return true;
+            return perms.includes(permission);
+        }
+
+        if (resource === 'Assets') {
+            const perms = assetManagementPermissions[user.role];
             if (!perms || perms.length === 0) {
                 return false;
             }

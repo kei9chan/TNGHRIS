@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { AssetRequest, AssetRequestStatus, User, Asset, AssetAssignment, AssetStatus } from '../../types';
-import { mockUsers, mockAssets, mockAssetAssignments } from '../../services/mockData';
+import { mockUsers } from '../../services/mockData';
+import { supabase } from '../../services/supabaseClient';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Textarea from '../ui/Textarea';
@@ -12,13 +13,16 @@ interface AssetReturnRequestModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSave: (request: AssetRequest) => void;
+    assets: Asset[];
+    assignments: AssetAssignment[];
 }
 
-const AssetReturnRequestModal: React.FC<AssetReturnRequestModalProps> = ({ isOpen, onClose, onSave }) => {
+const AssetReturnRequestModal: React.FC<AssetReturnRequestModalProps> = ({ isOpen, onClose, onSave, assets, assignments }) => {
     const { user } = useAuth();
     const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
     const [selectedAssignmentId, setSelectedAssignmentId] = useState('');
     const [justification, setJustification] = useState('');
+    const [employees, setEmployees] = useState<User[]>([]);
 
     // Search States
     const [employeeSearch, setEmployeeSearch] = useState('');
@@ -30,9 +34,10 @@ const AssetReturnRequestModal: React.FC<AssetReturnRequestModalProps> = ({ isOpe
     const assetWrapperRef = useRef<HTMLDivElement>(null);
 
     const employeesWithAssets = useMemo(() => {
-        const userIdsWithAssets = new Set(mockAssetAssignments.filter(a => !a.dateReturned).map(a => a.employeeId));
-        return mockUsers.filter(u => userIdsWithAssets.has(u.id)).sort((a, b) => a.name.localeCompare(b.name));
-    }, []);
+        const sourceEmployees = employees.length ? employees : [];
+        const userIdsWithAssets = new Set(assignments.filter(a => !a.dateReturned).map(a => a.employeeId));
+        return sourceEmployees.filter(u => userIdsWithAssets.has(u.id)).sort((a, b) => a.name.localeCompare(b.name));
+    }, [employees, assignments]);
 
     const filteredEmployees = useMemo(() => {
         if (!employeeSearch) return employeesWithAssets.slice(0, 10);
@@ -42,12 +47,12 @@ const AssetReturnRequestModal: React.FC<AssetReturnRequestModalProps> = ({ isOpe
 
     const assetsForEmployee = useMemo(() => {
         if (!selectedEmployeeId) return [];
-        const assignments = mockAssetAssignments.filter(a => a.employeeId === selectedEmployeeId && !a.dateReturned);
-        return assignments.map(assignment => {
-            const asset = mockAssets.find(asset => asset.id === assignment.assetId);
+        const relevantAssignments = assignments.filter(a => a.employeeId === selectedEmployeeId && !a.dateReturned);
+        return relevantAssignments.map(assignment => {
+            const asset = assets.find(asset => asset.id === assignment.assetId);
             return { assignment, asset };
         }).filter(item => item.asset) as { assignment: AssetAssignment, asset: Asset }[];
-    }, [selectedEmployeeId]);
+    }, [selectedEmployeeId, assignments, assets]);
 
     const filteredAssets = useMemo(() => {
         if (!assetSearch) return assetsForEmployee;
@@ -67,6 +72,28 @@ const AssetReturnRequestModal: React.FC<AssetReturnRequestModalProps> = ({ isOpe
             setJustification('');
             setIsEmployeeDropdownOpen(false);
             setIsAssetDropdownOpen(false);
+
+            const loadEmployees = async () => {
+                try {
+                    const { data, error } = await supabase
+                        .from('hris_users')
+                        .select('id, full_name, role, status');
+                    if (error) throw error;
+                    const mapped =
+                        data?.map((u: any) => ({
+                            id: u.id,
+                            name: u.full_name,
+                            email: '',
+                            role: u.role,
+                            status: u.status,
+                        })) || [];
+                    setEmployees(mapped);
+                } catch (err) {
+                    console.error('Failed to load employees for asset return', err);
+                    setEmployees([]);
+                }
+            };
+            loadEmployees();
         }
     }, [isOpen]);
 
@@ -106,11 +133,14 @@ const AssetReturnRequestModal: React.FC<AssetReturnRequestModalProps> = ({ isOpe
             return;
         }
 
-        const assignment = mockAssetAssignments.find(a => a.id === selectedAssignmentId);
-        const asset = mockAssets.find(a => a.id === assignment?.assetId);
-        const employee = mockUsers.find(u => u.id === selectedEmployeeId);
+        const assignment = assignments.find(a => a.id === selectedAssignmentId);
+        const asset = assets.find(a => a.id === assignment?.assetId);
+        const employee = employees.find(u => u.id === selectedEmployeeId);
 
-        if (!assignment || !asset || !employee) return;
+        if (!assignment || !asset || !employee) {
+            alert('Missing required data. Please re-select employee and asset.');
+            return;
+        }
         
         const newRequest: AssetRequest = {
             id: `ASSET-REQ-${Date.now()}`,

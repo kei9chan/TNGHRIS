@@ -1,7 +1,8 @@
 
-import React, { useMemo } from 'react';
-import { AssetAssignment, EnrichedAsset } from '../../types';
+import React, { useMemo, useEffect, useState } from 'react';
+import { AssetAssignment, EnrichedAsset, User } from '../../types';
 import { mockUsers, mockAssetRepairs } from '../../services/mockData';
+import { supabase } from '../../services/supabaseClient';
 import Modal from '../ui/Modal';
 import { useSettings } from '../../context/SettingsContext';
 
@@ -48,24 +49,49 @@ const DetailItem: React.FC<{ label: string, children: React.ReactNode }> = ({ la
 
 const AssetHistoryModal: React.FC<AssetHistoryModalProps> = ({ isOpen, onClose, asset, assignments }) => {
     const { settings } = useSettings();
+    const [employees, setEmployees] = useState<User[]>([]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        const loadEmployees = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('hris_users')
+                    .select('id, full_name, role, status');
+                if (error) throw error;
+                const mapped =
+                    data?.map((u: any) => ({
+                        id: u.id,
+                        name: u.full_name,
+                        email: '',
+                        role: u.role,
+                        status: u.status,
+                    })) || [];
+                setEmployees(mapped);
+            } catch (err) {
+                console.error('Failed to load employees for asset history', err);
+                setEmployees([]);
+            }
+        };
+        loadEmployees();
+    }, [isOpen]);
 
     const history = useMemo(() => {
         if (!asset || !asset.id) return [];
+        const lookup = employees.reduce<Record<string, string>>((acc, u) => {
+            acc[u.id] = u.name;
+            return acc;
+        }, {});
         return assignments
             .filter(a => a.assetId === asset.id)
             .sort((a, b) => new Date(b.dateAssigned).getTime() - new Date(a.dateAssigned).getTime())
             .map(assignment => ({
                 ...assignment,
-                employeeName: mockUsers.find(u => u.id === assignment.employeeId)?.name || 'Unknown User'
+                employeeName: lookup[assignment.employeeId] || 'Unknown User'
             }));
-    }, [asset, assignments]);
+    }, [asset, assignments, employees]);
 
-    const repairs = useMemo(() => {
-        if (!asset || !asset.id) return [];
-        return mockAssetRepairs
-            .filter(r => r.assetId === asset.id)
-            .sort((a, b) => new Date(b.dateIn).getTime() - new Date(a.dateIn).getTime());
-    }, [asset]);
+    const repairs: any[] = []; // Supabase repair data not wired; placeholder empty list
 
     if (!asset) return null;
 

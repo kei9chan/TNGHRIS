@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { AssetRequest, AssetRequestStatus, Permission, AssetStatus, NotificationType, EnrichedAssetRequest } from '../../types';
-import { mockAssetRequests, mockUsers, mockAssets, mockAssetAssignments, mockBusinessUnits, mockNotifications } from '../../services/mockData';
+import { AssetRequest, AssetRequestStatus, Permission, AssetStatus, NotificationType, EnrichedAssetRequest, User, Asset, AssetAssignment } from '../../types';
+import { mockBusinessUnits, mockNotifications } from '../../services/mockData';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import Card from '../../components/ui/Card';
@@ -14,6 +14,75 @@ import { logActivity } from '../../services/auditService';
 import AssetReturnSubmissionModal from '../../components/employees/AssetReturnSubmissionModal';
 import AssetRejectionModal from '../../components/employees/AssetRejectionModal';
 import AssetReturnRequestModal from '../../components/employees/AssetReturnRequestModal';
+import { supabase } from '../../services/supabaseClient';
+
+type AssetRequestRow = {
+    id: string;
+    request_type: 'Request' | 'Return';
+    employee_id: string;
+    employee_name: string;
+    asset_description: string;
+    justification: string;
+    status: AssetRequestStatus | string;
+    requested_at: string;
+    manager_id: string;
+    manager_notes?: string | null;
+    approved_at?: string | null;
+    rejected_at?: string | null;
+    fulfilled_at?: string | null;
+    asset_id?: string | null;
+    employee_submission_notes?: string | null;
+    employee_proof_url?: string | null;
+    employee_submitted_at?: string | null;
+    rejection_reason?: string | null;
+};
+
+const mapRequestRow = (row: AssetRequestRow): AssetRequest => ({
+    id: row.id,
+    requestType: row.request_type,
+    employeeId: row.employee_id,
+    employeeName: row.employee_name,
+    assetDescription: row.asset_description,
+    justification: row.justification,
+    status: row.status as AssetRequestStatus,
+    requestedAt: new Date(row.requested_at),
+    managerId: row.manager_id,
+    managerNotes: row.manager_notes ?? undefined,
+    approvedAt: row.approved_at ? new Date(row.approved_at) : undefined,
+    rejectedAt: row.rejected_at ? new Date(row.rejected_at) : undefined,
+    fulfilledAt: row.fulfilled_at ? new Date(row.fulfilled_at) : undefined,
+    assetId: row.asset_id ?? undefined,
+    employeeSubmissionNotes: row.employee_submission_notes ?? undefined,
+    employeeProofUrl: row.employee_proof_url ?? undefined,
+    employeeSubmittedAt: row.employee_submitted_at ? new Date(row.employee_submitted_at) : undefined,
+    rejectionReason: row.rejection_reason ?? undefined,
+});
+
+type AssignmentRow = {
+    id: string;
+    asset_id: string;
+    employee_id: string;
+    date_assigned: string;
+    date_returned?: string | null;
+    condition_on_assign: string;
+    condition_on_return?: string | null;
+    manager_proof_url_on_return?: string | null;
+    is_acknowledged?: boolean | null;
+    acknowledged_at?: string | null;
+};
+
+const mapAssignmentRow = (row: AssignmentRow): AssetAssignment => ({
+    id: row.id,
+    assetId: row.asset_id,
+    employeeId: row.employee_id,
+    dateAssigned: new Date(row.date_assigned),
+    dateReturned: row.date_returned ? new Date(row.date_returned) : undefined,
+    conditionOnAssign: row.condition_on_assign,
+    conditionOnReturn: row.condition_on_return || undefined,
+    managerProofUrlOnReturn: row.manager_proof_url_on_return || undefined,
+    isAcknowledged: !!row.is_acknowledged,
+    acknowledgedAt: row.acknowledged_at ? new Date(row.acknowledged_at) : undefined,
+});
 
 const AssetRequests: React.FC = () => {
     const { user } = useAuth();
@@ -21,7 +90,10 @@ const AssetRequests: React.FC = () => {
     const canManage = can('AssetRequests', Permission.Approve);
     const canRequest = can('AssetRequests', Permission.Create);
 
-    const [requests, setRequests] = useState<AssetRequest[]>(mockAssetRequests);
+    const [requests, setRequests] = useState<AssetRequest[]>([]);
+    const [employees, setEmployees] = useState<User[]>([]);
+    const [assets, setAssets] = useState<Asset[]>([]);
+    const [assignments, setAssignments] = useState<AssetAssignment[]>([]);
     const [isManagerRejectModalOpen, setIsManagerRejectModalOpen] = useState(false);
     const [isReturnConfirmModalOpen, setIsReturnConfirmModalOpen] = useState(false);
     const [isSubmissionModalOpen, setIsSubmissionModalOpen] = useState(false);
@@ -29,15 +101,79 @@ const AssetRequests: React.FC = () => {
     const [isReturnRequestModalOpen, setIsReturnRequestModalOpen] = useState(false);
     const [selectedRequest, setSelectedRequest] = useState<EnrichedAssetRequest | null>(null);
 
-    // Force re-render if mock data changes
     useEffect(() => {
-        const interval = setInterval(() => {
-            if (mockAssetRequests.length !== requests.length) {
-                setRequests([...mockAssetRequests]);
+        const loadEmployees = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('hris_users')
+                    .select('id, full_name, role, status, position');
+                if (error) throw error;
+                const mapped =
+                    data?.map((u: any) => ({
+                        id: u.id,
+                        name: u.full_name,
+                        email: '',
+                        role: u.role,
+                        status: u.status,
+                        position: (u as any)?.position,
+                    })) || [];
+                setEmployees(mapped);
+            } catch (err) {
+                console.error('Failed to load employees for asset requests', err);
+                setEmployees([]);
             }
-        }, 1000);
-        return () => clearInterval(interval);
-    }, [requests.length]);
+        };
+        const loadAssets = async () => {
+            try {
+                const { data, error } = await supabase.from('assets').select('*');
+                if (error) throw error;
+                const mapped =
+                    data?.map((row: any) => ({
+                        id: row.id,
+                        assetTag: row.asset_tag,
+                        name: row.name,
+                        type: row.type,
+                        businessUnitId: row.business_unit_id,
+                        serialNumber: row.serial_number || undefined,
+                        purchaseDate: row.purchase_date ? new Date(row.purchase_date) : new Date(),
+                        value: row.value ?? 0,
+                        status: row.status as AssetStatus,
+                        notes: row.notes || undefined,
+                    })) || [];
+                setAssets(mapped);
+            } catch (err) {
+                console.error('Failed to load assets for requests', err);
+                setAssets([]);
+            }
+        };
+        const loadRequests = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('asset_requests')
+                    .select('*')
+                    .order('requested_at', { ascending: false });
+                if (error) throw error;
+                setRequests((data as AssetRequestRow[] | null)?.map(mapRequestRow) || []);
+            } catch (err) {
+                console.error('Failed to load asset requests', err);
+                setRequests([]);
+            }
+        };
+        const loadAssignments = async () => {
+            try {
+                const { data, error } = await supabase.from('asset_assignments').select('*');
+                if (error) throw error;
+                setAssignments((data as AssignmentRow[] | null)?.map(mapAssignmentRow) || []);
+            } catch (err) {
+                console.error('Failed to load asset assignments for requests', err);
+                setAssignments([]);
+            }
+        };
+        loadEmployees();
+        loadAssets();
+        loadRequests();
+        loadAssignments();
+    }, []);
 
     const [filters, setFilters] = useState({
         searchTerm: '',
@@ -51,20 +187,18 @@ const AssetRequests: React.FC = () => {
     };
 
     const enrichedRequests = useMemo(() => {
-        const userMap = new Map(mockUsers.map(u => [u.id, u]));
-        const assetMap = new Map(mockAssets.map(a => [a.id, a]));
+        const userMap = new Map(employees.map(u => [u.id, u]));
+        const assetMap = new Map(assets.map(a => [a.id, a]));
         const buMap = new Map(mockBusinessUnits.map(b => [b.id, b.name]));
 
-        let viewableRequests = requests;
-        if (!canManage && user) {
-            viewableRequests = requests.filter(r => r.employeeId === user.id || r.managerId === user.id);
-        }
-
-        return viewableRequests.map(req => {
+        return requests.map(req => {
             const asset = req.assetId ? assetMap.get(req.assetId) : null;
             const employee = userMap.get(req.employeeId);
-            const businessUnitName = buMap.get(mockBusinessUnits.find(bu => bu.name === employee?.businessUnit)?.id || '') || 'N/A';
+            const businessUnitName = employee?.businessUnitId ? buMap.get(employee.businessUnitId) || 'N/A' : 'N/A';
             const requester = userMap.get(req.managerId);
+
+            // active assignment for this asset/employee
+            const activeAssignment = assignments.find(a => a.assetId === req.assetId && a.employeeId === req.employeeId && !a.dateReturned);
 
             return {
                 ...req,
@@ -72,9 +206,10 @@ const AssetRequests: React.FC = () => {
                 assetTag: asset?.assetTag,
                 businessUnitName: businessUnitName,
                 requester,
+                assignmentId: activeAssignment?.id,
             };
         });
-    }, [requests, user, canManage]);
+    }, [requests, user, canManage, employees, assets, assignments]);
     
     const filteredRequests = useMemo(() => {
         return enrichedRequests.filter(req => {
@@ -87,9 +222,7 @@ const AssetRequests: React.FC = () => {
             const statusMatch = filters.status === 'all' || req.status === filters.status;
             const typeMatch = filters.type === 'all' || req.requestType === filters.type;
             
-            const employeeForBu = mockUsers.find(u => u.id === req.employeeId);
-            const buForEmployee = mockBusinessUnits.find(b => b.name === employeeForBu?.businessUnit);
-            const buMatch = !filters.bu || buForEmployee?.id === filters.bu;
+            const buMatch = !filters.bu || req.businessUnitName === mockBusinessUnits.find(b => b.id === filters.bu)?.name;
 
             return searchMatch && statusMatch && typeMatch && buMatch;
         });
@@ -111,88 +244,116 @@ const AssetRequests: React.FC = () => {
         }
     };
     
-    const handleConfirmReject = (reason: string) => {
+    const updateRequestState = (updated: AssetRequest) => {
+        setRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
+    };
+
+    const handleConfirmReject = async (reason: string) => {
         if (!selectedRequest || !user) return;
-        
-        const reqIndex = mockAssetRequests.findIndex(r => r.id === selectedRequest.id);
-        if (reqIndex > -1) {
-            mockAssetRequests[reqIndex] = {
-                ...mockAssetRequests[reqIndex],
-                status: AssetRequestStatus.Rejected,
-                rejectionReason: reason,
-                rejectedAt: new Date(),
-            };
-            setRequests([...mockAssetRequests]);
+        try {
+            const { data, error } = await supabase
+                .from('asset_requests')
+                .update({
+                    status: AssetRequestStatus.Rejected,
+                    rejection_reason: reason,
+                    rejected_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                })
+                .eq('id', selectedRequest.id)
+                .select('*')
+                .single();
+            if (error) throw error;
+            const mapped = mapRequestRow(data as AssetRequestRow);
+            updateRequestState(mapped);
             logActivity(user, 'REJECT', 'AssetRequest', selectedRequest.id, `Rejected request. Reason: ${reason}`);
-            
-            mockNotifications.unshift({
-                id: `notif-asset-reject-${selectedRequest.id}`,
-                userId: selectedRequest.employeeId,
-                type: NotificationType.AssetRequestUpdate,
-                title: 'Asset Return Rejected',
-                message: `Your return for ${selectedRequest.assetName} was rejected. Click to view reason and resubmit.`,
-                link: '/employees/asset-management/asset-requests',
-                isRead: false,
-                createdAt: new Date(),
-                relatedEntityId: selectedRequest.id,
-            });
+        } catch (err) {
+            console.error('Failed to reject request', err);
+            alert('Failed to reject request. Please try again.');
+        } finally {
+            setIsManagerRejectModalOpen(false);
+            setIsReturnConfirmModalOpen(false);
         }
-        setIsManagerRejectModalOpen(false);
-        setIsReturnConfirmModalOpen(false);
     };
     
-    const handleSaveSubmission = (notes: string, proofUrl: string) => {
+    const handleSaveSubmission = async (notes: string, proofUrl: string) => {
         if (!selectedRequest || !user) return;
-
-        const reqIndex = mockAssetRequests.findIndex(r => r.id === selectedRequest.id);
-        if (reqIndex > -1) {
-            mockAssetRequests[reqIndex] = {
-                ...mockAssetRequests[reqIndex],
-                status: AssetRequestStatus.Returned,
-                employeeSubmissionNotes: notes,
-                employeeProofUrl: proofUrl,
-                employeeSubmittedAt: new Date(),
-                rejectionReason: undefined,
-                rejectedAt: undefined,
-            };
-            setRequests([...mockAssetRequests]);
+        try {
+            const { data, error } = await supabase
+                .from('asset_requests')
+                .update({
+                    status: AssetRequestStatus.Returned,
+                    employee_submission_notes: notes,
+                    employee_proof_url: proofUrl,
+                    employee_submitted_at: new Date().toISOString(),
+                    rejection_reason: null,
+                    rejected_at: null,
+                    updated_at: new Date().toISOString(),
+                })
+                .eq('id', selectedRequest.id)
+                .select('*')
+                .single();
+            if (error) throw error;
+            const mapped = mapRequestRow(data as AssetRequestRow);
+            updateRequestState(mapped);
             logActivity(user, 'UPDATE', 'AssetRequest', selectedRequest.id, `Submitted asset return proof.`);
+        } catch (err) {
+            console.error('Failed to submit return proof', err);
+            alert('Failed to submit return proof. Please try again.');
+        } finally {
+            setIsSubmissionModalOpen(false);
+            setIsRejectionViewModalOpen(false);
         }
-        setIsSubmissionModalOpen(false);
-        setIsRejectionViewModalOpen(false);
     };
 
-    const handleConfirmReturn = (assignmentId: string, returnCondition: string, newStatus: AssetStatus, managerProofUrl?: string) => {
+    const handleConfirmReturn = async (assignmentId: string | undefined, returnCondition: string, newStatus: AssetStatus, managerProofUrl?: string) => {
         if (!selectedRequest || !user) return;
-
-        const assignmentIndex = mockAssetAssignments.findIndex(a => a.id === assignmentId);
-        if (assignmentIndex > -1) {
-            mockAssetAssignments[assignmentIndex] = {
-                ...mockAssetAssignments[assignmentIndex],
-                dateReturned: new Date(),
-                conditionOnReturn: returnCondition,
-                managerProofUrlOnReturn: managerProofUrl,
-            };
+        if (!assignmentId) {
+            alert('No active assignment found for this asset/employee. Cannot complete return.');
+            return;
         }
 
-        const assetId = mockAssetAssignments[assignmentIndex].assetId;
-        const assetIndex = mockAssets.findIndex(a => a.id === assetId);
-        if (assetIndex > -1) {
-            mockAssets[assetIndex].status = newStatus;
-        }
+        try {
+            // Update assignment
+            await supabase
+                .from('asset_assignments')
+                .update({
+                    date_returned: new Date().toISOString(),
+                    condition_on_return: returnCondition,
+                    manager_proof_url_on_return: managerProofUrl || null,
+                    updated_at: new Date().toISOString(),
+                })
+                .eq('id', assignmentId);
 
-        const reqIndex = mockAssetRequests.findIndex(r => r.id === selectedRequest.id);
-        if (reqIndex > -1) {
-            mockAssetRequests[reqIndex] = {
-                ...mockAssetRequests[reqIndex],
-                status: AssetRequestStatus.Fulfilled,
-                fulfilledAt: new Date(),
-            };
+            // Update asset status
+            if (selectedRequest.assetId) {
+                await supabase
+                    .from('assets')
+                    .update({ status: newStatus, updated_at: new Date().toISOString() })
+                    .eq('id', selectedRequest.assetId);
+            }
+
+            // Update request status
+            const { data, error } = await supabase
+                .from('asset_requests')
+                .update({
+                    status: AssetRequestStatus.Fulfilled,
+                    fulfilled_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                })
+                .eq('id', selectedRequest.id)
+                .select('*')
+                .single();
+            if (error) throw error;
+            const mapped = mapRequestRow(data as AssetRequestRow);
+            updateRequestState(mapped);
+
+            logActivity(user, 'APPROVE', 'AssetRequest', selectedRequest.id, `Approved asset return. New status: ${newStatus}. Condition: ${returnCondition}`);
+        } catch (err) {
+            console.error('Failed to complete return', err);
+            alert('Failed to complete return. Please try again.');
+        } finally {
+            setIsReturnConfirmModalOpen(false);
         }
-        
-        setRequests([...mockAssetRequests]);
-        logActivity(user, 'APPROVE', 'AssetRequest', selectedRequest.id, `Approved asset return. New status: ${newStatus}. Condition: ${returnCondition}`);
-        setIsReturnConfirmModalOpen(false);
     };
     
     const handleResubmit = () => {
@@ -204,14 +365,35 @@ const AssetRequests: React.FC = () => {
         setIsReturnRequestModalOpen(true);
     };
 
-    const handleSaveReturnRequest = (request: AssetRequest) => {
+    const handleSaveReturnRequest = async (request: AssetRequest) => {
         if (!user) return;
-        
-        mockAssetRequests.unshift(request);
-        logActivity(user, 'CREATE', 'AssetRequest', request.id, `Created return request for asset ID ${request.assetId} from employee ID ${request.employeeId}`);
-        alert('Return request created successfully.');
-        setIsReturnRequestModalOpen(false);
-        setRequests([...mockAssetRequests]);
+        try {
+            const { data, error } = await supabase
+                .from('asset_requests')
+                .insert({
+                    request_type: request.requestType,
+                    employee_id: request.employeeId,
+                    employee_name: request.employeeName,
+                    asset_id: request.assetId,
+                    asset_description: request.assetDescription,
+                    justification: request.justification,
+                    status: AssetRequestStatus.Pending,
+                    requested_at: new Date().toISOString(),
+                    manager_id: user.id,
+                })
+                .select('*')
+                .single();
+            if (error) throw error;
+            const mapped = mapRequestRow(data as AssetRequestRow);
+            setRequests(prev => [mapped, ...prev]);
+            logActivity(user, 'CREATE', 'AssetRequest', mapped.id, `Created return request for asset ID ${mapped.assetId} from employee ID ${mapped.employeeId}`);
+            alert('Return request submitted.');
+        } catch (err) {
+            console.error('Failed to create return request', err);
+            alert('Failed to create return request. Please try again.');
+        } finally {
+            setIsReturnRequestModalOpen(false);
+        }
     };
 
 
@@ -285,9 +467,11 @@ const AssetRequests: React.FC = () => {
                         setIsManagerRejectModalOpen(true);
                     }}
                     isActionable={
-                        user?.id === selectedRequest.requester?.id &&
-                        selectedRequest.status === AssetRequestStatus.Returned
+                        user?.id === selectedRequest.managerId &&
+                        (selectedRequest.status === AssetRequestStatus.Returned || selectedRequest.status === AssetRequestStatus.Pending)
                     }
+                    assets={assets}
+                    assignments={assignments}
                 />
             )}
             
@@ -313,6 +497,8 @@ const AssetRequests: React.FC = () => {
                     isOpen={isReturnRequestModalOpen}
                     onClose={() => setIsReturnRequestModalOpen(false)}
                     onSave={handleSaveReturnRequest}
+                    assets={assets}
+                    assignments={assignments}
                 />
             )}
         </div>

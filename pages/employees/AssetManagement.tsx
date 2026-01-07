@@ -1,10 +1,11 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Asset, AssetAssignment, AssetStatus, Permission, User, NotificationType, EnrichedAsset } from '../../types';
-import { mockAssets, mockAssetAssignments, mockUsers, mockBusinessUnits, mockAssetRequests, mockNotifications } from '../../services/mockData';
+import { mockUsers, mockBusinessUnits, mockAssetRequests, mockNotifications } from '../../services/mockData';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { logActivity } from '../../services/auditService';
+import { supabase } from '../../services/supabaseClient';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
@@ -30,14 +31,71 @@ const DocumentArrowDownIcon = () => (
     </svg>
 );
 
+type AssetRow = {
+    id: string;
+    asset_tag: string;
+    name: string;
+    type: string;
+    business_unit_id: string;
+    serial_number?: string | null;
+    purchase_date: string;
+    value?: number | null;
+    status: AssetStatus | string;
+    notes?: string | null;
+};
+
+type AssignmentRow = {
+    id: string;
+    asset_id: string;
+    employee_id: string;
+    date_assigned: string;
+    date_returned?: string | null;
+    condition_on_assign: string;
+    condition_on_return?: string | null;
+    manager_proof_url_on_return?: string | null;
+    is_acknowledged?: boolean | null;
+    acknowledged_at?: string | null;
+    signed_document_url?: string | null;
+    assets?: AssetRow | null;
+};
+
+const mapAssetRow = (row: AssetRow): Asset => ({
+    id: row.id,
+    assetTag: row.asset_tag,
+    name: row.name,
+    type: row.type as Asset['type'],
+    businessUnitId: row.business_unit_id,
+    serialNumber: row.serial_number || undefined,
+    purchaseDate: new Date(row.purchase_date),
+    value: row.value ?? 0,
+    status: row.status as AssetStatus,
+    notes: row.notes || undefined,
+});
+
+const mapAssignmentRow = (row: AssignmentRow): AssetAssignment => ({
+    id: row.id,
+    assetId: row.asset_id,
+    employeeId: row.employee_id,
+    dateAssigned: new Date(row.date_assigned),
+    dateReturned: row.date_returned ? new Date(row.date_returned) : undefined,
+    conditionOnAssign: row.condition_on_assign,
+    conditionOnReturn: row.condition_on_return || undefined,
+    managerProofUrlOnReturn: row.manager_proof_url_on_return || undefined,
+    isAcknowledged: !!row.is_acknowledged,
+    acknowledgedAt: row.acknowledged_at ? new Date(row.acknowledged_at) : undefined,
+    signedDocumentUrl: row.signed_document_url || undefined,
+});
+
 const AssetManagement: React.FC = () => {
     const { user } = useAuth();
     const { can, getAccessibleBusinessUnits } = usePermissions();
     const canManage = can('Assets', Permission.Manage);
     const canRequest = can('AssetRequests', Permission.Create);
 
-    const [assets, setAssets] = useState<Asset[]>(mockAssets);
-    const [assignments, setAssignments] = useState<AssetAssignment[]>(mockAssetAssignments);
+    const [assets, setAssets] = useState<Asset[]>([]);
+    const [assetsLoading, setAssetsLoading] = useState(true);
+    const [assignments, setAssignments] = useState<AssetAssignment[]>([]);
+    const [employees, setEmployees] = useState<User[]>([]);
     
     // Modals
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -58,14 +116,58 @@ const AssetManagement: React.FC = () => {
     // Load accessible BUs for the filter dropdown
     const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
 
-    // Keep data fresh with mock DB
+    // Load data from Supabase
     useEffect(() => {
-        const interval = setInterval(() => {
-            if (mockAssets.length !== assets.length) setAssets([...mockAssets]);
-            if (mockAssetAssignments.length !== assignments.length) setAssignments([...mockAssetAssignments]);
-        }, 1000);
-        return () => clearInterval(interval);
-    }, [assets.length, assignments.length]);
+        const loadAssets = async () => {
+            try {
+                const { data, error } = await supabase.from('assets').select('*').order('created_at', { ascending: false });
+                if (error) throw error;
+                setAssets((data as AssetRow[] | null)?.map(mapAssetRow) || []);
+            } catch (err) {
+                console.error('Failed to load assets', err);
+                setAssets([]);
+            } finally {
+                setAssetsLoading(false);
+            }
+        };
+        const loadAssignments = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('asset_assignments')
+                    .select('*')
+                    .order('date_assigned', { ascending: false });
+                if (error) throw error;
+                setAssignments((data as AssignmentRow[] | null)?.map(mapAssignmentRow) || []);
+            } catch (err) {
+                console.error('Failed to load asset assignments', err);
+                setAssignments([]);
+            }
+        };
+        const loadEmployees = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('hris_users')
+                    .select('id, full_name, role, status, position');
+                if (error) throw error;
+                const mapped =
+                    data?.map((u: any) => ({
+                        id: u.id,
+                        name: u.full_name,
+                        email: '',
+                        role: u.role,
+                        status: u.status,
+                        position: (u as any)?.position,
+                    })) || [];
+                setEmployees(mapped);
+            } catch (err) {
+                console.error('Failed to load employees for assets page', err);
+                setEmployees([]);
+            }
+        };
+        loadAssets();
+        loadAssignments();
+        loadEmployees();
+    }, []);
 
     const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         setFilters(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -73,37 +175,37 @@ const AssetManagement: React.FC = () => {
 
     // 1. Enrich Assets with BU Name and Assigned User info
     const enrichedAssets = useMemo(() => {
-        // Only show assets for BUs the user has access to
-        const accessibleBuIds = new Set(accessibleBus.map(b => b.id));
-        
-        return assets
-            .filter(asset => accessibleBuIds.has(asset.businessUnitId))
-            .map(asset => {
-                let assignedTo: User | undefined;
-                let dateAssigned: Date | undefined;
-                let isPendingAcceptance = false;
-                
-                if (asset.status === AssetStatus.Assigned) {
-                    const assignment = assignments.find(a => a.assetId === asset.id && !a.dateReturned);
-                    if (assignment) {
-                        assignedTo = mockUsers.find(u => u.id === assignment.employeeId);
-                        dateAssigned = assignment.dateAssigned;
-                        isPendingAcceptance = !assignment.isAcknowledged;
-                    }
-                }
-                const businessUnitName = mockBusinessUnits.find(bu => bu.id === asset.businessUnitId)?.name || 'N/A';
-                return { ...asset, assignedTo, dateAssigned, businessUnitName, isPendingAcceptance };
-            });
-    }, [assets, assignments, accessibleBus]);
+        const userLookup = employees.reduce<Record<string, User>>((acc, u) => {
+            acc[u.id] = u;
+            return acc;
+        }, {});
+        return assets.map(asset => {
+            const activeAssignment = assignments.find(a => a.assetId === asset.id && !a.dateReturned);
+            const assignedTo = activeAssignment ? userLookup[activeAssignment.employeeId] : undefined;
+            const businessUnitName = mockBusinessUnits.find(bu => bu.id === asset.businessUnitId)?.name || 'N/A';
+            return {
+                ...asset,
+                assignedTo,
+                dateAssigned: activeAssignment?.dateAssigned,
+                isPendingAcceptance: activeAssignment ? !activeAssignment.isAcknowledged : false,
+                businessUnitName,
+            };
+        });
+    }, [assets, assignments, employees]);
 
-    // 2. Apply UI Filters (Search, Status, Type, Specific BU)
+    // 2. Apply UI Filters (Search, Status, Type, Specific BU) with dedupe
     const filteredAssets = useMemo(() => {
+        const seen = new Set<string>();
         return enrichedAssets.filter(asset => {
+            // de-dupe by asset id to avoid duplicate key rendering
+            if (seen.has(asset.id)) return false;
+            seen.add(asset.id);
+
             const search = filters.searchTerm.toLowerCase();
             const searchMatch = !search ||
                 asset.name.toLowerCase().includes(search) ||
                 asset.assetTag.toLowerCase().includes(search) ||
-                asset.assignedTo?.name.toLowerCase().includes(search);
+                asset.assignedTo?.name?.toLowerCase().includes(search);
             
             const statusMatch = !filters.status || asset.status === filters.status;
             const typeMatch = !filters.type || asset.type === filters.type;
@@ -167,101 +269,160 @@ const AssetManagement: React.FC = () => {
     // NEW: Handle assigning an existing asset
     const handleAssignExistingAsset = (assetId: string, employeeId: string, condition: string) => {
         if (!user) return;
-        
-        // 1. Update Asset Status
-        const assetIndex = mockAssets.findIndex(a => a.id === assetId);
-        if (assetIndex > -1) {
-            mockAssets[assetIndex] = { ...mockAssets[assetIndex], status: AssetStatus.Assigned };
-            setAssets([...mockAssets]);
-        }
 
-        // 2. Create Assignment Record
-        const newAssignment: AssetAssignment = {
-            id: `ASSIGN-${Date.now()}`,
-            assetId: assetId,
-            employeeId: employeeId,
-            dateAssigned: new Date(),
-            conditionOnAssign: condition,
-            isAcknowledged: false,
+        const persist = async () => {
+            // Update asset status
+            const { error: assetError } = await supabase
+                .from('assets')
+                .update({ status: AssetStatus.Assigned, updated_at: new Date().toISOString() })
+                .eq('id', assetId);
+            if (assetError) throw assetError;
+
+            // Insert assignment
+            const { data, error } = await supabase
+                .from('asset_assignments')
+                .insert({
+                    asset_id: assetId,
+                    employee_id: employeeId,
+                    condition_on_assign: condition,
+                    is_acknowledged: false,
+                    date_assigned: new Date().toISOString(),
+                })
+                .select('*')
+                .single();
+            if (error) throw error;
+
+            const mappedAssign = mapAssignmentRow(data as AssignmentRow);
+            setAssignments(prev => [mappedAssign, ...prev]);
+
+            // Refresh asset list locally
+            setAssets(prev => prev.map(a => a.id === assetId ? { ...a, status: AssetStatus.Assigned } : a));
+
+            const assetName = assets.find(a => a.id === assetId)?.name || 'Asset';
+            logActivity(user, 'CREATE', 'AssetAssignment', mappedAssign.id, `Assigned existing asset ${assetName} to employee ${employeeId}`);
+            mockNotifications.unshift({
+                id: `notif-asset-assign-${Date.now()}`,
+                userId: employeeId,
+                type: NotificationType.ASSET_ASSIGNED,
+                message: `You have been assigned an asset: ${assetName}. Please review and accept.`,
+                link: '/my-profile',
+                isRead: false,
+                createdAt: new Date(),
+                relatedEntityId: assetId,
+            });
         };
-        mockAssetAssignments.unshift(newAssignment);
-        setAssignments([...mockAssetAssignments]);
 
-        // 3. Audit & Notification
-        const assetName = mockAssets[assetIndex]?.name || 'Unknown Asset';
-        logActivity(user, 'CREATE', 'AssetAssignment', newAssignment.id, `Assigned existing asset ${assetName} to employee ${employeeId}`);
-        
-        mockNotifications.unshift({
-            id: `notif-asset-assign-${Date.now()}`,
-            userId: employeeId,
-            type: NotificationType.ASSET_ASSIGNED,
-            message: `You have been assigned an asset: ${assetName}. Please review and accept.`,
-            link: '/my-profile',
-            isRead: false,
-            createdAt: new Date(),
-            relatedEntityId: assetId,
-        });
-
-        setIsAssignmentModalOpen(false);
-        alert("Asset assigned successfully.");
+        persist()
+            .then(() => {
+                setIsAssignmentModalOpen(false);
+                alert("Asset assigned successfully.");
+            })
+            .catch(err => {
+                console.error('Failed to assign asset', err);
+                alert('Failed to assign asset. Please try again.');
+            });
     };
 
     const handleSaveAsset = (assetData: Partial<Asset>, employeeIdToAssign?: string) => {
         if (!user) return;
-        let savedAsset: Asset;
-        if (assetData.id) { // Editing
-            const index = mockAssets.findIndex(a => a.id === assetData.id);
-            if (index > -1) {
-                savedAsset = { ...mockAssets[index], ...assetData } as Asset;
-                if (employeeIdToAssign) savedAsset.status = AssetStatus.Assigned;
-                mockAssets[index] = savedAsset;
-                setAssets([...mockAssets]);
-                logActivity(user, 'UPDATE', 'Asset', savedAsset.id, `Updated asset: ${savedAsset.name}`);
-            }
-        } else { // Creating
-            savedAsset = {
-                id: `ASSET-${Date.now()}`,
-                ...assetData,
-                status: employeeIdToAssign ? AssetStatus.Assigned : AssetStatus.Available,
-            } as Asset;
-            mockAssets.unshift(savedAsset);
-            setAssets([...mockAssets]);
-            logActivity(user, 'CREATE', 'Asset', savedAsset.id, `Created new asset: ${savedAsset.name}`);
-        }
 
-        if (employeeIdToAssign) {
-            const newAssignment: AssetAssignment = {
-                id: `ASSIGN-${Date.now()}`,
-                assetId: savedAsset!.id,
-                employeeId: employeeIdToAssign,
-                dateAssigned: new Date(),
-                conditionOnAssign: 'New',
-                isAcknowledged: false, 
+        const persist = async () => {
+            const payload = {
+                asset_tag: assetData.assetTag,
+                name: assetData.name,
+                type: assetData.type,
+                business_unit_id: assetData.businessUnitId,
+                serial_number: assetData.serialNumber || null,
+                purchase_date: assetData.purchaseDate ? new Date(assetData.purchaseDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                value: assetData.value ?? 0,
+                status: employeeIdToAssign ? AssetStatus.Assigned : (assetData.status || AssetStatus.Available),
+                notes: assetData.notes || null,
+                updated_at: new Date().toISOString(),
             };
-            mockAssetAssignments.unshift(newAssignment);
-            setAssignments([...mockAssetAssignments]);
-            
-            logActivity(user, 'CREATE', 'AssetAssignment', newAssignment.id, `Assigned asset ${savedAsset!.name} to employee ID ${employeeIdToAssign}`);
-             mockNotifications.unshift({
-                id: `notif-asset-assign-${Date.now()}`,
-                userId: employeeIdToAssign,
-                type: NotificationType.ASSET_ASSIGNED,
-                message: `You have been assigned a new asset: ${savedAsset!.name}. Please review and accept.`,
-                link: '/my-profile',
-                isRead: false,
-                createdAt: new Date(),
-                relatedEntityId: savedAsset!.id,
+
+            const isEdit = !!assetData.id;
+            const { data, error } = isEdit
+                ? await supabase.from('assets').update(payload).eq('id', assetData.id).select('*').single()
+                : await supabase.from('assets').insert(payload).select('*').single();
+            if (error) throw error;
+            const mappedAsset = mapAssetRow(data as AssetRow);
+
+            // Create initial assignment if provided
+            if (employeeIdToAssign) {
+                const { data: assignmentData, error: assignError } = await supabase
+                    .from('asset_assignments')
+                    .insert({
+                        asset_id: mappedAsset.id,
+                        employee_id: employeeIdToAssign,
+                        condition_on_assign: 'New',
+                        is_acknowledged: false,
+                        date_assigned: new Date().toISOString(),
+                    })
+                    .select('*')
+                    .single();
+                if (assignError) throw assignError;
+                const mappedAssign = mapAssignmentRow(assignmentData as AssignmentRow);
+                setAssignments(prev => [mappedAssign, ...prev]);
+
+                mockNotifications.unshift({
+                    id: `notif-asset-assign-${Date.now()}`,
+                    userId: employeeIdToAssign,
+                    type: NotificationType.ASSET_ASSIGNED,
+                    message: `You have been assigned a new asset: ${mappedAsset.name}. Please review and accept.`,
+                    link: '/my-profile',
+                    isRead: false,
+                    createdAt: new Date(),
+                    relatedEntityId: mappedAsset.id,
+                });
+            }
+
+            setAssets(prev => {
+                if (isEdit) {
+                    return prev.map(a => a.id === mappedAsset.id ? mappedAsset : a);
+                }
+                return [mappedAsset, ...prev];
             });
-        }
-        setIsModalOpen(false);
+
+            logActivity(user, isEdit ? 'UPDATE' : 'CREATE', 'Asset', mappedAsset.id, `${isEdit ? 'Updated' : 'Created'} asset: ${mappedAsset.name}`);
+        };
+
+        persist()
+            .then(() => setIsModalOpen(false))
+            .catch(err => {
+                console.error('Failed to save asset', err);
+                alert('Failed to save asset. Please try again.');
+            });
     };
 
     const handleSaveReturnRequest = (request: any) => {
         if (!user) return;
-        mockAssetRequests.unshift(request);
-        logActivity(user, 'CREATE', 'AssetRequest', request.id, `Created return request for asset ID ${request.assetId}`);
-        alert('Return request created successfully.');
-        setIsReturnRequestModalOpen(false);
+        const persist = async () => {
+            const { error } = await supabase
+                .from('asset_requests')
+                .insert({
+                    request_type: 'Return',
+                    employee_id: request.employeeId,
+                    employee_name: request.employeeName,
+                    asset_id: request.assetId,
+                    asset_description: request.assetDescription,
+                    justification: request.justification,
+                    status: request.status,
+                    requested_at: request.requestedAt ? new Date(request.requestedAt).toISOString() : new Date().toISOString(),
+                    manager_id: request.managerId,
+                });
+            if (error) throw error;
+        };
+
+        persist()
+            .then(() => {
+                logActivity(user, 'CREATE', 'AssetRequest', request.id, `Created return request for asset ID ${request.assetId}`);
+                alert('Return request created successfully.');
+                setIsReturnRequestModalOpen(false);
+            })
+            .catch(err => {
+                console.error('Failed to create return request', err);
+                alert('Failed to create return request. Please try again.');
+            });
     };
 
     const assetTypes = ['Laptop', 'Mobile Phone', 'Monitor', 'Software License', 'Other'];
@@ -368,14 +529,17 @@ const AssetManagement: React.FC = () => {
                     isOpen={isAssignmentModalOpen}
                     onClose={() => setIsAssignmentModalOpen(false)}
                     onAssign={handleAssignExistingAsset}
+                    assets={assets}
                 />
             )}
-            
+
             {isReturnRequestModalOpen && canRequest && (
                 <AssetReturnRequestModal
                     isOpen={isReturnRequestModalOpen}
                     onClose={() => setIsReturnRequestModalOpen(false)}
                     onSave={handleSaveReturnRequest}
+                    assets={assets}
+                    assignments={assignments}
                 />
             )}
 

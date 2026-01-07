@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Asset, User, AssetStatus } from '../../types';
 import { mockAssets, mockUsers } from '../../services/mockData';
+import { supabase } from '../../services/supabaseClient';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
@@ -11,9 +12,11 @@ interface AssetAssignmentModalProps {
     isOpen: boolean;
     onClose: () => void;
     onAssign: (assetId: string, employeeId: string, condition: string) => void;
+    assets: Asset[];
+    assetsLoading?: boolean;
 }
 
-const AssetAssignmentModal: React.FC<AssetAssignmentModalProps> = ({ isOpen, onClose, onAssign }) => {
+const AssetAssignmentModal: React.FC<AssetAssignmentModalProps> = ({ isOpen, onClose, onAssign, assets, assetsLoading = false }) => {
     const [selectedAssetId, setSelectedAssetId] = useState('');
     const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
     const [condition, setCondition] = useState('Good / New');
@@ -26,15 +29,18 @@ const AssetAssignmentModal: React.FC<AssetAssignmentModalProps> = ({ isOpen, onC
     const [isAssetDropdownOpen, setIsAssetDropdownOpen] = useState(false);
     const assetWrapperRef = useRef<HTMLDivElement>(null);
 
+    const [employees, setEmployees] = useState<User[]>([]);
+
     // Filter only Available assets
     const availableAssets = useMemo(() => {
-        return mockAssets.filter(a => a.status === AssetStatus.Available);
-    }, []);
+        // Allow assigning any non-retired asset so full list shows up
+        return assets.filter(a => a.status !== AssetStatus.Retired);
+    }, [assets]);
 
     // Filter active employees
     const activeUsers = useMemo(() => {
-        return mockUsers.filter(u => u.status === 'Active');
-    }, []);
+        return (employees.length ? employees : mockUsers).filter(u => u.status === 'Active');
+    }, [employees]);
 
     const filteredUsers = useMemo(() => {
         if (!employeeSearch) return activeUsers.slice(0, 5);
@@ -45,13 +51,13 @@ const AssetAssignmentModal: React.FC<AssetAssignmentModalProps> = ({ isOpen, onC
     }, [employeeSearch, activeUsers, selectedEmployeeId]);
 
     const filteredAssets = useMemo(() => {
-        if (!assetSearch) return availableAssets.slice(0, 5);
+        if (!assetSearch) return availableAssets.slice(0, 10);
         const lowerSearch = assetSearch.toLowerCase();
         return availableAssets.filter(asset => 
             asset.assetTag.toLowerCase().includes(lowerSearch) ||
             asset.name.toLowerCase().includes(lowerSearch) ||
             asset.type.toLowerCase().includes(lowerSearch)
-        ).slice(0, 10);
+        ).slice(0, 15);
     }, [assetSearch, availableAssets]);
 
     // Reset form on open
@@ -64,6 +70,28 @@ const AssetAssignmentModal: React.FC<AssetAssignmentModalProps> = ({ isOpen, onC
             setCondition('Good / New');
             setIsEmployeeDropdownOpen(false);
             setIsAssetDropdownOpen(false);
+
+            const loadEmployees = async () => {
+                try {
+                    const { data, error } = await supabase
+                        .from('hris_users')
+                        .select('id, full_name, role, status');
+                    if (error) throw error;
+                    const mapped =
+                        data?.map((u: any) => ({
+                            id: u.id,
+                            name: u.full_name,
+                            email: '',
+                            role: u.role,
+                            status: u.status,
+                        })) || [];
+                    setEmployees(mapped);
+                } catch (err) {
+                    console.error('Failed to load employees for asset assignment', err);
+                    setEmployees(mockUsers);
+                }
+            };
+            loadEmployees();
         }
     }, [isOpen]);
 
@@ -129,12 +157,15 @@ const AssetAssignmentModal: React.FC<AssetAssignmentModalProps> = ({ isOpen, onC
                             setIsAssetDropdownOpen(true);
                         }}
                         onFocus={() => setIsAssetDropdownOpen(true)}
-                        placeholder="Search asset tag or name..."
+                        placeholder={assetsLoading ? 'Loading assets...' : 'Search asset tag or name...'}
                         autoComplete="off"
+                        disabled={assetsLoading}
                     />
                     {isAssetDropdownOpen && (
-                        <div className="absolute z-20 w-full mt-1 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-md shadow-lg max-h-48 overflow-y-auto">
-                            {filteredAssets.length > 0 ? (
+                        <div className="absolute z-20 w-full mt-1 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-md shadow-lg max-h-80 overflow-y-auto">
+                            {assetsLoading ? (
+                                <div className="px-4 py-2 text-sm text-gray-500">Loading assets...</div>
+                            ) : filteredAssets.length > 0 ? (
                                 filteredAssets.map(asset => (
                                     <div
                                         key={asset.id}
@@ -167,7 +198,7 @@ const AssetAssignmentModal: React.FC<AssetAssignmentModalProps> = ({ isOpen, onC
                         autoComplete="off"
                     />
                     {isEmployeeDropdownOpen && (
-                        <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                        <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-md shadow-lg max-h-80 overflow-y-auto">
                             {filteredUsers.length > 0 ? (
                                 filteredUsers.map(u => (
                                     <div

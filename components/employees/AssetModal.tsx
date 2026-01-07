@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Asset, AssetStatus, User } from '../../types';
 import { mockUsers, mockBusinessUnits } from '../../services/mockData';
+import { supabase } from '../../services/supabaseClient';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
 import Button from '../ui/Button';
@@ -16,6 +17,7 @@ interface AssetModalProps {
 const AssetModal: React.FC<AssetModalProps> = ({ isOpen, onClose, onSave, asset }) => {
     const [current, setCurrent] = useState<Partial<Asset>>({});
     const [employeeToAssign, setEmployeeToAssign] = useState<string>('');
+    const [employees, setEmployees] = useState<User[]>([]);
     const [employeeSearch, setEmployeeSearch] = useState('');
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const searchWrapperRef = useRef<HTMLDivElement>(null);
@@ -33,6 +35,28 @@ const AssetModal: React.FC<AssetModalProps> = ({ isOpen, onClose, onSave, asset 
             });
             setEmployeeToAssign('');
             setEmployeeSearch('');
+
+            const loadEmployees = async () => {
+                try {
+                    const { data, error } = await supabase
+                        .from('hris_users')
+                        .select('id, full_name, role, status');
+                    if (error) throw error;
+                    const mapped =
+                        data?.map((u: any) => ({
+                            id: u.id,
+                            name: u.full_name,
+                            email: '',
+                            role: u.role,
+                            status: u.status,
+                        })) || [];
+                    setEmployees(mapped);
+                } catch (err) {
+                    console.error('Failed to load employees for asset modal', err);
+                    setEmployees(mockUsers);
+                }
+            };
+            loadEmployees();
         }
     }, [asset, isOpen]);
 
@@ -69,8 +93,8 @@ const AssetModal: React.FC<AssetModalProps> = ({ isOpen, onClose, onSave, asset 
     };
 
     const assignableUsers = useMemo(() => {
-        return mockUsers.filter(u => u.status === 'Active');
-    }, []);
+        return (employees.length ? employees : mockUsers).filter(u => (u as any).status === 'Active');
+    }, [employees]);
 
     const filteredUsers = useMemo(() => {
         if (!employeeSearch) return [];
