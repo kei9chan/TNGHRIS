@@ -1,14 +1,14 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-import { CoachingSession, CoachingStatus, CoachingTrigger, Permission, Role, NotificationType } from '../../types';
-import { mockCoachingSessions, mockNotifications } from '../../services/mockData';
+import { CoachingSession, CoachingStatus, CoachingTrigger, Permission, Role, User } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import CoachingModal from '../../components/feedback/CoachingModal';
+import { supabase } from '../../services/supabaseClient';
 
 const CoachingLog: React.FC = () => {
     const { user } = useAuth();
@@ -18,7 +18,8 @@ const CoachingLog: React.FC = () => {
     
     const canCreate = can('Coaching', Permission.Create); 
 
-    const [sessions, setSessions] = useState<CoachingSession[]>(mockCoachingSessions);
+    const [sessions, setSessions] = useState<CoachingSession[]>([]);
+    const [employees, setEmployees] = useState<User[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedSession, setSelectedSession] = useState<CoachingSession | null>(null);
@@ -26,14 +27,78 @@ const CoachingLog: React.FC = () => {
     // New state for passing data from IR conversion
     const [initialModalData, setInitialModalData] = useState<Partial<CoachingSession> | undefined>(undefined);
 
-    // Check for incoming state from Incident Report conversion OR Dashboard action item
+    const mapRowToSession = useCallback((row: any): CoachingSession => ({
+        id: row.id,
+        employeeId: row.employee_id,
+        employeeName: row.employee_name,
+        coachId: row.coach_id,
+        coachName: row.coach_name,
+        trigger: row.trigger as CoachingTrigger,
+        context: row.context,
+        date: row.date ? new Date(row.date) : new Date(),
+        status: row.status as CoachingStatus,
+        rootCause: row.root_cause || '',
+        actionPlan: row.action_plan || '',
+        followUpDate: row.follow_up_date ? new Date(row.follow_up_date) : undefined,
+        employeeSignatureUrl: row.employee_signature_url || undefined,
+        coachSignatureUrl: row.coach_signature_url || undefined,
+        acknowledgedAt: row.acknowledged_at ? new Date(row.acknowledged_at) : undefined,
+    }), []);
+
+    // Load employees and sessions on mount
+    useEffect(() => {
+        const loadEmployees = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('hris_users')
+                    .select('id, full_name, role, status, position');
+                if (error) throw error;
+                const mapped: User[] =
+                    data?.map((u: any) => ({
+                        id: u.id,
+                        name: u.full_name,
+                        email: '',
+                        role: u.role,
+                        department: '',
+                        businessUnit: '',
+                        status: u.status || 'Active',
+                        position: (u as any)?.position || '',
+                        isPhotoEnrolled: false,
+                        dateHired: new Date(),
+                    })) || [];
+                setEmployees(mapped);
+            } catch (err) {
+                console.error('Failed to load employees for coaching', err);
+                setEmployees([]);
+            }
+        };
+
+        const loadSessions = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('coaching_sessions')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+                if (error) throw error;
+                const mapped = (data as any[])?.map(mapRowToSession) || [];
+                setSessions(mapped);
+            } catch (err) {
+                console.error('Failed to load coaching sessions', err);
+                setSessions([]);
+            }
+        };
+
+        loadEmployees();
+        loadSessions();
+    }, [mapRowToSession]);
+
+    // Handle navigation state (e.g., open modal) once sessions are loaded
     useEffect(() => {
         if (location.state?.initiateCoaching) {
             setInitialModalData(location.state.initiateCoaching);
             setIsModalOpen(true);
             navigate(location.pathname, { replace: true, state: {} });
-        } else if (location.state?.openSessionId) {
-            // Deep link to existing session (e.g. for Acknowledgment)
+        } else if (location.state?.openSessionId && sessions.length > 0) {
             const sessionToOpen = sessions.find(s => s.id === location.state.openSessionId);
             if (sessionToOpen) {
                 setSelectedSession(sessionToOpen);
@@ -41,7 +106,7 @@ const CoachingLog: React.FC = () => {
             }
             navigate(location.pathname, { replace: true, state: {} });
         }
-    }, [location.state, navigate, sessions]);
+    }, [location.pathname, location.state, navigate, sessions]);
 
     const filteredSessions = useMemo(() => {
         let baseList = sessions;
@@ -84,48 +149,62 @@ const CoachingLog: React.FC = () => {
         setIsModalOpen(true);
     };
 
-    const handleSave = (sessionData: Partial<CoachingSession>) => {
+    const handleSave = async (sessionData: Partial<CoachingSession>) => {
         const isNew = !sessionData.id;
-        const wasNotScheduled = !isNew && selectedSession?.status !== CoachingStatus.Scheduled;
-        let finalSession: CoachingSession;
+        try {
+            const payload = {
+                employee_id: sessionData.employeeId,
+                employee_name: sessionData.employeeName,
+                coach_id: sessionData.coachId,
+                coach_name: sessionData.coachName,
+                trigger: sessionData.trigger || CoachingTrigger.Performance,
+                context: sessionData.context || '',
+                date: sessionData.date ? new Date(sessionData.date).toISOString() : new Date().toISOString(),
+                status: sessionData.status || CoachingStatus.Draft,
+                root_cause: sessionData.rootCause || null,
+                action_plan: sessionData.actionPlan || null,
+                follow_up_date: sessionData.followUpDate ? new Date(sessionData.followUpDate).toISOString() : null,
+                employee_signature_url: sessionData.employeeSignatureUrl || null,
+                coach_signature_url: sessionData.coachSignatureUrl || null,
+                acknowledged_at: sessionData.acknowledgedAt ? new Date(sessionData.acknowledgedAt).toISOString() : null,
+            };
 
-        if (sessionData.id) {
-            // Update
-            const index = mockCoachingSessions.findIndex(s => s.id === sessionData.id);
-            if (index > -1) {
-                const updatedSession = { ...mockCoachingSessions[index], ...sessionData } as CoachingSession;
-                mockCoachingSessions[index] = updatedSession;
-                setSessions([...mockCoachingSessions]);
-                finalSession = updatedSession;
-            } else {
-                return; // Error handling
+            if (!sessionData.employeeId || !sessionData.coachId) {
+                throw new Error('Employee and coach are required');
             }
-        } else {
-            // Create
-            finalSession = {
-                ...sessionData,
-                id: `CS-${Date.now()}`,
-            } as CoachingSession;
-            mockCoachingSessions.unshift(finalSession);
-            setSessions([finalSession, ...sessions]);
-        }
 
-        // Trigger Notification if Status becomes Scheduled (New or Updated)
-        if (finalSession.status === CoachingStatus.Scheduled && (isNew || wasNotScheduled)) {
-             mockNotifications.unshift({
-                id: `notif-coaching-${Date.now()}`,
-                userId: finalSession.employeeId,
-                type: NotificationType.COACHING_INVITE,
-                title: " Let's Connect! 🚀",
-                message: `Hi ${finalSession.employeeName}, ${finalSession.coachName} has invited you to a coaching session on ${new Date(finalSession.date).toLocaleDateString()}.`,
-                link: '/feedback/coaching',
-                isRead: false,
-                createdAt: new Date(),
-                relatedEntityId: finalSession.id
+            let savedRow: any;
+            if (sessionData.id) {
+                const { data, error } = await supabase
+                    .from('coaching_sessions')
+                    .update(payload)
+                    .eq('id', sessionData.id)
+                    .select()
+                    .single();
+                if (error) throw error;
+                savedRow = data;
+            } else {
+                const { data, error } = await supabase
+                    .from('coaching_sessions')
+                    .insert(payload)
+                    .select()
+                    .single();
+                if (error) throw error;
+                savedRow = data;
+            }
+
+            const mapped = mapRowToSession(savedRow);
+            setSessions(prev => {
+                if (isNew) {
+                    return [mapped, ...prev];
+                }
+                return prev.map(s => (s.id === mapped.id ? mapped : s));
             });
+            setIsModalOpen(false);
+        } catch (err) {
+            console.error('Failed to save coaching session', err);
+            alert('Failed to save coaching session. Please try again.');
         }
-
-        setIsModalOpen(false);
     };
     
     const getActionButtonText = (session: CoachingSession) => {
@@ -222,7 +301,8 @@ const CoachingLog: React.FC = () => {
                 onClose={() => setIsModalOpen(false)} 
                 session={selectedSession} 
                 onSave={handleSave}
-                initialData={initialModalData} 
+                initialData={initialModalData}
+                employees={employees} 
             />
         </div>
     );

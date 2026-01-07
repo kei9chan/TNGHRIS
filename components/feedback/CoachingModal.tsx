@@ -1,7 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { CoachingSession, CoachingStatus, CoachingTrigger, User } from '../../types';
-import { mockUsers } from '../../services/mockData';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
@@ -15,9 +14,10 @@ interface CoachingModalProps {
     session: CoachingSession | null;
     onSave: (session: Partial<CoachingSession>) => void;
     initialData?: Partial<CoachingSession>;
+    employees: User[];
 }
 
-const CoachingModal: React.FC<CoachingModalProps> = ({ isOpen, onClose, session, onSave, initialData }) => {
+const CoachingModal: React.FC<CoachingModalProps> = ({ isOpen, onClose, session, onSave, initialData, employees }) => {
     const { user } = useAuth();
     const [current, setCurrent] = useState<Partial<CoachingSession>>({});
     
@@ -35,13 +35,13 @@ const CoachingModal: React.FC<CoachingModalProps> = ({ isOpen, onClose, session,
 
     // Filter active employees for selection
     const eligibleEmployees = useMemo(() => {
-        return mockUsers.filter(u => u.status === 'Active' && u.id !== user?.id).sort((a, b) => a.name.localeCompare(b.name));
-    }, [user]);
+        return employees.filter(u => (u as any).status === 'Active' && u.id !== user?.id).sort((a, b) => a.name.localeCompare(b.name));
+    }, [user, employees]);
 
     // Filter potential coaches (Managers, HR, Admins)
     const eligibleCoaches = useMemo(() => {
-        return mockUsers.filter(u => u.status === 'Active' && ['Admin', 'HR Manager', 'Manager', 'Business Unit Manager', 'Operations Director'].includes(u.role)).sort((a, b) => a.name.localeCompare(b.name));
-    }, []);
+        return employees.filter(u => (u as any).status === 'Active' && ['Admin', 'HR Manager', 'Manager', 'Business Unit Manager', 'Operations Director'].includes(u.role)).sort((a, b) => a.name.localeCompare(b.name));
+    }, [employees]);
 
     const filteredEmployees = useMemo(() => {
         return eligibleEmployees.filter(u => u.name.toLowerCase().includes(employeeSearch.toLowerCase()));
@@ -150,8 +150,8 @@ const CoachingModal: React.FC<CoachingModalProps> = ({ isOpen, onClose, session,
         }
 
         // Look up names if IDs changed (though search handlers update names too)
-        const employee = mockUsers.find(u => u.id === current.employeeId);
-        const coach = mockUsers.find(u => u.id === current.coachId);
+        const employee = employees.find(u => u.id === current.employeeId);
+        const coach = employees.find(u => u.id === current.coachId);
 
         onSave({
             ...current,
