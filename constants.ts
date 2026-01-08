@@ -84,7 +84,7 @@ export const NAV_LINKS: NavLink[] = [
             { name: 'Memo Library', path: '/feedback/memos', requiredPermission: { resource: 'MemoLibrary', permission: Permission.View } },
             { name: 'Code of Discipline', path: '/feedback/discipline', requiredPermission: { resource: 'CodeOfDiscipline', permission: Permission.View } },
             { name: 'Templates', path: '/feedback/templates', requiredPermission: { resource: 'FeedbackTemplates', permission: Permission.View } },
-            { name: 'Pipeline', path: '/feedback/pipeline', requiredPermission: { resource: 'Feedback', permission: Permission.Manage } },
+            { name: 'Pipeline', path: '/feedback/pipeline', requiredPermission: { resource: 'Pipeline', permission: Permission.View } },
         ]
     },
     {
