@@ -7,6 +7,7 @@ import Button from './Button';
 interface FileUploaderProps {
   onFileUpload: (file: File) => void | Promise<void>;
   maxSize?: number; // in bytes
+  inputId?: string;
 }
 
 const UploadIcon = () => (
@@ -16,10 +17,11 @@ const UploadIcon = () => (
 );
 
 
-const FileUploader: React.FC<FileUploaderProps> = ({ onFileUpload, maxSize }) => {
+const FileUploader: React.FC<FileUploaderProps> = ({ onFileUpload, maxSize, inputId }) => {
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
+  const controlId = inputId || 'dropzone-file';
 
   const validateFile = (selectedFile: File): boolean => {
     if (!selectedFile) return false;
@@ -92,13 +94,13 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onFileUpload, maxSize }) =>
             onDragLeave={handleDragLeave}
             className={`flex items-center justify-center w-full relative ${isDragging ? 'border-blue-500' : 'border-gray-300 dark:border-gray-600'}`}
         >
-            <label htmlFor="dropzone-file" className="flex flex-col items-center justify-center w-full h-64 border-2 border-dashed rounded-lg cursor-pointer bg-gray-50 dark:hover:bg-bray-800 dark:bg-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:hover:border-gray-500 dark:hover:bg-gray-600 transition-colors">
+            <label htmlFor={controlId} className="flex flex-col items-center justify-center w-full h-64 border-2 border-dashed rounded-lg cursor-pointer bg-gray-50 dark:hover:bg-bray-800 dark:bg-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:hover:border-gray-500 dark:hover:bg-gray-600 transition-colors">
                 <div className="flex flex-col items-center justify-center pt-5 pb-6">
                     <UploadIcon />
                     <p className="mb-2 text-sm text-gray-500 dark:text-gray-400"><span className="font-semibold">Click to upload</span> or drag and drop</p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">PDF, JPG, PNG, DOCX, XLSX (MAX. {sizeLimitInMB}MB)</p>
                 </div>
-                <input id="dropzone-file" type="file" className="hidden" onChange={handleFileChange} />
+                <input id={controlId} type="file" className="hidden" onChange={handleFileChange} />
             </label>
         </div> 
 

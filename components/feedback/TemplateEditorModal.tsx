@@ -6,6 +6,7 @@ import Textarea from '../ui/Textarea';
 import Button from '../ui/Button';
 import FileUploader from '../ui/FileUploader';
 import RichTextEditor from '../ui/RichTextEditor';
+import { supabase } from '../../services/supabaseClient';
 
 interface TemplateEditorModalProps {
     isOpen: boolean;
@@ -16,6 +17,8 @@ interface TemplateEditorModalProps {
 
 const TemplateEditorModal: React.FC<TemplateEditorModalProps> = ({ isOpen, onClose, onSave, template }) => {
     const [current, setCurrent] = useState<Partial<FeedbackTemplate>>({});
+    const [uploadingLogo, setUploadingLogo] = useState(false);
+    const [uploadingSignature, setUploadingSignature] = useState(false);
 
     useEffect(() => {
         if (isOpen) {
@@ -31,20 +34,56 @@ const TemplateEditorModal: React.FC<TemplateEditorModalProps> = ({ isOpen, onClo
         setCurrent(prev => ({ ...prev, [e.target.name]: e.target.value }));
     };
 
-    const handleFile = (file: File) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            setCurrent(prev => ({...prev, logoUrl: reader.result as string}));
-        };
-        reader.readAsDataURL(file);
+    const uploadLogoToBucket = async (file: File) => {
+        const bucket = 'feedback-templates-assets';
+        const ext = file.name.split('.').pop() || 'bin';
+        const path = `logos/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+        const { error: uploadError } = await supabase.storage.from(bucket).upload(path, file, {
+            cacheControl: '3600',
+            upsert: false,
+        });
+        if (uploadError) throw uploadError;
+        const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+        return data.publicUrl;
+    };
+
+    const uploadSignatureToBucket = async (file: File) => {
+        const bucket = 'feedback-templates-assets';
+        const ext = file.name.split('.').pop() || 'bin';
+        const path = `signatures/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+        const { error: uploadError } = await supabase.storage.from(bucket).upload(path, file, {
+            cacheControl: '3600',
+            upsert: false,
+        });
+        if (uploadError) throw uploadError;
+        const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+        return data.publicUrl;
+    };
+
+    const handleFile = async (file: File) => {
+        try {
+            setUploadingLogo(true);
+            const url = await uploadLogoToBucket(file);
+            setCurrent(prev => ({...prev, logoUrl: url}));
+        } catch (err) {
+            console.error('Logo upload failed', err);
+            alert('Failed to upload logo. Please try again.');
+        } finally {
+            setUploadingLogo(false);
+        }
     }
 
-    const handleSignatureFile = (file: File) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            setCurrent(prev => ({...prev, signatorySignatureUrl: reader.result as string}));
-        };
-        reader.readAsDataURL(file);
+    const handleSignatureFile = async (file: File) => {
+        try {
+            setUploadingSignature(true);
+            const url = await uploadSignatureToBucket(file);
+            setCurrent(prev => ({...prev, signatorySignatureUrl: url}));
+        } catch (err) {
+            console.error('Signature upload failed', err);
+            alert('Failed to upload signature. Please try again.');
+        } finally {
+            setUploadingSignature(false);
+        }
     }
 
     const handleSave = () => {
@@ -78,7 +117,7 @@ const TemplateEditorModal: React.FC<TemplateEditorModalProps> = ({ isOpen, onClo
                         <Input label="CC" name="cc" value={current.cc || ''} onChange={handleChange} />
                         <div>
                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Company Logo</label>
-                            <FileUploader onFileUpload={handleFile} />
+                            <FileUploader onFileUpload={handleFile} disabled={uploadingLogo} inputId="logo-upload" />
                             {current.logoUrl && <img src={current.logoUrl} alt="Logo Preview" className="mt-2 h-16"/>}
                         </div>
                     </div>
@@ -105,14 +144,20 @@ const TemplateEditorModal: React.FC<TemplateEditorModalProps> = ({ isOpen, onClo
                         <Input label="Signatory Name" name="signatoryName" value={current.signatoryName || ''} onChange={handleChange} />
                         <Input label="Signatory Title/Department" name="signatoryTitle" value={current.signatoryTitle || ''} onChange={handleChange} />
                     </div>
-                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Upload Signature Image</label>
-                        <FileUploader onFileUpload={handleSignatureFile} />
+                    <div>
+                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Upload Signature Image</label>
+                        <FileUploader onFileUpload={handleSignatureFile} disabled={uploadingSignature} inputId="signature-upload" />
                         {current.signatorySignatureUrl && (
                             <div className="mt-4">
                                 <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Signature Preview:</p>
                                 <img src={current.signatorySignatureUrl} alt="Signature Preview" className="mt-2 h-20 border rounded-md p-2 bg-gray-50 dark:bg-gray-900" />
                             </div>
+                        )}
+                        {!current.signatorySignatureUrl && !uploadingSignature && (
+                            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">No signature selected yet.</p>
+                        )}
+                        {uploadingSignature && (
+                            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Uploading signature...</p>
                         )}
                     </div>
                  </div>

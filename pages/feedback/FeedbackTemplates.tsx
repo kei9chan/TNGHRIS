@@ -1,35 +1,119 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { FeedbackTemplate, Permission } from '../../types';
-// FIX: Added mockFeedbackTemplates to the import.
-import { mockFeedbackTemplates } from '../../services/mockData';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { usePermissions } from '../../hooks/usePermissions';
 import TemplateEditorModal from '../../components/feedback/TemplateEditorModal';
+import { supabase } from '../../services/supabaseClient';
 
 const FeedbackTemplates: React.FC = () => {
     const { can } = usePermissions();
-    const canManage = can('Feedback', Permission.Manage);
+    const canManage = can('FeedbackTemplates', Permission.Manage);
+    const canView = can('FeedbackTemplates', Permission.View);
 
-    const [templates, setTemplates] = useState<FeedbackTemplate[]>(mockFeedbackTemplates);
+    const [templates, setTemplates] = useState<FeedbackTemplate[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedTemplate, setSelectedTemplate] = useState<FeedbackTemplate | null>(null);
+    const [loading, setLoading] = useState(false);
+
+    const mapRowToTemplate = useCallback((row: any): FeedbackTemplate => ({
+        id: row.id,
+        title: row.title,
+        body: row.body,
+        from: row.from,
+        subject: row.subject,
+        cc: row.cc,
+        logoUrl: row.logo_url,
+        signatoryName: row.signatory_name,
+        signatoryTitle: row.signatory_title,
+        signatorySignatureUrl: row.signatory_signature_url || row.signatorysignatureurl || row.signatory_signature || row.signature_url,
+    }), []);
+
+    useEffect(() => {
+        const loadTemplates = async () => {
+            setLoading(true);
+            try {
+                const { data, error } = await supabase
+                    .from('feedback_templates')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+                if (error) throw error;
+                const mapped = (data || []).map(mapRowToTemplate);
+                setTemplates(mapped);
+            } catch (err) {
+                console.error('Failed to load feedback templates', err);
+                setTemplates([]);
+            } finally {
+                setLoading(false);
+            }
+        };
+        loadTemplates();
+    }, [mapRowToTemplate]);
 
     const handleOpenModal = (template: FeedbackTemplate | null) => {
         setSelectedTemplate(template);
         setIsModalOpen(true);
     };
 
-    const handleSave = (templateToSave: FeedbackTemplate) => {
-        if (templateToSave.id) {
-            setTemplates(prev => prev.map(t => t.id === templateToSave.id ? templateToSave : t));
-        } else {
-            const newTemplate = { ...templateToSave, id: `FBTPL-${Date.now()}` };
-            setTemplates(prev => [...prev, newTemplate]);
+    const handleSave = async (templateToSave: FeedbackTemplate) => {
+        try {
+            let saved;
+            const payload = {
+                title: templateToSave.title,
+                body: templateToSave.body,
+                from: templateToSave.from,
+                subject: templateToSave.subject,
+                cc: templateToSave.cc,
+                logo_url: templateToSave.logoUrl,
+                signatory_name: templateToSave.signatoryName,
+                signatory_title: templateToSave.signatoryTitle,
+                signatory_signature_url: templateToSave.signatorySignatureUrl || null,
+            };
+            if (templateToSave.id) {
+                const { data, error } = await supabase
+                    .from('feedback_templates')
+                    .update(payload)
+                    .eq('id', templateToSave.id)
+                    .select()
+                    .single();
+                if (error) throw error;
+                saved = data;
+            } else {
+                const { data, error } = await supabase
+                    .from('feedback_templates')
+                    .insert(payload)
+                    .select()
+                    .single();
+                if (error) throw error;
+                saved = data;
+            }
+            const mapped = mapRowToTemplate(saved);
+            setTemplates(prev => {
+                const exists = prev.find(t => t.id === mapped.id);
+                if (exists) {
+                    return prev.map(t => t.id === mapped.id ? mapped : t);
+                }
+                return [mapped, ...prev];
+            });
+            setIsModalOpen(false);
+        } catch (err) {
+            console.error('Failed to save feedback template', err);
+            alert('Failed to save feedback template. Please try again.');
         }
-        setIsModalOpen(false);
     };
     
+    if (!canView) {
+        return (
+            <div className="p-6">
+                <Card>
+                    <div className="p-6 text-center text-gray-600 dark:text-gray-300">
+                        You do not have permission to view Feedback Templates.
+                    </div>
+                </Card>
+            </div>
+        );
+    }
+
     return (
         <div className="space-y-6">
             <div className="flex justify-between items-center">
@@ -51,7 +135,14 @@ const FeedbackTemplates: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                            {templates.map(template => (
+                            {loading && (
+                                <tr>
+                                    <td colSpan={3} className="px-6 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                                        Loading templates...
+                                    </td>
+                                </tr>
+                            )}
+                            {!loading && templates.map(template => (
                                 <tr key={template.id}>
                                     <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900 dark:text-white">{template.title}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{template.subject}</td>
@@ -60,6 +151,13 @@ const FeedbackTemplates: React.FC = () => {
                                     </td>
                                 </tr>
                             ))}
+                            {!loading && templates.length === 0 && (
+                                <tr>
+                                    <td colSpan={3} className="px-6 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                                        No templates found.
+                                    </td>
+                                </tr>
+                            )}
                         </tbody>
                     </table>
                 </div>
