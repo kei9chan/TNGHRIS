@@ -54,14 +54,24 @@ const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({ isOpen, onC
     };
 
     const handleSave = () => {
+        // If a new category was typed but not added via the "+" button, include it
+        const trimmedNew = newCategoryName.trim();
+        let categoriesToSave = [...editableCategories];
+        if (trimmedNew && !editableCategories.some(c => c.currentName.toLowerCase() === trimmedNew.toLowerCase())) {
+            categoriesToSave = [
+                ...editableCategories,
+                { id: Date.now(), originalName: '', currentName: trimmedNew }
+            ];
+        }
+
         const renamed = editableCategories
             .filter(c => c.originalName && c.originalName !== c.currentName)
             .map(c => ({ oldName: c.originalName, newName: c.currentName }));
 
-        const currentOriginalNameSet = new Set(editableCategories.map(c => c.originalName));
+        const currentOriginalNameSet = new Set(categoriesToSave.map(c => c.originalName));
         const deleted = initialCategories.filter(name => name && !currentOriginalNameSet.has(name));
         
-        const finalCategoryList = editableCategories.map(c => c.currentName);
+        const finalCategoryList = categoriesToSave.map(c => c.currentName);
 
         onSave(finalCategoryList, renamed, deleted);
     };

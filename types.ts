@@ -34,7 +34,7 @@ export type Resource =
   | 'Leave' | 'LeavePolicies' | 'Exceptions' | 'PayrollPrep' | 'PayrollStaging' | 'Payslips' | 'GovernmentReports'
   | 'ReportTemplates' | 'Reports' | 'FinalPay' | 'ClockLog' | 'Settings' | 'AuditLog' | 'Helpdesk'
   | 'Announcements' | 'Recruitment' | 'Requisitions' | 'JobPosts' | 'Applicants' | 'Candidates'
-  | 'Interviews' | 'Offers' | 'Offboarding' | 'Analytics' | 'Departments' | 'Loans' | 'User' | 'Sites' | 'Assets' | 'AssetRequests' | 'WorkforcePlanning' | 'Lifecycle' | 'Payroll' | 'Manpower' | 'COE' | 'Benefits' | 'PulseSurvey' | 'Coaching' | 'WFH';
+  | 'Interviews' | 'Offers' | 'Offboarding' | 'Analytics' | 'Departments' | 'Loans' | 'User' | 'Sites' | 'Assets' | 'AssetRequests' | 'WorkforcePlanning' | 'Lifecycle' | 'Payroll' | 'Manpower' | 'COE' | 'Benefits' | 'PulseSurvey' | 'Coaching' | 'WFH' | 'CodeOfDiscipline';
 
 export type PermissionsMatrix = {
   [key in Role]?: Partial<Record<Resource, Permission[]>>;

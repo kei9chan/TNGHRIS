@@ -89,7 +89,14 @@ const DisciplineEntryModal: React.FC<DisciplineEntryModalProps> = ({ isOpen, onC
         <Input label="Code" id="code" name="code" value={currentEntry.code || ''} onChange={handleChange} required />
         <div>
           <label htmlFor="category" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Category</label>
-          <select id="category" name="category" value={currentEntry.category || ''} onChange={handleChange} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+          <select
+            id="category"
+            name="category"
+            value={currentEntry.category || ''}
+            onChange={handleChange}
+            className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+          >
+            <option value="" disabled>Select a category</option>
             {categories.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
