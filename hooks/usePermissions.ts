@@ -140,6 +140,23 @@ const pipelinePermissions: Record<Role, Permission[]> = {
   [Role.IT]: [], // None
 };
 
+// Workforce Planning RBAC
+const workforcePlanningPermissions: Record<Role, Permission[]> = {
+  [Role.Admin]: [Permission.Manage],
+  [Role.HRManager]: [Permission.Manage],
+  [Role.HRStaff]: [Permission.Manage],
+  [Role.BOD]: [Permission.View],
+  [Role.GeneralManager]: [Permission.View], // View BU/Departments
+  [Role.OperationsDirector]: [Permission.View], // View BU only
+  [Role.BusinessUnitManager]: [Permission.View], // Own BU
+  [Role.Manager]: [Permission.View], // Own Team
+  [Role.Employee]: [], // None
+  [Role.FinanceStaff]: [], // None
+  [Role.Auditor]: [], // None
+  [Role.Recruiter]: [], // None
+  [Role.IT]: [], // None
+};
+
 export const usePermissions = () => {
     const { user: sessionUser } = useAuth();
     const { isRbacEnabled } = useSettings();
@@ -238,6 +255,14 @@ export const usePermissions = () => {
 
         if (resource === 'Pipeline') {
             const perms = pipelinePermissions[user.role];
+            if (!perms || perms.length === 0) return false;
+            if (perms.includes(Permission.Manage)) return true;
+            if (permission === Permission.View && perms.length > 0) return true;
+            return perms.includes(permission);
+        }
+
+        if (resource === 'WorkforcePlanning' || resource === 'WorkforcePlanningAdmin') {
+            const perms = workforcePlanningPermissions[user.role];
             if (!perms || perms.length === 0) return false;
             if (perms.includes(Permission.Manage)) return true;
             if (permission === Permission.View && perms.length > 0) return true;

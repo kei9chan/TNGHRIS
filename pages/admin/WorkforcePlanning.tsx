@@ -1,24 +1,58 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { mockBusinessUnits, mockServiceAreas, mockDemandTypes, mockStaffingRequirements, mockUsers } from '../../services/mockData';
-import { ServiceArea, DemandTypeConfig, StaffingRequirement, DayTypeTier, User } from '../../types';
+import { mockUsers } from '../../services/mockData';
+import { ServiceArea, DemandTypeConfig, StaffingRequirement, DayTypeTier, User, Permission } from '../../types';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
+import { supabase } from '../../services/supabaseClient';
 
 const PlusIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>;
 const TrashIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>;
 
+const mapDbTierToUi = (tier: string): DayTypeTier => {
+    const val = tier?.toLowerCase() || '';
+    if (val.includes('super')) return DayTypeTier.SuperPeak;
+    if (val.includes('peak')) return DayTypeTier.Peak;
+    return DayTypeTier.OffPeak;
+};
+
+const mapUiTierToDb = (tier?: DayTypeTier) => {
+    switch (tier) {
+        case DayTypeTier.Peak:
+            return 'Peak';
+        case DayTypeTier.SuperPeak:
+            return 'Holiday';
+        case DayTypeTier.OffPeak:
+        default:
+            return 'Regular';
+    }
+};
+
 const WorkforcePlanning: React.FC = () => {
     const { user } = useAuth();
-    const { getAccessibleBusinessUnits } = usePermissions();
-    
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+    const { can } = usePermissions();
+    const canView = can('WorkforcePlanning', Permission.View);
+    const canManage = can('WorkforcePlanning', Permission.Manage);
+    const [businessUnits, setBusinessUnits] = useState<{ id: string; name: string }[]>([]);
+    const accessibleBus = businessUnits; // Adjust if you want to reapply scope filtering later
 
     const [selectedBuId, setSelectedBuId] = useState<string>('');
     const [activeTab, setActiveTab] = useState<'areas' | 'demand' | 'matrix'>('areas');
+
+    useEffect(() => {
+        const loadBus = async () => {
+            const { data, error } = await supabase.from('business_units').select('id, name').order('name');
+            if (!error && data) {
+                setBusinessUnits(data.map((d: any) => ({ id: d.id, name: d.name })));
+            } else {
+                setBusinessUnits([]);
+            }
+        };
+        loadBus();
+    }, []);
 
     useEffect(() => {
         if (accessibleBus.length > 0 && !selectedBuId) {
@@ -26,10 +60,9 @@ const WorkforcePlanning: React.FC = () => {
         }
     }, [accessibleBus, selectedBuId]);
 
-    // Mock Data State (In a real app, fetch from API)
-    const [areas, setAreas] = useState<ServiceArea[]>(mockServiceAreas);
-    const [demands, setDemands] = useState<DemandTypeConfig[]>(mockDemandTypes);
-    const [requirements, setRequirements] = useState<StaffingRequirement[]>(mockStaffingRequirements);
+    const [areas, setAreas] = useState<ServiceArea[]>([]);
+    const [demands, setDemands] = useState<DemandTypeConfig[]>([]);
+    const [requirements, setRequirements] = useState<StaffingRequirement[]>([]);
 
     // Modals
     const [isAreaModalOpen, setIsAreaModalOpen] = useState(false);
@@ -48,57 +81,163 @@ const WorkforcePlanning: React.FC = () => {
     }, []);
 
     // Handlers - Area
-    const handleSaveArea = () => {
+    const loadData = async (buId: string) => {
+        if (!buId) return;
+        // Load areas
+        const { data: areaData, error: areaError } = await supabase
+            .from('service_areas')
+            .select('*')
+            .eq('business_unit_id', buId)
+            .order('name');
+        setAreas(areaData?.map((a: any) => ({
+            id: a.id,
+            businessUnitId: a.business_unit_id,
+            name: a.name,
+            capacity: a.capacity,
+            description: a.description,
+        })) || []);
+
+        // Load demand types
+        const { data: demandData, error: demandError } = await supabase
+            .from('demand_types')
+            .select('*')
+            .eq('business_unit_id', buId)
+            .order('label');
+        if (demandError) {
+            console.error('Failed to load demand types', demandError);
+        }
+        setDemands(demandData?.map((d: any) => ({
+            id: d.id,
+            businessUnitId: d.business_unit_id,
+            tier: mapDbTierToUi(d.tier),
+            label: d.label,
+            color: d.color,
+            description: d.description,
+        })) || []);
+
+        // Load requirements for areas in this BU
+        const areaIds = (areaData || []).map((a: any) => a.id);
+        if (areaIds.length) {
+            const { data: reqData } = await supabase
+                .from('staffing_requirements')
+                .select('*')
+                .in('area_id', areaIds);
+            setRequirements(reqData?.map((r: any) => ({
+                id: r.id,
+                areaId: r.area_id,
+                role: r.role,
+                dayTypeTier: mapDbTierToUi(r.day_type_tier),
+                minCount: r.min_count,
+            })) || []);
+        } else {
+            setRequirements([]);
+        }
+    };
+
+    useEffect(() => {
+        if (selectedBuId && canView) loadData(selectedBuId);
+    }, [selectedBuId, canView]);
+
+    if (!canView) {
+        return (
+            <div className="p-6">
+                <Card>
+                    <div className="p-6 text-center text-gray-600 dark:text-gray-300">
+                        You do not have permission to view Workforce Planning.
+                    </div>
+                </Card>
+            </div>
+        );
+    }
+
+    const handleSaveArea = async () => {
+        if (!canManage) {
+            alert('You do not have permission to modify areas.');
+            return;
+        }
         if (!areaForm.name) return;
-        const newArea: ServiceArea = {
-            id: areaForm.id || `AREA-${Date.now()}`,
-            businessUnitId: selectedBuId,
+        const payload = {
+            business_unit_id: selectedBuId,
             name: areaForm.name,
-            capacity: areaForm.capacity,
-            description: areaForm.description
+            capacity: areaForm.capacity || null,
+            description: areaForm.description || null,
         };
         if (areaForm.id) {
-            setAreas(prev => prev.map(a => a.id === areaForm.id ? newArea : a));
+            const { error } = await supabase.from('service_areas').update(payload).eq('id', areaForm.id);
+            if (error) {
+                alert('Failed to save area');
+                return;
+            }
         } else {
-            setAreas(prev => [...prev, newArea]);
+            const { error } = await supabase.from('service_areas').insert(payload);
+            if (error) {
+                alert('Failed to add area');
+                return;
+            }
         }
+        await loadData(selectedBuId);
         setIsAreaModalOpen(false);
     };
 
-    const handleDeleteArea = (id: string) => {
+    const handleDeleteArea = async (id: string) => {
+        if (!canManage) {
+            alert('You do not have permission to delete areas.');
+            return;
+        }
         if(window.confirm('Delete this area? Requirements linked to it will also be removed.')) {
-            setAreas(prev => prev.filter(a => a.id !== id));
-            setRequirements(prev => prev.filter(r => r.areaId !== id));
+            const { error } = await supabase.from('service_areas').delete().eq('id', id);
+            if (error) {
+                alert('Failed to delete area');
+                return;
+            }
+            await loadData(selectedBuId);
         }
     };
 
     // Handlers - Demand
-    const handleSaveDemand = () => {
+    const handleSaveDemand = async () => {
+         if (!canManage) {
+            alert('You do not have permission to modify demand types.');
+            return;
+         }
          if (!demandForm.label || !demandForm.tier) return;
-         const newDemand: DemandTypeConfig = {
-             id: demandForm.id || `DT-${Date.now()}`,
-             businessUnitId: selectedBuId,
-             tier: demandForm.tier,
+         const payload = {
+             business_unit_id: selectedBuId,
+             tier: mapUiTierToDb(demandForm.tier),
              label: demandForm.label,
              color: demandForm.color || 'bg-gray-100 text-gray-800',
-             description: demandForm.description
+             description: demandForm.description || null,
          };
          if (demandForm.id) {
-             setDemands(prev => prev.map(d => d.id === demandForm.id ? newDemand : d));
+             const { error } = await supabase.from('demand_types').update(payload).eq('id', demandForm.id);
+             if (error) {
+                 alert(`Failed to save demand type: ${error.message}`);
+                 return;
+             }
          } else {
-             setDemands(prev => [...prev, newDemand]);
+             const { error } = await supabase.from('demand_types').insert(payload);
+             if (error) {
+                 alert(`Failed to add demand type: ${error.message}`);
+                 return;
+             }
          }
+         await loadData(selectedBuId);
          setIsDemandModalOpen(false);
     };
 
     // Handlers - Matrix
-    const handleRequirementChange = (areaId: string, role: string, tier: DayTypeTier, countStr: string) => {
-        const count = parseInt(countStr) || 0;
+    const handleRequirementChange = async (areaId: string, role: string, tier: DayTypeTier, countStr: string) => {
+        if (!canManage) {
+            alert('You do not have permission to modify requirements.');
+            return;
+        }
+        const parsed = Number(countStr);
+        const count = isNaN(parsed) ? 0 : parsed;
+        // Optimistic local update
         setRequirements(prev => {
             const existingIndex = prev.findIndex(r => r.areaId === areaId && r.role === role && r.dayTypeTier === tier);
             if (existingIndex > -1) {
                 if (count === 0) {
-                    // Remove requirement if 0
                     return prev.filter((_, idx) => idx !== existingIndex);
                 }
                 const updated = [...prev];
@@ -115,6 +254,47 @@ const WorkforcePlanning: React.FC = () => {
                 }];
             }
         });
+
+        // Persist change
+        const dbTier = mapUiTierToDb(tier);
+        if (count === 0) {
+            const { error } = await supabase
+                .from('staffing_requirements')
+                .delete()
+                .eq('area_id', areaId)
+                .eq('role', role)
+                .eq('day_type_tier', dbTier);
+            if (error) {
+                alert(`Failed to delete requirement: ${error.message}`);
+                await loadData(selectedBuId);
+            }
+        } else {
+            // Delete any existing row then insert fresh to avoid unique conflict issues
+            const { error: delError } = await supabase
+                .from('staffing_requirements')
+                .delete()
+                .eq('area_id', areaId)
+                .eq('role', role)
+                .eq('day_type_tier', dbTier);
+            if (delError) {
+                alert(`Failed to save requirement: ${delError.message}`);
+                await loadData(selectedBuId);
+                return;
+            }
+            const { error: insError } = await supabase
+                .from('staffing_requirements')
+                .insert({
+                    area_id: areaId,
+                    role,
+                    day_type_tier: dbTier,
+                    min_count: count,
+                });
+            if (insError) {
+                alert(`Failed to save requirement: ${insError.message}`);
+                await loadData(selectedBuId);
+            }
+        }
+        await loadData(selectedBuId);
     };
 
     const getRequirement = (areaId: string, role: string, tier: DayTypeTier) => {
@@ -134,7 +314,7 @@ const WorkforcePlanning: React.FC = () => {
     const [areaRoles, setAreaRoles] = useState<Record<string, string[]>>({}); 
 
     // Initialize rows based on existing requirements
-    useMemo(() => {
+    useEffect(() => {
         const initial: Record<string, Set<string>> = {};
         currentAreas.forEach(a => initial[a.id] = new Set());
         requirements.filter(r => currentAreas.some(a => a.id === r.areaId)).forEach(r => {
@@ -145,14 +325,32 @@ const WorkforcePlanning: React.FC = () => {
         setAreaRoles(final);
     }, [requirements, currentAreas]);
 
-    const addRoleToArea = (areaId: string) => {
-        const role = prompt("Enter Job Title / Role Name:");
-        if (role) {
-            setAreaRoles(prev => ({
-                ...prev,
-                [areaId]: [...(prev[areaId] || []), role]
-            }));
+    const addRoleToArea = async (areaId: string) => {
+        if (!canManage) {
+            alert('You do not have permission to add roles.');
+            return;
         }
+        const role = prompt("Enter Job Title / Role Name:");
+        if (!role) return;
+        setAreaRoles(prev => ({
+            ...prev,
+            [areaId]: [...(prev[areaId] || []), role]
+        }));
+
+        // Persist a baseline requirement row per existing demand tier (or default Off-Peak)
+        const tiers = currentDemands.length ? currentDemands.map(d => d.tier) : [DayTypeTier.OffPeak];
+        const rows = tiers.map(tier => ({
+            area_id: areaId,
+            role,
+            day_type_tier: mapUiTierToDb(tier),
+            min_count: 0,
+        }));
+        const { error } = await supabase.from('staffing_requirements').upsert(rows, { onConflict: 'area_id,role,day_type_tier' });
+        if (error) {
+            alert('Failed to add role requirement. Please try again.');
+            return;
+        }
+        await loadData(selectedBuId);
     };
 
 
@@ -217,7 +415,7 @@ const WorkforcePlanning: React.FC = () => {
             {activeTab === 'demand' && (
                 <div className="space-y-4">
                      <div className="flex justify-end">
-                        <Button onClick={() => { setDemandForm({ color: 'bg-gray-100 text-gray-800' }); setIsDemandModalOpen(true); }}>
+                        <Button onClick={() => { setDemandForm({ color: 'bg-gray-100 text-gray-800', tier: DayTypeTier.OffPeak }); setIsDemandModalOpen(true); }}>
                             <PlusIcon /> Add Demand Type
                         </Button>
                     </div>
@@ -322,7 +520,7 @@ const WorkforcePlanning: React.FC = () => {
                     <Input label="Label" value={demandForm.label || ''} onChange={e => setDemandForm({...demandForm, label: e.target.value})} placeholder="e.g. Super Peak" />
                     <div>
                         <label className="block text-sm font-medium mb-1">Maps To System Tier</label>
-                        <select value={demandForm.tier} onChange={e => setDemandForm({...demandForm, tier: e.target.value as DayTypeTier})} className="w-full p-2 border rounded dark:bg-gray-700">
+                        <select value={demandForm.tier || DayTypeTier.OffPeak} onChange={e => setDemandForm({...demandForm, tier: e.target.value as DayTypeTier})} className="w-full p-2 border rounded dark:bg-gray-700">
                             {Object.values(DayTypeTier).map(t => <option key={t} value={t}>{t}</option>)}
                         </select>
                     </div>

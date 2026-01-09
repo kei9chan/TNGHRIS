@@ -94,7 +94,7 @@ export const NAV_LINKS: NavLink[] = [
         children: [
             { name: 'Timekeeping', path: '/payroll/timekeeping', requiredPermission: { resource: 'Timekeeping', permission: Permission.View } },
             { name: 'Manpower Planning', path: '/payroll/manpower-planning', requiredPermission: { resource: 'Manpower', permission: Permission.View } },
-            { name: 'Workforce Planning', path: '/payroll/workforce-planning', requiredPermission: { resource: 'WorkforcePlanning', permission: Permission.Manage } },
+            { name: 'Workforce Planning', path: '/payroll/workforce-planning', requiredPermission: { resource: 'WorkforcePlanning', permission: Permission.View } },
             { name: 'Daily Time Review', path: '/payroll/daily-review', requiredPermission: { resource: 'Timekeeping', permission: Permission.View } },
             { name: 'Clock-in/Out', path: '/payroll/clock-in-out', requiredPermission: { resource: 'Clock', permission: Permission.View } },
             { name: 'Clock Log', path: '/payroll/clock-log', requiredPermission: { resource: 'ClockLog', permission: Permission.View } },
