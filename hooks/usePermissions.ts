@@ -4,6 +4,23 @@ import { useSettings } from '../context/SettingsContext';
 import { mockPermissions, mockUsers, mockBusinessUnits, mockDepartments } from '../services/mockData';
 import { Resource, Permission, Role, IncidentReport, Ticket, BusinessUnit, Evaluation, EvaluatorType, User, COERequest, OTRequest, OTStatus } from '../types';
 
+// Daily Time Review RBAC matrix
+const dailyTimeReviewPermissions: Record<Role, Permission[]> = {
+  [Role.Admin]: [Permission.Manage],
+  [Role.HRManager]: [Permission.Manage],
+  [Role.HRStaff]: [Permission.Manage],
+  [Role.BOD]: [Permission.View],
+  [Role.GeneralManager]: [Permission.View], // View BU/Departments
+  [Role.OperationsDirector]: [Permission.View], // View BU only
+  [Role.BusinessUnitManager]: [Permission.View], // Own BU
+  [Role.Manager]: [Permission.View], // Own Team
+  [Role.Employee]: [], // None
+  [Role.FinanceStaff]: [], // None
+  [Role.Auditor]: [], // None
+  [Role.Recruiter]: [], // None
+  [Role.IT]: [], // None
+};
+
 // Clock-in/Out RBAC matrix
 const clockPermissions: Record<Role, Permission[]> = {
   [Role.Admin]: [Permission.Manage],
@@ -236,6 +253,14 @@ export const usePermissions = () => {
 
         if (!user) {
             return false;
+        }
+
+        if (resource === 'DailyTimeReview') {
+            const perms = dailyTimeReviewPermissions[user.role];
+            if (!perms || perms.length === 0) return false;
+            if (perms.includes(Permission.Manage)) return true;
+            if (permission === Permission.View && perms.length > 0) return true;
+            return perms.includes(permission);
         }
 
         if (resource === 'Clock') {

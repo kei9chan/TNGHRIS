@@ -50,12 +50,13 @@ const DailyRecordModal: React.FC<DailyRecordModalProps> = ({ isOpen, onClose, re
                 timezone: 'Asia/Manila',
                 app_version: getAppVersion(),
                 ip_hash: 'MANUAL_ADJUSTMENT',
-                site_name: 'System',
+                site_name: 'Manual Adjustment',
                 anomaly_tags: [AnomalyTag.Manual],
                 platform: 'web',
                 jailbreak_flag: false,
                 emulator_flag: false,
-                deviceId: 'SYSTEM'
+                deviceId: 'SYSTEM',
+                note: reason,
             };
             
             return {
@@ -64,7 +65,7 @@ const DailyRecordModal: React.FC<DailyRecordModalProps> = ({ isOpen, onClose, re
                 timestamp,
                 type,
                 source: TimeEventSource.Manual,
-                locationId: 'MANUAL',
+                locationId: '',
                 extra
             };
         };

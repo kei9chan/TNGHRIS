@@ -1,66 +1,153 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { mockShiftAssignments, mockTimeEvents, mockShiftTemplates, mockUsers, mockBusinessUnits } from '../../services/mockData';
-import { AttendanceRecord, AttendanceException, AttendanceStatus } from '../../types';
-import { generateDailyRecords } from '../../services/attendanceService';
+import { AttendanceRecord, AttendanceStatus, TimeEventSource, Permission } from '../../types';
 import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import DailyRecordModal from '../../components/payroll/DailyRecordModal';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
-import { Role } from '../../types';
+import { supabase } from '../../services/supabaseClient';
 
 const DailyTimeReview: React.FC = () => {
     const { user } = useAuth();
-    const { getAccessibleBusinessUnits } = usePermissions();
+    const { getAccessibleBusinessUnits, getVisibleEmployeeIds, can } = usePermissions();
+    const canView = can('DailyTimeReview', Permission.View);
+    const canManage = can('DailyTimeReview', Permission.Manage);
     const [records, setRecords] = useState<AttendanceRecord[]>([]);
+    const [businessUnits, setBusinessUnits] = useState<{ id: string; name: string }[]>([]);
+    const [employees, setEmployees] = useState<{ id: string; name: string; businessUnit?: string | null }[]>([]);
     const [filterDate, setFilterDate] = useState(new Date().toISOString().split('T')[0]);
     const [buFilter, setBuFilter] = useState('');
     const [selectedRecord, setSelectedRecord] = useState<AttendanceRecord | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
 
-    const refreshRecords = () => {
-        // In a real app, we'd fetch by date range. Here we regen everything.
-        const allRecords = generateDailyRecords(mockShiftAssignments, mockTimeEvents, mockShiftTemplates);
-        setRecords(allRecords);
+    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(businessUnits), [getAccessibleBusinessUnits, businessUnits]);
+
+    const loadLookups = async () => {
+        const [{ data: buData }, { data: empData }] = await Promise.all([
+            supabase.from('business_units').select('id, name').order('name'),
+            supabase.from('hris_users').select('id, full_name, business_unit').order('full_name'),
+        ]);
+        setBusinessUnits((buData || []).map((b: any) => ({ id: b.id, name: b.name })));
+        setEmployees((empData || []).map((e: any) => ({ id: e.id, name: e.full_name || 'Unknown', businessUnit: e.business_unit })));
+    };
+
+    const refreshRecords = async () => {
+        if (!filterDate) return;
+        const start = new Date(filterDate);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(filterDate);
+        end.setHours(23, 59, 59, 999);
+
+        const visibleIds = getVisibleEmployeeIds();
+        let eventsQuery = supabase
+            .from('time_events')
+            .select('*')
+            .gte('timestamp', start.toISOString())
+            .lte('timestamp', end.toISOString());
+
+        if (!canManage && visibleIds.length > 0) {
+            eventsQuery = eventsQuery.in('employee_id', visibleIds);
+        }
+        const { data: eventsData } = await eventsQuery;
+
+        const { data: shiftData } = await supabase
+            .from('shift_assignments')
+            .select('*')
+            .eq('date', filterDate);
+
+        const eventsByEmp = new Map<string, any[]>();
+        (eventsData || []).forEach((ev: any) => {
+            if (!eventsByEmp.has(ev.employee_id)) eventsByEmp.set(ev.employee_id, []);
+            eventsByEmp.get(ev.employee_id)!.push(ev);
+        });
+
+        const records: AttendanceRecord[] = [];
+        const employeeMap = new Map(employees.map(e => [e.id, e]));
+
+        const employeesToProcess = new Set<string>();
+        eventsByEmp.forEach((_, empId) => employeesToProcess.add(empId));
+        (shiftData || []).forEach((row: any) => employeesToProcess.add(row.employee_id));
+
+        employeesToProcess.forEach(empId => {
+            const empEvents = (eventsByEmp.get(empId) || []).sort(
+                (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+            );
+            const firstInRow = empEvents.find(ev => (ev.type || '').toLowerCase().includes('in'));
+            const lastOutRow = [...empEvents].reverse().find(ev => (ev.type || '').toLowerCase().includes('out'));
+            const firstIn = firstInRow ? new Date(firstInRow.timestamp) : null;
+            const lastOut = lastOutRow ? new Date(lastOutRow.timestamp) : null;
+            const totalWorkMinutes = firstIn && lastOut ? Math.max(0, (lastOut.getTime() - firstIn.getTime()) / 60000) : 0;
+
+            const hasManualEntry = empEvents.some(ev => (ev.source || '').toLowerCase().includes('manual'));
+            const anomalies = empEvents.flatMap(ev => ev.anomaly_tags || []);
+
+            const shift = (shiftData || []).find((s: any) => s.employee_id === empId);
+            const scheduledStart = shift?.scheduled_start ? new Date(shift.scheduled_start) : null;
+            const scheduledEnd = shift?.scheduled_end ? new Date(shift.scheduled_end) : null;
+
+            const empInfo = employeeMap.get(empId);
+            const record: AttendanceRecord = {
+                id: `att-${empId}-${filterDate}`,
+                employeeId: empId,
+                employeeName: empInfo?.name || empId,
+                date: new Date(filterDate),
+                scheduledStart,
+                scheduledEnd,
+                shiftName: shift?.shift_template_id || 'Scheduled',
+                firstIn,
+                lastOut,
+                totalWorkMinutes,
+                breakMinutes: 0,
+                overtimeMinutes: 0,
+                exceptions: anomalies,
+                hasManualEntry,
+                status: AttendanceStatus.Pending,
+            };
+
+            // BU filter and access scope
+            if (buFilter) {
+                const buName = businessUnits.find(b => b.id === buFilter)?.name;
+                if (empInfo?.businessUnit !== buName) return;
+            } else if (accessibleBus.length > 0) {
+                const buNames = new Set(accessibleBus.map(b => b.name));
+                if (empInfo?.businessUnit && !buNames.has(empInfo.businessUnit)) return;
+            }
+
+            records.push(record);
+        });
+
+        setRecords(records.sort((a, b) => a.employeeName.localeCompare(b.employeeName)));
     };
 
     useEffect(() => {
+        loadLookups();
+    }, []);
+
+    useEffect(() => {
         refreshRecords();
-    }, [mockTimeEvents.length]); // Re-run if events change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [filterDate, buFilter, employees.length, businessUnits.length]);
 
     const filteredRecords = useMemo(() => {
-        const accessibleBuIds = new Set(accessibleBus.map(b => b.id));
-        const accessibleBuNames = new Set(accessibleBus.map(b => b.name));
-
         return records.filter(r => {
             const dateMatch = new Date(r.date).toISOString().split('T')[0] === filterDate;
-            
-            // BU Filter
-            const employee = mockUsers.find(u => u.id === r.employeeId);
-            
-            // Check Scope
-            if (!employee || !accessibleBuNames.has(employee.businessUnit)) return false;
+            return dateMatch;
+        });
+    }, [records, filterDate]);
 
-            let buMatch = true;
-            if (buFilter) {
-                const buName = mockBusinessUnits.find(b => b.id === buFilter)?.name;
-                buMatch = employee?.businessUnit === buName;
-            }
-            
-            // Manager scope filter
-            let scopeMatch = true;
-            if (user?.role === Role.Manager) {
-                 // Only show direct reports
-                 scopeMatch = employee?.managerId === user.id || r.employeeId === user.id;
-            }
-
-            return dateMatch && buMatch && scopeMatch;
-        }).sort((a, b) => a.employeeName.localeCompare(b.employeeName));
-    }, [records, filterDate, buFilter, user, accessibleBus]);
+    if (!canView) {
+        return (
+            <div className="p-6">
+                <Card>
+                    <div className="p-6 text-center text-gray-600 dark:text-gray-300">
+                        You do not have permission to view Daily Time Review.
+                    </div>
+                </Card>
+            </div>
+        );
+    }
 
     const handleFix = (record: AttendanceRecord) => {
         setSelectedRecord(record);
