@@ -2,11 +2,12 @@
 
 import React, { useState } from 'react';
 import { TimeEvent, AnomalyTag } from '../../types';
-import { mockUsers, mockSites } from '../../services/mockData';
 import Modal from '../ui/Modal';
 
 interface ClockLogTableProps {
     events: TimeEvent[];
+    getEmployeeName: (id: string) => string;
+    getSiteName: (id: string, fallbackName?: string | null) => string;
 }
 
 const AnomalyChip: React.FC<{ tag: AnomalyTag }> = ({ tag }) => {
@@ -30,11 +31,8 @@ const AnomalyChip: React.FC<{ tag: AnomalyTag }> = ({ tag }) => {
     );
 };
 
-const ClockLogTable: React.FC<ClockLogTableProps> = ({ events }) => {
+const ClockLogTable: React.FC<ClockLogTableProps> = ({ events, getEmployeeName, getSiteName }) => {
     const [selectedEvent, setSelectedEvent] = useState<TimeEvent | null>(null);
-
-    const getUserName = (id: string) => mockUsers.find(u => u.id === id)?.name || 'Unknown';
-    const getSiteName = (id: string) => mockSites.find(s => s.id === id)?.name || id;
 
     return (
         <>
@@ -54,14 +52,14 @@ const ClockLogTable: React.FC<ClockLogTableProps> = ({ events }) => {
                         {events.map(event => (
                             <tr key={event.id} onClick={() => setSelectedEvent(event)} className="hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{new Date(event.timestamp).toLocaleString()}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{getUserName(event.employeeId)}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{getEmployeeName(event.employeeId)}</td>
                                  <td className="px-6 py-4 whitespace-nowrap text-sm">
                                     <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${event.type === 'CLOCK_IN' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                                         {event.type.replace('_', ' ')}
                                     </span>
                                  </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{event.source}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{getSiteName(event.locationId)}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{getSiteName(event.locationId, event.extra.site_name)}</td>
                                 <td className="px-6 py-4 whitespace-nowrap">
                                     <div className="flex flex-wrap gap-1">
                                         {event.extra.anomaly_tags.map(tag => <AnomalyChip key={tag} tag={tag} />)}

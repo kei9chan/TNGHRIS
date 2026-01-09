@@ -4,6 +4,40 @@ import { useSettings } from '../context/SettingsContext';
 import { mockPermissions, mockUsers, mockBusinessUnits, mockDepartments } from '../services/mockData';
 import { Resource, Permission, Role, IncidentReport, Ticket, BusinessUnit, Evaluation, EvaluatorType, User, COERequest, OTRequest, OTStatus } from '../types';
 
+// Clock-in/Out RBAC matrix
+const clockPermissions: Record<Role, Permission[]> = {
+  [Role.Admin]: [Permission.Manage],
+  [Role.HRManager]: [Permission.Manage],
+  [Role.HRStaff]: [Permission.Manage],
+  [Role.BOD]: [Permission.View],
+  [Role.GeneralManager]: [], // None
+  [Role.OperationsDirector]: [], // None
+  [Role.BusinessUnitManager]: [], // None
+  [Role.Manager]: [], // None
+  [Role.Employee]: [Permission.View], // Own scope handled by filter
+  [Role.FinanceStaff]: [], // None
+  [Role.Auditor]: [], // None
+  [Role.Recruiter]: [], // None
+  [Role.IT]: [], // None
+};
+
+// Clock Log RBAC matrix
+const clockLogPermissions: Record<Role, Permission[]> = {
+  [Role.Admin]: [Permission.Manage],
+  [Role.HRManager]: [Permission.Manage],
+  [Role.HRStaff]: [Permission.Manage],
+  [Role.BOD]: [Permission.View],
+  [Role.GeneralManager]: [], // None
+  [Role.OperationsDirector]: [], // None
+  [Role.BusinessUnitManager]: [], // None
+  [Role.Manager]: [], // None
+  [Role.Employee]: [Permission.View], // Own scope handled by filter
+  [Role.FinanceStaff]: [], // None
+  [Role.Auditor]: [], // None
+  [Role.Recruiter]: [], // None
+  [Role.IT]: [], // None
+};
+
 // Contracts RBAC matrix derived from user request
 const contractsPermissions: Record<Role, Permission[]> = {
   [Role.Admin]: [Permission.Manage],
@@ -202,6 +236,22 @@ export const usePermissions = () => {
 
         if (!user) {
             return false;
+        }
+
+        if (resource === 'Clock') {
+            const perms = clockPermissions[user.role];
+            if (!perms || perms.length === 0) return false;
+            if (perms.includes(Permission.Manage)) return true;
+            if (permission === Permission.View && perms.length > 0) return true;
+            return perms.includes(permission);
+        }
+
+        if (resource === 'ClockLog') {
+            const perms = clockLogPermissions[user.role];
+            if (!perms || perms.length === 0) return false;
+            if (perms.includes(Permission.Manage)) return true;
+            if (permission === Permission.View && perms.length > 0) return true;
+            return perms.includes(permission);
         }
 
         // Contracts & Signing custom matrix (only if rbac enabled)

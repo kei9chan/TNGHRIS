@@ -1,9 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { useTimeClock } from '../../hooks/useTimeClock';
-import { DeviceSecurityProfile, Role } from '../../types';
+import { DeviceSecurityProfile, Role, Permission } from '../../types';
 import { checkDeviceSecurity } from '../../services/deviceSecurity';
 import { useAuth } from '../../hooks/useAuth';
+import { usePermissions } from '../../hooks/usePermissions';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import MobileCheckIn from '../../components/payroll/MobileCheckIn';
@@ -25,12 +26,14 @@ const CameraIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 
 
 const ClockInOut: React.FC = () => {
     const { user } = useAuth();
+    const { can } = usePermissions();
     const [activeMethod, setActiveMethod] = useState<InputMethod>('mobile');
     const [securityProfile, setSecurityProfile] = useState<DeviceSecurityProfile | null>(null);
     const [isManagerAuthorized, setIsManagerAuthorized] = useState(false);
     const [isDeviceRooted, setIsDeviceRooted] = useState(false);
     
     const { isLoading, clockInStatus, lastEvent, todaysShift, addTimeEvent, isRetrying, retryCount, autoCloseStaleShifts } = useTimeClock();
+    const canView = can('Clock', Permission.View);
 
     useEffect(() => {
         const profile = checkDeviceSecurity(isDeviceRooted);
@@ -42,7 +45,19 @@ const ClockInOut: React.FC = () => {
         setActiveMethod(method);
     };
     
-    if (isLoading || !user) return <div>Loading...</div>;
+    if (!user) return <div>Loading...</div>;
+    if (!canView) {
+        return (
+            <div className="p-6">
+                <Card>
+                    <div className="p-6 text-center text-gray-600 dark:text-gray-300">
+                        You do not have permission to access Clock In/Out.
+                    </div>
+                </Card>
+            </div>
+        );
+    }
+    if (isLoading) return <div>Loading...</div>;
 
     const isPrivileged = [Role.Admin, Role.HRManager, Role.HRStaff, Role.Manager].includes(user.role);
     const isDeviceBlocked = securityProfile?.jailbreak_flag || securityProfile?.emulator_flag;
@@ -188,7 +203,7 @@ const ClockInOut: React.FC = () => {
                     Toggle Root/Jailbreak Simulation
                 </button>
                 <span className="mx-2">|</span>
-                <button onClick={() => { autoCloseStaleShifts(12); alert('Ran stale shift cleaner'); }} className="underline hover:text-gray-300">
+                <button onClick={async () => { await autoCloseStaleShifts(12); alert('Ran stale shift cleaner'); }} className="underline hover:text-gray-300">
                     Run Auto-Close
                 </button>
             </div>
