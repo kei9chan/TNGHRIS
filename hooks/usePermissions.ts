@@ -21,6 +21,23 @@ const knowledgeBasePermissions: Record<Role, Permission[]> = {
   [Role.IT]: [], // None
 };
 
+// Org Chart RBAC matrix
+const orgChartPermissions: Record<Role, Permission[]> = {
+  [Role.Admin]: [Permission.Manage],
+  [Role.HRManager]: [Permission.Manage],
+  [Role.HRStaff]: [Permission.Manage],
+  [Role.BOD]: [Permission.View],
+  [Role.GeneralManager]: [Permission.View], // View BU and Departments
+  [Role.OperationsDirector]: [Permission.View], // View BU only
+  [Role.BusinessUnitManager]: [Permission.View], // Own BU
+  [Role.Manager]: [Permission.View], // Own Team
+  [Role.Employee]: [Permission.View], // Own
+  [Role.FinanceStaff]: [Permission.View],
+  [Role.Auditor]: [], // None
+  [Role.Recruiter]: [Permission.Manage],
+  [Role.IT]: [], // None
+};
+
 // Calendar RBAC matrix
 const calendarPermissions: Record<Role, Permission[]> = {
   [Role.Admin]: [Permission.Manage],
@@ -304,6 +321,14 @@ export const usePermissions = () => {
 
         if (!user) {
             return false;
+        }
+
+        if (resource === 'OrgChart') {
+            const perms = orgChartPermissions[user.role];
+            if (!perms || perms.length === 0) return false;
+            if (perms.includes(Permission.Manage)) return true;
+            if (permission === Permission.View && perms.length > 0) return true;
+            return perms.includes(permission);
         }
 
         if (resource === 'Calendar') {
