@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Role, AccessScope } from '../../types';
-import { mockBusinessUnits } from '../../services/mockData';
+import { User, Role, AccessScope, BusinessUnit } from '../../types';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 
@@ -8,11 +7,13 @@ interface UserRoleEditModalProps {
     isOpen: boolean;
     onClose: () => void;
     user: User;
-    onSave: (userId: string, newRole: Role, accessScope: AccessScope) => void;
+    businessUnits: BusinessUnit[];
+    roles: string[];
+    onSave: (userId: string, newRole: string, accessScope: AccessScope) => void;
 }
 
-const UserRoleEditModal: React.FC<UserRoleEditModalProps> = ({ isOpen, onClose, user, onSave }) => {
-    const [newRole, setNewRole] = useState<Role>(user.role);
+const UserRoleEditModal: React.FC<UserRoleEditModalProps> = ({ isOpen, onClose, user, onSave, businessUnits, roles }) => {
+    const [newRole, setNewRole] = useState<string>(user.role);
     const [scopeType, setScopeType] = useState<AccessScope['type']>('HOME_ONLY');
     const [selectedBuIds, setSelectedBuIds] = useState<string[]>([]);
 
@@ -69,7 +70,7 @@ const UserRoleEditModal: React.FC<UserRoleEditModalProps> = ({ isOpen, onClose, 
                         onChange={(e) => setNewRole(e.target.value as Role)}
                         className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                     >
-                        {Object.values(Role).map((role) => (
+                        {roles.map((role) => (
                             <option key={role} value={role}>
                                 {role}
                             </option>
@@ -149,7 +150,7 @@ const UserRoleEditModal: React.FC<UserRoleEditModalProps> = ({ isOpen, onClose, 
                                 
                                 {scopeType === 'SPECIFIC' && (
                                     <div className="mt-2 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50 dark:bg-slate-800 p-2 max-h-40 overflow-y-auto">
-                                        {mockBusinessUnits.map(bu => (
+                                        {businessUnits.map(bu => (
                                             <div key={bu.id} className="flex items-center py-1">
                                                 <input
                                                     id={`bu-${bu.id}`}
