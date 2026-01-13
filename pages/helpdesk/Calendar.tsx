@@ -1,20 +1,48 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { CalendarEvent, Permission, Role } from '../../types';
-import { mockCalendarEvents } from '../../services/mockData';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useAuth } from '../../hooks/useAuth';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import EventModal from '../../components/helpdesk/EventModal';
+import { supabase } from '../../services/supabaseClient';
 
 const Calendar: React.FC = () => {
     const { can } = usePermissions();
     const { user } = useAuth();
-    const canManage = can('Helpdesk', Permission.Edit);
-    const [currentDate, setCurrentDate] = useState(new Date('2025-11-04'));
-    const [events, setEvents] = useState<CalendarEvent[]>(mockCalendarEvents);
+    const canManage = can('Calendar', Permission.Manage);
+    const canView = can('Calendar', Permission.View);
+    const [currentDate, setCurrentDate] = useState(new Date());
+    const [events, setEvents] = useState<CalendarEvent[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedEvent, setSelectedEvent] = useState<Partial<CalendarEvent> | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    const loadEvents = async () => {
+        setError(null);
+        const { data, error } = await supabase
+            .from('helpdesk_calendar_events')
+            .select('*')
+            .order('start', { ascending: true });
+        if (error) {
+            setError(error.message);
+            setEvents([]);
+            return;
+        }
+        setEvents(
+            (data || []).map((row: any) => ({
+                id: row.id,
+                title: row.title,
+                start: new Date(row.start),
+                end: new Date(row.end),
+                color: row.color || 'blue',
+            }))
+        );
+    };
+
+    useEffect(() => {
+        loadEvents();
+    }, []);
 
     const visibleEvents = useMemo(() => {
         if (!user) return [];
@@ -68,25 +96,51 @@ const Calendar: React.FC = () => {
     const handleToday = () => setCurrentDate(new Date());
 
     const handleOpenModal = (event: Partial<CalendarEvent> | null) => {
-        // Allow viewing birthdays for all, but only HR can manage other events
-        if (!canManage && !event?.id?.startsWith('bday-') && !event?.id?.startsWith('anniv-')) return;
+        if (!canManage) return;
         setSelectedEvent(event);
         setIsModalOpen(true);
     };
 
-    const handleSaveEvent = (eventToSave: CalendarEvent) => {
+    const handleSaveEvent = async (eventToSave: CalendarEvent) => {
+        setError(null);
         if (eventToSave.id) {
-            setEvents(prev => prev.map(e => e.id === eventToSave.id ? eventToSave : e));
+            const { error } = await supabase.from('helpdesk_calendar_events').update({
+                title: eventToSave.title,
+                start: eventToSave.start.toISOString(),
+                end: eventToSave.end.toISOString(),
+                color: eventToSave.color,
+                updated_at: new Date().toISOString(),
+            }).eq('id', eventToSave.id);
+            if (error) {
+                setError(error.message);
+                return;
+            }
         } else {
-            const newEvent = { ...eventToSave, id: `event-${Date.now()}` };
-            setEvents(prev => [...prev, newEvent]);
+            const { error } = await supabase.from('helpdesk_calendar_events').insert({
+                title: eventToSave.title,
+                start: eventToSave.start.toISOString(),
+                end: eventToSave.end.toISOString(),
+                color: eventToSave.color || 'blue',
+            });
+            if (error) {
+                setError(error.message);
+                return;
+            }
         }
         setIsModalOpen(false);
+        setSelectedEvent(null);
+        await loadEvents();
     };
 
-    const handleDeleteEvent = (eventId: string) => {
-        setEvents(prev => prev.filter(e => e.id !== eventId));
+    const handleDeleteEvent = async (eventId: string) => {
+        const { error } = await supabase.from('helpdesk_calendar_events').delete().eq('id', eventId);
+        if (error) {
+            setError(error.message);
+            return;
+        }
         setIsModalOpen(false);
+        setSelectedEvent(null);
+        await loadEvents();
     };
 
     const eventColors = {
@@ -104,6 +158,18 @@ const Calendar: React.FC = () => {
                 📆 <strong>Calendar</strong><br />
                 Track scheduled maintenance, HR events, or support deadlines — visualize upcoming tasks and helpdesk commitments.
             </p>
+            {!canView && (
+                <Card>
+                    <div className="p-4 text-center text-gray-600 dark:text-gray-300">
+                        You do not have permission to view the calendar.
+                    </div>
+                </Card>
+            )}
+            {error && (
+                <div className="text-sm text-red-600 dark:text-red-400">{error}</div>
+            )}
+            {canView && (
+            <>
             <div className="flex flex-col md:flex-row justify-between items-center gap-4">
                 <div className="flex items-center space-x-2">
                     <Button variant="secondary" onClick={handlePrevMonth}>&larr;</Button>
@@ -153,6 +219,8 @@ const Calendar: React.FC = () => {
                 onDelete={handleDeleteEvent}
                 isReadOnly={selectedEvent?.id?.startsWith('bday-') || selectedEvent?.id?.startsWith('anniv-')}
             />
+            </>
+            )}
         </div>
     );
 };
