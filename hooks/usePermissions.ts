@@ -21,6 +21,23 @@ const dailyTimeReviewPermissions: Record<Role, Permission[]> = {
   [Role.IT]: [], // None
 };
 
+// Attendance Exceptions RBAC matrix
+const attendanceExceptionsPermissions: Record<Role, Permission[]> = {
+  [Role.Admin]: [Permission.Manage],
+  [Role.HRManager]: [Permission.Manage],
+  [Role.HRStaff]: [Permission.Manage],
+  [Role.BOD]: [Permission.View],
+  [Role.GeneralManager]: [], // None
+  [Role.OperationsDirector]: [], // None
+  [Role.BusinessUnitManager]: [], // None
+  [Role.Manager]: [], // None
+  [Role.Employee]: [], // None
+  [Role.FinanceStaff]: [], // None
+  [Role.Auditor]: [], // None
+  [Role.Recruiter]: [], // None
+  [Role.IT]: [], // None
+};
+
 // Clock-in/Out RBAC matrix
 const clockPermissions: Record<Role, Permission[]> = {
   [Role.Admin]: [Permission.Manage],
@@ -253,6 +270,14 @@ export const usePermissions = () => {
 
         if (!user) {
             return false;
+        }
+
+        if (resource === 'Exceptions') {
+            const perms = attendanceExceptionsPermissions[user.role];
+            if (!perms || perms.length === 0) return false;
+            if (perms.includes(Permission.Manage)) return true;
+            if (permission === Permission.View && perms.length > 0) return true;
+            return perms.includes(permission);
         }
 
         if (resource === 'DailyTimeReview') {

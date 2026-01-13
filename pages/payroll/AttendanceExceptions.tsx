@@ -1,46 +1,98 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { mockShiftAssignments, mockTimeEvents, mockShiftTemplates, mockUsers, mockAttendanceExceptions } from '../../services/mockData';
-import { AttendanceExceptionRecord, ExceptionType, Role } from '../../types';
+import { AttendanceExceptionRecord, ExceptionType, Role, Permission } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
+import { usePermissions } from '../../hooks/usePermissions';
 import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
 import ExceptionsTable from '../../components/payroll/ExceptionsTable';
-import { generateAttendanceExceptions } from '../../services/attendanceService';
+import { supabase } from '../../services/supabaseClient';
 
 const AttendanceExceptions: React.FC = () => {
     const { user } = useAuth();
+    const { getVisibleEmployeeIds, can } = usePermissions();
+    const canView = can('Exceptions', Permission.View);
+    const canManage = can('Exceptions', Permission.Manage);
     
-    // Initialize with mock exceptions for history
     const [exceptions, setExceptions] = useState<AttendanceExceptionRecord[]>([]);
+    const [employees, setEmployees] = useState<{ id: string; name: string; role: Role }[]>([]);
 
     // Dynamic generation of exceptions based on current logs and schedule
     useEffect(() => {
-        // In a real app, this would be an API call or a background job.
-        // Here we combine static mock history with dynamic calculation.
-        const dynamicExceptions = generateAttendanceExceptions(mockShiftAssignments, mockTimeEvents, mockShiftTemplates);
-        
-        // Deduplicate based on ID (simple merge for prototype)
-        const allExceptions = [...mockAttendanceExceptions];
-        dynamicExceptions.forEach(dyn => {
-             if (!allExceptions.some(ex => ex.id === dyn.id)) {
-                 allExceptions.push(dyn);
-             }
-        });
-        
-        setExceptions(allExceptions);
-    }, []);
+        const load = async () => {
+            if (!canView) {
+                setExceptions([]);
+                return;
+            }
+            const [{ data: userData }, { data: eventsData }, { data: shiftsData }] = await Promise.all([
+                supabase.from('hris_users').select('id, full_name, role'),
+                supabase.from('time_events').select('*, hris_users:employee_id(full_name)').order('timestamp', { ascending: false }).limit(2000),
+                supabase.from('shift_assignments').select('*').order('date', { ascending: false }).limit(2000),
+            ]);
 
-    // Managers should only see exceptions for their direct reports.
-    // Admins/HR can see all. This simulates that logic.
-    const viewableExceptions = useMemo(() => {
-        if (user?.role === Role.Manager) {
-            // In a real app, you'd have a `managerId` on the user object.
-            // Here, we'll just show exceptions for John Doe and Jane Smith, who are managed by Peter Jones.
-            const managedEmployeeIds = ['3', '4', '101', '102', '103', '106', '107']; // Expanded team
-            return exceptions.filter(e => managedEmployeeIds.includes(e.employeeId));
-        }
-        return exceptions;
-    }, [exceptions, user?.role]);
+            const visibleIds = getVisibleEmployeeIds();
+            const employeeMap = new Map((userData || []).map((u: any) => [u.id, { id: u.id, name: u.full_name || 'Unknown', role: u.role as Role }]));
+            // Capture names from joined events if not present in hris_users
+            (eventsData || []).forEach((ev: any) => {
+                const joinedName = ev.hris_users?.full_name;
+                if (joinedName && (!employeeMap.has(ev.employee_id) || employeeMap.get(ev.employee_id)?.name === 'Unknown')) {
+                    employeeMap.set(ev.employee_id, { id: ev.employee_id, name: joinedName, role: Role.Employee });
+                }
+            });
+            setEmployees(Array.from(employeeMap.values()));
+
+            const filteredEvents = (eventsData || []).filter((e: any) => canManage || visibleIds.includes(e.employee_id));
+            const eventsByDay = new Map<string, any[]>();
+            filteredEvents.forEach((e: any) => {
+                const day = e.timestamp ? e.timestamp.slice(0, 10) : null;
+                if (!day) return;
+                const key = `${e.employee_id}|${day}`; // use pipe to avoid UUID hyphen collisions
+                if (!eventsByDay.has(key)) eventsByDay.set(key, []);
+                eventsByDay.get(key)!.push(e);
+            });
+
+            const shiftByEmpDay = new Map<string, any>();
+            (shiftsData || []).forEach((s: any) => {
+                const key = `${s.employee_id}-${s.date}`;
+                shiftByEmpDay.set(key, s);
+            });
+
+            const derived: AttendanceExceptionRecord[] = [];
+            eventsByDay.forEach((evs, key) => {
+                const [empId, day] = key.split('|');
+                const sorted = evs.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+                const firstIn = sorted.find(ev => (ev.type || '').toLowerCase().includes('in'));
+                const lastOut = [...sorted].reverse().find(ev => (ev.type || '').toLowerCase().includes('out'));
+                const dateObj = day ? new Date(`${day}T00:00:00`) : new Date();
+
+                const pushEx = (type: ExceptionType, details: string, sourceId: string) => {
+                    derived.push({
+                        id: `${empId}-${day}-${type}`,
+                        employeeId: empId,
+                        employeeName: employeeMap.get(empId)?.name || evs[0]?.hris_users?.full_name || empId,
+                        date: dateObj,
+                        type,
+                        details,
+                        status: 'Pending',
+                        sourceEventId: sourceId,
+                    });
+                };
+
+                if (!firstIn) pushEx(ExceptionType.MissingIn, 'No clock-in found for this day.', evs[0]?.id || '');
+                if (!lastOut) pushEx(ExceptionType.MissingOut, 'No clock-out found for this day.', evs[evs.length - 1]?.id || '');
+
+                const anyOutside = evs.some(ev => (ev.anomaly_tags || []).some((t: string) => t.toLowerCase().includes('outside')));
+                if (anyOutside) pushEx(ExceptionType.OutsideFence, 'Clock recorded outside geofence.', evs.find(ev => (ev.anomaly_tags || []).length)?.id || evs[0]?.id || '');
+
+                const doubleLog = sorted.filter(ev => (ev.type || '').toLowerCase().includes('in')).length > 1;
+                if (doubleLog) pushEx(ExceptionType.DoubleLog, 'Multiple clock-ins detected.', firstIn?.id || evs[0]?.id || '');
+
+                // Missing break/extended break detection skipped for now without break events
+            });
+
+            setExceptions(derived);
+        };
+        load();
+    }, [canView, canManage, getVisibleEmployeeIds]);
 
     const [filters, setFilters] = useState({
         startDate: '',
@@ -61,7 +113,7 @@ const AttendanceExceptions: React.FC = () => {
     };
 
     const filteredExceptions = useMemo(() => {
-        return viewableExceptions.filter(ex => {
+        return exceptions.filter(ex => {
             const exDate = new Date(ex.date);
             if (filters.startDate && exDate < new Date(filters.startDate)) return false;
             if (filters.endDate) {
@@ -74,7 +126,19 @@ const AttendanceExceptions: React.FC = () => {
             if (filters.status && ex.status !== filters.status) return false;
             return true;
         }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [filters, viewableExceptions]);
+    }, [filters, exceptions]);
+
+    if (!canView) {
+        return (
+            <div className="p-6">
+                <Card>
+                    <div className="p-6 text-center text-gray-600 dark:text-gray-300">
+                        You do not have permission to view Attendance Exceptions.
+                    </div>
+                </Card>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6">
@@ -89,7 +153,7 @@ const AttendanceExceptions: React.FC = () => {
                         <label htmlFor="employeeId" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Employee</label>
                         <select name="employeeId" id="employeeId" value={filters.employeeId} onChange={handleFilterChange} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
                             <option value="">All</option>
-                            {mockUsers.filter(u => u.role === Role.Employee).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                            {employees.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                         </select>
                     </div>
                      <div>
