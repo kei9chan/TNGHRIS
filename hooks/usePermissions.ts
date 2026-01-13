@@ -4,6 +4,23 @@ import { useSettings } from '../context/SettingsContext';
 import { mockPermissions, mockUsers, mockBusinessUnits, mockDepartments } from '../services/mockData';
 import { Resource, Permission, Role, IncidentReport, Ticket, BusinessUnit, Evaluation, EvaluatorType, User, COERequest, OTRequest, OTStatus } from '../types';
 
+// Knowledge Base RBAC matrix
+const knowledgeBasePermissions: Record<Role, Permission[]> = {
+  [Role.Admin]: [Permission.Manage],
+  [Role.HRManager]: [Permission.Manage],
+  [Role.HRStaff]: [Permission.Manage],
+  [Role.BOD]: [Permission.View],
+  [Role.GeneralManager]: [Permission.View],
+  [Role.OperationsDirector]: [Permission.View],
+  [Role.BusinessUnitManager]: [Permission.View],
+  [Role.Manager]: [Permission.View],
+  [Role.Employee]: [Permission.View],
+  [Role.FinanceStaff]: [Permission.View],
+  [Role.Auditor]: [], // None
+  [Role.Recruiter]: [Permission.Manage],
+  [Role.IT]: [], // None
+};
+
 // Daily Time Review RBAC matrix
 const dailyTimeReviewPermissions: Record<Role, Permission[]> = {
   [Role.Admin]: [Permission.Manage],
@@ -270,6 +287,14 @@ export const usePermissions = () => {
 
         if (!user) {
             return false;
+        }
+
+        if (resource === 'Helpdesk') {
+            const perms = knowledgeBasePermissions[user.role];
+            if (!perms || perms.length === 0) return false;
+            if (perms.includes(Permission.Manage)) return true;
+            if (permission === Permission.View && perms.length > 0) return true;
+            return perms.includes(permission);
         }
 
         if (resource === 'Exceptions') {

@@ -1,12 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { mockKbCategories, mockKbArticles } from '../../services/mockData';
 import { KnowledgeBaseArticle, KnowledgeBaseCategory, Permission } from '../../types';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { usePermissions } from '../../hooks/usePermissions';
 import CategoryModal from '../../components/helpdesk/CategoryModal';
 import ArticleModal from '../../components/helpdesk/ArticleModal';
+import { supabase } from '../../services/supabaseClient';
 
 
 // Icons
@@ -21,11 +21,13 @@ const KnowledgeBase: React.FC = () => {
     const [searchParams, setSearchParams] = useSearchParams();
     const [searchTerm, setSearchTerm] = useState('');
     const { can } = usePermissions();
-    const canManageKb = can('Helpdesk', Permission.Edit);
+    const canManageKb = can('Helpdesk', Permission.Manage);
+    const canViewKb = can('Helpdesk', Permission.View);
 
-    // State for mock data to allow UI updates
-    const [categories, setCategories] = useState<KnowledgeBaseCategory[]>(mockKbCategories);
-    const [articles, setArticles] = useState<KnowledgeBaseArticle[]>(mockKbArticles);
+    const [categories, setCategories] = useState<KnowledgeBaseCategory[]>([]);
+    const [articles, setArticles] = useState<KnowledgeBaseArticle[]>([]);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     // State for modals
     const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
@@ -37,6 +39,42 @@ const KnowledgeBase: React.FC = () => {
     const categoryId = searchParams.get('category');
     const articleSlug = searchParams.get('article');
     const isHomeView = !query && !categoryId && !articleSlug;
+
+    const loadData = async () => {
+        setIsLoading(true);
+        setError(null);
+        const [{ data: catData, error: catErr }, { data: artData, error: artErr }] = await Promise.all([
+            supabase.from('kb_categories').select('*').order('name'),
+            supabase.from('kb_articles').select('*').order('last_updated_at', { ascending: false }),
+        ]);
+        if (catErr || artErr) {
+            setError(catErr?.message || artErr?.message || 'Failed to load knowledge base data.');
+            setCategories([]);
+            setArticles([]);
+        } else {
+            setCategories((catData || []).map((c: any) => ({
+                id: c.id,
+                name: c.name,
+                description: c.description,
+                icon: c.icon,
+            })));
+            setArticles((artData || []).map((a: any) => ({
+                id: a.id,
+                slug: a.slug,
+                title: a.title,
+                categoryId: a.category_id,
+                content: a.content,
+                tags: a.tags || [],
+                lastUpdatedAt: a.last_updated_at ? new Date(a.last_updated_at) : new Date(),
+                viewCount: a.view_count ?? 0,
+            })));
+        }
+        setIsLoading(false);
+    };
+
+    useEffect(() => {
+        loadData();
+    }, []);
     
     const searchResults = useMemo(() => {
         if (!query) return [];
@@ -59,55 +97,91 @@ const KnowledgeBase: React.FC = () => {
     }, [articleSlug, articles]);
     
     // --- Handlers for mock data mutation ---
-    const handleSaveCategory = (category: KnowledgeBaseCategory) => {
+    const handleSaveCategory = async (category: KnowledgeBaseCategory) => {
+        setError(null);
         if (category.id) { // Editing
-            const updated = categories.map(c => c.id === category.id ? category : c);
-            setCategories(updated);
-            const index = mockKbCategories.findIndex(c => c.id === category.id);
-            if (index > -1) mockKbCategories[index] = category;
+            const { error: err } = await supabase.from('kb_categories').update({
+                name: category.name,
+                description: category.description,
+                icon: category.icon,
+                updated_at: new Date().toISOString(),
+            }).eq('id', category.id);
+            if (err) {
+                setError(err.message);
+                return;
+            }
         } else { // Creating
-            const newCategory = { ...category, id: `cat-${Date.now()}` };
-            setCategories(prev => [...prev, newCategory]);
-            mockKbCategories.push(newCategory);
+            const { error: err } = await supabase.from('kb_categories').insert({
+                name: category.name,
+                description: category.description,
+                icon: category.icon,
+            });
+            if (err) {
+                setError(err.message);
+                return;
+            }
         }
         setIsCategoryModalOpen(false);
+        setEditingCategory(null);
+        await loadData();
     };
 
-    const handleDeleteCategory = (id: string) => {
+    const handleDeleteCategory = async (id: string) => {
         if (articles.some(a => a.categoryId === id)) {
             alert("Cannot delete a category with articles in it. Please move or delete the articles first.");
             return;
         }
         if (window.confirm("Are you sure you want to delete this category?")) {
-            setCategories(prev => prev.filter(c => c.id !== id));
-            const index = mockKbCategories.findIndex(c => c.id === id);
-            if (index > -1) mockKbCategories.splice(index, 1);
+            const { error: err } = await supabase.from('kb_categories').delete().eq('id', id);
+            if (err) {
+                setError(err.message);
+                return;
+            }
+            setSearchParams({});
+            await loadData();
         }
     };
 
-    const handleSaveArticle = (article: KnowledgeBaseArticle) => {
+    const handleSaveArticle = async (article: KnowledgeBaseArticle) => {
+        setError(null);
         const newSlug = article.title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+        const payload = {
+            slug: newSlug,
+            title: article.title,
+            category_id: article.categoryId,
+            content: article.content,
+            tags: article.tags || [],
+            last_updated_at: new Date().toISOString(),
+        };
+
         if (article.id) { // Editing
-            const updatedArticle = { ...article, slug: newSlug, lastUpdatedAt: new Date() };
-            const updated = articles.map(a => a.id === article.id ? updatedArticle : a);
-            setArticles(updated);
-            const index = mockKbArticles.findIndex(a => a.id === article.id);
-            if (index > -1) mockKbArticles[index] = updatedArticle;
+            const { error: err } = await supabase.from('kb_articles').update(payload).eq('id', article.id);
+            if (err) {
+                setError(err.message);
+                return;
+            }
         } else { // Creating
-            const newArticle = { ...article, id: `article-${Date.now()}`, slug: newSlug, lastUpdatedAt: new Date(), viewCount: 0 };
-            setArticles(prev => [...prev, newArticle]);
-            mockKbArticles.push(newArticle);
+            const { error: err } = await supabase.from('kb_articles').insert({ ...payload, view_count: 0 });
+            if (err) {
+                setError(err.message);
+                return;
+            }
         }
         setIsArticleModalOpen(false);
+        setEditingArticle(null);
+        await loadData();
         setSearchParams({ article: newSlug }); // Navigate to the new/edited article
     };
 
-    const handleDeleteArticle = (id: string) => {
+    const handleDeleteArticle = async (id: string) => {
         if (window.confirm("Are you sure you want to delete this article?")) {
-            setArticles(prev => prev.filter(a => a.id !== id));
-            const index = mockKbArticles.findIndex(a => a.id === id);
-            if (index > -1) mockKbArticles.splice(index, 1);
+            const { error: err } = await supabase.from('kb_articles').delete().eq('id', id);
+            if (err) {
+                setError(err.message);
+                return;
+            }
             setSearchParams({}); // Go back to home
+            await loadData();
         }
     };
     
@@ -215,6 +289,15 @@ const KnowledgeBase: React.FC = () => {
     
     return (
         <div className="space-y-8">
+            {!canViewKb && (
+                <Card>
+                    <div className="p-6 text-center text-gray-600 dark:text-gray-300">
+                        You do not have permission to view the Knowledge Base.
+                    </div>
+                </Card>
+            )}
+            {canViewKb && (
+        <>
             {/* Header Section */}
             <div className="relative flex flex-col items-center justify-center py-6">
                 <div className="text-center">
@@ -274,6 +357,8 @@ const KnowledgeBase: React.FC = () => {
                     defaultCategoryId={categoryId || undefined}
                     onSave={handleSaveArticle}
                 />
+            )}
+        </>
             )}
         </div>
     );
