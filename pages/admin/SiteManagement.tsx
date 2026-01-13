@@ -1,27 +1,57 @@
 
-import React, { useState, useMemo } from 'react';
-import { Site } from '../../types';
-import { mockSites, mockBusinessUnits } from '../../services/mockData';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Site, BusinessUnit, Permission } from '../../types';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import SiteModal from '../../components/admin/SiteModal';
 import { usePermissions } from '../../hooks/usePermissions';
-import { logActivity } from '../../services/auditService';
 import { useAuth } from '../../hooks/useAuth';
+import { supabase } from '../../services/supabaseClient';
 
 const SiteManagement: React.FC = () => {
     const { user } = useAuth();
-    const { getAccessibleBusinessUnits } = usePermissions();
-    const [sites, setSites] = useState<Site[]>(mockSites);
+    const { getAccessibleBusinessUnits, can } = usePermissions();
+    const canView = can('SiteManagement', Permission.View);
+    const canManage = can('SiteManagement', Permission.Manage);
+    const [sites, setSites] = useState<Site[]>([]);
+    const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
+    const [error, setError] = useState<string | null>(null);
+    const [loading, setLoading] = useState<boolean>(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingSite, setEditingSite] = useState<Site | null>(null);
 
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
-    const accessibleBuIds = useMemo(() => new Set(accessibleBus.map(bu => bu.id)), [accessibleBus]);
+    // Show all business units/sites; if you need scoping, reintroduce getAccessibleBusinessUnits
+    const filteredSites = useMemo(() => sites, [sites]);
 
-    const filteredSites = useMemo(() => {
-        return sites.filter(site => accessibleBuIds.has(site.businessUnitId));
-    }, [sites, accessibleBuIds]);
+    useEffect(() => {
+        const loadData = async () => {
+            setLoading(true);
+            setError(null);
+            const [{ data: siteRows, error: siteErr }, { data: buRows, error: buErr }] = await Promise.all([
+                supabase.from('sites').select('id, name, latitude, longitude, radius_meters, business_unit_id, timezone, allowed_wifi_ssids, grace_period_minutes'),
+                supabase.from('business_units').select('id, name'),
+            ]);
+            if (siteErr || buErr) {
+                setError(siteErr?.message || buErr?.message || 'Failed to load sites.');
+                setLoading(false);
+                return;
+            }
+            setBusinessUnits((buRows || []).map((b: any) => ({ id: b.id, name: b.name } as BusinessUnit)));
+            setSites((siteRows || []).map((s: any) => ({
+                id: s.id,
+                name: s.name,
+                latitude: s.latitude ?? 0,
+                longitude: s.longitude ?? 0,
+                radiusMeters: s.radius_meters ?? 100,
+                businessUnitId: s.business_unit_id,
+                allowedWifiSSIDs: s.allowed_wifi_ssids || [],
+                gracePeriodMinutes: s.grace_period_minutes ?? 0,
+                timezone: s.timezone || '',
+            } as Site)));
+            setLoading(false);
+        };
+        loadData();
+    }, []);
 
     const handleOpenModal = (site: Site | null) => {
         setEditingSite(site);
@@ -33,46 +63,91 @@ const SiteManagement: React.FC = () => {
         setEditingSite(null);
     };
 
-    const handleSave = (siteToSave: Site) => {
-        if (siteToSave.id) { // Editing
-            const updated = sites.map(s => s.id === siteToSave.id ? siteToSave : s);
-            setSites(updated);
-            const mockIndex = mockSites.findIndex(s => s.id === siteToSave.id);
-            if (mockIndex > -1) mockSites[mockIndex] = siteToSave;
-            logActivity(user, 'UPDATE', 'Site', siteToSave.id, `Updated site: ${siteToSave.name}`);
-        } else { // Adding
-            const newSite: Site = {
-                ...siteToSave,
-                id: `SITE-${Date.now()}`,
-            };
-            setSites(prev => [...prev, newSite]);
-            mockSites.push(newSite);
-            logActivity(user, 'CREATE', 'Site', newSite.id, `Created new site: ${newSite.name}`);
+    const handleSave = async (siteToSave: Site) => {
+        if (!siteToSave.name.trim() || !siteToSave.businessUnitId) {
+            alert('Site name and Business Unit are required.');
+            return;
+        }
+        setError(null);
+        if (siteToSave.id) {
+            const { error: err } = await supabase.from('sites').update({
+                name: siteToSave.name,
+                latitude: siteToSave.latitude,
+                longitude: siteToSave.longitude,
+                radius_meters: siteToSave.radiusMeters,
+                business_unit_id: siteToSave.businessUnitId,
+                timezone: (siteToSave as any).timezone || null,
+                allowed_wifi_ssids: siteToSave.allowedWifiSSIDs || [],
+                grace_period_minutes: siteToSave.gracePeriodMinutes ?? null,
+            }).eq('id', siteToSave.id);
+            if (err) {
+                setError(err.message);
+                return;
+            }
+            setSites(prev => prev.map(s => s.id === siteToSave.id ? siteToSave : s));
+        } else {
+            const { data, error: err } = await supabase.from('sites').insert({
+                name: siteToSave.name,
+                latitude: siteToSave.latitude,
+                longitude: siteToSave.longitude,
+                radius_meters: siteToSave.radiusMeters,
+                business_unit_id: siteToSave.businessUnitId,
+                timezone: (siteToSave as any).timezone || null,
+                allowed_wifi_ssids: siteToSave.allowedWifiSSIDs || [],
+                grace_period_minutes: siteToSave.gracePeriodMinutes ?? null,
+            }).select('id').single();
+            if (err) {
+                setError(err.message);
+                return;
+            }
+            if (data) {
+                setSites(prev => [...prev, { ...siteToSave, id: data.id }]);
+            }
         }
         handleCloseModal();
     };
 
-    const handleDelete = (siteId: string) => {
-        if (window.confirm('Are you sure you want to delete this site?')) {
-            const updated = sites.filter(s => s.id !== siteId);
-            setSites(updated);
-            const mockIndex = mockSites.findIndex(d => d.id === siteId);
-            if (mockIndex > -1) mockSites.splice(mockIndex, 1);
-            logActivity(user, 'DELETE', 'Site', siteId, 'Deleted site');
+    const handleDelete = async (siteId: string) => {
+        if (!window.confirm('Are you sure you want to delete this site?')) return;
+        const { error: err } = await supabase.from('sites').delete().eq('id', siteId);
+        if (err) {
+            setError(err.message);
+            return;
         }
+        setSites(prev => prev.filter(s => s.id !== siteId));
     };
 
     const getBuName = (buId: string) => {
-        return mockBusinessUnits.find(bu => bu.id === buId)?.name || 'N/A';
+        return businessUnits.find(bu => bu.id === buId)?.name || 'N/A';
+    }
+
+    if (!canView) {
+        return (
+            <Card>
+                <div className="p-6 text-center text-gray-600 dark:text-gray-300">
+                    You do not have permission to view this page.
+                </div>
+            </Card>
+        );
     }
 
     return (
         <div className="space-y-6">
             <div className="flex justify-between items-center">
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Site Management</h1>
-                <Button onClick={() => handleOpenModal(null)}>Add New Site</Button>
+                {canManage && <Button onClick={() => handleOpenModal(null)}>Add New Site</Button>}
             </div>
             <p className="text-gray-600 dark:text-gray-400">Manage geofence locations for the GPS clock-in feature.</p>
+            {error && (
+                <Card>
+                    <div className="p-3 text-sm text-red-600 dark:text-red-400">{error}</div>
+                </Card>
+            )}
+            {loading && (
+                <Card>
+                    <div className="p-3 text-sm text-gray-600 dark:text-gray-300">Loading sites...</div>
+                </Card>
+            )}
 
             <Card>
                 <div className="overflow-x-auto">
@@ -98,7 +173,7 @@ const SiteManagement: React.FC = () => {
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                         <div className="flex justify-end space-x-2">
                                             <Button size="sm" variant="secondary" onClick={() => handleOpenModal(site)}>Edit</Button>
-                                            <Button size="sm" variant="danger" onClick={() => handleDelete(site.id)}>Delete</Button>
+                                            {canManage && <Button size="sm" variant="danger" onClick={() => handleDelete(site.id)}>Delete</Button>}
                                         </div>
                                     </td>
                                 </tr>
@@ -121,6 +196,7 @@ const SiteManagement: React.FC = () => {
                     onClose={handleCloseModal}
                     onSave={handleSave}
                     site={editingSite}
+                    businessUnits={businessUnits}
                 />
             )}
         </div>
