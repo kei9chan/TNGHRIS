@@ -224,6 +224,23 @@ const memoPermissions: Record<Role, Permission[]> = {
   [Role.IT]: [], // None
 };
 
+// Pulse Survey RBAC matrix
+const pulseSurveyPermissions: Record<Role, Permission[]> = {
+  [Role.Admin]: [Permission.Manage],
+  [Role.HRManager]: [Permission.Manage],
+  [Role.HRStaff]: [Permission.Manage],
+  [Role.BOD]: [Permission.View],
+  [Role.GeneralManager]: [Permission.View], // View BU/Departments (scope handled elsewhere)
+  [Role.OperationsDirector]: [Permission.View], // View BU only
+  [Role.BusinessUnitManager]: [Permission.View], // Own BU
+  [Role.Manager]: [Permission.View], // Own Team
+  [Role.Employee]: [Permission.View], // Own
+  [Role.FinanceStaff]: [], // None
+  [Role.Auditor]: [], // None
+  [Role.Recruiter]: [], // None
+  [Role.IT]: [], // None
+};
+
 // Code of Discipline RBAC
 const codeOfDisciplinePermissions: Record<Role, Permission[]> = {
   [Role.Admin]: [Permission.Manage],
@@ -436,6 +453,16 @@ export const usePermissions = () => {
 
         if (resource === 'MemoLibrary') {
             const perms = memoPermissions[user.role];
+            if (!perms || perms.length === 0) {
+                return false;
+            }
+            if (perms.includes(Permission.Manage)) return true;
+            if (permission === Permission.View && perms.length > 0) return true;
+            return perms.includes(permission);
+        }
+
+        if (resource === 'PulseSurvey') {
+            const perms = pulseSurveyPermissions[user.role];
             if (!perms || perms.length === 0) {
                 return false;
             }

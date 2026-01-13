@@ -1,13 +1,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { mockPulseSurveys } from '../../services/mockData';
-import { PulseSurvey, PulseSurveyStatus, SurveySection, PulseSurveyQuestion } from '../../types';
+import { PulseSurveyStatus, SurveySection, PulseSurveyQuestion, Permission } from '../../types';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Textarea from '../../components/ui/Textarea';
 import { useAuth } from '../../hooks/useAuth';
+import { usePermissions } from '../../hooks/usePermissions';
+import { supabase } from '../../services/supabaseClient';
 
 const TrashIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>;
 const PlusIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>;
@@ -18,8 +19,19 @@ const PulseSurveyBuilder: React.FC = () => {
     const { surveyId } = useParams<{ surveyId: string }>();
     const navigate = useNavigate();
     const { user } = useAuth();
+    const { can } = usePermissions();
+    const canManage = can('PulseSurvey', Permission.Manage);
 
-    const [survey, setSurvey] = useState<Partial<PulseSurvey>>({
+    const [survey, setSurvey] = useState<{
+        id?: string;
+        title?: string;
+        description?: string;
+        startDate?: Date;
+        endDate?: Date;
+        status?: PulseSurveyStatus;
+        isAnonymous?: boolean;
+        sections?: SurveySection[];
+    }>({
         title: '',
         description: '',
         startDate: new Date(),
@@ -27,17 +39,79 @@ const PulseSurveyBuilder: React.FC = () => {
         isAnonymous: true,
         sections: []
     });
+    const [loading, setLoading] = useState<boolean>(false);
+    const [error, setError] = useState<string | null>(null);
+
+    if (!canManage) {
+        return (
+            <div className="max-w-3xl mx-auto space-y-4">
+                <Card>
+                    <div className="p-6 text-center text-gray-600 dark:text-gray-300">
+                        You do not have permission to manage pulse surveys.
+                    </div>
+                </Card>
+                <div className="text-center">
+                    <Link to="/evaluation/pulse">
+                        <Button variant="secondary">Back to Pulse Surveys</Button>
+                    </Link>
+                </div>
+            </div>
+        );
+    }
 
     useEffect(() => {
-        if (surveyId) {
-            const existingSurvey = mockPulseSurveys.find(s => s.id === surveyId);
-            if (existingSurvey) {
-                setSurvey(JSON.parse(JSON.stringify(existingSurvey))); // Deep copy
-            } else {
-                alert('Survey not found');
-                navigate('/evaluation/pulse');
+        const loadExisting = async () => {
+            if (!surveyId) return;
+            setLoading(true);
+            setError(null);
+            const { data: surveyData, error: surveyErr } = await supabase.from('pulse_surveys').select('*').eq('id', surveyId).single();
+            if (surveyErr || !surveyData) {
+                setError(surveyErr?.message || 'Survey not found.');
+                setLoading(false);
+                return;
             }
-        }
+            const { data: sectionRows, error: secErr } = await supabase.from('pulse_survey_sections').select('*').eq('survey_id', surveyId).order('sort_order');
+            const sectionIds = (sectionRows || []).map((s: any) => s.id);
+            const { data: questionRows, error: qErr } = sectionIds.length > 0
+                ? await supabase.from('pulse_survey_questions').select('*').in('section_id', sectionIds).order('sort_order')
+                : { data: [], error: null };
+            if (secErr || qErr) {
+                setError(secErr?.message || qErr?.message || 'Failed to load survey.');
+                setLoading(false);
+                return;
+            }
+            const sectionMap: Record<string, SurveySection> = {};
+            (sectionRows || []).forEach((s: any) => {
+                sectionMap[s.id] = {
+                    id: s.id,
+                    title: s.title,
+                    description: s.description || '',
+                    questions: [],
+                };
+            });
+            (questionRows || []).forEach((q: any) => {
+                const container = sectionMap[q.section_id];
+                if (container) {
+                    container.questions.push({
+                        id: q.id,
+                        text: q.text,
+                        type: q.question_type,
+                    });
+                }
+            });
+            setSurvey({
+                id: surveyData.id,
+                title: surveyData.title,
+                description: surveyData.description || '',
+                startDate: surveyData.start_date ? new Date(surveyData.start_date) : undefined,
+                endDate: surveyData.end_date ? new Date(surveyData.end_date) : undefined,
+                status: surveyData.status || PulseSurveyStatus.Draft,
+                isAnonymous: !!surveyData.is_anonymous,
+                sections: Object.values(sectionMap),
+            });
+            setLoading(false);
+        };
+        loadExisting();
     }, [surveyId, navigate]);
 
     const handleSurveyChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -122,29 +196,94 @@ const PulseSurveyBuilder: React.FC = () => {
         }));
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!survey.title || !survey.sections || survey.sections.length === 0) {
             alert("Title and at least one section are required.");
             return;
         }
+        setLoading(true);
+        setError(null);
         
-        if (surveyId) {
-            // Update existing
-             const index = mockPulseSurveys.findIndex(s => s.id === surveyId);
-             if (index > -1) {
-                 mockPulseSurveys[index] = survey as PulseSurvey;
-             }
+        // Insert/update survey
+        const surveyPayload = {
+            title: survey.title,
+            description: survey.description || '',
+            start_date: survey.startDate ? survey.startDate.toISOString().split('T')[0] : null,
+            end_date: survey.endDate ? survey.endDate.toISOString().split('T')[0] : null,
+            status: survey.status || PulseSurveyStatus.Draft,
+            is_anonymous: survey.isAnonymous ?? true,
+            created_by_user_id: user?.id || null,
+        };
+
+        let surveyRecordId = surveyId || survey.id;
+
+        if (surveyRecordId) {
+            const { error: updateErr } = await supabase.from('pulse_surveys').update(surveyPayload).eq('id', surveyRecordId);
+            if (updateErr) {
+                setError(updateErr.message);
+                setLoading(false);
+                return;
+            }
+            // Replace sections/questions to keep it simple
+            await supabase.from('pulse_survey_sections').delete().eq('survey_id', surveyRecordId);
         } else {
-            // Create new
-            const newSurvey = {
-                ...survey,
-                id: `SURVEY-${Date.now()}`,
-                createdAt: new Date(),
-                createdByUserId: user?.id || 'admin'
-            } as PulseSurvey;
-            mockPulseSurveys.unshift(newSurvey);
+            const { data, error: insertErr } = await supabase.from('pulse_surveys').insert(surveyPayload).select('id').single();
+            if (insertErr || !data) {
+                setError(insertErr?.message || 'Failed to create survey.');
+                setLoading(false);
+                return;
+            }
+            surveyRecordId = data.id;
         }
-        
+
+        // Re-insert sections and questions letting Supabase generate UUIDs
+        const sectionPayloads = (survey.sections || []).map((s, idx) => ({
+            survey_id: surveyRecordId,
+            title: s.title || 'Untitled Section',
+            description: s.description || '',
+            sort_order: idx,
+        }));
+
+        if (sectionPayloads.length > 0) {
+            const { data: insertedSections, error: secErr } = await supabase
+                .from('pulse_survey_sections')
+                .insert(sectionPayloads)
+                .select('id, sort_order');
+            if (secErr) {
+                setError(secErr.message);
+                setLoading(false);
+                return;
+            }
+            const sectionIdByOrder: Record<number, string> = {};
+            (insertedSections || []).forEach((row: any) => {
+                sectionIdByOrder[row.sort_order] = row.id;
+            });
+
+            const questionPayloads: any[] = [];
+            (survey.sections || []).forEach((section, idx) => {
+                const sectionId = sectionIdByOrder[idx];
+                if (!sectionId) return;
+                (section.questions || []).forEach((q, qIdx) => {
+                    questionPayloads.push({
+                        section_id: sectionId,
+                        text: q.text,
+                        question_type: q.type,
+                        sort_order: qIdx,
+                    });
+                });
+            });
+
+            if (questionPayloads.length > 0) {
+                const { error: qErr } = await supabase.from('pulse_survey_questions').insert(questionPayloads);
+                if (qErr) {
+                    setError(qErr.message);
+                    setLoading(false);
+                    return;
+                }
+            }
+        }
+
+        setLoading(false);
         navigate('/evaluation/pulse');
     };
 
@@ -159,10 +298,25 @@ const PulseSurveyBuilder: React.FC = () => {
                     <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{surveyId ? 'Edit Survey' : 'Create Engagement Survey'}</h1>
                     <div className="flex space-x-2">
                         <Button variant="secondary" onClick={() => navigate('/evaluation/pulse')}>Cancel</Button>
-                        <Button onClick={handleSave}>Save Survey</Button>
+                        <Button onClick={handleSave} disabled={!canManage || loading}>
+                            {loading ? 'Saving...' : 'Save Survey'}
+                        </Button>
                     </div>
                 </div>
             </div>
+
+            {!canManage && (
+                <Card>
+                    <div className="p-4 text-sm text-gray-600 dark:text-gray-300">
+                        You do not have permission to manage pulse surveys.
+                    </div>
+                </Card>
+            )}
+            {error && (
+                <Card>
+                    <div className="p-4 text-sm text-red-600 dark:text-red-400">{error}</div>
+                </Card>
+            )}
 
             <Card title="Survey Settings">
                 <div className="space-y-4">
