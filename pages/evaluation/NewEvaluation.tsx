@@ -1,14 +1,14 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import { mockBusinessUnits, mockUsers, mockEvaluationTimelines, mockQuestionSets, mockEvaluations, mockDepartments } from '../../services/mockData';
 import Input from '../../components/ui/Input';
-import { User, Evaluation, EvaluatorConfig, EvaluatorType, EvaluatorGroupFilter } from '../../types';
+import { User, Evaluation, EvaluatorConfig, EvaluatorType, EvaluatorGroupFilter, Permission } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
 import { logActivity } from '../../services/auditService';
 import { useAuth } from '../../hooks/useAuth';
+import { supabase } from '../../services/supabaseClient';
 
 // Icons
 const UserIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg>;
@@ -17,7 +17,9 @@ const UsersIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w
 const NewEvaluation: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { getAccessibleBusinessUnits } = usePermissions();
+  const { getAccessibleBusinessUnits, can } = usePermissions();
+  const canView = can('Evaluation', Permission.View);
+  const canManage = can('Evaluation', Permission.Manage);
   const [evaluationName, setEvaluationName] = useState('');
   const [dueDate, setDueDate] = useState(new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
   const [selectedBuIds, setSelectedBuIds] = useState<string[]>([]);
@@ -28,8 +30,53 @@ const NewEvaluation: React.FC = () => {
   const [timelineId, setTimelineId] = useState('');
   const [selectedQuestionSets, setSelectedQuestionSets] = useState<string[]>([]);
   const [evaluators, setEvaluators] = useState<EvaluatorConfig[]>([]); 
+  const [businessUnits, setBusinessUnits] = useState<{id:string; name:string;}[]>([]);
+  const [employees, setEmployees] = useState<User[]>([]);
+  const [departments, setDepartments] = useState<{id:string; name:string; businessUnitId?:string|null;}[]>([]);
+  const [timelines, setTimelines] = useState<any[]>([]);
+  const [questionSets, setQuestionSets] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
-  const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+  // Show all business units for targeting (not scoped to user access)
+  const accessibleBus = businessUnits;
+
+  useEffect(() => {
+    const loadLookups = async () => {
+        setError(null);
+        const [{ data: buData }, { data: empData }, { data: tlData }, { data: qsData }, { data: deptData }] = await Promise.all([
+            supabase.from('business_units').select('id, name').order('name'),
+            supabase.from('hris_users').select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position'),
+            supabase.from('evaluation_timelines').select('*').order('rollout_date', { ascending: false }),
+            supabase.from('evaluation_question_sets').select('*').order('name'),
+            supabase.from('departments').select('id, name, business_unit_id'),
+        ]);
+        setBusinessUnits((buData || []).map((b:any)=>({id:b.id,name:b.name||'Unknown BU'})));
+        setEmployees((empData || []).map((u:any)=>({
+            id: u.id,
+            name: u.full_name || 'Unknown',
+            email: u.email || '',
+            role: u.role,
+            department: u.department || '',
+            businessUnit: u.business_unit || '',
+            departmentId: u.department_id || undefined,
+            businessUnitId: u.business_unit_id || undefined,
+            status: u.status || 'Active',
+            employmentStatus: undefined,
+            isPhotoEnrolled: false,
+            dateHired: new Date(),
+            position: u.position || '',
+            managerId: undefined,
+            activeDeviceId: undefined,
+            isGoogleConnected: false,
+            profilePictureUrl: undefined,
+            signatureUrl: undefined,
+          } as User)));
+        setTimelines(tlData || []);
+        setQuestionSets(qsData || []);
+        setDepartments((deptData || []).map((d:any)=>({id:d.id,name:d.name,businessUnitId:d.business_unit_id})));
+    };
+    loadLookups();
+  }, []);
 
   const handleBuChange = (buId: string) => {
     const newSelectedBuIds = selectedBuIds.includes(buId)
@@ -41,12 +88,10 @@ const NewEvaluation: React.FC = () => {
   };
 
   const employeesInSelectedBUs = useMemo(() => {
-    if (selectedBuIds.length === 0) return [];
-    const selectedBuNames = mockBusinessUnits
-      .filter(bu => selectedBuIds.includes(bu.id))
-      .map(bu => bu.name);
-    return mockUsers.filter(u => selectedBuNames.includes(u.businessUnit));
-  }, [selectedBuIds]);
+    const buNames = new Set(businessUnits.filter(b=>selectedBuIds.includes(b.id)).map(b=>b.name));
+    if (selectedBuIds.length === 0) return employees;
+    return employees.filter(u => selectedBuIds.includes(u.businessUnitId || '') || buNames.has(u.businessUnit));
+  }, [selectedBuIds, employees, businessUnits]);
 
   const searchedEmployees = useMemo(() => {
     if (!employeeSearch) return employeesInSelectedBUs;
@@ -69,23 +114,32 @@ const NewEvaluation: React.FC = () => {
   };
 
 
-  const quarterlyTimelines = useMemo(() => {
-    return mockEvaluationTimelines.filter(t => {
-      const timelineYear = new Date(t.rolloutDate).getFullYear().toString();
-      return t.type === 'Quarterly' && timelineYear === year;
+  const filterByTypeWithFallback = (type: string) => {
+    const typeList = timelines.filter((t:any) => (t.type || '').toLowerCase() === type.toLowerCase());
+    const byYear = typeList.filter((t:any) => {
+      const timelineYear = t.rollout_date ? new Date(t.rollout_date).getFullYear().toString() : '';
+      return timelineYear === year;
     });
-  }, [year]);
+    return byYear.length > 0 ? byYear : typeList;
+  };
 
-  const onboardingTimelines = useMemo(() => {
-      return mockEvaluationTimelines.filter(t => t.type === 'Onboarding');
-  }, []);
+  const quarterlyTimelines = useMemo(() => filterByTypeWithFallback('Quarterly'), [year, timelines]);
+  const onboardingTimelines = useMemo(() => filterByTypeWithFallback('Onboarding'), [year, timelines]);
+  const annualTimelines = useMemo(() => filterByTypeWithFallback('Annual'), [year, timelines]);
 
-  const annualTimelines = useMemo(() => {
-    return mockEvaluationTimelines.filter(t => {
-      const timelineYear = new Date(t.rolloutDate).getFullYear().toString();
-      return t.type === 'Annual' && timelineYear === year;
-    });
-  }, [year]);
+  const currentTimelineOptions = useMemo(() => {
+    if (timelineType === 'Quarterly') return quarterlyTimelines;
+    if (timelineType === 'Onboarding') return onboardingTimelines;
+    if (timelineType === 'Annual') return annualTimelines;
+    return [];
+  }, [timelineType, quarterlyTimelines, onboardingTimelines, annualTimelines]);
+
+  // Auto-select first available timeline when type/year changes
+  useEffect(() => {
+    if (!timelineId && currentTimelineOptions.length > 0) {
+      setTimelineId(currentTimelineOptions[0].id);
+    }
+  }, [timelineType, year, currentTimelineOptions, timelineId]);
 
 
   const handleQuestionSetChange = (setId: string) => {
@@ -136,7 +190,15 @@ const NewEvaluation: React.FC = () => {
     setEvaluators(newEvaluators);
   };
 
-  const createEvaluation = () => {
+  const createEvaluation = async () => {
+    const timelineToUse =
+      timelineId ||
+      (currentTimelineOptions.length > 0 ? currentTimelineOptions[0].id : '');
+    const targetEmployeeIds =
+      selectedEmployeeIds.length > 0
+        ? selectedEmployeeIds
+        : employeesInSelectedBUs.map(e => e.id);
+
     if (!evaluationName.trim()) {
         alert('Please provide a name for this evaluation.');
         return;
@@ -145,7 +207,8 @@ const NewEvaluation: React.FC = () => {
       alert('Total weight for evaluators must be exactly 100.');
       return;
     }
-    if (selectedEmployeeIds.length === 0 || !timelineId) {
+    const requireTimeline = currentTimelineOptions.length > 0;
+    if (targetEmployeeIds.length === 0 || (requireTimeline && !timelineToUse)) {
         alert('Please select at least one employee and a timeline.');
         return;
     }
@@ -170,9 +233,9 @@ const NewEvaluation: React.FC = () => {
     const newEvaluation: Evaluation = {
         id: `EVAL-${Date.now()}`,
         name: evaluationName,
-        timelineId,
+        timelineId: timelineToUse,
         targetBusinessUnitIds: selectedBuIds,
-        targetEmployeeIds: selectedEmployeeIds,
+        targetEmployeeIds,
         questionSetIds: selectedQuestionSets,
         evaluators,
         status: 'InProgress',
@@ -182,10 +245,42 @@ const NewEvaluation: React.FC = () => {
         acknowledgedBy: [],
     };
 
-    mockEvaluations.unshift(newEvaluation);
-    
-    logActivity(user, 'CREATE', 'Evaluation', newEvaluation.id, `Created new evaluation cycle: ${newEvaluation.name} targeting ${newEvaluation.targetEmployeeIds.length} employees.`);
-    
+    // Persist evaluation and evaluators
+    const { data: createdEval, error: evalErr } = await supabase.from('evaluations').insert({
+        name: newEvaluation.name,
+        timeline_id: timelineToUse || null,
+        target_business_unit_ids: newEvaluation.targetBusinessUnitIds,
+        target_employee_ids: newEvaluation.targetEmployeeIds,
+        question_set_ids: newEvaluation.questionSetIds,
+        status: newEvaluation.status,
+        due_date: newEvaluation.dueDate.toISOString(),
+        is_employee_visible: newEvaluation.isEmployeeVisible,
+        acknowledged_by: [],
+        created_by: user?.id || null,
+    }).select('id').single();
+    if (evalErr) {
+        setError(evalErr.message);
+        return;
+    }
+    if (createdEval?.id && evaluators.length > 0) {
+        const rows = evaluators.map(ev => ({
+            evaluation_id: createdEval.id,
+            type: ev.type === EvaluatorType.Individual ? 'Individual' : 'Group',
+            weight: ev.weight || 0,
+            user_id: ev.userId || null,
+            business_unit_id: ev.groupFilter?.businessUnitId || null,
+            department_id: ev.groupFilter?.departmentId || null,
+            is_anonymous: ev.isAnonymous || false,
+            exclude_subject: ev.excludeSubject ?? true,
+        }));
+        const { error: evErr } = await supabase.from('evaluation_evaluators').insert(rows);
+        if (evErr) {
+            setError(evErr.message);
+            return;
+        }
+    }
+
+    logActivity(user, 'CREATE', 'Evaluation', createdEval?.id || '', `Created new evaluation cycle: ${newEvaluation.name} targeting ${newEvaluation.targetEmployeeIds.length} employees.`);
     alert('Evaluation created successfully!');
     navigate('/evaluation/reviews');
   };
@@ -193,24 +288,33 @@ const NewEvaluation: React.FC = () => {
   const availableEvaluators = useMemo(() => {
       // Filter out already selected INDIVIDUAL evaluators
       const selectedIds = new Set(evaluators.filter(e => e.type === EvaluatorType.Individual && e.userId).map(e => e.userId));
-      return mockUsers.filter(u => u.status === 'Active' && !selectedIds.has(u.id)).sort((a,b) => a.name.localeCompare(b.name));
-  }, [evaluators]);
+      return employees.filter(u => u.status === 'Active' && !selectedIds.has(u.id)).sort((a,b) => a.name.localeCompare(b.name));
+  }, [evaluators, employees]);
 
   const getGroupEmployeeCount = (filter?: EvaluatorGroupFilter) => {
       if (!filter?.businessUnitId) return 0;
-      const buName = mockBusinessUnits.find(b => b.id === filter.businessUnitId)?.name;
-      const deptName = filter.departmentId ? mockDepartments.find(d => d.id === filter.departmentId)?.name : null;
+      const buName = businessUnits.find(b => b.id === filter.businessUnitId)?.name;
+      const deptName = filter.departmentId ? departments.find(d => d.id === filter.departmentId)?.name : undefined;
       
-      return mockUsers.filter(u => {
+      return employees.filter(u => {
           if (u.status !== 'Active') return false;
-          if (u.businessUnit !== buName) return false;
-          if (deptName && u.department !== deptName) return false;
+          if (u.businessUnit !== buName && u.businessUnitId !== filter.businessUnitId) return false;
+          if (deptName && u.department !== deptName && u.departmentId !== filter.departmentId) return false;
           return true;
       }).length;
   };
 
   return (
     <div className="space-y-6">
+      {!canView && (
+        <Card>
+          <div className="p-6 text-center text-gray-600 dark:text-gray-300">
+            You do not have permission to create or view evaluations.
+          </div>
+        </Card>
+      )}
+      {canView && (
+      <>
       <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Create New Evaluation</h1>
       
       <Card>
@@ -307,7 +411,6 @@ const NewEvaluation: React.FC = () => {
             </div>
           </div>
 
-
           {/* Timeline Type */}
           <div>
             <h3 className="text-lg font-medium text-gray-900 dark:text-white">Timeline Type</h3>
@@ -398,7 +501,7 @@ const NewEvaluation: React.FC = () => {
             <h3 className="text-lg font-medium text-gray-900 dark:text-white">Question Sets (Optional)</h3>
             <p className="text-sm text-gray-500 dark:text-gray-400">Select question sets to automatically load questions for this evaluation</p>
             <div className="mt-2 p-4 border border-gray-200 rounded-md dark:border-gray-700 grid grid-cols-1 sm:grid-cols-2 gap-4 bg-gray-50 dark:bg-slate-900/50">
-              {mockQuestionSets.map(set => (
+              {questionSets.map((set:any) => (
                 <div key={set.id} className="flex items-start">
                   <input
                     type="checkbox"
@@ -421,7 +524,7 @@ const NewEvaluation: React.FC = () => {
             <h3 className="text-lg font-medium text-gray-900 dark:text-white">Evaluators</h3>
             <div className="mt-2 space-y-3">
               {evaluators.map((evaluator, index) => {
-                  const currentUserForDropdown = mockUsers.find(u => u.id === evaluator.userId);
+                  const currentUserForDropdown = employees.find(u => u.id === evaluator.userId);
                   return (
                       <div key={evaluator.id} className="flex flex-col sm:flex-row sm:items-start gap-4 p-4 bg-gray-50 dark:bg-slate-900/50 rounded-md border dark:border-slate-700">
                           <div className="flex-grow space-y-3">
@@ -468,7 +571,7 @@ const NewEvaluation: React.FC = () => {
                                                  className="mt-1 block w-full pl-3 pr-10 py-2 text-sm border-gray-300 rounded-md dark:bg-slate-700 dark:border-slate-600 disabled:opacity-50"
                                              >
                                                  <option value="">-- All Departments --</option>
-                                                 {mockDepartments
+                                                 {departments
                                                     .filter(d => d.businessUnitId === evaluator.groupFilter?.businessUnitId)
                                                     .map(d => <option key={d.id} value={d.id}>{d.name}</option>)
                                                  }
@@ -537,6 +640,8 @@ const NewEvaluation: React.FC = () => {
           </div>
         </div>
       </Card>
+      </>
+      )}
     </div>
   );
 };

@@ -55,6 +55,22 @@ const calendarPermissions: Record<Role, Permission[]> = {
   [Role.IT]: [], // None
 };
 
+// Evaluations RBAC matrix
+const evaluationsPermissions: Record<Role, Permission[]> = {
+  [Role.Admin]: [Permission.Manage],
+  [Role.HRManager]: [Permission.Manage],
+  [Role.HRStaff]: [Permission.Manage],
+  [Role.BOD]: [Permission.View],
+  [Role.GeneralManager]: [Permission.View], // View BU/Departments (scope handled elsewhere)
+  [Role.OperationsDirector]: [Permission.View], // View BU only
+  [Role.BusinessUnitManager]: [Permission.View], // Own BU
+  [Role.Manager]: [Permission.View], // Own Team
+  [Role.Employee]: [Permission.View], // Own
+  [Role.FinanceStaff]: [], // None
+  [Role.Auditor]: [], // None
+  [Role.Recruiter]: [], // None
+  [Role.IT]: [], // None
+};
 // Daily Time Review RBAC matrix
 const dailyTimeReviewPermissions: Record<Role, Permission[]> = {
   [Role.Admin]: [Permission.Manage],
@@ -321,6 +337,14 @@ export const usePermissions = () => {
 
         if (!user) {
             return false;
+        }
+
+        if (resource === 'Evaluation') {
+            const perms = evaluationsPermissions[user.role];
+            if (!perms || perms.length === 0) return false;
+            if (perms.includes(Permission.Manage)) return true;
+            if (permission === Permission.View && perms.length > 0) return true;
+            return perms.includes(permission);
         }
 
         if (resource === 'OrgChart') {

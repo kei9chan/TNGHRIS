@@ -1,20 +1,45 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import Card from '../../components/ui/Card';
 import { EvaluationTimeline, Permission } from '../../types';
-import { mockEvaluationTimelines } from '../../services/mockData';
 import Button from '../../components/ui/Button';
 import { usePermissions } from '../../hooks/usePermissions';
 import TimelineTable from '../../components/evaluation/TimelineTable';
 import TimelineModal from '../../components/evaluation/TimelineModal';
+import { supabase } from '../../services/supabaseClient';
 
 const Timelines: React.FC = () => {
   const { can } = usePermissions();
   const canManage = can('Evaluation', Permission.Manage);
+  const canView = can('Evaluation', Permission.View);
 
-  const [timelines, setTimelines] = useState<EvaluationTimeline[]>(mockEvaluationTimelines);
+  const [timelines, setTimelines] = useState<EvaluationTimeline[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTimeline, setSelectedTimeline] = useState<EvaluationTimeline | null>(null);
+
+  const loadTimelines = async () => {
+    setError(null);
+    const { data, error } = await supabase.from('evaluation_timelines').select('*').order('rollout_date', { ascending: false });
+    if (error) {
+      setError(error.message);
+      setTimelines([]);
+      return;
+    }
+    setTimelines((data || []).map((t:any)=>({
+      id: t.id,
+      businessUnitId: t.business_unit_id || '',
+      name: t.name,
+      type: t.type,
+      rolloutDate: t.rollout_date ? new Date(t.rollout_date) : new Date(),
+      endDate: t.end_date ? new Date(t.end_date) : undefined,
+      status: t.status || 'Active',
+    } as EvaluationTimeline)));
+  };
+
+  useEffect(() => {
+    loadTimelines();
+  }, []);
 
   const filteredTimelines = useMemo(() => {
     return timelines;
@@ -25,29 +50,51 @@ const Timelines: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleSave = (timelineToSave: EvaluationTimeline) => {
+  const handleSave = async (timelineToSave: EvaluationTimeline) => {
+    setError(null);
     if (timelineToSave.id) {
-        setTimelines(prev => prev.map(t => t.id === timelineToSave.id ? timelineToSave : t));
+        const { error: err } = await supabase.from('evaluation_timelines').update({
+          name: timelineToSave.name,
+          type: timelineToSave.type,
+          rollout_date: timelineToSave.rolloutDate.toISOString(),
+          end_date: timelineToSave.endDate ? timelineToSave.endDate.toISOString() : null,
+          status: timelineToSave.status || null,
+        }).eq('id', timelineToSave.id);
+        if (err) { setError(err.message); return; }
     } else {
-        const newTimeline: EvaluationTimeline = {
-            ...timelineToSave,
-            id: `tl-${Date.now()}`,
-        };
-        setTimelines(prev => [...prev, newTimeline]);
-        // Update mock data so it's available in other pages
-        mockEvaluationTimelines.push(newTimeline);
+        const { error: err } = await supabase.from('evaluation_timelines').insert({
+          name: timelineToSave.name,
+          type: timelineToSave.type,
+          rollout_date: timelineToSave.rolloutDate.toISOString(),
+          end_date: timelineToSave.endDate ? timelineToSave.endDate.toISOString() : null,
+          status: timelineToSave.status || null,
+        });
+        if (err) { setError(err.message); return; }
     }
     setIsModalOpen(false);
+    setSelectedTimeline(null);
+    await loadTimelines();
   };
 
-  const handleDelete = (timelineId: string) => {
+  const handleDelete = async (timelineId: string) => {
     if (window.confirm('Are you sure you want to delete this timeline?')) {
-        setTimelines(prev => prev.filter(t => t.id !== timelineId));
+        const { error: err } = await supabase.from('evaluation_timelines').delete().eq('id', timelineId);
+        if (err) { setError(err.message); return; }
+        await loadTimelines();
     }
   };
 
   return (
     <div className="space-y-6">
+      {!canView && (
+        <Card>
+          <div className="p-6 text-center text-gray-600 dark:text-gray-300">
+            You do not have permission to view timelines.
+          </div>
+        </Card>
+      )}
+      {canView && (
+      <>
       <div className="flex justify-between items-start">
         <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Evaluation Timelines</h1>
@@ -57,6 +104,7 @@ const Timelines: React.FC = () => {
             <Button onClick={() => handleOpenModal(null)}>Create New Timeline</Button>
         )}
       </div>
+      {error && <div className="text-sm text-red-600 dark:text-red-400">{error}</div>}
       
       <Card title="Manage Review Cycles">
         <TimelineTable 
@@ -73,6 +121,8 @@ const Timelines: React.FC = () => {
             timeline={selectedTimeline}
             onSave={handleSave}
         />
+      )}
+      </>
       )}
     </div>
   );

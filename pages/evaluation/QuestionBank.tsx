@@ -1,23 +1,53 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Card from '../../components/ui/Card';
-import { mockQuestionSets, mockEvaluationQuestions } from '../../services/mockData';
-import { QuestionSet, EvaluationQuestion } from '../../types';
+import { QuestionSet, EvaluationQuestion, Permission } from '../../types';
 import Button from '../../components/ui/Button';
 import { usePermissions } from '../../hooks/usePermissions';
-import { Permission } from '../../types';
 import SectionModal from '../../components/evaluation/SectionModal';
+import { supabase } from '../../services/supabaseClient';
 
 
 const QuestionBank: React.FC = () => {
   const { can } = usePermissions();
   const canManage = can('Evaluation', Permission.Manage);
+  const canView = can('Evaluation', Permission.View);
 
-  const [questionSets, setQuestionSets] = useState<QuestionSet[]>(mockQuestionSets);
-  const [questions, setQuestions] = useState<EvaluationQuestion[]>(mockEvaluationQuestions);
+  const [questionSets, setQuestionSets] = useState<QuestionSet[]>([]);
+  const [questions, setQuestions] = useState<EvaluationQuestion[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   const [isSetModalOpen, setSetModalOpen] = useState(false);
   const [selectedSet, setSelectedSet] = useState<QuestionSet | null>(null);
+
+  const loadData = async () => {
+    setError(null);
+    const [{ data: setsData, error: setsErr }, { data: qData, error: qErr }] = await Promise.all([
+      supabase.from('evaluation_question_sets').select('*').order('name'),
+      supabase.from('evaluation_questions').select('*'),
+    ]);
+    if (setsErr || qErr) {
+      setError(setsErr?.message || qErr?.message || 'Failed to load question bank.');
+      setQuestionSets([]);
+      setQuestions([]);
+      return;
+    }
+    setQuestionSets((setsData || []).map((s:any)=>({ id:s.id, name:s.name, description:s.description || '' })));
+    setQuestions((qData || []).map((q:any)=>({
+      id: q.id,
+      questionSetId: q.question_set_id,
+      title: q.title,
+      description: q.description || '',
+      questionType: q.question_type,
+      isArchived: q.is_archived || false,
+      targetEmployeeLevels: q.target_employee_levels || [],
+      targetEvaluatorRoles: q.target_evaluator_roles || [],
+    } as EvaluationQuestion)));
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
 
   const filteredSets = useMemo(() => {
     return questionSets;
@@ -28,46 +58,46 @@ const QuestionBank: React.FC = () => {
     setSetModalOpen(true);
   };
 
-  const handleSaveSet = (setToSave: QuestionSet) => {
+  const handleSaveSet = async (setToSave: QuestionSet) => {
+    setError(null);
     if (setToSave.id) {
-      setQuestionSets(prev => prev.map(s => s.id === setToSave.id ? setToSave : s));
-      const setIndex = mockQuestionSets.findIndex(s => s.id === setToSave.id);
-      if (setIndex > -1) {
-          mockQuestionSets[setIndex] = setToSave;
-      }
+      const { error: err } = await supabase.from('evaluation_question_sets').update({
+        name: setToSave.name,
+        description: setToSave.description || null,
+      }).eq('id', setToSave.id);
+      if (err) { setError(err.message); return; }
     } else {
-      const newSet: QuestionSet = { 
-        ...setToSave, 
-        id: `set-${Date.now()}`, 
-      };
-      setQuestionSets(prev => [...prev, newSet]);
-      mockQuestionSets.push(newSet);
+      const { error: err } = await supabase.from('evaluation_question_sets').insert({
+        name: setToSave.name,
+        description: setToSave.description || null,
+      });
+      if (err) { setError(err.message); return; }
     }
     setSetModalOpen(false);
+    setSelectedSet(null);
+    await loadData();
   };
 
-  const handleDelete = (setId: string) => {
+  const handleDelete = async (setId: string) => {
     if (window.confirm('Are you sure you want to delete this question set? This will also delete all questions within it.')) {
-        // Update local state
-        setQuestionSets(prev => prev.filter(s => s.id !== setId));
-        setQuestions(prev => prev.filter(q => q.questionSetId !== setId));
-        
-        // Update mock data source for Question Sets
-        const setIndex = mockQuestionSets.findIndex(s => s.id === setId);
-        if (setIndex > -1) {
-            mockQuestionSets.splice(setIndex, 1);
-        }
-
-        // Update mock data source for Questions
-        const updatedMockQuestions = mockEvaluationQuestions.filter(q => q.questionSetId !== setId);
-        mockEvaluationQuestions.length = 0; // Clear the array
-        mockEvaluationQuestions.push(...updatedMockQuestions); // Push the filtered items back
+        const { error: err } = await supabase.from('evaluation_question_sets').delete().eq('id', setId);
+        if (err) { setError(err.message); return; }
+        await loadData();
     }
   };
 
 
   return (
     <div className="space-y-6">
+      {!canView && (
+        <Card>
+          <div className="p-6 text-center text-gray-600 dark:text-gray-300">
+            You do not have permission to view the Question Bank.
+          </div>
+        </Card>
+      )}
+      {canView && (
+      <>
       <div className="flex justify-between items-start">
         <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Question Bank</h1>
@@ -77,6 +107,7 @@ const QuestionBank: React.FC = () => {
             <Button onClick={() => handleOpenSetModal(null)}>Add New Set</Button>
         )}
       </div>
+      {error && <div className="text-sm text-red-600 dark:text-red-400">{error}</div>}
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredSets.map(set => {
@@ -116,6 +147,8 @@ const QuestionBank: React.FC = () => {
         section={selectedSet}
         onSave={handleSaveSet}
       />
+      </>
+      )}
     </div>
   );
 };

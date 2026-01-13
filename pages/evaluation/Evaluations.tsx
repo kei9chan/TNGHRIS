@@ -1,21 +1,27 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import { mockEvaluations, mockEvaluationSubmissions, mockBusinessUnits, mockUsers, mockDepartments, mockEvaluationTimelines } from '../../services/mockData';
-import { Evaluation, Role, EvaluatorType, User } from '../../types';
+import { Evaluation, Role, EvaluatorType, User, Permission } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import ComplianceModal from '../../components/evaluation/ComplianceModal';
+import { supabase } from '../../services/supabaseClient';
 
 const Evaluations: React.FC = () => {
     const { user } = useAuth();
-    const { getVisibleEmployeeIds, getAccessibleBusinessUnits, isUserEligibleEvaluator } = usePermissions();
+    const { getVisibleEmployeeIds, getAccessibleBusinessUnits, isUserEligibleEvaluator, can } = usePermissions();
+    const canView = can('Evaluation', Permission.View);
+    const canManage = can('Evaluation', Permission.Manage);
     
-    const [yearFilter, setYearFilter] = useState<string>(new Date().getFullYear().toString());
-    const [monthFilter, setMonthFilter] = useState<string>((new Date().getMonth() + 1).toString());
+    const [yearFilter, setYearFilter] = useState<string>('all');
+    const [monthFilter, setMonthFilter] = useState<string>('all');
     const [buFilter, setBuFilter] = useState<string>('all');
+    const [businessUnits, setBusinessUnits] = useState<{id:string; name:string}[]>([]);
+    const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
+    const [evaluatorsByEval, setEvaluatorsByEval] = useState<Record<string, { type: string; userId?: string | null }[]>>({});
+    const [error, setError] = useState<string | null>(null);
 
     // Compliance Modal State
     const [isComplianceModalOpen, setIsComplianceModalOpen] = useState(false);
@@ -23,14 +29,59 @@ const Evaluations: React.FC = () => {
     const [missingEvaluators, setMissingEvaluators] = useState<{ user: User; subjectName: string }[]>([]);
 
 
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(businessUnits), [getAccessibleBusinessUnits, businessUnits]);
+
+    useEffect(() => {
+        const loadData = async () => {
+            setError(null);
+            const [{ data: buData, error: buErr }, { data: evalData, error: evalErr }, { data: evalersData, error: evErr }] = await Promise.all([
+                supabase.from('business_units').select('id, name').order('name'),
+                supabase.from('evaluations').select('*').order('created_at', { ascending: false }),
+                supabase.from('evaluation_evaluators').select('evaluation_id, type, user_id'),
+            ]);
+            if (buErr || evalErr || evErr) {
+                setError(buErr?.message || evalErr?.message || evErr?.message || 'Failed to load evaluations.');
+                setBusinessUnits([]);
+                setEvaluations([]);
+                setEvaluatorsByEval({});
+                return;
+            }
+            setBusinessUnits((buData || []).map((b:any)=>({id:b.id,name:b.name||'Unknown BU'})));
+
+            const evalerMap: Record<string, { type: string; userId?: string | null }[]> = {};
+            (evalersData || []).forEach((row:any) => {
+                if (!evalerMap[row.evaluation_id]) evalerMap[row.evaluation_id] = [];
+                evalerMap[row.evaluation_id].push({ type: row.type, userId: row.user_id });
+            });
+            setEvaluatorsByEval(evalerMap);
+
+            setEvaluations((evalData || []).map((e:any)=>({
+                id: e.id,
+                name: e.name,
+                timelineId: e.timeline_id || '',
+                targetBusinessUnitIds: e.target_business_unit_ids || [],
+                targetEmployeeIds: e.target_employee_ids || [],
+                questionSetIds: e.question_set_ids || [],
+                evaluators: evalerMap[e.id] || [],
+                status: e.status || 'InProgress',
+                createdAt: e.created_at ? new Date(e.created_at) : new Date(),
+                dueDate: e.due_date ? new Date(e.due_date) : undefined,
+                isEmployeeVisible: e.is_employee_visible || false,
+                acknowledgedBy: e.acknowledged_by || [],
+            } as Evaluation)));
+        };
+        loadData();
+    }, []);
 
     const yearOptions = useMemo(() => {
-        const years = new Set(mockEvaluations.map(e => new Date(e.createdAt).getFullYear()));
+        const years = new Set<number>();
+        evaluations.forEach(e => {
+            if (e.createdAt) years.add(new Date(e.createdAt).getFullYear());
+        });
         const currentYear = new Date().getFullYear();
         years.add(currentYear);
         return Array.from(years).sort((a, b) => b - a);
-    }, []);
+    }, [evaluations]);
 
     const monthOptions = [
         { value: '1', name: 'January' }, { value: '2', name: 'February' }, { value: '3', name: 'March' },
@@ -40,42 +91,48 @@ const Evaluations: React.FC = () => {
     ];
 
     const calculateProgress = (evaluation: Evaluation) => {
-        const totalSubmissions = evaluation.targetEmployeeIds.length * evaluation.evaluators.length;
-        if (totalSubmissions === 0) return { completed: 0, total: 0, percentage: 0 };
-
-        const completedSubmissions = mockEvaluationSubmissions.filter(s => s.evaluationId === evaluation.id).length;
-        const percentage = (completedSubmissions / totalSubmissions) * 100;
+        const evalers = evaluatorsByEval[evaluation.id] || [];
+        const totalSubmissions = evaluation.targetEmployeeIds.length * Math.max(evalers.length || 0, 1);
+        const completedSubmissions = 0; // submissions table not yet wired
+        const percentage = totalSubmissions ? (completedSubmissions / totalSubmissions) * 100 : 0;
         return { completed: completedSubmissions, total: totalSubmissions, percentage };
     };
 
     const viewableEvaluations = React.useMemo(() => {
-        if (!user) return [];
+        if (!user || !canView) return [];
 
         const accessibleBuIds = new Set(accessibleBus.map(b => b.id));
 
-        let filteredByDateAndBU = mockEvaluations.filter(evaluation => {
-            const hasAccessibleTarget = evaluation.targetBusinessUnitIds.some(id => accessibleBuIds.has(id));
+        let filteredByDateAndBU = evaluations.filter(evaluation => {
+            const evalDate = evaluation.createdAt ? new Date(evaluation.createdAt) : null;
+            const yearMatch = yearFilter === 'all' || (evalDate && evalDate.getFullYear().toString() === yearFilter);
+            const monthMatch = monthFilter === 'all' || (evalDate && (evalDate.getMonth() + 1).toString() === monthFilter);
+            const hasBuTargets = (evaluation.targetBusinessUnitIds || []).length > 0;
+            const buMatch =
+              buFilter === 'all'
+                ? true
+                : evaluation.targetBusinessUnitIds.includes(buFilter);
+            // If no BU targets specified, treat as all-accessible
+            const accessibleMatch =
+              accessibleBuIds.size === 0 ||
+              !hasBuTargets ||
+              evaluation.targetBusinessUnitIds.some(id => accessibleBuIds.has(id));
             
-            const evalDate = new Date(evaluation.createdAt);
-            const yearMatch = yearFilter === 'all' || evalDate.getFullYear().toString() === yearFilter;
-            const monthMatch = monthFilter === 'all' || (evalDate.getMonth() + 1).toString() === monthFilter;
-            const buMatch = buFilter === 'all' || evaluation.targetBusinessUnitIds.includes(buFilter);
-            
-            return yearMatch && monthMatch && buMatch;
+            return yearMatch && monthMatch && buMatch && accessibleMatch;
         });
 
         const isAdminOrHR = [Role.Admin, Role.HRManager, Role.HRStaff].includes(user.role);
         
         if (isAdminOrHR) {
-            return filteredByDateAndBU.filter(e => e.targetBusinessUnitIds.some(id => accessibleBuIds.has(id)));
+            return filteredByDateAndBU;
         }
 
         const visibleIds = new Set(getVisibleEmployeeIds());
 
-        return mockEvaluations.filter(evaluation => {
-            const evalDate = new Date(evaluation.createdAt);
-            if (yearFilter !== 'all' && evalDate.getFullYear().toString() !== yearFilter) return false;
-            if (monthFilter !== 'all' && (evalDate.getMonth() + 1).toString() !== monthFilter) return false;
+        return evaluations.filter(evaluation => {
+            const evalDate = evaluation.createdAt ? new Date(evaluation.createdAt) : null;
+            if (yearFilter !== 'all' && (!evalDate || evalDate.getFullYear().toString() !== yearFilter)) return false;
+            if (monthFilter !== 'all' && (!evalDate || (evalDate.getMonth() + 1).toString() !== monthFilter)) return false;
 
             if (evaluation.status === 'InProgress') {
                 const canEvaluateSomeone = evaluation.targetEmployeeIds.some(targetId => 
@@ -94,63 +151,26 @@ const Evaluations: React.FC = () => {
     }, [user, getVisibleEmployeeIds, yearFilter, monthFilter, buFilter, accessibleBus, isUserEligibleEvaluator]);
 
     const handleViewCompliance = (evaluation: Evaluation) => {
-        const missingList: { user: User; subjectName: string }[] = [];
-
-        // Get all targets
-        const targets = mockUsers.filter(u => evaluation.targetEmployeeIds.includes(u.id));
-        
-        // For each target, determine who SHOULD evaluate them based on config
-        targets.forEach(target => {
-            evaluation.evaluators.forEach(config => {
-                // Determine expected evaluator(s) for this config
-                let expectedEvaluatorIds: string[] = [];
-
-                if (config.type === EvaluatorType.Individual) {
-                    if (config.userId) expectedEvaluatorIds.push(config.userId);
-                } else if (config.type === EvaluatorType.Group && config.groupFilter) {
-                     // Logic simplified: Find users matching BU/Dept of filter
-                     const filterBuName = mockBusinessUnits.find(b => b.id === config.groupFilter?.businessUnitId)?.name;
-                     const filterDeptName = config.groupFilter?.departmentId ? mockDepartments.find(d => d.id === config.groupFilter?.departmentId)?.name : null;
-                     
-                     const groupUsers = mockUsers.filter(u => {
-                         if (u.status !== 'Active') return false;
-                         if (filterBuName && u.businessUnit !== filterBuName) return false;
-                         if (filterDeptName && u.department !== filterDeptName) return false;
-                         if (config.excludeSubject && u.id === target.id) return false;
-                         return true;
-                     });
-                     
-                     expectedEvaluatorIds = groupUsers.map(u => u.id);
-                }
-
-                // Check if these evaluators have submitted
-                expectedEvaluatorIds.forEach(raterId => {
-                    const hasSubmitted = mockEvaluationSubmissions.some(s => 
-                        s.evaluationId === evaluation.id && 
-                        s.subjectEmployeeId === target.id && 
-                        s.raterId === raterId
-                    );
-
-                    if (!hasSubmitted) {
-                        const raterUser = mockUsers.find(u => u.id === raterId);
-                        if (raterUser) {
-                            missingList.push({
-                                user: raterUser,
-                                subjectName: target.name
-                            });
-                        }
-                    }
-                });
-            });
-        });
-
-        setMissingEvaluators(missingList);
+        // Placeholder: compliance check requires evaluator configs and submissions; not yet wired to Supabase
+        setMissingEvaluators([]);
         setSelectedEvaluationForCompliance(evaluation);
         setIsComplianceModalOpen(true);
     };
 
     const selectClasses = "block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white";
     const isAdminView = [Role.Admin, Role.HRManager, Role.HRStaff].includes(user?.role as Role);
+
+    if (!canView) {
+        return (
+            <div className="p-6">
+                <Card>
+                    <div className="p-6 text-center text-gray-600 dark:text-gray-300">
+                        You do not have permission to view evaluations.
+                    </div>
+                </Card>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6">

@@ -1,11 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { mockQuestionSets, mockEvaluationQuestions } from '../../services/mockData';
 import { QuestionSet, EvaluationQuestion } from '../../types';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import SectionModal from '../../components/evaluation/SectionModal';
 import QuestionModal from '../../components/evaluation/QuestionModal';
+import { supabase } from '../../services/supabaseClient';
 
 const ArrowLeftIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>);
 const EditIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L15.232 5.232z" /></svg>);
@@ -15,55 +15,118 @@ const TrashIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" className="h-5 
 const QuestionSetDetail: React.FC = () => {
     const { setId } = useParams<{ setId: string }>();
     const navigate = useNavigate();
-    const [questionSets, setQuestionSets] = useState<QuestionSet[]>(mockQuestionSets);
-    const [questions, setQuestions] = useState<EvaluationQuestion[]>(mockEvaluationQuestions);
+    const [questionSet, setQuestionSet] = useState<QuestionSet | null>(null);
+    const [questions, setQuestions] = useState<EvaluationQuestion[]>([]);
+    const [error, setError] = useState<string | null>(null);
 
     const [isSetModalOpen, setSetModalOpen] = useState(false);
     const [isQuestionModalOpen, setQuestionModalOpen] = useState(false);
     const [selectedQuestion, setSelectedQuestion] = useState<EvaluationQuestion | null>(null);
 
-    const questionSet = useMemo(() => {
-        return questionSets.find(s => s.id === setId);
-    }, [questionSets, setId]);
-
-    const questionsInSet = useMemo(() => {
-        return questions.filter(q => q.questionSetId === setId && !q.isArchived);
-    }, [questions, setId]);
-
-    if (!questionSet) {
-        return <div>Question set not found. <Link to="/evaluation/question-bank">Go back.</Link></div>;
-    }
-
-    const handleSaveSet = (setToSave: QuestionSet) => {
-        const updatedSets = questionSets.map(s => s.id === setToSave.id ? setToSave : s);
-        setQuestionSets(updatedSets);
-        mockQuestionSets.length = 0;
-        mockQuestionSets.push(...updatedSets);
-        setSetModalOpen(false);
+    const loadData = async () => {
+        if (!setId) return;
+        setError(null);
+        const [{ data: setData, error: setErr }, { data: qData, error: qErr }] = await Promise.all([
+            supabase.from('evaluation_question_sets').select('*').eq('id', setId).maybeSingle(),
+            supabase.from('evaluation_questions').select('*').eq('question_set_id', setId),
+        ]);
+        if (setErr || qErr) {
+            setError(setErr?.message || qErr?.message || 'Failed to load question set.');
+            setQuestionSet(null);
+            setQuestions([]);
+            return;
+        }
+        if (!setData) {
+            setQuestionSet(null);
+            setQuestions([]);
+            return;
+        }
+        setQuestionSet({
+            id: setData.id,
+            name: setData.name,
+            description: setData.description || '',
+        });
+        setQuestions((qData || []).map((q:any)=>({
+            id: q.id,
+            questionSetId: q.question_set_id,
+            title: q.title,
+            description: q.description || '',
+            questionType: q.question_type,
+            isArchived: q.is_archived || false,
+            targetEmployeeLevels: q.target_employee_levels || [],
+            targetEvaluatorRoles: q.target_evaluator_roles || [],
+        } as EvaluationQuestion)));
     };
 
-    const handleSaveQuestion = (questionToSave: EvaluationQuestion) => {
+    useEffect(() => {
+        loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [setId]);
+
+    const questionsInSet = useMemo(() => {
+        return questions.filter(q => !q.isArchived);
+    }, [questions]);
+
+    if (!questionSet) {
+        return (
+            <div className="p-6">
+                <Card>
+                    <div className="p-6 text-center text-gray-600 dark:text-gray-300">
+                        Question set not found. <Link to="/evaluation/question-bank" className="text-indigo-600">Go back.</Link>
+                    </div>
+                </Card>
+            </div>
+        );
+    }
+
+    const handleSaveSet = async (setToSave: QuestionSet) => {
+        if (!questionSet) return;
+        const { error: err } = await supabase.from('evaluation_question_sets').update({
+            name: setToSave.name,
+            description: setToSave.description || null,
+        }).eq('id', questionSet.id);
+        if (err) {
+            setError(err.message);
+            return;
+        }
+        setSetModalOpen(false);
+        await loadData();
+    };
+
+    const handleSaveQuestion = async (questionToSave: EvaluationQuestion) => {
+        if (!questionSet) return;
         if (questionToSave.id) {
-            const updated = questions.map(q => q.id === questionToSave.id ? questionToSave : q);
-            setQuestions(updated);
-            mockEvaluationQuestions.length = 0;
-            mockEvaluationQuestions.push(...updated);
+            const { error: err } = await supabase.from('evaluation_questions').update({
+                title: questionToSave.title,
+                description: questionToSave.description || null,
+                question_type: questionToSave.questionType,
+                is_archived: questionToSave.isArchived || false,
+                target_employee_levels: questionToSave.targetEmployeeLevels || [],
+                target_evaluator_roles: questionToSave.targetEvaluatorRoles || [],
+            }).eq('id', questionToSave.id);
+            if (err) { setError(err.message); return; }
         } else {
-            const newQuestion = { ...questionToSave, id: `q-${Date.now()}`, questionSetId: setId, isArchived: false };
-            const updated = [...questions, newQuestion];
-            setQuestions(updated);
-            mockEvaluationQuestions.push(newQuestion);
+            const { error: err } = await supabase.from('evaluation_questions').insert({
+                question_set_id: questionSet.id,
+                title: questionToSave.title,
+                description: questionToSave.description || null,
+                question_type: questionToSave.questionType,
+                is_archived: false,
+                target_employee_levels: questionToSave.targetEmployeeLevels || [],
+                target_evaluator_roles: questionToSave.targetEvaluatorRoles || [],
+            });
+            if (err) { setError(err.message); return; }
         }
         setQuestionModalOpen(false);
         setSelectedQuestion(null);
+        await loadData();
     };
     
-    const handleDeleteQuestion = (questionId: string) => {
+    const handleDeleteQuestion = async (questionId: string) => {
         if (window.confirm('Are you sure you want to delete this question? This cannot be undone.')) {
-            const updated = questions.filter(q => q.id !== questionId);
-            setQuestions(updated);
-            mockEvaluationQuestions.length = 0;
-            mockEvaluationQuestions.push(...updated);
+            const { error: err } = await supabase.from('evaluation_questions').delete().eq('id', questionId);
+            if (err) { setError(err.message); return; }
+            await loadData();
         }
     }
 
