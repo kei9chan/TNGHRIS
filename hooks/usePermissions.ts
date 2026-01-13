@@ -309,6 +309,23 @@ const siteManagementPermissions: Record<Role, Permission[]> = {
   [Role.IT]: [], // None
 };
 
+// Leave Policies RBAC
+const leavePoliciesPermissions: Record<Role, Permission[]> = {
+  [Role.Admin]: [Permission.Manage],
+  [Role.HRManager]: [Permission.Manage],
+  [Role.HRStaff]: [Permission.Manage],
+  [Role.BOD]: [Permission.View],
+  [Role.GeneralManager]: [], // None
+  [Role.OperationsDirector]: [], // None
+  [Role.BusinessUnitManager]: [], // None
+  [Role.Manager]: [], // None
+  [Role.Employee]: [], // None
+  [Role.FinanceStaff]: [], // None
+  [Role.Auditor]: [], // None
+  [Role.Recruiter]: [], // None
+  [Role.IT]: [], // None
+};
+
 // Code of Discipline RBAC
 const codeOfDisciplinePermissions: Record<Role, Permission[]> = {
   [Role.Admin]: [Permission.Manage],
@@ -571,6 +588,16 @@ export const usePermissions = () => {
 
         if (resource === 'SiteManagement') {
             const perms = siteManagementPermissions[user.role];
+            if (!perms || perms.length === 0) {
+                return false;
+            }
+            if (perms.includes(Permission.Manage)) return true;
+            if (permission === Permission.View && perms.length > 0) return true;
+            return perms.includes(permission);
+        }
+
+        if (resource === 'LeavePolicies') {
+            const perms = leavePoliciesPermissions[user.role];
             if (!perms || perms.length === 0) {
                 return false;
             }
