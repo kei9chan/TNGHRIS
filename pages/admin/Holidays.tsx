@@ -1,27 +1,54 @@
-
-import React, { useState, useMemo } from 'react';
-import { Holiday, HolidayType } from '../../types';
-import { mockHolidays } from '../../services/mockData';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Holiday, HolidayType, Permission } from '../../types';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import HolidayModal from '../../components/admin/HolidayModal';
 import { usePermissions } from '../../hooks/usePermissions';
-import { Permission } from '../../types';
+import { supabase } from '../../services/supabaseClient';
 
 const CalendarIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>;
 const TrashIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>;
 const PencilIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L15.232 5.232z" /></svg>;
 const RefreshIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>;
 
-
 const Holidays: React.FC = () => {
     const { can } = usePermissions();
-    const canManage = can('Settings', Permission.Manage);
+    const canView = can('Holidays', Permission.View);
+    const canManage = can('Holidays', Permission.Manage);
 
-    const [holidays, setHolidays] = useState<Holiday[]>(mockHolidays);
+    const [holidays, setHolidays] = useState<Holiday[]>([]);
     const [yearFilter, setYearFilter] = useState<string>(new Date().getFullYear().toString());
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingHoliday, setEditingHoliday] = useState<Holiday | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const [loading, setLoading] = useState<boolean>(false);
+
+    useEffect(() => {
+        const loadData = async () => {
+            setLoading(true);
+            setError(null);
+            const { data, error: err } = await supabase
+                .from('holidays')
+                .select('id, name, date, type, is_paid')
+                .order('date', { ascending: true });
+            if (err) {
+                setError(err.message);
+                setLoading(false);
+                return;
+            }
+            setHolidays(
+                (data || []).map((h: any) => ({
+                    id: h.id,
+                    name: h.name,
+                    date: new Date(h.date),
+                    type: h.type as HolidayType,
+                    isPaid: !!h.is_paid,
+                }))
+            );
+            setLoading(false);
+        };
+        loadData();
+    }, []);
 
     const availableYears = useMemo(() => {
         const years = new Set(holidays.map(h => new Date(h.date).getFullYear()));
@@ -41,31 +68,48 @@ const Holidays: React.FC = () => {
         setIsModalOpen(true);
     };
 
-    const handleSave = (holidayToSave: Holiday) => {
+    const handleSave = async (holidayToSave: Holiday) => {
+        setError(null);
+        if (!holidayToSave.name || !holidayToSave.date) {
+            alert('Holiday Name and Date are required.');
+            return;
+        }
+        const payload = {
+            name: holidayToSave.name,
+            date: new Date(holidayToSave.date).toISOString().split('T')[0],
+            type: holidayToSave.type,
+            is_paid: holidayToSave.isPaid,
+        };
         if (holidayToSave.id) {
-            const updated = holidays.map(h => h.id === holidayToSave.id ? holidayToSave : h);
-            setHolidays(updated);
-            const idx = mockHolidays.findIndex(h => h.id === holidayToSave.id);
-            if(idx > -1) mockHolidays[idx] = holidayToSave;
+            const { error: err } = await supabase.from('holidays').update(payload).eq('id', holidayToSave.id);
+            if (err) {
+                setError(err.message);
+                return;
+            }
+            setHolidays(prev => prev.map(h => h.id === holidayToSave.id ? { ...holidayToSave } : h));
         } else {
-            const newHoliday = { ...holidayToSave, id: `HOL-${Date.now()}` };
-            setHolidays(prev => [...prev, newHoliday]);
-            mockHolidays.push(newHoliday);
+            const { data, error: err } = await supabase.from('holidays').insert(payload).select('id').single();
+            if (err) {
+                setError(err.message);
+                return;
+            }
+            setHolidays(prev => [...prev, { ...holidayToSave, id: data?.id }]);
         }
         setIsModalOpen(false);
     };
 
-    const handleDelete = (id: string) => {
-        if(window.confirm("Are you sure you want to delete this holiday?")) {
-            setHolidays(prev => prev.filter(h => h.id !== id));
-            const idx = mockHolidays.findIndex(h => h.id === id);
-            if(idx > -1) mockHolidays.splice(idx, 1);
+    const handleDelete = async (id: string) => {
+        if (!window.confirm("Are you sure you want to delete this holiday?")) return;
+        const { error: err } = await supabase.from('holidays').delete().eq('id', id);
+        if (err) {
+            setError(err.message);
+            return;
         }
+        setHolidays(prev => prev.filter(h => h.id !== id));
     };
     
     const handleSync = () => {
-        // Simulate sync or open standard calendar
-        const confirmed = window.confirm("This will open the Official Philippine Holiday Calendar in a new tab for reference. In a real system, this would sync data automatically via API.");
+        const confirmed = window.confirm("This will open the Official Philippine Holiday Calendar in a new tab for reference.");
         if (confirmed) {
              window.open('https://calendar.google.com/calendar/embed?src=en.philippines%23holiday%40group.v.calendar.google.com', '_blank');
         }
@@ -79,6 +123,16 @@ const Holidays: React.FC = () => {
             default: return 'bg-gray-100 text-gray-800';
         }
     };
+
+    if (!canView) {
+        return (
+            <Card>
+                <div className="p-6 text-center text-gray-600 dark:text-gray-300">
+                    You do not have permission to view this page.
+                </div>
+            </Card>
+        );
+    }
 
     return (
         <div className="space-y-6">
@@ -94,6 +148,17 @@ const Holidays: React.FC = () => {
                     {canManage && <Button onClick={() => handleOpenModal(null)}>Add Holiday</Button>}
                 </div>
             </div>
+
+            {error && (
+                <Card>
+                    <div className="p-3 text-sm text-red-600 dark:text-red-400">{error}</div>
+                </Card>
+            )}
+            {loading && (
+                <Card>
+                    <div className="p-3 text-sm text-gray-600 dark:text-gray-300">Loading holidays...</div>
+                </Card>
+            )}
 
             <Card>
                 <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center space-x-4">
