@@ -149,6 +149,13 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
     
     const approverPool = useMemo(() => mockUsers.filter(u => u.role === Role.BOD || u.role === Role.GeneralManager), []);
 
+    const generateReqCode = () => {
+        const now = new Date();
+        const ym = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const slug = (crypto?.randomUUID?.() || Math.random().toString(16).slice(2, 10)).replace(/-/g, '').slice(0, 6).toUpperCase();
+        return `REQ-${ym}-${slug}`;
+    };
+
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
         const { name, value, type } = e.target;
@@ -186,6 +193,10 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
             status,
             updatedAt: new Date(),
         };
+
+        if (!payload.reqCode) {
+            payload.reqCode = generateReqCode();
+        }
 
         if (status === JobRequisitionStatus.PendingApproval && (!payload.routingSteps || payload.routingSteps.length === 0)) {
             const hrHead = mockUsers.find(u => u.role === Role.HRManager);
