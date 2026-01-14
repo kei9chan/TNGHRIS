@@ -1,7 +1,6 @@
 
 import React, { useMemo } from 'react';
-import { Candidate, Application, ApplicationStage } from '../../types';
-import { mockApplications, mockJobPosts } from '../../services/mockData';
+import { Candidate, Application, ApplicationStage, JobPost } from '../../types';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 
@@ -9,6 +8,8 @@ interface CandidateProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
   candidate: Candidate;
+  applications: Application[];
+  jobPosts: JobPost[];
 }
 
 const getStageColor = (stage: ApplicationStage) => {
@@ -22,20 +23,20 @@ const getStageColor = (stage: ApplicationStage) => {
     }
 }
 
-const CandidateProfileModal: React.FC<CandidateProfileModalProps> = ({ isOpen, onClose, candidate }) => {
+const CandidateProfileModal: React.FC<CandidateProfileModalProps> = ({ isOpen, onClose, candidate, applications, jobPosts }) => {
     
     const applicationHistory = useMemo(() => {
-        return mockApplications
+        return applications
             .filter(app => app.candidateId === candidate.id)
             .map(app => {
-                const jobPost = mockJobPosts.find(p => p.id === app.jobPostId);
+                const jobPost = jobPosts.find(p => p.id === app.jobPostId);
                 return {
                     ...app,
                     jobTitle: jobPost?.title || 'Unknown Position'
                 }
             })
             .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    }, [candidate.id]);
+    }, [applications, candidate.id, jobPosts]);
 
     const DetailItem: React.FC<{label: string, value?: React.ReactNode}> = ({label, value}) => (
         <div>

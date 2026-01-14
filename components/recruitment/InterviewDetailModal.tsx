@@ -1,7 +1,6 @@
 
 import React from 'react';
-import { Interview, InterviewFeedback, User, Application } from '../../types';
-import { mockUsers, mockApplications, mockCandidates } from '../../services/mockData';
+import { Interview, InterviewFeedback, User, Application, Candidate } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
@@ -13,6 +12,9 @@ interface InterviewDetailModalProps {
   interview: Interview;
   feedbacks: InterviewFeedback[];
   onSaveFeedback: (feedback: InterviewFeedback) => void;
+  applications: Application[];
+  candidates: Candidate[];
+  users: User[];
 }
 
 const DetailItem: React.FC<{label: string, value?: React.ReactNode}> = ({label, value}) => (
@@ -22,21 +24,21 @@ const DetailItem: React.FC<{label: string, value?: React.ReactNode}> = ({label, 
     </div>
 );
 
-const InterviewDetailModal: React.FC<InterviewDetailModalProps> = ({ isOpen, onClose, interview, feedbacks, onSaveFeedback }) => {
+const InterviewDetailModal: React.FC<InterviewDetailModalProps> = ({ isOpen, onClose, interview, feedbacks, onSaveFeedback, applications, candidates, users }) => {
     const { user } = useAuth();
 
-    const application = mockApplications.find(a => a.id === interview.applicationId) as Application;
-    const candidate = mockCandidates.find(c => c.id === application.candidateId);
-    const panel = mockUsers.filter(u => interview.panelUserIds.includes(u.id));
+    const application = applications.find(a => a.id === interview.applicationId) as Application | undefined;
+    const candidate = candidates.find(c => c.id === application?.candidateId);
+    const panel = users.filter(u => interview.panelUserIds.includes(u.id));
 
-    const currentUserIsOnPanel = user ? interview.panelUserIds.includes(user.id) : false;
+    const currentUserIsOnPanel = user ? (interview.panelUserIds || []).includes(user.id) : false;
     const currentUserFeedback = currentUserIsOnPanel ? feedbacks.find(f => f.reviewerUserId === user?.id) : null;
     
     return (
         <Modal
             isOpen={isOpen}
             onClose={onClose}
-            title={`Interview Details: ${candidate?.firstName} ${candidate?.lastName}`}
+            title={`Interview Details: ${candidate ? `${candidate.firstName} ${candidate.lastName}` : 'Interview'}`}
             footer={<div className="flex justify-end w-full"><Button variant="secondary" onClick={onClose}>Close</Button></div>}
             size="2xl"
         >
@@ -66,7 +68,7 @@ const InterviewDetailModal: React.FC<InterviewDetailModalProps> = ({ isOpen, onC
 
                     <div className="space-y-4 mt-4">
                         {feedbacks.map(feedback => {
-                             const reviewer = mockUsers.find(u => u.id === feedback.reviewerUserId);
+                             const reviewer = users.find(u => u.id === feedback.reviewerUserId);
                              return (
                                 <div key={feedback.id} className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg border dark:border-gray-700">
                                     <div className="flex justify-between items-center mb-3">

@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Interview, ApplicationStage, InterviewType, User, InterviewStatus, Application } from '../../types';
-import { mockApplications, mockCandidates, mockJobPosts, mockUsers } from '../../services/mockData';
+import { Interview, InterviewType, User, InterviewStatus } from '../../types';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
@@ -10,28 +9,17 @@ interface InterviewSchedulerModalProps {
     onClose: () => void;
     interview: Interview | null;
     onSave: (interview: Interview) => void;
+    candidateOptions: { appId: string; label: string }[];
+    users: User[];
 }
 
-const InterviewSchedulerModal: React.FC<InterviewSchedulerModalProps> = ({ isOpen, onClose, interview, onSave }) => {
+const InterviewSchedulerModal: React.FC<InterviewSchedulerModalProps> = ({ isOpen, onClose, interview, onSave, candidateOptions, users }) => {
     const [current, setCurrent] = useState<Partial<Interview>>(interview || {});
     const [panelSearchTerm, setPanelSearchTerm] = useState('');
 
-    const applicantsInInterviewStage = useMemo(() => {
-        return mockApplications
-            .filter(app => [ApplicationStage.Screen, ApplicationStage.HMReview, ApplicationStage.Interview].includes(app.stage))
-            .map(app => {
-                const candidate = mockCandidates.find(c => c.id === app.candidateId);
-                const job = mockJobPosts.find(j => j.id === app.jobPostId);
-                return {
-                    appId: app.id,
-                    label: `${candidate?.firstName} ${candidate?.lastName} - ${job?.title}`
-                }
-            });
-    }, []);
-    
     const potentialInterviewers = useMemo(() => {
-        return mockUsers.filter(u => [u.role].includes(u.role)); // Can add more roles
-    }, []);
+        return users;
+    }, [users]);
 
     const displayedInterviewers = useMemo(() => {
         const lowercasedFilter = panelSearchTerm.toLowerCase();
@@ -128,7 +116,7 @@ const InterviewSchedulerModal: React.FC<InterviewSchedulerModalProps> = ({ isOpe
                     <label className="block text-sm font-medium">Applicant</label>
                     <select name="applicationId" value={current.applicationId || ''} onChange={handleChange} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
                         <option value="">-- Select an Applicant --</option>
-                        {applicantsInInterviewStage.map(opt => <option key={opt.appId} value={opt.appId}>{opt.label}</option>)}
+                        {candidateOptions.map(opt => <option key={opt.appId} value={opt.appId}>{opt.label}</option>)}
                     </select>
                 </div>
 
@@ -136,7 +124,7 @@ const InterviewSchedulerModal: React.FC<InterviewSchedulerModalProps> = ({ isOpe
                     <Input label="Date" type="date" value={formatDateForInput(current.scheduledStart)} onChange={e => handleDateChange(e.target.value)} />
                     <div>
                         <label className="block text-sm font-medium">Type</label>
-                        <select name="interviewType" value={current.interviewType || ''} onChange={handleChange} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        <select name="interviewType" value={current.interviewType || InterviewType.Virtual} onChange={handleChange} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
                             {Object.values(InterviewType).map(t => <option key={t} value={t}>{t}</option>)}
                         </select>
                     </div>

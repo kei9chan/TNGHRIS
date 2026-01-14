@@ -1,13 +1,13 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { mockBusinessUnits, mockJobPosts, mockCandidates, mockApplications } from '../services/mockData';
-import { JobPostStatus, Candidate, CandidateSource, Application, ApplicationStage } from '../types';
+import { JobPostStatus, CandidateSource, ApplicationStage, JobPost } from '../types';
 import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
 import Textarea from '../components/ui/Textarea';
 import Button from '../components/ui/Button';
 import FileUploader from '../components/ui/FileUploader';
+import { supabase } from '../services/supabaseClient';
 
 const Apply: React.FC = () => {
     const { jobPostId } = useParams<{ jobPostId: string }>();
@@ -26,32 +26,80 @@ const Apply: React.FC = () => {
 
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState('');
+    const [jobPosts, setJobPosts] = useState<JobPost[]>([]);
+    const [businessUnits, setBusinessUnits] = useState<{ id: string; name: string }[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     
     const isDirectLink = !!jobPostId;
 
-    // Get ALL available job posts for the career site.
-    const availableJobPosts = useMemo(() => {
-        return mockJobPosts.filter(post => 
-            post.status === JobPostStatus.Published &&
-            post.channels?.careerSite
-        );
+    const loadData = useCallback(async () => {
+        setIsLoading(true);
+        try {
+            const [postRes, buRes] = await Promise.all([
+                supabase.from('job_posts').select('*'),
+                supabase.from('business_units').select('id,name'),
+            ]);
+            if (postRes.error) throw postRes.error;
+            if (buRes.error) throw buRes.error;
+            setBusinessUnits(buRes.data || []);
+            setJobPosts((postRes.data || []).map((p: any) => {
+                const statusRaw = (p.status || '').toString().toLowerCase();
+                const status =
+                    statusRaw === 'published' ? JobPostStatus.Published :
+                    statusRaw === 'paused' ? JobPostStatus.Paused :
+                    statusRaw === 'closed' ? JobPostStatus.Closed :
+                    JobPostStatus.Draft;
+                return {
+                    id: p.id,
+                    requisitionId: p.requisition_id,
+                    businessUnitId: p.business_unit_id,
+                    title: p.title,
+                    slug: p.slug,
+                    description: p.description,
+                    requirements: p.requirements ?? '',
+                    benefits: p.benefits ?? '',
+                    locationLabel: p.location_label ?? '',
+                    employmentType: p.employment_type,
+                    status,
+                    publishedAt: p.published_at ? new Date(p.published_at) : undefined,
+                    channels: p.channels || { careerSite: false, qr: false, social: false, jobBoards: false },
+                } as JobPost;
+            }));
+        } catch (err) {
+            console.error('Failed to load jobs', err);
+            setError('Failed to load job posts. Please try again later.');
+        } finally {
+            setIsLoading(false);
+        }
     }, []);
+
+    useEffect(() => {
+        loadData();
+    }, [loadData]);
 
     const selectedJobPost = useMemo(() => {
         if (!selectedJobPostId) return null;
-        return mockJobPosts.find(post => post.id === selectedJobPostId);
-    }, [selectedJobPostId]);
+        return jobPosts.find(post => post.id === selectedJobPostId) || null;
+    }, [selectedJobPostId, jobPosts]);
+
+    // Get ALL available job posts for the career site.
+    const availableJobPosts = useMemo(() => {
+        return jobPosts.filter(post => 
+            post.status === JobPostStatus.Published &&
+            post.channels?.careerSite
+        );
+    }, [jobPosts]);
 
     // Pre-fill form if accessed via a direct link
     useEffect(() => {
         if (jobPostId) {
-            const post = mockJobPosts.find(p => p.id === jobPostId);
+            const post = jobPosts.find(p => p.id === jobPostId);
             if (post) {
                 setSelectedBuId(post.businessUnitId);
                 setSelectedJobPostId(post.id);
             }
         }
-    }, [jobPostId]);
+    }, [jobPostId, jobPosts]);
 
     // Automatically update the Business Unit when a job is selected.
     useEffect(() => {
@@ -69,7 +117,7 @@ const Apply: React.FC = () => {
     }, [selectedJobPostId, availableJobPosts, selectedBuId, isDirectLink]);
 
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
         if (!firstName || !lastName || !email || (!resumeLink && !resumeFile) || !selectedJobPostId) {
@@ -78,48 +126,52 @@ const Apply: React.FC = () => {
         }
         setIsSubmitting(true);
 
-        const jobPost = mockJobPosts.find(p => p.id === selectedJobPostId);
+        const jobPost = jobPosts.find(p => p.id === selectedJobPostId);
         if (!jobPost) {
             setError('Selected job post is no longer available.');
             setIsSubmitting(false);
             return;
         }
 
-        const finalResumeUrl = resumeFile ? `file_upload/${resumeFile.name}` : resumeLink;
+        try {
+            let resumeUrl = resumeLink;
+            if (resumeFile) {
+                const path = `resumes/${Date.now()}-${resumeFile.name}`;
+                const { error: uploadError } = await supabase.storage.from('recruitment-uploads').upload(path, resumeFile, { upsert: false });
+                if (uploadError) throw uploadError;
+                resumeUrl = path;
+            }
 
-        const newCandidate: Candidate = {
-            id: `CAND-${Date.now()}`,
-            firstName: firstName || '',
-            lastName: lastName || '',
-            email,
-            phone: mobile,
-            source: CandidateSource.CareerSite,
-            portfolioUrl: finalResumeUrl, 
-            consentAt: new Date(),
-            tags: [],
-        };
-        mockCandidates.push(newCandidate);
+            const { data: cand, error: candErr } = await supabase.from('job_candidates').insert({
+                first_name: firstName,
+                last_name: lastName,
+                email,
+                phone: mobile,
+                source: CandidateSource.CareerSite,
+                portfolio_url: resumeUrl,
+                tags: [],
+                consent_at: new Date(),
+            }).select().single();
+            if (candErr) throw candErr;
 
-        const newApplication: Application = {
-            id: `APP-${Date.now()}`,
-            candidateId: newCandidate.id,
-            jobPostId: selectedJobPostId,
-            requisitionId: jobPost.requisitionId,
-            stage: ApplicationStage.New,
-            notes: coverLetter,
-            referrer: referredBy,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-        };
-        mockApplications.push(newApplication);
+            const { error: appErr } = await supabase.from('job_applications').insert({
+                candidate_id: cand.id,
+                job_post_id: selectedJobPostId,
+                requisition_id: jobPost.requisitionId || null,
+                stage: ApplicationStage.New,
+                cover_letter: coverLetter,
+                notes: referredBy ? `Referrer: ${referredBy}` : null,
+                resume_url: resumeUrl,
+            });
+            if (appErr) throw appErr;
 
-        // Signal to other tabs/windows that data has changed
-        localStorage.setItem('tng_hris_db_update', JSON.stringify({ entity: 'applications', timestamp: Date.now() }));
-        
-        setTimeout(() => {
-            setIsSubmitting(false);
             navigate('/thank-you');
-        }, 500);
+        } catch (err: any) {
+            console.error('Failed to submit application', err);
+            setError(err?.message || 'Failed to submit application. Please try again.');
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     return (
@@ -138,17 +190,17 @@ const Apply: React.FC = () => {
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
                             <select value={selectedBuId} disabled className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white bg-gray-100 dark:bg-gray-800 cursor-not-allowed">
                                 <option value="">-- Select a job to see the business unit --</option>
-                                {mockBusinessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
+                                {businessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
                             </select>
                         </div>
                          <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Job Application</label>
-                            <select value={selectedJobPostId} onChange={e => setSelectedJobPostId(e.target.value)} disabled={isDirectLink} required className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:bg-gray-200 dark:disabled:bg-gray-800">
+                            <select value={selectedJobPostId} onChange={e => setSelectedJobPostId(e.target.value)} disabled={isDirectLink || isLoading} required className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:bg-gray-200 dark:disabled:bg-gray-800">
                                 {availableJobPosts.length > 0 ? (
                                     <>
                                         <option value="">-- Select a job post --</option>
                                         {availableJobPosts.map(post => {
-                                            const bu = mockBusinessUnits.find(b => b.id === post.businessUnitId);
+                                            const bu = businessUnits.find(b => b.id === post.businessUnitId);
                                             return <option key={post.id} value={post.id}>{post.title} ({bu?.name || 'N/A'})</option>
                                         })}
                                     </>

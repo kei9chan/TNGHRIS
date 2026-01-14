@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Candidate, CandidateSource, JobPostStatus } from '../../types';
-import { mockJobPosts, mockBusinessUnits, mockJobRequisitions } from '../../services/mockData';
+import { Candidate, CandidateSource, JobPostStatus, JobPost, BusinessUnit, JobRequisition } from '../../types';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
 import Button from '../ui/Button';
@@ -10,10 +9,13 @@ import FileUploader from '../ui/FileUploader';
 interface AddApplicantModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (data: { candidateData: Omit<Candidate, 'id'>, jobPostId: string, coverLetter: string }) => void;
+    onSave: (data: { candidateData: Omit<Candidate, 'id'>, jobPostId: string, coverLetter: string, resumeFile?: File | null, resumeLink?: string }) => void;
+    businessUnits: BusinessUnit[];
+    jobPosts: JobPost[];
+    jobRequisitions?: JobRequisition[];
 }
 
-const AddApplicantModal: React.FC<AddApplicantModalProps> = ({ isOpen, onClose, onSave }) => {
+const AddApplicantModal: React.FC<AddApplicantModalProps> = ({ isOpen, onClose, onSave, businessUnits, jobPosts, jobRequisitions = [] }) => {
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
     const [email, setEmail] = useState('');
@@ -27,17 +29,16 @@ const AddApplicantModal: React.FC<AddApplicantModalProps> = ({ isOpen, onClose, 
     const [error, setError] = useState('');
 
     const filteredJobPosts = useMemo(() => {
-        if (!businessUnitId) return [];
-        const requisitionsInBu = new Set(
-            mockJobRequisitions
-                .filter(req => req.businessUnitId === businessUnitId)
-                .map(req => req.id)
+        // Always show published posts; if BU is selected, prefer matches but allow all published if none match.
+        const published = jobPosts.filter(post => post.status === JobPostStatus.Published);
+        if (!businessUnitId) return published;
+        const matches = published.filter(
+            post =>
+                !post.businessUnitId ||
+                post.businessUnitId === businessUnitId
         );
-        return mockJobPosts.filter(post => 
-            post.status === JobPostStatus.Published && 
-            requisitionsInBu.has(post.requisitionId)
-        );
-    }, [businessUnitId]);
+        return matches.length > 0 ? matches : published;
+    }, [businessUnitId, jobPosts]);
 
     useEffect(() => {
         if (isOpen) {
@@ -49,10 +50,10 @@ const AddApplicantModal: React.FC<AddApplicantModalProps> = ({ isOpen, onClose, 
             setResumeLink('');
             setResumeFile(null);
             setCoverLetter('');
-            setBusinessUnitId(mockBusinessUnits.length > 0 ? mockBusinessUnits[0].id : '');
+            setBusinessUnitId(businessUnits.length > 0 ? businessUnits[0].id : '');
             setError('');
         }
-    }, [isOpen]);
+    }, [isOpen, businessUnits]);
 
     // Logic to select the first available job when BU changes, similar to Apply page behavior
     useEffect(() => {
@@ -74,20 +75,18 @@ const AddApplicantModal: React.FC<AddApplicantModalProps> = ({ isOpen, onClose, 
             return;
         }
 
-        const finalResumeUrl = resumeFile ? `file_upload/${resumeFile.name}` : resumeLink;
-
         const candidateData = {
             firstName,
             lastName,
             email,
             phone,
             source,
-            portfolioUrl: finalResumeUrl,
+            portfolioUrl: resumeLink || '',
             tags: [],
             consentAt: new Date(),
         };
 
-        onSave({ candidateData, jobPostId, coverLetter });
+        onSave({ candidateData, jobPostId, coverLetter, resumeFile, resumeLink });
         onClose();
     };
 
@@ -114,7 +113,7 @@ const AddApplicantModal: React.FC<AddApplicantModalProps> = ({ isOpen, onClose, 
                     <div>
                         <label className="block text-sm font-medium">Business Unit</label>
                         <select value={businessUnitId} onChange={e => setBusinessUnitId(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                            {mockBusinessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
+                            {businessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
                         </select>
                     </div>
                      <div>

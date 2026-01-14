@@ -55,6 +55,23 @@ const jobPostsPermissions: Record<Role, Permission[]> = {
   [Role.IT]: [], // None
 };
 
+// Applicants RBAC matrix
+const applicantsPermissions: Record<Role, Permission[]> = {
+  [Role.Admin]: [Permission.Manage],
+  [Role.HRManager]: [Permission.Manage],
+  [Role.HRStaff]: [Permission.Manage],
+  [Role.BOD]: [Permission.View],
+  [Role.GeneralManager]: [Permission.View],
+  [Role.OperationsDirector]: [Permission.View],
+  [Role.BusinessUnitManager]: [Permission.View],
+  [Role.Manager]: [Permission.View],
+  [Role.Employee]: [], // None
+  [Role.FinanceStaff]: [], // None
+  [Role.Auditor]: [], // None
+  [Role.Recruiter]: [Permission.Manage],
+  [Role.IT]: [], // None
+};
+
 // Calendar RBAC matrix
 const calendarPermissions: Record<Role, Permission[]> = {
   [Role.Admin]: [Permission.Manage],
@@ -720,6 +737,13 @@ export const usePermissions = () => {
         }
         if (resource === 'JobPosts') {
             const perms = jobPostsPermissions[user.role];
+            if (!perms || perms.length === 0) return false;
+            if (perms.includes(Permission.Manage)) return true;
+            if (permission === Permission.View && perms.length > 0) return true;
+            return perms.includes(permission);
+        }
+        if (resource === 'Applicants') {
+            const perms = applicantsPermissions[user.role];
             if (!perms || perms.length === 0) return false;
             if (perms.includes(Permission.Manage)) return true;
             if (permission === Permission.View && perms.length > 0) return true;

@@ -1,13 +1,9 @@
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Application, ApplicationStage, Candidate, CandidateSource, JobPostStatus, Role, BusinessUnit, JobRequisition, Interview } from '../../types';
-import { mockApplications, mockCandidates, mockJobPosts, mockJobRequisitions, mockBusinessUnits, mockDepartments, mockInterviews } from '../../services/mockData';
+import { Application, ApplicationStage, Candidate, CandidateSource, JobPostStatus, Role, BusinessUnit, JobRequisition, Interview, JobPost, Permission } from '../../types';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import Modal from '../../components/ui/Modal';
-import Input from '../../components/ui/Input';
-import Textarea from '../../components/ui/Textarea';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useSettings } from '../../context/SettingsContext';
@@ -18,6 +14,7 @@ import ApplicantDetailModal from '../../components/recruitment/ApplicantDetailMo
 import { logActivity } from '../../services/auditService';
 import InterviewSchedulerModal from '../../components/recruitment/InterviewSchedulerModal';
 import RejectionEmailModal from '../../components/recruitment/RejectionEmailModal';
+import { supabase } from '../../services/supabaseClient';
 
 export interface EnrichedApplication extends Application {
     candidateName: string;
@@ -77,7 +74,14 @@ const Applicants: React.FC = () => {
     const [isEditingDesc, setIsEditingDesc] = useState(false);
     const [editText, setEditText] = useState('');
 
-    const [applications, setApplications] = useState<Application[]>(mockApplications);
+    const [applications, setApplications] = useState<Application[]>([]);
+    const [candidates, setCandidates] = useState<Candidate[]>([]);
+    const [jobPosts, setJobPosts] = useState<JobPost[]>([]);
+    const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
+    const [jobRequisitions, setJobRequisitions] = useState<JobRequisition[]>([]);
+    const [departments, setDepartments] = useState<{ id: string; name: string; businessUnitId: string }[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
     const [selectedApplication, setSelectedApplication] = useState<EnrichedApplication | null>(null);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     
@@ -89,11 +93,11 @@ const Applicants: React.FC = () => {
     
     const [buFilter, setBuFilter] = useState<string>('');
     const [departmentFilter, setDepartmentFilter] = useState<string>('');
-    const [yearFilter, setYearFilter] = useState<string>(new Date().getFullYear().toString());
+    const [yearFilter, setYearFilter] = useState<string>('all');
     const [monthFilter, setMonthFilter] = useState<string>('all');
     const [view, setView] = useState<'kanban' | 'list'>('list');
 
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(businessUnits), [getAccessibleBusinessUnits, businessUnits]);
 
     const isAdmin = user?.role === Role.Admin;
     const descriptionKey = 'recruitmentApplicantsDesc';
@@ -102,65 +106,99 @@ const Applicants: React.FC = () => {
     const handleEditDesc = () => { setEditText(description); setIsEditingDesc(true); };
     const handleSaveDesc = () => { updateSettings({ [descriptionKey]: editText }); setIsEditingDesc(false); };
 
-    // --- SYNC LOGIC START ---
+    const loadData = useCallback(async () => {
+        setIsLoading(true);
+        try {
+            const [buRes, deptRes, reqRes, postRes, candRes, appRes] = await Promise.all([
+                supabase.from('business_units').select('id,name'),
+                supabase.from('departments').select('id,name,business_unit_id'),
+                supabase.from('job_requisitions').select('*'),
+                supabase.from('job_posts').select('*'),
+                supabase.from('job_candidates').select('*'),
+                supabase.from('job_applications').select('*'),
+            ]);
+            if (buRes.error) throw buRes.error;
+            if (deptRes.error) throw deptRes.error;
+            if (reqRes.error) throw reqRes.error;
+            if (postRes.error) throw postRes.error;
+            if (candRes.error) throw candRes.error;
+            if (appRes.error) throw appRes.error;
+
+            setBusinessUnits(buRes.data || []);
+            setDepartments((deptRes.data || []).map((d: any) => ({ id: d.id, name: d.name, businessUnitId: d.business_unit_id })));
+            setJobRequisitions((reqRes.data || []).map((r: any) => ({
+                ...r,
+                createdAt: r.created_at ? new Date(r.created_at) : new Date(),
+                updatedAt: r.updated_at ? new Date(r.updated_at) : new Date(),
+                departmentId: r.department_id,
+                businessUnitId: r.business_unit_id,
+            } as JobRequisition)));
+            const postsMapped = (postRes.data || []).map((p: any) => {
+                const statusRaw = (p.status || '').toString().toLowerCase();
+                const status =
+                    statusRaw === 'published' ? JobPostStatus.Published :
+                    statusRaw === 'paused' ? JobPostStatus.Paused :
+                    statusRaw === 'closed' ? JobPostStatus.Closed :
+                    JobPostStatus.Draft;
+                return {
+                    id: p.id,
+                    requisitionId: p.requisition_id,
+                    businessUnitId: p.business_unit_id,
+                    title: p.title,
+                    slug: p.slug,
+                    description: p.description,
+                    requirements: p.requirements ?? '',
+                    benefits: p.benefits ?? '',
+                    locationLabel: p.location_label ?? '',
+                    employmentType: p.employment_type,
+                    status,
+                    publishedAt: p.published_at ? new Date(p.published_at) : undefined,
+                    channels: p.channels || { careerSite: false, qr: false, social: false, jobBoards: false },
+                    referralBonus: p.referral_bonus ?? undefined,
+                } as JobPost;
+            });
+            setJobPosts(postsMapped);
+            setCandidates((candRes.data || []).map((c: any) => ({
+                id: c.id,
+                firstName: c.first_name,
+                lastName: c.last_name,
+                email: c.email,
+                phone: c.phone ?? '',
+                source: c.source as CandidateSource,
+                tags: c.tags || [],
+                portfolioUrl: c.portfolio_url || '',
+                consentAt: c.consent_at ? new Date(c.consent_at) : undefined,
+            } as Candidate)));
+            const appsMapped = (appRes.data || []).map((a: any) => ({
+                id: a.id,
+                candidateId: a.candidate_id,
+                jobPostId: a.job_post_id,
+                requisitionId: a.requisition_id,
+                stage: a.stage as ApplicationStage,
+                notes: a.notes || '',
+                createdAt: a.created_at ? new Date(a.created_at) : new Date(),
+                updatedAt: a.updated_at ? new Date(a.updated_at) : new Date(),
+            } as Application));
+            setApplications(appsMapped);
+        } catch (err) {
+            console.error('Failed to load applicants', err);
+            alert('Failed to load applicant data.');
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+
     useEffect(() => {
-        const syncFromStorage = () => {
-            try {
-                const storedApps = JSON.parse(localStorage.getItem('tng_applications') || '[]');
-                const storedCands = JSON.parse(localStorage.getItem('tng_candidates') || '[]');
-                
-                let hasUpdates = false;
-                // Merge new candidates first
-                storedCands.forEach((cand: Candidate) => {
-                    if (!mockCandidates.find(c => c.id === cand.id)) {
-                        mockCandidates.push(cand);
-                    }
-                });
-
-                // Merge new applications
-                storedApps.forEach((app: Application) => {
-                    if (!mockApplications.find(a => a.id === app.id)) {
-                        mockApplications.push(app);
-                        hasUpdates = true;
-                    }
-                });
-
-                if (hasUpdates || mockApplications.length !== applications.length) {
-                    setApplications([...mockApplications]);
-                }
-            } catch (e) {
-                console.error("Error syncing applicant data:", e);
-            }
-        };
-
-        // Initial Sync
-        syncFromStorage();
-
-        // Poll for changes (e.g. from another tab)
-        const interval = setInterval(syncFromStorage, 2000);
-        
-        // Listen for storage event (immediate cross-tab sync)
-        const handleStorage = (event: StorageEvent) => {
-            if (event.key === 'tng_hris_db_update' || event.key === 'tng_applications') {
-                syncFromStorage();
-            }
-        };
-        window.addEventListener('storage', handleStorage);
-
-        return () => {
-            clearInterval(interval);
-            window.removeEventListener('storage', handleStorage);
-        };
-    }, [applications.length]);
-    // --- SYNC LOGIC END ---
+        loadData();
+    }, [loadData]);
 
     const enrichedApplications: EnrichedApplication[] = useMemo(() => {
         return applications.map(app => {
-            const candidate = mockCandidates.find(c => c.id === app.candidateId);
-            const jobPost = mockJobPosts.find(p => p.id === app.jobPostId);
-            const requisition = mockJobRequisitions.find(r => r.id === app.requisitionId);
-            const businessUnit = mockBusinessUnits.find(bu => bu.id === requisition?.businessUnitId);
-            const department = mockDepartments.find(d => d.id === requisition?.departmentId);
+            const candidate = candidates.find(c => c.id === app.candidateId);
+            const jobPost = jobPosts.find(p => p.id === app.jobPostId);
+            const requisition = jobRequisitions.find(r => r.id === app.requisitionId);
+            const businessUnit = businessUnits.find(bu => bu.id === (jobPost?.businessUnitId || requisition?.businessUnitId));
+            const department = departments.find(d => d.id === requisition?.departmentId);
             return {
                 ...app,
                 candidateName: candidate ? `${candidate.firstName} ${candidate.lastName}` : 'Unknown',
@@ -171,12 +209,12 @@ const Applicants: React.FC = () => {
                 candidateSource: candidate?.source,
             };
         }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    }, [applications]);
+    }, [applications, candidates, jobPosts, jobRequisitions, businessUnits, departments]);
 
     const departmentsForBU = useMemo(() => {
-        if (!buFilter) return mockDepartments;
-        return mockDepartments.filter(d => d.businessUnitId === buFilter);
-    }, [buFilter]);
+        if (!buFilter) return departments;
+        return departments.filter(d => d.businessUnitId === buFilter);
+    }, [buFilter, departments]);
 
     const yearOptions = useMemo(() => {
         const years = new Set(enrichedApplications.map(app => new Date(app.createdAt).getFullYear()));
@@ -187,14 +225,9 @@ const Applicants: React.FC = () => {
     const monthOptions = [{ value: 'all', name: 'All Months' }, ...Array.from({length: 12}, (_, i) => ({ value: (i+1).toString(), name: new Date(0, i).toLocaleString('default', { month: 'long' }) }))];
 
     const filteredApplications = useMemo(() => {
-        const accessibleBuIds = new Set(accessibleBus.map(b => b.id));
-
         return enrichedApplications.filter(app => {
-            // Scope Check
-            if (app.businessUnitId && !accessibleBuIds.has(app.businessUnitId)) return false;
-
-            const buName = mockBusinessUnits.find(b => b.id === buFilter)?.name;
-            const deptName = mockDepartments.find(d => d.id === departmentFilter)?.name;
+            const buName = businessUnits.find(b => b.id === buFilter)?.name;
+            const deptName = departments.find(d => d.id === departmentFilter)?.name;
             
             const appDate = new Date(app.createdAt);
             const buMatch = !buFilter || app.businessUnitName === buName;
@@ -203,14 +236,19 @@ const Applicants: React.FC = () => {
             const monthMatch = monthFilter === 'all' || (appDate.getMonth() + 1).toString() === monthFilter;
             return buMatch && deptMatch && yearMatch && monthMatch;
         });
-    }, [enrichedApplications, buFilter, departmentFilter, yearFilter, monthFilter, accessibleBus]);
+    }, [enrichedApplications, buFilter, departmentFilter, yearFilter, monthFilter, accessibleBus, businessUnits, departments]);
 
-    const performStageUpdate = (appId: string, stage: ApplicationStage) => {
-        const updated = applications.map(app => app.id === appId ? { ...app, stage, updatedAt: new Date() } : app);
-        setApplications(updated);
-        const mockIndex = mockApplications.findIndex(app => app.id === appId);
-        if (mockIndex !== -1) mockApplications[mockIndex] = { ...mockApplications[mockIndex], stage, updatedAt: new Date() };
-        logActivity(user, 'UPDATE', 'Application', appId, `Updated application stage to ${stage}`);
+    const performStageUpdate = async (appId: string, stage: ApplicationStage) => {
+        const updatedAt = new Date();
+        setApplications(prev => prev.map(app => app.id === appId ? { ...app, stage, updatedAt } : app));
+        try {
+            const { error } = await supabase.from('job_applications').update({ stage, updated_at: updatedAt }).eq('id', appId);
+            if (error) throw error;
+            logActivity(user, 'UPDATE', 'Application', appId, `Updated application stage to ${stage}`);
+        } catch (err) {
+            console.error('Failed to update stage', err);
+            alert('Failed to update stage.');
+        }
     };
 
     const handleUpdateStage = (applicationId: string, newStage: ApplicationStage) => {
@@ -237,13 +275,28 @@ const Applicants: React.FC = () => {
         performStageUpdate(applicationId, newStage);
     };
 
-    const handleSaveInterview = (interviewToSave: Interview) => {
-        const newInterview = { ...interviewToSave, id: `INT-${Date.now()}`};
-        mockInterviews.unshift(newInterview);
-        setIsSchedulerOpen(false);
-        setPendingAppId(null);
-        setPendingStage(null);
-        alert("Interview scheduled successfully.");
+    const handleSaveInterview = async (interviewToSave: Interview) => {
+        try {
+            const payload = {
+                application_id: interviewToSave.applicationId,
+                interviewer_id: interviewToSave.interviewerId || null,
+                start_at: interviewToSave.startAt,
+                end_at: interviewToSave.endAt || null,
+                location: interviewToSave.location || null,
+                type: interviewToSave.type || null,
+                status: interviewToSave.status || 'Scheduled',
+                notes: interviewToSave.notes || null,
+            };
+            const { error } = await supabase.from('job_interviews').insert(payload);
+            if (error) throw error;
+            setIsSchedulerOpen(false);
+            setPendingAppId(null);
+            setPendingStage(null);
+            alert("Interview scheduled successfully.");
+        } catch (err) {
+            console.error('Failed to save interview', err);
+            alert('Failed to save interview.');
+        }
     };
     
     const handleRejectionComplete = () => {
@@ -256,25 +309,70 @@ const Applicants: React.FC = () => {
     };
 
 
-    const handleSaveApplicant = ({ candidateData, jobPostId, coverLetter }: { candidateData: Omit<Candidate, 'id'>, jobPostId: string, coverLetter: string }) => {
-        const jobPost = mockJobPosts.find(post => post.id === jobPostId)!;
-        const newCandidate: Candidate = { id: `CAND-${Date.now()}`, ...candidateData };
-        mockCandidates.push(newCandidate);
-        const newApplication: Application = { 
-            id: `APP-${Date.now()}`, 
-            candidateId: newCandidate.id, 
-            jobPostId, 
-            requisitionId: jobPost.requisitionId, 
-            stage: ApplicationStage.New, 
-            notes: coverLetter, // Map cover letter to notes
-            createdAt: new Date(), 
-            updatedAt: new Date() 
-        };
-        mockApplications.push(newApplication);
-        setApplications(prev => [...prev, newApplication]);
-        
-        logActivity(user, 'CREATE', 'Application', newApplication.id, `Added new applicant: ${newCandidate.firstName} ${newCandidate.lastName}`);
-        setIsAddModalOpen(false);
+    const handleSaveApplicant = async ({ candidateData, jobPostId, coverLetter, resumeFile, resumeLink }: { candidateData: Omit<Candidate, 'id'>, jobPostId: string, coverLetter: string, resumeFile?: File | null, resumeLink?: string }) => {
+        let resumeUrl = resumeLink || '';
+        try {
+            // Upload file if provided
+            if (resumeFile) {
+                const path = `resumes/${Date.now()}-${resumeFile.name}`;
+                const { error: uploadError } = await supabase.storage.from('recruitment-uploads').upload(path, resumeFile, { upsert: false });
+                if (uploadError) throw uploadError;
+                resumeUrl = path;
+            }
+
+            const { data: insertedCandidate, error: candErr } = await supabase.from('job_candidates').insert({
+                first_name: candidateData.firstName,
+                last_name: candidateData.lastName,
+                email: candidateData.email,
+                phone: candidateData.phone,
+                source: candidateData.source,
+                portfolio_url: resumeUrl || candidateData.portfolioUrl || null,
+                tags: candidateData.tags || [],
+                consent_at: candidateData.consentAt || new Date(),
+            }).select().single();
+            if (candErr) throw candErr;
+
+            const jobPost = jobPosts.find(post => post.id === jobPostId);
+            const { data: insertedApp, error: appErr } = await supabase.from('job_applications').insert({
+                candidate_id: insertedCandidate.id,
+                job_post_id: jobPostId,
+                requisition_id: jobPost?.requisitionId || null,
+                stage: ApplicationStage.New,
+                cover_letter: coverLetter,
+                resume_url: resumeUrl || null,
+            }).select().single();
+            if (appErr) throw appErr;
+
+            // Update local state
+            const newCand: Candidate = {
+                id: insertedCandidate.id,
+                firstName: insertedCandidate.first_name,
+                lastName: insertedCandidate.last_name,
+                email: insertedCandidate.email,
+                phone: insertedCandidate.phone ?? '',
+                source: insertedCandidate.source as CandidateSource,
+                tags: insertedCandidate.tags || [],
+                portfolioUrl: insertedCandidate.portfolio_url || '',
+                consentAt: insertedCandidate.consent_at ? new Date(insertedCandidate.consent_at) : undefined,
+            };
+            const newApp: Application = {
+                id: insertedApp.id,
+                candidateId: insertedApp.candidate_id,
+                jobPostId: insertedApp.job_post_id,
+                requisitionId: insertedApp.requisition_id,
+                stage: insertedApp.stage as ApplicationStage,
+                notes: insertedApp.cover_letter || '',
+                createdAt: insertedApp.created_at ? new Date(insertedApp.created_at) : new Date(),
+                updatedAt: insertedApp.updated_at ? new Date(insertedApp.updated_at) : new Date(),
+            };
+            setCandidates(prev => [...prev, newCand]);
+            setApplications(prev => [...prev, newApp]);
+            logActivity(user, 'CREATE', 'Application', newApp.id, `Added new applicant: ${newCand.firstName} ${newCand.lastName}`);
+            setIsAddModalOpen(false);
+        } catch (err: any) {
+            console.error('Failed to save applicant', err);
+            alert(err?.message || 'Failed to save applicant.');
+        }
     };
 
     const viewButtonClass = (buttonView: 'kanban' | 'list') => `flex items-center px-4 py-2 text-sm font-medium rounded-md transition-colors ${view === buttonView ? 'bg-indigo-100 text-indigo-700 dark:bg-slate-700 dark:text-indigo-300 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`;
@@ -292,13 +390,20 @@ const Applicants: React.FC = () => {
     }, [pendingAppId, applications]);
 
 
+    const canView = can('Applicants', Permission.View) || can('Applicants', Permission.Manage);
+    const canManage = can('Applicants', Permission.Manage);
+
     return (
         <div className="space-y-6">
+            {!canView ? (
+                <Card><div className="p-6 text-gray-600 dark:text-gray-300">You do not have permission to view applicants.</div></Card>
+            ) : (
+        <>
             <div className="flex justify-between items-center">
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Applicant Tracking System</h1>
                  <div className="flex items-center space-x-2">
                     <Link to="/apply"><Button variant="secondary">View Applicant Page</Button></Link>
-                    <Button onClick={() => setIsAddModalOpen(true)}>New Applicant</Button>
+                    {canManage && <Button onClick={() => setIsAddModalOpen(true)}>New Applicant</Button>}
                 </div>
             </div>
             
@@ -352,9 +457,18 @@ const Applicants: React.FC = () => {
                 </div>
             </Card>
 
-            {view === 'kanban' ? <ApplicantKanbanBoard applications={filteredApplications} onUpdateStage={handleUpdateStage} onCardClick={setSelectedApplication} /> : <ApplicantListTable applications={filteredApplications} onRowClick={setSelectedApplication}/>}
+            {isLoading ? (
+                <Card><div className="p-6 text-gray-500">Loading applicants...</div></Card>
+            ) : view === 'kanban' ? <ApplicantKanbanBoard applications={filteredApplications} onUpdateStage={handleUpdateStage} onCardClick={setSelectedApplication} /> : <ApplicantListTable applications={filteredApplications} onRowClick={setSelectedApplication}/>}
             {selectedApplication && <ApplicantDetailModal isOpen={!!selectedApplication} onClose={() => setSelectedApplication(null)} application={selectedApplication} />}
-            <AddApplicantModal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} onSave={handleSaveApplicant} />
+            <AddApplicantModal
+                isOpen={isAddModalOpen}
+                onClose={() => setIsAddModalOpen(false)}
+                onSave={handleSaveApplicant}
+                businessUnits={businessUnits}
+                jobPosts={jobPosts}
+                jobRequisitions={jobRequisitions}
+            />
 
             {/* Automation Modals */}
             {isSchedulerOpen && (
@@ -363,6 +477,8 @@ const Applicants: React.FC = () => {
                     onClose={() => { setIsSchedulerOpen(false); setPendingAppId(null); }}
                     interview={pendingInterviewStub}
                     onSave={handleSaveInterview}
+                    candidateOptions={[]}
+                    users={[]}
                 />
             )}
 
@@ -374,6 +490,8 @@ const Applicants: React.FC = () => {
                     onSend={handleRejectionComplete}
                 />
             )}
+        </>
+        )}
         </div>
     );
 };
