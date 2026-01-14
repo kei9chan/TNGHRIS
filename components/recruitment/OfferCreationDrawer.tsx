@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Offer, OfferStatus, ApplicationStage, JobRequisition, User } from '../../types';
-import { mockApplications, mockCandidates, mockJobRequisitions, mockUsers, mockDepartments, mockOffers } from '../../services/mockData';
+import { Offer, OfferStatus, ApplicationStage, JobRequisition, Application, Candidate, BusinessUnit, Department } from '../../types';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import RichTextEditor from '../ui/RichTextEditor';
@@ -11,6 +10,11 @@ interface OfferCreationDrawerProps {
     isOpen: boolean;
     onClose: () => void;
     onSave: (offer: Offer) => void;
+    applications: Application[];
+    candidates: Candidate[];
+    requisitions: JobRequisition[];
+    businessUnits?: BusinessUnit[];
+    departments?: Department[];
 }
 
 interface Allowance {
@@ -35,7 +39,7 @@ const Section: React.FC<{ title: string; id: string; openSection: string; setOpe
     );
 };
 
-const OfferCreationDrawer: React.FC<OfferCreationDrawerProps> = ({ isOpen, onClose, onSave }) => {
+const OfferCreationDrawer: React.FC<OfferCreationDrawerProps> = ({ isOpen, onClose, onSave, applications, candidates, requisitions, businessUnits = [], departments = [] }) => {
     const { settings } = useSettings();
     const { user } = useAuth();
     const [openSection, setOpenSection] = useState('applicant');
@@ -47,20 +51,20 @@ const OfferCreationDrawer: React.FC<OfferCreationDrawerProps> = ({ isOpen, onClo
     const [error, setError] = useState('');
     
     const applicantsInOfferStage = useMemo(() => {
-        return mockApplications
-            .filter(app => app.stage === ApplicationStage.Offer && !mockOffers.some(o => o.applicationId === app.id && o.status !== OfferStatus.Declined))
+        return applications
+            .filter(app => [ApplicationStage.Offer, ApplicationStage.Interview, ApplicationStage.Screen, ApplicationStage.HMReview].includes(app.stage))
             .map(app => {
-                const candidate = mockCandidates.find(c => c.id === app.candidateId);
-                const job = mockJobRequisitions.find(j => j.id === app.requisitionId);
-                return { appId: app.id, label: `${candidate?.firstName} ${candidate?.lastName} - ${job?.title}` };
+                const candidate = candidates.find(c => c.id === app.candidateId);
+                const job = requisitions.find(j => j.id === app.requisitionId);
+                return { appId: app.id, label: `${candidate?.firstName || 'Candidate'} ${candidate?.lastName || ''} - ${job?.title || 'Unknown Role'}` };
             });
-    }, []);
+    }, [applications, candidates, requisitions]);
 
     const selectedRequisition = useMemo(() => {
         if (!applicationId) return null;
-        const app = mockApplications.find(a => a.id === applicationId);
-        return mockJobRequisitions.find(r => r.id === app?.requisitionId);
-    }, [applicationId]);
+        const app = applications.find(a => a.id === applicationId);
+        return requisitions.find(r => r.id === app?.requisitionId);
+    }, [applicationId, applications, requisitions]);
 
     useEffect(() => {
         const defaultOffer: Partial<Offer> = {
@@ -72,13 +76,12 @@ const OfferCreationDrawer: React.FC<OfferCreationDrawerProps> = ({ isOpen, onClo
         };
 
         if (selectedRequisition) {
-            const manager = mockUsers.find(u => u.id === selectedRequisition.createdByUserId);
             setOfferData({
                 ...defaultOffer,
                 basePay: selectedRequisition.budgetedSalaryMin,
                 employmentType: selectedRequisition.employmentType,
                 workLocation: selectedRequisition.workLocation,
-                reportingTo: manager?.name,
+                reportingTo: '',
             });
             setAllowances([]);
         } else {
@@ -113,7 +116,7 @@ const OfferCreationDrawer: React.FC<OfferCreationDrawerProps> = ({ isOpen, onClo
             applicationId,
             status,
             allowanceJSON: JSON.stringify(allowanceObject),
-            offerNumber: `OFFER-${Date.now().toString().slice(-6)}`
+            offerNumber: offerData.offerNumber || `OFFER-${Date.now().toString().slice(-6)}`
         } as Offer;
         
         onSave(payload);
@@ -141,7 +144,7 @@ const OfferCreationDrawer: React.FC<OfferCreationDrawerProps> = ({ isOpen, onClo
                                     </select>
                                 </div>
                                 <Input label="Job Title" value={selectedRequisition?.title || ''} readOnly />
-                                <Input label="Department" value={mockDepartments.find(d=>d.id === selectedRequisition?.departmentId)?.name || ''} readOnly />
+                                <Input label="Department" value={departments.find(d=>d.id === selectedRequisition?.departmentId)?.name || ''} readOnly />
                                 <Input label="Reporting To" name="reportingTo" value={offerData.reportingTo || ''} onChange={(e) => handleDataChange('reportingTo', e.target.value)} />
                                 <div>
                                     <label className="block text-sm font-medium">Employment Type</label>
