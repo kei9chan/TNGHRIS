@@ -10,6 +10,7 @@ interface JobPostTemplateGeneratorProps {
     onClose: () => void;
     onSave: (template: JobPostVisualTemplate) => void;
     template?: JobPostVisualTemplate | null;
+    saving?: boolean;
 }
 
 // --- Helper Components ---
@@ -139,7 +140,7 @@ const defaultConfig = {
     buttonText: '[BUTTON_TEXT]',
 };
 
-const JobPostTemplateGenerator: React.FC<JobPostTemplateGeneratorProps> = ({ isOpen, onClose, onSave, template }) => {
+const JobPostTemplateGenerator: React.FC<JobPostTemplateGeneratorProps> = ({ isOpen, onClose, onSave, template, saving }) => {
     const previewRef = useRef<HTMLDivElement>(null);
 
     // State for the customizable config
@@ -333,7 +334,9 @@ const JobPostTemplateGenerator: React.FC<JobPostTemplateGeneratorProps> = ({ isO
                         <div className="text-xs text-slate-500">Changes update automatically in preview.</div>
                         <div className="flex gap-2">
                             <Button variant="secondary" onClick={handleDownloadImage}>Download Image</Button>
-                            <Button onClick={handleSaveTemplate}>Save Template</Button>
+                            <Button onClick={handleSaveTemplate} disabled={!!saving}>
+                                {saving ? 'Saving...' : 'Save Template'}
+                            </Button>
                         </div>
                     </div>
                 </div>

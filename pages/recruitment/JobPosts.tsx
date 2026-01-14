@@ -1,7 +1,7 @@
 
-import React, { useState, useMemo } from 'react';
-import { JobPost, Permission, JobPostStatus, Role } from '../../types';
-import { mockJobPosts, mockBusinessUnits } from '../../services/mockData';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { JobPost, Permission, JobPostStatus, Role, JobRequisition, BusinessUnit } from '../../types';
+import { supabase } from '../../services/supabaseClient';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -21,22 +21,94 @@ const JobPosts: React.FC = () => {
   const [isEditingDesc, setIsEditingDesc] = useState(false);
   const [editText, setEditText] = useState('');
 
-  const [jobPosts, setJobPosts] = useState<JobPost[]>(mockJobPosts);
+  const [jobPosts, setJobPosts] = useState<JobPost[]>([]);
+  const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
+  const [requisitions, setRequisitions] = useState<JobRequisition[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedPost, setSelectedPost] = useState<JobPost | null>(null);
 
-  const canCreate = can('JobPosts', Permission.Create) || can('JobPosts', Permission.Manage);
+  const canView = can('JobPosts', Permission.View) || can('JobPosts', Permission.Manage);
+  const canCreate = can('JobPosts', Permission.Manage);
 
   const isAdmin = user?.role === Role.Admin;
   const descriptionKey = 'recruitmentJobPostsDesc';
   const description = settings[descriptionKey] as string || '';
 
-  const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+  const accessibleBus = useMemo(
+    () => getAccessibleBusinessUnits(businessUnits),
+    [getAccessibleBusinessUnits, businessUnits]
+  );
 
-  const filteredJobPosts = useMemo(() => {
-      const accessibleBuIds = new Set(accessibleBus.map(b => b.id));
-      return jobPosts.filter(post => accessibleBuIds.has(post.businessUnitId));
-  }, [jobPosts, accessibleBus]);
+  // Show all posts to avoid hiding data due to BU/access issues.
+  const filteredJobPosts = jobPosts;
+
+  const mapJobPost = useCallback((row: any): JobPost => ({
+    id: row.id,
+    requisitionId: row.requisition_id,
+    businessUnitId: row.business_unit_id,
+    title: row.title,
+    slug: row.slug,
+    description: row.description,
+    requirements: row.requirements ?? '',
+    benefits: row.benefits ?? '',
+    locationLabel: row.location_label ?? '',
+    employmentType: row.employment_type,
+    status: row.status,
+    publishedAt: row.published_at ? new Date(row.published_at) : undefined,
+    channels: row.channels ?? { careerSite: false, qr: false, social: false, jobBoards: false },
+    referralBonus: row.referral_bonus ?? undefined,
+  }), []);
+
+  const mapRequisition = useCallback((row: any): JobRequisition => ({
+    id: row.id,
+    reqCode: row.req_code,
+    title: row.title,
+    departmentId: row.department_id,
+    businessUnitId: row.business_unit_id,
+    headcount: row.headcount,
+    employmentType: row.employment_type,
+    locationType: row.location_type,
+    workLocation: row.work_location,
+    budgetedSalaryMin: row.budgeted_salary_min,
+    budgetedSalaryMax: row.budgeted_salary_max,
+    justification: row.justification,
+    createdByUserId: row.created_by_user_id,
+    status: (row.status || '').toString().trim(),
+    createdAt: row.created_at ? new Date(row.created_at) : new Date(),
+    updatedAt: row.updated_at ? new Date(row.updated_at) : new Date(),
+    isUrgent: row.is_urgent,
+    routingSteps: row.routing_steps || [],
+  }), []);
+
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [buRes, reqRes, postsRes] = await Promise.all([
+        supabase.from('business_units').select('id, name, code, color'),
+        supabase.from('job_requisitions').select('*'),
+        supabase.from('job_posts').select('*').order('created_at', { ascending: false }),
+      ]);
+
+      if (buRes.error) throw buRes.error;
+      if (reqRes.error) throw reqRes.error;
+      if (postsRes.error) throw postsRes.error;
+
+      setBusinessUnits(buRes.data as BusinessUnit[]);
+      setRequisitions((reqRes.data || []).map(mapRequisition));
+      setJobPosts((postsRes.data || []).map(mapJobPost));
+    } catch (err) {
+      console.error('Failed to load job posts', err);
+      alert('Failed to load job posts. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [mapJobPost, mapRequisition]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleEditDesc = () => {
       setEditText(description);
@@ -58,43 +130,73 @@ const JobPosts: React.FC = () => {
     setSelectedPost(null);
   };
 
-  const handleSave = (postToSave: JobPost) => {
-    if (postToSave.id) {
-      // Update existing
-      const updatedPosts = jobPosts.map(p => (p.id === postToSave.id ? postToSave : p));
-      setJobPosts(updatedPosts);
-      const index = mockJobPosts.findIndex(p => p.id === postToSave.id);
-      if (index > -1) mockJobPosts[index] = postToSave;
-      logActivity(user, 'UPDATE', 'JobPost', postToSave.id, `Updated job post: ${postToSave.title}`);
-    } else {
-      // Create new
-      const newPost = { ...postToSave, id: `POST-${Date.now()}`, slug: postToSave.title.toLowerCase().replace(/\s+/g, '-') };
-      const updatedPosts = [newPost, ...jobPosts];
-      setJobPosts(updatedPosts);
-      mockJobPosts.unshift(newPost);
-      logActivity(user, 'CREATE', 'JobPost', newPost.id, `Created new job post: ${newPost.title}`);
+  const handleSave = async (postToSave: JobPost) => {
+    setIsSaving(true);
+    const slug = postToSave.slug || postToSave.title.toLowerCase().replace(/\s+/g, '-');
+    const payload = {
+      requisition_id: postToSave.requisitionId,
+      business_unit_id: postToSave.businessUnitId,
+      title: postToSave.title,
+      slug,
+      description: postToSave.description,
+      requirements: postToSave.requirements ?? '',
+      benefits: postToSave.benefits ?? '',
+      location_label: postToSave.locationLabel ?? '',
+      employment_type: postToSave.employmentType,
+      status: postToSave.status,
+      published_at: postToSave.publishedAt ?? (postToSave.status === JobPostStatus.Published ? new Date().toISOString() : null),
+      channels: postToSave.channels || { careerSite: false, qr: false, social: false, jobBoards: false },
+      referral_bonus: postToSave.referralBonus ?? null,
+      created_by_user_id: user?.id || null,
+    };
+
+    try {
+      if (postToSave.id) {
+        const { data, error } = await supabase.from('job_posts').update(payload).eq('id', postToSave.id).select().single();
+        if (error) throw error;
+        const mapped = mapJobPost(data);
+        setJobPosts(prev => prev.map(p => (p.id === mapped.id ? mapped : p)));
+        logActivity(user, 'UPDATE', 'JobPost', mapped.id, `Updated job post: ${mapped.title}`);
+      } else {
+        const { data, error } = await supabase.from('job_posts').insert(payload).select().single();
+        if (error) throw error;
+        const mapped = mapJobPost(data);
+        setJobPosts(prev => [mapped, ...prev]);
+        logActivity(user, 'CREATE', 'JobPost', mapped.id, `Created new job post: ${mapped.title}`);
+      }
+      handleCloseModal();
+    } catch (err: any) {
+      console.error('Failed to save job post', err);
+      alert(err?.message || 'Failed to save job post.');
+    } finally {
+      setIsSaving(false);
     }
-    handleCloseModal();
   };
 
-   const handleDelete = (id: string) => {
-    if (window.confirm('Are you sure you want to delete this job post draft?')) {
+   const handleDelete = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this job post draft?')) return;
+    try {
+        const { error } = await supabase.from('job_posts').delete().eq('id', id);
+        if (error) throw error;
         setJobPosts(prev => prev.filter(p => p.id !== id));
-        const index = mockJobPosts.findIndex(p => p.id === id);
-        if (index > -1) {
-            const deletedPost = mockJobPosts.splice(index, 1)[0];
-            logActivity(user, 'DELETE', 'JobPost', id, `Deleted job post draft: ${deletedPost.title}`);
-        }
+        logActivity(user, 'DELETE', 'JobPost', id, `Deleted job post draft`);
+    } catch (err) {
+        console.error('Failed to delete job post', err);
+        alert('Failed to delete job post.');
     }
   };
 
 
   return (
     <div className="space-y-6">
+      {!canView ? (
+        <Card><div className="p-6 text-gray-600 dark:text-gray-300">You do not have permission to view job posts.</div></Card>
+      ) : (
+      <>
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Job Post Manager</h1>
         {canCreate && (
-          <Button onClick={() => handleOpenModal(null)}>Create Job Post</Button>
+          <Button onClick={() => handleOpenModal(null)} disabled={isLoading}>Create Job Post</Button>
         )}
       </div>
        {isEditingDesc ? (
@@ -125,19 +227,28 @@ const JobPosts: React.FC = () => {
           </div>
       )}
       <Card>
+        {isLoading ? (
+          <div className="py-8 text-center text-gray-500 dark:text-gray-400">Loading job posts...</div>
+        ) : (
         <JobPostTable
             posts={filteredJobPosts}
             onEdit={handleOpenModal}
             onDelete={handleDelete}
         />
+        )}
       </Card>
       {isModalOpen && (
           <JobPostModal
             isOpen={isModalOpen}
             onClose={handleCloseModal}
             jobPost={selectedPost}
+            jobRequisitions={requisitions}
+            businessUnits={businessUnits}
             onSave={handleSave}
+            saving={isSaving}
           />
+      )}
+      </>
       )}
     </div>
   );

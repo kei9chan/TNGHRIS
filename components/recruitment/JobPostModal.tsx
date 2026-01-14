@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { JobPost, JobPostStatus, JobRequisitionStatus } from '../../types';
-import { mockJobRequisitions, mockBusinessUnits } from '../../services/mockData';
+import { JobPost, JobPostStatus, JobRequisitionStatus, JobRequisition, BusinessUnit } from '../../types';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
@@ -12,9 +11,12 @@ interface JobPostModalProps {
     onClose: () => void;
     jobPost: JobPost | null;
     onSave: (jobPost: JobPost) => void;
+    jobRequisitions: JobRequisition[];
+    businessUnits: BusinessUnit[];
+    saving?: boolean;
 }
 
-const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, onSave }) => {
+const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, onSave, jobRequisitions, businessUnits, saving }) => {
     const { getAccessibleBusinessUnits } = usePermissions();
     const [current, setCurrent] = useState<Partial<JobPost>>(jobPost || {});
     
@@ -23,15 +25,16 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
     const [isReqDropdownOpen, setIsReqDropdownOpen] = useState(false);
     const reqWrapperRef = useRef<HTMLDivElement>(null);
 
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(businessUnits), [getAccessibleBusinessUnits, businessUnits]);
     const accessibleBuIds = useMemo(() => new Set(accessibleBus.map(b => b.id)), [accessibleBus]);
 
     const approvedRequisitions = useMemo(() => {
-        return mockJobRequisitions.filter(r => 
-            r.status === JobRequisitionStatus.Approved &&
-            accessibleBuIds.has(r.businessUnitId)
-        );
-    }, [accessibleBuIds]);
+        return jobRequisitions.filter(r => {
+            const status = (r.status || '').toString().trim().toLowerCase();
+            // Show all approved requisitions to avoid hiding valid records due to BU mismatches.
+            return status === 'approved';
+        });
+    }, [jobRequisitions]);
 
     useEffect(() => {
         if (isOpen) {
@@ -46,14 +49,22 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
 
             // Initialize search term if a requisition is already selected
             if (initialData.requisitionId) {
-                const r = approvedRequisitions.find(req => req.id === initialData.requisitionId);
+                const r = jobRequisitions.find(req => req.id === initialData.requisitionId);
                 setReqSearchTerm(r ? `${r.reqCode}: ${r.title}` : '');
             } else {
                 setReqSearchTerm('');
             }
             setIsReqDropdownOpen(false);
         }
-    }, [jobPost, isOpen, approvedRequisitions]);
+    }, [jobPost, isOpen]);
+
+    // Sync search term when requisitions load after opening
+    useEffect(() => {
+        if (isOpen && current.requisitionId && !reqSearchTerm) {
+            const r = jobRequisitions.find(req => req.id === current.requisitionId);
+            if (r) setReqSearchTerm(`${r.reqCode}: ${r.title}`);
+        }
+    }, [jobRequisitions, current.requisitionId, isOpen, reqSearchTerm]);
 
     useEffect(() => {
         if (current.requisitionId) {
@@ -155,10 +166,10 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
 
     const footer = (
         <div className="flex justify-end w-full space-x-2">
-            <Button variant="secondary" onClick={onClose}>Cancel</Button>
-            {!isPublished && <Button onClick={() => handleSave(JobPostStatus.Draft)}>Save as Draft</Button>}
-            <Button onClick={() => handleSave(JobPostStatus.Published)}>
-                {isPublished ? 'Update Post' : 'Publish Post'}
+            <Button variant="secondary" onClick={onClose} disabled={!!saving}>Cancel</Button>
+            {!isPublished && <Button onClick={() => handleSave(JobPostStatus.Draft)} disabled={!!saving}>Save as Draft</Button>}
+            <Button onClick={() => handleSave(JobPostStatus.Published)} disabled={!!saving}>
+                {saving ? 'Saving...' : isPublished ? 'Update Post' : 'Publish Post'}
             </Button>
         </div>
     );
@@ -200,7 +211,7 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
                                         <div className="font-medium text-indigo-600 dark:text-indigo-400">{r.reqCode}</div>
                                         <div className="text-gray-900 dark:text-gray-200 font-semibold">{r.title}</div>
                                         <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2 mt-0.5">
-                                            <span>{mockBusinessUnits.find(b => b.id === r.businessUnitId)?.name || 'Unknown BU'}</span>
+                                            <span>{businessUnits.find(b => b.id === r.businessUnitId)?.name || 'Unknown BU'}</span>
                                             <span>•</span>
                                             <span>{r.employmentType}</span>
                                         </div>
@@ -221,7 +232,7 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
                         className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:bg-gray-200 dark:disabled:bg-gray-800"
                     >
                         <option value="">-- Derived from Requisition --</option>
-                        {mockBusinessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
+                        {businessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
                     </select>
                 </div>
                 <Input label="Job Title" name="title" value={current.title || ''} onChange={handleChange} required />
