@@ -1,8 +1,9 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { WFHRequest, WFHRequestStatus, Role } from '../../types';
+import { WFHRequest, WFHRequestStatus, Role, Permission } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
+import { usePermissions } from '../../hooks/usePermissions';
 import { supabase } from '../../services/supabaseClient';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -21,8 +22,19 @@ const getStatusColor = (status: WFHRequestStatus) => {
     }
 };
 
+const normalizeUrl = (url: string) => {
+    if (!url) return '';
+    const trimmed = url.trim();
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    return `https://${trimmed}`;
+};
+
 const WFHRequests: React.FC = () => {
   const { user } = useAuth();
+  const { can } = usePermissions();
+  const canView = can('WFH', Permission.View);
+  const canCreate = can('WFH', Permission.Create) || can('WFH', Permission.Manage);
+  const canManage = can('WFH', Permission.Manage) || can('WFH', Permission.Approve);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -32,7 +44,7 @@ const WFHRequests: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
   const loadRequests = async () => {
-    if (!user) return;
+    if (!user || !canView) return;
 
     const role = user.role as Role;
     let query = supabase.from('wfh_requests').select('*').order('date', { ascending: false });
@@ -97,7 +109,7 @@ const WFHRequests: React.FC = () => {
   useEffect(() => {
     loadRequests();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [user, canView]);
 
   useEffect(() => {
     if (location.state?.openNewModal) {
@@ -119,12 +131,18 @@ const WFHRequests: React.FC = () => {
   }, [requests, user, statusFilter]);
 
   const handleOpenModal = (request: WFHRequest | null) => {
+      if (!canView) return;
+      if (request && !canManage && !canCreate) return;
       setSelectedRequest(request);
       setIsModalOpen(true);
   };
 
   const handleSave = async (data: Partial<WFHRequest>) => {
       if (!user) return;
+      if (!canCreate && !canManage) {
+        alert('You do not have permission to update WFH requests.');
+        return;
+      }
 
       if (data.id) {
           const { error } = await supabase
@@ -166,11 +184,18 @@ const WFHRequests: React.FC = () => {
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Work From Home Requests</h1>
                 <p className="text-gray-600 dark:text-gray-400 mt-1">Submit requests and track your WFH status.</p>
             </div>
-            <Button onClick={() => handleOpenModal(null)}>New Request</Button>
+            {canCreate && <Button onClick={() => handleOpenModal(null)}>New Request</Button>}
         </div>
 
         <EditableDescription descriptionKey="wfhDesc" />
 
+        {!canView && (
+            <div className="p-4 rounded-md bg-yellow-50 text-sm text-yellow-800">
+                You do not have permission to view WFH requests.
+            </div>
+        )}
+        {canView && (
+        <>
         <Card>
             <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-end">
                 <div className="w-48">
@@ -196,7 +221,7 @@ const WFHRequests: React.FC = () => {
                         </tr>
                     </thead>
                     <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
-                        {myRequests.map(req => (
+        {myRequests.map(req => (
                             <tr key={req.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
                                     {new Date(req.date).toLocaleDateString()}
@@ -211,7 +236,7 @@ const WFHRequests: React.FC = () => {
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm">
                                     {req.reportLink ? (
-                                        <a href={req.reportLink} target="_blank" rel="noopener noreferrer" className="flex items-center text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">
+                                        <a href={normalizeUrl(req.reportLink)} target="_blank" rel="noopener noreferrer" className="flex items-center text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">
                                             <LinkIcon /> <span className="ml-1">View Report</span>
                                         </a>
                                     ) : req.status === WFHRequestStatus.Approved ? (
@@ -223,7 +248,7 @@ const WFHRequests: React.FC = () => {
                                     )}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                    <Button size="sm" variant="secondary" onClick={() => handleOpenModal(req)}>
+                                    <Button size="sm" variant="secondary" onClick={() => handleOpenModal(req)} disabled={!canView}>
                                         {req.status === WFHRequestStatus.Pending ? 'Edit' : 'View'}
                                     </Button>
                                 </td>
@@ -247,6 +272,8 @@ const WFHRequests: React.FC = () => {
             request={selectedRequest}
             onSave={handleSave}
         />
+        </>
+        )}
     </div>
   );
 };

@@ -81,7 +81,7 @@ const WFHRequestModal: React.FC<WFHRequestModalProps> = ({ isOpen, onClose, onSa
                 </div>
             }
         >
-            <div className="space-y-4">
+            <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
                 {isRejected && (
                     <div className="p-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-md">
                          <p className="text-red-800 dark:text-red-200 font-medium">Request Rejected</p>

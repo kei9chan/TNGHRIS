@@ -207,6 +207,23 @@ const clockLogPermissions: Record<Role, Permission[]> = {
   [Role.IT]: [], // None
 };
 
+// WFH Requests RBAC matrix
+const wfhPermissions: Record<Role, Permission[]> = {
+  [Role.Admin]: [Permission.Manage],
+  [Role.HRManager]: [Permission.Manage],
+  [Role.HRStaff]: [Permission.Manage],
+  [Role.BOD]: [Permission.View],
+  [Role.GeneralManager]: [Permission.View], // View BU/Departments (scope elsewhere)
+  [Role.OperationsDirector]: [Permission.View, Permission.Approve], // View/Approve BU
+  [Role.BusinessUnitManager]: [Permission.View, Permission.Create], // View/request own BU
+  [Role.Manager]: [Permission.View], // Own team
+  [Role.Employee]: [Permission.View, Permission.Create], // Own
+  [Role.FinanceStaff]: [], // None
+  [Role.Auditor]: [Permission.View], // View logs
+  [Role.Recruiter]: [], // None
+  [Role.IT]: [], // None
+};
+
 // Contracts RBAC matrix derived from user request
 const contractsPermissions: Record<Role, Permission[]> = {
   [Role.Admin]: [Permission.Manage],
@@ -601,6 +618,13 @@ export const usePermissions = () => {
 
         if (resource === 'ClockLog') {
             const perms = clockLogPermissions[user.role];
+            if (!perms || perms.length === 0) return false;
+            if (perms.includes(Permission.Manage)) return true;
+            if (permission === Permission.View && perms.length > 0) return true;
+            return perms.includes(permission);
+        }
+        if (resource === 'WFH') {
+            const perms = wfhPermissions[user.role];
             if (!perms || perms.length === 0) return false;
             if (perms.includes(Permission.Manage)) return true;
             if (permission === Permission.View && perms.length > 0) return true;
