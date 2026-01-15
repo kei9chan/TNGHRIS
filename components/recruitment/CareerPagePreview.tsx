@@ -1,10 +1,10 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ApplicantPageTheme, JobPost, JobPostStatus } from '../../types';
-import { mockJobPosts, mockApplicantPageThemes, mockBusinessUnits } from '../../services/mockData';
 import { useParams, Link } from 'react-router-dom';
 import Modal from '../ui/Modal';
 import PublicJobApplicationForm from './PublicJobApplicationForm';
+import { supabase } from '../../services/supabaseClient';
 
 interface CareerPagePreviewProps {
     theme?: ApplicantPageTheme;
@@ -31,19 +31,123 @@ const CareerPagePreview: React.FC<CareerPagePreviewProps> = ({ theme: propTheme,
     const { slug } = useParams<{ slug: string }>();
     const [selectedJob, setSelectedJob] = useState<JobPost | null>(null);
     const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
-    
-    // Find theme from mock data if accessed via public route
-    const theme = propTheme || mockApplicantPageThemes.find(t => t.slug === slug);
+
+    const [theme, setTheme] = useState<ApplicantPageTheme | null>(propTheme || null);
+    const [jobs, setJobs] = useState<JobPost[]>([]);
+    const [buName, setBuName] = useState<string>('');
+    const [loading, setLoading] = useState<boolean>(!propTheme);
+
+    const mapTheme = useMemo(() => (row: any): ApplicantPageTheme => {
+        const sections = row.sections || {};
+        return {
+            id: row.id,
+            businessUnitId: row.business_unit_id,
+            name: row.name || row.page_title || row.slug || 'Career Page',
+            slug: row.slug,
+            pageTitle: row.page_title,
+            heroHeadline: row.hero_headline,
+            heroDescription: row.hero_description,
+            heroOverlayColor: sections.heroOverlayColor || 'rgba(0,0,0,0.5)',
+            primaryColor: row.primary_color,
+            backgroundColor: row.background_color,
+            heroImage: row.hero_image_url || '',
+            logoImage: row.logo_url || '',
+            benefits: sections.benefits || [],
+            testimonials: sections.testimonials || [],
+            contactEmail: sections.contactEmail || '',
+            sections,
+            isActive: row.is_active ?? true,
+        };
+    }, []);
+
+    useEffect(() => {
+        const fetchThemeAndJobs = async (incomingTheme?: ApplicantPageTheme | null) => {
+            setLoading(true);
+            try {
+                let resolvedTheme = incomingTheme || null;
+                if (!resolvedTheme) {
+                    const { data: themeRow, error } = await supabase
+                        .from('applicant_page_themes')
+                        .select('*')
+                        .eq('slug', slug || '')
+                        .eq('is_active', true)
+                        .maybeSingle();
+                    if (error) throw error;
+                    if (!themeRow) {
+                        setTheme(null);
+                        return;
+                    }
+                    resolvedTheme = mapTheme(themeRow);
+                    setTheme(resolvedTheme);
+                }
+
+                // BU name
+                if (resolvedTheme?.businessUnitId) {
+                    const { data: bu, error: buErr } = await supabase
+                        .from('business_units')
+                        .select('name')
+                        .eq('id', resolvedTheme.businessUnitId)
+                        .maybeSingle();
+                    if (!buErr && bu?.name) setBuName(bu.name);
+                }
+
+                if (resolvedTheme?.businessUnitId) {
+                    const { data: jobRows, error: jobErr } = await supabase
+                        .from('job_posts')
+                        .select('*')
+                        .eq('status', 'Published')
+                        .eq('business_unit_id', resolvedTheme.businessUnitId);
+                    if (jobErr) throw jobErr;
+                    setJobs(
+                        (jobRows || []).map((row: any) => ({
+                            id: row.id,
+                            requisitionId: row.requisition_id,
+                            businessUnitId: row.business_unit_id,
+                            title: row.title,
+                            slug: row.slug,
+                            description: row.description || '',
+                            requirements: row.requirements || '',
+                            benefits: row.benefits || '',
+                            locationLabel: row.location_label || 'Location',
+                            employmentType: row.employment_type || 'Full-Time',
+                            status: row.status as JobPostStatus,
+                            publishedAt: row.published_at ? new Date(row.published_at) : undefined,
+                            channels: row.channels || { careerSite: true, qr: false, social: false, jobBoards: false },
+                            referralBonus: row.referral_bonus || undefined,
+                        }))
+                    );
+                } else {
+                    setJobs([]);
+                }
+            } catch (err) {
+                console.error('Failed to load public career page', err);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        // For public route, always fetch; for preview with provided theme, still fetch jobs
+        if (isPublic || (!isPublic && !propTheme)) {
+            fetchThemeAndJobs(propTheme || null);
+        } else if (propTheme) {
+            // still fetch jobs for preview if needed
+            setTheme(propTheme);
+            fetchThemeAndJobs(propTheme);
+        }
+    }, [propTheme, slug, mapTheme, isPublic]);
+
+    const openJobs = useMemo(
+        () => jobs.filter(j => j.status === JobPostStatus.Published),
+        [jobs]
+    );
+
+    if (loading) {
+        return <div className="p-10 text-center">Loading...</div>;
+    }
 
     if (!theme) {
         return <div className="p-10 text-center">Page not found.</div>;
     }
-
-    const openJobs = mockJobPosts.filter(post => {
-        // Strictly match jobs to this theme's Business Unit
-        // This ensures jobs from other BUs do not appear here.
-        return post.businessUnitId === theme.businessUnitId && post.status === JobPostStatus.Published;
-    });
 
     const handleApplyClick = (job: JobPost) => {
         if (isPreview) return;
@@ -152,7 +256,7 @@ const CareerPagePreview: React.FC<CareerPagePreviewProps> = ({ theme: propTheme,
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                      <h2 className="text-3xl font-extrabold text-gray-900 mb-8">Current Openings</h2>
                      {openJobs.length === 0 ? (
-                         <p className="text-gray-600">No open positions for {mockBusinessUnits.find(b => b.id === theme.businessUnitId)?.name} at the moment. Please check back later.</p>
+                         <p className="text-gray-600">No open positions for {buName || 'this business unit'} at the moment. Please check back later.</p>
                      ) : (
                          <div className="grid gap-6 lg:grid-cols-2">
                              {openJobs.map(job => (

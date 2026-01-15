@@ -35,7 +35,8 @@ export type Resource =
   | 'ReportTemplates' | 'Reports' | 'FinalPay' | 'ClockLog' | 'Settings' | 'AuditLog' | 'Helpdesk'
   | 'Announcements' | 'Recruitment' | 'Requisitions' | 'JobPosts' | 'Applicants' | 'Candidates'
   | 'Interviews' | 'Offers' | 'Offboarding' | 'Analytics' | 'Departments' | 'Loans' | 'User' | 'Sites' | 'Assets' | 'AssetRequests' | 'WorkforcePlanning' | 'Lifecycle' | 'Payroll' | 'Manpower' | 'COE' | 'Benefits' | 'PulseSurvey' | 'Coaching' | 'WFH' | 'CodeOfDiscipline' | 'FeedbackTemplates' | 'Pipeline' | 'WorkforcePlanningAdmin'
-  | 'Calendar' | 'OrgChart' | 'DailyTimeReview' | 'MemoLibrary' | 'Contracts & Signing' | 'RolesPermissions' | 'UserManagement' | 'SiteManagement' | 'LeavePolicies' | 'Holidays' | 'AuditLog';
+  | 'Calendar' | 'OrgChart' | 'DailyTimeReview' | 'MemoLibrary' | 'Contracts & Signing' | 'RolesPermissions' | 'UserManagement' | 'SiteManagement' | 'LeavePolicies' | 'Holidays' | 'AuditLog'
+  | 'ApplicationPages';
 
 export type PermissionsMatrix = {
   [key in Role]?: Partial<Record<Resource, Permission[]>>;
@@ -1793,6 +1794,7 @@ export interface JobPostVisualTemplate {
 export interface ApplicantPageTheme {
     id: string;
     businessUnitId: string;
+    name: string;
     slug: string; // e.g., 'inflatable-island'
     isActive: boolean;
     

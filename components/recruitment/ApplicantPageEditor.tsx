@@ -1,9 +1,8 @@
 
 
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ApplicantPageTheme } from '../../types';
-import { mockBusinessUnits } from '../../services/mockData';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
@@ -16,36 +15,51 @@ interface ApplicantPageEditorProps {
     onClose: () => void;
     onSave: (theme: ApplicantPageTheme) => void;
     theme: ApplicantPageTheme | null;
+    businessUnits: { id: string; name: string }[];
 }
 
 const icons = ['rocket', 'smile', 'wallet', 'heart', 'star'];
 
-const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClose, onSave, theme }) => {
+const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClose, onSave, theme, businessUnits }) => {
     const [config, setConfig] = useState<Partial<ApplicantPageTheme>>({});
     const [activeTab, setActiveTab] = useState<'general' | 'hero' | 'benefits' | 'preview'>('general');
 
+    const defaultConfig = useMemo<ApplicantPageTheme>(() => ({
+        id: '',
+        businessUnitId: businessUnits[0]?.id || '',
+        name: 'New Career Page',
+        slug: '',
+        isActive: true,
+        pageTitle: 'Join Our Team',
+        heroHeadline: 'Build Your Career With Us',
+        heroDescription: 'We are looking for talented individuals to join our growing family.',
+        heroOverlayColor: 'rgba(0,0,0,0.5)',
+        primaryColor: '#4F46E5',
+        backgroundColor: '#F3F4F6',
+        heroImage: '',
+        contactEmail: '',
+        benefits: [
+            { id: 'b1', title: 'Great Culture', description: 'Work with amazing people', icon: 'smile' },
+            { id: 'b2', title: 'Competitive Pay', description: 'We reward performance', icon: 'wallet' },
+        ],
+        testimonials: [],
+    } as ApplicantPageTheme), [businessUnits]);
+
+    // Initialize form when modal opens
     useEffect(() => {
-        if (isOpen) {
-            setConfig(theme || {
-                businessUnitId: mockBusinessUnits[0]?.id,
-                slug: '',
-                isActive: true,
-                pageTitle: 'Join Our Team',
-                heroHeadline: 'Build Your Career With Us',
-                heroDescription: 'We are looking for talented individuals to join our growing family.',
-                heroOverlayColor: 'rgba(0,0,0,0.5)',
-                primaryColor: '#4F46E5',
-                backgroundColor: '#F3F4F6',
-                heroImage: '',
-                contactEmail: '',
-                benefits: [
-                    { id: 'b1', title: 'Great Culture', description: 'Work with amazing people', icon: 'smile' },
-                    { id: 'b2', title: 'Competitive Pay', description: 'We reward performance', icon: 'wallet' },
-                ],
-                testimonials: []
-            });
-        }
-    }, [isOpen, theme]);
+        if (!isOpen) return;
+        setConfig(prev => {
+            // If already populated during this open, keep user input
+            if (Object.keys(prev).length && !theme) return prev;
+            return theme || { ...defaultConfig, businessUnitId: theme?.businessUnitId || businessUnits[0]?.id || '' };
+        });
+    }, [isOpen, theme, defaultConfig, businessUnits]);
+
+    // Backfill BU once options finish loading without nuking user input
+    useEffect(() => {
+        if (!isOpen) return;
+        setConfig(prev => (prev.businessUnitId || !businessUnits.length) ? prev : { ...prev, businessUnitId: businessUnits[0]?.id || '' });
+    }, [businessUnits, isOpen]);
 
     const handleChange = (field: keyof ApplicantPageTheme, value: any) => {
         setConfig(prev => ({ ...prev, [field]: value }));
@@ -75,8 +89,8 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
     };
 
     const handleSave = () => {
-        if (!config.slug || !config.businessUnitId) {
-            alert('Slug and Business Unit are required.');
+        if (!config.name?.trim() || !config.slug?.trim() || !config.businessUnitId) {
+            alert('Name, slug, and Business Unit are required.');
             return;
         }
         onSave(config as ApplicantPageTheme);
@@ -110,13 +124,14 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
                             <select 
-                                value={config.businessUnitId} 
+                                value={config.businessUnitId || businessUnits[0]?.id || ''} 
                                 onChange={e => handleChange('businessUnitId', e.target.value)}
                                 className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                             >
-                                {mockBusinessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
+                                {businessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
                             </select>
                         </div>
+                        <Input label="Page Name" value={config.name || ''} onChange={e => handleChange('name', e.target.value)} required />
                         <Input label="URL Slug (e.g., inflatable-island)" value={config.slug || ''} onChange={e => handleChange('slug', e.target.value)} required />
                         <Input label="Page Title" value={config.pageTitle || ''} onChange={e => handleChange('pageTitle', e.target.value)} />
                         <Input label="Contact Email" value={config.contactEmail || ''} onChange={e => handleChange('contactEmail', e.target.value)} />
@@ -129,15 +144,15 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Primary Color</label>
                                 <div className="flex items-center mt-1">
-                                    <input type="color" value={config.primaryColor} onChange={e => handleChange('primaryColor', e.target.value)} className="h-10 w-10 border-0 p-0 rounded shadow-sm cursor-pointer" />
-                                    <input type="text" value={config.primaryColor} onChange={e => handleChange('primaryColor', e.target.value)} className="ml-2 block w-full pl-3 pr-3 py-2 border-gray-300 rounded-md sm:text-sm" />
+                                    <input type="color" value={config.primaryColor || '#4F46E5'} onChange={e => handleChange('primaryColor', e.target.value)} className="h-10 w-10 border-0 p-0 rounded shadow-sm cursor-pointer" />
+                                    <input type="text" value={config.primaryColor || '#4F46E5'} onChange={e => handleChange('primaryColor', e.target.value)} className="ml-2 block w-full pl-3 pr-3 py-2 border-gray-300 rounded-md sm:text-sm" />
                                 </div>
                             </div>
                              <div>
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Background Color</label>
                                 <div className="flex items-center mt-1">
-                                    <input type="color" value={config.backgroundColor} onChange={e => handleChange('backgroundColor', e.target.value)} className="h-10 w-10 border-0 p-0 rounded shadow-sm cursor-pointer" />
-                                    <input type="text" value={config.backgroundColor} onChange={e => handleChange('backgroundColor', e.target.value)} className="ml-2 block w-full pl-3 pr-3 py-2 border-gray-300 rounded-md sm:text-sm" />
+                                    <input type="color" value={config.backgroundColor || '#F3F4F6'} onChange={e => handleChange('backgroundColor', e.target.value)} className="h-10 w-10 border-0 p-0 rounded shadow-sm cursor-pointer" />
+                                    <input type="text" value={config.backgroundColor || '#F3F4F6'} onChange={e => handleChange('backgroundColor', e.target.value)} className="ml-2 block w-full pl-3 pr-3 py-2 border-gray-300 rounded-md sm:text-sm" />
                                 </div>
                             </div>
                         </div>

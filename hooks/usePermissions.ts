@@ -55,6 +55,23 @@ const jobPostsPermissions: Record<Role, Permission[]> = {
   [Role.IT]: [], // None
 };
 
+// Application Pages RBAC matrix
+const applicationPagesPermissions: Record<Role, Permission[]> = {
+  [Role.Admin]: [Permission.Manage],
+  [Role.HRManager]: [Permission.Manage],
+  [Role.HRStaff]: [Permission.Manage],
+  [Role.BOD]: [Permission.View],
+  [Role.GeneralManager]: [Permission.View], // View BU/Departments (scope handled elsewhere)
+  [Role.OperationsDirector]: [Permission.View], // View BU only
+  [Role.BusinessUnitManager]: [Permission.View], // Own BU
+  [Role.Manager]: [Permission.View], // Own Team
+  [Role.Employee]: [Permission.View], // Own
+  [Role.FinanceStaff]: [], // None
+  [Role.Auditor]: [], // None
+  [Role.Recruiter]: [Permission.Manage],
+  [Role.IT]: [], // None
+};
+
 // Applicants RBAC matrix
 const applicantsPermissions: Record<Role, Permission[]> = {
   [Role.Admin]: [Permission.Manage],
@@ -768,6 +785,13 @@ export const usePermissions = () => {
         }
         if (resource === 'Offers') {
             const perms = offersPermissions[user.role];
+            if (!perms || perms.length === 0) return false;
+            if (perms.includes(Permission.Manage)) return true;
+            if (permission === Permission.View && perms.length > 0) return true;
+            return perms.includes(permission);
+        }
+        if (resource === 'ApplicationPages') {
+            const perms = applicationPagesPermissions[user.role];
             if (!perms || perms.length === 0) return false;
             if (perms.includes(Permission.Manage)) return true;
             if (permission === Permission.View && perms.length > 0) return true;
