@@ -64,6 +64,11 @@ const LeaveRequestTable: React.FC<LeaveRequestTableProps> = ({ requests, leaveTy
                                 <span
                                   className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full cursor-pointer ${getStatusColor(req.status)}`}
                                   title={rejectionNote || req.status}
+                                  onClick={() => {
+                                    if (isManagerView && req.status === LeaveRequestStatus.Pending) {
+                                        onSelectRequest(req);
+                                    }
+                                  }}
                                 >
                                     {req.status}
                                 </span>

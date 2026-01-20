@@ -99,6 +99,24 @@ const Leave: React.FC = () => {
 
     const { data, error } = await query;
     if (!error && data) {
+      const normalizeStatus = (status: string | null | undefined): LeaveRequestStatus => {
+        const key = (status || '').toString().trim().toLowerCase();
+        switch (key) {
+          case 'approved':
+            return LeaveRequestStatus.Approved;
+          case 'rejected':
+            return LeaveRequestStatus.Rejected;
+          case 'cancelled':
+          case 'canceled':
+            return LeaveRequestStatus.Cancelled;
+          case 'draft':
+            return LeaveRequestStatus.Draft;
+          case 'pending':
+          default:
+            return LeaveRequestStatus.Pending;
+        }
+      };
+
       setLeaveRequests(
         data.map(r => ({
           id: r.id,
@@ -111,7 +129,7 @@ const Leave: React.FC = () => {
           endTime: r.end_time || undefined,
           durationDays: Number(r.duration_days),
           reason: r.reason,
-          status: r.status as LeaveRequestStatus,
+          status: normalizeStatus(r.status),
           approverChain: (r.approver_chain || []) as any,
           historyLog: (r.history_log || []) as any,
           attachmentUrl: r.attachment_url || undefined,
@@ -264,6 +282,8 @@ const Leave: React.FC = () => {
       .eq('id', request.id);
 
     setToastInfo({ show: true, title: 'Success', message: `Request ${approved ? 'approved' : 'rejected'}.` });
+    setIsModalOpen(false);
+    setSelectedRequest(null);
     setIsRejectModalOpen(false);
     setRequestToReject(null);
     loadLeaveRequests();
