@@ -1,11 +1,11 @@
 
 import React from 'react';
 import { LeaveRequest, LeaveRequestStatus } from '../../types';
-import { mockLeaveTypes } from '../../services/mockData';
 import Button from '../ui/Button';
 
 interface LeaveRequestTableProps {
     requests: LeaveRequest[];
+    leaveTypes: { id: string; name: string }[];
     onSelectRequest: (request: LeaveRequest) => void;
     isManagerView?: boolean;
     onApprove?: (request: LeaveRequest) => void;
@@ -26,9 +26,9 @@ const getStatusColor = (status: LeaveRequestStatus) => {
 const CheckIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>;
 const XIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>;
 
-const LeaveRequestTable: React.FC<LeaveRequestTableProps> = ({ requests, onSelectRequest, isManagerView = false, onApprove, onReject }) => {
+const LeaveRequestTable: React.FC<LeaveRequestTableProps> = ({ requests, leaveTypes, onSelectRequest, isManagerView = false, onApprove, onReject }) => {
     
-    const getLeaveTypeName = (id: string) => mockLeaveTypes.find(lt => lt.id === id)?.name || 'Unknown';
+    const getLeaveTypeName = (id: string) => leaveTypes.find(lt => lt.id === id)?.name || 'Unknown';
     const getRejectionNote = (req: LeaveRequest) => {
         const history = req.historyLog || [];
         const rejected = history.filter(h => h.action === 'Rejected');

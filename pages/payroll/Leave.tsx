@@ -329,7 +329,7 @@ const Leave: React.FC = () => {
       {activeView === 'my_requests' && (
         <Card>
           <div className="p-2">
-            <LeaveRequestTable requests={myRequests} onSelectRequest={handleOpenModal} isManagerView={false} />
+            <LeaveRequestTable requests={myRequests} leaveTypes={leaveTypes} onSelectRequest={handleOpenModal} isManagerView={false} />
           </div>
         </Card>
       )}
@@ -339,6 +339,7 @@ const Leave: React.FC = () => {
           <div className="p-2">
             <LeaveRequestTable
               requests={teamRequests}
+              leaveTypes={leaveTypes}
               onSelectRequest={handleOpenModal}
               isManagerView={true}
               onApprove={handleQuickApprove}
