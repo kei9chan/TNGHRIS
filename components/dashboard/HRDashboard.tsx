@@ -230,7 +230,7 @@ const HRDashboard: React.FC = () => {
                 type: NotificationType.COE_UPDATE,
                 title: 'COE Request Approved',
                 message: `Your COE request for ${request.purpose.replace(/_/g, ' ')} has been approved.`,
-                link: '/my-profile', // Assuming documents are there
+                link: `/employees/coe/requests?requestId=${request.id}`,
                 isRead: false,
                 createdAt: new Date(),
                 relatedEntityId: request.id
@@ -266,7 +266,7 @@ const HRDashboard: React.FC = () => {
                 type: NotificationType.COE_UPDATE, 
                 title: 'COE Request Rejected',
                 message: `Your COE request was rejected. Reason: ${reason}`,
-                link: '/my-profile',
+                link: `/employees/coe/requests?requestId=${coeToReject.id}`,
                 isRead: false,
                 createdAt: new Date(),
                 relatedEntityId: coeToReject.id

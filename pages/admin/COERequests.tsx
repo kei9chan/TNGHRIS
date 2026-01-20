@@ -5,8 +5,11 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { COERequest, COERequestStatus, COETemplate, NotificationType, Permission } from '../../types';
+import { useLocation } from 'react-router-dom';
+import { COERequest, COERequestStatus, COETemplate, NotificationType, Permission, Role, User } from '../../types';
 import { mockCOERequests, mockCOETemplates, mockUsers, mockBusinessUnits, mockNotifications } from '../../services/mockData';
+import { approveCoeRequest, fetchActiveCoeTemplates, fetchCoeRequestById, fetchCoeRequests, rejectCoeRequest } from '../../services/coeService';
+import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import Card from '../../components/ui/Card';
@@ -20,12 +23,15 @@ import { logActivity } from '../../services/auditService';
 const COERequests: React.FC = () => {
     const { user } = useAuth();
     const { can, getAccessibleBusinessUnits } = usePermissions();
+    const location = useLocation();
     
     // Permission check to see if user can manage (Approve/Reject) or just view own
     const canManage = can('COE', Permission.Manage) || can('COE', Permission.Approve);
     const canRequest = can('COE', Permission.Create);
 
     const [requests, setRequests] = useState<COERequest[]>(mockCOERequests);
+    const [coeTemplates, setCoeTemplates] = useState<COETemplate[]>(mockCOETemplates);
+    const [templatesLoaded, setTemplatesLoaded] = useState(false);
     const [statusFilter, setStatusFilter] = useState<string>('all');
     const [searchTerm, setSearchTerm] = useState('');
     
@@ -34,19 +40,38 @@ const COERequests: React.FC = () => {
     const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
     const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
     const [printData, setPrintData] = useState<{ template: COETemplate, request: COERequest, employee: any } | null>(null);
+    const [autoOpenedRequestId, setAutoOpenedRequestId] = useState<string | null>(null);
 
     const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
     const accessibleBuIds = useMemo(() => new Set(accessibleBus.map(b => b.id)), [accessibleBus]);
 
-    // Sync with mock data
     useEffect(() => {
-        const interval = setInterval(() => {
-            if (JSON.stringify(mockCOERequests) !== JSON.stringify(requests)) {
+        let isMounted = true;
+
+        const loadCOEData = async () => {
+            try {
+                const [reqs, templates] = await Promise.all([
+                    fetchCoeRequests(),
+                    fetchActiveCoeTemplates()
+                ]);
+                if (!isMounted) return;
+                setRequests(reqs);
+                setCoeTemplates(templates);
+                setTemplatesLoaded(true);
+            } catch (error) {
+                if (!isMounted) return;
                 setRequests([...mockCOERequests]);
+                setCoeTemplates([...mockCOETemplates]);
+                setTemplatesLoaded(true);
             }
-        }, 1000);
-        return () => clearInterval(interval);
-    }, [requests]);
+        };
+
+        loadCOEData();
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
 
     const filteredRequests = useMemo(() => {
         return requests.filter(req => {
@@ -56,7 +81,7 @@ const COERequests: React.FC = () => {
                 if (req.employeeId !== user?.id) return false;
             } else {
                 // Admins/Managers see requests within their BU scope
-                if (!accessibleBuIds.has(req.businessUnitId)) return false;
+                if (req.employeeId !== user?.id && !accessibleBuIds.has(req.businessUnitId)) return false;
             }
 
             // 2. Status Filter
@@ -70,6 +95,131 @@ const COERequests: React.FC = () => {
             return statusMatch && searchMatch;
         }).sort((a, b) => new Date(b.dateRequested).getTime() - new Date(a.dateRequested).getTime());
     }, [requests, accessibleBuIds, statusFilter, searchTerm, canManage, user]);
+
+    const resolveEmployee = async (employeeId: string): Promise<User | null> => {
+        if (user?.id === employeeId) {
+            return user;
+        }
+
+        const local = mockUsers.find(u => u.id === employeeId);
+        if (local) {
+            return local;
+        }
+
+        const { data, error } = await supabase
+            .from('hris_users')
+            .select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position, date_hired')
+            .eq('id', employeeId)
+            .maybeSingle();
+
+        if (error || !data) {
+            return null;
+        }
+
+        const roleValue = Object.values(Role).includes(data.role as Role)
+            ? (data.role as Role)
+            : (user?.role || Role.Employee);
+
+        return {
+            id: data.id,
+            name: data.full_name || 'Unknown',
+            email: data.email || '',
+            role: roleValue,
+            department: data.department || '',
+            businessUnit: data.business_unit || '',
+            departmentId: data.department_id || undefined,
+            businessUnitId: data.business_unit_id || undefined,
+            status: data.status === 'Inactive' ? 'Inactive' : 'Active',
+            isPhotoEnrolled: false,
+            dateHired: data.date_hired ? new Date(data.date_hired) : new Date(),
+            position: data.position || '',
+            monthlySalary: undefined
+        };
+    };
+
+    const resolveTemplate = (businessUnitId: string): COETemplate | null => {
+        const activeTemplates = coeTemplates.filter(t => t.isActive);
+        const mockActiveTemplates = mockCOETemplates.filter(t => t.isActive);
+
+        return (
+            activeTemplates.find(t => t.businessUnitId === businessUnitId)
+            || mockActiveTemplates.find(t => t.businessUnitId === businessUnitId)
+            || activeTemplates[0]
+            || mockActiveTemplates[0]
+            || coeTemplates[0]
+            || mockCOETemplates[0]
+            || null
+        );
+    };
+
+    const requestId = useMemo(() => {
+        const params = new URLSearchParams(location.search);
+        return params.get('requestId');
+    }, [location.search]);
+
+    useEffect(() => {
+        if (!requestId || autoOpenedRequestId === requestId || !templatesLoaded) return;
+
+        const openPreview = async () => {
+            let target = requests.find(req => req.id === requestId) || null;
+            if (!target) {
+                const fresh = await fetchCoeRequestById(requestId);
+                if (fresh) {
+                    setRequests(prev => {
+                        const existingIndex = prev.findIndex(r => r.id === fresh.id);
+                        if (existingIndex >= 0) {
+                            const next = [...prev];
+                            next[existingIndex] = fresh;
+                            return next;
+                        }
+                        return [fresh, ...prev];
+                    });
+                    target = fresh;
+                } else {
+                    return;
+                }
+            }
+
+            const hasAccess = canManage
+                ? (target.employeeId === user?.id || accessibleBuIds.has(target.businessUnitId))
+                : target.employeeId === user?.id;
+
+            if (!hasAccess) {
+                alert('You do not have access to this COE request.');
+                setAutoOpenedRequestId(requestId);
+                return;
+            }
+
+            let isApproved = String(target.status).toLowerCase() === String(COERequestStatus.Approved).toLowerCase();
+            if (!isApproved) {
+                const fresh = await fetchCoeRequestById(requestId);
+                if (fresh) {
+                    setRequests(prev => prev.map(r => r.id === fresh.id ? fresh : r));
+                    target = fresh;
+                    isApproved = String(target.status).toLowerCase() === String(COERequestStatus.Approved).toLowerCase();
+                }
+            }
+            if (!isApproved) {
+                alert('This COE request is not approved yet.');
+                setAutoOpenedRequestId(requestId);
+                return;
+            }
+
+            const template = resolveTemplate(target.businessUnitId);
+
+            const employee = await resolveEmployee(target.employeeId);
+
+            if (template && employee) {
+                setPrintData({ template, request: target, employee });
+            } else {
+                alert('Cannot view document: Template or Employee data missing.');
+            }
+
+            setAutoOpenedRequestId(requestId);
+        };
+
+        void openPreview();
+    }, [requestId, autoOpenedRequestId, requests, canManage, accessibleBuIds, user, coeTemplates, templatesLoaded]);
 
     const getBuName = (id: string) => mockBusinessUnits.find(b => b.id === id)?.name || 'Unknown BU';
 
@@ -87,25 +237,21 @@ const COERequests: React.FC = () => {
         setRequests([...mockCOERequests]);
     };
 
-    const handleApprove = (request: COERequest) => {
+    const handleApprove = async (request: COERequest) => {
         if (!user) return;
 
-        const template = mockCOETemplates.find(t => t.businessUnitId === request.businessUnitId && t.isActive);
+        const template = coeTemplates.find(t => t.businessUnitId === request.businessUnitId && t.isActive)
+            || mockCOETemplates.find(t => t.businessUnitId === request.businessUnitId && t.isActive);
         if (!template) {
             alert(`No active COE Template found for ${getBuName(request.businessUnitId)}. Please create one in Employee > COE > Templates.`);
             return;
         }
 
-        const index = mockCOERequests.findIndex(r => r.id === request.id);
-        if (index > -1) {
-            mockCOERequests[index] = {
-                ...mockCOERequests[index],
-                status: COERequestStatus.Approved,
-                approvedBy: user.id,
-                approvedAt: new Date(),
-                generatedDocumentUrl: `generated_coe_${request.id}.pdf`
-            };
-            
+        const generatedUrl = `generated_coe_${request.id}.pdf`;
+        try {
+            const updated = await approveCoeRequest(request.id, user.id, generatedUrl);
+            setRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
+
             // Notify
             mockNotifications.unshift({
                 id: `notif-coe-app-${Date.now()}`,
@@ -113,18 +259,19 @@ const COERequests: React.FC = () => {
                 type: NotificationType.COE_UPDATE,
                 title: 'COE Request Approved',
                 message: `Your request for a Certificate of Employment has been approved.`,
-                link: '/employees/coe/requests', 
+                link: `/employees/coe/requests?requestId=${request.id}`,
                 isRead: false,
                 createdAt: new Date(),
                 relatedEntityId: request.id
             });
 
             logActivity(user, 'APPROVE', 'COERequest', request.id, `Approved COE for ${request.employeeName}`);
-            setRequests([...mockCOERequests]);
             
             // Auto-open print view
-            const employee = mockUsers.find(u => u.id === request.employeeId);
-            setPrintData({ template, request: mockCOERequests[index], employee });
+            const employee = mockUsers.find(u => u.id === request.employeeId) || user;
+            setPrintData({ template, request: updated, employee });
+        } catch (error: any) {
+            alert(error?.message || 'Failed to approve COE request.');
         }
     };
 
@@ -133,39 +280,37 @@ const COERequests: React.FC = () => {
         setIsRejectModalOpen(true);
     };
 
-    const handleConfirmReject = (reason: string) => {
+    const handleConfirmReject = async (reason: string) => {
         if (!user || !requestToReject) return;
-        
-        const index = mockCOERequests.findIndex(r => r.id === requestToReject.id);
-        if (index > -1) {
-            mockCOERequests[index] = {
-                ...mockCOERequests[index],
-                status: COERequestStatus.Rejected,
-                rejectionReason: reason
-            };
-             // Notify
-             mockNotifications.unshift({
+
+        try {
+            const updated = await rejectCoeRequest(requestToReject.id, user.id, reason);
+            setRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
+            // Notify
+            mockNotifications.unshift({
                 id: `notif-coe-rej-${Date.now()}`,
                 userId: requestToReject.employeeId,
                 type: NotificationType.COE_UPDATE,
                 title: 'COE Request Rejected',
                 message: `Your COE request was rejected: ${reason}`,
-                link: '/employees/coe/requests',
+                link: `/employees/coe/requests?requestId=${requestToReject.id}`,
                 isRead: false,
                 createdAt: new Date(),
                 relatedEntityId: requestToReject.id
             });
-            
+
             logActivity(user, 'REJECT', 'COERequest', requestToReject.id, `Rejected COE. Reason: ${reason}`);
-            setRequests([...mockCOERequests]);
+        } catch (error: any) {
+            alert(error?.message || 'Failed to reject COE request.');
         }
+
         setIsRejectModalOpen(false);
         setRequestToReject(null);
     };
 
-    const handleViewDocument = (request: COERequest) => {
-        const template = mockCOETemplates.find(t => t.businessUnitId === request.businessUnitId);
-        const employee = mockUsers.find(u => u.id === request.employeeId);
+    const handleViewDocument = async (request: COERequest) => {
+        const template = resolveTemplate(request.businessUnitId);
+        const employee = await resolveEmployee(request.employeeId);
         
         if (template && employee) {
             setPrintData({ template, request, employee });

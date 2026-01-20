@@ -724,7 +724,13 @@ const EmployeeDashboard: React.FC = () => {
                         details = { icon: <ArchiveBoxArrowDownIcon {...iconProps} />, title: item.title || "Asset Update", colorClass: "bg-orange-500", priority: 1 };
                         break;
                     case NotificationType.COE_UPDATE:
-                         details = { icon: <DocumentTextIcon {...iconProps} />, title: item.title || "COE Update", colorClass: "bg-blue-500", priority: 1 };
+                         details = { 
+                            icon: <DocumentTextIcon {...iconProps} />, 
+                            title: item.title || "COE Update", 
+                            colorClass: "bg-blue-500", 
+                            priority: 1,
+                            link: item.relatedEntityId ? `/employees/coe/requests?requestId=${item.relatedEntityId}` : (item.link || '/employees/coe/requests')
+                         };
                          break;
                     case NotificationType.ASSET_ASSIGNED:
                          // We handle this explicitly above, checking for dups

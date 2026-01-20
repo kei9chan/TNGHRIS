@@ -125,6 +125,20 @@ export const fetchCoeRequests = async (): Promise<COERequest[]> => {
   return (data as CoeRequestRow[]).map(mapCoeRequest);
 };
 
+export const fetchCoeRequestById = async (requestId: string): Promise<COERequest | null> => {
+  const { data, error } = await supabase
+    .from('coe_requests')
+    .select('*')
+    .eq('id', requestId)
+    .maybeSingle();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return mapCoeRequest(data as CoeRequestRow);
+};
+
 type CoeTemplateRow = {
   id: string;
   business_unit_id: string;
