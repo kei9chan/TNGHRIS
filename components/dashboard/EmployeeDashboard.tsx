@@ -30,7 +30,11 @@ import {
     PulseSurveyStatus,
     CoachingStatus,
     Envelope,
-    NTE
+    NTE,
+    LeaveRequestStatus,
+    WFHRequestStatus,
+    OTStatus,
+    ManpowerRequestStatus
 } from '../../types';
 import { 
     mockEmployeeDrafts, 
@@ -69,8 +73,9 @@ import Toast from '../ui/Toast';
 import QuickLinks from './QuickLinks';
 import RequestCOEModal from '../employees/RequestCOEModal';
 import { logActivity } from '../../services/auditService';
-import { createCoeRequest } from '../../services/coeService';
+import { createCoeRequest, fetchCoeRequestById, fetchCoeRequests } from '../../services/coeService';
 import { usePermissions } from '../../hooks/usePermissions';
+import { supabase } from '../../services/supabaseClient';
 
 
 // --- ICONS ---
@@ -198,6 +203,15 @@ const EmployeeDashboard: React.FC = () => {
     const [envelopes, setEnvelopes] = useState<Envelope[]>(mockEnvelopes);
     const [ntes, setNTEs] = useState<NTE[]>(mockNTEs);
     const [evaluationSubmissions, setEvaluationSubmissions] = useState(mockEvaluationSubmissions);
+    const [coeDecisions, setCoeDecisions] = useState<Array<{ id: string; status: COERequest['status']; date: Date }>>([]);
+    const [approvedLeaveRequests, setApprovedLeaveRequests] = useState<Array<{ id: string; startDate: Date; endDate: Date }>>([]);
+    const [approvedWfhRequests, setApprovedWfhRequests] = useState<Array<{ id: string; date: Date }>>([]);
+    const [approvedOtRequests, setApprovedOtRequests] = useState<Array<{ id: string; date: Date }>>([]);
+    const [approvedManpowerRequests, setApprovedManpowerRequests] = useState<Array<{ id: string; date: Date }>>([]);
+    const [rejectedLeaveRequests, setRejectedLeaveRequests] = useState<Array<{ id: string; startDate: Date; endDate: Date; reason: string }>>([]);
+    const [rejectedWfhRequests, setRejectedWfhRequests] = useState<Array<{ id: string; date: Date; reason: string }>>([]);
+    const [rejectedOtRequests, setRejectedOtRequests] = useState<Array<{ id: string; date: Date; reason: string }>>([]);
+    const [rejectedManpowerRequests, setRejectedManpowerRequests] = useState<Array<{ id: string; date: Date; reason: string }>>([]);
 
     useEffect(() => {
         if (location.state?.openRequestCOE) {
@@ -262,6 +276,170 @@ const EmployeeDashboard: React.FC = () => {
         }, 1000);
         return () => clearInterval(interval);
     }, []);
+
+    useEffect(() => {
+        if (!user?.id) return;
+
+        let isMounted = true;
+        const loadApproved = async () => {
+            const [leaveRes, wfhRes, otRes, manpowerRes] = await Promise.all([
+                supabase
+                    .from('leave_requests')
+                    .select('id, start_date, end_date, status, history_log')
+                    .eq('employee_id', user.id)
+                    .in('status', [LeaveRequestStatus.Approved, LeaveRequestStatus.Rejected])
+                    .order('start_date', { ascending: false }),
+                supabase
+                    .from('wfh_requests')
+                    .select('id, date, status, rejection_reason')
+                    .eq('employee_id', user.id)
+                    .in('status', [WFHRequestStatus.Approved, WFHRequestStatus.Rejected])
+                    .order('date', { ascending: false }),
+                supabase
+                    .from('ot_requests')
+                    .select('id, date, status, manager_note')
+                    .eq('employee_id', user.id)
+                    .in('status', [OTStatus.Approved, OTStatus.Rejected])
+                    .order('date', { ascending: false }),
+                supabase
+                    .from('manpower_requests')
+                    .select('id, date_needed, status, rejection_reason')
+                    .eq('requester_id', user.id)
+                    .in('status', [ManpowerRequestStatus.Approved, ManpowerRequestStatus.Rejected])
+                    .order('date_needed', { ascending: false }),
+            ]);
+
+            if (!isMounted) return;
+
+            setApprovedLeaveRequests(
+                !leaveRes.error && leaveRes.data
+                    ? leaveRes.data
+                        .filter((row: any) => row.status === LeaveRequestStatus.Approved)
+                        .map((row: any) => ({
+                        id: row.id,
+                        startDate: new Date(row.start_date),
+                        endDate: new Date(row.end_date),
+                    }))
+                    : []
+            );
+            setRejectedLeaveRequests(
+                !leaveRes.error && leaveRes.data
+                    ? leaveRes.data
+                        .filter((row: any) => row.status === LeaveRequestStatus.Rejected)
+                        .map((row: any) => ({
+                            id: row.id,
+                            startDate: new Date(row.start_date),
+                            endDate: new Date(row.end_date),
+                            reason: (() => {
+                                const history = Array.isArray(row.history_log) ? row.history_log : [];
+                                const rejected = history.filter((h: any) => h.action === 'Rejected');
+                                const latest = rejected.length > 0 ? rejected[rejected.length - 1] : history[history.length - 1];
+                                return latest?.details || 'Rejected';
+                            })(),
+                        }))
+                    : []
+            );
+            setApprovedWfhRequests(
+                !wfhRes.error && wfhRes.data
+                    ? wfhRes.data
+                        .filter((row: any) => row.status === WFHRequestStatus.Approved)
+                        .map((row: any) => ({
+                        id: row.id,
+                        date: new Date(row.date),
+                    }))
+                    : []
+            );
+            setRejectedWfhRequests(
+                !wfhRes.error && wfhRes.data
+                    ? wfhRes.data
+                        .filter((row: any) => row.status === WFHRequestStatus.Rejected)
+                        .map((row: any) => ({
+                            id: row.id,
+                            date: new Date(row.date),
+                            reason: row.rejection_reason || 'Rejected',
+                        }))
+                    : []
+            );
+            setApprovedOtRequests(
+                !otRes.error && otRes.data
+                    ? otRes.data
+                        .filter((row: any) => row.status === OTStatus.Approved)
+                        .map((row: any) => ({
+                        id: row.id,
+                        date: new Date(row.date),
+                    }))
+                    : []
+            );
+            setRejectedOtRequests(
+                !otRes.error && otRes.data
+                    ? otRes.data
+                        .filter((row: any) => row.status === OTStatus.Rejected)
+                        .map((row: any) => ({
+                            id: row.id,
+                            date: new Date(row.date),
+                            reason: row.manager_note || 'Rejected',
+                        }))
+                    : []
+            );
+            setApprovedManpowerRequests(
+                !manpowerRes.error && manpowerRes.data
+                    ? manpowerRes.data
+                        .filter((row: any) => row.status === ManpowerRequestStatus.Approved)
+                        .map((row: any) => ({
+                        id: row.id,
+                        date: row.date_needed ? new Date(row.date_needed) : new Date(),
+                    }))
+                    : []
+            );
+            setRejectedManpowerRequests(
+                !manpowerRes.error && manpowerRes.data
+                    ? manpowerRes.data
+                        .filter((row: any) => row.status === ManpowerRequestStatus.Rejected)
+                        .map((row: any) => ({
+                            id: row.id,
+                            date: row.date_needed ? new Date(row.date_needed) : new Date(),
+                            reason: row.rejection_reason || 'Rejected',
+                        }))
+                    : []
+            );
+        };
+
+        loadApproved();
+        const interval = setInterval(loadApproved, 15000);
+        return () => {
+            isMounted = false;
+            clearInterval(interval);
+        };
+    }, [user?.id]);
+
+    useEffect(() => {
+        if (!user?.id) return;
+        let isMounted = true;
+
+        const loadCoeDecisions = async () => {
+            try {
+                const requests = await fetchCoeRequests();
+                if (!isMounted) return;
+                const myDecisions = requests
+                    .filter(r => r.employeeId === user.id && (r.status === 'Approved' || r.status === 'Rejected'))
+                    .map(r => ({
+                        id: r.id,
+                        status: r.status,
+                        date: r.approvedAt || r.dateRequested,
+                    }));
+                setCoeDecisions(myDecisions);
+            } catch {
+                setCoeDecisions([]);
+            }
+        };
+
+        loadCoeDecisions();
+        const interval = setInterval(loadCoeDecisions, 15000);
+        return () => {
+            isMounted = false;
+            clearInterval(interval);
+        };
+    }, [user?.id]);
 
 
     const handleViewMemo = (memo: Memo) => {
@@ -366,6 +544,124 @@ const EmployeeDashboard: React.FC = () => {
                 state: { openSessionId: session.id },
                 colorClass: 'bg-purple-500',
                 priority: 0 // Top priority
+            });
+        });
+
+        approvedLeaveRequests.forEach(req => {
+            items.push({
+                id: `leave-approved-${req.id}`,
+                icon: <SunIcon {...iconProps} />,
+                title: "Leave Approved",
+                subtitle: `${new Date(req.startDate).toLocaleDateString()} - ${new Date(req.endDate).toLocaleDateString()}`,
+                date: new Date(req.startDate).toLocaleDateString(),
+                link: '/payroll/leave',
+                colorClass: 'bg-green-500',
+                priority: 3
+            });
+        });
+
+        approvedWfhRequests.forEach(req => {
+            items.push({
+                id: `wfh-approved-${req.id}`,
+                icon: <CalendarDaysIcon {...iconProps} />,
+                title: "WFH Approved",
+                subtitle: new Date(req.date).toLocaleDateString(),
+                date: new Date(req.date).toLocaleDateString(),
+                link: '/payroll/wfh-requests',
+                colorClass: 'bg-green-500',
+                priority: 3
+            });
+        });
+
+        approvedOtRequests.forEach(req => {
+            items.push({
+                id: `ot-approved-${req.id}`,
+                icon: <ClipboardCheckIcon {...iconProps} />,
+                title: "Overtime Approved",
+                subtitle: new Date(req.date).toLocaleDateString(),
+                date: new Date(req.date).toLocaleDateString(),
+                link: '/payroll/overtime-requests',
+                colorClass: 'bg-green-500',
+                priority: 3
+            });
+        });
+
+        approvedManpowerRequests.forEach(req => {
+            items.push({
+                id: `oncall-approved-${req.id}`,
+                icon: <UserCircleIcon {...iconProps} />,
+                title: "On-Call Approved",
+                subtitle: new Date(req.date).toLocaleDateString(),
+                date: new Date(req.date).toLocaleDateString(),
+                link: '/payroll/manpower-planning',
+                colorClass: 'bg-green-500',
+                priority: 3
+            });
+        });
+
+        coeDecisions.forEach(req => {
+            const approved = req.status === 'Approved';
+            items.push({
+                id: `coe-${approved ? 'approved' : 'rejected'}-${req.id}`,
+                icon: <DocumentTextIcon {...iconProps} />,
+                title: `COE ${approved ? 'Approved' : 'Rejected'}`,
+                subtitle: `Request ${req.id}`,
+                date: new Date(req.date).toLocaleDateString(),
+                link: `/employees/coe/requests?requestId=${req.id}`,
+                colorClass: approved ? 'bg-green-500' : 'bg-red-500',
+                priority: approved ? 3 : 2
+            });
+        });
+
+        rejectedLeaveRequests.forEach(req => {
+            items.push({
+                id: `leave-rejected-${req.id}`,
+                icon: <SunIcon {...iconProps} />,
+                title: "Leave Rejected",
+                subtitle: `${new Date(req.startDate).toLocaleDateString()} - ${new Date(req.endDate).toLocaleDateString()} • ${req.reason}`,
+                date: new Date(req.startDate).toLocaleDateString(),
+                link: '/payroll/leave',
+                colorClass: 'bg-red-500',
+                priority: 2
+            });
+        });
+
+        rejectedWfhRequests.forEach(req => {
+            items.push({
+                id: `wfh-rejected-${req.id}`,
+                icon: <CalendarDaysIcon {...iconProps} />,
+                title: "WFH Rejected",
+                subtitle: `${new Date(req.date).toLocaleDateString()} • ${req.reason}`,
+                date: new Date(req.date).toLocaleDateString(),
+                link: '/payroll/wfh-requests',
+                colorClass: 'bg-red-500',
+                priority: 2
+            });
+        });
+
+        rejectedOtRequests.forEach(req => {
+            items.push({
+                id: `ot-rejected-${req.id}`,
+                icon: <ClipboardCheckIcon {...iconProps} />,
+                title: "Overtime Rejected",
+                subtitle: `${new Date(req.date).toLocaleDateString()} • ${req.reason}`,
+                date: new Date(req.date).toLocaleDateString(),
+                link: '/payroll/overtime-requests',
+                colorClass: 'bg-red-500',
+                priority: 2
+            });
+        });
+
+        rejectedManpowerRequests.forEach(req => {
+            items.push({
+                id: `oncall-rejected-${req.id}`,
+                icon: <UserCircleIcon {...iconProps} />,
+                title: "On-Call Rejected",
+                subtitle: `${new Date(req.date).toLocaleDateString()} • ${req.reason}`,
+                date: new Date(req.date).toLocaleDateString(),
+                link: '/payroll/manpower-planning',
+                colorClass: 'bg-red-500',
+                priority: 2
             });
         });
 
@@ -772,7 +1068,7 @@ const EmployeeDashboard: React.FC = () => {
 
         return items.sort((a,b) => (a.priority ?? 99) - (b.priority ?? 99) || new Date(b.date).getTime() - new Date(a.date).getTime());
 
-    }, [user, refreshKey, memoUpdateKey, requests, assignments, checklists, templates, isUserEligibleEvaluator, benefitRequests, pulseSurveys, surveyResponses, coachingSessions, envelopes, ntes, evaluationSubmissions]);
+    }, [user, refreshKey, memoUpdateKey, requests, assignments, checklists, templates, isUserEligibleEvaluator, benefitRequests, pulseSurveys, surveyResponses, coachingSessions, envelopes, ntes, evaluationSubmissions, approvedLeaveRequests, approvedWfhRequests, approvedOtRequests, approvedManpowerRequests, rejectedLeaveRequests, rejectedWfhRequests, rejectedOtRequests, rejectedManpowerRequests, coeDecisions]);
 
     // Add AcademicCapIcon definition if missing since we used it for evaluation items
     const AcademicCapIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.26 10.147a60.436 60.436 0 0 0-.491 6.347A48.627 48.627 0 0 1 12 20.904a48.627 48.627 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.57 50.57 0 0 0-2.658-.813A59.905 59.905 0 0 1 12 3.493a59.902 59.902 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5" /></svg>);

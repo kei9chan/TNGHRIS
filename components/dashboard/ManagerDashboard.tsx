@@ -3,8 +3,8 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Card from '../ui/Card';
-import { mockOtRequests, mockAttendanceExceptions, mockResolutions, mockPANs, mockJobRequisitions, mockEvaluations, mockNotifications, mockEvaluationSubmissions, mockTickets, mockEmployeeAwards, mockUsers, mockOnboardingChecklists, mockAssetRequests, mockIncidentReports, mockNTEs, mockAssetAssignments, mockManpowerRequests, mockOnboardingTemplates, mockEnvelopes, mockBenefitRequests, mockCoachingSessions } from '../../services/mockData';
-import { OTStatus, Role, ResolutionStatus, ApproverStatus, PANStatus, PANStepStatus, JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, NotificationType, TicketStatus, OnboardingTaskStatus, PANActionTaken, AssetRequest, AssetRequestStatus, NTEStatus, PAN, Resolution, NTE, JobRequisition, OTRequest, AttendanceExceptionRecord, EmployeeAward, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, Envelope, EnvelopeStatus, RoutingStepStatus, BenefitRequest, BenefitRequestStatus, CoachingStatus, COETemplate, User } from '../../types';
+import { mockOtRequests, mockAttendanceExceptions, mockResolutions, mockPANs, mockJobRequisitions, mockEvaluations, mockNotifications, mockEvaluationSubmissions, mockTickets, mockEmployeeAwards, mockUsers, mockOnboardingChecklists, mockAssetRequests, mockIncidentReports, mockNTEs, mockAssetAssignments, mockManpowerRequests, mockOnboardingTemplates, mockEnvelopes, mockBenefitRequests, mockCoachingSessions, mockShiftAssignments, mockShiftTemplates, mockAttendanceRecords } from '../../services/mockData';
+import { OTStatus, Role, ResolutionStatus, ApproverStatus, PANStatus, PANStepStatus, JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, NotificationType, TicketStatus, OnboardingTaskStatus, PANActionTaken, AssetRequest, AssetRequestStatus, NTEStatus, PAN, Resolution, NTE, JobRequisition, OTRequest, AttendanceExceptionRecord, EmployeeAward, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, Envelope, EnvelopeStatus, RoutingStepStatus, BenefitRequest, BenefitRequestStatus, CoachingStatus, COETemplate, User, LeaveRequest, LeaveRequestStatus, WFHRequest, WFHRequestStatus, AttendanceRecord, ShiftAssignment, ShiftTemplate } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useAuth } from '../../hooks/useAuth';
 import ActionItemCard from './ActionItemCard';
@@ -14,12 +14,16 @@ import QuickLinks from './QuickLinks';
 import Button from '../ui/Button';
 import ManpowerRequestModal from '../payroll/ManpowerRequestModal';
 import ManpowerReviewModal from '../payroll/ManpowerReviewModal';
+import LeaveRequestModal from '../payroll/LeaveRequestModal';
+import WFHReviewModal from '../payroll/WFHReviewModal';
+import OTRequestModal from '../payroll/OTRequestModal';
 import RequestCOEModal from '../employees/RequestCOEModal';
 import PrintableCOE from '../admin/PrintableCOE';
 import { logActivity } from '../../services/auditService';
 import { approveCoeRequest, createCoeRequest, fetchCoeRequests, rejectCoeRequest, fetchActiveCoeTemplates } from '../../services/coeService';
 import { supabase } from '../../services/supabaseClient';
 import COEQueue from './COEQueue';
+import { approveRejectOtRequest } from '../../services/otService';
 
 const InboxIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" /></svg>;
 const ClipboardListIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>;
@@ -81,11 +85,23 @@ const ManagerDashboard: React.FC = () => {
     const [coeTemplates, setCoeTemplates] = useState<COETemplate[]>([]);
     const [coeToPrint, setCoeToPrint] = useState<{ template: COETemplate, request: COERequest, employee: User } | null>(null);
     const [isLoadingCoe, setIsLoadingCoe] = useState(false);
+    const [reporteeIds, setReporteeIds] = useState<string[]>([]);
+    const [leaveTypes, setLeaveTypes] = useState<{ id: string; name: string }[]>([]);
+    const [pendingLeaveApprovals, setPendingLeaveApprovals] = useState<LeaveRequest[]>([]);
+    const [pendingWfhApprovals, setPendingWfhApprovals] = useState<WFHRequest[]>([]);
+    const [pendingOtApprovals, setPendingOtApprovals] = useState<OTRequest[]>([]);
+    const [pendingManpowerApprovals, setPendingManpowerApprovals] = useState<ManpowerRequest[]>([]);
 
 
     const [isManpowerModalOpen, setIsManpowerModalOpen] = useState(false);
     const [isManpowerReviewModalOpen, setIsManpowerReviewModalOpen] = useState(false);
     const [selectedManpowerRequest, setSelectedManpowerRequest] = useState<ManpowerRequest | null>(null);
+    const [isLeaveReviewModalOpen, setIsLeaveReviewModalOpen] = useState(false);
+    const [selectedLeaveRequest, setSelectedLeaveRequest] = useState<LeaveRequest | null>(null);
+    const [isWFHReviewModalOpen, setIsWFHReviewModalOpen] = useState(false);
+    const [selectedWFHRequest, setSelectedWFHRequest] = useState<WFHRequest | null>(null);
+    const [isOTReviewModalOpen, setIsOTReviewModalOpen] = useState(false);
+    const [selectedOTRequest, setSelectedOTRequest] = useState<OTRequest | null>(null);
 
     const [isRequestCOEModalOpen, setIsRequestCOEModalOpen] = useState(false);
     const coeAccess = getCoeAccess();
@@ -121,6 +137,183 @@ const ManagerDashboard: React.FC = () => {
         };
         loadCoe();
     }, []);
+
+    useEffect(() => {
+        const loadReportees = async () => {
+            if (!user?.id) {
+                setReporteeIds([]);
+                return;
+            }
+            const { data, error } = await supabase
+                .from('hris_users')
+                .select('id')
+                .eq('reports_to', user.id);
+            if (error || !data) {
+                setReporteeIds([]);
+                return;
+            }
+            setReporteeIds(data.map((row: any) => row.id).filter(Boolean));
+        };
+        loadReportees();
+    }, [user?.id]);
+
+    useEffect(() => {
+        const loadLeaveTypes = async () => {
+            const { data, error } = await supabase
+                .from('leave_types')
+                .select('id, name')
+                .order('name');
+            if (!error && data) {
+                setLeaveTypes(data.map((row: any) => ({ id: row.id, name: row.name })));
+            } else {
+                setLeaveTypes([]);
+            }
+        };
+        loadLeaveTypes();
+    }, []);
+
+    useEffect(() => {
+        const normalizeLeaveStatus = (status: string | null | undefined): LeaveRequestStatus => {
+            const key = (status || '').toString().trim().toLowerCase();
+            switch (key) {
+                case 'approved':
+                    return LeaveRequestStatus.Approved;
+                case 'rejected':
+                    return LeaveRequestStatus.Rejected;
+                case 'cancelled':
+                case 'canceled':
+                    return LeaveRequestStatus.Cancelled;
+                case 'draft':
+                    return LeaveRequestStatus.Draft;
+                case 'pending':
+                default:
+                    return LeaveRequestStatus.Pending;
+            }
+        };
+
+        const loadPendingApprovals = async () => {
+            if (!user?.id || reporteeIds.length === 0) {
+                setPendingLeaveApprovals([]);
+                setPendingWfhApprovals([]);
+                setPendingOtApprovals([]);
+                setPendingManpowerApprovals([]);
+                return;
+            }
+
+            const [leaveRes, wfhRes, otRes, manpowerRes] = await Promise.all([
+                supabase
+                    .from('leave_requests')
+                    .select('id, employee_id, employee_name, leave_type_id, start_date, end_date, start_time, end_time, duration_days, reason, status, history_log, attachment_url, approver_id, business_unit_id, department_id')
+                    .in('employee_id', reporteeIds),
+                supabase
+                    .from('wfh_requests')
+                    .select('id, employee_id, employee_name, date, reason, status, report_link, approved_by, approved_at, rejection_reason, created_at')
+                    .in('employee_id', reporteeIds),
+                supabase
+                    .from('ot_requests')
+                    .select('id, employee_id, employee_name, date, start_time, end_time, reason, status, submitted_at, approved_hours, manager_note, history_log, attachment_url')
+                    .in('employee_id', reporteeIds)
+                    .eq('status', OTStatus.Submitted),
+                supabase
+                    .from('manpower_requests')
+                    .select('id, business_unit_id, business_unit_name, department_id, requester_id, requester_name, date_needed, forecasted_pax, general_note, items, grand_total, status, created_at, approved_by, approved_at, rejection_reason')
+                    .in('requester_id', reporteeIds)
+                    .eq('status', ManpowerRequestStatus.Pending),
+            ]);
+
+            if (!leaveRes.error && leaveRes.data) {
+                const mapped = leaveRes.data.map((row: any) => ({
+                        id: row.id,
+                        employeeId: row.employee_id,
+                        employeeName: row.employee_name,
+                        leaveTypeId: row.leave_type_id,
+                        startDate: new Date(row.start_date),
+                        endDate: new Date(row.end_date),
+                        startTime: row.start_time || undefined,
+                        endTime: row.end_time || undefined,
+                        durationDays: Number(row.duration_days),
+                        reason: row.reason,
+                        status: normalizeLeaveStatus(row.status),
+                        historyLog: row.history_log || [],
+                        attachmentUrl: row.attachment_url || undefined,
+                        approverId: row.approver_id || undefined,
+                        businessUnitId: row.business_unit_id || undefined,
+                        departmentId: row.department_id || undefined,
+                    }));
+                setPendingLeaveApprovals(mapped.filter(r => r.status === LeaveRequestStatus.Pending));
+            } else {
+                setPendingLeaveApprovals([]);
+            }
+
+            if (!wfhRes.error && wfhRes.data) {
+                const mapped = wfhRes.data.map((row: any) => ({
+                        id: row.id,
+                        employeeId: row.employee_id,
+                        employeeName: row.employee_name,
+                        date: row.date ? new Date(row.date) : new Date(),
+                        reason: row.reason,
+                        status: row.status as WFHRequestStatus,
+                        reportLink: row.report_link || undefined,
+                        approvedBy: row.approved_by || undefined,
+                        approvedAt: row.approved_at ? new Date(row.approved_at) : undefined,
+                        rejectionReason: row.rejection_reason || undefined,
+                        createdAt: row.created_at ? new Date(row.created_at) : new Date(),
+                    }));
+                setPendingWfhApprovals(mapped.filter(r => r.status === WFHRequestStatus.Pending));
+            } else {
+                setPendingWfhApprovals([]);
+            }
+
+            if (!otRes.error && otRes.data) {
+                setPendingOtApprovals(
+                    otRes.data.map((row: any) => ({
+                        id: row.id,
+                        employeeId: row.employee_id,
+                        employeeName: row.employee_name,
+                        date: row.date ? new Date(row.date) : new Date(),
+                        startTime: row.start_time,
+                        endTime: row.end_time,
+                        reason: row.reason,
+                        status: row.status as OTStatus,
+                        submittedAt: row.submitted_at ? new Date(row.submitted_at) : undefined,
+                        approvedHours: row.approved_hours ?? undefined,
+                        managerNote: row.manager_note ?? undefined,
+                        historyLog: row.history_log || [],
+                        attachmentUrl: row.attachment_url ?? undefined,
+                    }))
+                );
+            } else {
+                setPendingOtApprovals([]);
+            }
+
+            if (!manpowerRes.error && manpowerRes.data) {
+                setPendingManpowerApprovals(
+                    manpowerRes.data.map((row: any) => ({
+                        id: row.id,
+                        businessUnitId: row.business_unit_id || '',
+                        departmentId: row.department_id || undefined,
+                        businessUnitName: row.business_unit_name || 'Unknown BU',
+                        requestedBy: row.requester_id,
+                        requesterName: row.requester_name,
+                        date: row.date_needed ? new Date(row.date_needed) : new Date(),
+                        forecastedPax: row.forecasted_pax || 0,
+                        generalNote: row.general_note || '',
+                        items: Array.isArray(row.items) ? row.items : (row.items ? JSON.parse(row.items) : []),
+                        grandTotal: row.grand_total || 0,
+                        status: row.status as ManpowerRequestStatus,
+                        createdAt: row.created_at ? new Date(row.created_at) : new Date(),
+                        approvedBy: row.approved_by || undefined,
+                        approvedAt: row.approved_at ? new Date(row.approved_at) : undefined,
+                        rejectionReason: row.rejection_reason || undefined,
+                    }))
+                );
+            } else {
+                setPendingManpowerApprovals([]);
+            }
+        };
+
+        loadPendingApprovals();
+    }, [user?.id, reporteeIds]);
 
     // Robust polling interval to sync local state with global mock data
     useEffect(() => {
@@ -262,31 +455,51 @@ const ManagerDashboard: React.FC = () => {
         }
     };
 
-    const handleApproveManpower = (requestId: string) => {
+    const handleApproveManpower = async (requestId: string) => {
+        if (!user) return;
+        const { error } = await supabase
+            .from('manpower_requests')
+            .update({ status: ManpowerRequestStatus.Approved, approved_by: user.id, approved_at: new Date().toISOString() })
+            .eq('id', requestId);
+
+        if (error) {
+            alert("Error approving request.");
+            return;
+        }
+
         const index = mockManpowerRequests.findIndex(r => r.id === requestId);
         if (index > -1) {
             mockManpowerRequests[index].status = ManpowerRequestStatus.Approved;
-            mockManpowerRequests[index].approvedBy = user?.id;
+            mockManpowerRequests[index].approvedBy = user.id;
             mockManpowerRequests[index].approvedAt = new Date();
             setManpowerRequests([...mockManpowerRequests]);
-            setIsManpowerReviewModalOpen(false);
-            alert("Manpower Request Approved.");
-        } else {
-             alert("Error: Request not found.");
         }
+        setPendingManpowerApprovals(prev => prev.filter(r => r.id !== requestId));
+        setIsManpowerReviewModalOpen(false);
+        alert("Manpower Request Approved.");
     };
+    
+    const handleRejectManpower = async (requestId: string, reason: string) => {
+        if (!user) return;
+        const { error } = await supabase
+            .from('manpower_requests')
+            .update({ status: ManpowerRequestStatus.Rejected, rejection_reason: reason })
+            .eq('id', requestId);
 
-    const handleRejectManpower = (requestId: string, reason: string) => {
+        if (error) {
+            alert("Error rejecting request.");
+            return;
+        }
+
         const index = mockManpowerRequests.findIndex(r => r.id === requestId);
         if (index > -1) {
             mockManpowerRequests[index].status = ManpowerRequestStatus.Rejected;
             mockManpowerRequests[index].rejectionReason = reason;
             setManpowerRequests([...mockManpowerRequests]);
-            setIsManpowerReviewModalOpen(false);
-            alert("Manpower Request Rejected.");
-        } else {
-             alert("Error: Request not found.");
         }
+        setPendingManpowerApprovals(prev => prev.filter(r => r.id !== requestId));
+        setIsManpowerReviewModalOpen(false);
+        alert("Manpower Request Rejected.");
     };
 
     const openReviewModal = (req: ManpowerRequest) => {
@@ -294,6 +507,102 @@ const ManagerDashboard: React.FC = () => {
         setIsManpowerReviewModalOpen(true);
     };
 
+    const openLeaveReviewModal = (req: LeaveRequest) => {
+        setSelectedLeaveRequest(req);
+        setIsLeaveReviewModalOpen(true);
+    };
+
+    const openWFHReviewModal = (req: WFHRequest) => {
+        setSelectedWFHRequest(req);
+        setIsWFHReviewModalOpen(true);
+    };
+
+    const openOTReviewModal = (req: OTRequest) => {
+        setSelectedOTRequest(req);
+        setIsOTReviewModalOpen(true);
+    };
+
+    const handleLeaveApproval = async (request: LeaveRequest, approved: boolean, notes: string) => {
+        if (!user) return;
+        const historyEntry = {
+            userId: user.id,
+            userName: user.name,
+            timestamp: new Date().toISOString(),
+            action: approved ? 'Approved' : 'Rejected',
+            details: notes ? `Manager notes: ${notes}` : undefined,
+        };
+        const newStatus = approved ? LeaveRequestStatus.Approved : LeaveRequestStatus.Rejected;
+
+        const { error } = await supabase
+            .from('leave_requests')
+            .update({
+                status: newStatus,
+                approver_id: user.id,
+                history_log: [...(request.historyLog || []), historyEntry],
+            })
+            .eq('id', request.id);
+
+        if (error) {
+            alert(error.message || 'Failed to update leave request.');
+            return;
+        }
+
+        setPendingLeaveApprovals(prev => prev.filter(r => r.id !== request.id));
+        setIsLeaveReviewModalOpen(false);
+        setSelectedLeaveRequest(null);
+    };
+
+    const handleApproveWFH = async (requestId: string) => {
+        if (!user) return;
+        const { error } = await supabase
+            .from('wfh_requests')
+            .update({ status: WFHRequestStatus.Approved, approved_by: user.id, approved_at: new Date().toISOString() })
+            .eq('id', requestId);
+
+        if (error) {
+            alert(error.message || 'Failed to approve WFH request.');
+            return;
+        }
+
+        setPendingWfhApprovals(prev => prev.filter(r => r.id !== requestId));
+        setIsWFHReviewModalOpen(false);
+        setSelectedWFHRequest(null);
+    };
+
+    const handleRejectWFH = async (requestId: string, reason: string) => {
+        if (!user) return;
+        const { error } = await supabase
+            .from('wfh_requests')
+            .update({ status: WFHRequestStatus.Rejected, rejection_reason: reason })
+            .eq('id', requestId);
+
+        if (error) {
+            alert(error.message || 'Failed to reject WFH request.');
+            return;
+        }
+
+        setPendingWfhApprovals(prev => prev.filter(r => r.id !== requestId));
+        setIsWFHReviewModalOpen(false);
+        setSelectedWFHRequest(null);
+    };
+
+    const handleApproveRejectOT = async (
+        request: Partial<OTRequest>,
+        newStatus: OTStatus.Approved | OTStatus.Rejected,
+        details: { approvedHours?: number; managerNote?: string }
+    ) => {
+        if (!request.id) return;
+        try {
+            await approveRejectOtRequest(request.id, newStatus, details);
+            setPendingOtApprovals(prev => prev.filter(r => r.id !== request.id));
+            setIsOTReviewModalOpen(false);
+            setSelectedOTRequest(null);
+        } catch (error: any) {
+            alert(error?.message || 'Failed to update OT request.');
+        }
+    };
+
+    const approvalIconProps = { className: "h-6 w-6 text-white" };
 
     const actionItems = useMemo(() => {
         if (!user) return [];
@@ -633,6 +942,68 @@ const ManagerDashboard: React.FC = () => {
         return items.sort((a,b) => (a.priority ?? 99) - (b.priority ?? 99) || new Date(b.date).getTime() - new Date(a.date).getTime());
     }, [user, requests, assignments, checklists, templates, pans, otRequests, exceptions, requisitions, resolutions, ntes, awards, manpowerRequests, isApprover, isBusinessUnitManager, subordinateIds, envelopes, benefitRequests, coachingSessions, evaluationSubmissions, isUserEligibleEvaluator, visibleEmployeeIds]);
 
+    const teamApprovalItems = useMemo(() => {
+        const items: Array<{
+            id: string;
+            icon: React.ReactNode;
+            title: string;
+            subtitle: string;
+            date: string;
+            colorClass: string;
+            onClick: () => void;
+        }> = [];
+
+        pendingLeaveApprovals.forEach(req => {
+            items.push({
+                id: `leave-${req.id}`,
+                icon: <SunIcon {...approvalIconProps} />,
+                title: 'Leave Request Approval',
+                subtitle: `${req.employeeName} • ${new Date(req.startDate).toLocaleDateString()} - ${new Date(req.endDate).toLocaleDateString()}`,
+                date: new Date(req.startDate).toLocaleDateString(),
+                colorClass: 'bg-yellow-500',
+                onClick: () => openLeaveReviewModal(req),
+            });
+        });
+
+        pendingWfhApprovals.forEach(req => {
+            items.push({
+                id: `wfh-${req.id}`,
+                icon: <CalendarDaysIcon {...approvalIconProps} />,
+                title: 'WFH Request Approval',
+                subtitle: `${req.employeeName} • ${new Date(req.date).toLocaleDateString()}`,
+                date: new Date(req.date).toLocaleDateString(),
+                colorClass: 'bg-blue-500',
+                onClick: () => openWFHReviewModal(req),
+            });
+        });
+
+        pendingOtApprovals.forEach(req => {
+            items.push({
+                id: `ot-${req.id}`,
+                icon: <ClipboardListIcon />,
+                title: 'Overtime Request Approval',
+                subtitle: `${req.employeeName} • ${new Date(req.date).toLocaleDateString()}`,
+                date: new Date(req.date).toLocaleDateString(),
+                colorClass: 'bg-indigo-500',
+                onClick: () => openOTReviewModal(req),
+            });
+        });
+
+        pendingManpowerApprovals.forEach(req => {
+            items.push({
+                id: `oncall-${req.id}`,
+                icon: <UserGroupIcon />,
+                title: 'On-Call Request Approval',
+                subtitle: `${req.requesterName} • ${new Date(req.date).toLocaleDateString()}`,
+                date: new Date(req.date).toLocaleDateString(),
+                colorClass: 'bg-teal-500',
+                onClick: () => openReviewModal(req),
+            });
+        });
+
+        return items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    }, [pendingLeaveApprovals, pendingWfhApprovals, pendingOtApprovals, pendingManpowerApprovals]);
+
     return (
         <div className="space-y-6">
             <QuickLinks />
@@ -646,6 +1017,35 @@ const ManagerDashboard: React.FC = () => {
                     canAct={coeAccess.canApprove}
                     canActOn={coeAccess.canActOn}
                 />
+            </Card>
+
+            <Card title="Team Requests">
+                {teamApprovalItems.length > 0 ? (
+                    <div className="space-y-4">
+                        {teamApprovalItems.map(item => (
+                            <div key={item.id} onClick={item.onClick} className="cursor-pointer">
+                                <div className="bg-white dark:bg-slate-800 shadow-md rounded-lg overflow-hidden transition-all hover:shadow-lg hover:ring-2 hover:ring-indigo-500">
+                                    <div className="flex items-center p-4">
+                                        <div className={`flex-shrink-0 p-3 rounded-full ${item.colorClass}`}>
+                                            {item.icon}
+                                        </div>
+                                        <div className="flex-grow ml-4 min-w-0">
+                                            <h3 className="font-semibold text-gray-800 dark:text-gray-200 truncate">{item.title}</h3>
+                                            <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{item.subtitle}</p>
+                                        </div>
+                                        <div className="flex-shrink-0 ml-4 flex flex-col items-end">
+                                            <span className="text-xs text-gray-500 dark:text-gray-400">{item.date}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="text-center py-6 text-sm text-gray-500 dark:text-gray-400">
+                        No pending requests from your direct reports.
+                    </div>
+                )}
             </Card>
 
             {actionItems.length > 0 ? (
@@ -704,6 +1104,43 @@ const ManagerDashboard: React.FC = () => {
                 onApprove={handleApproveManpower}
                 onReject={handleRejectManpower}
                 canApprove={true}
+            />
+
+            <LeaveRequestModal
+                isOpen={isLeaveReviewModalOpen}
+                onClose={() => {
+                    setIsLeaveReviewModalOpen(false);
+                    setSelectedLeaveRequest(null);
+                }}
+                request={selectedLeaveRequest}
+                leaveTypes={leaveTypes}
+                onSave={() => {}}
+                onApprove={handleLeaveApproval}
+            />
+
+            <WFHReviewModal
+                isOpen={isWFHReviewModalOpen}
+                onClose={() => {
+                    setIsWFHReviewModalOpen(false);
+                    setSelectedWFHRequest(null);
+                }}
+                request={selectedWFHRequest}
+                onApprove={handleApproveWFH}
+                onReject={handleRejectWFH}
+            />
+
+            <OTRequestModal
+                isOpen={isOTReviewModalOpen}
+                onClose={() => {
+                    setIsOTReviewModalOpen(false);
+                    setSelectedOTRequest(null);
+                }}
+                onSave={() => {}}
+                onApproveOrReject={handleApproveRejectOT}
+                requestToEdit={selectedOTRequest}
+                attendanceRecords={mockAttendanceRecords}
+                shiftAssignments={mockShiftAssignments}
+                shiftTemplates={mockShiftTemplates}
             />
             
             <ManpowerRequestModal
