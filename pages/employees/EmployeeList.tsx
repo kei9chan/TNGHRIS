@@ -53,7 +53,7 @@ const EmployeeList: React.FC = () => {
       try {
         const { data } = await supabase
           .from('hris_users')
-          .select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position, birth_date, date_hired, sss_no, pagibig_no, philhealth_no, tin, emergency_contact_name, emergency_contact_relationship, emergency_contact_phone, bank_name, bank_account_number, bank_account_type, leave_quota_vacation, leave_quota_sick, leave_last_credit_date, employment_status, rate_type, rate_amount, tax_status, salary_basic, salary_deminimis, salary_reimbursable');
+          .select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position, reports_to, birth_date, date_hired, sss_no, pagibig_no, philhealth_no, tin, emergency_contact_name, emergency_contact_relationship, emergency_contact_phone, bank_name, bank_account_number, bank_account_type, leave_quota_vacation, leave_quota_sick, leave_last_credit_date, employment_status, rate_type, rate_amount, tax_status, salary_basic, salary_deminimis, salary_reimbursable');
         if (data) {
           const mapped: User[] = data.map((u: any) => ({
             id: u.id,
@@ -69,6 +69,7 @@ const EmployeeList: React.FC = () => {
             birthDate: u.birth_date ? new Date(u.birth_date) : undefined,
             dateHired: u.date_hired ? new Date(u.date_hired) : new Date(),
             position: u.position || '',
+            reportsTo: u.reports_to || undefined,
             leaveQuotaVacation: u.leave_quota_vacation ?? undefined,
             leaveQuotaSick: u.leave_quota_sick ?? undefined,
             leaveLastCreditDate: u.leave_last_credit_date ? new Date(u.leave_last_credit_date) : undefined,
@@ -150,9 +151,18 @@ const EmployeeList: React.FC = () => {
     }
   }, [currentUser]);
   
+  const availableBusOptions = useMemo(() => {
+    if (accessControl.scope === 'global' || accessControl.scope === 'logs') {
+      return businessUnits;
+    }
+    return accessibleBus;
+  }, [accessControl.scope, accessibleBus, businessUnits]);
+
   // Filter users based on RBAC scope + UI filters
   const filteredUsers = useMemo(() => {
-    const accessibleBuNames = accessibleBus.length ? new Set(accessibleBus.map(b => b.name)) : null;
+    const accessibleBuNames = (accessControl.scope === 'global' || accessControl.scope === 'logs')
+      ? null
+      : (accessibleBus.length ? new Set(accessibleBus.map(b => b.name)) : null);
     const scope = accessControl.scope;
 
     const withinScope = (user: User) => {
@@ -260,6 +270,7 @@ const EmployeeList: React.FC = () => {
         business_unit: updatedProfileData.businessUnit,
         business_unit_id: updatedProfileData.businessUnitId,
         position: updatedProfileData.position,
+        reports_to: updatedProfileData.reportsTo,
         birth_date: formatDateOnly(birthDateValue),
         date_hired: formatDateOnly(hireDateValue),
         status: updatedProfileData.status,
@@ -308,7 +319,7 @@ const EmployeeList: React.FC = () => {
       // Refresh list to reflect updates
       const refreshed = await supabase
         .from('hris_users')
-        .select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position, birth_date, date_hired, sss_no, pagibig_no, philhealth_no, tin, emergency_contact_name, emergency_contact_relationship, emergency_contact_phone, bank_name, bank_account_number, bank_account_type, leave_quota_vacation, leave_quota_sick, leave_last_credit_date, employment_status, rate_type, rate_amount, tax_status, salary_basic, salary_deminimis, salary_reimbursable');
+        .select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position, reports_to, birth_date, date_hired, sss_no, pagibig_no, philhealth_no, tin, emergency_contact_name, emergency_contact_relationship, emergency_contact_phone, bank_name, bank_account_number, bank_account_type, leave_quota_vacation, leave_quota_sick, leave_last_credit_date, employment_status, rate_type, rate_amount, tax_status, salary_basic, salary_deminimis, salary_reimbursable');
       if (!refreshed.error && refreshed.data) {
         const mapped: User[] = refreshed.data.map((u: any) => ({
           id: u.id,
@@ -324,6 +335,7 @@ const EmployeeList: React.FC = () => {
           birthDate: u.birth_date ? new Date(u.birth_date) : undefined,
           dateHired: u.date_hired ? new Date(u.date_hired) : new Date(),
           position: u.position || '',
+          reportsTo: u.reports_to || undefined,
           employmentStatus: u.employment_status || undefined,
           rateType: u.rate_type || undefined,
           rateAmount: u.rate_amount !== null && u.rate_amount !== undefined ? Number(u.rate_amount) : undefined,
@@ -406,7 +418,7 @@ const EmployeeList: React.FC = () => {
                             <label htmlFor="bu-filter" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
                             <select id="bu-filter" value={buFilter} onChange={e => setBuFilter(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
                                 <option value="">All Accessible</option>
-                                {accessibleBus.map(bu => <option key={bu.id} value={bu.name}>{bu.name}</option>)}
+                                {availableBusOptions.map(bu => <option key={bu.id} value={bu.name}>{bu.name}</option>)}
                             </select>
                         </div>
                          <div>

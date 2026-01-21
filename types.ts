@@ -450,6 +450,7 @@ export interface User {
   birthDate?: Date;
   endDate?: Date;
   position: string;
+  reportsTo?: string;
   managerId?: string;
   salary?: SalaryBreakdown;
   monthlySalary?: number;

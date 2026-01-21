@@ -23,6 +23,7 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
   const [activeTab, setActiveTab] = useState<Tab>('personal');
   const [formData, setFormData] = useState<Partial<User>>({});
   const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
+  const [reportsToOptions, setReportsToOptions] = useState<Array<{ id: string; label: string }>>([]);
   const [computedLeaves, setComputedLeaves] = useState<{
     usedVacation: number;
     usedSick: number;
@@ -51,6 +52,7 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
             businessUnit: user.businessUnit,
             businessUnitId: user.businessUnitId,
             position: user.position,
+            reportsTo: user.reportsTo,
             employmentStatus: user.employmentStatus || 'Probationary',
             rateType: user.rateType || RateType.Monthly,
             rateAmount: user.rateAmount ?? user.salary?.basic ?? 0,
@@ -72,6 +74,25 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
         };
       setFormData(initialData);
       setActiveTab('personal');
+
+      supabase
+        .from('hris_users')
+        .select('id, full_name, role')
+        .order('full_name')
+        .then(({ data }) => {
+          if (!data) {
+            setReportsToOptions([]);
+            return;
+          }
+          const options = data
+            .filter((row: any) => row.id !== user.id)
+            .map((row: any) => ({
+              id: row.id,
+              label: `${row.full_name || 'Unknown'} (${row.role || 'Employee'})`,
+            }));
+          setReportsToOptions(options);
+        })
+        .catch(() => setReportsToOptions([]));
 
       // Load leave requests for this employee to prefill Leave tab
       supabase
@@ -294,6 +315,22 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
             <Input label="Birth Date" name="birthDate" type="date" value={formData.birthDate ? (typeof formData.birthDate === 'string' ? formData.birthDate : new Date(formData.birthDate).toISOString().split('T')[0]) : ''} onChange={handleChange} />
             <Input label="Department" name="department" value={formData.department || ''} onChange={handleChange} disabled={!isAdminEdit} />
             <Input label="Position" name="position" value={formData.position || ''} onChange={handleChange} disabled={!isAdminEdit}/>
+            {isAdminEdit && (
+              <div>
+                <label className="block text-sm font-medium">Reports To</label>
+                <select
+                  name="reportsTo"
+                  value={formData.reportsTo || ''}
+                  onChange={handleChange}
+                  className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                >
+                  <option value="">Select manager</option>
+                  {reportsToOptions.map(option => (
+                    <option key={option.id} value={option.id}>{option.label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             {isAdminEdit && (
                 <div>
                     <label className="block text-sm font-medium">Employment Status</label>
