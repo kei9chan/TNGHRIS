@@ -31,6 +31,7 @@ const COERequests: React.FC = () => {
 
     const [requests, setRequests] = useState<COERequest[]>(mockCOERequests);
     const [coeTemplates, setCoeTemplates] = useState<COETemplate[]>(mockCOETemplates);
+    const [businessUnits, setBusinessUnits] = useState(mockBusinessUnits);
     const [templatesLoaded, setTemplatesLoaded] = useState(false);
     const [statusFilter, setStatusFilter] = useState<string>('all');
     const [searchTerm, setSearchTerm] = useState('');
@@ -50,18 +51,25 @@ const COERequests: React.FC = () => {
 
         const loadCOEData = async () => {
             try {
-                const [reqs, templates] = await Promise.all([
+                const [reqs, templates, buRows] = await Promise.all([
                     fetchCoeRequests(),
-                    fetchActiveCoeTemplates()
+                    fetchActiveCoeTemplates(),
+                    supabase.from('business_units').select('id, name')
                 ]);
                 if (!isMounted) return;
                 setRequests(reqs);
                 setCoeTemplates(templates);
+                if (!buRows.error && buRows.data) {
+                    setBusinessUnits(buRows.data.map((row: any) => ({ id: row.id, name: row.name })));
+                } else {
+                    setBusinessUnits(mockBusinessUnits);
+                }
                 setTemplatesLoaded(true);
             } catch (error) {
                 if (!isMounted) return;
                 setRequests([...mockCOERequests]);
                 setCoeTemplates([...mockCOETemplates]);
+                setBusinessUnits([...mockBusinessUnits]);
                 setTemplatesLoaded(true);
             }
         };
@@ -221,7 +229,7 @@ const COERequests: React.FC = () => {
         void openPreview();
     }, [requestId, autoOpenedRequestId, requests, canManage, accessibleBuIds, user, coeTemplates, templatesLoaded]);
 
-    const getBuName = (id: string) => mockBusinessUnits.find(b => b.id === id)?.name || 'Unknown BU';
+    const getBuName = (id: string) => businessUnits.find(b => b.id === id)?.name || 'Unknown BU';
 
     const handleSaveCOERequest = (request: Partial<COERequest>) => {
         const newRequest: COERequest = {
