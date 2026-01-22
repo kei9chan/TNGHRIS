@@ -8,6 +8,7 @@ import { supabase } from '../../services/supabaseClient';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import WFHRequestModal from '../../components/payroll/WFHRequestModal';
+import WFHReviewModal from '../../components/payroll/WFHReviewModal';
 import { logActivity } from '../../services/auditService';
 import EditableDescription from '../../components/ui/EditableDescription';
 
@@ -34,13 +35,17 @@ const WFHRequests: React.FC = () => {
   const { can } = usePermissions();
   const canView = can('WFH', Permission.View);
   const canCreate = can('WFH', Permission.Create) || can('WFH', Permission.Manage);
-  const canManage = can('WFH', Permission.Manage) || can('WFH', Permission.Approve);
+  const [reporteeIds, setReporteeIds] = useState<string[]>([]);
+  const [reporteeIdsLoaded, setReporteeIdsLoaded] = useState(false);
+  const canManage = can('WFH', Permission.Manage) || can('WFH', Permission.Approve) || reporteeIds.length > 0;
   const navigate = useNavigate();
   const location = useLocation();
 
   const [requests, setRequests] = useState<WFHRequest[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<WFHRequest | null>(null);
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [selectedReviewRequest, setSelectedReviewRequest] = useState<WFHRequest | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
   const loadRequests = async () => {
@@ -68,8 +73,14 @@ const WFHRequests: React.FC = () => {
         if (user.businessUnitId) query = query.eq('business_unit_id', user.businessUnitId);
         break;
       case Role.Manager:
-        if (user.departmentId) query = query.eq('department_id', user.departmentId);
-        else query = query.eq('employee_id', user.id);
+        if (!reporteeIdsLoaded) return;
+        if (reporteeIds.length > 0) {
+          query = query.in('employee_id', reporteeIds);
+        } else {
+          // Managers only review direct reports via reports_to.
+          setRequests([]);
+          return;
+        }
         break;
       case Role.Employee:
         query = query.eq('employee_id', user.id);
@@ -107,9 +118,31 @@ const WFHRequests: React.FC = () => {
   };
 
   useEffect(() => {
+    if (!user?.id) {
+      setReporteeIds([]);
+      setReporteeIdsLoaded(false);
+      return;
+    }
+    const loadReportees = async () => {
+      const { data, error } = await supabase
+        .from('hris_users')
+        .select('id')
+        .eq('reports_to', user.id);
+      if (error || !data) {
+        setReporteeIds([]);
+        setReporteeIdsLoaded(true);
+        return;
+      }
+      setReporteeIds(data.map((row: any) => row.id).filter(Boolean));
+      setReporteeIdsLoaded(true);
+    };
+    loadReportees();
+  }, [user?.id]);
+
+  useEffect(() => {
     loadRequests();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, canView]);
+  }, [user, canView, reporteeIds, reporteeIdsLoaded]);
 
   useEffect(() => {
     if (location.state?.openNewModal) {
@@ -132,9 +165,16 @@ const WFHRequests: React.FC = () => {
 
   const handleOpenModal = (request: WFHRequest | null) => {
       if (!canView) return;
+      if (request && request.employeeId !== user?.id) return;
       if (request && !canManage && !canCreate) return;
       setSelectedRequest(request);
       setIsModalOpen(true);
+  };
+
+  const handleOpenReview = (request: WFHRequest) => {
+      if (!canManage) return;
+      setSelectedReviewRequest(request);
+      setIsReviewModalOpen(true);
   };
 
   const handleSave = async (data: Partial<WFHRequest>) => {
@@ -150,7 +190,7 @@ const WFHRequests: React.FC = () => {
             .update({
               reason: data.reason,
               report_link: data.reportLink,
-              status: data.status,
+              status: data.status || selectedRequest?.status || WFHRequestStatus.Pending,
             })
             .eq('id', data.id);
 
@@ -174,6 +214,38 @@ const WFHRequests: React.FC = () => {
           }
       }
       setIsModalOpen(false);
+      loadRequests();
+  };
+
+  const handleApprove = async (requestId: string) => {
+      if (!user) return;
+      const { error } = await supabase
+        .from('wfh_requests')
+        .update({ status: WFHRequestStatus.Approved, approved_by: user.id, approved_at: new Date().toISOString() })
+        .eq('id', requestId);
+      if (error) {
+        alert(error.message || 'Failed to approve WFH request.');
+        return;
+      }
+      logActivity(user, 'APPROVE', 'WFHRequest', requestId, 'Approved WFH request.');
+      setIsReviewModalOpen(false);
+      setSelectedReviewRequest(null);
+      loadRequests();
+  };
+
+  const handleReject = async (requestId: string, reason: string) => {
+      if (!user) return;
+      const { error } = await supabase
+        .from('wfh_requests')
+        .update({ status: WFHRequestStatus.Rejected, rejection_reason: reason })
+        .eq('id', requestId);
+      if (error) {
+        alert(error.message || 'Failed to reject WFH request.');
+        return;
+      }
+      logActivity(user, 'REJECT', 'WFHRequest', requestId, `Rejected WFH request. Reason: ${reason}`);
+      setIsReviewModalOpen(false);
+      setSelectedReviewRequest(null);
       loadRequests();
   };
 
@@ -213,6 +285,7 @@ const WFHRequests: React.FC = () => {
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                     <thead className="bg-gray-50 dark:bg-gray-800">
                         <tr>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Employee</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Date</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Reason</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
@@ -223,6 +296,9 @@ const WFHRequests: React.FC = () => {
                     <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
         {myRequests.map(req => (
                             <tr key={req.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+                                    {req.employeeName}
+                                </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
                                     {new Date(req.date).toLocaleDateString()}
                                 </td>
@@ -239,7 +315,7 @@ const WFHRequests: React.FC = () => {
                                         <a href={normalizeUrl(req.reportLink)} target="_blank" rel="noopener noreferrer" className="flex items-center text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">
                                             <LinkIcon /> <span className="ml-1">View Report</span>
                                         </a>
-                                    ) : req.status === WFHRequestStatus.Approved ? (
+                                    ) : req.status === WFHRequestStatus.Approved && req.employeeId === user?.id ? (
                                         <button onClick={() => handleOpenModal(req)} className="text-xs text-orange-600 hover:text-orange-800 font-medium">
                                             + Add Report
                                         </button>
@@ -248,15 +324,23 @@ const WFHRequests: React.FC = () => {
                                     )}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                    <Button size="sm" variant="secondary" onClick={() => handleOpenModal(req)} disabled={!canView}>
-                                        {req.status === WFHRequestStatus.Pending ? 'Edit' : 'View'}
-                                    </Button>
+                                    <div className="flex justify-end space-x-2">
+                                        {canManage && req.status === WFHRequestStatus.Pending ? (
+                                            <Button size="sm" variant="secondary" onClick={() => handleOpenReview(req)}>
+                                                Review
+                                            </Button>
+                                        ) : (
+                                            <Button size="sm" variant="secondary" onClick={() => handleOpenModal(req)} disabled={!canView}>
+                                                {req.status === WFHRequestStatus.Pending ? 'Edit' : 'View'}
+                                            </Button>
+                                        )}
+                                    </div>
                                 </td>
                             </tr>
                         ))}
                         {myRequests.length === 0 && (
                             <tr>
-                                <td colSpan={5} className="text-center py-10 text-gray-500 dark:text-gray-400">
+                                <td colSpan={6} className="text-center py-10 text-gray-500 dark:text-gray-400">
                                     No requests found.
                                 </td>
                             </tr>
@@ -271,6 +355,16 @@ const WFHRequests: React.FC = () => {
             onClose={() => setIsModalOpen(false)}
             request={selectedRequest}
             onSave={handleSave}
+        />
+        <WFHReviewModal
+            isOpen={isReviewModalOpen}
+            onClose={() => {
+                setIsReviewModalOpen(false);
+                setSelectedReviewRequest(null);
+            }}
+            request={selectedReviewRequest}
+            onApprove={handleApprove}
+            onReject={handleReject}
         />
         </>
         )}
