@@ -204,14 +204,14 @@ const EmployeeDashboard: React.FC = () => {
     const [ntes, setNTEs] = useState<NTE[]>(mockNTEs);
     const [evaluationSubmissions, setEvaluationSubmissions] = useState(mockEvaluationSubmissions);
     const [coeDecisions, setCoeDecisions] = useState<Array<{ id: string; status: COERequest['status']; date: Date }>>([]);
-    const [approvedLeaveRequests, setApprovedLeaveRequests] = useState<Array<{ id: string; startDate: Date; endDate: Date }>>([]);
-    const [approvedWfhRequests, setApprovedWfhRequests] = useState<Array<{ id: string; date: Date }>>([]);
-    const [approvedOtRequests, setApprovedOtRequests] = useState<Array<{ id: string; date: Date }>>([]);
-    const [approvedManpowerRequests, setApprovedManpowerRequests] = useState<Array<{ id: string; date: Date }>>([]);
-    const [rejectedLeaveRequests, setRejectedLeaveRequests] = useState<Array<{ id: string; startDate: Date; endDate: Date; reason: string }>>([]);
-    const [rejectedWfhRequests, setRejectedWfhRequests] = useState<Array<{ id: string; date: Date; reason: string }>>([]);
-    const [rejectedOtRequests, setRejectedOtRequests] = useState<Array<{ id: string; date: Date; reason: string }>>([]);
-    const [rejectedManpowerRequests, setRejectedManpowerRequests] = useState<Array<{ id: string; date: Date; reason: string }>>([]);
+    const [approvedLeaveRequests, setApprovedLeaveRequests] = useState<Array<{ id: string; startDate: Date; endDate: Date; decisionDate?: Date }>>([]);
+    const [approvedWfhRequests, setApprovedWfhRequests] = useState<Array<{ id: string; date: Date; decisionDate?: Date }>>([]);
+    const [approvedOtRequests, setApprovedOtRequests] = useState<Array<{ id: string; date: Date; decisionDate?: Date }>>([]);
+    const [approvedManpowerRequests, setApprovedManpowerRequests] = useState<Array<{ id: string; date: Date; decisionDate?: Date }>>([]);
+    const [rejectedLeaveRequests, setRejectedLeaveRequests] = useState<Array<{ id: string; startDate: Date; endDate: Date; reason: string; decisionDate?: Date }>>([]);
+    const [rejectedWfhRequests, setRejectedWfhRequests] = useState<Array<{ id: string; date: Date; reason: string; decisionDate?: Date }>>([]);
+    const [rejectedOtRequests, setRejectedOtRequests] = useState<Array<{ id: string; date: Date; reason: string; decisionDate?: Date }>>([]);
+    const [rejectedManpowerRequests, setRejectedManpowerRequests] = useState<Array<{ id: string; date: Date; reason: string; decisionDate?: Date }>>([]);
 
     useEffect(() => {
         if (location.state?.openRequestCOE) {
@@ -285,31 +285,40 @@ const EmployeeDashboard: React.FC = () => {
             const [leaveRes, wfhRes, otRes, manpowerRes] = await Promise.all([
                 supabase
                     .from('leave_requests')
-                    .select('id, start_date, end_date, status, history_log')
+                    .select('id, start_date, end_date, status, history_log, updated_at')
                     .eq('employee_id', user.id)
                     .in('status', [LeaveRequestStatus.Approved, LeaveRequestStatus.Rejected])
                     .order('start_date', { ascending: false }),
                 supabase
                     .from('wfh_requests')
-                    .select('id, date, status, rejection_reason')
+                    .select('id, date, status, rejection_reason, approved_at, updated_at')
                     .eq('employee_id', user.id)
                     .in('status', [WFHRequestStatus.Approved, WFHRequestStatus.Rejected])
                     .order('date', { ascending: false }),
                 supabase
                     .from('ot_requests')
-                    .select('id, date, status, manager_note')
+                    .select('id, date, status, manager_note, updated_at')
                     .eq('employee_id', user.id)
                     .in('status', [OTStatus.Approved, OTStatus.Rejected])
                     .order('date', { ascending: false }),
                 supabase
                     .from('manpower_requests')
-                    .select('id, date_needed, status, rejection_reason')
+                    .select('id, date_needed, status, rejection_reason, approved_at, updated_at')
                     .eq('requester_id', user.id)
                     .in('status', [ManpowerRequestStatus.Approved, ManpowerRequestStatus.Rejected])
                     .order('date_needed', { ascending: false }),
             ]);
 
             if (!isMounted) return;
+
+            const getLeaveDecisionDate = (row: any, action: 'Approved' | 'Rejected') => {
+                const history = Array.isArray(row.history_log) ? row.history_log : [];
+                const entries = history.filter((h: any) => h.action === action);
+                const last = entries.length > 0 ? entries[entries.length - 1] : history[history.length - 1];
+                const fromHistory = last?.timestamp ? new Date(last.timestamp) : undefined;
+                const fromUpdatedAt = row.updated_at ? new Date(row.updated_at) : undefined;
+                return fromHistory || fromUpdatedAt || (row.start_date ? new Date(row.start_date) : undefined);
+            };
 
             setApprovedLeaveRequests(
                 !leaveRes.error && leaveRes.data
@@ -319,6 +328,7 @@ const EmployeeDashboard: React.FC = () => {
                         id: row.id,
                         startDate: new Date(row.start_date),
                         endDate: new Date(row.end_date),
+                        decisionDate: getLeaveDecisionDate(row, 'Approved'),
                     }))
                     : []
             );
@@ -336,6 +346,7 @@ const EmployeeDashboard: React.FC = () => {
                                 const latest = rejected.length > 0 ? rejected[rejected.length - 1] : history[history.length - 1];
                                 return latest?.details || 'Rejected';
                             })(),
+                            decisionDate: getLeaveDecisionDate(row, 'Rejected'),
                         }))
                     : []
             );
@@ -346,6 +357,7 @@ const EmployeeDashboard: React.FC = () => {
                         .map((row: any) => ({
                         id: row.id,
                         date: new Date(row.date),
+                        decisionDate: row.approved_at ? new Date(row.approved_at) : (row.updated_at ? new Date(row.updated_at) : new Date(row.date)),
                     }))
                     : []
             );
@@ -357,6 +369,7 @@ const EmployeeDashboard: React.FC = () => {
                             id: row.id,
                             date: new Date(row.date),
                             reason: row.rejection_reason || 'Rejected',
+                            decisionDate: row.updated_at ? new Date(row.updated_at) : new Date(row.date),
                         }))
                     : []
             );
@@ -367,6 +380,7 @@ const EmployeeDashboard: React.FC = () => {
                         .map((row: any) => ({
                         id: row.id,
                         date: new Date(row.date),
+                        decisionDate: row.updated_at ? new Date(row.updated_at) : new Date(row.date),
                     }))
                     : []
             );
@@ -378,6 +392,7 @@ const EmployeeDashboard: React.FC = () => {
                             id: row.id,
                             date: new Date(row.date),
                             reason: row.manager_note || 'Rejected',
+                            decisionDate: row.updated_at ? new Date(row.updated_at) : new Date(row.date),
                         }))
                     : []
             );
@@ -388,6 +403,7 @@ const EmployeeDashboard: React.FC = () => {
                         .map((row: any) => ({
                         id: row.id,
                         date: row.date_needed ? new Date(row.date_needed) : new Date(),
+                        decisionDate: row.approved_at ? new Date(row.approved_at) : (row.updated_at ? new Date(row.updated_at) : (row.date_needed ? new Date(row.date_needed) : new Date())),
                     }))
                     : []
             );
@@ -399,6 +415,7 @@ const EmployeeDashboard: React.FC = () => {
                             id: row.id,
                             date: row.date_needed ? new Date(row.date_needed) : new Date(),
                             reason: row.rejection_reason || 'Rejected',
+                            decisionDate: row.updated_at ? new Date(row.updated_at) : (row.date_needed ? new Date(row.date_needed) : new Date()),
                         }))
                     : []
             );
@@ -548,12 +565,14 @@ const EmployeeDashboard: React.FC = () => {
         });
 
         approvedLeaveRequests.forEach(req => {
+            const sortDate = req.decisionDate || req.startDate;
             items.push({
                 id: `leave-approved-${req.id}`,
                 icon: <SunIcon {...iconProps} />,
                 title: "Leave Approved",
                 subtitle: `${new Date(req.startDate).toLocaleDateString()} - ${new Date(req.endDate).toLocaleDateString()}`,
                 date: new Date(req.startDate).toLocaleDateString(),
+                sortDate,
                 link: '/payroll/leave',
                 colorClass: 'bg-green-500',
                 priority: 3
@@ -561,12 +580,14 @@ const EmployeeDashboard: React.FC = () => {
         });
 
         approvedWfhRequests.forEach(req => {
+            const sortDate = req.decisionDate || req.date;
             items.push({
                 id: `wfh-approved-${req.id}`,
                 icon: <CalendarDaysIcon {...iconProps} />,
                 title: "WFH Approved",
                 subtitle: new Date(req.date).toLocaleDateString(),
                 date: new Date(req.date).toLocaleDateString(),
+                sortDate,
                 link: '/payroll/wfh-requests',
                 colorClass: 'bg-green-500',
                 priority: 3
@@ -574,12 +595,14 @@ const EmployeeDashboard: React.FC = () => {
         });
 
         approvedOtRequests.forEach(req => {
+            const sortDate = req.decisionDate || req.date;
             items.push({
                 id: `ot-approved-${req.id}`,
                 icon: <ClipboardCheckIcon {...iconProps} />,
                 title: "Overtime Approved",
                 subtitle: new Date(req.date).toLocaleDateString(),
                 date: new Date(req.date).toLocaleDateString(),
+                sortDate,
                 link: '/payroll/overtime-requests',
                 colorClass: 'bg-green-500',
                 priority: 3
@@ -587,12 +610,14 @@ const EmployeeDashboard: React.FC = () => {
         });
 
         approvedManpowerRequests.forEach(req => {
+            const sortDate = req.decisionDate || req.date;
             items.push({
                 id: `oncall-approved-${req.id}`,
                 icon: <UserCircleIcon {...iconProps} />,
                 title: "On-Call Approved",
                 subtitle: new Date(req.date).toLocaleDateString(),
                 date: new Date(req.date).toLocaleDateString(),
+                sortDate,
                 link: '/payroll/manpower-planning',
                 colorClass: 'bg-green-500',
                 priority: 3
@@ -601,12 +626,14 @@ const EmployeeDashboard: React.FC = () => {
 
         coeDecisions.forEach(req => {
             const approved = req.status === 'Approved';
+            const sortDate = req.date;
             items.push({
                 id: `coe-${approved ? 'approved' : 'rejected'}-${req.id}`,
                 icon: <DocumentTextIcon {...iconProps} />,
                 title: `COE ${approved ? 'Approved' : 'Rejected'}`,
                 subtitle: `Request ${req.id}`,
                 date: new Date(req.date).toLocaleDateString(),
+                sortDate,
                 link: `/employees/coe/requests?requestId=${req.id}`,
                 colorClass: approved ? 'bg-green-500' : 'bg-red-500',
                 priority: approved ? 3 : 2
@@ -614,12 +641,14 @@ const EmployeeDashboard: React.FC = () => {
         });
 
         rejectedLeaveRequests.forEach(req => {
+            const sortDate = req.decisionDate || req.startDate;
             items.push({
                 id: `leave-rejected-${req.id}`,
                 icon: <SunIcon {...iconProps} />,
                 title: "Leave Rejected",
                 subtitle: `${new Date(req.startDate).toLocaleDateString()} - ${new Date(req.endDate).toLocaleDateString()} • ${req.reason}`,
                 date: new Date(req.startDate).toLocaleDateString(),
+                sortDate,
                 link: '/payroll/leave',
                 colorClass: 'bg-red-500',
                 priority: 2
@@ -627,12 +656,14 @@ const EmployeeDashboard: React.FC = () => {
         });
 
         rejectedWfhRequests.forEach(req => {
+            const sortDate = req.decisionDate || req.date;
             items.push({
                 id: `wfh-rejected-${req.id}`,
                 icon: <CalendarDaysIcon {...iconProps} />,
                 title: "WFH Rejected",
                 subtitle: `${new Date(req.date).toLocaleDateString()} • ${req.reason}`,
                 date: new Date(req.date).toLocaleDateString(),
+                sortDate,
                 link: '/payroll/wfh-requests',
                 colorClass: 'bg-red-500',
                 priority: 2
@@ -640,12 +671,14 @@ const EmployeeDashboard: React.FC = () => {
         });
 
         rejectedOtRequests.forEach(req => {
+            const sortDate = req.decisionDate || req.date;
             items.push({
                 id: `ot-rejected-${req.id}`,
                 icon: <ClipboardCheckIcon {...iconProps} />,
                 title: "Overtime Rejected",
                 subtitle: `${new Date(req.date).toLocaleDateString()} • ${req.reason}`,
                 date: new Date(req.date).toLocaleDateString(),
+                sortDate,
                 link: '/payroll/overtime-requests',
                 colorClass: 'bg-red-500',
                 priority: 2
@@ -653,12 +686,14 @@ const EmployeeDashboard: React.FC = () => {
         });
 
         rejectedManpowerRequests.forEach(req => {
+            const sortDate = req.decisionDate || req.date;
             items.push({
                 id: `oncall-rejected-${req.id}`,
                 icon: <UserCircleIcon {...iconProps} />,
                 title: "On-Call Rejected",
                 subtitle: `${new Date(req.date).toLocaleDateString()} • ${req.reason}`,
                 date: new Date(req.date).toLocaleDateString(),
+                sortDate,
                 link: '/payroll/manpower-planning',
                 colorClass: 'bg-red-500',
                 priority: 2
@@ -1066,7 +1101,11 @@ const EmployeeDashboard: React.FC = () => {
         });
 
 
-        return items.sort((a,b) => (a.priority ?? 99) - (b.priority ?? 99) || new Date(b.date).getTime() - new Date(a.date).getTime());
+        return items.sort((a,b) => {
+            const dateA = a.sortDate ?? a.date ?? a.createdAt ?? new Date(0);
+            const dateB = b.sortDate ?? b.date ?? b.createdAt ?? new Date(0);
+            return new Date(dateB).getTime() - new Date(dateA).getTime();
+        });
 
     }, [user, refreshKey, memoUpdateKey, requests, assignments, checklists, templates, isUserEligibleEvaluator, benefitRequests, pulseSurveys, surveyResponses, coachingSessions, envelopes, ntes, evaluationSubmissions, approvedLeaveRequests, approvedWfhRequests, approvedOtRequests, approvedManpowerRequests, rejectedLeaveRequests, rejectedWfhRequests, rejectedOtRequests, rejectedManpowerRequests, coeDecisions]);
 
