@@ -71,18 +71,18 @@ const ShiftAssignmentDrawer: React.FC<ShiftAssignmentDrawerProps> = ({ isOpen, o
         <>
             {/* Overlay */}
             <div
-                className={`fixed inset-0 bg-black bg-opacity-50 z-20 transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                className={`fixed inset-0 bg-black bg-opacity-50 z-[50] transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
                 onClick={onClose}
                 aria-hidden="true"
             ></div>
             {/* Drawer */}
             <div
-                className={`fixed top-0 right-0 h-full w-80 bg-white dark:bg-slate-800 shadow-xl z-30 transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
+                className={`fixed top-[128px] right-0 h-[calc(100%-128px)] w-80 bg-white dark:bg-slate-800 shadow-xl z-[60] transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
                 role="dialog"
                 aria-modal="true"
             >
                 <div className="flex flex-col h-full">
-                    <div className="flex justify-between items-center p-4 border-b border-gray-200 dark:border-slate-700">
+                    <div className="flex justify-between items-center p-4 border-b border-gray-200 dark:border-slate-700 shrink-0">
                         <div className="flex-grow">
                             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Assign Shift</h3>
                             <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -94,7 +94,7 @@ const ShiftAssignmentDrawer: React.FC<ShiftAssignmentDrawerProps> = ({ isOpen, o
                         </button>
                     </div>
 
-                    <div className="flex-grow overflow-y-auto p-2">
+                    <div className="flex-1 min-h-0 overflow-y-auto p-2">
                         
                         {/* Recommendations Section */}
                         {relevantGaps.length > 0 && (
@@ -130,7 +130,7 @@ const ShiftAssignmentDrawer: React.FC<ShiftAssignmentDrawerProps> = ({ isOpen, o
                             </button>
                         </div>
                         <div className="my-2 border-t border-gray-200 dark:border-gray-600"></div>
-                        <ul className="space-y-1">
+                        <ul className="space-y-1 pb-4">
                             {templates.map(template => {
                                 const isHighlighted = highlightedTemplateId === template.id;
                                 return (

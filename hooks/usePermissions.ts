@@ -513,6 +513,23 @@ const workforcePlanningPermissions: Record<Role, Permission[]> = {
   [Role.IT]: [], // None
 };
 
+// Timekeeping RBAC matrix (View Schedule)
+const timekeepingPermissions: Record<Role, Permission[]> = {
+  [Role.Admin]: [Permission.Manage],
+  [Role.HRManager]: [Permission.Manage],
+  [Role.HRStaff]: [Permission.Manage],
+  [Role.BOD]: [Permission.Manage],
+  [Role.GeneralManager]: [Permission.View],
+  [Role.OperationsDirector]: [Permission.View],
+  [Role.BusinessUnitManager]: [Permission.View],
+  [Role.Manager]: [Permission.View],
+  [Role.Employee]: [Permission.View],
+  [Role.FinanceStaff]: [], // None
+  [Role.Auditor]: [], // View logs only, not schedule
+  [Role.Recruiter]: [], // None
+  [Role.IT]: [], // None
+};
+
 export const usePermissions = () => {
     const { user: sessionUser } = useAuth();
     const { isRbacEnabled } = useSettings();
@@ -526,10 +543,16 @@ export const usePermissions = () => {
     const getAccessibleBusinessUnits = (allBusinessUnits: BusinessUnit[]): BusinessUnit[] => {
         const user = getCurrentUser();
         if (!user) return [];
+        if (!isRbacEnabled) return allBusinessUnits;
 
         // Special Rule: Managers of Marketing, Finance, and HR get global view access
         const specialDepartments = ['Marketing', 'Finance', 'Finance and Accounting', 'Human Resources'];
         if (user.role === Role.Manager && user.department && specialDepartments.includes(user.department)) {
+            return allBusinessUnits;
+        }
+
+        // Global-access roles should see all business units even without an explicit scope.
+        if ([Role.Admin, Role.HRManager, Role.HRStaff, Role.BOD, Role.GeneralManager, Role.FinanceStaff, Role.Auditor, Role.Recruiter].includes(user.role)) {
             return allBusinessUnits;
         }
 
@@ -546,7 +569,13 @@ export const usePermissions = () => {
             return allBusinessUnits.filter(bu => scope.allowedBuIds?.includes(bu.id));
         }
 
-        return allBusinessUnits.filter(bu => bu.name === user.businessUnit);
+        if (user.businessUnitId) {
+            return allBusinessUnits.filter(bu => bu.id === user.businessUnitId);
+        }
+        if (user.businessUnit) {
+            return allBusinessUnits.filter(bu => bu.name === user.businessUnit);
+        }
+        return [];
     };
 
     const can = (resource: Resource, permission: Permission): boolean => {
@@ -770,6 +799,14 @@ export const usePermissions = () => {
 
         if (resource === 'WorkforcePlanning' || resource === 'WorkforcePlanningAdmin') {
             const perms = workforcePlanningPermissions[user.role];
+            if (!perms || perms.length === 0) return false;
+            if (perms.includes(Permission.Manage)) return true;
+            if (permission === Permission.View && perms.length > 0) return true;
+            return perms.includes(permission);
+        }
+
+        if (resource === 'Timekeeping') {
+            const perms = timekeepingPermissions[user.role];
             if (!perms || perms.length === 0) return false;
             if (perms.includes(Permission.Manage)) return true;
             if (permission === Permission.View && perms.length > 0) return true;

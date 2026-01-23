@@ -1,5 +1,4 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { mockUsers } from '../../services/mockData';
 import { ServiceArea, DemandTypeConfig, StaffingRequirement, DayTypeTier, User, Permission } from '../../types';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -24,10 +23,10 @@ const mapUiTierToDb = (tier?: DayTypeTier) => {
         case DayTypeTier.Peak:
             return 'Peak';
         case DayTypeTier.SuperPeak:
-            return 'Holiday';
+            return 'Super Peak';
         case DayTypeTier.OffPeak:
         default:
-            return 'Regular';
+            return 'Off-Peak';
     }
 };
 
@@ -74,12 +73,6 @@ const WorkforcePlanning: React.FC = () => {
     const currentAreas = useMemo(() => areas.filter(a => a.businessUnitId === selectedBuId), [areas, selectedBuId]);
     const currentDemands = useMemo(() => demands.filter(d => d.businessUnitId === selectedBuId), [demands, selectedBuId]);
     
-    // Derive available roles from mockUsers (just to have a list to pick from)
-    const availableRoles = useMemo(() => {
-        const roles = new Set(mockUsers.filter(u => u.position).map(u => u.position));
-        return Array.from(roles).sort();
-    }, []);
-
     // Handlers - Area
     const loadData = async (buId: string) => {
         if (!buId) return;
@@ -263,7 +256,8 @@ const WorkforcePlanning: React.FC = () => {
                 .delete()
                 .eq('area_id', areaId)
                 .eq('role', role)
-                .eq('day_type_tier', dbTier);
+                .eq('day_type_tier', dbTier)
+                .eq('business_unit_id', selectedBuId);
             if (error) {
                 alert(`Failed to delete requirement: ${error.message}`);
                 await loadData(selectedBuId);
@@ -275,7 +269,8 @@ const WorkforcePlanning: React.FC = () => {
                 .delete()
                 .eq('area_id', areaId)
                 .eq('role', role)
-                .eq('day_type_tier', dbTier);
+                .eq('day_type_tier', dbTier)
+                .eq('business_unit_id', selectedBuId);
             if (delError) {
                 alert(`Failed to save requirement: ${delError.message}`);
                 await loadData(selectedBuId);
@@ -285,6 +280,7 @@ const WorkforcePlanning: React.FC = () => {
                 .from('staffing_requirements')
                 .insert({
                     area_id: areaId,
+                    business_unit_id: selectedBuId,
                     role,
                     day_type_tier: dbTier,
                     min_count: count,
@@ -345,7 +341,18 @@ const WorkforcePlanning: React.FC = () => {
             day_type_tier: mapUiTierToDb(tier),
             min_count: 0,
         }));
-        const { error } = await supabase.from('staffing_requirements').upsert(rows, { onConflict: 'area_id,role,day_type_tier' });
+        await supabase
+            .from('staffing_requirements')
+            .delete()
+            .eq('area_id', areaId)
+            .eq('role', role)
+            .eq('business_unit_id', selectedBuId);
+
+        const rowsWithBu = rows.map(row => ({
+            ...row,
+            business_unit_id: selectedBuId,
+        }));
+        const { error } = await supabase.from('staffing_requirements').insert(rowsWithBu);
         if (error) {
             alert('Failed to add role requirement. Please try again.');
             return;

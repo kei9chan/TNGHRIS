@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { User, TimeEventType } from '../../types';
-import { mockUsers, mockTimeEvents, mockShiftAssignments, mockShiftTemplates, mockBusinessUnits } from '../../services/mockData';
+import { User, TimeEventType, ShiftAssignment, ShiftTemplate } from '../../types';
 import Card from '../ui/Card';
+import { supabase } from '../../services/supabaseClient';
 
 interface LiveShiftStatusDashboardProps {
   selectedBuId: string;
   actions?: React.ReactNode;
+  employees: User[];
+  assignments: ShiftAssignment[];
+  templates: ShiftTemplate[];
 }
 
 const StatusIndicator: React.FC<{ status: 'in' | 'late' | 'break' }> = ({ status }) => {
@@ -54,30 +57,59 @@ const StatusColumn: React.FC<{ title: string; data: Record<string, User[]>; stat
 };
 
 
-const LiveShiftStatusDashboard: React.FC<LiveShiftStatusDashboardProps> = ({ selectedBuId, actions }) => {
-    const [now, setNow] = useState(new Date('2025-11-19T13:30:00')); // Set to a specific time for consistent demo
+const LiveShiftStatusDashboard: React.FC<LiveShiftStatusDashboardProps> = ({ selectedBuId, actions, employees, assignments, templates }) => {
+    const [events, setEvents] = useState<{ employeeId: string; type: TimeEventType; timestamp: Date }[]>([]);
+
+    const mapTypeFromDb = (type?: string): TimeEventType => {
+        const t = (type || '').toLowerCase();
+        if (t.includes('out')) return TimeEventType.ClockOut;
+        if (t.includes('start')) return TimeEventType.StartBreak;
+        if (t.includes('end')) return TimeEventType.EndBreak;
+        return TimeEventType.ClockIn;
+    };
 
     useEffect(() => {
-        // In a real scenario, you might not want a timer if you're demoing a specific point in time.
-        // For a live dashboard, this would be new Date().
-        // const timer = setInterval(() => setNow(new Date()), 30000); 
-        // return () => clearInterval(timer);
-    }, []);
+        const loadEvents = async () => {
+            if (!employees.length) {
+                setEvents([]);
+                return;
+            }
+            const start = new Date();
+            start.setHours(0, 0, 0, 0);
+            const end = new Date();
+            end.setHours(23, 59, 59, 999);
+
+            const employeeIds = employees.map(e => e.id);
+            const { data, error } = await supabase
+                .from('time_events')
+                .select('employee_id, timestamp, type')
+                .in('employee_id', employeeIds)
+                .gte('timestamp', start.toISOString())
+                .lte('timestamp', end.toISOString());
+
+            if (error) {
+                console.error('Failed to load time events', error);
+                setEvents([]);
+                return;
+            }
+
+            setEvents((data || []).map((row: any) => ({
+                employeeId: row.employee_id,
+                type: mapTypeFromDb(row.type),
+                timestamp: new Date(row.timestamp),
+            })));
+        };
+
+        loadEvents();
+    }, [employees, selectedBuId]);
 
     const { clockedIn, scheduledLate, onBreak } = useMemo(() => {
-        const selectedBuName = mockBusinessUnits.find(bu => bu.id === selectedBuId)?.name;
-        if (!selectedBuName) {
-            return { clockedIn: {}, scheduledLate: {}, onBreak: {} };
-        }
-
-        const employeesInBU = mockUsers.filter(u => u.businessUnit === selectedBuName && u.status === 'Active');
-
         const categorized = {
             clockedIn: {} as Record<string, User[]>,
             scheduledLate: {} as Record<string, User[]>,
             onBreak: {} as Record<string, User[]>,
         };
-        
+
         const addToGroup = (group: Record<string, User[]>, employee: User) => {
             const dept = employee.department || 'No Department';
             if (!group[dept]) {
@@ -86,47 +118,49 @@ const LiveShiftStatusDashboard: React.FC<LiveShiftStatusDashboardProps> = ({ sel
             group[dept].push(employee);
         };
 
-        for (const employee of employeesInBU) {
-            const todaysEvents = mockTimeEvents
-                .filter(e => e.employeeId === employee.id && new Date(e.timestamp).toDateString() === now.toDateString())
-                .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-            
-            const latestEventToday = todaysEvents[0];
+        const todayKey = new Date().toDateString();
+        const eventsByEmployee = new Map<string, { type: TimeEventType; timestamp: Date }>();
+        events.forEach(event => {
+            if (event.timestamp.toDateString() !== todayKey) return;
+            const existing = eventsByEmployee.get(event.employeeId);
+            if (!existing || event.timestamp > existing.timestamp) {
+                eventsByEmployee.set(event.employeeId, event);
+            }
+        });
+
+        for (const employee of employees) {
+            const latestEventToday = eventsByEmployee.get(employee.id);
 
             if (!latestEventToday) {
-                // No events today, check if they are late for their shift.
-                const todaysShiftAssignment = mockShiftAssignments.find(a => 
-                    a.employeeId === employee.id && 
-                    new Date(a.date).toDateString() === now.toDateString()
+                const todaysShiftAssignment = assignments.find(a =>
+                    a.employeeId === employee.id &&
+                    new Date(a.date).toDateString() === todayKey
                 );
 
                 if (todaysShiftAssignment) {
-                    const shiftTemplate = mockShiftTemplates.find(t => t.id === todaysShiftAssignment.shiftTemplateId);
+                    const shiftTemplate = templates.find(t => t.id === todaysShiftAssignment.shiftTemplateId);
                     if (shiftTemplate && shiftTemplate.startTime && shiftTemplate.startTime !== '00:00') {
                         const [hours, minutes] = shiftTemplate.startTime.split(':').map(Number);
-                        const shiftStartTime = new Date(now);
+                        const shiftStartTime = new Date();
                         shiftStartTime.setHours(hours, minutes, 0, 0);
-                        
+
                         const gracePeriod = shiftTemplate.gracePeriodMinutes || 15;
                         const graceTime = new Date(shiftStartTime.getTime() + gracePeriod * 60000);
 
-                        if (now > graceTime) {
+                        if (new Date() > graceTime) {
                             addToGroup(categorized.scheduledLate, employee);
                         }
                     }
                 }
             } else {
-                // Has events today, determine status from the latest one.
                 if (latestEventToday.type === TimeEventType.StartBreak) {
                     addToGroup(categorized.onBreak, employee);
                 } else if (latestEventToday.type === TimeEventType.ClockIn || latestEventToday.type === TimeEventType.EndBreak) {
                     addToGroup(categorized.clockedIn, employee);
                 }
-                // If latest event is CLOCK_OUT, they are done for the day. Do nothing.
             }
         }
-        
-        // Sort employees within each department alphabetically
+
         for (const dept in categorized.clockedIn) {
             categorized.clockedIn[dept].sort((a, b) => a.name.localeCompare(b.name));
         }
@@ -138,7 +172,7 @@ const LiveShiftStatusDashboard: React.FC<LiveShiftStatusDashboardProps> = ({ sel
         }
 
         return categorized;
-    }, [selectedBuId, now]);
+    }, [employees, assignments, templates, events]);
 
     const clockedInCount = Object.values(clockedIn).flat().length;
     const lateCount = Object.values(scheduledLate).flat().length;

@@ -1,8 +1,7 @@
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import { ShiftTemplate, ShiftAssignment, User, LeaveRequest, LeaveRequestStatus, Permission, OperatingHours, Role, Notification, NotificationType, DayTypeTier, StaffingRequirement, ServiceArea } from '../../types';
-import { mockShiftTemplates, mockUsers, mockShiftAssignments, mockBusinessUnits, mockLeaveRequests, mockDepartments, mockOperatingHours, mockNotifications, mockStaffingRequirements, mockServiceAreas, mockDemandTypes } from '../../services/mockData';
+import { ShiftTemplate, ShiftAssignment, User, LeaveRequest, LeaveRequestStatus, Permission, OperatingHours, Role, DayTypeTier, StaffingRequirement, ServiceArea } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -15,6 +14,7 @@ import RoleViewTable from '../../components/payroll/RoleViewTable';
 import TimelineView from '../../components/payroll/TimelineView';
 import LiveShiftStatusDashboard from '../../components/payroll/LiveShiftStatusDashboard';
 import { logActivity } from '../../services/auditService';
+import { supabase } from '../../services/supabaseClient';
 
 // --- Helper Types ---
 interface Gap {
@@ -42,6 +42,8 @@ const addDays = (date: Date, days: number): Date => {
   result.setDate(result.getDate() + days);
   return result;
 };
+
+const dayKeys = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const formatDateRange = (start: Date, end: Date): string => {
     const startMonth = start.toLocaleString('default', { month: 'short' });
@@ -89,29 +91,155 @@ const Timekeeping: React.FC = () => {
     const { user } = useAuth();
     const { can, getAccessibleBusinessUnits } = usePermissions();
     
-    const [assignments, setAssignments] = useState<ShiftAssignment[]>(() => [...mockShiftAssignments]);
-    const [templates, setTemplates] = useState<ShiftTemplate[]>(mockShiftTemplates);
-    const [leaves] = useState<LeaveRequest[]>(mockLeaveRequests);
+    const [assignments, setAssignments] = useState<ShiftAssignment[]>([]);
+    const [templates, setTemplates] = useState<ShiftTemplate[]>([]);
+    const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
+    const [businessUnits, setBusinessUnits] = useState<{ id: string; name?: string; code?: string; color?: string }[]>([]);
+    const [departments, setDepartments] = useState<{ id: string; name: string; businessUnitId: string }[]>([]);
+    const [employees, setEmployees] = useState<User[]>([]);
+    const [serviceAreas, setServiceAreas] = useState<ServiceArea[]>([]);
+    const [staffingRequirements, setStaffingRequirements] = useState<StaffingRequirement[]>([]);
     
     const [viewDate, setViewDate] = useState(new Date());
     const [view, setView] = useState<'grid' | 'role' | 'area' | 'timeline'>('grid');
     const [scheduleStatus, setScheduleStatus] = useState<'published' | 'dirty'>('published');
     const [toastInfo, setToastInfo] = useState<{ show: boolean; message: string }>({ show: false, message: '' });
 
+    useEffect(() => {
+        const loadReferenceData = async () => {
+            const [buRes, deptRes, usersRes, templateRes] = await Promise.all([
+                supabase.from('business_units').select('*'),
+                supabase.from('departments').select('id, name, business_unit_id'),
+                supabase.from('hris_users').select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position, date_hired, reports_to'),
+                supabase.from('shift_templates').select('id, name, start_time, end_time, break_minutes, business_unit_id, is_night_shift'),
+            ]);
+
+            if (!buRes.error && buRes.data) {
+                setBusinessUnits(buRes.data.map((row: any) => ({
+                    id: row.id,
+                    name: row.name || row.code || row.id,
+                    code: row.code || undefined,
+                    color: row.color || undefined,
+                })));
+            }
+
+            if (!deptRes.error && deptRes.data) {
+                setDepartments(deptRes.data.map((row: any) => ({
+                    id: row.id,
+                    name: row.name,
+                    businessUnitId: row.business_unit_id,
+                })));
+            }
+
+            if (!usersRes.error && usersRes.data) {
+                setEmployees(usersRes.data.map((row: any) => ({
+                    id: row.id,
+                    name: row.full_name || row.email || 'Unknown',
+                    email: row.email || '',
+                    role: row.role || Role.Employee,
+                    department: row.department || '',
+                    businessUnit: row.business_unit || '',
+                    departmentId: row.department_id || undefined,
+                    businessUnitId: row.business_unit_id || undefined,
+                    reportsTo: row.reports_to || undefined,
+                    status: row.status === 'Inactive' ? 'Inactive' : 'Active',
+                    isPhotoEnrolled: false,
+                    dateHired: row.date_hired ? new Date(row.date_hired) : new Date(),
+                    position: row.position || '',
+                } as User)));
+            }
+
+            if (!templateRes.error && templateRes.data) {
+                setTemplates(templateRes.data.map((row: any) => ({
+                    id: row.id,
+                    name: row.name,
+                    startTime: row.start_time,
+                    endTime: row.end_time,
+                    breakMinutes: row.break_minutes ?? 0,
+                    gracePeriodMinutes: 0,
+                    businessUnitId: row.business_unit_id || '',
+                    color: 'blue',
+                    isFlexible: false,
+                })));
+            }
+
+        };
+
+        loadReferenceData();
+    }, []);
+
     // --- Permission Logic ---
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [user, getAccessibleBusinessUnits]);
-    const [selectedBuId, setSelectedBuId] = useState<string>('');
+    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(businessUnits as any), [user, getAccessibleBusinessUnits, businessUnits]);
+    const [selectedBuId, setSelectedBuId] = useState<string>('all');
     const [departmentFilter, setDepartmentFilter] = useState<string>('all');
 
+    const canView = useMemo(() => can('Timekeeping', Permission.View), [can]);
+
     useEffect(() => {
-        if (accessibleBus.length > 0 && !accessibleBus.find(b => b.id === selectedBuId)) {
+        if (accessibleBus.length === 0) {
+            return;
+        }
+        if (selectedBuId === 'all') {
+            return;
+        }
+        if (!accessibleBus.find(b => b.id === selectedBuId)) {
             // Default to the first accessible BU if current selection is invalid or empty
             setSelectedBuId(accessibleBus[0].id);
         }
     }, [accessibleBus, selectedBuId]);
 
+    useEffect(() => {
+        const loadWorkforcePlanningData = async () => {
+            if (!selectedBuId) return;
+            const areaQuery = supabase
+                .from('service_areas')
+                .select('id, business_unit_id, name, capacity, description');
+            const reqQuery = supabase
+                .from('staffing_requirements')
+                .select('id, area_id, business_unit_id, day_type_tier, role, min_count, start_time, end_time');
+
+            if (selectedBuId !== 'all') {
+                areaQuery.eq('business_unit_id', selectedBuId);
+                reqQuery.eq('business_unit_id', selectedBuId);
+            }
+
+            const [areaRes, reqRes] = await Promise.all([areaQuery, reqQuery]);
+
+            if (!areaRes.error && areaRes.data) {
+                setServiceAreas(areaRes.data.map((row: any) => ({
+                    id: row.id,
+                    businessUnitId: row.business_unit_id,
+                    name: row.name,
+                    capacity: row.capacity ?? 0,
+                    description: row.description || undefined,
+                })));
+            } else {
+                setServiceAreas([]);
+            }
+
+            if (!reqRes.error && reqRes.data) {
+                setStaffingRequirements(reqRes.data.map((row: any) => ({
+                    id: row.id,
+                    areaId: row.area_id,
+                    role: row.role,
+                    dayTypeTier: row.day_type_tier as DayTypeTier,
+                    minCount: row.min_count ?? 1,
+                    startTime: row.start_time || undefined,
+                    endTime: row.end_time || undefined,
+                })));
+            } else {
+                setStaffingRequirements([]);
+            }
+        };
+
+        loadWorkforcePlanningData();
+    }, [selectedBuId]);
+
     const canEditOwnBU = useMemo(() => user ? user.role === Role.BusinessUnitManager : false, [user]);
-    const userBu = useMemo(() => mockBusinessUnits.find(bu => bu.name === user?.businessUnit), [user]);
+    const userBu = useMemo(() => {
+        if (!user) return undefined;
+        return businessUnits.find(bu => bu.id === user.businessUnitId) ?? businessUnits.find(bu => bu.name === user.businessUnit);
+    }, [user, businessUnits]);
     const userBuId = useMemo(() => userBu?.id, [userBu]);
 
     // Special Department Manager Logic
@@ -136,6 +264,13 @@ const Timekeeping: React.FC = () => {
     const [operatingHours, setOperatingHours] = useState<OperatingHours | null>(null);
     const [isHoursModalOpen, setIsHoursModalOpen] = useState(false);
 
+    const toDateOnly = (d: Date) => {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+
 
     // Drawer for assigning shifts
     const [drawerState, setDrawerState] = useState<{ open: boolean; employee: User | null; date: Date | null }>({ open: false, employee: null, date: null });
@@ -151,13 +286,110 @@ const Timekeeping: React.FC = () => {
 
     // Fetch operating hours for the selected BU
     useEffect(() => {
-        const hours = mockOperatingHours.find(h => h.businessUnitId === selectedBuId);
-        setOperatingHours(hours || null);
+        if (!selectedBuId || selectedBuId === 'all') {
+            setOperatingHours(null);
+            return;
+        }
+
+        const loadHours = async () => {
+            const { data, error } = await supabase
+                .from('operating_hours')
+                .select('day_of_week, open_time, close_time')
+                .eq('business_unit_id', selectedBuId);
+
+            if (error || !data) {
+                setOperatingHours(null);
+                return;
+            }
+
+            const hours: OperatingHours['hours'] = {};
+            dayKeys.forEach((day) => {
+                hours[day] = { open: '00:00', close: '00:00' };
+            });
+
+            data.forEach((row: any) => {
+                const key = dayKeys[row.day_of_week];
+                if (key) {
+                    hours[key] = {
+                        open: (row.open_time || '00:00').toString().slice(0, 5),
+                        close: (row.close_time || '00:00').toString().slice(0, 5),
+                    };
+                }
+            });
+
+            setOperatingHours({ businessUnitId: selectedBuId, hours });
+        };
+
+        loadHours();
     }, [selectedBuId]);
+
+    useEffect(() => {
+        if (!selectedBuId) {
+            setAssignments([]);
+            setLeaves([]);
+            return;
+        }
+
+        const loadScheduleData = async () => {
+            const rangeStart = addDays(weekStart, -7);
+            const rangeEnd = addDays(weekStart, 13);
+            const accessibleBuIds = accessibleBus.map(bu => bu.id);
+
+            const assignmentQuery = supabase
+                .from('shift_assignments')
+                .select('id, employee_id, shift_template_id, date, business_unit_id, department_id, assigned_area_id, notes')
+                .gte('date', toDateOnly(rangeStart))
+                .lte('date', toDateOnly(rangeEnd));
+
+            const leaveQuery = supabase
+                .from('leave_requests')
+                .select('id, employee_id, start_date, end_date, status')
+                .eq('status', LeaveRequestStatus.Approved);
+
+            if (selectedBuId === 'all') {
+                if (accessibleBuIds.length > 0) {
+                    assignmentQuery.in('business_unit_id', accessibleBuIds);
+                    leaveQuery.in('business_unit_id', accessibleBuIds);
+                }
+            } else {
+                assignmentQuery.eq('business_unit_id', selectedBuId);
+                leaveQuery.eq('business_unit_id', selectedBuId);
+            }
+
+            const [assignmentRes, leaveRes] = await Promise.all([assignmentQuery, leaveQuery]);
+
+            if (!assignmentRes.error && assignmentRes.data) {
+                setAssignments(assignmentRes.data.map((row: any) => ({
+                    id: row.id,
+                    employeeId: row.employee_id,
+                    shiftTemplateId: row.shift_template_id,
+                    date: row.date ? new Date(row.date) : new Date(),
+                    locationId: 'OFFICE-MAIN',
+                    assignedAreaId: row.assigned_area_id || undefined,
+                })));
+            }
+
+            if (!leaveRes.error && leaveRes.data) {
+                setLeaves(leaveRes.data.map((row: any) => ({
+                    id: row.id,
+                    employeeId: row.employee_id,
+                    employeeName: '',
+                    leaveTypeId: '',
+                    startDate: new Date(row.start_date),
+                    endDate: new Date(row.end_date),
+                    durationDays: 0,
+                    reason: '',
+                    status: row.status as LeaveRequestStatus,
+                } as LeaveRequest)));
+            }
+        };
+
+        loadScheduleData();
+    }, [selectedBuId, weekStart, accessibleBus]);
 
     // --- GAP ANALYSIS ENGINE (New in Phase 3) ---
     const gaps = useMemo<Gap[]>(() => {
-        if (!selectedBuId) return [];
+        if (!selectedBuId || selectedBuId === 'all') return [];
 
         const calculatedGaps: Gap[] = [];
         
@@ -165,18 +397,18 @@ const Timekeeping: React.FC = () => {
             const dayType = getDayType(date);
             
             // Filter requirements for this day type & BU
-            const requirements = mockStaffingRequirements.filter(r => {
-                const area = mockServiceAreas.find(a => a.id === r.areaId);
+            const requirements = staffingRequirements.filter(r => {
+                const area = serviceAreas.find(a => a.id === r.areaId);
                 return area?.businessUnitId === selectedBuId && r.dayTypeTier === dayType;
             });
 
             requirements.forEach(req => {
-                const area = mockServiceAreas.find(a => a.id === req.areaId);
+                const area = serviceAreas.find(a => a.id === req.areaId);
                 if (!area) return;
 
                 // Count assigned staff for this role/date
                 const scheduledCount = assignments.filter(a => {
-                    const emp = mockUsers.find(u => u.id === a.employeeId);
+                    const emp = employees.find(u => u.id === a.employeeId);
                     const isDate = new Date(a.date).toDateString() === date.toDateString();
                     // Simple matching by role name. In real app, map position IDs
                     const isRole = emp?.position === req.role;
@@ -202,7 +434,7 @@ const Timekeeping: React.FC = () => {
         });
 
         return calculatedGaps;
-    }, [selectedBuId, weekDates, assignments]);
+    }, [selectedBuId, weekDates, assignments, staffingRequirements, serviceAreas, employees]);
 
 
     // Smart Carry-Over Logic
@@ -239,23 +471,32 @@ const Timekeeping: React.FC = () => {
     }, [weekStart, assignments, isSuggested, isScheduleEditable]);
     
     const departmentsInSelectedBu = useMemo(() => {
-        return mockDepartments.filter(d => d.businessUnitId === selectedBuId);
-    }, [selectedBuId]);
+        if (selectedBuId === 'all') {
+            return departments;
+        }
+        return departments.filter(d => d.businessUnitId === selectedBuId);
+    }, [selectedBuId, departments]);
 
     useEffect(() => {
         setDepartmentFilter('all');
     }, [selectedBuId]);
 
     const employeesInBU = useMemo(() => {
-        const selectedBuName = mockBusinessUnits.find(bu => bu.id === selectedBuId)?.name;
-        let employees = mockUsers.filter(u => u.businessUnit === selectedBuName && u.status === 'Active');
+        let filtered = selectedBuId === 'all'
+            ? employees.filter(u => u.status === 'Active')
+            : employees.filter(u => u.businessUnitId === selectedBuId && u.status === 'Active');
 
         if (departmentFilter !== 'all') {
-            const departmentName = mockDepartments.find(d => d.id === departmentFilter)?.name;
-            employees = employees.filter(u => u.department === departmentName);
+            filtered = filtered.filter(u => u.departmentId === departmentFilter);
         }
-        return employees.sort((a,b) => a.name.localeCompare(b.name));
-    }, [selectedBuId, departmentFilter]);
+        if (user?.role === Role.Employee) {
+            filtered = filtered.filter(u => u.id === user.id);
+        }
+        if (user?.role === Role.Manager) {
+            filtered = filtered.filter(u => u.id === user.id || u.reportsTo === user.id);
+        }
+        return filtered.sort((a,b) => a.name.localeCompare(b.name));
+    }, [selectedBuId, departmentFilter, employees, user]);
 
      const employeesByRole = useMemo(() => {
       const grouped: Record<string, User[]> = {};
@@ -276,13 +517,13 @@ const Timekeeping: React.FC = () => {
         const roleToArea = new Map<string, string>();
         
         // Filter requirements for current BU first to ensure correct mapping context
-        const buRequirements = mockStaffingRequirements.filter(r => {
-             const area = mockServiceAreas.find(a => a.id === r.areaId);
+        const buRequirements = staffingRequirements.filter(r => {
+             const area = serviceAreas.find(a => a.id === r.areaId);
              return area?.businessUnitId === selectedBuId;
         });
 
         buRequirements.forEach(req => {
-            const area = mockServiceAreas.find(a => a.id === req.areaId);
+            const area = serviceAreas.find(a => a.id === req.areaId);
             if (area) roleToArea.set(req.role, area.name);
         });
 
@@ -297,7 +538,7 @@ const Timekeeping: React.FC = () => {
         });
         
         return grouped;
-    }, [employeesInBU, selectedBuId]);
+    }, [employeesInBU, selectedBuId, staffingRequirements, serviceAreas]);
     
     const validationStatus = useMemo(() => {
         if (!operatingHours) return {};
@@ -349,34 +590,65 @@ const Timekeeping: React.FC = () => {
     
     const handleCloseDrawer = () => setDrawerState({ open: false, employee: null, date: null });
 
-    const handleSaveShift = (employeeId: string, date: Date, templateId: string) => {
-        const existingAssignmentIndex = mockShiftAssignments.findIndex(
+    const resolveAssignmentBuId = (employeeId: string) => {
+        if (selectedBuId && selectedBuId !== 'all') return selectedBuId;
+        const employee = employees.find(e => e.id === employeeId);
+        return employee?.businessUnitId || null;
+    };
+
+    const handleSaveShift = async (employeeId: string, date: Date, templateId: string) => {
+        const existing = assignments.find(
             a => a.employeeId === employeeId && new Date(a.date).toDateString() === date.toDateString()
         );
+        const employee = employees.find(e => e.id === employeeId);
+        const resolvedBuId = resolveAssignmentBuId(employeeId);
 
-        if (existingAssignmentIndex > -1) {
-            mockShiftAssignments[existingAssignmentIndex].shiftTemplateId = templateId;
-            logActivity(user, 'UPDATE', 'ShiftAssignment', mockShiftAssignments[existingAssignmentIndex].id, `Updated shift assignment for employee ${employeeId} on ${date.toDateString()}`);
+        if (existing) {
+            const { error } = await supabase
+                .from('shift_assignments')
+                .update({ shift_template_id: templateId, business_unit_id: resolvedBuId })
+                .eq('id', existing.id);
+
+            if (!error) {
+                setAssignments(prev => prev.map(a => a.id === existing.id ? { ...a, shiftTemplateId: templateId } : a));
+                logActivity(user, 'UPDATE', 'ShiftAssignment', existing.id, `Updated shift assignment for employee ${employeeId} on ${date.toDateString()}`);
+            }
         } else {
-            const newAssignment: ShiftAssignment = {
-                id: `SA-${Date.now()}-${Math.random()}`,
-                employeeId,
-                date,
-                shiftTemplateId: templateId,
-                locationId: 'OFFICE-MAIN'
+            const payload = {
+                employee_id: employeeId,
+                shift_template_id: templateId,
+                date: toDateOnly(date),
+                business_unit_id: resolvedBuId,
+                department_id: employee?.departmentId || null,
+                assigned_area_id: null,
+                created_by: user?.id || null,
             };
-            mockShiftAssignments.push(newAssignment);
-            logActivity(user, 'CREATE', 'ShiftAssignment', newAssignment.id, `Assigned shift to employee ${employeeId} on ${date.toDateString()}`);
+            const { data, error } = await supabase
+                .from('shift_assignments')
+                .insert(payload)
+                .select('id')
+                .single();
+
+            if (!error && data) {
+                const newAssignment: ShiftAssignment = {
+                    id: data.id,
+                    employeeId,
+                    date,
+                    shiftTemplateId: templateId,
+                    locationId: 'OFFICE-MAIN'
+                };
+                setAssignments(prev => [...prev, newAssignment]);
+                logActivity(user, 'CREATE', 'ShiftAssignment', newAssignment.id, `Assigned shift to employee ${employeeId} on ${date.toDateString()}`);
+            }
         }
 
-        setAssignments([...mockShiftAssignments]);
         setScheduleStatus('dirty');
         handleCloseDrawer();
     };
 
     const handleOpenDetailModal = (assignment: ShiftAssignment) => {
          // Check permissions before allowing detail view actions if restricted
-         const employee = mockUsers.find(u => u.id === assignment.employeeId);
+         const employee = employees.find(u => u.id === assignment.employeeId);
          if (isSpecialDeptManager && user && employee && employee.department !== user.department) {
              // They can view but not edit/delete. The modal handles isEditable prop.
              // We need to pass down a specific isEditable flag for this specific assignment?
@@ -394,21 +666,24 @@ const Timekeeping: React.FC = () => {
         setDetailModalState({ open: false, assignment: null });
     };
 
-    const handleDeleteShift = (assignmentId: string) => {
+    const handleDeleteShift = async (assignmentId: string) => {
         if (window.confirm('This will delete the single shift for this day. Do you want to proceed?')) {
-            const mockIndex = mockShiftAssignments.findIndex(a => a.id === assignmentId);
-            if (mockIndex > -1) {
-                mockShiftAssignments.splice(mockIndex, 1);
+            const { error } = await supabase
+                .from('shift_assignments')
+                .delete()
+                .eq('id', assignmentId);
+
+            if (!error) {
+                setAssignments(prev => prev.filter(a => a.id !== assignmentId));
                 logActivity(user, 'DELETE', 'ShiftAssignment', assignmentId, 'Deleted shift assignment');
+                setScheduleStatus('dirty');
+                handleCloseDetailModal();
             }
-            setAssignments([...mockShiftAssignments]);
-            setScheduleStatus('dirty');
-            handleCloseDetailModal();
         }
     };
     
     const handleChangeShift = (assignment: ShiftAssignment) => {
-        const employee = mockUsers.find(u => u.id === assignment.employeeId);
+        const employee = employees.find(u => u.id === assignment.employeeId);
         if (employee) {
             handleCloseDetailModal();
             setTimeout(() => {
@@ -417,7 +692,7 @@ const Timekeeping: React.FC = () => {
         }
     };
     
-    const handleCopyWeek = (assignmentToCopy: ShiftAssignment) => {
+    const handleCopyWeek = async (assignmentToCopy: ShiftAssignment) => {
         const { employeeId, shiftTemplateId, date } = assignmentToCopy;
         const startDate = new Date(date);
         const dayOfWeek = startDate.getDay();
@@ -428,7 +703,7 @@ const Timekeeping: React.FC = () => {
         for (let i = weekDayIndex + 1; i < 7; i++) {
             const targetDate = weekDates[i];
             
-            const existingAssignmentIndex = mockShiftAssignments.findIndex(a => a.employeeId === employeeId && new Date(a.date).toDateString() === targetDate.toDateString());
+            const existingAssignmentIndex = assignments.findIndex(a => a.employeeId === employeeId && new Date(a.date).toDateString() === targetDate.toDateString());
             const existingLeave = leaves.find(l => l.employeeId === employeeId && l.status === LeaveRequestStatus.Approved && targetDate >= new Date(l.startDate) && targetDate <= new Date(l.endDate));
             
             if (existingAssignmentIndex === -1 && !existingLeave) {
@@ -443,24 +718,50 @@ const Timekeeping: React.FC = () => {
         }
         
         if (newAssignments.length > 0) {
-            mockShiftAssignments.push(...newAssignments);
-            setAssignments([...mockShiftAssignments]);
+            const payloads = newAssignments.map(a => {
+                const emp = employees.find(e => e.id === a.employeeId);
+                const resolvedBuId = resolveAssignmentBuId(a.employeeId);
+                return {
+                    employee_id: a.employeeId,
+                    shift_template_id: a.shiftTemplateId,
+                    date: toDateOnly(a.date),
+                    business_unit_id: resolvedBuId,
+                    department_id: emp?.departmentId || null,
+                    assigned_area_id: a.assignedAreaId || null,
+                    created_by: user?.id || null,
+                };
+            });
+
+            const { data, error } = await supabase
+                .from('shift_assignments')
+                .insert(payloads)
+                .select('id, employee_id, shift_template_id, date, assigned_area_id');
+
+            if (!error && data) {
+                const inserted = data.map((row: any) => ({
+                    id: row.id,
+                    employeeId: row.employee_id,
+                    shiftTemplateId: row.shift_template_id,
+                    date: row.date ? new Date(row.date) : new Date(),
+                    locationId: 'OFFICE-MAIN',
+                    assignedAreaId: row.assigned_area_id || undefined,
+                }));
+                setAssignments(prev => [...prev, ...inserted]);
+            }
             setScheduleStatus('dirty');
             logActivity(user, 'CREATE', 'ShiftAssignment', 'batch', `Copied shift to rest of week for employee ${employeeId}`);
         }
         handleCloseDetailModal();
     };
 
-    const handleCopyLastWeekSchedule = (employeeId: string) => {
+    const handleCopyLastWeekSchedule = async (employeeId: string) => {
         if (!user) return;
         if (!window.confirm("This will copy the employee's entire schedule from last week, overwriting any shifts in the current week. Proceed?")) {
             return;
         }
         
         const prevWeekStart = addDays(weekStart, -7);
-        const assignmentsToCopyFrom = [...mockShiftAssignments];
-
-        const prevWeekAssignments = assignmentsToCopyFrom.filter(a => {
+        const prevWeekAssignments = assignments.filter(a => {
             if (a.employeeId === employeeId) {
                 const assignmentDate = new Date(a.date);
                 const assignmentWeekStart = getStartOfWeek(assignmentDate);
@@ -480,29 +781,58 @@ const Timekeeping: React.FC = () => {
             date: addDays(new Date(a.date), 7),
         }));
 
-        const currentWeekStartStr = weekStart.toDateString();
-        
-        const updatedAssignments = [
-            ...assignmentsToCopyFrom.filter(a => {
-                if (a.employeeId === employeeId) {
+        const currentWeekEnd = addDays(weekStart, 6);
+        await supabase
+            .from('shift_assignments')
+            .delete()
+            .eq('employee_id', employeeId)
+            .gte('date', toDateOnly(weekStart))
+            .lte('date', toDateOnly(currentWeekEnd));
+
+        const payloads = newAssignmentsForCurrentWeek.map(a => {
+            const emp = employees.find(e => e.id === a.employeeId);
+            const resolvedBuId = resolveAssignmentBuId(a.employeeId);
+            return {
+                employee_id: a.employeeId,
+                shift_template_id: a.shiftTemplateId,
+                date: toDateOnly(a.date),
+                business_unit_id: resolvedBuId,
+                department_id: emp?.departmentId || null,
+                assigned_area_id: a.assignedAreaId || null,
+                created_by: user.id,
+            };
+        });
+
+        const { data, error } = await supabase
+            .from('shift_assignments')
+            .insert(payloads)
+            .select('id, employee_id, shift_template_id, date, assigned_area_id');
+
+        if (!error && data) {
+            const inserted = data.map((row: any) => ({
+                id: row.id,
+                employeeId: row.employee_id,
+                shiftTemplateId: row.shift_template_id,
+                date: row.date ? new Date(row.date) : new Date(),
+                locationId: 'OFFICE-MAIN',
+                assignedAreaId: row.assigned_area_id || undefined,
+            }));
+            setAssignments(prev => {
+                const filtered = prev.filter(a => {
+                    if (a.employeeId !== employeeId) return true;
                     const assignmentWeekStart = getStartOfWeek(new Date(a.date));
-                    return assignmentWeekStart.toDateString() !== currentWeekStartStr;
-                }
-                return true;
-            }),
-            ...newAssignmentsForCurrentWeek
-        ];
-        
-        mockShiftAssignments.length = 0;
-        Array.prototype.push.apply(mockShiftAssignments, updatedAssignments);
-        setAssignments(updatedAssignments);
+                    return assignmentWeekStart.toDateString() !== weekStart.toDateString();
+                });
+                return [...filtered, ...inserted];
+            });
+        }
         setScheduleStatus('dirty');
         setToastInfo({ show: true, message: 'Last week\'s schedule copied!' });
         logActivity(user, 'CREATE', 'ShiftAssignment', 'batch', `Copied last week's schedule for employee ${employeeId}`);
         handleCloseDrawer();
     };
 
-    const handleCopyPreviousWeekAll = () => {
+    const handleCopyPreviousWeekAll = async () => {
         if (!isScheduleEditable) return;
 
         const prevWeekStart = addDays(weekStart, -7);
@@ -523,7 +853,7 @@ const Timekeeping: React.FC = () => {
 
         const displayedEmployeeIds = targetEmployees.map(e => e.id);
         
-        const sourceAssignments = mockShiftAssignments.filter(a => {
+        const sourceAssignments = assignments.filter(a => {
             const d = new Date(a.date);
             return displayedEmployeeIds.includes(a.employeeId) &&
                    d >= prevWeekStart && 
@@ -538,69 +868,189 @@ const Timekeeping: React.FC = () => {
         const currentWeekEnd = addDays(weekStart, 6);
         currentWeekEnd.setHours(23, 59, 59, 999);
 
-        // Remove existing assignments for target employees in current week
-        const otherAssignments = mockShiftAssignments.filter(a => {
-            const d = new Date(a.date);
-            const isTargetEmployee = displayedEmployeeIds.includes(a.employeeId);
-            const isInCurrentWeek = d >= weekStart && d <= currentWeekEnd;
-            
-            return !(isTargetEmployee && isInCurrentWeek);
-        });
-
         const newAssignments = sourceAssignments.map(a => ({
             ...a,
             id: `SA-COPY-ALL-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             date: addDays(new Date(a.date), 7),
         }));
 
-        mockShiftAssignments.length = 0;
-        mockShiftAssignments.push(...otherAssignments, ...newAssignments);
-        
-        setAssignments([...mockShiftAssignments]);
+        await supabase
+            .from('shift_assignments')
+            .delete()
+            .in('employee_id', displayedEmployeeIds)
+            .gte('date', toDateOnly(weekStart))
+            .lte('date', toDateOnly(currentWeekEnd));
+
+        const payloads = newAssignments.map(a => {
+            const emp = employees.find(e => e.id === a.employeeId);
+            const resolvedBuId = resolveAssignmentBuId(a.employeeId);
+            return {
+                employee_id: a.employeeId,
+                shift_template_id: a.shiftTemplateId,
+                date: toDateOnly(a.date),
+                business_unit_id: resolvedBuId,
+                department_id: emp?.departmentId || null,
+                assigned_area_id: a.assignedAreaId || null,
+                created_by: user?.id || null,
+            };
+        });
+
+        const { data, error } = await supabase
+            .from('shift_assignments')
+            .insert(payloads)
+            .select('id, employee_id, shift_template_id, date, assigned_area_id');
+
+        if (!error && data) {
+            const inserted = data.map((row: any) => ({
+                id: row.id,
+                employeeId: row.employee_id,
+                shiftTemplateId: row.shift_template_id,
+                date: row.date ? new Date(row.date) : new Date(),
+                locationId: 'OFFICE-MAIN',
+                assignedAreaId: row.assigned_area_id || undefined,
+            }));
+            setAssignments(prev => {
+                const filtered = prev.filter(a => {
+                    const d = new Date(a.date);
+                    const isTargetEmployee = displayedEmployeeIds.includes(a.employeeId);
+                    const isInCurrentWeek = d >= weekStart && d <= currentWeekEnd;
+                    return !(isTargetEmployee && isInCurrentWeek);
+                });
+                return [...filtered, ...inserted];
+            });
+        }
+
         setScheduleStatus('dirty');
         setToastInfo({ show: true, message: `Successfully copied ${newAssignments.length} shifts from previous week.` });
         logActivity(user!, 'CREATE', 'ShiftAssignment', 'batch', `Copied previous week schedule for employees.`);
     };
 
-    const handleSaveTemplate = (templateData: ShiftTemplate) => {
+    const handleSaveTemplate = async (templateData: ShiftTemplate) => {
+        const resolvedBuId = templateData.businessUnitId && templateData.businessUnitId !== 'all'
+            ? templateData.businessUnitId
+            : (selectedBuId && selectedBuId !== 'all' ? selectedBuId : null);
+        const payload = {
+            name: templateData.name,
+            start_time: templateData.startTime,
+            end_time: templateData.endTime,
+            break_minutes: templateData.breakMinutes ?? 0,
+            business_unit_id: resolvedBuId,
+            is_night_shift: false,
+        };
+
         if (templateData.id) {
-            const index = mockShiftTemplates.findIndex(t => t.id === templateData.id);
-            if (index > -1) mockShiftTemplates[index] = templateData;
+            const { data, error } = await supabase
+                .from('shift_templates')
+                .update(payload)
+                .eq('id', templateData.id)
+                .select('id, name, start_time, end_time, break_minutes, business_unit_id, is_night_shift')
+                .single();
+
+            if (error || !data) {
+                setToastInfo({ show: true, message: 'Failed to update shift preset.' });
+                return;
+            }
+
+            const updated: ShiftTemplate = {
+                id: data.id,
+                name: data.name,
+                startTime: data.start_time,
+                endTime: data.end_time,
+                breakMinutes: data.break_minutes ?? 0,
+                gracePeriodMinutes: templateData.gracePeriodMinutes ?? 15,
+                businessUnitId: data.business_unit_id || '',
+                color: templateData.color || 'blue',
+                isFlexible: false,
+            };
+
+            setTemplates(prev => prev.map(t => t.id === updated.id ? updated : t));
         } else {
-            const newTemplate = { ...templateData, id: `ST-${Date.now()}` };
-            mockShiftTemplates.push(newTemplate);
+            const { data, error } = await supabase
+                .from('shift_templates')
+                .insert(payload)
+                .select('id, name, start_time, end_time, break_minutes, business_unit_id, is_night_shift')
+                .single();
+
+            if (error || !data) {
+                setToastInfo({ show: true, message: 'Failed to create shift preset.' });
+                return;
+            }
+
+            const created: ShiftTemplate = {
+                id: data.id,
+                name: data.name,
+                startTime: data.start_time,
+                endTime: data.end_time,
+                breakMinutes: data.break_minutes ?? 0,
+                gracePeriodMinutes: templateData.gracePeriodMinutes ?? 15,
+                businessUnitId: data.business_unit_id || '',
+                color: templateData.color || 'blue',
+                isFlexible: false,
+            };
+            setTemplates(prev => [...prev, created]);
         }
-        setTemplates([...mockShiftTemplates]);
+
         setTemplateModalState({ open: false, template: null });
     };
 
-    const handleDeleteTemplate = (templateId: string) => {
+    const handleDeleteTemplate = async (templateId: string) => {
         if (assignments.some(a => a.shiftTemplateId === templateId)) {
             alert('Cannot delete a shift preset that is currently assigned to one or more employees.');
             return;
         }
         if (window.confirm('Are you sure you want to delete this shift preset?')) {
-            const index = mockShiftTemplates.findIndex(t => t.id === templateId);
-            if (index > -1) mockShiftTemplates.splice(index, 1);
-            setTemplates([...mockShiftTemplates]);
+            const { error } = await supabase
+                .from('shift_templates')
+                .delete()
+                .eq('id', templateId);
+
+            if (error) {
+                setToastInfo({ show: true, message: 'Failed to delete shift preset.' });
+                return;
+            }
+            setTemplates(prev => prev.filter(t => t.id !== templateId));
         }
     };
 
-    const handleSaveHours = (newHours: OperatingHours['hours']) => {
-        const index = mockOperatingHours.findIndex(h => h.businessUnitId === selectedBuId);
-        if (index > -1) {
-            mockOperatingHours[index].hours = newHours;
-            setOperatingHours(mockOperatingHours[index]);
-        } else {
-            const newOperatingHours: OperatingHours = { businessUnitId: selectedBuId, hours: newHours };
-            mockOperatingHours.push(newOperatingHours);
-            setOperatingHours(newOperatingHours);
+    const handleSaveHours = async (newHours: OperatingHours['hours']) => {
+        if (!selectedBuId) return;
+        const payloads = dayKeys.map((day, index) => ({
+            business_unit_id: selectedBuId,
+            day_of_week: index,
+            open_time: newHours[day]?.open || '00:00',
+            close_time: newHours[day]?.close || '00:00',
+        }));
+
+        const { error } = await supabase
+            .from('operating_hours')
+            .upsert(payloads, { onConflict: 'business_unit_id,day_of_week' });
+
+        if (error) {
+            setToastInfo({ show: true, message: 'Failed to update operating hours.' });
+            return;
         }
+
+        setOperatingHours({ businessUnitId: selectedBuId, hours: newHours });
         setIsHoursModalOpen(false);
     };
     
     // --- Auto Fill Logic ---
-    const handleAutoFill = () => {
+    const handleAutoFill = async () => {
+        if (selectedBuId === 'all') {
+            setToastInfo({ show: true, message: 'Select a specific business unit to auto-assign shifts.' });
+            return;
+        }
+
+        const hasRequirementsForBu = staffingRequirements.some(req => {
+            const area = serviceAreas.find(a => a.id === req.areaId);
+            return area?.businessUnitId === selectedBuId;
+        });
+
+        if (!hasRequirementsForBu) {
+            setToastInfo({ show: true, message: 'No staffing requirements configured for this business unit.' });
+            return;
+        }
+
         if (gaps.length === 0) {
             setToastInfo({ show: true, message: 'No gaps to fill!' });
             return;
@@ -649,60 +1099,94 @@ const Timekeeping: React.FC = () => {
         });
 
         if (filledCount > 0) {
-            mockShiftAssignments.push(...newAssignments);
-            setAssignments([...mockShiftAssignments]);
-            setScheduleStatus('dirty');
-            setToastInfo({ show: true, message: `Auto-assigned ${filledCount} shifts based on gaps.` });
-            logActivity(user!, 'CREATE', 'ShiftAssignment', 'batch', `Auto-filled ${filledCount} shifts based on gaps.`);
+            const payloads = newAssignments.map(a => {
+                const emp = employees.find(e => e.id === a.employeeId);
+                const resolvedBuId = resolveAssignmentBuId(a.employeeId);
+                return {
+                    employee_id: a.employeeId,
+                    shift_template_id: a.shiftTemplateId,
+                    date: toDateOnly(a.date),
+                    business_unit_id: resolvedBuId,
+                    department_id: emp?.departmentId || null,
+                    assigned_area_id: a.assignedAreaId || null,
+                    created_by: user?.id || null,
+                };
+            });
+
+            const { data, error } = await supabase
+                .from('shift_assignments')
+                .insert(payloads)
+                .select('id, employee_id, shift_template_id, date, assigned_area_id');
+
+            if (!error && data) {
+                const inserted = data.map((row: any) => ({
+                    id: row.id,
+                    employeeId: row.employee_id,
+                    shiftTemplateId: row.shift_template_id,
+                    date: row.date ? new Date(row.date) : new Date(),
+                    locationId: 'OFFICE-MAIN',
+                    assignedAreaId: row.assigned_area_id || undefined,
+                }));
+                setAssignments(prev => [...prev, ...inserted]);
+                setScheduleStatus('dirty');
+                setToastInfo({ show: true, message: `Auto-assigned ${inserted.length} shifts based on gaps.` });
+                logActivity(user!, 'CREATE', 'ShiftAssignment', 'batch', `Auto-filled ${inserted.length} shifts based on gaps.`);
+            } else {
+                setToastInfo({ show: true, message: 'Failed to auto-assign shifts.' });
+            }
         } else {
              setToastInfo({ show: true, message: 'Could not find available employees to fill gaps.' });
         }
     };
 
-    const handlePublishSchedule = () => {
+    const handlePublishSchedule = async () => {
         const currentWeekKey = weekStart.toISOString().split('T')[0];
         const suggestionsToConfirm = suggestedAssignments.filter(sa => 
             getStartOfWeek(new Date(sa.date)).toISOString().split('T')[0] === currentWeekKey
         );
         
         if (suggestionsToConfirm.length > 0) {
-            const newAssignmentsFromSuggestions = suggestionsToConfirm.map(suggestion => ({
-                ...suggestion,
-                id: `SA-${suggestion.id}-${Date.now()}`,
-            }));
+            const payloads = suggestionsToConfirm.map(suggestion => {
+                const emp = employees.find(e => e.id === suggestion.employeeId);
+                const resolvedBuId = resolveAssignmentBuId(suggestion.employeeId);
+                return {
+                    employee_id: suggestion.employeeId,
+                    shift_template_id: suggestion.shiftTemplateId,
+                    date: toDateOnly(new Date(suggestion.date)),
+                    business_unit_id: resolvedBuId,
+                    department_id: emp?.departmentId || null,
+                    assigned_area_id: suggestion.assignedAreaId || null,
+                    created_by: user?.id || null,
+                };
+            });
 
-            mockShiftAssignments.push(...newAssignmentsFromSuggestions);
-            setAssignments([...mockShiftAssignments]);
-            
-            setSuggestedAssignments(prev => prev.filter(sa => 
-                getStartOfWeek(new Date(sa.date)).toISOString().split('T')[0] !== currentWeekKey
-            ));
+            const { data, error } = await supabase
+                .from('shift_assignments')
+                .insert(payloads)
+                .select('id, employee_id, shift_template_id, date, assigned_area_id');
+
+            if (!error && data) {
+                const inserted = data.map((row: any) => ({
+                    id: row.id,
+                    employeeId: row.employee_id,
+                    shiftTemplateId: row.shift_template_id,
+                    date: row.date ? new Date(row.date) : new Date(),
+                    locationId: 'OFFICE-MAIN',
+                    assignedAreaId: row.assigned_area_id || undefined,
+                }));
+                setAssignments(prev => [...prev, ...inserted]);
+                setSuggestedAssignments(prev => prev.filter(sa => 
+                    getStartOfWeek(new Date(sa.date)).toISOString().split('T')[0] !== currentWeekKey
+                ));
+            } else {
+                setToastInfo({ show: true, message: 'Failed to publish suggested shifts.' });
+                return;
+            }
         }
 
         setScheduleStatus('published');
         setToastInfo({ show: true, message: 'Schedule for the week has been published!' });
         logActivity(user!, 'UPDATE', 'Schedule', currentWeekKey, `Published schedule for week of ${weekStart.toLocaleDateString()}`);
-
-        if (user) {
-            const weekStartDateStr = weekStart.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-            const newNotifications: Notification[] = employeesInBU.map(employee => ({
-                id: `notif-sched-${employee.id}-${weekStart.getTime()}`,
-                userId: employee.id,
-                type: NotificationType.SCHEDULE_PUBLISHED,
-                message: `Your shift schedule for the week of ${weekStartDateStr} has been published.`,
-                link: '/payroll/timekeeping',
-                isRead: false,
-                createdAt: new Date(),
-                relatedEntityId: selectedBuId,
-            }));
-
-            const existingNotifIds = new Set(mockNotifications.map(n => n.id));
-            const uniqueNewNotifications = newNotifications.filter(n => !existingNotifIds.has(n.id));
-
-            if (uniqueNewNotifications.length > 0) {
-                mockNotifications.unshift(...uniqueNewNotifications);
-            }
-        }
     };
 
     const handlePrevWeek = () => { setViewDate(prev => addDays(prev, -7)); setScheduleStatus('published'); };
@@ -720,25 +1204,35 @@ const Timekeeping: React.FC = () => {
     
     const enrichedAssignmentDetail: EnrichedAssignmentDetail | null = useMemo(() => {
         if (!detailModalState.assignment) return null;
-        const employee = mockUsers.find(u => u.id === detailModalState.assignment!.employeeId);
+        const employee = employees.find(u => u.id === detailModalState.assignment!.employeeId);
         const shift = templates.find(t => t.id === detailModalState.assignment!.shiftTemplateId);
         if (!employee || !shift) return null;
         return { assignment: detailModalState.assignment, employee, shift };
     }, [detailModalState.assignment, templates]);
 
     const templatesForDrawer = useMemo(() => {
+        if (selectedBuId === 'all') return templates;
         return templates.filter(t => t.businessUnitId === selectedBuId || !t.businessUnitId);
     }, [templates, selectedBuId]);
     
     const presetTemplates = useMemo(() => {
-        return templates.filter(t => t.businessUnitId === selectedBuId);
+        if (selectedBuId !== 'all') {
+            return templates.filter(t => t.businessUnitId === selectedBuId);
+        }
+        const seen = new Set<string>();
+        return templates.filter(template => {
+            const key = `${template.name}|${template.startTime}|${template.endTime}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
     }, [templates, selectedBuId]);
 
-    const buNameForModal = mockBusinessUnits.find(b => b.id === selectedBuId)?.name;
+    const buNameForModal = businessUnits.find(b => b.id === selectedBuId)?.name;
     
     const viewButtonClass = (buttonView: typeof view) => `flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md transition-colors ${view === buttonView ? 'bg-indigo-100 text-indigo-700 dark:bg-slate-700 dark:text-indigo-300 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`;
     
-    const selectedBu = useMemo(() => mockBusinessUnits.find(bu => bu.id === selectedBuId), [selectedBuId]);
+    const selectedBu = useMemo(() => businessUnits.find(bu => bu.id === selectedBuId), [selectedBuId, businessUnits]);
 
     const colorStyles: Record<string, { bg: string, text: string, border: string }> = {
         blue: { bg: 'bg-blue-100 dark:bg-blue-900/50', text: 'text-blue-800 dark:text-blue-200', border: 'border-blue-500' },
@@ -763,6 +1257,7 @@ const Timekeeping: React.FC = () => {
                     onChange={e => setSelectedBuId(e.target.value)}
                     className={`block w-full pl-4 pr-10 py-2 text-xl appearance-none focus:outline-none rounded-md ${buColorStyle.bg} ${buColorStyle.text}`}
                 >
+                    {accessibleBus.length > 0 && <option value="all">All BUs</option>}
                     {accessibleBus.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
                 </select>
                 <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-inherit">
@@ -806,6 +1301,18 @@ const Timekeeping: React.FC = () => {
         </div>
     );
 
+    if (!canView) {
+        return (
+            <div className="p-6">
+                <Card>
+                    <div className="p-6 text-center text-gray-600 dark:text-gray-300">
+                        You do not have permission to view schedules.
+                    </div>
+                </Card>
+            </div>
+        );
+    }
+
 
     return (
         <div className="space-y-6">
@@ -816,8 +1323,18 @@ const Timekeeping: React.FC = () => {
                 message={toastInfo.message}
             />
 
-            {isScheduleEditable && <LiveShiftStatusDashboard selectedBuId={selectedBuId} actions={dropdowns} />}
-            {!isScheduleEditable && <div className="mb-6">{dropdowns}</div>}
+            {isScheduleEditable && (
+                <LiveShiftStatusDashboard
+                    selectedBuId={selectedBuId}
+                    actions={dropdowns}
+                    employees={employeesInBU}
+                    assignments={assignments}
+                    templates={templates}
+                />
+            )}
+            {!isScheduleEditable && (
+                <div className="mb-6">{dropdowns}</div>
+            )}
 
             {gapBar}
 
@@ -898,7 +1415,9 @@ const Timekeeping: React.FC = () => {
                                     ) : (
                                         <span className="text-green-600 dark:text-green-400 font-semibold text-sm">✓ Published</span>
                                     )}
-                                    <Button variant="secondary" onClick={() => setIsHoursModalOpen(true)}>Edit Business Hours</Button>
+                                    {selectedBuId !== 'all' && (
+                                        <Button variant="secondary" onClick={() => setIsHoursModalOpen(true)}>Edit Business Hours</Button>
+                                    )}
                                 </>
                             )}
                         </div>
