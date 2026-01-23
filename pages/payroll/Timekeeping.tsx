@@ -489,11 +489,25 @@ const Timekeeping: React.FC = () => {
         if (departmentFilter !== 'all') {
             filtered = filtered.filter(u => u.departmentId === departmentFilter);
         }
-        if (user?.role === Role.Employee) {
-            filtered = filtered.filter(u => u.id === user.id);
-        }
-        if (user?.role === Role.Manager) {
-            filtered = filtered.filter(u => u.id === user.id || u.reportsTo === user.id);
+        if (user) {
+            const broadViewRoles = new Set<Role>([
+                Role.Admin,
+                Role.HRManager,
+                Role.HRStaff,
+                Role.BOD,
+                Role.GeneralManager,
+                Role.OperationsDirector,
+                Role.BusinessUnitManager,
+            ]);
+
+            if (user.role === Role.Manager) {
+                filtered = filtered.filter(u => u.id === user.id || u.reportsTo === user.id);
+            } else if (user.role === Role.Employee) {
+                filtered = filtered.filter(u => u.id === user.id);
+            } else if (!broadViewRoles.has(user.role)) {
+                // Safety fallback for unknown roles: show only self.
+                filtered = filtered.filter(u => u.id === user.id);
+            }
         }
         return filtered.sort((a,b) => a.name.localeCompare(b.name));
     }, [selectedBuId, departmentFilter, employees, user]);
