@@ -543,6 +543,19 @@ const BODDashboard: React.FC = () => {
                 colorClass: "bg-cyan-500"
             }));
         allItems.push(...ticketNotifications);
+        
+        const caseNotifications = mockNotifications
+            .filter(n => n.userId === user.id && !n.isRead && n.type === NotificationType.CASE_ASSIGNED)
+            .map(item => ({
+                id: `notif-${item.id}`,
+                icon: <GavelIcon {...iconProps} />,
+                title: "Case Assigned",
+                subtitle: item.message,
+                date: new Date(item.createdAt).toLocaleDateString(),
+                link: item.link,
+                colorClass: "bg-rose-500"
+            }));
+        allItems.push(...caseNotifications);
 
         const assetNotifications = mockNotifications
             .filter(n => n.userId === user.id && !n.isRead && n.type === NotificationType.ASSET_ASSIGNED)

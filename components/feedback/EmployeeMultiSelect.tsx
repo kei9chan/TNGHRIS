@@ -89,11 +89,10 @@ const EmployeeMultiSelect: React.FC<EmployeeMultiSelectProps> = ({ label, allUse
                 >
                     <UserAvatar />
                     <div className="ml-3">
-                        <p className="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-1">
-                          <span>{user.name}</span>
-                          {user.role && <span className="text-xs text-gray-500">[{user.role}]</span>}
+                        <p className="text-sm font-medium text-gray-900 dark:text-white">
+                          {user.name}
                         </p>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">{user.position}</p>
+                        {user.role && <p className="text-sm text-gray-500 dark:text-gray-400">{user.role}</p>}
                     </div>
                 </div>
               ))
@@ -109,11 +108,10 @@ const EmployeeMultiSelect: React.FC<EmployeeMultiSelectProps> = ({ label, allUse
             <div className="flex items-center">
                 <UserAvatar />
                 <div className="ml-3">
-                    <p className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-1">
-                      <span>{user.name}</span>
-                      {user.role && <span className="text-xs text-gray-500 font-normal">[{user.role}]</span>}
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                      {user.name}
                     </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{user.position}</p>
+                    {user.role && <p className="text-xs text-gray-500 dark:text-gray-400">{user.role}</p>}
                 </div>
             </div>
             <button type="button" onClick={() => handleRemoveUser(user.id)} className="text-gray-400 hover:text-red-500 disabled:cursor-not-allowed disabled:hover:text-gray-400" disabled={disabled}>

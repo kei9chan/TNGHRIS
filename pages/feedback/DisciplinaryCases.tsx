@@ -421,6 +421,20 @@ const DisciplinaryCases: React.FC = () => {
 
     try {
       const saved = await saveIncidentReport(reportToSave, user);
+      if (handlerChanged && saved.assignedToId) {
+        const createdAt = new Date();
+        mockNotifications.unshift({
+          id: `notif-ir-${saved.id}-${saved.assignedToId}-${createdAt.getTime()}`,
+          userId: saved.assignedToId,
+          type: NotificationType.CASE_ASSIGNED,
+          title: 'New Case Assigned',
+          message: `You have been assigned as case handler for Incident Report ${saved.id}.`,
+          link: '/feedback/cases',
+          isRead: false,
+          createdAt,
+          relatedEntityId: saved.id,
+        });
+      }
       setAllReports(prev => {
         const rest = prev.filter(r => r.id !== saved.id);
         return filterByIrAccess([saved, ...rest]);
