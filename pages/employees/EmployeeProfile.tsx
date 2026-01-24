@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { mockUsers, mockChangeHistory, mockEmployeeDrafts } from '../../services/mockData';
@@ -27,6 +27,7 @@ const EmployeeProfile: React.FC = () => {
     const { user: currentUser } = useAuth();
     const { can } = usePermissions();
     const navigate = useNavigate();
+    const location = useLocation();
 
     const [users, setUsers] = useState<User[]>(mockUsers);
     const [history, setHistory] = useState<ChangeHistory[]>(mockChangeHistory);
@@ -140,6 +141,19 @@ const EmployeeProfile: React.FC = () => {
         }
         return found;
     }, [employeeId, currentUser, users]);
+
+    useEffect(() => {
+        if (!location.hash) return;
+        const targetId = location.hash.replace('#', '');
+        const scrollToTarget = () => {
+            const target = document.getElementById(targetId);
+            if (target) {
+                target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        };
+        const timeoutId = window.setTimeout(scrollToTarget, 0);
+        return () => window.clearTimeout(timeoutId);
+    }, [location.hash, userToView?.id]);
 
     const userHistory = useMemo(() => {
         if (!userToView) return [];
@@ -291,7 +305,9 @@ const EmployeeProfile: React.FC = () => {
 
                     <CompensationCard user={userToView} />
                     <LeaveBalancesCard user={userToView} />
-                    <AchievementsCard employeeId={userToView.id} />
+                    <div id="achievements">
+                        <AchievementsCard employeeId={userToView.id} />
+                    </div>
                 </div>
                 <div className="lg:col-span-1">
                     <PersonalInformationCard user={userToView} />
