@@ -291,6 +291,41 @@ const Benefits: React.FC = () => {
                 .single();
             if (error) throw error;
             const mapped = mapRequestRow(data as BenefitRequestRow);
+            const approverRoles = [Role.Admin, Role.HRManager, Role.HRStaff];
+            const createdAt = new Date();
+            let approverIds: string[] = [];
+
+            try {
+                const { data: approverRows } = await supabase
+                    .from('hris_users')
+                    .select('id, role')
+                    .in('role', approverRoles);
+                approverIds = (approverRows || [])
+                    .map((row: any) => row?.id)
+                    .filter(Boolean);
+            } catch (err) {
+                console.warn('Failed to load benefit approvers from DB, falling back to mock users.', err);
+            }
+
+            if (approverIds.length === 0) {
+                approverIds = mockUsers
+                    .filter(u => approverRoles.includes(u.role))
+                    .map(u => u.id);
+            }
+
+            approverIds.forEach(approverId => {
+                mockNotifications.unshift({
+                    id: `notif-benefit-req-${mapped.id}-${approverId}-${createdAt.getTime()}`,
+                    userId: approverId,
+                    type: NotificationType.BENEFIT_REQUEST_SUBMITTED,
+                    title: 'Benefit Approval Required',
+                    message: `${mapped.employeeName} submitted a benefit request for ${mapped.benefitTypeName}.`,
+                    link: '/employees/benefits?tab=approvals',
+                    isRead: false,
+                    createdAt,
+                    relatedEntityId: mapped.id
+                });
+            });
             setAllRequests(prev => [mapped, ...prev]);
             setMyRequests(prev => [mapped, ...prev]);
             logActivity(user, 'CREATE', 'BenefitRequest', mapped.id, `Requested ${mapped.benefitTypeName}`);

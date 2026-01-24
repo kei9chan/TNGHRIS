@@ -432,6 +432,12 @@ const HRDashboard: React.FC = () => {
                         title: "Case Assigned",
                         colorClass: 'bg-rose-500'
                     };
+                case NotificationType.BENEFIT_REQUEST_SUBMITTED:
+                    return {
+                        icon: <GiftIcon {...iconProps} />,
+                        title: "Benefit Approval Required",
+                        colorClass: "bg-emerald-500"
+                    };
                 case NotificationType.ASSET_ASSIGNED:
                      // We handle this explicitly above as an Action Item, but we can also show it as a notification
                      if (allItems.some((i: any) => i.id === `asset-accept-${notification.relatedEntityId}`)) return null;

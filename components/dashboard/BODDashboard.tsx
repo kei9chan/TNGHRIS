@@ -557,6 +557,19 @@ const BODDashboard: React.FC = () => {
             }));
         allItems.push(...caseNotifications);
 
+        const benefitNotifications = mockNotifications
+            .filter(n => n.userId === user.id && !n.isRead && n.type === NotificationType.BENEFIT_REQUEST_SUBMITTED)
+            .map(item => ({
+                id: `notif-${item.id}`,
+                icon: <GiftIcon {...iconProps} />,
+                title: "Benefit Approval Required",
+                subtitle: item.message,
+                date: new Date(item.createdAt).toLocaleDateString(),
+                link: item.link,
+                colorClass: "bg-emerald-500"
+            }));
+        allItems.push(...benefitNotifications);
+
         const assetNotifications = mockNotifications
             .filter(n => n.userId === user.id && !n.isRead && n.type === NotificationType.ASSET_ASSIGNED)
             .map(item => {

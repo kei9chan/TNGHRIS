@@ -751,6 +751,20 @@ const ManagerDashboard: React.FC = () => {
                 priority: 1
             }));
         items.push(...caseNotifications);
+
+        const benefitNotifications = mockNotifications
+            .filter(n => n.userId === user.id && !n.isRead && n.type === NotificationType.BENEFIT_REQUEST_SUBMITTED)
+            .map(item => ({
+                id: `benefit-notif-${item.id}`,
+                icon: <GiftIcon {...iconProps} />,
+                title: 'Benefit Approval Required',
+                subtitle: item.message,
+                date: new Date(item.createdAt).toLocaleDateString(),
+                link: item.link,
+                colorClass: 'bg-emerald-500',
+                priority: 1
+            }));
+        items.push(...benefitNotifications);
         
         // 4. Manpower Request Approvals (For Approvers)
         if (isApprover || isBusinessUnitManager) {
