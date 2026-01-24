@@ -405,7 +405,7 @@ const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, ticket, onSa
                                     {filteredAssignees.map(u => (
                                       <div key={u.id} onClick={() => handleSelectAssignee(u)} className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
                                         <p className="text-sm font-medium">{u.name}</p>
-                                        <p className="text-xs text-gray-500">{u.position}</p>
+                                        <p className="text-xs text-gray-500">{u.role}</p>
                                       </div>
                                     ))}
                                   </div>

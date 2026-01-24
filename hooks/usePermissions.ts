@@ -955,6 +955,7 @@ export const usePermissions = () => {
             case Role.Auditor:
                 return { canSubmit: false, canRespond: false, canView: true, scope: 'global' as const }; // View Logs
             case Role.Manager:
+                return { canSubmit: false, canRespond: true, canView: true, scope: 'self' as const }; // Assigned/self
             case Role.Recruiter:
                 return { canSubmit: false, canRespond: false, canView: false, scope: 'none' as const }; // None
             default:
@@ -969,7 +970,11 @@ export const usePermissions = () => {
         if (!access.canView && !access.canRespond) return [];
 
         return data.filter(item => {
-            if (item.assignedToId === user.id && access.canRespond) return true;
+            if (user.role === Role.Manager) {
+                return item.assignedToId === user.id || item.requesterId === user.id;
+            }
+
+            if (item.assignedToId === user.id) return true;
 
             if (access.scope === 'global') return true;
 

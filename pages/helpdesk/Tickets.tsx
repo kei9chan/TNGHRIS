@@ -1,8 +1,8 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { mockBusinessUnits } from '../../services/mockData';
-import { Ticket, TicketStatus, TicketPriority, ChatMessage, TicketCategory } from '../../types';
+import { mockBusinessUnits, mockNotifications } from '../../services/mockData';
+import { Ticket, TicketStatus, TicketPriority, ChatMessage, TicketCategory, NotificationType, Role } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import Card from '../../components/ui/Card';
@@ -14,6 +14,7 @@ import { useSettings } from '../../context/SettingsContext';
 import Input from '../../components/ui/Input';
 import { logActivity } from '../../services/auditService';
 import { fetchTickets, saveTicket, fetchTicketById } from '../../services/ticketService';
+import { supabase } from '../../services/supabaseClient';
 
 const PlusIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>;
 
@@ -159,10 +160,11 @@ const Tickets: React.FC = () => {
         }
 
         let payload: Partial<Ticket> = { ...ticketToSave };
+        let newlyAssigned = false;
 
         if (ticketToSave.id) { 
             const existing = tickets.find(t => t.id === ticketToSave.id);
-            const newlyAssigned = ticketToSave.assignedToId && existing?.assignedToId !== ticketToSave.assignedToId;
+            newlyAssigned = !!(ticketToSave.assignedToId && existing?.assignedToId !== ticketToSave.assignedToId);
 
             if (newlyAssigned) {
                 payload.assignedAt = new Date();
@@ -200,6 +202,58 @@ const Tickets: React.FC = () => {
                 return filterTicketsByScope([...rest, saved]);
             });
             logActivity(user, ticketToSave.id ? 'UPDATE' : 'CREATE', 'Ticket', saved.id, `${ticketToSave.id ? 'Updated' : 'Created'} ticket ${saved.id}`);
+
+            if (newlyAssigned && saved.assignedToId) {
+                const { data: assigneeRow } = await supabase
+                    .from('hris_users')
+                    .select('id, full_name, role')
+                    .eq('id', saved.assignedToId)
+                    .maybeSingle();
+
+                const assigneeName = assigneeRow?.full_name || saved.assignedToName || 'Assignee';
+                const assigneeRole = assigneeRow?.role as Role | undefined;
+
+                const targets = new Set<string>();
+                targets.add(saved.assignedToId);
+                if (saved.requesterId) {
+                    targets.add(saved.requesterId);
+                }
+
+                if (assigneeRole === Role.Manager) {
+                    const { data: adminRows } = await supabase
+                        .from('hris_users')
+                        .select('id, role')
+                        .in('role', [Role.Admin, Role.HRManager, Role.HRStaff]);
+                    (adminRows || []).forEach((row: any) => {
+                        if (row?.id) targets.add(row.id);
+                    });
+                }
+
+                const createdAt = new Date();
+                targets.forEach(targetId => {
+                    const isAssignee = targetId === saved.assignedToId;
+                    const isRequester = targetId === saved.requesterId;
+                    if (!isAssignee && !isRequester && assigneeRole !== Role.Manager) {
+                        return;
+                    }
+                    const type = isAssignee ? NotificationType.TICKET_ASSIGNED_TO_YOU : NotificationType.TICKET_UPDATE_REQUESTER;
+                    const message = isAssignee
+                        ? `Ticket ${saved.id} has been assigned to you.`
+                        : `Ticket ${saved.id} assigned to ${assigneeName}.`;
+                    mockNotifications.unshift({
+                        id: `notif-ticket-${saved.id}-${targetId}-${createdAt.getTime()}`,
+                        userId: targetId,
+                        type,
+                        title: type === NotificationType.TICKET_ASSIGNED_TO_YOU ? 'New Ticket Assigned' : 'Ticket Update',
+                        message,
+                        link: `/helpdesk/tickets?ticketId=${saved.id}`,
+                        isRead: false,
+                        createdAt,
+                        relatedEntityId: saved.id,
+                    });
+                });
+            }
+
             setIsModalOpen(false);
         } catch (error: any) {
             alert(error?.message || 'Failed to save ticket.');

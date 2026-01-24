@@ -723,6 +723,20 @@ const ManagerDashboard: React.FC = () => {
                 priority: 0
             });
         }
+
+        const ticketNotifications = mockNotifications
+            .filter(n => n.userId === user.id && !n.isRead && (n.type === NotificationType.TICKET_ASSIGNED_TO_YOU || n.type === NotificationType.TICKET_UPDATE_REQUESTER))
+            .map(item => ({
+                id: `ticket-notif-${item.id}`,
+                icon: <TicketIcon {...iconProps} />,
+                title: item.type === NotificationType.TICKET_ASSIGNED_TO_YOU ? 'New Ticket Assigned' : 'Ticket Update',
+                subtitle: item.message,
+                date: new Date(item.createdAt).toLocaleDateString(),
+                link: item.link,
+                colorClass: 'bg-cyan-500',
+                priority: 1
+            }));
+        items.push(...ticketNotifications);
         
         // 4. Manpower Request Approvals (For Approvers)
         if (isApprover || isBusinessUnitManager) {

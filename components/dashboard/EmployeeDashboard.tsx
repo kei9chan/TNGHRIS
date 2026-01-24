@@ -204,6 +204,7 @@ const EmployeeDashboard: React.FC = () => {
     const [ntes, setNTEs] = useState<NTE[]>(mockNTEs);
     const [evaluationSubmissions, setEvaluationSubmissions] = useState(mockEvaluationSubmissions);
     const [coeDecisions, setCoeDecisions] = useState<Array<{ id: string; status: COERequest['status']; date: Date }>>([]);
+    const [assignedTickets, setAssignedTickets] = useState<Array<{ id: string; status: TicketStatus; category: string; priority: string; assignedAt?: Date; createdAt?: Date; requesterName?: string }>>([]);
     const [approvedLeaveRequests, setApprovedLeaveRequests] = useState<Array<{ id: string; startDate: Date; endDate: Date; decisionDate?: Date }>>([]);
     const [approvedWfhRequests, setApprovedWfhRequests] = useState<Array<{ id: string; date: Date; decisionDate?: Date }>>([]);
     const [approvedOtRequests, setApprovedOtRequests] = useState<Array<{ id: string; date: Date; decisionDate?: Date }>>([]);
@@ -452,6 +453,42 @@ const EmployeeDashboard: React.FC = () => {
 
         loadCoeDecisions();
         const interval = setInterval(loadCoeDecisions, 15000);
+        return () => {
+            isMounted = false;
+            clearInterval(interval);
+        };
+    }, [user?.id]);
+
+    useEffect(() => {
+        if (!user?.id) {
+            setAssignedTickets([]);
+            return;
+        }
+        let isMounted = true;
+        const loadAssignedTickets = async () => {
+            const { data, error } = await supabase
+                .from('tickets')
+                .select('id, status, category, priority, assigned_at, created_at, requester_name')
+                .eq('assigned_to_id', user.id)
+                .in('status', [TicketStatus.Assigned, TicketStatus.InProgress, TicketStatus.PendingResolution])
+                .order('assigned_at', { ascending: false });
+            if (!isMounted) return;
+            if (error || !data) {
+                setAssignedTickets([]);
+                return;
+            }
+            setAssignedTickets(data.map((row: any) => ({
+                id: row.id,
+                status: row.status as TicketStatus,
+                category: row.category,
+                priority: row.priority,
+                assignedAt: row.assigned_at ? new Date(row.assigned_at) : undefined,
+                createdAt: row.created_at ? new Date(row.created_at) : undefined,
+                requesterName: row.requester_name || undefined,
+            })));
+        };
+        loadAssignedTickets();
+        const interval = setInterval(loadAssignedTickets, 20000);
         return () => {
             isMounted = false;
             clearInterval(interval);
@@ -966,6 +1003,22 @@ const EmployeeDashboard: React.FC = () => {
             });
         }
         
+        assignedTickets.forEach(ticket => {
+            const sortDate = ticket.assignedAt || ticket.createdAt;
+            const statusLabel = ticket.status === TicketStatus.PendingResolution ? 'Ticket Resolution Pending' : 'Assigned Ticket';
+            items.push({
+                id: `ticket-assigned-${ticket.id}`,
+                icon: <QuestionMarkCircleIcon {...iconProps} />,
+                title: statusLabel,
+                subtitle: `${ticket.category} • ${ticket.priority}${ticket.requesterName ? ` • ${ticket.requesterName}` : ''}`,
+                date: new Date(sortDate || new Date()).toLocaleDateString(),
+                sortDate,
+                link: `/helpdesk/tickets?ticketId=${ticket.id}`,
+                colorClass: 'bg-cyan-500',
+                priority: 1
+            });
+        });
+
         const myTickets = mockTickets.filter(t => t.requesterId === user.id && t.status === TicketStatus.PendingResolution);
         myTickets.forEach(ticket => {
             items.push({
@@ -974,6 +1027,7 @@ const EmployeeDashboard: React.FC = () => {
                 title: "Ticket Resolution Pending",
                 subtitle: `Please confirm the resolution for ticket #${ticket.id}`,
                 date: new Date(ticket.resolvedAt || ticket.createdAt).toLocaleDateString(),
+                sortDate: ticket.resolvedAt || ticket.createdAt,
                 link: `/helpdesk/tickets?ticketId=${ticket.id}`,
                 colorClass: 'bg-cyan-500',
                 priority: 1
@@ -1078,6 +1132,12 @@ const EmployeeDashboard: React.FC = () => {
                     case NotificationType.COACHING_INVITE:
                         details = { icon: <SparklesIcon {...iconProps} />, title: item.title || " Let's Connect! 🚀", colorClass: "bg-purple-500", priority: 0 };
                         break;
+                    case NotificationType.TICKET_ASSIGNED_TO_YOU:
+                        details = { icon: <TicketIcon {...iconProps} />, title: "New Ticket Assigned", colorClass: "bg-cyan-500", priority: 1 };
+                        break;
+                    case NotificationType.TICKET_UPDATE_REQUESTER:
+                        details = { icon: <TicketIcon {...iconProps} />, title: "Ticket Update", colorClass: "bg-cyan-500", priority: 1 };
+                        break;
                     default:
                         return null;
                 }
@@ -1092,6 +1152,7 @@ const EmployeeDashboard: React.FC = () => {
                     title: notif.title,
                     subtitle: notif.message,
                     date: new Date(notif.createdAt).toLocaleDateString(),
+                    sortDate: notif.createdAt,
                     link: notif.link,
                     state: notif.relatedEntityId ? { openSessionId: notif.relatedEntityId } : undefined, // Pass related ID if relevant (generic)
                     colorClass: notif.colorClass,
@@ -1107,7 +1168,7 @@ const EmployeeDashboard: React.FC = () => {
             return new Date(dateB).getTime() - new Date(dateA).getTime();
         });
 
-    }, [user, refreshKey, memoUpdateKey, requests, assignments, checklists, templates, isUserEligibleEvaluator, benefitRequests, pulseSurveys, surveyResponses, coachingSessions, envelopes, ntes, evaluationSubmissions, approvedLeaveRequests, approvedWfhRequests, approvedOtRequests, approvedManpowerRequests, rejectedLeaveRequests, rejectedWfhRequests, rejectedOtRequests, rejectedManpowerRequests, coeDecisions]);
+    }, [user, refreshKey, memoUpdateKey, requests, assignments, checklists, templates, isUserEligibleEvaluator, benefitRequests, pulseSurveys, surveyResponses, coachingSessions, envelopes, ntes, evaluationSubmissions, approvedLeaveRequests, approvedWfhRequests, approvedOtRequests, approvedManpowerRequests, rejectedLeaveRequests, rejectedWfhRequests, rejectedOtRequests, rejectedManpowerRequests, coeDecisions, assignedTickets]);
 
     // Add AcademicCapIcon definition if missing since we used it for evaluation items
     const AcademicCapIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.26 10.147a60.436 60.436 0 0 0-.491 6.347A48.627 48.627 0 0 1 12 20.904a48.627 48.627 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.57 50.57 0 0 0-2.658-.813A59.905 59.905 0 0 1 12 3.493a59.902 59.902 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5" /></svg>);
