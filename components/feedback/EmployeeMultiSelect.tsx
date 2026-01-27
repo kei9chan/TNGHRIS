@@ -38,7 +38,8 @@ const EmployeeMultiSelect: React.FC<EmployeeMultiSelectProps> = ({ label, allUse
     }
     const lowerSearch = searchTerm.toLowerCase();
     return pool.filter(user => 
-        user.name.toLowerCase().includes(lowerSearch) || user.email.toLowerCase().includes(lowerSearch)
+        user.name.toLowerCase().includes(lowerSearch) ||
+        (user.email || '').toLowerCase().includes(lowerSearch)
     );
   }, [searchTerm, allUsers, selectedUsers]);
 

@@ -115,6 +115,17 @@ const BODDashboard: React.FC = () => {
     const coeAccess = getCoeAccess();
     const scopedCOE = useMemo(() => coeAccess.filterRequests(coeRequests), [coeRequests, coeAccess]);
     const pendingCOE = useMemo(() => scopedCOE.filter(r => r.status === 'Pending'), [scopedCOE]);
+    const legacyUserId = useMemo(() => {
+        if (!user) return null;
+        const byEmail = user.email
+            ? mockUsers.find(u => u.email?.toLowerCase() === user.email.toLowerCase())
+            : null;
+        if (byEmail?.id) return byEmail.id;
+        const byName = user.name
+            ? mockUsers.find(u => u.name?.toLowerCase() === user.name.toLowerCase())
+            : null;
+        return byName?.id ?? null;
+    }, [user?.email, user?.name]);
 
     useEffect(() => {
         if (location.state?.openRequestCOE) {
@@ -379,6 +390,7 @@ const BODDashboard: React.FC = () => {
         if (!user) return [];
         const allItems: any[] = [];
         const iconProps = { className: "h-6 w-6 text-white" };
+        const notificationUserIds = new Set([user.id, user.authUserId, panApproverId, legacyUserId].filter(Boolean));
 
         // Retrieve ALL active checklists (Onboarding/Offboarding) assigned to the user
         const myChecklists = checklists.filter(c => c.employeeId === user.id && c.status === 'InProgress');
@@ -599,7 +611,7 @@ const BODDashboard: React.FC = () => {
 
 
         const interviewInvites = mockNotifications
-            .filter(n => n.userId === user.id && !n.isRead && n.type === NotificationType.InterviewInvite)
+            .filter(n => notificationUserIds.has(n.userId) && !n.isRead && n.type === NotificationType.InterviewInvite)
             .map(item => ({
                 id: `notif-${item.id}`,
                 icon: <CalendarDaysIcon {...iconProps} />,
@@ -612,7 +624,7 @@ const BODDashboard: React.FC = () => {
         allItems.push(...interviewInvites);
         
         const ticketNotifications = mockNotifications
-            .filter(n => n.userId === user.id && !n.isRead && (n.type === NotificationType.TICKET_ASSIGNED_TO_YOU || n.type === NotificationType.TICKET_UPDATE_REQUESTER))
+            .filter(n => notificationUserIds.has(n.userId) && !n.isRead && (n.type === NotificationType.TICKET_ASSIGNED_TO_YOU || n.type === NotificationType.TICKET_UPDATE_REQUESTER))
             .map(item => ({
                 id: `notif-${item.id}`,
                 icon: <TicketIcon {...iconProps} />,
@@ -625,7 +637,7 @@ const BODDashboard: React.FC = () => {
         allItems.push(...ticketNotifications);
         
         const caseNotifications = mockNotifications
-            .filter(n => n.userId === user.id && !n.isRead && n.type === NotificationType.CASE_ASSIGNED)
+            .filter(n => notificationUserIds.has(n.userId) && !n.isRead && n.type === NotificationType.CASE_ASSIGNED)
             .map(item => ({
                 id: `notif-${item.id}`,
                 icon: <GavelIcon {...iconProps} />,
@@ -638,7 +650,7 @@ const BODDashboard: React.FC = () => {
         allItems.push(...caseNotifications);
 
         const benefitNotifications = mockNotifications
-            .filter(n => n.userId === user.id && !n.isRead && n.type === NotificationType.BENEFIT_REQUEST_SUBMITTED)
+            .filter(n => notificationUserIds.has(n.userId) && !n.isRead && n.type === NotificationType.BENEFIT_REQUEST_SUBMITTED)
             .map(item => ({
                 id: `notif-${item.id}`,
                 icon: <GiftIcon {...iconProps} />,
@@ -651,7 +663,7 @@ const BODDashboard: React.FC = () => {
         allItems.push(...benefitNotifications);
 
         const panApprovalNotifications = mockNotifications
-            .filter(n => n.userId === user.id && !n.isRead && n.type === NotificationType.PAN_APPROVAL_REQUEST)
+            .filter(n => notificationUserIds.has(n.userId) && !n.isRead && n.type === NotificationType.PAN_APPROVAL_REQUEST)
             .map(item => ({
                 id: `notif-${item.id}`,
                 icon: <DocumentTextIcon {...iconProps} />,
@@ -663,8 +675,21 @@ const BODDashboard: React.FC = () => {
             }));
         allItems.push(...panApprovalNotifications);
 
+        const onboardingNotifications = mockNotifications
+            .filter(n => notificationUserIds.has(n.userId) && !n.isRead && (n.type === NotificationType.ONBOARDING_ASSIGNED || n.type === NotificationType.OFFBOARDING_ASSIGNED))
+            .map(item => ({
+                id: `notif-${item.id}`,
+                icon: <ClipboardCheckIcon {...iconProps} />,
+                title: item.type === NotificationType.OFFBOARDING_ASSIGNED ? "Offboarding Assigned" : "Onboarding Assigned",
+                subtitle: item.message,
+                date: new Date(item.createdAt).toLocaleDateString(),
+                link: item.link,
+                colorClass: item.type === NotificationType.OFFBOARDING_ASSIGNED ? "bg-orange-500" : "bg-cyan-500"
+            }));
+        allItems.push(...onboardingNotifications);
+
         const assetNotifications = mockNotifications
-            .filter(n => n.userId === user.id && !n.isRead && n.type === NotificationType.ASSET_ASSIGNED)
+            .filter(n => notificationUserIds.has(n.userId) && !n.isRead && n.type === NotificationType.ASSET_ASSIGNED)
             .map(item => {
                  if (allItems.some((i: any) => i.id === `asset-accept-${item.relatedEntityId}`)) return null;
                  return {
@@ -680,7 +705,7 @@ const BODDashboard: React.FC = () => {
         allItems.push(...assetNotifications);
 
         const leaveRequestNotifications = mockNotifications
-            .filter(n => n.userId === user.id && !n.isRead && n.type === NotificationType.LEAVE_REQUEST)
+            .filter(n => notificationUserIds.has(n.userId) && !n.isRead && n.type === NotificationType.LEAVE_REQUEST)
             .map(item => ({
                 id: `notif-${item.id}`,
                 icon: <SunIcon {...iconProps} />,

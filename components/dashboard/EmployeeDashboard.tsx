@@ -203,6 +203,10 @@ const EmployeeDashboard: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
     const [refreshKey, setRefreshKey] = useState(0); 
+    const notificationUserIds = useMemo(
+        () => new Set([user?.id, user?.authUserId].filter(Boolean)),
+        [user?.id, user?.authUserId]
+    );
     
     // --- Memo Modal State ---
     const [isMemoViewOpen, setIsMemoViewOpen] = useState(false);
@@ -1139,7 +1143,7 @@ const EmployeeDashboard: React.FC = () => {
 
 
         const myNotifications = mockNotifications
-            .filter(n => n.userId === user.id && !n.isRead)
+            .filter(n => n.userId && notificationUserIds.has(n.userId) && !n.isRead)
             .map(item => {
                 let details;
                 switch (item.type) {
@@ -1193,6 +1197,12 @@ const EmployeeDashboard: React.FC = () => {
                     case NotificationType.PAN_UPDATE:
                         details = { icon: <DocumentTextIcon {...iconProps} />, title: "PAN for Acknowledgement", colorClass: "bg-purple-500", priority: 1 };
                         break;
+                    case NotificationType.ONBOARDING_ASSIGNED:
+                        details = { icon: <ClipboardCheckIcon {...iconProps} />, title: "Onboarding Assigned", colorClass: "bg-cyan-500", priority: 1 };
+                        break;
+                    case NotificationType.OFFBOARDING_ASSIGNED:
+                        details = { icon: <ClipboardCheckIcon {...iconProps} />, title: "Offboarding Assigned", colorClass: "bg-orange-500", priority: 1 };
+                        break;
                     case NotificationType.TICKET_ASSIGNED_TO_YOU:
                         details = { icon: <TicketIcon {...iconProps} />, title: "New Ticket Assigned", colorClass: "bg-cyan-500", priority: 1 };
                         break;
@@ -1229,7 +1239,7 @@ const EmployeeDashboard: React.FC = () => {
             return new Date(dateB).getTime() - new Date(dateA).getTime();
         });
 
-    }, [user, refreshKey, memoUpdateKey, requests, assignments, checklists, templates, isUserEligibleEvaluator, benefitRequests, pulseSurveys, surveyResponses, coachingSessions, envelopes, pans, ntes, evaluationSubmissions, approvedLeaveRequests, approvedWfhRequests, approvedOtRequests, approvedManpowerRequests, rejectedLeaveRequests, rejectedWfhRequests, rejectedOtRequests, rejectedManpowerRequests, coeDecisions, assignedTickets]);
+    }, [user, notificationUserIds, refreshKey, memoUpdateKey, requests, assignments, checklists, templates, isUserEligibleEvaluator, benefitRequests, pulseSurveys, surveyResponses, coachingSessions, envelopes, pans, ntes, evaluationSubmissions, approvedLeaveRequests, approvedWfhRequests, approvedOtRequests, approvedManpowerRequests, rejectedLeaveRequests, rejectedWfhRequests, rejectedOtRequests, rejectedManpowerRequests, coeDecisions, assignedTickets]);
 
     // Add AcademicCapIcon definition if missing since we used it for evaluation items
     const AcademicCapIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.26 10.147a60.436 60.436 0 0 0-.491 6.347A48.627 48.627 0 0 1 12 20.904a48.627 48.627 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.57 50.57 0 0 0-2.658-.813A59.905 59.905 0 0 1 12 3.493a59.902 59.902 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5" /></svg>);

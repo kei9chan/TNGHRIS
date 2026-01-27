@@ -1,5 +1,5 @@
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Card from '../ui/Card';
@@ -137,6 +137,20 @@ const ManagerDashboard: React.FC = () => {
     const coeAccess = getCoeAccess();
     const scopedCOE = useMemo(() => coeAccess.filterRequests(coeRequests), [coeRequests, coeAccess]);
     const pendingCOE = useMemo(() => scopedCOE.filter(r => r.status === 'Pending'), [scopedCOE]);
+    const legacyUserId = useMemo(() => {
+        if (!user) return null;
+        const byEmail = user.email
+            ? mockUsers.find(u => u.email?.toLowerCase() === user.email.toLowerCase())
+            : null;
+        if (byEmail?.id) return byEmail.id;
+        const byName = user.name
+            ? mockUsers.find(u => u.name?.toLowerCase() === user.name.toLowerCase())
+            : null;
+        return byName?.id ?? null;
+    }, [user?.email, user?.name]);
+    const notificationUserIdsRef = useRef<Set<string>>(new Set());
+    const [useSupabaseOnboarding, setUseSupabaseOnboarding] = useState(false);
+    const employeeProfileId = useMemo(() => panApproverId || user?.id || null, [panApproverId, user?.id]);
 
     useEffect(() => {
         if (location.state?.openManpowerModal) {
@@ -180,6 +194,68 @@ const ManagerDashboard: React.FC = () => {
             active = false;
         };
     }, [user]);
+
+    useEffect(() => {
+        if (!employeeProfileId) return;
+        let active = true;
+        const loadOnboardingData = async () => {
+            try {
+                const [{ data: checklistRows, error: checklistError }, { data: templateRows, error: templateError }] =
+                    await Promise.all([
+                        supabase
+                            .from('onboarding_checklists')
+                            .select('id, employee_id, template_id, status, created_at, start_date')
+                            .eq('employee_id', employeeProfileId),
+                        supabase
+                            .from('onboarding_checklist_templates')
+                            .select('id, name, target_role, template_type, tasks'),
+                    ]);
+                if (checklistError) throw checklistError;
+                if (templateError) throw templateError;
+                if (!active) return;
+
+                if (templateRows) {
+                    const mappedTemplates: OnboardingChecklistTemplate[] = templateRows.map((t: any) => ({
+                        id: t.id,
+                        name: t.name,
+                        targetRole: (t.target_role as Role) || Role.Employee,
+                        templateType: t.template_type || 'Onboarding',
+                        tasks: Array.isArray(t.tasks) ? t.tasks : [],
+                    }));
+                    setTemplates(mappedTemplates);
+                }
+
+                if (checklistRows) {
+                    const mappedChecklists: OnboardingChecklist[] = checklistRows.map((c: any) => ({
+                        id: c.id,
+                        employeeId: c.employee_id,
+                        templateId: c.template_id,
+                        createdAt: c.created_at ? new Date(c.created_at) : new Date(),
+                        status: (c.status as any) || 'InProgress',
+                        tasks: [],
+                        signedAt: undefined,
+                    }));
+                    setChecklists(mappedChecklists);
+                }
+
+                setUseSupabaseOnboarding(true);
+            } catch (err) {
+                console.error('Failed to load onboarding data for manager dashboard', err);
+            }
+        };
+        loadOnboardingData();
+        return () => {
+            active = false;
+        };
+    }, [employeeProfileId]);
+
+    const notificationUserIds = useMemo(() => {
+        const ids = notificationUserIdsRef.current;
+        [user?.id, user?.authUserId, panApproverId, legacyUserId]
+            .filter(Boolean)
+            .forEach(id => ids.add(id as string));
+        return ids;
+    }, [user?.id, user?.authUserId, panApproverId, legacyUserId]);
 
     useEffect(() => {
         const loadPans = async () => {
@@ -407,15 +483,17 @@ const ManagerDashboard: React.FC = () => {
             setAwards([...mockEmployeeAwards]);
             setAssignments([...mockAssetAssignments]);
             setManpowerRequests([...mockManpowerRequests]);
-            setChecklists([...mockOnboardingChecklists]);
-            setTemplates([...mockOnboardingTemplates]);
+            if (!useSupabaseOnboarding) {
+                setChecklists([...mockOnboardingChecklists]);
+                setTemplates([...mockOnboardingTemplates]);
+            }
             setEnvelopes([...mockEnvelopes]);
             setBenefitRequests([...mockBenefitRequests]);
             setCoachingSessions([...mockCoachingSessions]);
             setEvaluationSubmissions([...mockEvaluationSubmissions]);
         }, 1000);
         return () => clearInterval(interval);
-    }, []);
+    }, [useSupabaseOnboarding]);
 
     // Updated to include all visible employees (BU or subordinates)
     const visibleEmployeeIds = useMemo(() => {
@@ -687,6 +765,7 @@ const ManagerDashboard: React.FC = () => {
         if (!user) return [];
         const items: any[] = [];
         const iconProps = { className: "h-6 w-6 text-white" };
+        const notificationIds = notificationUserIds;
         
         // Helper for countdown logic
         const getCountdownString = (deadline: Date) => {
@@ -730,7 +809,7 @@ const ManagerDashboard: React.FC = () => {
         });
 
         // 1. Employee Lifecycle Checklists (Onboarding / Offboarding)
-        const myChecklists = checklists.filter(c => c.employeeId === user.id && c.status === 'InProgress');
+        const myChecklists = checklists.filter(c => c.employeeId === (employeeProfileId || user.id) && c.status === 'InProgress');
         
         myChecklists.forEach(checklist => {
             const template = templates.find(t => t.id === checklist.templateId);
@@ -750,6 +829,17 @@ const ManagerDashboard: React.FC = () => {
                     subtitle: `Pending Task: "${nextTask.name}"`,
                     date: new Date(nextTask.dueDate).toLocaleDateString(),
                     link: `/employees/onboarding/task/${nextTask.id}`,
+                    colorClass: templateType === 'Offboarding' ? 'bg-orange-500' : 'bg-cyan-500',
+                    priority: 1
+                });
+            } else if (checklist.tasks.length === 0) {
+                items.push({
+                    id: `checklist-assigned-${checklist.id}`,
+                    icon: <ClipboardCheckIcon {...iconProps} />,
+                    title: `${templateType} Assigned`,
+                    subtitle: `Your ${templateType.toLowerCase()} checklist is ready.`,
+                    date: new Date(checklist.createdAt).toLocaleDateString(),
+                    link: '/employees/onboarding',
                     colorClass: templateType === 'Offboarding' ? 'bg-orange-500' : 'bg-cyan-500',
                     priority: 1
                 });
@@ -804,7 +894,7 @@ const ManagerDashboard: React.FC = () => {
         }
 
         const ticketNotifications = mockNotifications
-            .filter(n => n.userId === user.id && !n.isRead && (n.type === NotificationType.TICKET_ASSIGNED_TO_YOU || n.type === NotificationType.TICKET_UPDATE_REQUESTER))
+            .filter(n => notificationIds.has(n.userId) && !n.isRead && (n.type === NotificationType.TICKET_ASSIGNED_TO_YOU || n.type === NotificationType.TICKET_UPDATE_REQUESTER))
             .map(item => ({
                 id: `ticket-notif-${item.id}`,
                 icon: <TicketIcon {...iconProps} />,
@@ -818,7 +908,7 @@ const ManagerDashboard: React.FC = () => {
         items.push(...ticketNotifications);
 
         const caseNotifications = mockNotifications
-            .filter(n => n.userId === user.id && !n.isRead && n.type === NotificationType.CASE_ASSIGNED)
+            .filter(n => notificationIds.has(n.userId) && !n.isRead && n.type === NotificationType.CASE_ASSIGNED)
             .map(item => ({
                 id: `case-notif-${item.id}`,
                 icon: <GavelIcon {...iconProps} />,
@@ -832,7 +922,7 @@ const ManagerDashboard: React.FC = () => {
         items.push(...caseNotifications);
 
         const benefitNotifications = mockNotifications
-            .filter(n => n.userId === user.id && !n.isRead && n.type === NotificationType.BENEFIT_REQUEST_SUBMITTED)
+            .filter(n => notificationIds.has(n.userId) && !n.isRead && n.type === NotificationType.BENEFIT_REQUEST_SUBMITTED)
             .map(item => ({
                 id: `benefit-notif-${item.id}`,
                 icon: <GiftIcon {...iconProps} />,
@@ -846,7 +936,7 @@ const ManagerDashboard: React.FC = () => {
         items.push(...benefitNotifications);
 
         const panApprovalNotifications = mockNotifications
-            .filter(n => n.userId === user.id && !n.isRead && n.type === NotificationType.PAN_APPROVAL_REQUEST)
+            .filter(n => notificationIds.has(n.userId) && !n.isRead && n.type === NotificationType.PAN_APPROVAL_REQUEST)
             .map(item => ({
                 id: `pan-approve-${item.id}`,
                 icon: <DocumentTextIcon {...iconProps} />,
@@ -858,6 +948,20 @@ const ManagerDashboard: React.FC = () => {
                 priority: 1
             }));
         items.push(...panApprovalNotifications);
+
+        const onboardingNotifications = mockNotifications
+            .filter(n => notificationIds.has(n.userId) && !n.isRead && (n.type === NotificationType.ONBOARDING_ASSIGNED || n.type === NotificationType.OFFBOARDING_ASSIGNED))
+            .map(item => ({
+                id: `onboard-notif-${item.id}`,
+                icon: <ClipboardCheckIcon {...iconProps} />,
+                title: item.type === NotificationType.OFFBOARDING_ASSIGNED ? 'Offboarding Assigned' : 'Onboarding Assigned',
+                subtitle: item.message,
+                date: new Date(item.createdAt).toLocaleDateString(),
+                link: item.link,
+                colorClass: item.type === NotificationType.OFFBOARDING_ASSIGNED ? 'bg-orange-500' : 'bg-cyan-500',
+                priority: 1
+            }));
+        items.push(...onboardingNotifications);
         
         // 4. Manpower Request Approvals (For Approvers)
         if (isApprover || isBusinessUnitManager) {
@@ -1076,7 +1180,7 @@ const ManagerDashboard: React.FC = () => {
         items.push(...evaluationItems);
 
         return items.sort((a,b) => (a.priority ?? 99) - (b.priority ?? 99) || new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [user, requests, assignments, checklists, templates, pans, otRequests, exceptions, requisitions, resolutions, ntes, awards, manpowerRequests, isApprover, isBusinessUnitManager, subordinateIds, envelopes, benefitRequests, coachingSessions, evaluationSubmissions, isUserEligibleEvaluator, visibleEmployeeIds, panApproverId]);
+    }, [user, notificationUserIds, employeeProfileId, requests, assignments, checklists, templates, pans, otRequests, exceptions, requisitions, resolutions, ntes, awards, manpowerRequests, isApprover, isBusinessUnitManager, subordinateIds, envelopes, benefitRequests, coachingSessions, evaluationSubmissions, isUserEligibleEvaluator, visibleEmployeeIds, panApproverId]);
 
     const teamApprovalItems = useMemo(() => {
         const items: Array<{

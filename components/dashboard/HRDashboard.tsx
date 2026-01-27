@@ -223,6 +223,17 @@ const HRDashboard: React.FC = () => {
     const pendingCOE = useMemo(() => {
         return scopedCOE.filter(r => r.status === COERequestStatus.Pending);
     }, [scopedCOE]);
+    const legacyUserId = useMemo(() => {
+        if (!user) return null;
+        const byEmail = user.email
+            ? mockUsers.find(u => u.email?.toLowerCase() === user.email.toLowerCase())
+            : null;
+        if (byEmail?.id) return byEmail.id;
+        const byName = user.name
+            ? mockUsers.find(u => u.name?.toLowerCase() === user.name.toLowerCase())
+            : null;
+        return byName?.id ?? null;
+    }, [user?.email, user?.name]);
 
     const pendingBenefitRequests = useMemo(() => {
         return benefitRequests.filter(r => r.status === BenefitRequestStatus.PendingHR);
@@ -365,6 +376,7 @@ const HRDashboard: React.FC = () => {
 
         const allItems: any[] = [];
         const iconProps = { className: "h-6 w-6 text-white" };
+        const notificationUserIds = new Set([user.id, user.authUserId, panApproverId, legacyUserId].filter(Boolean));
 
         // Retrieve ALL active checklists (Onboarding/Offboarding) assigned to the user
         // Use state variable 'checklists' instead of mock directly for reactivity
@@ -568,6 +580,18 @@ const HRDashboard: React.FC = () => {
                         title: "PAN Approval Required",
                         colorClass: "bg-amber-500"
                     };
+                case NotificationType.ONBOARDING_ASSIGNED:
+                    return {
+                        icon: <ClipboardCheckIcon {...iconProps} />,
+                        title: "Onboarding Assigned",
+                        colorClass: "bg-cyan-500"
+                    };
+                case NotificationType.OFFBOARDING_ASSIGNED:
+                    return {
+                        icon: <ClipboardCheckIcon {...iconProps} />,
+                        title: "Offboarding Assigned",
+                        colorClass: "bg-orange-500"
+                    };
                 default:
                      return {
                         icon: <DocumentTextIcon {...iconProps} />,
@@ -578,7 +602,7 @@ const HRDashboard: React.FC = () => {
         }
         
         const notificationItems = mockNotifications
-            .filter(n => n.userId === user.id && !n.isRead)
+            .filter(n => notificationUserIds.has(n.userId) && !n.isRead)
             .map(item => {
                 const details = getNotificationDetails(item);
                 if (!details) return null;

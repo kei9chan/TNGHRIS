@@ -4,8 +4,8 @@ import { Link } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-import { OnboardingChecklistTemplate, Permission, Role, OnboardingChecklist, OnboardingTask, OnboardingTaskStatus, Resignation, OnboardingTaskType } from '../../types';
-import { mockOnboardingTemplates, mockUsers, mockResignations, mockAssetAssignments, mockAssets } from '../../services/mockData';
+import { OnboardingChecklistTemplate, Permission, Role, OnboardingChecklist, OnboardingTask, OnboardingTaskStatus, Resignation, OnboardingTaskType, NotificationType } from '../../types';
+import { mockOnboardingTemplates, mockUsers, mockResignations, mockAssetAssignments, mockAssets, mockNotifications } from '../../services/mockData';
 import { usePermissions } from '../../hooks/usePermissions';
 import OnboardingTemplateModal from '../../components/employees/OnboardingTemplateModal';
 import { useAuth } from '../../hooks/useAuth';
@@ -332,6 +332,63 @@ const OnboardingChecklistPage: React.FC = () => {
             tasks: [],
             signedAt: undefined,
           })) || [];
+        const insertedByEmployee = new Map(
+          (inserted || []).map((c: any) => [c.employee_id, c.id])
+        );
+        const templateType = template.templateType || 'Onboarding';
+        const notificationType =
+          templateType === 'Offboarding'
+            ? NotificationType.OFFBOARDING_ASSIGNED
+            : NotificationType.ONBOARDING_ASSIGNED;
+
+        if (notify && employeeIds.length > 0) {
+          const { data: employeeRows } = await supabase
+            .from('hris_users')
+            .select('id, email, auth_user_id, full_name')
+            .in('id', employeeIds);
+          const employeeMap = new Map(
+            (employeeRows || []).map((row: any) => [row.id, row])
+          );
+          const createdAt = new Date();
+
+          employeeIds.forEach(empId => {
+            const row = employeeMap.get(empId);
+            const displayName =
+              row?.full_name ||
+              employees.find(e => e.id === empId)?.name ||
+              mockUsers.find(u => u.id === empId)?.name ||
+              'Employee';
+            const targets = new Set<string>();
+            if (empId) targets.add(empId);
+            if (row?.auth_user_id) targets.add(row.auth_user_id);
+            if (row?.email) {
+              const mockMatch = mockUsers.find(
+                u => u.email?.toLowerCase() === String(row.email).toLowerCase()
+              );
+              if (mockMatch?.id) targets.add(mockMatch.id);
+            }
+            if (row?.full_name) {
+              const nameMatch = mockUsers.find(
+                u => u.name?.toLowerCase() === String(row.full_name).toLowerCase()
+              );
+              if (nameMatch?.id) targets.add(nameMatch.id);
+            }
+
+            targets.forEach(targetId => {
+              mockNotifications.unshift({
+                id: `notif-onboard-${insertedByEmployee.get(empId) || template.id}-${targetId}-${createdAt.getTime()}`,
+                userId: targetId,
+                type: notificationType,
+                title: `${templateType} Assigned`,
+                message: `${templateType} checklist assigned to ${displayName}.`,
+                link: '/employees/onboarding',
+                isRead: false,
+                createdAt,
+                relatedEntityId: insertedByEmployee.get(empId) || template.id,
+              });
+            });
+          });
+        }
 
         logActivity(
           user,
