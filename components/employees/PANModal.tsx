@@ -66,13 +66,24 @@ const PANModal: React.FC<PANModalProps> = ({ isOpen, onClose, pan, templates, em
     return pan.status === PANStatus.Declined && isHR;
   }, [pan, user, isNew, isDraft]);
 
-  const isSubjectOfPAN = useMemo(() => user?.id === pan?.employeeId, [user, pan]);
+  const resolvedUserId = useMemo(() => {
+    if (!user) return null;
+    if (user.email) {
+      const match = employees.find(
+        u => u.email?.toLowerCase() === user.email.toLowerCase()
+      );
+      if (match?.id) return match.id;
+    }
+    return user.id;
+  }, [user, employees]);
+
+  const isSubjectOfPAN = useMemo(() => resolvedUserId === pan?.employeeId, [resolvedUserId, pan]);
   
   const isForAcknowledgement = useMemo(() => {
-    if (!pan || !user) return false;
-    const isEmployee = pan.employeeId === user.id;
+    if (!pan || !resolvedUserId) return false;
+    const isEmployee = pan.employeeId === resolvedUserId;
     return isEmployee && pan.status === PANStatus.PendingEmployee;
-  }, [pan, user]);
+  }, [pan, resolvedUserId]);
 
 
   const approverPool = useMemo(() => {
@@ -80,9 +91,9 @@ const PANModal: React.FC<PANModalProps> = ({ isOpen, onClose, pan, templates, em
   }, [employees]);
 
   const currentUserStep = useMemo(() => {
-    if (!pan || !user) return null;
-    return pan.routingSteps.find(s => s.userId === user.id && s.status === PANStepStatus.Pending);
-  }, [pan, user]);
+    if (!pan || !resolvedUserId) return null;
+    return pan.routingSteps.find(s => s.userId === resolvedUserId && s.status === PANStepStatus.Pending);
+  }, [pan, resolvedUserId]);
 
   const canTakeAction = !!currentUserStep;
 
@@ -210,9 +221,17 @@ const PANModal: React.FC<PANModalProps> = ({ isOpen, onClose, pan, templates, em
   };
 
   const handleSignatureSubmit = () => {
-    if (!pan || !signaturePadRef.current || !typedName) return;
-    const dataUrl = signaturePadRef.current.getTrimmedCanvas().toDataURL('image/png');
-    onAcknowledge(pan.id, dataUrl, typedName);
+    if (!pan || !signaturePadRef.current) return;
+    if (!typedName.trim()) {
+      alert('Please type your name before acknowledging.');
+      return;
+    }
+    const dataUrl = signaturePadRef.current.getSignatureDataUrl();
+    if (!dataUrl) {
+      alert('Please provide a signature before acknowledging.');
+      return;
+    }
+    onAcknowledge(pan.id, dataUrl, typedName.trim());
   };
 
   const handleApproveClick = () => {
@@ -276,7 +295,7 @@ const PANModal: React.FC<PANModalProps> = ({ isOpen, onClose, pan, templates, em
                     onClick={() => handleSelectEmployee(emp)}
                     className="px-3 py-2 cursor-pointer hover:bg-indigo-50 dark:hover:bg-slate-600"
                   >
-                    {emp.name} <span className="text-xs text-gray-500">({emp.position})</span>
+                    {emp.name} <span className="text-xs text-gray-500">({emp.role})</span>
                   </div>
                 ))}
               </div>

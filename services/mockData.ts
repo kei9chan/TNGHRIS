@@ -1629,6 +1629,7 @@ export const mockPermissions: PermissionsMatrix = {
     [Role.Employee]: {
         'Dashboard': [Permission.View],
         'Employees': [Permission.View],
+        'PAN': [Permission.View],
         'COE': [Permission.Create, Permission.View],
         'Benefits': [Permission.Create, Permission.View],
         'PulseSurvey': [Permission.View],

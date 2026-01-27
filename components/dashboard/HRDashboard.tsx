@@ -7,7 +7,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions'; // Import added
 import { supabase } from '../../services/supabaseClient';
 import { mockJobRequisitions, mockNotifications, mockResignations, mockEvaluations, mockEvaluationSubmissions, mockTickets, mockUserDocuments, mockUsers, mockOnboardingChecklists, mockChangeHistory, mockPANs, mockAssetAssignments, mockManpowerRequests, mockOnboardingTemplates, mockBenefitRequests, mockIncidentReports } from '../../services/mockData';
-import { JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, Role, NotificationType, ResignationStatus, Notification, TicketStatus, UserDocumentStatus, OnboardingTaskStatus, ChangeHistoryStatus, PANStatus, PANActionTaken, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, COERequestStatus, COETemplate, BenefitRequestStatus, IRStatus, IncidentReport, User } from '../../types';
+import { JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, Role, NotificationType, ResignationStatus, Notification, TicketStatus, UserDocumentStatus, OnboardingTaskStatus, ChangeHistoryStatus, PANStatus, PANActionTaken, PANStepStatus, PAN, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, COERequestStatus, COETemplate, BenefitRequestStatus, IRStatus, IncidentReport, User } from '../../types';
 import ActionItemCard from './ActionItemCard';
 import QuickAnalyticsPreview from './QuickAnalyticsPreview';
 import UpcomingEventsWidget from './UpcomingEventsWidget';
@@ -49,6 +49,35 @@ const getActionType = (action: PANActionTaken) => {
     return actions.join(', ') || 'Update';
 };
 
+const emptyActions: PANActionTaken = {
+    changeOfStatus: false,
+    promotion: false,
+    transfer: false,
+    salaryIncrease: false,
+    changeOfJobTitle: false,
+    others: ''
+};
+
+const mapPanRow = (p: any): PAN => ({
+    id: p.id,
+    employeeId: p.employee_id,
+    employeeName: p.employee_name,
+    effectiveDate: p.effective_date ? new Date(p.effective_date) : new Date(),
+    status: p.status as PANStatus,
+    actionTaken: p.action_taken || { ...emptyActions },
+    particulars: p.particulars || { from: {}, to: {} },
+    tenure: p.tenure || '',
+    notes: p.notes || '',
+    routingSteps: p.routing_steps || [],
+    signedAt: p.signed_at ? new Date(p.signed_at) : undefined,
+    signatureDataUrl: p.signature_data_url || undefined,
+    signatureName: p.signature_name || undefined,
+    logoUrl: p.logo_url || undefined,
+    pdfHash: p.pdf_hash || undefined,
+    preparerName: p.preparer_name || undefined,
+    preparerSignatureUrl: p.preparer_signature_url || undefined,
+});
+
 const HRDashboard: React.FC = () => {
     const { user } = useAuth();
     const { isUserEligibleEvaluator, getCoeAccess } = usePermissions(); // Added hook
@@ -62,6 +91,8 @@ const HRDashboard: React.FC = () => {
     const [benefitRequests, setBenefitRequests] = useState(mockBenefitRequests);
     const [incidentReports, setIncidentReports] = useState<IncidentReport[]>(mockIncidentReports);
     const [evaluationSubmissions, setEvaluationSubmissions] = useState(mockEvaluationSubmissions);
+    const [pans, setPans] = useState<PAN[]>(mockPANs);
+    const [panApproverId, setPanApproverId] = useState<string | null>(null);
 
     const location = useLocation();
     const navigate = useNavigate();
@@ -84,6 +115,55 @@ const HRDashboard: React.FC = () => {
             navigate(location.pathname, { replace: true, state: {} });
         }
     }, [location.state, navigate]);
+
+    useEffect(() => {
+        let active = true;
+        const loadPanApproverId = async () => {
+            if (!user) {
+                if (active) setPanApproverId(null);
+                return;
+            }
+            let resolvedId: string | null = null;
+            if (user.authUserId) {
+                const { data } = await supabase
+                    .from('hris_users')
+                    .select('id')
+                    .eq('auth_user_id', user.authUserId)
+                    .maybeSingle();
+                resolvedId = data?.id ?? null;
+            }
+            if (!resolvedId && user.email) {
+                const { data } = await supabase
+                    .from('hris_users')
+                    .select('id')
+                    .eq('email', user.email)
+                    .maybeSingle();
+                resolvedId = data?.id ?? null;
+            }
+            if (active) setPanApproverId(resolvedId || user.id || null);
+        };
+        loadPanApproverId();
+        return () => {
+            active = false;
+        };
+    }, [user]);
+
+    useEffect(() => {
+        const loadPans = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('pans')
+                    .select('*')
+                    .order('updated_at', { ascending: false });
+                if (error) throw error;
+                setPans((data || []).map(mapPanRow));
+            } catch (err) {
+                console.error('Failed to load PANs', err);
+                setPans([...mockPANs]);
+            }
+        };
+        loadPans();
+    }, []);
 
     useEffect(() => {
         const loadCoeData = async () => {
@@ -331,13 +411,31 @@ const HRDashboard: React.FC = () => {
         });
 
         // Check for PANs needing acknowledgement (shows up regardless of role)
-        const pendingPANsForAcknowledgement = mockPANs.filter(p => p.employeeId === user.id && p.status === PANStatus.PendingEmployee);
+        const pendingPANsForAcknowledgement = pans.filter(p => p.employeeId === user.id && p.status === PANStatus.PendingEmployee);
         pendingPANsForAcknowledgement.forEach(pan => {
             allItems.push({
                 id: `pan-ack-${pan.id}`,
                 icon: <DocumentTextIcon {...iconProps} />,
                 title: 'PAN for Acknowledgement',
                 subtitle: `Action: ${getActionType(pan.actionTaken)}`,
+                date: new Date(pan.effectiveDate).toLocaleDateString(),
+                link: '/employees/pan',
+                colorClass: 'bg-purple-500',
+                priority: 1
+            });
+        });
+
+        const approverIds = new Set([user.id, panApproverId].filter(Boolean));
+        const pendingPansForApproval = pans.filter(pan =>
+            [PANStatus.PendingApproval, PANStatus.PendingEndorser, PANStatus.PendingRecommender].includes(pan.status) &&
+            pan.routingSteps.some(step => approverIds.has(step.userId) && step.status === PANStepStatus.Pending)
+        );
+        pendingPansForApproval.forEach(pan => {
+            allItems.push({
+                id: `pan-approve-${pan.id}`,
+                icon: <DocumentTextIcon {...iconProps} />,
+                title: 'PAN for Approval',
+                subtitle: `For ${pan.employeeName}, effective ${new Date(pan.effectiveDate).toLocaleDateString()}`,
                 date: new Date(pan.effectiveDate).toLocaleDateString(),
                 link: '/employees/pan',
                 colorClass: 'bg-purple-500',
@@ -463,6 +561,12 @@ const HRDashboard: React.FC = () => {
                         icon: <DocumentTextIcon {...iconProps} />,
                         title: "PAN Approved",
                         colorClass: "bg-green-500"
+                    };
+                case NotificationType.PAN_APPROVAL_REQUEST:
+                    return {
+                        icon: <DocumentTextIcon {...iconProps} />,
+                        title: "PAN Approval Required",
+                        colorClass: "bg-amber-500"
                     };
                 default:
                      return {
@@ -624,7 +728,7 @@ const HRDashboard: React.FC = () => {
         
         return allItems.sort((a,b) => (a.priority ?? 99) - (b.priority ?? 99) || new Date(b.date).getTime() - new Date(a.date).getTime());
 
-    }, [user, isHR, pendingHrRequisitions, pendingResignations, pendingProfileChanges, pendingUserRegistrations, assignments, checklists, templates, pendingBenefitRequests, incidentReports, evaluationSubmissions, isUserEligibleEvaluator]);
+    }, [user, isHR, pendingHrRequisitions, pendingResignations, pendingProfileChanges, pendingUserRegistrations, assignments, checklists, templates, pendingBenefitRequests, incidentReports, evaluationSubmissions, isUserEligibleEvaluator, pans, panApproverId]);
 
 
     return (

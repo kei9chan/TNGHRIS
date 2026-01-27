@@ -47,6 +47,35 @@ const getActionType = (action: PANActionTaken) => {
     return actions.join(', ') || 'Update';
 };
 
+const emptyActions: PANActionTaken = {
+    changeOfStatus: false,
+    promotion: false,
+    transfer: false,
+    salaryIncrease: false,
+    changeOfJobTitle: false,
+    others: ''
+};
+
+const mapPanRow = (p: any): PAN => ({
+    id: p.id,
+    employeeId: p.employee_id,
+    employeeName: p.employee_name,
+    effectiveDate: p.effective_date ? new Date(p.effective_date) : new Date(),
+    status: p.status as PANStatus,
+    actionTaken: p.action_taken || { ...emptyActions },
+    particulars: p.particulars || { from: {}, to: {} },
+    tenure: p.tenure || '',
+    notes: p.notes || '',
+    routingSteps: p.routing_steps || [],
+    signedAt: p.signed_at ? new Date(p.signed_at) : undefined,
+    signatureDataUrl: p.signature_data_url || undefined,
+    signatureName: p.signature_name || undefined,
+    logoUrl: p.logo_url || undefined,
+    pdfHash: p.pdf_hash || undefined,
+    preparerName: p.preparer_name || undefined,
+    preparerSignatureUrl: p.preparer_signature_url || undefined,
+});
+
 
 const BODDashboard: React.FC = () => {
     const { user } = useAuth();
@@ -55,6 +84,7 @@ const BODDashboard: React.FC = () => {
     const navigate = useNavigate();
     
     const [pans, setPans] = useState<PAN[]>(mockPANs);
+    const [panApproverId, setPanApproverId] = useState<string | null>(null);
     const [resolutions, setResolutions] = useState<Resolution[]>(mockResolutions);
     const [ntes, setNTEs] = useState<NTE[]>(mockNTEs);
     const [requisitions, setRequisitions] = useState<JobRequisition[]>(mockJobRequisitions);
@@ -110,6 +140,55 @@ const BODDashboard: React.FC = () => {
             }
         };
         loadCoe();
+    }, []);
+
+    useEffect(() => {
+        let active = true;
+        const loadPanApproverId = async () => {
+            if (!user) {
+                if (active) setPanApproverId(null);
+                return;
+            }
+            let resolvedId: string | null = null;
+            if (user.authUserId) {
+                const { data } = await supabase
+                    .from('hris_users')
+                    .select('id')
+                    .eq('auth_user_id', user.authUserId)
+                    .maybeSingle();
+                resolvedId = data?.id ?? null;
+            }
+            if (!resolvedId && user.email) {
+                const { data } = await supabase
+                    .from('hris_users')
+                    .select('id')
+                    .eq('email', user.email)
+                    .maybeSingle();
+                resolvedId = data?.id ?? null;
+            }
+            if (active) setPanApproverId(resolvedId || user.id || null);
+        };
+        loadPanApproverId();
+        return () => {
+            active = false;
+        };
+    }, [user]);
+
+    useEffect(() => {
+        const loadPans = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('pans')
+                    .select('*')
+                    .order('updated_at', { ascending: false });
+                if (error) throw error;
+                setPans((data || []).map(mapPanRow));
+            } catch (err) {
+                console.error('Failed to load PANs', err);
+                setPans([...mockPANs]);
+            }
+        };
+        loadPans();
     }, []);
 
     // Sync with mock data to ensure approvals are reflected immediately when navigating back
@@ -412,9 +491,10 @@ const BODDashboard: React.FC = () => {
             )
         );
 
+        const approverIds = new Set([user.id, panApproverId].filter(Boolean));
         const pendingPansForMe = pans.filter(pan =>
             [PANStatus.PendingApproval, PANStatus.PendingEndorser, PANStatus.PendingRecommender].includes(pan.status) &&
-            pan.routingSteps.some(step => step.userId === user.id && step.status === PANStepStatus.Pending)
+            pan.routingSteps.some(step => approverIds.has(step.userId) && step.status === PANStepStatus.Pending)
         );
 
         const pendingResolutionsForMe = resolutions.filter(res =>
@@ -570,6 +650,19 @@ const BODDashboard: React.FC = () => {
             }));
         allItems.push(...benefitNotifications);
 
+        const panApprovalNotifications = mockNotifications
+            .filter(n => n.userId === user.id && !n.isRead && n.type === NotificationType.PAN_APPROVAL_REQUEST)
+            .map(item => ({
+                id: `notif-${item.id}`,
+                icon: <DocumentTextIcon {...iconProps} />,
+                title: "PAN Approval Required",
+                subtitle: item.message,
+                date: new Date(item.createdAt).toLocaleDateString(),
+                link: item.link,
+                colorClass: "bg-amber-500"
+            }));
+        allItems.push(...panApprovalNotifications);
+
         const assetNotifications = mockNotifications
             .filter(n => n.userId === user.id && !n.isRead && n.type === NotificationType.ASSET_ASSIGNED)
             .map(item => {
@@ -656,7 +749,7 @@ const BODDashboard: React.FC = () => {
              // Parse the date string back to a timestamp for correct sorting
              return new Date(b.date).getTime() - new Date(a.date).getTime();
         });
-    }, [user, pans, resolutions, ntes, requisitions, awards, assignments, manpowerRequests, wfhRequests, checklists, templates, isManpowerReviewModalOpen, pendingBenefitRequests, envelopes, evaluationSubmissions, isUserEligibleEvaluator]); 
+    }, [user, pans, resolutions, ntes, requisitions, awards, assignments, manpowerRequests, wfhRequests, checklists, templates, isManpowerReviewModalOpen, pendingBenefitRequests, envelopes, evaluationSubmissions, isUserEligibleEvaluator, panApproverId]); 
 
     return (
         <div className="space-y-6">

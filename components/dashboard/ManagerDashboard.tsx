@@ -58,6 +58,35 @@ const getActionType = (action: PANActionTaken) => {
     return actions.join(', ') || 'Update';
 };
 
+const emptyActions: PANActionTaken = {
+    changeOfStatus: false,
+    promotion: false,
+    transfer: false,
+    salaryIncrease: false,
+    changeOfJobTitle: false,
+    others: ''
+};
+
+const mapPanRow = (p: any): PAN => ({
+    id: p.id,
+    employeeId: p.employee_id,
+    employeeName: p.employee_name,
+    effectiveDate: p.effective_date ? new Date(p.effective_date) : new Date(),
+    status: p.status as PANStatus,
+    actionTaken: p.action_taken || { ...emptyActions },
+    particulars: p.particulars || { from: {}, to: {} },
+    tenure: p.tenure || '',
+    notes: p.notes || '',
+    routingSteps: p.routing_steps || [],
+    signedAt: p.signed_at ? new Date(p.signed_at) : undefined,
+    signatureDataUrl: p.signature_data_url || undefined,
+    signatureName: p.signature_name || undefined,
+    logoUrl: p.logo_url || undefined,
+    pdfHash: p.pdf_hash || undefined,
+    preparerName: p.preparer_name || undefined,
+    preparerSignatureUrl: p.preparer_signature_url || undefined,
+});
+
 const ManagerDashboard: React.FC = () => {
     const { user } = useAuth();
     const { getVisibleEmployeeIds, isUserEligibleEvaluator, getCoeAccess } = usePermissions();
@@ -91,6 +120,7 @@ const ManagerDashboard: React.FC = () => {
     const [pendingWfhApprovals, setPendingWfhApprovals] = useState<WFHRequest[]>([]);
     const [pendingOtApprovals, setPendingOtApprovals] = useState<OTRequest[]>([]);
     const [pendingManpowerApprovals, setPendingManpowerApprovals] = useState<ManpowerRequest[]>([]);
+    const [panApproverId, setPanApproverId] = useState<string | null>(null);
 
 
     const [isManpowerModalOpen, setIsManpowerModalOpen] = useState(false);
@@ -118,6 +148,55 @@ const ManagerDashboard: React.FC = () => {
             navigate(location.pathname, { replace: true, state: {} });
         }
     }, [location.state, navigate]);
+
+    useEffect(() => {
+        let active = true;
+        const loadPanApproverId = async () => {
+            if (!user) {
+                if (active) setPanApproverId(null);
+                return;
+            }
+            let resolvedId: string | null = null;
+            if (user.authUserId) {
+                const { data } = await supabase
+                    .from('hris_users')
+                    .select('id')
+                    .eq('auth_user_id', user.authUserId)
+                    .maybeSingle();
+                resolvedId = data?.id ?? null;
+            }
+            if (!resolvedId && user.email) {
+                const { data } = await supabase
+                    .from('hris_users')
+                    .select('id')
+                    .eq('email', user.email)
+                    .maybeSingle();
+                resolvedId = data?.id ?? null;
+            }
+            if (active) setPanApproverId(resolvedId || user.id || null);
+        };
+        loadPanApproverId();
+        return () => {
+            active = false;
+        };
+    }, [user]);
+
+    useEffect(() => {
+        const loadPans = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('pans')
+                    .select('*')
+                    .order('updated_at', { ascending: false });
+                if (error) throw error;
+                setPans((data || []).map(mapPanRow));
+            } catch (err) {
+                console.error('Failed to load PANs', err);
+                setPans([...mockPANs]);
+            }
+        };
+        loadPans();
+    }, []);
 
     useEffect(() => {
         const loadCoe = async () => {
@@ -765,6 +844,20 @@ const ManagerDashboard: React.FC = () => {
                 priority: 1
             }));
         items.push(...benefitNotifications);
+
+        const panApprovalNotifications = mockNotifications
+            .filter(n => n.userId === user.id && !n.isRead && n.type === NotificationType.PAN_APPROVAL_REQUEST)
+            .map(item => ({
+                id: `pan-approve-${item.id}`,
+                icon: <DocumentTextIcon {...iconProps} />,
+                title: 'PAN Approval Required',
+                subtitle: item.message,
+                date: new Date(item.createdAt).toLocaleDateString(),
+                link: item.link,
+                colorClass: 'bg-amber-500',
+                priority: 1
+            }));
+        items.push(...panApprovalNotifications);
         
         // 4. Manpower Request Approvals (For Approvers)
         if (isApprover || isBusinessUnitManager) {
@@ -834,9 +927,10 @@ const ManagerDashboard: React.FC = () => {
         });
         
         // 8. PAN Approval (Manager Approving)
+        const approverIds = new Set([user.id, panApproverId].filter(Boolean));
         const pendingPans = pans.filter(pan =>
             [PANStatus.PendingApproval, PANStatus.PendingEndorser, PANStatus.PendingRecommender].includes(pan.status) &&
-            pan.routingSteps.some(s => s.userId === user.id && s.status === PANStepStatus.Pending)
+            pan.routingSteps.some(s => approverIds.has(s.userId) && s.status === PANStepStatus.Pending)
         );
         pendingPans.forEach(pan => {
              items.push({
@@ -982,7 +1076,7 @@ const ManagerDashboard: React.FC = () => {
         items.push(...evaluationItems);
 
         return items.sort((a,b) => (a.priority ?? 99) - (b.priority ?? 99) || new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [user, requests, assignments, checklists, templates, pans, otRequests, exceptions, requisitions, resolutions, ntes, awards, manpowerRequests, isApprover, isBusinessUnitManager, subordinateIds, envelopes, benefitRequests, coachingSessions, evaluationSubmissions, isUserEligibleEvaluator, visibleEmployeeIds]);
+    }, [user, requests, assignments, checklists, templates, pans, otRequests, exceptions, requisitions, resolutions, ntes, awards, manpowerRequests, isApprover, isBusinessUnitManager, subordinateIds, envelopes, benefitRequests, coachingSessions, evaluationSubmissions, isUserEligibleEvaluator, visibleEmployeeIds, panApproverId]);
 
     const teamApprovalItems = useMemo(() => {
         const items: Array<{

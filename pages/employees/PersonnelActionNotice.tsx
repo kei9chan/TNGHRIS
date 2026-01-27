@@ -14,6 +14,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { supabase } from '../../services/supabaseClient';
 import { logActivity } from '../../services/auditService';
+import { mockUsers, mockNotifications } from '../../services/mockData';
 import {
   PAN,
   PANStatus,
@@ -25,6 +26,7 @@ import {
   PANStepStatus,
   PANRoutingStep,
   PANRole,
+  NotificationType,
 } from '../../types';
 
 const emptyActions: PANActionTaken = {
@@ -52,8 +54,8 @@ const PersonnelActionNotice: React.FC = () => {
   const [panForAction, setPanForAction] = useState<PAN | null>(null);
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [yearFilter, setYearFilter] = useState<string>(new Date().getFullYear().toString());
-  const [monthFilter, setMonthFilter] = useState<string>((new Date().getMonth() + 1).toString());
+  const [yearFilter, setYearFilter] = useState<string>('all');
+  const [monthFilter, setMonthFilter] = useState<string>('all');
 
   const panAccess = getPanAccess();
   const canCreatePAN = panAccess.canCreate;
@@ -200,6 +202,45 @@ const PersonnelActionNotice: React.FC = () => {
     if (saved) {
       setRecords(prev => [mapPanRow(saved), ...prev.filter(p => p.id !== saved.id)]);
       setIsModalOpen(false);
+      const createdAt = new Date();
+      const stepIds = (panToSend.routingSteps || []).map(step => step.userId).filter(Boolean);
+      const stepUserRows = stepIds.length
+        ? (await supabase
+            .from('hris_users')
+            .select('id, email, auth_user_id')
+            .in('id', stepIds)).data
+        : [];
+      const stepUserMap = new Map(
+        (stepUserRows || []).map((row: any) => [row.id, row])
+      );
+
+      (panToSend.routingSteps || []).forEach(step => {
+        const targets = new Set<string>();
+        if (step.userId) targets.add(step.userId);
+
+        const row = stepUserMap.get(step.userId);
+        if (row?.auth_user_id) targets.add(row.auth_user_id);
+        if (row?.email) {
+          const mockMatch = mockUsers.find(
+            u => u.email?.toLowerCase() === String(row.email).toLowerCase()
+          );
+          if (mockMatch?.id) targets.add(mockMatch.id);
+        }
+
+        targets.forEach(targetId => {
+          mockNotifications.unshift({
+            id: `notif-pan-approve-${saved.id}-${targetId}-${createdAt.getTime()}`,
+            userId: targetId,
+            type: NotificationType.PAN_APPROVAL_REQUEST,
+            title: 'PAN Approval Required',
+            message: `A PAN requires your review for ${panToSend.employeeName || 'an employee'}.`,
+            link: '/employees/pan',
+            isRead: false,
+            createdAt,
+            relatedEntityId: saved.id,
+          });
+        });
+      });
       logActivity(user!, 'SUBMIT', 'PAN', saved.id, `Sent PAN for acknowledgement for ${panToSend.employeeName || ''}.`);
     }
   };
@@ -221,6 +262,8 @@ const PersonnelActionNotice: React.FC = () => {
     if (!error && data) {
       setRecords(prev => prev.map(r => (r.id === panId ? mapPanRow(data) : r)));
     }
+    setIsModalOpen(false);
+    setSelectedRecord(null);
   };
 
   const handleApprovePAN = async (panId: string) => {
@@ -241,6 +284,40 @@ const PersonnelActionNotice: React.FC = () => {
       .single();
     if (!error && data) {
       setRecords(prev => prev.map(r => (r.id === panId ? mapPanRow(data) : r)));
+      if (newStatus === PANStatus.PendingEmployee) {
+        const createdAt = new Date();
+        const employeeId = data.employee_id || existing.employeeId;
+        const employeeName = data.employee_name || existing.employeeName || 'the employee';
+        const targets = new Set<string>();
+        if (employeeId) targets.add(employeeId);
+
+        const { data: empRow } = await supabase
+          .from('hris_users')
+          .select('id, email, auth_user_id')
+          .eq('id', employeeId)
+          .maybeSingle();
+        if (empRow?.auth_user_id) targets.add(empRow.auth_user_id);
+        if (empRow?.email) {
+          const mockMatch = mockUsers.find(
+            u => u.email?.toLowerCase() === String(empRow.email).toLowerCase()
+          );
+          if (mockMatch?.id) targets.add(mockMatch.id);
+        }
+
+        targets.forEach(targetId => {
+          mockNotifications.unshift({
+            id: `notif-pan-ack-${panId}-${targetId}-${createdAt.getTime()}`,
+            userId: targetId,
+            type: NotificationType.PAN_UPDATE,
+            title: 'PAN for Acknowledgement',
+            message: `A PAN is ready for your acknowledgement (${employeeName}).`,
+            link: '/employees/pan',
+            isRead: false,
+            createdAt,
+            relatedEntityId: panId,
+          });
+        });
+      }
     }
     setIsModalOpen(false);
     setSelectedRecord(null);
@@ -354,19 +431,22 @@ const PersonnelActionNotice: React.FC = () => {
   ];
 
   const filteredRecords = useMemo(() => {
+    if (!user) return [];
     return records.filter(record => {
       const recordDate = new Date(record.effectiveDate);
       const yearMatch = yearFilter === 'all' || recordDate.getFullYear().toString() === yearFilter;
       const monthMatch = monthFilter === 'all' || (recordDate.getMonth() + 1).toString() === monthFilter;
+      const routingMatch = record.routingSteps?.some(step => step.userId === user.id);
+      const employeeMatch = record.employeeId === user.id;
 
       const searchTermMatch = !searchTerm ||
         record.employeeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         getActionType(record.actionTaken).toLowerCase().includes(searchTerm.toLowerCase()) ||
         record.status.toLowerCase().includes(searchTerm.toLowerCase());
 
-      return yearMatch && monthMatch && searchTermMatch;
+      return yearMatch && monthMatch && searchTermMatch && (routingMatch || employeeMatch);
     });
-  }, [records, searchTerm, yearFilter, monthFilter]);
+  }, [records, searchTerm, yearFilter, monthFilter, user]);
 
   return (
     <div className="space-y-6">

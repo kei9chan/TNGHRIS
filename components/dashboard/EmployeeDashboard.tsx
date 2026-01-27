@@ -15,6 +15,7 @@ import {
     OnboardingTaskStatus,
     PANStatus,
     PANActionTaken,
+    PAN,
     ResolutionStatus,
     IRStatus,
     NotificationType,
@@ -117,6 +118,35 @@ const getActionType = (action: PANActionTaken) => {
     return actions.join(', ') || 'Update';
 };
 
+const emptyActions: PANActionTaken = {
+    changeOfStatus: false,
+    promotion: false,
+    transfer: false,
+    salaryIncrease: false,
+    changeOfJobTitle: false,
+    others: ''
+};
+
+const mapPanRow = (p: any): PAN => ({
+    id: p.id,
+    employeeId: p.employee_id,
+    employeeName: p.employee_name,
+    effectiveDate: p.effective_date ? new Date(p.effective_date) : new Date(),
+    status: p.status as PANStatus,
+    actionTaken: p.action_taken || { ...emptyActions },
+    particulars: p.particulars || { from: {}, to: {} },
+    tenure: p.tenure || '',
+    notes: p.notes || '',
+    routingSteps: p.routing_steps || [],
+    signedAt: p.signed_at ? new Date(p.signed_at) : undefined,
+    signatureDataUrl: p.signature_data_url || undefined,
+    signatureName: p.signature_name || undefined,
+    logoUrl: p.logo_url || undefined,
+    pdfHash: p.pdf_hash || undefined,
+    preparerName: p.preparer_name || undefined,
+    preparerSignatureUrl: p.preparer_signature_url || undefined,
+});
+
 const AnniversaryBanner: React.FC = () => {
     const { user } = useAuth();
     
@@ -201,6 +231,7 @@ const EmployeeDashboard: React.FC = () => {
     // NEW: State for Coaching
     const [coachingSessions, setCoachingSessions] = useState(mockCoachingSessions);
     const [envelopes, setEnvelopes] = useState<Envelope[]>(mockEnvelopes);
+    const [pans, setPans] = useState<PAN[]>(mockPANs);
     const [ntes, setNTEs] = useState<NTE[]>(mockNTEs);
     const [evaluationSubmissions, setEvaluationSubmissions] = useState(mockEvaluationSubmissions);
     const [coeDecisions, setCoeDecisions] = useState<Array<{ id: string; status: COERequest['status']; date: Date }>>([]);
@@ -424,6 +455,33 @@ const EmployeeDashboard: React.FC = () => {
 
         loadApproved();
         const interval = setInterval(loadApproved, 15000);
+        return () => {
+            isMounted = false;
+            clearInterval(interval);
+        };
+    }, [user?.id]);
+
+    useEffect(() => {
+        if (!user?.id) {
+            setPans([]);
+            return;
+        }
+        let isMounted = true;
+        const loadPans = async () => {
+            const { data, error } = await supabase
+                .from('pans')
+                .select('*')
+                .eq('employee_id', user.id)
+                .order('updated_at', { ascending: false });
+            if (!isMounted) return;
+            if (error || !data) {
+                setPans(mockPANs.filter(p => p.employeeId === user.id));
+                return;
+            }
+            setPans(data.map(mapPanRow));
+        };
+        loadPans();
+        const interval = setInterval(loadPans, 20000);
         return () => {
             isMounted = false;
             clearInterval(interval);
@@ -935,7 +993,7 @@ const EmployeeDashboard: React.FC = () => {
             });
         }
         
-        const pendingPANs = mockPANs.filter(p => p.employeeId === user.id && p.status === PANStatus.PendingEmployee);
+        const pendingPANs = pans.filter(p => p.employeeId === user.id && p.status === PANStatus.PendingEmployee);
         pendingPANs.forEach(pan => {
             items.push({
                 id: `pan-${pan.id}`,
@@ -1132,6 +1190,9 @@ const EmployeeDashboard: React.FC = () => {
                     case NotificationType.COACHING_INVITE:
                         details = { icon: <SparklesIcon {...iconProps} />, title: item.title || " Let's Connect! 🚀", colorClass: "bg-purple-500", priority: 0 };
                         break;
+                    case NotificationType.PAN_UPDATE:
+                        details = { icon: <DocumentTextIcon {...iconProps} />, title: "PAN for Acknowledgement", colorClass: "bg-purple-500", priority: 1 };
+                        break;
                     case NotificationType.TICKET_ASSIGNED_TO_YOU:
                         details = { icon: <TicketIcon {...iconProps} />, title: "New Ticket Assigned", colorClass: "bg-cyan-500", priority: 1 };
                         break;
@@ -1168,7 +1229,7 @@ const EmployeeDashboard: React.FC = () => {
             return new Date(dateB).getTime() - new Date(dateA).getTime();
         });
 
-    }, [user, refreshKey, memoUpdateKey, requests, assignments, checklists, templates, isUserEligibleEvaluator, benefitRequests, pulseSurveys, surveyResponses, coachingSessions, envelopes, ntes, evaluationSubmissions, approvedLeaveRequests, approvedWfhRequests, approvedOtRequests, approvedManpowerRequests, rejectedLeaveRequests, rejectedWfhRequests, rejectedOtRequests, rejectedManpowerRequests, coeDecisions, assignedTickets]);
+    }, [user, refreshKey, memoUpdateKey, requests, assignments, checklists, templates, isUserEligibleEvaluator, benefitRequests, pulseSurveys, surveyResponses, coachingSessions, envelopes, pans, ntes, evaluationSubmissions, approvedLeaveRequests, approvedWfhRequests, approvedOtRequests, approvedManpowerRequests, rejectedLeaveRequests, rejectedWfhRequests, rejectedOtRequests, rejectedManpowerRequests, coeDecisions, assignedTickets]);
 
     // Add AcademicCapIcon definition if missing since we used it for evaluation items
     const AcademicCapIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.26 10.147a60.436 60.436 0 0 0-.491 6.347A48.627 48.627 0 0 1 12 20.904a48.627 48.627 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.57 50.57 0 0 0-2.658-.813A59.905 59.905 0 0 1 12 3.493a59.902 59.902 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5" /></svg>);
