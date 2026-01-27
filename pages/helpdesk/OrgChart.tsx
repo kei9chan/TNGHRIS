@@ -13,7 +13,9 @@ const OrgChart: React.FC = () => {
     const { user: currentUser } = useAuth();
     const { getAccessibleBusinessUnits, can } = usePermissions();
     const canView = can('OrgChart', Permission.View);
-    const canManage = can('OrgChart', Permission.Manage);
+    const canManage = can('OrgChart', Permission.Manage)
+        && !!currentUser
+        && [Role.Admin, Role.HRManager, Role.HRStaff].includes(currentUser.role);
     const [users, setUsers] = useState<User[]>([]);
     const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
     const [selectedBu, setSelectedBu] = useState<string>('');
