@@ -103,6 +103,7 @@ const ManagerDashboard: React.FC = () => {
     const [ntes, setNTEs] = useState<NTE[]>(mockNTEs);
     const [awards, setAwards] = useState<EmployeeAward[]>(mockEmployeeAwards);
     const [assignments, setAssignments] = useState<AssetAssignment[]>(mockAssetAssignments);
+    const [useSupabaseAssignments, setUseSupabaseAssignments] = useState(false);
     const [manpowerRequests, setManpowerRequests] = useState<ManpowerRequest[]>(mockManpowerRequests);
     const [checklists, setChecklists] = useState<OnboardingChecklist[]>(mockOnboardingChecklists);
     const [templates, setTemplates] = useState<OnboardingChecklistTemplate[]>(mockOnboardingTemplates);
@@ -194,6 +195,42 @@ const ManagerDashboard: React.FC = () => {
             active = false;
         };
     }, [user]);
+
+    useEffect(() => {
+        if (!employeeProfileId) return;
+        let active = true;
+        const loadAssignments = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('asset_assignments')
+                    .select('id, asset_id, employee_id, condition_on_assign, is_acknowledged, date_assigned, date_returned, acknowledged_at, signed_document_url')
+                    .eq('employee_id', employeeProfileId)
+                    .order('date_assigned', { ascending: false });
+                if (error) throw error;
+                if (!active) return;
+                const mapped =
+                    (data || []).map((row: any) => ({
+                        id: row.id,
+                        assetId: row.asset_id,
+                        employeeId: row.employee_id,
+                        conditionOnAssign: row.condition_on_assign || '',
+                        isAcknowledged: !!row.is_acknowledged,
+                        dateAssigned: row.date_assigned ? new Date(row.date_assigned) : new Date(),
+                        dateReturned: row.date_returned ? new Date(row.date_returned) : undefined,
+                        acknowledgedAt: row.acknowledged_at ? new Date(row.acknowledged_at) : undefined,
+                        signedDocumentUrl: row.signed_document_url || undefined,
+                    })) || [];
+                setAssignments(mapped);
+                setUseSupabaseAssignments(true);
+            } catch (err) {
+                console.error('Failed to load asset assignments for manager dashboard', err);
+            }
+        };
+        loadAssignments();
+        return () => {
+            active = false;
+        };
+    }, [employeeProfileId]);
 
     useEffect(() => {
         if (!employeeProfileId) return;
@@ -481,7 +518,9 @@ const ManagerDashboard: React.FC = () => {
             setResolutions([...mockResolutions]);
             setNTEs([...mockNTEs]);
             setAwards([...mockEmployeeAwards]);
-            setAssignments([...mockAssetAssignments]);
+            if (!useSupabaseAssignments) {
+                setAssignments([...mockAssetAssignments]);
+            }
             setManpowerRequests([...mockManpowerRequests]);
             if (!useSupabaseOnboarding) {
                 setChecklists([...mockOnboardingChecklists]);
@@ -493,7 +532,7 @@ const ManagerDashboard: React.FC = () => {
             setEvaluationSubmissions([...mockEvaluationSubmissions]);
         }, 1000);
         return () => clearInterval(interval);
-    }, [useSupabaseOnboarding]);
+    }, [useSupabaseOnboarding, useSupabaseAssignments]);
 
     // Updated to include all visible employees (BU or subordinates)
     const visibleEmployeeIds = useMemo(() => {
@@ -859,7 +898,7 @@ const ManagerDashboard: React.FC = () => {
         });
 
         // 2. Pending Asset Acceptance (Manager as Employee)
-        const pendingAssetAcceptance = assignments.filter(a => a.employeeId === user.id && !a.isAcknowledged && !a.dateReturned);
+        const pendingAssetAcceptance = assignments.filter(a => a.employeeId === (employeeProfileId || user.id) && !a.isAcknowledged && !a.dateReturned);
         pendingAssetAcceptance.forEach(assignment => {
             items.push({
                 id: `asset-accept-${assignment.id}`,
@@ -867,7 +906,7 @@ const ManagerDashboard: React.FC = () => {
                 title: 'Pending Asset Acceptance',
                 subtitle: `You have been assigned an asset that requires your acknowledgment.`,
                 date: new Date(assignment.dateAssigned).toLocaleDateString(),
-                link: '/my-profile', 
+                link: `/my-profile?acceptAssetAssignmentId=${assignment.id}`, 
                 colorClass: 'bg-indigo-500',
                 priority: 0 
             });

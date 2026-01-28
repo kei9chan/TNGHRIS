@@ -84,6 +84,7 @@ const HRDashboard: React.FC = () => {
     const isHR = user && [Role.Admin, Role.HRManager, Role.HRStaff].includes(user.role);
     
     const [assignments, setAssignments] = useState<AssetAssignment[]>(mockAssetAssignments);
+    const [useSupabaseAssignments, setUseSupabaseAssignments] = useState(false);
     const [checklists, setChecklists] = useState<OnboardingChecklist[]>(mockOnboardingChecklists);
     const [templates, setTemplates] = useState<OnboardingChecklistTemplate[]>(mockOnboardingTemplates);
     const [coeRequests, setCoeRequests] = useState<COERequest[]>([]);
@@ -93,6 +94,18 @@ const HRDashboard: React.FC = () => {
     const [evaluationSubmissions, setEvaluationSubmissions] = useState(mockEvaluationSubmissions);
     const [pans, setPans] = useState<PAN[]>(mockPANs);
     const [panApproverId, setPanApproverId] = useState<string | null>(null);
+    const legacyUserId = useMemo(() => {
+        if (!user) return null;
+        const byEmail = user.email
+            ? mockUsers.find(u => u.email?.toLowerCase() === user.email.toLowerCase())
+            : null;
+        if (byEmail?.id) return byEmail.id;
+        const byName = user.name
+            ? mockUsers.find(u => u.name?.toLowerCase() === user.name.toLowerCase())
+            : null;
+        return byName?.id ?? null;
+    }, [user?.email, user?.name]);
+    const employeeProfileId = useMemo(() => panApproverId || user?.id || null, [panApproverId, user?.id]);
 
     const location = useLocation();
     const navigate = useNavigate();
@@ -186,8 +199,46 @@ const HRDashboard: React.FC = () => {
     }, []);
 
     useEffect(() => {
+        if (!employeeProfileId) return;
+        let active = true;
+        const loadAssignments = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('asset_assignments')
+                    .select('id, asset_id, employee_id, condition_on_assign, is_acknowledged, date_assigned, date_returned, acknowledged_at, signed_document_url')
+                    .eq('employee_id', employeeProfileId)
+                    .order('date_assigned', { ascending: false });
+                if (error) throw error;
+                if (!active) return;
+                const mapped =
+                    (data || []).map((row: any) => ({
+                        id: row.id,
+                        assetId: row.asset_id,
+                        employeeId: row.employee_id,
+                        conditionOnAssign: row.condition_on_assign || '',
+                        isAcknowledged: !!row.is_acknowledged,
+                        dateAssigned: row.date_assigned ? new Date(row.date_assigned) : new Date(),
+                        dateReturned: row.date_returned ? new Date(row.date_returned) : undefined,
+                        acknowledgedAt: row.acknowledged_at ? new Date(row.acknowledged_at) : undefined,
+                        signedDocumentUrl: row.signed_document_url || undefined,
+                    })) || [];
+                setAssignments(mapped);
+                setUseSupabaseAssignments(true);
+            } catch (err) {
+                console.error('Failed to load asset assignments for HR dashboard', err);
+            }
+        };
+        loadAssignments();
+        return () => {
+            active = false;
+        };
+    }, [employeeProfileId]);
+
+    useEffect(() => {
         const interval = setInterval(() => {
-             setAssignments([...mockAssetAssignments]);
+             if (!useSupabaseAssignments) {
+                 setAssignments([...mockAssetAssignments]);
+             }
              setChecklists([...mockOnboardingChecklists]);
              setTemplates([...mockOnboardingTemplates]);
              setBenefitRequests([...mockBenefitRequests]);
@@ -195,7 +246,7 @@ const HRDashboard: React.FC = () => {
              setEvaluationSubmissions([...mockEvaluationSubmissions]);
         }, 1000);
         return () => clearInterval(interval);
-    }, []);
+    }, [useSupabaseAssignments]);
 
     const pendingHrRequisitions = useMemo(() => {
         return mockJobRequisitions.filter(req => 
@@ -223,17 +274,6 @@ const HRDashboard: React.FC = () => {
     const pendingCOE = useMemo(() => {
         return scopedCOE.filter(r => r.status === COERequestStatus.Pending);
     }, [scopedCOE]);
-    const legacyUserId = useMemo(() => {
-        if (!user) return null;
-        const byEmail = user.email
-            ? mockUsers.find(u => u.email?.toLowerCase() === user.email.toLowerCase())
-            : null;
-        if (byEmail?.id) return byEmail.id;
-        const byName = user.name
-            ? mockUsers.find(u => u.name?.toLowerCase() === user.name.toLowerCase())
-            : null;
-        return byName?.id ?? null;
-    }, [user?.email, user?.name]);
 
     const pendingBenefitRequests = useMemo(() => {
         return benefitRequests.filter(r => r.status === BenefitRequestStatus.PendingHR);
@@ -408,7 +448,7 @@ const HRDashboard: React.FC = () => {
         });
 
         // Pending Asset Acceptance for HR
-        const pendingAssetAcceptance = assignments.filter(a => a.employeeId === user.id && !a.isAcknowledged && !a.dateReturned);
+        const pendingAssetAcceptance = assignments.filter(a => a.employeeId === (employeeProfileId || user.id) && !a.isAcknowledged && !a.dateReturned);
         pendingAssetAcceptance.forEach(assignment => {
             allItems.push({
                 id: `asset-accept-${assignment.id}`,
@@ -416,7 +456,7 @@ const HRDashboard: React.FC = () => {
                 title: 'Pending Asset Acceptance',
                 subtitle: `You have been assigned an asset that requires your acknowledgment.`,
                 date: new Date(assignment.dateAssigned).toLocaleDateString(),
-                link: '/my-profile', 
+                link: `/my-profile?acceptAssetAssignmentId=${assignment.id}`, 
                 colorClass: 'bg-indigo-500',
                 priority: 0 // High priority
             });
@@ -752,7 +792,7 @@ const HRDashboard: React.FC = () => {
         
         return allItems.sort((a,b) => (a.priority ?? 99) - (b.priority ?? 99) || new Date(b.date).getTime() - new Date(a.date).getTime());
 
-    }, [user, isHR, pendingHrRequisitions, pendingResignations, pendingProfileChanges, pendingUserRegistrations, assignments, checklists, templates, pendingBenefitRequests, incidentReports, evaluationSubmissions, isUserEligibleEvaluator, pans, panApproverId]);
+    }, [user, isHR, pendingHrRequisitions, pendingResignations, pendingProfileChanges, pendingUserRegistrations, assignments, checklists, templates, pendingBenefitRequests, incidentReports, evaluationSubmissions, isUserEligibleEvaluator, pans, panApproverId, employeeProfileId]);
 
 
     return (

@@ -300,15 +300,40 @@ const AssetManagement: React.FC = () => {
 
             const assetName = assets.find(a => a.id === assetId)?.name || 'Asset';
             logActivity(user, 'CREATE', 'AssetAssignment', mappedAssign.id, `Assigned existing asset ${assetName} to employee ${employeeId}`);
-            mockNotifications.unshift({
-                id: `notif-asset-assign-${Date.now()}`,
-                userId: employeeId,
-                type: NotificationType.ASSET_ASSIGNED,
-                message: `You have been assigned an asset: ${assetName}. Please review and accept.`,
-                link: '/my-profile',
-                isRead: false,
-                createdAt: new Date(),
-                relatedEntityId: assetId,
+
+            const { data: assigneeRow } = await supabase
+                .from('hris_users')
+                .select('id, email, auth_user_id, full_name')
+                .eq('id', employeeId)
+                .maybeSingle();
+            const targets = new Set<string>();
+            if (employeeId) targets.add(employeeId);
+            if (assigneeRow?.auth_user_id) targets.add(assigneeRow.auth_user_id);
+            if (assigneeRow?.email) {
+                const mockMatch = mockUsers.find(
+                    u => u.email?.toLowerCase() === String(assigneeRow.email).toLowerCase()
+                );
+                if (mockMatch?.id) targets.add(mockMatch.id);
+            }
+            if (assigneeRow?.full_name) {
+                const nameMatch = mockUsers.find(
+                    u => u.name?.toLowerCase() === String(assigneeRow.full_name).toLowerCase()
+                );
+                if (nameMatch?.id) targets.add(nameMatch.id);
+            }
+
+            const createdAt = new Date();
+            targets.forEach(targetId => {
+                mockNotifications.unshift({
+                    id: `notif-asset-assign-${mappedAssign.id}-${targetId}-${createdAt.getTime()}`,
+                    userId: targetId,
+                    type: NotificationType.ASSET_ASSIGNED,
+                    message: `You have been assigned an asset: ${assetName}. Please review and accept.`,
+                    link: `/my-profile?acceptAssetAssignmentId=${mappedAssign.id}`,
+                    isRead: false,
+                    createdAt,
+                    relatedEntityId: mappedAssign.id,
+                });
             });
         };
 
@@ -364,15 +389,39 @@ const AssetManagement: React.FC = () => {
                 const mappedAssign = mapAssignmentRow(assignmentData as AssignmentRow);
                 setAssignments(prev => [mappedAssign, ...prev]);
 
-                mockNotifications.unshift({
-                    id: `notif-asset-assign-${Date.now()}`,
-                    userId: employeeIdToAssign,
-                    type: NotificationType.ASSET_ASSIGNED,
-                    message: `You have been assigned a new asset: ${mappedAsset.name}. Please review and accept.`,
-                    link: '/my-profile',
-                    isRead: false,
-                    createdAt: new Date(),
-                    relatedEntityId: mappedAsset.id,
+                const { data: assigneeRow } = await supabase
+                    .from('hris_users')
+                    .select('id, email, auth_user_id, full_name')
+                    .eq('id', employeeIdToAssign)
+                    .maybeSingle();
+                const targets = new Set<string>();
+                if (employeeIdToAssign) targets.add(employeeIdToAssign);
+                if (assigneeRow?.auth_user_id) targets.add(assigneeRow.auth_user_id);
+                if (assigneeRow?.email) {
+                    const mockMatch = mockUsers.find(
+                        u => u.email?.toLowerCase() === String(assigneeRow.email).toLowerCase()
+                    );
+                    if (mockMatch?.id) targets.add(mockMatch.id);
+                }
+                if (assigneeRow?.full_name) {
+                    const nameMatch = mockUsers.find(
+                        u => u.name?.toLowerCase() === String(assigneeRow.full_name).toLowerCase()
+                    );
+                    if (nameMatch?.id) targets.add(nameMatch.id);
+                }
+
+                const createdAt = new Date();
+                targets.forEach(targetId => {
+                    mockNotifications.unshift({
+                        id: `notif-asset-assign-${mappedAssign.id}-${targetId}-${createdAt.getTime()}`,
+                        userId: targetId,
+                        type: NotificationType.ASSET_ASSIGNED,
+                        message: `You have been assigned a new asset: ${mappedAsset.name}. Please review and accept.`,
+                        link: `/my-profile?acceptAssetAssignmentId=${mappedAssign.id}`,
+                        isRead: false,
+                        createdAt,
+                        relatedEntityId: mappedAssign.id,
+                    });
                 });
             }
 

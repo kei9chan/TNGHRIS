@@ -90,6 +90,7 @@ const BODDashboard: React.FC = () => {
     const [requisitions, setRequisitions] = useState<JobRequisition[]>(mockJobRequisitions);
     const [awards, setAwards] = useState<EmployeeAward[]>(mockEmployeeAwards);
     const [assignments, setAssignments] = useState<AssetAssignment[]>(mockAssetAssignments);
+    const [useSupabaseAssignments, setUseSupabaseAssignments] = useState(false);
     const [manpowerRequests, setManpowerRequests] = useState<ManpowerRequest[]>(mockManpowerRequests);
     const [wfhRequests, setWfhRequests] = useState<WFHRequest[]>(mockWFHRequests);
     const [checklists, setChecklists] = useState<OnboardingChecklist[]>(mockOnboardingChecklists);
@@ -126,6 +127,7 @@ const BODDashboard: React.FC = () => {
             : null;
         return byName?.id ?? null;
     }, [user?.email, user?.name]);
+    const employeeProfileId = useMemo(() => panApproverId || user?.id || null, [panApproverId, user?.id]);
 
     useEffect(() => {
         if (location.state?.openRequestCOE) {
@@ -202,6 +204,42 @@ const BODDashboard: React.FC = () => {
         loadPans();
     }, []);
 
+    useEffect(() => {
+        if (!employeeProfileId) return;
+        let active = true;
+        const loadAssignments = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('asset_assignments')
+                    .select('id, asset_id, employee_id, condition_on_assign, is_acknowledged, date_assigned, date_returned, acknowledged_at, signed_document_url')
+                    .eq('employee_id', employeeProfileId)
+                    .order('date_assigned', { ascending: false });
+                if (error) throw error;
+                if (!active) return;
+                const mapped =
+                    (data || []).map((row: any) => ({
+                        id: row.id,
+                        assetId: row.asset_id,
+                        employeeId: row.employee_id,
+                        conditionOnAssign: row.condition_on_assign || '',
+                        isAcknowledged: !!row.is_acknowledged,
+                        dateAssigned: row.date_assigned ? new Date(row.date_assigned) : new Date(),
+                        dateReturned: row.date_returned ? new Date(row.date_returned) : undefined,
+                        acknowledgedAt: row.acknowledged_at ? new Date(row.acknowledged_at) : undefined,
+                        signedDocumentUrl: row.signed_document_url || undefined,
+                    })) || [];
+                setAssignments(mapped);
+                setUseSupabaseAssignments(true);
+            } catch (err) {
+                console.error('Failed to load asset assignments for BOD dashboard', err);
+            }
+        };
+        loadAssignments();
+        return () => {
+            active = false;
+        };
+    }, [employeeProfileId]);
+
     // Sync with mock data to ensure approvals are reflected immediately when navigating back
     useEffect(() => {
         const interval = setInterval(() => {
@@ -210,7 +248,9 @@ const BODDashboard: React.FC = () => {
              setNTEs([...mockNTEs]);
              setRequisitions([...mockJobRequisitions]);
              setAwards([...mockEmployeeAwards]);
-             setAssignments([...mockAssetAssignments]);
+             if (!useSupabaseAssignments) {
+                 setAssignments([...mockAssetAssignments]);
+             }
              setManpowerRequests([...mockManpowerRequests]);
              setWfhRequests([...mockWFHRequests]);
              setChecklists([...mockOnboardingChecklists]);
@@ -220,7 +260,7 @@ const BODDashboard: React.FC = () => {
              setEvaluationSubmissions([...mockEvaluationSubmissions]);
         }, 1000);
         return () => clearInterval(interval);
-    }, []);
+    }, [useSupabaseAssignments]);
 
     const handleApproveManpower = (requestId: string) => {
         const index = mockManpowerRequests.findIndex(r => r.id === requestId);
@@ -434,7 +474,7 @@ const BODDashboard: React.FC = () => {
         });
 
         // Pending Asset Acceptance for BOD
-        const pendingAssetAcceptance = assignments.filter(a => a.employeeId === user.id && !a.isAcknowledged && !a.dateReturned);
+        const pendingAssetAcceptance = assignments.filter(a => a.employeeId === (employeeProfileId || user.id) && !a.isAcknowledged && !a.dateReturned);
         pendingAssetAcceptance.forEach(assignment => {
             allItems.push({
                 id: `asset-accept-${assignment.id}`,
@@ -442,7 +482,7 @@ const BODDashboard: React.FC = () => {
                 title: 'Pending Asset Acceptance',
                 subtitle: `You have been assigned an asset that requires your acknowledgment.`,
                 date: new Date(assignment.dateAssigned).toLocaleDateString(),
-                link: '/my-profile', 
+                link: `/my-profile?acceptAssetAssignmentId=${assignment.id}`, 
                 colorClass: 'bg-indigo-500',
                 priority: 0 // High priority
             });
@@ -774,7 +814,7 @@ const BODDashboard: React.FC = () => {
              // Parse the date string back to a timestamp for correct sorting
              return new Date(b.date).getTime() - new Date(a.date).getTime();
         });
-    }, [user, pans, resolutions, ntes, requisitions, awards, assignments, manpowerRequests, wfhRequests, checklists, templates, isManpowerReviewModalOpen, pendingBenefitRequests, envelopes, evaluationSubmissions, isUserEligibleEvaluator, panApproverId]); 
+    }, [user, pans, resolutions, ntes, requisitions, awards, assignments, manpowerRequests, wfhRequests, checklists, templates, isManpowerReviewModalOpen, pendingBenefitRequests, envelopes, evaluationSubmissions, isUserEligibleEvaluator, panApproverId, employeeProfileId]); 
 
     return (
         <div className="space-y-6">

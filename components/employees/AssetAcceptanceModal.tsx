@@ -19,6 +19,7 @@ const AssetAcceptanceModal: React.FC<AssetAcceptanceModalProps> = ({ isOpen, onC
     const signaturePadRef = useRef<SignaturePadRef>(null);
     const contentRef = useRef<HTMLDivElement>(null);
     const [typedName, setTypedName] = useState('');
+    const [isSignatureEmpty, setIsSignatureEmpty] = useState(true);
     const [isAcknowledged, setIsAcknowledged] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
 
@@ -27,8 +28,8 @@ const AssetAcceptanceModal: React.FC<AssetAcceptanceModalProps> = ({ isOpen, onC
             alert('Please acknowledge the asset care policy.');
             return;
         }
-        if (!typedName.trim() || signaturePadRef.current?.isEmpty()) {
-            alert('Please sign to accept the asset.');
+        if (!typedName.trim()) {
+            alert('Please enter your full name.');
             return;
         }
         
@@ -168,7 +169,17 @@ const AssetAcceptanceModal: React.FC<AssetAcceptanceModalProps> = ({ isOpen, onC
                         <div>
                             <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Signature</label>
                             <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-1">
-                                <SignaturePad ref={signaturePadRef} />
+                                <div className="relative">
+                                    <SignaturePad
+                                        ref={signaturePadRef}
+                                        onEnd={() => setIsSignatureEmpty(signaturePadRef.current?.isEmpty() ?? true)}
+                                    />
+                                    {isSignatureEmpty && typedName.trim() && (
+                                        <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-2xl italic text-gray-600 dark:text-gray-300 font-['Brush_Script_MT',_cursive]">
+                                            {typedName}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                             <p className="text-xs text-gray-500 mt-1 text-center">Sign above to confirm acceptance</p>
                         </div>

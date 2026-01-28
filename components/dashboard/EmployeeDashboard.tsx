@@ -223,6 +223,8 @@ const EmployeeDashboard: React.FC = () => {
     const [requests, setRequests] = useState<AssetRequest[]>(mockAssetRequests);
     // New state for asset polling
     const [assignments, setAssignments] = useState(mockAssetAssignments);
+    const [useSupabaseAssignments, setUseSupabaseAssignments] = useState(false);
+    const [employeeProfileId, setEmployeeProfileId] = useState<string | null>(null);
     // NEW: State for checklists to ensure reactivity
     const [checklists, setChecklists] = useState<OnboardingChecklist[]>(mockOnboardingChecklists);
     // NEW: State for templates
@@ -296,10 +298,79 @@ const EmployeeDashboard: React.FC = () => {
     }, [user]);
 
     useEffect(() => {
+        if (!user) return;
+        let active = true;
+        const resolveProfileId = async () => {
+            let resolvedId: string | null = null;
+            if (user.authUserId) {
+                const { data } = await supabase
+                    .from('hris_users')
+                    .select('id')
+                    .eq('auth_user_id', user.authUserId)
+                    .maybeSingle();
+                resolvedId = data?.id ?? null;
+            }
+            if (!resolvedId && user.email) {
+                const { data } = await supabase
+                    .from('hris_users')
+                    .select('id')
+                    .eq('email', user.email)
+                    .maybeSingle();
+                resolvedId = data?.id ?? null;
+            }
+            if (active) {
+                setEmployeeProfileId(resolvedId || user.id || null);
+            }
+        };
+        resolveProfileId();
+        return () => {
+            active = false;
+        };
+    }, [user]);
+
+    useEffect(() => {
+        if (!employeeProfileId) return;
+        let active = true;
+        const loadAssignments = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('asset_assignments')
+                    .select('id, asset_id, employee_id, condition_on_assign, is_acknowledged, date_assigned, date_returned, acknowledged_at, signed_document_url')
+                    .eq('employee_id', employeeProfileId)
+                    .order('date_assigned', { ascending: false });
+                if (error) throw error;
+                if (!active) return;
+                const mapped =
+                    (data || []).map((row: any) => ({
+                        id: row.id,
+                        assetId: row.asset_id,
+                        employeeId: row.employee_id,
+                        conditionOnAssign: row.condition_on_assign || '',
+                        isAcknowledged: !!row.is_acknowledged,
+                        dateAssigned: row.date_assigned ? new Date(row.date_assigned) : new Date(),
+                        dateReturned: row.date_returned ? new Date(row.date_returned) : undefined,
+                        acknowledgedAt: row.acknowledged_at ? new Date(row.acknowledged_at) : undefined,
+                        signedDocumentUrl: row.signed_document_url || undefined,
+                    })) || [];
+                setAssignments(mapped);
+                setUseSupabaseAssignments(true);
+            } catch (err) {
+                console.error('Failed to load asset assignments for employee dashboard', err);
+            }
+        };
+        loadAssignments();
+        return () => {
+            active = false;
+        };
+    }, [employeeProfileId]);
+
+    useEffect(() => {
         const interval = setInterval(() => {
             // Simply sync with global mock data every second for robustness in this prototype
             setRequests([...mockAssetRequests]);
-            setAssignments([...mockAssetAssignments]);
+            if (!useSupabaseAssignments) {
+                setAssignments([...mockAssetAssignments]);
+            }
             setChecklists([...mockOnboardingChecklists]);
             setTemplates([...mockOnboardingTemplates]);
             setBenefitRequests([...mockBenefitRequests]);
@@ -311,7 +382,7 @@ const EmployeeDashboard: React.FC = () => {
             setEvaluationSubmissions([...mockEvaluationSubmissions]);
         }, 1000);
         return () => clearInterval(interval);
-    }, []);
+    }, [useSupabaseAssignments]);
 
     useEffect(() => {
         if (!user?.id) return;
@@ -900,7 +971,7 @@ const EmployeeDashboard: React.FC = () => {
         });
 
         
-        const pendingAssetAcceptance = assignments.filter(a => a.employeeId === user.id && !a.isAcknowledged && !a.dateReturned);
+        const pendingAssetAcceptance = assignments.filter(a => a.employeeId === (employeeProfileId || user.id) && !a.isAcknowledged && !a.dateReturned);
         pendingAssetAcceptance.forEach(assignment => {
             items.push({
                 id: `asset-accept-${assignment.id}`,
@@ -908,7 +979,7 @@ const EmployeeDashboard: React.FC = () => {
                 title: 'Pending Asset Acceptance',
                 subtitle: `You have been assigned an asset that requires your acknowledgment.`,
                 date: new Date(assignment.dateAssigned).toLocaleDateString(),
-                link: '/my-profile', // Direct to profile where the card is
+                link: `/my-profile?acceptAssetAssignmentId=${assignment.id}`, // Direct to profile and open acceptance modal
                 colorClass: 'bg-indigo-500',
                 priority: 0 // High priority
             });
@@ -1239,7 +1310,7 @@ const EmployeeDashboard: React.FC = () => {
             return new Date(dateB).getTime() - new Date(dateA).getTime();
         });
 
-    }, [user, notificationUserIds, refreshKey, memoUpdateKey, requests, assignments, checklists, templates, isUserEligibleEvaluator, benefitRequests, pulseSurveys, surveyResponses, coachingSessions, envelopes, pans, ntes, evaluationSubmissions, approvedLeaveRequests, approvedWfhRequests, approvedOtRequests, approvedManpowerRequests, rejectedLeaveRequests, rejectedWfhRequests, rejectedOtRequests, rejectedManpowerRequests, coeDecisions, assignedTickets]);
+    }, [user, notificationUserIds, employeeProfileId, refreshKey, memoUpdateKey, requests, assignments, checklists, templates, isUserEligibleEvaluator, benefitRequests, pulseSurveys, surveyResponses, coachingSessions, envelopes, pans, ntes, evaluationSubmissions, approvedLeaveRequests, approvedWfhRequests, approvedOtRequests, approvedManpowerRequests, rejectedLeaveRequests, rejectedWfhRequests, rejectedOtRequests, rejectedManpowerRequests, coeDecisions, assignedTickets]);
 
     // Add AcademicCapIcon definition if missing since we used it for evaluation items
     const AcademicCapIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.26 10.147a60.436 60.436 0 0 0-.491 6.347A48.627 48.627 0 0 1 12 20.904a48.627 48.627 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.57 50.57 0 0 0-2.658-.813A59.905 59.905 0 0 1 12 3.493a59.902 59.902 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5" /></svg>);

@@ -1,12 +1,13 @@
 
-import React, { useMemo, useState } from 'react';
-import { Asset, AssetAssignment, AssetStatus, User } from '../../types';
-import { mockAssets, mockAssetAssignments } from '../../services/mockData';
+import React, { useMemo, useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { Asset, AssetAssignment, User } from '../../types';
 import Card from '../ui/Card';
 import Button from '../ui/Button';
 import AssetAcceptanceModal from './AssetAcceptanceModal';
 import { logActivity } from '../../services/auditService';
 import { useAuth } from '../../hooks/useAuth';
+import { supabase } from '../../services/supabaseClient';
 
 interface EmployeeAssetsCardProps {
     employeeId: string;
@@ -15,18 +16,72 @@ interface EmployeeAssetsCardProps {
 
 const EmployeeAssetsCard: React.FC<EmployeeAssetsCardProps> = ({ employeeId, isMyProfile }) => {
     const { user } = useAuth();
-    const [assets, setAssets] = useState<Asset[]>(mockAssets);
-    const [assignments, setAssignments] = useState<AssetAssignment[]>(mockAssetAssignments);
+    const location = useLocation();
+    const navigate = useNavigate();
+    const [assets, setAssets] = useState<Asset[]>([]);
+    const [assignments, setAssignments] = useState<AssetAssignment[]>([]);
     const [selectedAssignment, setSelectedAssignment] = useState<{asset: Asset, assignment: AssetAssignment} | null>(null);
 
-    // Polling for updates
-    React.useEffect(() => {
-        const interval = setInterval(() => {
-            if (mockAssets.length !== assets.length) setAssets([...mockAssets]);
-            if (mockAssetAssignments.length !== assignments.length) setAssignments([...mockAssetAssignments]);
-        }, 2000);
-        return () => clearInterval(interval);
-    }, [assets.length, assignments.length]);
+    useEffect(() => {
+        let active = true;
+        const loadAssets = async () => {
+            try {
+                const { data: assignmentRows, error: assignmentError } = await supabase
+                    .from('asset_assignments')
+                    .select('id, asset_id, employee_id, condition_on_assign, is_acknowledged, date_assigned, date_returned, acknowledged_at, signed_document_url')
+                    .eq('employee_id', employeeId)
+                    .order('date_assigned', { ascending: false });
+                if (assignmentError) throw assignmentError;
+
+                const mappedAssignments: AssetAssignment[] =
+                    (assignmentRows || []).map((row: any) => ({
+                        id: row.id,
+                        assetId: row.asset_id,
+                        employeeId: row.employee_id,
+                        conditionOnAssign: row.condition_on_assign || '',
+                        isAcknowledged: !!row.is_acknowledged,
+                        dateAssigned: row.date_assigned ? new Date(row.date_assigned) : new Date(),
+                        dateReturned: row.date_returned ? new Date(row.date_returned) : undefined,
+                        acknowledgedAt: row.acknowledged_at ? new Date(row.acknowledged_at) : undefined,
+                        signedDocumentUrl: row.signed_document_url || undefined,
+                    })) || [];
+
+                const assetIds = Array.from(new Set(mappedAssignments.map(a => a.assetId)));
+                let mappedAssets: Asset[] = [];
+                if (assetIds.length > 0) {
+                    const { data: assetRows, error: assetError } = await supabase
+                        .from('assets')
+                        .select('id, asset_tag, name, type, business_unit_id, serial_number, purchase_date, value, status, notes')
+                        .in('id', assetIds);
+                    if (assetError) throw assetError;
+                    mappedAssets =
+                        (assetRows || []).map((row: any) => ({
+                            id: row.id,
+                            assetTag: row.asset_tag,
+                            name: row.name,
+                            type: row.type,
+                            businessUnitId: row.business_unit_id,
+                            serialNumber: row.serial_number || undefined,
+                            purchaseDate: row.purchase_date ? new Date(row.purchase_date) : undefined,
+                            value: row.value ?? undefined,
+                            status: row.status,
+                            notes: row.notes || undefined,
+                        })) || [];
+                }
+
+                if (!active) return;
+                setAssignments(mappedAssignments);
+                setAssets(mappedAssets);
+            } catch (err) {
+                console.error('Failed to load employee assets', err);
+            }
+        };
+
+        loadAssets();
+        return () => {
+            active = false;
+        };
+    }, [employeeId]);
 
     const myAssets = useMemo(() => {
         const activeAssignments = assignments.filter(a => a.employeeId === employeeId && !a.dateReturned);
@@ -40,22 +95,53 @@ const EmployeeAssetsCard: React.FC<EmployeeAssetsCardProps> = ({ employeeId, isM
         return validItems;
     }, [assignments, assets, employeeId]);
 
-    const handleAcceptAsset = (assignmentId: string, signedDocumentUrl: string) => {
-        const index = mockAssetAssignments.findIndex(a => a.id === assignmentId);
-        if (index > -1) {
-            mockAssetAssignments[index].isAcknowledged = true;
-            mockAssetAssignments[index].acknowledgedAt = new Date();
-            mockAssetAssignments[index].signedDocumentUrl = signedDocumentUrl; // Store the PDF/Image
-            
-            setAssignments([...mockAssetAssignments]);
-            
+    const handleAcceptAsset = async (assignmentId: string, signedDocumentUrl: string) => {
+        try {
+            const { error } = await supabase
+                .from('asset_assignments')
+                .update({
+                    is_acknowledged: true,
+                    acknowledged_at: new Date().toISOString(),
+                    signed_document_url: signedDocumentUrl || null,
+                })
+                .eq('id', assignmentId);
+            if (error) throw error;
+
+            setAssignments(prev =>
+                prev.map(a =>
+                    a.id === assignmentId
+                        ? {
+                              ...a,
+                              isAcknowledged: true,
+                              acknowledgedAt: new Date(),
+                              signedDocumentUrl: signedDocumentUrl || a.signedDocumentUrl,
+                          }
+                        : a
+                )
+            );
+
             if (user) {
                 logActivity(user, 'UPDATE', 'AssetAssignment', assignmentId, 'Employee accepted asset assignment.');
             }
             alert('Asset accepted successfully.');
             setSelectedAssignment(null);
+            navigate(location.pathname, { replace: true });
+        } catch (err) {
+            console.error('Failed to accept asset', err);
+            alert('Failed to accept asset. Please try again.');
         }
     };
+
+    useEffect(() => {
+        if (!isMyProfile) return;
+        const params = new URLSearchParams(location.search);
+        const assignmentId = params.get('acceptAssetAssignmentId');
+        if (!assignmentId) return;
+        const match = myAssets.find(item => item.assignment.id === assignmentId);
+        if (match) {
+            setSelectedAssignment(match);
+        }
+    }, [isMyProfile, location.search, myAssets]);
 
     if (myAssets.length === 0) return null;
 
@@ -116,7 +202,10 @@ const EmployeeAssetsCard: React.FC<EmployeeAssetsCardProps> = ({ employeeId, isM
             {selectedAssignment && (
                 <AssetAcceptanceModal
                     isOpen={!!selectedAssignment}
-                    onClose={() => setSelectedAssignment(null)}
+                    onClose={() => {
+                        setSelectedAssignment(null);
+                        navigate(location.pathname, { replace: true });
+                    }}
                     asset={selectedAssignment.asset}
                     assignment={selectedAssignment.assignment}
                     onAccept={handleAcceptAsset}
