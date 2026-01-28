@@ -111,6 +111,7 @@ const ManagerDashboard: React.FC = () => {
     const [benefitRequests, setBenefitRequests] = useState<BenefitRequest[]>(mockBenefitRequests);
     const [coachingSessions, setCoachingSessions] = useState(mockCoachingSessions);
     const [evaluationSubmissions, setEvaluationSubmissions] = useState(mockEvaluationSubmissions);
+    const [assignedTickets, setAssignedTickets] = useState<Array<{ id: string; status: TicketStatus; category: string; priority: string; assignedAt?: Date; createdAt?: Date; requesterName?: string }>>([]);
     const [evaluations, setEvaluations] = useState<Evaluation[]>(mockEvaluations);
     const [evaluationTimelines, setEvaluationTimelines] = useState(mockEvaluationTimelines);
     const [useSupabaseEvaluations, setUseSupabaseEvaluations] = useState(false);
@@ -333,6 +334,43 @@ const ManagerDashboard: React.FC = () => {
         };
         loadCoe();
     }, []);
+
+    useEffect(() => {
+        const profileId = employeeProfileId || user?.id;
+        if (!profileId) {
+            setAssignedTickets([]);
+            return;
+        }
+        let isMounted = true;
+        const loadAssignedTickets = async () => {
+            const { data, error } = await supabase
+                .from('tickets')
+                .select('id, status, category, priority, assigned_at, created_at, requester_name')
+                .eq('assigned_to_id', profileId)
+                .in('status', [TicketStatus.Assigned, TicketStatus.InProgress, TicketStatus.PendingResolution])
+                .order('assigned_at', { ascending: false });
+            if (!isMounted) return;
+            if (error || !data) {
+                setAssignedTickets([]);
+                return;
+            }
+            setAssignedTickets(data.map((row: any) => ({
+                id: row.id,
+                status: row.status as TicketStatus,
+                category: row.category,
+                priority: row.priority,
+                assignedAt: row.assigned_at ? new Date(row.assigned_at) : undefined,
+                createdAt: row.created_at ? new Date(row.created_at) : undefined,
+                requesterName: row.requester_name || undefined,
+            })));
+        };
+        loadAssignedTickets();
+        const interval = setInterval(loadAssignedTickets, 20000);
+        return () => {
+            isMounted = false;
+            clearInterval(interval);
+        };
+    }, [employeeProfileId, user?.id]);
 
     useEffect(() => {
         let active = true;
@@ -1024,7 +1062,23 @@ const ManagerDashboard: React.FC = () => {
                 priority: 0 
             });
         });
-        
+
+        assignedTickets.forEach(ticket => {
+            const sortDate = ticket.assignedAt || ticket.createdAt;
+            const statusLabel = ticket.status === TicketStatus.PendingResolution ? 'Ticket Resolution Pending' : 'Assigned Ticket';
+            items.push({
+                id: `ticket-assigned-${ticket.id}`,
+                icon: <TicketIcon {...iconProps} />,
+                title: statusLabel,
+                subtitle: `${ticket.category} • ${ticket.priority}${ticket.requesterName ? ` • ${ticket.requesterName}` : ''}`,
+                date: new Date(sortDate || new Date()).toLocaleDateString(),
+                sortDate,
+                link: `/helpdesk/tickets?ticketId=${ticket.id}`,
+                colorClass: 'bg-cyan-500',
+                priority: 1
+            });
+        });
+
         // 3. Pending Asset Returns (Manager as Employee)
         const pendingAssetReturns = requests.filter(req =>
             req.employeeId === user.id &&
@@ -1347,7 +1401,7 @@ const ManagerDashboard: React.FC = () => {
         items.push(...evaluationItems);
 
         return items.sort((a,b) => (a.priority ?? 99) - (b.priority ?? 99) || new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [user, notificationUserIds, employeeProfileId, requests, assignments, checklists, templates, pans, otRequests, exceptions, requisitions, resolutions, ntes, awards, manpowerRequests, isApprover, isBusinessUnitManager, subordinateIds, envelopes, benefitRequests, coachingSessions, evaluationSubmissions, evaluations, useSupabaseEvaluations, isUserEligibleEvaluator, visibleEmployeeIds, panApproverId]);
+    }, [user, notificationUserIds, employeeProfileId, requests, assignments, assignedTickets, checklists, templates, pans, otRequests, exceptions, requisitions, resolutions, ntes, awards, manpowerRequests, isApprover, isBusinessUnitManager, subordinateIds, envelopes, benefitRequests, coachingSessions, evaluationSubmissions, evaluations, useSupabaseEvaluations, isUserEligibleEvaluator, visibleEmployeeIds, panApproverId]);
 
     const teamApprovalItems = useMemo(() => {
         const items: Array<{

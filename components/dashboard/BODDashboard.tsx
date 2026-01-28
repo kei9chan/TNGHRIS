@@ -98,6 +98,7 @@ const BODDashboard: React.FC = () => {
     const [benefitRequests, setBenefitRequests] = useState(mockBenefitRequests);
     const [envelopes, setEnvelopes] = useState<Envelope[]>(mockEnvelopes);
     const [evaluationSubmissions, setEvaluationSubmissions] = useState(mockEvaluationSubmissions);
+    const [assignedTickets, setAssignedTickets] = useState<Array<{ id: string; status: TicketStatus; category: string; priority: string; assignedAt?: Date; createdAt?: Date; requesterName?: string }>>([]);
     const [evaluations, setEvaluations] = useState<Evaluation[]>(mockEvaluations);
     const [useSupabaseEvaluations, setUseSupabaseEvaluations] = useState(false);
     const [useSupabaseEvaluationSubmissions, setUseSupabaseEvaluationSubmissions] = useState(false);
@@ -240,6 +241,43 @@ const BODDashboard: React.FC = () => {
             active = false;
         };
     }, [employeeProfileId]);
+
+    useEffect(() => {
+        const profileId = employeeProfileId || user?.id;
+        if (!profileId) {
+            setAssignedTickets([]);
+            return;
+        }
+        let isMounted = true;
+        const loadAssignedTickets = async () => {
+            const { data, error } = await supabase
+                .from('tickets')
+                .select('id, status, category, priority, assigned_at, created_at, requester_name')
+                .eq('assigned_to_id', profileId)
+                .in('status', [TicketStatus.Assigned, TicketStatus.InProgress, TicketStatus.PendingResolution])
+                .order('assigned_at', { ascending: false });
+            if (!isMounted) return;
+            if (error || !data) {
+                setAssignedTickets([]);
+                return;
+            }
+            setAssignedTickets(data.map((row: any) => ({
+                id: row.id,
+                status: row.status as TicketStatus,
+                category: row.category,
+                priority: row.priority,
+                assignedAt: row.assigned_at ? new Date(row.assigned_at) : undefined,
+                createdAt: row.created_at ? new Date(row.created_at) : undefined,
+                requesterName: row.requester_name || undefined,
+            })));
+        };
+        loadAssignedTickets();
+        const interval = setInterval(loadAssignedTickets, 20000);
+        return () => {
+            isMounted = false;
+            clearInterval(interval);
+        };
+    }, [employeeProfileId, user?.id]);
 
     useEffect(() => {
         let active = true;
@@ -902,6 +940,20 @@ const BODDashboard: React.FC = () => {
         }).filter(Boolean);
         allItems.push(...evaluationItems);
 
+        assignedTickets.forEach(ticket => {
+            const sortDate = ticket.assignedAt || ticket.createdAt;
+            const statusLabel = ticket.status === TicketStatus.PendingResolution ? 'Ticket Resolution Pending' : 'Assigned Ticket';
+            allItems.push({
+                id: `ticket-assigned-${ticket.id}`,
+                icon: <TicketIcon {...iconProps} />,
+                title: statusLabel,
+                subtitle: `${ticket.category} • ${ticket.priority}${ticket.requesterName ? ` • ${ticket.requesterName}` : ''}`,
+                date: new Date(sortDate || new Date()).toLocaleDateString(),
+                link: `/helpdesk/tickets?ticketId=${ticket.id}`,
+                colorClass: 'bg-cyan-500'
+            });
+        });
+
         const myTickets = mockTickets.filter(t => 
             t.assignedToId === user.id && 
             ![TicketStatus.Resolved, TicketStatus.Closed].includes(t.status)
@@ -926,7 +978,7 @@ const BODDashboard: React.FC = () => {
              // Parse the date string back to a timestamp for correct sorting
              return new Date(b.date).getTime() - new Date(a.date).getTime();
         });
-    }, [user, pans, resolutions, ntes, requisitions, awards, assignments, manpowerRequests, wfhRequests, checklists, templates, isManpowerReviewModalOpen, pendingBenefitRequests, envelopes, evaluationSubmissions, evaluations, useSupabaseEvaluations, isUserEligibleEvaluator, panApproverId, employeeProfileId]); 
+    }, [user, pans, resolutions, ntes, requisitions, awards, assignments, assignedTickets, manpowerRequests, wfhRequests, checklists, templates, isManpowerReviewModalOpen, pendingBenefitRequests, envelopes, evaluationSubmissions, evaluations, useSupabaseEvaluations, isUserEligibleEvaluator, panApproverId, employeeProfileId]); 
 
     return (
         <div className="space-y-6">
