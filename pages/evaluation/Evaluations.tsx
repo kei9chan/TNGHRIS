@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import { Evaluation, Role, EvaluatorType, User, Permission } from '../../types';
+import { Evaluation, Role, EvaluatorType, User, Permission, EvaluatorConfig } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import ComplianceModal from '../../components/evaluation/ComplianceModal';
@@ -20,8 +20,10 @@ const Evaluations: React.FC = () => {
     const [buFilter, setBuFilter] = useState<string>('all');
     const [businessUnits, setBusinessUnits] = useState<{id:string; name:string}[]>([]);
     const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
-    const [evaluatorsByEval, setEvaluatorsByEval] = useState<Record<string, { type: string; userId?: string | null }[]>>({});
+    const [evaluatorsByEval, setEvaluatorsByEval] = useState<Record<string, EvaluatorConfig[]>>({});
+    const [submissionsByEval, setSubmissionsByEval] = useState<Record<string, Set<string>>>({});
     const [error, setError] = useState<string | null>(null);
+    const [employeeProfileId, setEmployeeProfileId] = useState<string | null>(null);
 
     // Compliance Modal State
     const [isComplianceModalOpen, setIsComplianceModalOpen] = useState(false);
@@ -34,26 +36,49 @@ const Evaluations: React.FC = () => {
     useEffect(() => {
         const loadData = async () => {
             setError(null);
-            const [{ data: buData, error: buErr }, { data: evalData, error: evalErr }, { data: evalersData, error: evErr }] = await Promise.all([
+            const [{ data: buData, error: buErr }, { data: evalData, error: evalErr }, { data: evalersData, error: evErr }, { data: submissionsData, error: subErr }] = await Promise.all([
                 supabase.from('business_units').select('id, name').order('name'),
                 supabase.from('evaluations').select('*').order('created_at', { ascending: false }),
-                supabase.from('evaluation_evaluators').select('evaluation_id, type, user_id'),
+                supabase.from('evaluation_evaluators').select('evaluation_id, type, user_id, weight, business_unit_id, department_id, is_anonymous, exclude_subject'),
+                supabase.from('evaluation_submissions').select('evaluation_id, rater_id, subject_employee_id'),
             ]);
-            if (buErr || evalErr || evErr) {
-                setError(buErr?.message || evalErr?.message || evErr?.message || 'Failed to load evaluations.');
+            if (buErr || evalErr || evErr || subErr) {
+                setError(buErr?.message || evalErr?.message || evErr?.message || subErr?.message || 'Failed to load evaluations.');
                 setBusinessUnits([]);
                 setEvaluations([]);
                 setEvaluatorsByEval({});
+                setSubmissionsByEval({});
                 return;
             }
             setBusinessUnits((buData || []).map((b:any)=>({id:b.id,name:b.name||'Unknown BU'})));
 
-            const evalerMap: Record<string, { type: string; userId?: string | null }[]> = {};
+            const evalerMap: Record<string, EvaluatorConfig[]> = {};
             (evalersData || []).forEach((row:any) => {
                 if (!evalerMap[row.evaluation_id]) evalerMap[row.evaluation_id] = [];
-                evalerMap[row.evaluation_id].push({ type: row.type, userId: row.user_id });
+                const normalizedType = String(row.type || '').toLowerCase();
+                evalerMap[row.evaluation_id].push({
+                    id: `${row.evaluation_id}-${row.user_id || 'group'}-${row.type || 'unknown'}`,
+                    type: normalizedType === 'group' ? EvaluatorType.Group : EvaluatorType.Individual,
+                    weight: row.weight || 0,
+                    userId: row.user_id || undefined,
+                    groupFilter: row.business_unit_id || row.department_id ? {
+                        businessUnitId: row.business_unit_id || undefined,
+                        departmentId: row.department_id || undefined,
+                    } : undefined,
+                    isAnonymous: !!row.is_anonymous,
+                    excludeSubject: row.exclude_subject ?? true,
+                });
             });
             setEvaluatorsByEval(evalerMap);
+
+            const submissionMap: Record<string, Set<string>> = {};
+            (submissionsData || []).forEach((row: any) => {
+                if (!submissionMap[row.evaluation_id]) {
+                    submissionMap[row.evaluation_id] = new Set<string>();
+                }
+                submissionMap[row.evaluation_id].add(`${row.rater_id}:${row.subject_employee_id}`);
+            });
+            setSubmissionsByEval(submissionMap);
 
             setEvaluations((evalData || []).map((e:any)=>({
                 id: e.id,
@@ -72,6 +97,38 @@ const Evaluations: React.FC = () => {
         };
         loadData();
     }, []);
+
+    useEffect(() => {
+        if (!user) {
+            setEmployeeProfileId(null);
+            return;
+        }
+        let active = true;
+        const resolveProfileId = async () => {
+            let resolvedId: string | null = null;
+            if (user.authUserId) {
+                const { data } = await supabase
+                    .from('hris_users')
+                    .select('id')
+                    .eq('auth_user_id', user.authUserId)
+                    .maybeSingle();
+                resolvedId = data?.id ?? null;
+            }
+            if (!resolvedId && user.email) {
+                const { data } = await supabase
+                    .from('hris_users')
+                    .select('id')
+                    .eq('email', user.email)
+                    .maybeSingle();
+                resolvedId = data?.id ?? null;
+            }
+            if (active) setEmployeeProfileId(resolvedId || user.id || null);
+        };
+        resolveProfileId();
+        return () => {
+            active = false;
+        };
+    }, [user]);
 
     const yearOptions = useMemo(() => {
         const years = new Set<number>();
@@ -93,13 +150,14 @@ const Evaluations: React.FC = () => {
     const calculateProgress = (evaluation: Evaluation) => {
         const evalers = evaluatorsByEval[evaluation.id] || [];
         const totalSubmissions = evaluation.targetEmployeeIds.length * Math.max(evalers.length || 0, 1);
-        const completedSubmissions = 0; // submissions table not yet wired
+        const completedSubmissions = submissionsByEval[evaluation.id]?.size || 0;
         const percentage = totalSubmissions ? (completedSubmissions / totalSubmissions) * 100 : 0;
         return { completed: completedSubmissions, total: totalSubmissions, percentage };
     };
 
     const viewableEvaluations = React.useMemo(() => {
         if (!user || !canView) return [];
+        const evaluatorUser = { ...user, id: employeeProfileId || user.id };
 
         const accessibleBuIds = new Set(accessibleBus.map(b => b.id));
 
@@ -136,25 +194,139 @@ const Evaluations: React.FC = () => {
 
             if (evaluation.status === 'InProgress') {
                 const canEvaluateSomeone = evaluation.targetEmployeeIds.some(targetId => 
-                    isUserEligibleEvaluator(user, evaluation, targetId)
+                    isUserEligibleEvaluator(evaluatorUser, evaluation, targetId)
                 );
                 if (canEvaluateSomeone) return true;
             }
 
-            const isTarget = evaluation.targetEmployeeIds.includes(user.id);
+            const isTarget = evaluation.targetEmployeeIds.includes(employeeProfileId || user.id);
             if (isTarget && evaluation.status === 'Completed' && evaluation.isEmployeeVisible) {
                 return true;
             }
 
             return false;
         });
-    }, [user, getVisibleEmployeeIds, yearFilter, monthFilter, buFilter, accessibleBus, isUserEligibleEvaluator]);
+    }, [user, employeeProfileId, getVisibleEmployeeIds, yearFilter, monthFilter, buFilter, accessibleBus, isUserEligibleEvaluator]);
 
-    const handleViewCompliance = (evaluation: Evaluation) => {
-        // Placeholder: compliance check requires evaluator configs and submissions; not yet wired to Supabase
-        setMissingEvaluators([]);
+    const handleViewCompliance = async (evaluation: Evaluation) => {
         setSelectedEvaluationForCompliance(evaluation);
         setIsComplianceModalOpen(true);
+        setMissingEvaluators([]);
+
+        try {
+            const needsDeptNames = evaluation.evaluators.some(
+                ev => ev.type === EvaluatorType.Group && ev.groupFilter?.departmentId
+            );
+            const [{ data: userRows, error: userErr }, { data: submissionRows, error: subErr }, { data: deptRows, error: deptErr }] =
+                await Promise.all([
+                    supabase
+                        .from('hris_users')
+                        .select('id, full_name, email, role, department, business_unit, business_unit_id, department_id, status'),
+                    supabase
+                        .from('evaluation_submissions')
+                        .select('subject_employee_id, rater_id')
+                        .eq('evaluation_id', evaluation.id),
+                    needsDeptNames
+                        ? supabase.from('departments').select('id, name')
+                        : Promise.resolve({ data: [], error: null }),
+                ]);
+
+            if (userErr || subErr || deptErr) {
+                throw userErr || subErr || deptErr;
+            }
+
+            const departmentNameById = new Map(
+                (deptRows || []).map((row: any) => [row.id, row.name])
+            );
+
+            const allUsers: User[] = (userRows || []).map((u: any) => ({
+                id: u.id,
+                name: u.full_name || 'Unknown',
+                email: u.email || '',
+                role: u.role,
+                department: u.department || '',
+                businessUnit: u.business_unit || '',
+                departmentId: u.department_id || undefined,
+                businessUnitId: u.business_unit_id || undefined,
+                status: u.status || 'Active',
+                employmentStatus: undefined,
+                isPhotoEnrolled: false,
+                dateHired: new Date(),
+                position: '',
+                managerId: undefined,
+                activeDeviceId: undefined,
+                isGoogleConnected: false,
+                profilePictureUrl: undefined,
+                signatureUrl: undefined,
+            } as User));
+
+            const userById = new Map(allUsers.map(user => [user.id, user]));
+            const submittedPairs = new Set(
+                (submissionRows || []).map((row: any) => `${row.rater_id}:${row.subject_employee_id}`)
+            );
+
+            const evaluatorUsersById = new Map<string, User>();
+            const buNameById = new Map(businessUnits.map(bu => [bu.id, bu.name]));
+
+            evaluation.evaluators.forEach(ev => {
+                if (ev.type === EvaluatorType.Individual && ev.userId) {
+                    const evaluator = userById.get(ev.userId);
+                    if (evaluator) evaluatorUsersById.set(evaluator.id, evaluator);
+                    return;
+                }
+
+                if (ev.type === EvaluatorType.Group && ev.groupFilter?.businessUnitId) {
+                    const targetBuId = ev.groupFilter.businessUnitId;
+                    const targetBuName = buNameById.get(targetBuId);
+                    const targetDeptId = ev.groupFilter.departmentId;
+                    const targetDeptName = targetDeptId ? departmentNameById.get(targetDeptId) : undefined;
+
+                    allUsers.forEach(candidate => {
+                        if ((candidate.status || '').toLowerCase() !== 'active') return;
+
+                        const buMatch = candidate.businessUnitId
+                            ? candidate.businessUnitId === targetBuId
+                            : (targetBuName ? candidate.businessUnit === targetBuName : false);
+                        if (!buMatch) return;
+
+                        if (targetDeptId) {
+                            const deptMatch = candidate.departmentId
+                                ? candidate.departmentId === targetDeptId
+                                : (targetDeptName ? candidate.department === targetDeptName : false);
+                            if (!deptMatch) return;
+                        }
+
+                        evaluatorUsersById.set(candidate.id, candidate);
+                    });
+                }
+            });
+
+            const targetSubjects = evaluation.targetEmployeeIds
+                .map(id => userById.get(id))
+                .filter(Boolean) as User[];
+
+            const missing: { user: User; subjectName: string }[] = [];
+
+            targetSubjects.forEach(subject => {
+                evaluatorUsersById.forEach(evaluator => {
+                    if (!isUserEligibleEvaluator(evaluator, evaluation, subject.id)) {
+                        return;
+                    }
+                    if (submittedPairs.has(`${evaluator.id}:${subject.id}`)) {
+                        return;
+                    }
+                    missing.push({
+                        user: evaluator,
+                        subjectName: subject.name,
+                    });
+                });
+            });
+
+            setMissingEvaluators(missing);
+        } catch (err: any) {
+            console.error('Failed to load compliance report', err);
+            setMissingEvaluators([]);
+        }
     };
 
     const selectClasses = "block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white";

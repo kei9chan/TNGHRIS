@@ -999,6 +999,10 @@ export const usePermissions = () => {
     const isUserEligibleEvaluator = (user: User, evaluation: Evaluation, subjectId: string): boolean => {
         // User cannot evaluate themselves unless it is a Self Evaluation (which is usually an Individual config pointing to them)
         // However, the 'excludeSubject' flag in Group configs handles the self-exclusion.
+
+        if (subjectId === user.id && evaluation.targetEmployeeIds.includes(user.id)) {
+            return true;
+        }
         
         return evaluation.evaluators.some(config => {
             // 1. Individual Assignment
@@ -1015,20 +1019,31 @@ export const usePermissions = () => {
                     return false;
                 }
 
-                // Resolve IDs to Names for matching against User object
-                const targetBuName = mockBusinessUnits.find(b => b.id === config.groupFilter?.businessUnitId)?.name;
-                const targetDeptName = config.groupFilter?.departmentId 
-                    ? mockDepartments.find(d => d.id === config.groupFilter?.departmentId)?.name 
-                    : null;
+                const targetBuId = config.groupFilter?.businessUnitId;
+                const targetDeptId = config.groupFilter?.departmentId;
+                const targetBuName = targetBuId
+                    ? mockBusinessUnits.find(b => b.id === targetBuId)?.name
+                    : undefined;
+                const targetDeptName = targetDeptId
+                    ? mockDepartments.find(d => d.id === targetDeptId)?.name
+                    : undefined;
 
-                // Check Business Unit Match
-                if (targetBuName && user.businessUnit !== targetBuName) {
-                    return false;
+                if (targetBuId) {
+                    if (user.businessUnitId && user.businessUnitId !== targetBuId) {
+                        return false;
+                    }
+                    if (!user.businessUnitId && targetBuName && user.businessUnit !== targetBuName) {
+                        return false;
+                    }
                 }
 
-                // Check Department Match (if specified)
-                if (targetDeptName && user.department !== targetDeptName) {
-                    return false;
+                if (targetDeptId) {
+                    if (user.departmentId && user.departmentId !== targetDeptId) {
+                        return false;
+                    }
+                    if (!user.departmentId && targetDeptName && user.department !== targetDeptName) {
+                        return false;
+                    }
                 }
 
                 // If we got here, the user matches the group criteria

@@ -7,7 +7,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions'; // Import added
 import { supabase } from '../../services/supabaseClient';
 import { mockJobRequisitions, mockNotifications, mockResignations, mockEvaluations, mockEvaluationSubmissions, mockTickets, mockUserDocuments, mockUsers, mockOnboardingChecklists, mockChangeHistory, mockPANs, mockAssetAssignments, mockManpowerRequests, mockOnboardingTemplates, mockBenefitRequests, mockIncidentReports } from '../../services/mockData';
-import { JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, Role, NotificationType, ResignationStatus, Notification, TicketStatus, UserDocumentStatus, OnboardingTaskStatus, ChangeHistoryStatus, PANStatus, PANActionTaken, PANStepStatus, PAN, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, COERequestStatus, COETemplate, BenefitRequestStatus, IRStatus, IncidentReport, User } from '../../types';
+import { JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, Role, NotificationType, ResignationStatus, Notification, TicketStatus, UserDocumentStatus, OnboardingTaskStatus, ChangeHistoryStatus, PANStatus, PANActionTaken, PANStepStatus, PAN, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, COERequestStatus, COETemplate, BenefitRequestStatus, IRStatus, IncidentReport, User, Evaluation, EvaluatorType } from '../../types';
 import ActionItemCard from './ActionItemCard';
 import QuickAnalyticsPreview from './QuickAnalyticsPreview';
 import UpcomingEventsWidget from './UpcomingEventsWidget';
@@ -92,6 +92,9 @@ const HRDashboard: React.FC = () => {
     const [benefitRequests, setBenefitRequests] = useState(mockBenefitRequests);
     const [incidentReports, setIncidentReports] = useState<IncidentReport[]>(mockIncidentReports);
     const [evaluationSubmissions, setEvaluationSubmissions] = useState(mockEvaluationSubmissions);
+    const [evaluations, setEvaluations] = useState<Evaluation[]>(mockEvaluations);
+    const [useSupabaseEvaluations, setUseSupabaseEvaluations] = useState(false);
+    const [useSupabaseEvaluationSubmissions, setUseSupabaseEvaluationSubmissions] = useState(false);
     const [pans, setPans] = useState<PAN[]>(mockPANs);
     const [panApproverId, setPanApproverId] = useState<string | null>(null);
     const legacyUserId = useMemo(() => {
@@ -235,6 +238,103 @@ const HRDashboard: React.FC = () => {
     }, [employeeProfileId]);
 
     useEffect(() => {
+        let active = true;
+        const loadEvaluations = async () => {
+            try {
+                const [{ data: evalRows, error: evalErr }, { data: evalers, error: evalerErr }] = await Promise.all([
+                    supabase.from('evaluations').select('*').order('created_at', { ascending: false }),
+                    supabase.from('evaluation_evaluators').select('*'),
+                ]);
+                if (evalErr) throw evalErr;
+                if (evalerErr) throw evalerErr;
+
+                const evalerMap = new Map<string, any[]>();
+                (evalers || []).forEach((row: any) => {
+                    if (!evalerMap.has(row.evaluation_id)) evalerMap.set(row.evaluation_id, []);
+                    evalerMap.get(row.evaluation_id)!.push(row);
+                });
+
+                const mappedEvaluations: Evaluation[] =
+                    (evalRows || []).map((e: any) => {
+                        const rows = evalerMap.get(e.id) || [];
+                        const evaluators = rows.map((row: any, index: number) => {
+                            const normalizedType = String(row.type || '').toLowerCase();
+                            return {
+                                id: row.id || `${e.id}-${row.user_id || 'group'}-${index}`,
+                                type: normalizedType === 'group' ? EvaluatorType.Group : EvaluatorType.Individual,
+                                weight: row.weight || 0,
+                                userId: row.user_id || undefined,
+                                groupFilter: row.business_unit_id || row.department_id ? {
+                                    businessUnitId: row.business_unit_id || undefined,
+                                    departmentId: row.department_id || undefined,
+                                } : undefined,
+                                isAnonymous: !!row.is_anonymous,
+                                excludeSubject: row.exclude_subject ?? true,
+                            };
+                        });
+                        return {
+                            id: e.id,
+                            name: e.name,
+                            timelineId: e.timeline_id || '',
+                            targetBusinessUnitIds: e.target_business_unit_ids || [],
+                            targetEmployeeIds: e.target_employee_ids || [],
+                            questionSetIds: e.question_set_ids || [],
+                            evaluators,
+                            status: e.status || 'InProgress',
+                            createdAt: e.created_at ? new Date(e.created_at) : new Date(),
+                            dueDate: e.due_date ? new Date(e.due_date) : undefined,
+                            isEmployeeVisible: !!e.is_employee_visible,
+                            acknowledgedBy: e.acknowledged_by || [],
+                        } as Evaluation;
+                    }) || [];
+
+                if (!active) return;
+                setEvaluations(mappedEvaluations);
+                setUseSupabaseEvaluations(true);
+            } catch (err) {
+                console.error('Failed to load evaluations for HR dashboard', err);
+            }
+        };
+        loadEvaluations();
+        return () => {
+            active = false;
+        };
+    }, []);
+
+    useEffect(() => {
+        if (!employeeProfileId) return;
+        let active = true;
+        const loadSubmissions = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('evaluation_submissions')
+                    .select('*')
+                    .eq('rater_id', employeeProfileId);
+                if (error) throw error;
+                if (!active) return;
+                const mapped =
+                    (data || []).map((row: any) => ({
+                        id: row.id,
+                        evaluationId: row.evaluation_id,
+                        subjectEmployeeId: row.subject_employee_id,
+                        raterId: row.rater_id,
+                        raterGroup: row.rater_group,
+                        scores: row.scores || [],
+                        submittedAt: row.submitted_at ? new Date(row.submitted_at) : new Date(),
+                    })) || [];
+                setEvaluationSubmissions(mapped);
+                setUseSupabaseEvaluationSubmissions(true);
+            } catch (err) {
+                console.error('Failed to load evaluation submissions for HR dashboard', err);
+            }
+        };
+        loadSubmissions();
+        return () => {
+            active = false;
+        };
+    }, [employeeProfileId]);
+
+    useEffect(() => {
         const interval = setInterval(() => {
              if (!useSupabaseAssignments) {
                  setAssignments([...mockAssetAssignments]);
@@ -243,10 +343,12 @@ const HRDashboard: React.FC = () => {
              setTemplates([...mockOnboardingTemplates]);
              setBenefitRequests([...mockBenefitRequests]);
              setIncidentReports([...mockIncidentReports]);
-             setEvaluationSubmissions([...mockEvaluationSubmissions]);
+             if (!useSupabaseEvaluationSubmissions) {
+                 setEvaluationSubmissions([...mockEvaluationSubmissions]);
+             }
         }, 1000);
         return () => clearInterval(interval);
-    }, [useSupabaseAssignments]);
+    }, [useSupabaseAssignments, useSupabaseEvaluationSubmissions]);
 
     const pendingHrRequisitions = useMemo(() => {
         return mockJobRequisitions.filter(req => 
@@ -632,6 +734,12 @@ const HRDashboard: React.FC = () => {
                         title: "Offboarding Assigned",
                         colorClass: "bg-orange-500"
                     };
+                case NotificationType.EVALUATION_ASSIGNED:
+                    return {
+                        icon: <AcademicCapIcon {...iconProps} />,
+                        title: notification.title || "Evaluation Assigned",
+                        colorClass: "bg-teal-500"
+                    };
                 default:
                      return {
                         icon: <DocumentTextIcon {...iconProps} />,
@@ -741,13 +849,14 @@ const HRDashboard: React.FC = () => {
 
 
         // UPDATED: Evaluation Logic using shared helper
-        const mySubmissions = evaluationSubmissions.filter(sub => sub.raterId === user.id);
-        const evaluationsToPerform = mockEvaluations.filter(e => e.status === 'InProgress');
+        const evaluatorUser = { ...user, id: employeeProfileId || user.id };
+        const mySubmissions = evaluationSubmissions.filter(sub => sub.raterId === (employeeProfileId || user.id));
+        const evaluationsToPerform = (useSupabaseEvaluations ? evaluations : mockEvaluations).filter(e => e.status === 'InProgress');
 
         const evaluationItems = evaluationsToPerform.map(evaluation => {
             // Find who this user needs to evaluate for this evaluation cycle
             const eligibleTargets = evaluation.targetEmployeeIds.filter(targetId => 
-                isUserEligibleEvaluator(user, evaluation, targetId)
+                isUserEligibleEvaluator(evaluatorUser, evaluation, targetId)
             );
 
             // Count how many of these have already been submitted
@@ -792,7 +901,7 @@ const HRDashboard: React.FC = () => {
         
         return allItems.sort((a,b) => (a.priority ?? 99) - (b.priority ?? 99) || new Date(b.date).getTime() - new Date(a.date).getTime());
 
-    }, [user, isHR, pendingHrRequisitions, pendingResignations, pendingProfileChanges, pendingUserRegistrations, assignments, checklists, templates, pendingBenefitRequests, incidentReports, evaluationSubmissions, isUserEligibleEvaluator, pans, panApproverId, employeeProfileId]);
+    }, [user, isHR, pendingHrRequisitions, pendingResignations, pendingProfileChanges, pendingUserRegistrations, assignments, checklists, templates, pendingBenefitRequests, incidentReports, evaluationSubmissions, evaluations, useSupabaseEvaluations, isUserEligibleEvaluator, pans, panApproverId, employeeProfileId]);
 
 
     return (

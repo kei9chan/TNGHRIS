@@ -4,11 +4,12 @@ import { useNavigate } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-import { User, Evaluation, EvaluatorConfig, EvaluatorType, EvaluatorGroupFilter, Permission } from '../../types';
+import { User, Evaluation, EvaluatorConfig, EvaluatorType, EvaluatorGroupFilter, Permission, NotificationType } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
 import { logActivity } from '../../services/auditService';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../services/supabaseClient';
+import { mockNotifications, mockUsers } from '../../services/mockData';
 
 // Icons
 const UserIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg>;
@@ -45,7 +46,7 @@ const NewEvaluation: React.FC = () => {
         setError(null);
         const [{ data: buData }, { data: empData }, { data: tlData }, { data: qsData }, { data: deptData }] = await Promise.all([
             supabase.from('business_units').select('id, name').order('name'),
-            supabase.from('hris_users').select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position'),
+            supabase.from('hris_users').select('id, full_name, email, auth_user_id, role, status, business_unit, business_unit_id, department, department_id, position'),
             supabase.from('evaluation_timelines').select('*').order('rollout_date', { ascending: false }),
             supabase.from('evaluation_question_sets').select('*').order('name'),
             supabase.from('departments').select('id, name, business_unit_id'),
@@ -55,6 +56,7 @@ const NewEvaluation: React.FC = () => {
             id: u.id,
             name: u.full_name || 'Unknown',
             email: u.email || '',
+            authUserId: u.auth_user_id || undefined,
             role: u.role,
             department: u.department || '',
             businessUnit: u.business_unit || '',
@@ -280,7 +282,42 @@ const NewEvaluation: React.FC = () => {
         }
     }
 
-    logActivity(user, 'CREATE', 'Evaluation', createdEval?.id || '', `Created new evaluation cycle: ${newEvaluation.name} targeting ${newEvaluation.targetEmployeeIds.length} employees.`);
+    const evaluationId = createdEval?.id || newEvaluation.id;
+    const createdAt = new Date();
+    const employeeLookup = new Map(employees.map(emp => [emp.id, emp]));
+    targetEmployeeIds.forEach(empId => {
+        const emp = employeeLookup.get(empId);
+        const targets = new Set<string>();
+        if (empId) targets.add(empId);
+        if (emp?.authUserId) targets.add(emp.authUserId);
+        if (emp?.email) {
+            const mockMatch = mockUsers.find(
+                u => u.email?.toLowerCase() === emp.email.toLowerCase()
+            );
+            if (mockMatch?.id) targets.add(mockMatch.id);
+        }
+        if (emp?.name) {
+            const nameMatch = mockUsers.find(
+                u => u.name?.toLowerCase() === emp.name.toLowerCase()
+            );
+            if (nameMatch?.id) targets.add(nameMatch.id);
+        }
+        targets.forEach(targetId => {
+            mockNotifications.unshift({
+                id: `notif-eval-assign-${evaluationId}-${targetId}-${createdAt.getTime()}`,
+                userId: targetId,
+                type: NotificationType.EVALUATION_ASSIGNED,
+                title: 'Evaluation Assigned',
+                message: `${newEvaluation.name} is now scheduled for you.`,
+                link: '/evaluation',
+                isRead: false,
+                createdAt,
+                relatedEntityId: evaluationId,
+            });
+        });
+    });
+
+    logActivity(user, 'CREATE', 'Evaluation', evaluationId, `Created new evaluation cycle: ${newEvaluation.name} targeting ${newEvaluation.targetEmployeeIds.length} employees.`);
     alert('Evaluation created successfully!');
     navigate('/evaluation/reviews');
   };

@@ -3,8 +3,8 @@ import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Card from '../ui/Card';
-import { mockOtRequests, mockAttendanceExceptions, mockResolutions, mockPANs, mockJobRequisitions, mockEvaluations, mockNotifications, mockEvaluationSubmissions, mockTickets, mockEmployeeAwards, mockUsers, mockOnboardingChecklists, mockAssetRequests, mockIncidentReports, mockNTEs, mockAssetAssignments, mockManpowerRequests, mockOnboardingTemplates, mockEnvelopes, mockBenefitRequests, mockCoachingSessions, mockShiftAssignments, mockShiftTemplates, mockAttendanceRecords } from '../../services/mockData';
-import { OTStatus, Role, ResolutionStatus, ApproverStatus, PANStatus, PANStepStatus, JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, NotificationType, TicketStatus, OnboardingTaskStatus, PANActionTaken, AssetRequest, AssetRequestStatus, NTEStatus, PAN, Resolution, NTE, JobRequisition, OTRequest, AttendanceExceptionRecord, EmployeeAward, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, Envelope, EnvelopeStatus, RoutingStepStatus, BenefitRequest, BenefitRequestStatus, CoachingStatus, COETemplate, User, LeaveRequest, LeaveRequestStatus, WFHRequest, WFHRequestStatus, AttendanceRecord, ShiftAssignment, ShiftTemplate } from '../../types';
+import { mockOtRequests, mockAttendanceExceptions, mockResolutions, mockPANs, mockJobRequisitions, mockEvaluations, mockEvaluationSubmissions, mockEvaluationTimelines, mockNotifications, mockTickets, mockEmployeeAwards, mockUsers, mockOnboardingChecklists, mockAssetRequests, mockIncidentReports, mockNTEs, mockAssetAssignments, mockManpowerRequests, mockOnboardingTemplates, mockEnvelopes, mockBenefitRequests, mockCoachingSessions, mockShiftAssignments, mockShiftTemplates, mockAttendanceRecords } from '../../services/mockData';
+import { OTStatus, Role, ResolutionStatus, ApproverStatus, PANStatus, PANStepStatus, JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, NotificationType, TicketStatus, OnboardingTaskStatus, PANActionTaken, AssetRequest, AssetRequestStatus, NTEStatus, PAN, Resolution, NTE, JobRequisition, OTRequest, AttendanceExceptionRecord, EmployeeAward, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, Envelope, EnvelopeStatus, RoutingStepStatus, BenefitRequest, BenefitRequestStatus, CoachingStatus, COETemplate, User, LeaveRequest, LeaveRequestStatus, WFHRequest, WFHRequestStatus, AttendanceRecord, ShiftAssignment, ShiftTemplate, Evaluation, EvaluatorType } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useAuth } from '../../hooks/useAuth';
 import ActionItemCard from './ActionItemCard';
@@ -111,6 +111,10 @@ const ManagerDashboard: React.FC = () => {
     const [benefitRequests, setBenefitRequests] = useState<BenefitRequest[]>(mockBenefitRequests);
     const [coachingSessions, setCoachingSessions] = useState(mockCoachingSessions);
     const [evaluationSubmissions, setEvaluationSubmissions] = useState(mockEvaluationSubmissions);
+    const [evaluations, setEvaluations] = useState<Evaluation[]>(mockEvaluations);
+    const [evaluationTimelines, setEvaluationTimelines] = useState(mockEvaluationTimelines);
+    const [useSupabaseEvaluations, setUseSupabaseEvaluations] = useState(false);
+    const [useSupabaseEvaluationSubmissions, setUseSupabaseEvaluationSubmissions] = useState(false);
     const [coeRequests, setCoeRequests] = useState<COERequest[]>([]);
     const [coeTemplates, setCoeTemplates] = useState<COETemplate[]>([]);
     const [coeToPrint, setCoeToPrint] = useState<{ template: COETemplate, request: COERequest, employee: User } | null>(null);
@@ -331,6 +335,113 @@ const ManagerDashboard: React.FC = () => {
     }, []);
 
     useEffect(() => {
+        let active = true;
+        const loadEvaluations = async () => {
+            try {
+                const [{ data: evalRows, error: evalErr }, { data: evalers, error: evalerErr }, { data: timelines, error: timelineErr }] =
+                    await Promise.all([
+                        supabase.from('evaluations').select('*').order('created_at', { ascending: false }),
+                        supabase.from('evaluation_evaluators').select('*'),
+                        supabase.from('evaluation_timelines').select('*'),
+                    ]);
+                if (evalErr) throw evalErr;
+                if (evalerErr) throw evalerErr;
+                if (timelineErr) throw timelineErr;
+
+                const evalerMap = new Map<string, any[]>();
+                (evalers || []).forEach((row: any) => {
+                    if (!evalerMap.has(row.evaluation_id)) evalerMap.set(row.evaluation_id, []);
+                    evalerMap.get(row.evaluation_id)!.push(row);
+                });
+
+                const mappedEvaluations: Evaluation[] =
+                    (evalRows || []).map((e: any) => {
+                        const rows = evalerMap.get(e.id) || [];
+                        const evaluators = rows.map((row: any, index: number) => {
+                            const normalizedType = String(row.type || '').toLowerCase();
+                            return {
+                                id: row.id || `${e.id}-${row.user_id || 'group'}-${index}`,
+                                type: normalizedType === 'group' ? EvaluatorType.Group : EvaluatorType.Individual,
+                                weight: row.weight || 0,
+                                userId: row.user_id || undefined,
+                                groupFilter: row.business_unit_id || row.department_id ? {
+                                    businessUnitId: row.business_unit_id || undefined,
+                                    departmentId: row.department_id || undefined,
+                                } : undefined,
+                                isAnonymous: !!row.is_anonymous,
+                                excludeSubject: row.exclude_subject ?? true,
+                            };
+                        });
+                        return {
+                            id: e.id,
+                            name: e.name,
+                            timelineId: e.timeline_id || '',
+                            targetBusinessUnitIds: e.target_business_unit_ids || [],
+                            targetEmployeeIds: e.target_employee_ids || [],
+                            questionSetIds: e.question_set_ids || [],
+                            evaluators,
+                            status: e.status || 'InProgress',
+                            createdAt: e.created_at ? new Date(e.created_at) : new Date(),
+                            dueDate: e.due_date ? new Date(e.due_date) : undefined,
+                            isEmployeeVisible: !!e.is_employee_visible,
+                            acknowledgedBy: e.acknowledged_by || [],
+                        } as Evaluation;
+                    }) || [];
+
+                const mappedTimelines =
+                    (timelines || []).map((t: any) => ({
+                        id: t.id,
+                        endDate: t.end_date ? new Date(t.end_date) : new Date(),
+                    })) || [];
+
+                if (!active) return;
+                setEvaluations(mappedEvaluations);
+                setEvaluationTimelines(mappedTimelines);
+                setUseSupabaseEvaluations(true);
+            } catch (err) {
+                console.error('Failed to load evaluations for manager dashboard', err);
+            }
+        };
+        loadEvaluations();
+        return () => {
+            active = false;
+        };
+    }, []);
+
+    useEffect(() => {
+        if (!employeeProfileId) return;
+        let active = true;
+        const loadSubmissions = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('evaluation_submissions')
+                    .select('*')
+                    .eq('rater_id', employeeProfileId);
+                if (error) throw error;
+                if (!active) return;
+                const mapped =
+                    (data || []).map((row: any) => ({
+                        id: row.id,
+                        evaluationId: row.evaluation_id,
+                        subjectEmployeeId: row.subject_employee_id,
+                        raterId: row.rater_id,
+                        raterGroup: row.rater_group,
+                        scores: row.scores || [],
+                        submittedAt: row.submitted_at ? new Date(row.submitted_at) : new Date(),
+                    })) || [];
+                setEvaluationSubmissions(mapped);
+                setUseSupabaseEvaluationSubmissions(true);
+            } catch (err) {
+                console.error('Failed to load evaluation submissions for manager dashboard', err);
+            }
+        };
+        loadSubmissions();
+        return () => {
+            active = false;
+        };
+    }, [employeeProfileId]);
+
+    useEffect(() => {
         const loadReportees = async () => {
             if (!user?.id) {
                 setReporteeIds([]);
@@ -529,10 +640,12 @@ const ManagerDashboard: React.FC = () => {
             setEnvelopes([...mockEnvelopes]);
             setBenefitRequests([...mockBenefitRequests]);
             setCoachingSessions([...mockCoachingSessions]);
-            setEvaluationSubmissions([...mockEvaluationSubmissions]);
+            if (!useSupabaseEvaluationSubmissions) {
+                setEvaluationSubmissions([...mockEvaluationSubmissions]);
+            }
         }, 1000);
         return () => clearInterval(interval);
-    }, [useSupabaseOnboarding, useSupabaseAssignments]);
+    }, [useSupabaseOnboarding, useSupabaseAssignments, useSupabaseEvaluationSubmissions]);
 
     // Updated to include all visible employees (BU or subordinates)
     const visibleEmployeeIds = useMemo(() => {
@@ -1001,6 +1114,20 @@ const ManagerDashboard: React.FC = () => {
                 priority: 1
             }));
         items.push(...onboardingNotifications);
+
+        const evaluationNotifications = mockNotifications
+            .filter(n => notificationIds.has(n.userId) && !n.isRead && n.type === NotificationType.EVALUATION_ASSIGNED)
+            .map(item => ({
+                id: `eval-notif-${item.id}`,
+                icon: <AcademicCapIcon {...iconProps} />,
+                title: item.title || 'Evaluation Assigned',
+                subtitle: item.message,
+                date: new Date(item.createdAt).toLocaleDateString(),
+                link: item.link,
+                colorClass: 'bg-teal-500',
+                priority: 1
+            }));
+        items.push(...evaluationNotifications);
         
         // 4. Manpower Request Approvals (For Approvers)
         if (isApprover || isBusinessUnitManager) {
@@ -1187,13 +1314,14 @@ const ManagerDashboard: React.FC = () => {
        }
 
        // 14. UPDATED: Evaluation Pending (Manager/GM as Evaluator)
-        const mySubmissions = evaluationSubmissions.filter(sub => sub.raterId === user.id);
-        const evaluationsToPerform = mockEvaluations.filter(e => e.status === 'InProgress');
+        const evaluatorUser = { ...user, id: employeeProfileId || user.id };
+        const mySubmissions = evaluationSubmissions.filter(sub => sub.raterId === (employeeProfileId || user.id));
+        const evaluationsToPerform = (useSupabaseEvaluations ? evaluations : mockEvaluations).filter(e => e.status === 'InProgress');
 
         const evaluationItems = evaluationsToPerform.map(evaluation => {
             // Find who this user needs to evaluate for this evaluation cycle using the robust helper
             const eligibleTargets = evaluation.targetEmployeeIds.filter(targetId => 
-                isUserEligibleEvaluator(user, evaluation, targetId)
+                isUserEligibleEvaluator(evaluatorUser, evaluation, targetId)
             );
 
             // Count how many of these have already been submitted
@@ -1219,7 +1347,7 @@ const ManagerDashboard: React.FC = () => {
         items.push(...evaluationItems);
 
         return items.sort((a,b) => (a.priority ?? 99) - (b.priority ?? 99) || new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [user, notificationUserIds, employeeProfileId, requests, assignments, checklists, templates, pans, otRequests, exceptions, requisitions, resolutions, ntes, awards, manpowerRequests, isApprover, isBusinessUnitManager, subordinateIds, envelopes, benefitRequests, coachingSessions, evaluationSubmissions, isUserEligibleEvaluator, visibleEmployeeIds, panApproverId]);
+    }, [user, notificationUserIds, employeeProfileId, requests, assignments, checklists, templates, pans, otRequests, exceptions, requisitions, resolutions, ntes, awards, manpowerRequests, isApprover, isBusinessUnitManager, subordinateIds, envelopes, benefitRequests, coachingSessions, evaluationSubmissions, evaluations, useSupabaseEvaluations, isUserEligibleEvaluator, visibleEmployeeIds, panApproverId]);
 
     const teamApprovalItems = useMemo(() => {
         const items: Array<{

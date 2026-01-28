@@ -26,6 +26,8 @@ import {
     AssetRequest,
     AssetRequestStatus,
     OnboardingChecklistTemplate,
+    Evaluation,
+    EvaluatorType,
     COERequest,
     BenefitRequestStatus,
     PulseSurveyStatus,
@@ -240,6 +242,10 @@ const EmployeeDashboard: React.FC = () => {
     const [pans, setPans] = useState<PAN[]>(mockPANs);
     const [ntes, setNTEs] = useState<NTE[]>(mockNTEs);
     const [evaluationSubmissions, setEvaluationSubmissions] = useState(mockEvaluationSubmissions);
+    const [evaluations, setEvaluations] = useState<Evaluation[]>(mockEvaluations);
+    const [evaluationTimelines, setEvaluationTimelines] = useState(mockEvaluationTimelines);
+    const [useSupabaseEvaluations, setUseSupabaseEvaluations] = useState(false);
+    const [useSupabaseEvaluationSubmissions, setUseSupabaseEvaluationSubmissions] = useState(false);
     const [coeDecisions, setCoeDecisions] = useState<Array<{ id: string; status: COERequest['status']; date: Date }>>([]);
     const [assignedTickets, setAssignedTickets] = useState<Array<{ id: string; status: TicketStatus; category: string; priority: string; assignedAt?: Date; createdAt?: Date; requesterName?: string }>>([]);
     const [approvedLeaveRequests, setApprovedLeaveRequests] = useState<Array<{ id: string; startDate: Date; endDate: Date; decisionDate?: Date }>>([]);
@@ -365,6 +371,113 @@ const EmployeeDashboard: React.FC = () => {
     }, [employeeProfileId]);
 
     useEffect(() => {
+        let active = true;
+        const loadEvaluations = async () => {
+            try {
+                const [{ data: evalRows, error: evalErr }, { data: evalers, error: evalerErr }, { data: timelines, error: timelineErr }] =
+                    await Promise.all([
+                        supabase.from('evaluations').select('*').order('created_at', { ascending: false }),
+                        supabase.from('evaluation_evaluators').select('*'),
+                        supabase.from('evaluation_timelines').select('*'),
+                    ]);
+                if (evalErr) throw evalErr;
+                if (evalerErr) throw evalerErr;
+                if (timelineErr) throw timelineErr;
+
+                const evalerMap = new Map<string, any[]>();
+                (evalers || []).forEach((row: any) => {
+                    if (!evalerMap.has(row.evaluation_id)) evalerMap.set(row.evaluation_id, []);
+                    evalerMap.get(row.evaluation_id)!.push(row);
+                });
+
+                const mappedEvaluations: Evaluation[] =
+                    (evalRows || []).map((e: any) => {
+                        const rows = evalerMap.get(e.id) || [];
+                        const evaluators = rows.map((row: any, index: number) => {
+                            const normalizedType = String(row.type || '').toLowerCase();
+                            return {
+                                id: row.id || `${e.id}-${row.user_id || 'group'}-${index}`,
+                                type: normalizedType === 'group' ? EvaluatorType.Group : EvaluatorType.Individual,
+                                weight: row.weight || 0,
+                                userId: row.user_id || undefined,
+                                groupFilter: row.business_unit_id || row.department_id ? {
+                                    businessUnitId: row.business_unit_id || undefined,
+                                    departmentId: row.department_id || undefined,
+                                } : undefined,
+                                isAnonymous: !!row.is_anonymous,
+                                excludeSubject: row.exclude_subject ?? true,
+                            };
+                        });
+                        return {
+                            id: e.id,
+                            name: e.name,
+                            timelineId: e.timeline_id || '',
+                            targetBusinessUnitIds: e.target_business_unit_ids || [],
+                            targetEmployeeIds: e.target_employee_ids || [],
+                            questionSetIds: e.question_set_ids || [],
+                            evaluators,
+                            status: e.status || 'InProgress',
+                            createdAt: e.created_at ? new Date(e.created_at) : new Date(),
+                            dueDate: e.due_date ? new Date(e.due_date) : undefined,
+                            isEmployeeVisible: !!e.is_employee_visible,
+                            acknowledgedBy: e.acknowledged_by || [],
+                        } as Evaluation;
+                    }) || [];
+
+                const mappedTimelines =
+                    (timelines || []).map((t: any) => ({
+                        id: t.id,
+                        endDate: t.end_date ? new Date(t.end_date) : new Date(),
+                    })) || [];
+
+                if (!active) return;
+                setEvaluations(mappedEvaluations);
+                setEvaluationTimelines(mappedTimelines);
+                setUseSupabaseEvaluations(true);
+            } catch (err) {
+                console.error('Failed to load evaluations for dashboard', err);
+            }
+        };
+        loadEvaluations();
+        return () => {
+            active = false;
+        };
+    }, []);
+
+    useEffect(() => {
+        if (!employeeProfileId) return;
+        let active = true;
+        const loadSubmissions = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('evaluation_submissions')
+                    .select('*')
+                    .eq('rater_id', employeeProfileId);
+                if (error) throw error;
+                if (!active) return;
+                const mapped =
+                    (data || []).map((row: any) => ({
+                        id: row.id,
+                        evaluationId: row.evaluation_id,
+                        subjectEmployeeId: row.subject_employee_id,
+                        raterId: row.rater_id,
+                        raterGroup: row.rater_group,
+                        scores: row.scores || [],
+                        submittedAt: row.submitted_at ? new Date(row.submitted_at) : new Date(),
+                    })) || [];
+                setEvaluationSubmissions(mapped);
+                setUseSupabaseEvaluationSubmissions(true);
+            } catch (err) {
+                console.error('Failed to load evaluation submissions for dashboard', err);
+            }
+        };
+        loadSubmissions();
+        return () => {
+            active = false;
+        };
+    }, [employeeProfileId]);
+
+    useEffect(() => {
         const interval = setInterval(() => {
             // Simply sync with global mock data every second for robustness in this prototype
             setRequests([...mockAssetRequests]);
@@ -379,10 +492,12 @@ const EmployeeDashboard: React.FC = () => {
             setCoachingSessions([...mockCoachingSessions]);
             setEnvelopes([...mockEnvelopes]);
             setNTEs([...mockNTEs]);
-            setEvaluationSubmissions([...mockEvaluationSubmissions]);
+            if (!useSupabaseEvaluationSubmissions) {
+                setEvaluationSubmissions([...mockEvaluationSubmissions]);
+            }
         }, 1000);
         return () => clearInterval(interval);
-    }, [useSupabaseAssignments]);
+    }, [useSupabaseAssignments, useSupabaseEvaluationSubmissions]);
 
     useEffect(() => {
         if (!user?.id) return;
@@ -1083,13 +1198,14 @@ const EmployeeDashboard: React.FC = () => {
         });
         
         // --- EVALUATION LOGIC UPDATE ---
-        const mySubmissions = evaluationSubmissions.filter(sub => sub.raterId === user.id);
-        const evaluationsToPerform = mockEvaluations.filter(e => e.status === 'InProgress');
+        const evaluatorUser = { ...user, id: employeeProfileId || user.id };
+        const mySubmissions = evaluationSubmissions.filter(sub => sub.raterId === (employeeProfileId || user.id));
+        const evaluationsToPerform = (useSupabaseEvaluations ? evaluations : mockEvaluations).filter(e => e.status === 'InProgress');
 
         evaluationsToPerform.forEach(evaluation => {
             // Find who the user needs to evaluate for this evaluation cycle using robust helper
             const eligibleTargets = evaluation.targetEmployeeIds.filter(targetId => 
-                isUserEligibleEvaluator(user, evaluation, targetId)
+                isUserEligibleEvaluator(evaluatorUser, evaluation, targetId)
             );
 
             // Count how many of these have already been submitted
@@ -1103,7 +1219,7 @@ const EmployeeDashboard: React.FC = () => {
             // Check if evaluation has specific due date, otherwise fallback to timeline or default
             const deadline = evaluation.dueDate 
                 ? evaluation.dueDate 
-                : (mockEvaluationTimelines.find(t => t.id === evaluation.timelineId)?.endDate || new Date(evaluation.createdAt.getTime() + 14*24*60*60*1000));
+                : ((useSupabaseEvaluations ? evaluationTimelines : mockEvaluationTimelines).find((t: any) => t.id === evaluation.timelineId)?.endDate || new Date(evaluation.createdAt.getTime() + 14*24*60*60*1000));
             
             const deadlineStr = new Date(deadline).toLocaleDateString();
             const isOverdue = new Date() > new Date(deadline);
@@ -1274,6 +1390,9 @@ const EmployeeDashboard: React.FC = () => {
                     case NotificationType.OFFBOARDING_ASSIGNED:
                         details = { icon: <ClipboardCheckIcon {...iconProps} />, title: "Offboarding Assigned", colorClass: "bg-orange-500", priority: 1 };
                         break;
+                    case NotificationType.EVALUATION_ASSIGNED:
+                        details = { icon: <AcademicCapIcon {...iconProps} />, title: item.title || "Evaluation Assigned", colorClass: "bg-teal-500", priority: 1 };
+                        break;
                     case NotificationType.TICKET_ASSIGNED_TO_YOU:
                         details = { icon: <TicketIcon {...iconProps} />, title: "New Ticket Assigned", colorClass: "bg-cyan-500", priority: 1 };
                         break;
@@ -1310,7 +1429,7 @@ const EmployeeDashboard: React.FC = () => {
             return new Date(dateB).getTime() - new Date(dateA).getTime();
         });
 
-    }, [user, notificationUserIds, employeeProfileId, refreshKey, memoUpdateKey, requests, assignments, checklists, templates, isUserEligibleEvaluator, benefitRequests, pulseSurveys, surveyResponses, coachingSessions, envelopes, pans, ntes, evaluationSubmissions, approvedLeaveRequests, approvedWfhRequests, approvedOtRequests, approvedManpowerRequests, rejectedLeaveRequests, rejectedWfhRequests, rejectedOtRequests, rejectedManpowerRequests, coeDecisions, assignedTickets]);
+    }, [user, notificationUserIds, employeeProfileId, refreshKey, memoUpdateKey, requests, assignments, checklists, templates, isUserEligibleEvaluator, benefitRequests, pulseSurveys, surveyResponses, coachingSessions, envelopes, pans, ntes, evaluationSubmissions, evaluations, evaluationTimelines, useSupabaseEvaluations, approvedLeaveRequests, approvedWfhRequests, approvedOtRequests, approvedManpowerRequests, rejectedLeaveRequests, rejectedWfhRequests, rejectedOtRequests, rejectedManpowerRequests, coeDecisions, assignedTickets]);
 
     // Add AcademicCapIcon definition if missing since we used it for evaluation items
     const AcademicCapIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.26 10.147a60.436 60.436 0 0 0-.491 6.347A48.627 48.627 0 0 1 12 20.904a48.627 48.627 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.57 50.57 0 0 0-2.658-.813A59.905 59.905 0 0 1 12 3.493a59.902 59.902 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5" /></svg>);
