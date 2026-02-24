@@ -168,23 +168,6 @@ export const mockDepartments: Department[] = [
 export const mockUsers: User[] = [
     // --- GLOBAL ROLES (Corporate HQ) ---
     {
-        id: '0',
-        name: 'Kay',
-        email: 'kay@thenextperience.com',
-        role: Role.Admin,
-        accessScope: { type: 'GLOBAL' },
-        department: 'Executive',
-        businessUnit: 'Corporate HQ',
-        status: 'Active',
-        employmentStatus: 'Regular',
-        isPhotoEnrolled: true,
-        dateHired: new Date('2018-01-01'),
-        position: 'Owner',
-        salary: { basic: 200000, deminimis: 5000, reimbursable: 5000 },
-        monthlySalary: 200000,
-        leaveInfo: { balances: { vacation: 5, sick: 5 }, accrualRate: 0.4166, lastCreditDate: new Date('2024-01-01') }
-    },
-    {
         id: 'admin_user',
         name: 'Admin User',
         email: 'admin@tng.com',
