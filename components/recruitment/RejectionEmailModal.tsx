@@ -13,22 +13,25 @@ interface RejectionEmailModalProps {
     isOpen: boolean;
     onClose: () => void;
     application: Application | null;
+    candidate?: Candidate | null;
+    jobTitle?: string | null;
     onSend: () => void;
 }
 
-const RejectionEmailModal: React.FC<RejectionEmailModalProps> = ({ isOpen, onClose, application, onSend }) => {
+const RejectionEmailModal: React.FC<RejectionEmailModalProps> = ({ isOpen, onClose, application, candidate, jobTitle, onSend }) => {
     const { user } = useAuth();
     const [subject, setSubject] = useState('');
     const [message, setMessage] = useState('');
-    const candidate = mockCandidates.find(c => c.id === application?.candidateId);
-    const jobPost = mockJobPosts.find(p => p.id === application?.jobPostId);
+    const [isSending, setIsSending] = useState(false);
+    const resolvedCandidate = candidate || mockCandidates.find(c => c.id === application?.candidateId);
+    const resolvedJobTitle = jobTitle || mockJobPosts.find(p => p.id === application?.jobPostId)?.title;
 
     useEffect(() => {
-        if (isOpen && candidate && jobPost) {
-            setSubject(`Update on your application for ${jobPost.title}`);
-            setMessage(`Dear ${candidate.firstName},
+        if (isOpen && resolvedCandidate && resolvedJobTitle) {
+            setSubject(`Update on your application for ${resolvedJobTitle}`);
+            setMessage(`Dear ${resolvedCandidate.firstName},
 
-Thank you for giving us the opportunity to consider your application for the ${jobPost.title} position. We have reviewed your background and qualifications and appreciate the time and effort you put into sharing them with us.
+Thank you for giving us the opportunity to consider your application for the ${resolvedJobTitle} position. We have reviewed your background and qualifications and appreciate the time and effort you put into sharing them with us.
 
 While your skills and experience are impressive, we have decided to proceed with other candidates who more closely align with our current needs for this role.
 
@@ -37,17 +40,44 @@ We will keep your resume on file for future openings that may be a good fit. We 
 Sincerely,
 The Hiring Team`);
         }
-    }, [isOpen, candidate, jobPost]);
+    }, [isOpen, resolvedCandidate, resolvedJobTitle]);
 
-    const handleSend = () => {
-        if (user && candidate) {
-             logActivity(user, 'EXPORT', 'Application', application?.id || '', `Sent rejection email to ${candidate.email}`);
-             alert(`Rejection email sent to ${candidate.email}`);
-             onSend();
+    const handleSend = async () => {
+        if (!resolvedCandidate?.email) {
+            alert('Candidate email is missing.');
+            return;
+        }
+
+        setIsSending(true);
+        try {
+            const response = await fetch('/api/send-email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    to: resolvedCandidate.email,
+                    subject,
+                    message,
+                }),
+            });
+
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data?.error || 'Failed to send rejection email.');
+            }
+
+            if (user) {
+                logActivity(user, 'EXPORT', 'Application', application?.id || '', `Sent rejection email to ${resolvedCandidate.email}`);
+            }
+            alert(`Rejection email sent to ${resolvedCandidate.email}`);
+            onSend();
+        } catch (error: any) {
+            alert(error?.message || 'Failed to send rejection email.');
+        } finally {
+            setIsSending(false);
         }
     };
 
-    if (!application || !candidate) return null;
+    if (!application || !resolvedCandidate) return null;
 
     return (
         <Modal
@@ -57,7 +87,9 @@ The Hiring Team`);
             footer={
                 <div className="flex justify-end w-full space-x-2">
                     <Button variant="secondary" onClick={onClose}>Cancel</Button>
-                    <Button variant="danger" onClick={handleSend}>Send Rejection</Button>
+                    <Button variant="danger" onClick={handleSend} disabled={isSending}>
+                        {isSending ? 'Sending...' : 'Send Rejection'}
+                    </Button>
                 </div>
             }
         >
@@ -70,7 +102,7 @@ The Hiring Team`);
 
                 <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">To</label>
-                    <Input label="" value={`${candidate.firstName} ${candidate.lastName} <${candidate.email}>`} disabled />
+                    <Input label="" value={`${resolvedCandidate.firstName} ${resolvedCandidate.lastName} <${resolvedCandidate.email}>`} disabled />
                 </div>
                 
                 <div>

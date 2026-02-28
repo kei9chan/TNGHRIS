@@ -19,8 +19,9 @@ const ApplicantKanbanColumn: React.FC<ApplicantKanbanColumnProps> = ({ stage, ap
     const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
         e.preventDefault();
         const applicationId = e.dataTransfer.getData('text/plain');
-        if (draggedItemId) {
-             onUpdateStage(draggedItemId, stage);
+        const targetId = draggedItemId || applicationId;
+        if (targetId) {
+             onUpdateStage(targetId, stage);
         }
         setIsDragOver(false);
     };

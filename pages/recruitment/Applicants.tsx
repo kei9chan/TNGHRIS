@@ -400,6 +400,14 @@ const Applicants: React.FC = () => {
         if (!pendingAppId) return null;
         return applications.find(a => a.id === pendingAppId) || null;
     }, [pendingAppId, applications]);
+    const pendingCandidate = useMemo(() => {
+        if (!pendingApplication) return null;
+        return candidates.find(c => c.id === pendingApplication.candidateId) || null;
+    }, [pendingApplication, candidates]);
+    const pendingJobTitle = useMemo(() => {
+        if (!pendingApplication) return null;
+        return jobPosts.find(p => p.id === pendingApplication.jobPostId)?.title || null;
+    }, [pendingApplication, jobPosts]);
 
 
     const canView = can('Applicants', Permission.View) || can('Applicants', Permission.Manage);
@@ -499,6 +507,8 @@ const Applicants: React.FC = () => {
                     isOpen={isRejectionModalOpen}
                     onClose={() => { setIsRejectionModalOpen(false); setPendingAppId(null); }}
                     application={pendingApplication}
+                    candidate={pendingCandidate}
+                    jobTitle={pendingJobTitle}
                     onSend={handleRejectionComplete}
                 />
             )}
