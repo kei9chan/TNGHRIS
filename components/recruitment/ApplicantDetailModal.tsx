@@ -1,7 +1,6 @@
 
-import React, { useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { EnrichedApplication } from '../../pages/recruitment/Applicants';
-import { mockCandidates } from '../../services/mockData';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
@@ -17,21 +16,64 @@ interface ApplicantDetailModalProps {
 
 const ApplicantDetailModal: React.FC<ApplicantDetailModalProps> = ({ isOpen, onClose, application }) => {
     const { user } = useAuth();
-    const candidate = mockCandidates.find(c => c.id === application.candidateId);
+    const candidateName = useMemo(() => {
+        if (application.candidateName && application.candidateName !== 'Unknown') {
+            return application.candidateName;
+        }
+        const fallback = `${application.candidateFirstName || ''} ${application.candidateLastName || ''}`.trim();
+        return fallback || 'Applicant';
+    }, [application]);
     
     const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
-    const [subject, setSubject] = useState(`Regarding your application for ${application.jobTitle}`);
-    const [message, setMessage] = useState(`Dear ${candidate?.firstName},\n\nWe are reviewing your application and would like to request further details regarding...\n\nBest regards,\n${user?.name || 'The Hiring Team'}`);
+    const [isSending, setIsSending] = useState(false);
+    const [subject, setSubject] = useState('');
+    const [message, setMessage] = useState('');
 
-    const handleSendEmail = () => {
-        // Simulation of email sending
-        alert(`(Simulation) Email sent to ${candidate?.email}!\n\nSubject: ${subject}\nMessage: ${message}`);
-        
-        if (user) {
-            logActivity(user, 'EXPORT', 'Applicant', application.candidateId, `Sent email to candidate regarding ${application.jobTitle}`);
+    useEffect(() => {
+        if (!isEmailModalOpen) return;
+        const senderName =
+            (import.meta as any).env?.VITE_SMTP_FROM_NAME ||
+            user?.name ||
+            'The Hiring Team';
+        setSubject(`Regarding your application for ${application.jobTitle}`);
+        setMessage(
+            `Dear ${application.candidateFirstName || candidateName},\n\nThank you for your interest in the ${application.jobTitle} position. We are currently reviewing your application and would contact for further announcements. Stay tuned. \n\nBest regards,\n${senderName}`
+        );
+    }, [isEmailModalOpen, application, candidateName, user?.name]);
+
+    const handleSendEmail = async () => {
+        if (!application.candidateEmail) {
+            alert('Candidate email is missing.');
+            return;
         }
-        
-        setIsEmailModalOpen(false);
+
+        setIsSending(true);
+        try {
+            const response = await fetch('/api/send-email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    to: application.candidateEmail,
+                    subject,
+                    message,
+                }),
+            });
+
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data?.error || 'Failed to send email.');
+            }
+
+            alert(`Email sent to ${application.candidateEmail}.`);
+            if (user) {
+                logActivity(user, 'EXPORT', 'Applicant', application.candidateId, `Sent email to candidate regarding ${application.jobTitle}`);
+            }
+            setIsEmailModalOpen(false);
+        } catch (error: any) {
+            alert(error?.message || 'Failed to send email.');
+        } finally {
+            setIsSending(false);
+        }
     };
     
     const renderFooter = () => (
@@ -62,11 +104,11 @@ const ApplicantDetailModal: React.FC<ApplicantDetailModalProps> = ({ isOpen, onC
                     <h3 className="text-lg font-medium text-gray-900 dark:text-white border-b pb-2 mb-2">Candidate Information</h3>
                     <dl className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
                         <DetailItem label="Full Name" value={application.candidateName} />
-                        <DetailItem label="Email" value={<a href={`mailto:${candidate?.email}`} className="text-indigo-600 dark:text-indigo-400">{candidate?.email}</a>} />
-                        <DetailItem label="Phone" value={candidate?.phone} />
-                        <DetailItem label="Source" value={candidate?.source} />
-                        <DetailItem label="Portfolio" value={candidate?.portfolioUrl ? <a href={candidate.portfolioUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400">View Portfolio</a> : 'N/A'} />
-                        <DetailItem label="Tags" value={candidate?.tags?.join(', ')} />
+                        <DetailItem label="Email" value={application.candidateEmail ? <a href={`mailto:${application.candidateEmail}`} className="text-indigo-600 dark:text-indigo-400">{application.candidateEmail}</a> : 'N/A'} />
+                        <DetailItem label="Phone" value={application.candidatePhone} />
+                        <DetailItem label="Source" value={application.candidateSource} />
+                        <DetailItem label="Portfolio" value={application.candidatePortfolioUrl ? <a href={application.candidatePortfolioUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400">View Portfolio</a> : 'N/A'} />
+                        <DetailItem label="Tags" value={application.candidateTags?.join(', ')} />
                     </dl>
                 </section>
 
@@ -90,17 +132,19 @@ const ApplicantDetailModal: React.FC<ApplicantDetailModalProps> = ({ isOpen, onC
             <Modal
                 isOpen={isEmailModalOpen}
                 onClose={() => setIsEmailModalOpen(false)}
-                title={`Email ${candidate?.firstName} ${candidate?.lastName}`}
+                title={`Email ${candidateName}`}
                 footer={
                     <div className="flex justify-end w-full space-x-2">
                         <Button variant="secondary" onClick={() => setIsEmailModalOpen(false)}>Cancel</Button>
-                        <Button onClick={handleSendEmail}>Send Email</Button>
+                        <Button onClick={handleSendEmail} disabled={isSending}>
+                            {isSending ? 'Sending...' : 'Send Email'}
+                        </Button>
                     </div>
                 }
             >
                 <div className="space-y-4">
                     <div className="p-2 bg-gray-100 dark:bg-slate-700 rounded text-sm">
-                        <p><strong>To:</strong> {candidate?.email}</p>
+                        <p><strong>To:</strong> {application.candidateEmail || 'N/A'}</p>
                     </div>
                     <Input 
                         label="Subject" 
