@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { COETemplate, COERequest, User } from '../../types';
 import { useSettings } from '../../context/SettingsContext';
 import Button from '../ui/Button';
@@ -7,6 +7,7 @@ import Modal from '../ui/Modal';
 import Input from '../ui/Input';
 import { useAuth } from '../../hooks/useAuth';
 import { logActivity } from '../../services/auditService';
+import jsPDF from 'jspdf';
 
 interface PrintableCOEProps {
     template: COETemplate;
@@ -20,7 +21,9 @@ const PrintableCOE: React.FC<PrintableCOEProps> = ({ template, request, employee
     const { user } = useAuth();
     
     const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
+    const [isSending, setIsSending] = useState(false);
     const [emailRecipient, setEmailRecipient] = useState(employee.email);
+    const pdfRef = useRef<HTMLDivElement | null>(null);
 
     const processedBody = useMemo(() => {
         let text = template.body;
@@ -46,12 +49,84 @@ const PrintableCOE: React.FC<PrintableCOEProps> = ({ template, request, employee
         window.print();
     };
 
-    const handleSendEmail = () => {
-         alert(`(Simulation) Certificate successfully emailed to ${emailRecipient}`);
-         if (user) {
-             logActivity(user, 'EXPORT', 'COE', request.id, `Emailed COE to ${emailRecipient}`);
-         }
-         setIsEmailModalOpen(false);
+    const handleSendEmail = async () => {
+        if (!emailRecipient || !emailRecipient.includes('@')) {
+            alert('Please enter a valid email address.');
+            return;
+        }
+
+        const purposeText =
+            request.purpose === 'OTHERS'
+                ? (request.otherPurposeDetail || 'personal matters')
+                : request.purpose.replace(/_/g, ' ').toLowerCase();
+        const senderName =
+            (import.meta as any).env?.VITE_SMTP_FROM_NAME ||
+            user?.name ||
+            'HR Team';
+        const subject = `Certificate of Employment - ${employee.name}`;
+        const message = `Dear ${employee.name.split(' ')[0]},\n\nYour Certificate of Employment has been issued for ${purposeText}. A copy is included below.\n\nRequest ID: ${request.id}\n\nBest regards,\n${senderName}`;
+        const html = `
+<p>Dear ${employee.name.split(' ')[0]},</p>
+<p>Your Certificate of Employment has been issued for ${purposeText}. A copy is included below.</p>
+<p><strong>Request ID:</strong> ${request.id}</p>
+<hr />
+${processedBody}
+<p>Best regards,<br />${senderName}</p>
+        `.trim();
+
+        setIsSending(true);
+        try {
+            if (!pdfRef.current) {
+                throw new Error('Unable to generate COE PDF.');
+            }
+
+            const pdf = new jsPDF('p', 'pt', 'a4');
+            await pdf.html(pdfRef.current, {
+                x: 20,
+                y: 20,
+                width: 555,
+                windowWidth: pdfRef.current.scrollWidth,
+            });
+
+            const pdfDataUri = pdf.output('datauristring');
+            const pdfBase64 = pdfDataUri.split(',')[1] || '';
+            if (!pdfBase64) {
+                throw new Error('Unable to generate COE PDF.');
+            }
+
+            const response = await fetch('/api/send-email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    to: emailRecipient,
+                    subject,
+                    message,
+                    html,
+                    attachments: [
+                        {
+                            filename: `Certificate_of_Employment_${employee.name.replace(/\s+/g, '_')}.pdf`,
+                            contentBase64: pdfBase64,
+                            contentType: 'application/pdf',
+                        },
+                    ],
+                }),
+            });
+
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data?.error || 'Failed to send email.');
+            }
+
+            alert(`Certificate successfully emailed to ${emailRecipient}.`);
+            if (user) {
+                logActivity(user, 'EXPORT', 'COE', request.id, `Emailed COE to ${emailRecipient}`);
+            }
+            setIsEmailModalOpen(false);
+        } catch (error: any) {
+            alert(error?.message || 'Failed to send email.');
+        } finally {
+            setIsSending(false);
+        }
     };
 
     return (
@@ -128,7 +203,7 @@ const PrintableCOE: React.FC<PrintableCOEProps> = ({ template, request, employee
 
             {/* Document View */}
             <div className="print-scroll-container">
-                <div className="print-content-wrapper">
+                <div className="print-content-wrapper" ref={pdfRef}>
                     <div className="print-content p-12 relative h-full">
                         {/* Header / Logo */}
                         <div className="text-center mb-8">
@@ -166,7 +241,9 @@ const PrintableCOE: React.FC<PrintableCOEProps> = ({ template, request, employee
                 footer={
                     <div className="flex justify-end w-full space-x-2">
                         <Button variant="secondary" onClick={() => setIsEmailModalOpen(false)}>Cancel</Button>
-                        <Button onClick={handleSendEmail}>Send Email</Button>
+                        <Button onClick={handleSendEmail} disabled={isSending}>
+                            {isSending ? 'Sending...' : 'Send Email'}
+                        </Button>
                     </div>
                 }
             >

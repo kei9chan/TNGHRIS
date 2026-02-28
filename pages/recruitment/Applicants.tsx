@@ -18,6 +18,12 @@ import { supabase } from '../../services/supabaseClient';
 
 export interface EnrichedApplication extends Application {
     candidateName: string;
+    candidateEmail?: string;
+    candidateFirstName?: string;
+    candidateLastName?: string;
+    candidatePhone?: string;
+    candidatePortfolioUrl?: string;
+    candidateTags?: string[];
     jobTitle: string;
     businessUnitName: string;
     businessUnitId?: string;
@@ -202,6 +208,12 @@ const Applicants: React.FC = () => {
             return {
                 ...app,
                 candidateName: candidate ? `${candidate.firstName} ${candidate.lastName}` : 'Unknown',
+                candidateEmail: candidate?.email,
+                candidateFirstName: candidate?.firstName,
+                candidateLastName: candidate?.lastName,
+                candidatePhone: candidate?.phone,
+                candidatePortfolioUrl: candidate?.portfolioUrl,
+                candidateTags: candidate?.tags,
                 jobTitle: jobPost?.title || 'N/A',
                 businessUnitName: businessUnit?.name || 'N/A',
                 businessUnitId: businessUnit?.id,
