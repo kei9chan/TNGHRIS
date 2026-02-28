@@ -144,6 +144,14 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
         await new Promise(requestAnimationFrame); // allow preview to paint
         const src = document.getElementById('certificate-preview') as HTMLElement | null;
         if (!src) return;
+        if (!selectedEmployee || !selectedAward) {
+            alert('Please select an employee and award.');
+            return;
+        }
+        if (!selectedEmployee.email) {
+            alert('Selected employee has no email address.');
+            return;
+        }
 
         // Clone the preview at full scale off-screen to avoid overlays/transform issues
         const clone = src.cloneNode(true) as HTMLElement;
@@ -164,10 +172,53 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
                 backgroundColor: '#ffffff',
             });
             const certificateUrl = canvas.toDataURL('image/png');
-            onAssign(employeeId, awardId, notes, businessUnitId, selectedApprovers, certificateUrl);
+            await Promise.resolve(
+                onAssign(employeeId, awardId, notes, businessUnitId, selectedApprovers, certificateUrl)
+            );
+
+            const senderName =
+                (import.meta as any).env?.VITE_SMTP_FROM_NAME ||
+                user?.name ||
+                'HR Team';
+            const subject = `Award Certificate - ${selectedAward.title}`;
+            const message = `Dear ${selectedEmployee.name.split(' ')[0]},\n\nCongratulations on receiving the ${selectedAward.title} award. Your certificate is attached.\n\nBest regards,\n${senderName}`;
+            const html = `
+<p>Dear ${selectedEmployee.name.split(' ')[0]},</p>
+<p>Congratulations on receiving the <strong>${selectedAward.title}</strong> award. Your certificate is attached.</p>
+${notes ? `<p><strong>Citation:</strong> ${notes}</p>` : ''}
+<p>Best regards,<br />${senderName}</p>
+            `.trim();
+
+            const certificateBase64 = certificateUrl.split(',')[1] || '';
+            if (!certificateBase64) {
+                throw new Error('Unable to prepare certificate attachment.');
+            }
+
+            const response = await fetch('/api/send-email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    to: selectedEmployee.email,
+                    subject,
+                    message,
+                    html,
+                    attachments: [
+                        {
+                            filename: `Award_Certificate_${selectedEmployee.name.replace(/\\s+/g, '_')}.png`,
+                            contentBase64: certificateBase64,
+                            contentType: 'image/png',
+                        },
+                    ],
+                }),
+            });
+
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data?.error || 'Failed to send award email.');
+            }
         } catch (error) {
             console.error("Failed to generate certificate image", error);
-            alert("Failed to generate certificate image. Please try again.");
+            alert((error as Error)?.message || "Failed to generate certificate image. Please try again.");
         } finally {
             clone.remove();
             setIsGenerating(false);
