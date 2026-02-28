@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { mockEnvelopes, mockUsers } from '../../services/mockData';
-import { Envelope, RoutingStep, RoutingStepStatus, EnvelopeStatus, EnvelopeEventType } from '../../types';
+import { Envelope, RoutingStepStatus, EnvelopeStatus, EnvelopeEventType } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -12,6 +12,7 @@ import PrintableContract from '../../components/contracts/PrintableContract';
 import Modal from '../../components/ui/Modal';
 import Input from '../../components/ui/Input';
 import { logActivity } from '../../services/auditService';
+import { supabase } from '../../services/supabaseClient';
 
 const ArrowLeftIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>;
 const CheckCircleIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-500" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>;
@@ -39,11 +40,19 @@ const EnvelopeDetail: React.FC = () => {
     const { user } = useAuth();
     const navigate = useNavigate();
 
-    const [envelope, setEnvelope] = useState<Envelope | null>(() => mockEnvelopes.find(e => e.id === envelopeId) || null);
+    const [envelope, setEnvelope] = useState<Envelope | null>(null);
+    const [employeeProfile, setEmployeeProfile] = useState<{
+        position?: string;
+        dateHired?: Date;
+        monthlySalary?: number;
+        email?: string;
+    } | null>(null);
     const [isSigningModalOpen, setIsSigningModalOpen] = useState(false);
     const [envelopeToPrint, setEnvelopeToPrint] = useState<Envelope | null>(null);
     const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
     const [emailRecipient, setEmailRecipient] = useState('');
+    const [isSending, setIsSending] = useState(false);
+    const pdfRef = useRef<HTMLDivElement | null>(null);
 
     const currentUserRecipient = useMemo(() => {
         if (!user || !envelope) return null;
@@ -63,13 +72,16 @@ const EnvelopeDetail: React.FC = () => {
 
         const { contentSnapshot, employeeName, employeeId } = envelope;
         const employee = mockUsers.find(u => u.id === employeeId);
+        const position = employeeProfile?.position || employee?.position || 'N/A';
+        const dateHired = employeeProfile?.dateHired || employee?.dateHired;
+        const monthlySalary = employeeProfile?.monthlySalary ?? employee?.monthlySalary;
         
         const replacePlaceholders = (text: string) => {
             let processed = text.replace(/{{employee_name}}/g, employeeName);
-            processed = processed.replace(/{{position}}/g, employee?.position || 'N/A');
-            processed = processed.replace(/{{start_date}}/g, employee?.dateHired ? new Date(employee.dateHired).toLocaleDateString() : 'N/A');
+            processed = processed.replace(/{{position}}/g, position);
+            processed = processed.replace(/{{start_date}}/g, dateHired ? new Date(dateHired).toLocaleDateString() : 'N/A');
             processed = processed.replace(/{{today}}/g, new Date().toLocaleDateString());
-            processed = processed.replace(/{{rate}}/g, employee?.monthlySalary?.toLocaleString() || 'N/A');
+            processed = processed.replace(/{{rate}}/g, monthlySalary ? monthlySalary.toLocaleString() : 'N/A');
             return processed;
         };
 
@@ -82,6 +94,70 @@ const EnvelopeDetail: React.FC = () => {
         };
     }, [envelope]);
 
+
+    useEffect(() => {
+        const loadEnvelope = async () => {
+            if (!envelopeId) return;
+            try {
+                const { data, error } = await supabase
+                    .from('envelopes')
+                    .select('*')
+                    .eq('id', envelopeId)
+                    .single();
+                if (error) throw error;
+                const mapped: Envelope = {
+                    id: data.id,
+                    templateId: data.template_id || '',
+                    templateTitle: data.template_title || '',
+                    employeeId: data.employee_id,
+                    employeeName: data.employee_name,
+                    title: data.title,
+                    routingSteps: Array.isArray(data.routing_steps) ? data.routing_steps : [],
+                    dueDate: data.due_date ? new Date(data.due_date) : new Date(),
+                    status: data.status as EnvelopeStatus,
+                    createdByUserId: data.created_by_user_id,
+                    createdAt: data.created_at ? new Date(data.created_at) : new Date(),
+                    events: Array.isArray(data.events)
+                        ? data.events.map((ev: any) => ({ ...ev, timestamp: new Date(ev.timestamp) }))
+                        : [],
+                    contentSnapshot: data.content_snapshot || undefined,
+                };
+                setEnvelope(mapped);
+            } catch (error) {
+                console.error('Failed to load envelope', error);
+                const fallback = mockEnvelopes.find(e => e.id === envelopeId) || null;
+                setEnvelope(fallback);
+            }
+        };
+        loadEnvelope();
+    }, [envelopeId]);
+
+    useEffect(() => {
+        const loadEmployeeProfile = async () => {
+            if (!envelope?.employeeId) {
+                setEmployeeProfile(null);
+                return;
+            }
+            try {
+                const { data, error } = await supabase
+                    .from('hris_users')
+                    .select('position, date_hired, salary_basic, rate_amount, email')
+                    .eq('id', envelope.employeeId)
+                    .single();
+                if (error) throw error;
+                setEmployeeProfile({
+                    position: data.position || undefined,
+                    dateHired: data.date_hired ? new Date(data.date_hired) : undefined,
+                    monthlySalary: data.rate_amount ?? data.salary_basic ?? undefined,
+                    email: data.email || undefined,
+                });
+            } catch (error) {
+                console.error('Failed to load employee profile for envelope', error);
+                setEmployeeProfile(null);
+            }
+        };
+        loadEmployeeProfile();
+    }, [envelope?.employeeId]);
 
     if (!envelope) {
         return <div>Envelope not found.</div>;
@@ -121,20 +197,88 @@ const EnvelopeDetail: React.FC = () => {
     const handleOpenEmailModal = () => {
         if (!envelope) return;
         const employee = mockUsers.find(u => u.id === envelope.employeeId);
-        setEmailRecipient(employee?.email || user?.email || '');
+        setEmailRecipient(employeeProfile?.email || employee?.email || user?.email || '');
         setIsEmailModalOpen(true);
     };
 
-    const handleSendEmail = () => {
+    const handleSendEmail = async () => {
         if (!emailRecipient.includes('@')) {
           alert('Please enter a valid email address.');
           return;
         }
-        alert(`(Simulation) Contract PDF has been sent to ${emailRecipient}.`);
-        if (user && envelope) {
-            logActivity(user, 'EXPORT', 'Envelope', envelope.id, `Emailed contract PDF to ${emailRecipient}.`);
+        if (!envelope) return;
+
+        const senderName =
+            (import.meta as any).env?.VITE_SMTP_FROM_NAME ||
+            user?.name ||
+            'HR Team';
+        const subject = `Contract Document - ${envelope.title}`;
+        const message = `Dear ${envelope.employeeName},\n\nPlease find the contract document details below.\n\nBest regards,\n${senderName}`;
+        const html = `
+<p>Dear ${envelope.employeeName},</p>
+<p>Please find the contract document details below.</p>
+<hr />
+${processedContent.body}
+${processedContent.sections
+    .map(section => `<h2>${section.title}</h2>${section.body}`)
+    .join('')}
+<p>Best regards,<br />${senderName}</p>
+        `.trim();
+
+        setIsSending(true);
+        try {
+            if (!pdfRef.current) {
+                throw new Error('Unable to generate contract PDF.');
+            }
+
+            const { default: jsPDF } = await import('jspdf');
+            const pdf = new jsPDF('p', 'pt', 'a4');
+            await pdf.html(pdfRef.current, {
+                x: 20,
+                y: 20,
+                width: 555,
+                windowWidth: pdfRef.current.scrollWidth,
+            });
+
+            const pdfDataUri = pdf.output('datauristring');
+            const pdfBase64 = pdfDataUri.split(',')[1] || '';
+            if (!pdfBase64) {
+                throw new Error('Unable to generate contract PDF.');
+            }
+
+            const response = await fetch('/api/send-email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    to: emailRecipient,
+                    subject,
+                    message,
+                    html,
+                    attachments: [
+                        {
+                            filename: `Contract_${envelope.title.replace(/\\s+/g, '_')}.pdf`,
+                            contentBase64: pdfBase64,
+                            contentType: 'application/pdf',
+                        },
+                    ],
+                }),
+            });
+
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data?.error || 'Failed to send email.');
+            }
+
+            alert(`Contract has been emailed to ${emailRecipient}.`);
+            if (user && envelope) {
+                logActivity(user, 'EXPORT', 'Envelope', envelope.id, `Emailed contract to ${emailRecipient}.`);
+            }
+            setIsEmailModalOpen(false);
+        } catch (error: any) {
+            alert(error?.message || 'Failed to send email.');
+        } finally {
+            setIsSending(false);
         }
-        setIsEmailModalOpen(false);
     };
 
     return (
@@ -210,6 +354,29 @@ const EnvelopeDetail: React.FC = () => {
               document.body
             )}
 
+            <div
+                style={{
+                    position: 'absolute',
+                    left: '-10000px',
+                    top: 0,
+                    width: '800px',
+                    background: 'white',
+                    color: 'black',
+                    padding: '24px',
+                }}
+                aria-hidden="true"
+            >
+                <div ref={pdfRef}>
+                    <div dangerouslySetInnerHTML={{ __html: processedContent.body }} />
+                    {processedContent.sections.map(section => (
+                        <div key={section.id}>
+                            <h2>{section.title}</h2>
+                            <div dangerouslySetInnerHTML={{ __html: section.body }} />
+                        </div>
+                    ))}
+                </div>
+            </div>
+
             {isEmailModalOpen && (
                 <Modal
                     isOpen={isEmailModalOpen}
@@ -218,7 +385,9 @@ const EnvelopeDetail: React.FC = () => {
                     footer={
                         <div className="flex justify-end w-full space-x-2">
                             <Button variant="secondary" onClick={() => setIsEmailModalOpen(false)}>Cancel</Button>
-                            <Button onClick={handleSendEmail}>Send Email</Button>
+                            <Button onClick={handleSendEmail} disabled={isSending}>
+                                {isSending ? 'Sending...' : 'Send Email'}
+                            </Button>
                         </div>
                     }
                 >
