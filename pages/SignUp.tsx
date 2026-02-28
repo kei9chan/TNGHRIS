@@ -256,8 +256,10 @@ const SignUp: React.FC = () => {
       }
 
       // 1) Create Supabase Auth user (auth.users)
+      const baseUrl =
+        (import.meta as any).env?.VITE_APP_BASE_URL || window.location.origin;
       const emailRedirectTo =
-        typeof window !== 'undefined' ? `${window.location.origin}/login` : undefined;
+        typeof window !== 'undefined' ? `${baseUrl}/login` : undefined;
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
