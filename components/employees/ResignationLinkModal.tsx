@@ -3,10 +3,11 @@ import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
-import { User } from '../../types';
+import { Role, User } from '../../types';
 import { mockUsers } from '../../services/mockData';
 import { useAuth } from '../../hooks/useAuth';
 import { logActivity } from '../../services/auditService';
+import { supabase } from '../../services/supabaseClient';
 
 interface ResignationLinkModalProps {
     isOpen: boolean;
@@ -18,6 +19,9 @@ const ResignationLinkModal: React.FC<ResignationLinkModalProps> = ({ isOpen, onC
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+    const [users, setUsers] = useState<User[]>([]);
+    const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+    const [isSending, setIsSending] = useState(false);
     const searchRef = useRef<HTMLDivElement>(null);
 
     const defaultSubject = "Resignation Process & Offboarding Guidance";
@@ -28,11 +32,48 @@ const ResignationLinkModal: React.FC<ResignationLinkModalProps> = ({ isOpen, onC
     const filteredUsers = useMemo(() => {
         if (!searchQuery) return [];
         const lowerQuery = searchQuery.toLowerCase();
-        return mockUsers.filter(u => 
+        return users.filter(u => 
             u.status === 'Active' && 
             (u.name.toLowerCase().includes(lowerQuery) || u.email.toLowerCase().includes(lowerQuery))
         ).slice(0, 5);
-    }, [searchQuery]);
+    }, [searchQuery, users]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        const loadUsers = async () => {
+            setIsLoadingUsers(true);
+            try {
+                const { data } = await supabase
+                    .from('hris_users')
+                    .select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position, date_hired');
+                if (data) {
+                    const mapped: User[] = data.map((u: any) => ({
+                        id: u.id,
+                        name: u.full_name || u.email,
+                        email: u.email,
+                        role: (u.role as Role) || Role.Employee,
+                        department: u.department || '',
+                        businessUnit: u.business_unit || '',
+                        departmentId: u.department_id || undefined,
+                        businessUnitId: u.business_unit_id || undefined,
+                        status: (u.status as 'Active' | 'Inactive') || 'Active',
+                        isPhotoEnrolled: false,
+                        dateHired: u.date_hired ? new Date(u.date_hired) : new Date(),
+                        position: u.position || '',
+                    }));
+                    setUsers(mapped);
+                } else {
+                    setUsers([]);
+                }
+            } catch (error) {
+                console.error('Failed to load employees from hris_users', error);
+                setUsers([]);
+            } finally {
+                setIsLoadingUsers(false);
+            }
+        };
+        loadUsers();
+    }, [isOpen]);
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -48,13 +89,19 @@ const ResignationLinkModal: React.FC<ResignationLinkModalProps> = ({ isOpen, onC
     // Generate message when user is selected
     useEffect(() => {
         if (selectedUser) {
+            const isLocalhost =
+                window.location.hostname === 'localhost' ||
+                window.location.hostname === '127.0.0.1';
+            const resignationLink = isLocalhost
+                ? `${window.location.origin}/#/submit-resignation`
+                : 'https://hris.thenextperience.com/submit-resignation';
             const template = `Dear ${selectedUser.name.split(' ')[0]},
 
 We are sorry to hear that you are considering moving on, but we wish you the best in your next chapter. We truly appreciate your contributions to the team.
 
 To formally begin the resignation and clearance process, please submit your resignation details via the HRIS portal using the link below:
 
-${window.location.origin}/#/submit-resignation
+${resignationLink}
 
 This will trigger the automated offboarding checklist to ensure a smooth transition.
 
@@ -74,25 +121,48 @@ HR Department`;
         setIsDropdownOpen(false);
     };
 
-    const handleSend = () => {
+    const handleSend = async () => {
         if (!selectedUser) {
             alert("Please select an employee.");
             return;
         }
-        
-        // Simulate sending email
-        console.log(`Sending email to ${selectedUser.email}`, { subject, message });
-        
-        logActivity(
-            user, 
-            'EXPORT', 
-            'ResignationLink', 
-            selectedUser.id, 
-            `Sent resignation guidance email to ${selectedUser.email}`
-        );
+        if (!selectedUser.email) {
+            alert('Selected employee has no email address.');
+            return;
+        }
 
-        alert(`Resignation link and guidance sent to ${selectedUser.email}.`);
-        onClose();
+        setIsSending(true);
+        try {
+            const response = await fetch('/api/send-email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    to: selectedUser.email,
+                    subject,
+                    message,
+                }),
+            });
+
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data?.error || 'Failed to send email.');
+            }
+
+            logActivity(
+                user, 
+                'EXPORT', 
+                'ResignationLink', 
+                selectedUser.id, 
+                `Sent resignation guidance email to ${selectedUser.email}`
+            );
+
+            alert(`Resignation link and guidance sent to ${selectedUser.email}.`);
+            onClose();
+        } catch (error: any) {
+            alert(error?.message || 'Failed to send email.');
+        } finally {
+            setIsSending(false);
+        }
     };
 
     return (
@@ -103,7 +173,9 @@ HR Department`;
             footer={
                 <div className="flex justify-end space-x-2">
                     <Button variant="secondary" onClick={onClose}>Cancel</Button>
-                    <Button onClick={handleSend} disabled={!selectedUser}>Send Email</Button>
+                    <Button onClick={handleSend} disabled={!selectedUser || isSending}>
+                        {isSending ? 'Sending...' : 'Send Email'}
+                    </Button>
                 </div>
             }
         >
@@ -120,6 +192,11 @@ HR Department`;
                         placeholder="Type name or email..."
                         autoComplete="off"
                     />
+                    {isDropdownOpen && isLoadingUsers && (
+                        <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg px-4 py-2 text-sm text-gray-500 dark:text-gray-400">
+                            Loading employees...
+                        </div>
+                    )}
                     {isDropdownOpen && filteredUsers.length > 0 && (
                         <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg">
                             {filteredUsers.map(u => (
