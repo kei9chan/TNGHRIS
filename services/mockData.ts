@@ -1676,6 +1676,7 @@ export const mockPermissions: PermissionsMatrix = {
         'PulseSurvey': [Permission.Manage],
         'Coaching': [Permission.Create, Permission.View, Permission.Edit],
         'WFH': [Permission.View],
+        'Recruitment': [Permission.Manage],
     },
     [Role.BusinessUnitManager]: {
         'Dashboard': [Permission.View],
@@ -1743,7 +1744,6 @@ export const mockPermissions: PermissionsMatrix = {
     },
     [Role.Recruiter]: {
         'Dashboard': [Permission.View],
-        'Recruitment': [Permission.Manage],
         'Benefits': [Permission.View],
     },
 };

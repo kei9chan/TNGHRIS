@@ -43,16 +43,16 @@ const jobPostsPermissions: Record<Role, Permission[]> = {
   [Role.Admin]: [Permission.Manage],
   [Role.HRManager]: [Permission.Manage],
   [Role.HRStaff]: [Permission.Manage],
-  [Role.BOD]: [Permission.View],
-  [Role.GeneralManager]: [Permission.View], // View BU/Departments (scope handled elsewhere)
-  [Role.OperationsDirector]: [Permission.View], // View BU only
-  [Role.BusinessUnitManager]: [Permission.View], // Own BU
-  [Role.Manager]: [Permission.View], // Own Team
-  [Role.Employee]: [Permission.View],
-  [Role.FinanceStaff]: [], // None
-  [Role.Auditor]: [], // None
-  [Role.Recruiter]: [Permission.Manage],
-  [Role.IT]: [], // None
+  [Role.BOD]: [],
+  [Role.GeneralManager]: [],
+  [Role.OperationsDirector]: [],
+  [Role.BusinessUnitManager]: [],
+  [Role.Manager]: [],
+  [Role.Employee]: [],
+  [Role.FinanceStaff]: [],
+  [Role.Auditor]: [],
+  [Role.Recruiter]: [],
+  [Role.IT]: [],
 };
 
 // Application Pages RBAC matrix
@@ -60,16 +60,16 @@ const applicationPagesPermissions: Record<Role, Permission[]> = {
   [Role.Admin]: [Permission.Manage],
   [Role.HRManager]: [Permission.Manage],
   [Role.HRStaff]: [Permission.Manage],
-  [Role.BOD]: [Permission.View],
-  [Role.GeneralManager]: [Permission.View], // View BU/Departments (scope handled elsewhere)
-  [Role.OperationsDirector]: [Permission.View], // View BU only
-  [Role.BusinessUnitManager]: [Permission.View], // Own BU
-  [Role.Manager]: [Permission.View], // Own Team
-  [Role.Employee]: [Permission.View], // Own
-  [Role.FinanceStaff]: [], // None
-  [Role.Auditor]: [], // None
-  [Role.Recruiter]: [Permission.Manage],
-  [Role.IT]: [], // None
+  [Role.BOD]: [],
+  [Role.GeneralManager]: [],
+  [Role.OperationsDirector]: [],
+  [Role.BusinessUnitManager]: [],
+  [Role.Manager]: [],
+  [Role.Employee]: [],
+  [Role.FinanceStaff]: [],
+  [Role.Auditor]: [],
+  [Role.Recruiter]: [],
+  [Role.IT]: [],
 };
 
 // Applicants RBAC matrix
@@ -77,16 +77,16 @@ const applicantsPermissions: Record<Role, Permission[]> = {
   [Role.Admin]: [Permission.Manage],
   [Role.HRManager]: [Permission.Manage],
   [Role.HRStaff]: [Permission.Manage],
-  [Role.BOD]: [Permission.View],
-  [Role.GeneralManager]: [Permission.View],
-  [Role.OperationsDirector]: [Permission.View],
-  [Role.BusinessUnitManager]: [Permission.View],
-  [Role.Manager]: [Permission.View],
-  [Role.Employee]: [], // None
-  [Role.FinanceStaff]: [], // None
-  [Role.Auditor]: [], // None
-  [Role.Recruiter]: [Permission.Manage],
-  [Role.IT]: [], // None
+  [Role.BOD]: [],
+  [Role.GeneralManager]: [],
+  [Role.OperationsDirector]: [],
+  [Role.BusinessUnitManager]: [],
+  [Role.Manager]: [],
+  [Role.Employee]: [],
+  [Role.FinanceStaff]: [],
+  [Role.Auditor]: [],
+  [Role.Recruiter]: [],
+  [Role.IT]: [],
 };
 
 // Offers RBAC matrix
@@ -94,16 +94,16 @@ const offersPermissions: Record<Role, Permission[]> = {
   [Role.Admin]: [Permission.Manage],
   [Role.HRManager]: [Permission.Manage],
   [Role.HRStaff]: [Permission.Manage],
-  [Role.BOD]: [Permission.View],
-  [Role.GeneralManager]: [Permission.View], // View BU/Departments
-  [Role.OperationsDirector]: [Permission.View], // View BU only
-  [Role.BusinessUnitManager]: [Permission.View], // Own BU
-  [Role.Manager]: [Permission.View], // Own Team
-  [Role.Employee]: [], // None
-  [Role.FinanceStaff]: [], // None
-  [Role.Auditor]: [], // None
-  [Role.Recruiter]: [Permission.Manage],
-  [Role.IT]: [], // None
+  [Role.BOD]: [],
+  [Role.GeneralManager]: [],
+  [Role.OperationsDirector]: [],
+  [Role.BusinessUnitManager]: [],
+  [Role.Manager]: [],
+  [Role.Employee]: [],
+  [Role.FinanceStaff]: [],
+  [Role.Auditor]: [],
+  [Role.Recruiter]: [],
+  [Role.IT]: [],
 };
 
 // Calendar RBAC matrix
