@@ -877,6 +877,24 @@ const BODDashboard: React.FC = () => {
             }));
         allItems.push(...evaluationNotifications);
 
+        const contractNotifications = mockNotifications
+            .filter(
+                n =>
+                    notificationUserIds.has(n.userId) &&
+                    !n.isRead &&
+                    (n.type === NotificationType.CONTRACT_SIGNATURE_REQUEST || n.type === NotificationType.CONTRACT_APPROVAL_REQUEST)
+            )
+            .map(item => ({
+                id: `notif-${item.id}`,
+                icon: <PencilSquareIcon {...iconProps} />,
+                title: item.type === NotificationType.CONTRACT_APPROVAL_REQUEST ? "Contract Approval Required" : "Contract Signature Required",
+                subtitle: item.message,
+                date: new Date(item.createdAt).toLocaleDateString(),
+                link: item.link,
+                colorClass: item.type === NotificationType.CONTRACT_APPROVAL_REQUEST ? "bg-pink-500" : "bg-orange-500"
+            }));
+        allItems.push(...contractNotifications);
+
         const assetNotifications = mockNotifications
             .filter(n => notificationUserIds.has(n.userId) && !n.isRead && n.type === NotificationType.ASSET_ASSIGNED)
             .map(item => {

@@ -2,12 +2,12 @@ import React, { useState, useMemo } from 'react';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { useAuth } from '../../hooks/useAuth';
-import { Role, ContractTemplate, Envelope, EnvelopeStatus, RoutingStep, RoutingStepStatus, EnvelopeEvent, EnvelopeEventType, Permission } from '../../types';
+import { Role, ContractTemplate, Envelope, EnvelopeStatus, RoutingStep, RoutingStepStatus, EnvelopeEvent, EnvelopeEventType, Permission, NotificationType } from '../../types';
 import TemplateList from '../../components/contracts/TemplateList';
 import TemplateDrawer from '../../components/contracts/TemplateDrawer';
 import EnvelopeList from '../../components/contracts/EnvelopeList';
 import EnvelopeCreationDrawer from '../../components/contracts/EnvelopeCreationDrawer';
-import { mockContractTemplates, mockUsers } from '../../services/mockData';
+import { mockContractTemplates, mockNotifications, mockUsers } from '../../services/mockData';
 import Input from '../../components/ui/Input';
 import { usePermissions } from '../../hooks/usePermissions';
 import EditableDescription from '../../components/ui/EditableDescription';
@@ -353,6 +353,41 @@ const Contracts: React.FC = () => {
           events: data.events || [],
           contentSnapshot: data.content_snapshot || undefined,
         };
+
+        if (send) {
+          const createdAt = new Date();
+          const link = `/employees/contracts/${newEnvelope.id}`;
+          const approvalIds = new Set(
+            (newEnvelope.routingSteps || [])
+              .filter(step => step.role === 'Approver' && step.userId)
+              .map(step => step.userId)
+          );
+
+          mockNotifications.unshift({
+            id: `notif-contract-sign-${newEnvelope.id}-${newEnvelope.employeeId}-${createdAt.getTime()}`,
+            userId: newEnvelope.employeeId,
+            type: NotificationType.CONTRACT_SIGNATURE_REQUEST,
+            message: `Contract "${newEnvelope.title}" is ready for your signature.`,
+            link,
+            isRead: false,
+            createdAt,
+            relatedEntityId: newEnvelope.id,
+          });
+
+          approvalIds.forEach(approverId => {
+            if (approverId === newEnvelope.employeeId) return;
+            mockNotifications.unshift({
+              id: `notif-contract-approve-${newEnvelope.id}-${approverId}-${createdAt.getTime()}`,
+              userId: approverId,
+              type: NotificationType.CONTRACT_APPROVAL_REQUEST,
+              message: `Approval required for "${newEnvelope.title}" for ${newEnvelope.employeeName}.`,
+              link,
+              isRead: false,
+              createdAt,
+              relatedEntityId: newEnvelope.id,
+            });
+          });
+        }
 
         setEnvelopes(prev => [newEnvelope, ...prev]);
       } catch (err) {
