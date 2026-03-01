@@ -221,11 +221,13 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
     const isSubmitted = !isDraft;
 
     const currentUserStep = requisition?.routingSteps.find(s => s.userId === user?.id && s.status === JobRequisitionStepStatus.Pending);
-    const canApprove = !!currentUserStep;
+    const isHrApprover = user?.role === Role.HRManager || user?.role === Role.HRStaff || user?.role === Role.Admin;
+    const canApprove = !!currentUserStep || (isHrApprover && requisition?.status === JobRequisitionStatus.PendingApproval);
     
     const allHrApproved = !!requisition?.routingSteps.filter(s => s.role === JobRequisitionRole.HR).every(s => s.status === JobRequisitionStepStatus.Approved);
     const hasFinalApprovers = !!requisition?.routingSteps.some(s => s.role === JobRequisitionRole.Final);
-    const showFinalApproverSelection = allHrApproved && !hasFinalApprovers && requisition?.status === JobRequisitionStatus.PendingApproval && (user?.role === Role.HRManager || user?.role === Role.Admin);
+    const hasHrSteps = !!requisition?.routingSteps.some(s => s.role === JobRequisitionRole.HR);
+    const showFinalApproverSelection = hasHrSteps && allHrApproved && !hasFinalApprovers && requisition?.status === JobRequisitionStatus.PendingApproval && (user?.role === Role.HRManager || user?.role === Role.Admin);
 
     const footer = () => {
         if (showFinalApproverSelection) {

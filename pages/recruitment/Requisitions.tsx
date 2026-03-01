@@ -148,35 +148,43 @@ const Requisitions: React.FC = () => {
         }
     };
 
-    const handleApprove = (requisitionId: string) => {
+    const handleApprove = async (requisitionId: string) => {
         if (!user) return;
-        const reqIndex = mockJobRequisitions.findIndex(r => r.id === requisitionId);
-        if (reqIndex === -1) return;
+        const existing = requisitions.find(r => r.id === requisitionId);
+        if (!existing) return;
 
-        const updatedReq = { ...mockJobRequisitions[reqIndex] };
+        const updatedReq = { ...existing };
         const userStepIndex = updatedReq.routingSteps.findIndex(s => s.userId === user.id && s.status === JobRequisitionStepStatus.Pending);
+        const isHrApprover = user.role === Role.HRManager || user.role === Role.HRStaff || user.role === Role.Admin;
 
         if (userStepIndex > -1) {
             updatedReq.routingSteps[userStepIndex].status = JobRequisitionStepStatus.Approved;
             updatedReq.routingSteps[userStepIndex].timestamp = new Date();
-            
             logActivity(user, 'APPROVE', 'JobRequisition', requisitionId, `Approved requisition step.`);
-        }
-        
-        // Check if all steps are approved AND if we have final approvers
-        const allStepsApproved = updatedReq.routingSteps.every(s => s.status === JobRequisitionStepStatus.Approved);
-        const hasFinalApprovers = updatedReq.routingSteps.some(s => s.role === JobRequisitionRole.Final);
-
-        // Only set to Approved if all steps are done AND we have Final approvers involved (BOD/GM).
-        // If only HR has approved (and no final approvers added yet), it stays PendingApproval to allow HR to add Final Approvers.
-        if (allStepsApproved && hasFinalApprovers) {
+        } else if (isHrApprover) {
             updatedReq.status = JobRequisitionStatus.Approved;
-            logActivity(user, 'APPROVE', 'JobRequisition', requisitionId, `Job Requisition fully approved and opened.`);
+            logActivity(user, 'APPROVE', 'JobRequisition', requisitionId, `Job Requisition approved.`);
         }
         
-        mockJobRequisitions[reqIndex] = updatedReq;
-        setRequisitions([...mockJobRequisitions]);
-        handleCloseModal();
+        if (updatedReq.routingSteps.length > 0) {
+            const allStepsApproved = updatedReq.routingSteps.every(s => s.status === JobRequisitionStepStatus.Approved);
+            const hasFinalApprovers = updatedReq.routingSteps.some(s => s.role === JobRequisitionRole.Final);
+            if (allStepsApproved && hasFinalApprovers) {
+                updatedReq.status = JobRequisitionStatus.Approved;
+                logActivity(user, 'APPROVE', 'JobRequisition', requisitionId, `Job Requisition fully approved and opened.`);
+            }
+        }
+        
+        try {
+            const saved = await saveJobRequisition(updatedReq);
+            setRequisitions(prev => {
+                const rest = prev.filter(r => r.id !== saved.id);
+                return [saved, ...rest];
+            });
+            handleCloseModal();
+        } catch (err: any) {
+            alert(err?.message || 'Failed to approve requisition.');
+        }
     };
 
     const handleOpenRejectModal = (requisition: JobRequisition) => {
@@ -184,13 +192,12 @@ const Requisitions: React.FC = () => {
         setIsRejectModalOpen(true);
     };
 
-    const handleConfirmReject = (reason: string) => {
+    const handleConfirmReject = async (reason: string) => {
         if (!user || !selectedRequisition) return;
-        
-        const reqIndex = mockJobRequisitions.findIndex(r => r.id === selectedRequisition.id);
-        if (reqIndex === -1) return;
+        const existing = requisitions.find(r => r.id === selectedRequisition.id);
+        if (!existing) return;
 
-        const updatedReq = { ...mockJobRequisitions[reqIndex] };
+        const updatedReq = { ...existing };
         const userStepIndex = updatedReq.routingSteps.findIndex(s => s.userId === user.id && s.status === JobRequisitionStepStatus.Pending);
 
         if (userStepIndex > -1) {
@@ -200,27 +207,32 @@ const Requisitions: React.FC = () => {
         }
         
         updatedReq.status = JobRequisitionStatus.Rejected;
-        
         logActivity(user, 'REJECT', 'JobRequisition', selectedRequisition.id, `Rejected requisition. Reason: ${reason}`);
         
-        mockJobRequisitions[reqIndex] = updatedReq;
-        setRequisitions([...mockJobRequisitions]);
-        
-        setIsRejectModalOpen(false);
-        handleCloseModal();
+        try {
+            const saved = await saveJobRequisition(updatedReq);
+            setRequisitions(prev => {
+                const rest = prev.filter(r => r.id !== saved.id);
+                return [saved, ...rest];
+            });
+            setIsRejectModalOpen(false);
+            handleCloseModal();
+        } catch (err: any) {
+            alert(err?.message || 'Failed to reject requisition.');
+        }
     };
 
-    const handleAddFinalApprovers = (requisitionId: string, finalApproverIds: string[]) => {
-        const reqIndex = mockJobRequisitions.findIndex(r => r.id === requisitionId);
-        if (reqIndex === -1) return;
+    const handleAddFinalApprovers = async (requisitionId: string, finalApproverIds: string[]) => {
+        const existing = requisitions.find(r => r.id === requisitionId);
+        if (!existing) return;
         
-        const updatedReq = { ...mockJobRequisitions[reqIndex] };
+        const updatedReq = { ...existing };
         const finalSteps = finalApproverIds.map((id, index) => {
-            const approver = mockUsers.find(u => u.id === id)!;
+            const approver = mockUsers.find(u => u.id === id);
             return {
                 id: `req-step-${requisitionId}-final-${index}`,
                 userId: id,
-                name: approver.name,
+                name: approver?.name || 'Final Approver',
                 role: JobRequisitionRole.Final,
                 status: JobRequisitionStepStatus.Pending,
                 order: 2 // All final approvers are at the same level
@@ -228,12 +240,18 @@ const Requisitions: React.FC = () => {
         });
 
         updatedReq.routingSteps.push(...finalSteps);
-        mockJobRequisitions[reqIndex] = updatedReq;
-        setRequisitions([...mockJobRequisitions]);
         
-        logActivity(user!, 'UPDATE', 'JobRequisition', requisitionId, `Added ${finalSteps.length} final approver(s).`);
-        
-        handleCloseModal();
+        try {
+            const saved = await saveJobRequisition(updatedReq);
+            setRequisitions(prev => {
+                const rest = prev.filter(r => r.id !== saved.id);
+                return [saved, ...rest];
+            });
+            logActivity(user!, 'UPDATE', 'JobRequisition', requisitionId, `Added ${finalSteps.length} final approver(s).`);
+            handleCloseModal();
+        } catch (err: any) {
+            alert(err?.message || 'Failed to add final approvers.');
+        }
     };
 
 
