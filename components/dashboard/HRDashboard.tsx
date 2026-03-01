@@ -419,13 +419,18 @@ const HRDashboard: React.FC = () => {
         return benefitRequests.filter(r => r.status === BenefitRequestStatus.PendingHR);
     }, [benefitRequests]);
 
+    const handleCloseManpowerModal = () => {
+        setIsManpowerModalOpen(false);
+        navigate('/payroll/manpower-planning');
+    };
+
     const handleSaveManpowerRequest = (request: ManpowerRequest) => {
         mockManpowerRequests.unshift(request);
         if (user) {
             logActivity(user, 'CREATE', 'ManpowerRequest', request.id, `Created On-Call Request for ${request.date}`);
         }
         alert("Request submitted for approval.");
-        setIsManpowerModalOpen(false);
+        handleCloseManpowerModal();
     };
     
     const handleSaveCOERequest = async (request: Partial<COERequest>) => {
@@ -1002,7 +1007,7 @@ const HRDashboard: React.FC = () => {
 
             <ManpowerRequestModal
                 isOpen={isManpowerModalOpen}
-                onClose={() => setIsManpowerModalOpen(false)}
+                onClose={handleCloseManpowerModal}
                 onSave={handleSaveManpowerRequest}
             />
             

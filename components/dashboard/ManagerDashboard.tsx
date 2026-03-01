@@ -701,6 +701,11 @@ const ManagerDashboard: React.FC = () => {
     // Check if Business Unit Manager to allow broader approvals
     const isBusinessUnitManager = user && user.role === Role.BusinessUnitManager;
 
+    const handleCloseManpowerModal = () => {
+        setIsManpowerModalOpen(false);
+        navigate('/payroll/manpower-planning');
+    };
+
     const handleSaveManpowerRequest = (request: ManpowerRequest) => {
         mockManpowerRequests.unshift(request);
         setManpowerRequests([...mockManpowerRequests]);
@@ -709,7 +714,7 @@ const ManagerDashboard: React.FC = () => {
             logActivity(user, 'CREATE', 'ManpowerRequest', request.id, `Created On-Call Request for ${request.date}`);
         }
         alert("Request submitted for approval.");
-        setIsManpowerModalOpen(false); 
+        handleCloseManpowerModal();
     };
 
     const handleSaveCOERequest = async (request: Partial<COERequest>) => {
@@ -1606,7 +1611,7 @@ const ManagerDashboard: React.FC = () => {
             
             <ManpowerRequestModal
                 isOpen={isManpowerModalOpen}
-                onClose={() => setIsManpowerModalOpen(false)}
+                onClose={handleCloseManpowerModal}
                 onSave={handleSaveManpowerRequest}
             />
 
