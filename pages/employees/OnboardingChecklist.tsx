@@ -78,8 +78,9 @@ const OnboardingChecklistPage: React.FC = () => {
         if (employeeError) throw employeeError;
         if (checklistError) throw checklistError;
 
+        let mappedTemplates: OnboardingChecklistTemplate[] = [];
         if (templateRows) {
-          const mappedTemplates: OnboardingChecklistTemplate[] = templateRows.map((t: any) => ({
+          mappedTemplates = templateRows.map((t: any) => ({
             id: t.id,
             name: t.name,
             targetRole: (t.target_role as Role) || Role.Employee,
@@ -101,14 +102,65 @@ const OnboardingChecklistPage: React.FC = () => {
           setEmployees(mappedEmployees);
         }
 
+        const buildChecklistTasks = (
+          template: OnboardingChecklistTemplate | undefined,
+          employeeId: string,
+          startDateRaw?: string | null
+        ): OnboardingTask[] => {
+          if (!template) return [];
+          const startDate = startDateRaw ? new Date(startDateRaw) : new Date();
+          return (template.tasks || []).map((taskTemplate: any) => {
+            const templateTaskId = taskTemplate.id || taskTemplate.name;
+            let ownerUserId = '';
+            if (taskTemplate.ownerUserId) {
+              ownerUserId = taskTemplate.ownerUserId;
+            } else if (taskTemplate.ownerRole === Role.Manager) {
+              const employee = employees.find(e => e.id === employeeId);
+              if (employee?.managerId) {
+                ownerUserId = employee.managerId;
+              }
+            } else {
+              const owner =
+                employees.find(u => u.role === taskTemplate.ownerRole) ||
+                mockUsers.find(u => u.role === taskTemplate.ownerRole);
+              if (owner) ownerUserId = owner.id;
+            }
+            const ownerUser =
+              employees.find(u => u.id === ownerUserId) ||
+              mockUsers.find(u => u.id === ownerUserId);
+            const dueDate = new Date(startDate);
+            dueDate.setDate(dueDate.getDate() + (taskTemplate.dueDays || 0));
+
+            return {
+              id: `ONBOARDTASK-${employeeId}-${templateTaskId}`,
+              templateTaskId,
+              employeeId,
+              name: taskTemplate.name,
+              description: taskTemplate.description,
+              ownerUserId,
+              ownerName: ownerUser ? ownerUser.name : 'System',
+              videoUrl: taskTemplate.videoUrl,
+              dueDate,
+              status: OnboardingTaskStatus.Pending,
+              points: taskTemplate.points || 0,
+              taskType: taskTemplate.taskType,
+              readContent: taskTemplate.readContent,
+              requiresApproval: taskTemplate.requiresApproval,
+              assetId: taskTemplate.assetId,
+              assetDescription: taskTemplate.assetDescription,
+            } as OnboardingTask;
+          });
+        };
+
         if (checklistRows && checklistRows.length > 0) {
+          const templateMap = new Map(mappedTemplates.map(t => [t.id, t]));
           const mappedChecklists: OnboardingChecklist[] = checklistRows.map((c: any) => ({
             id: c.id,
             employeeId: c.employee_id,
             templateId: c.template_id,
             createdAt: c.created_at ? new Date(c.created_at) : new Date(),
             status: (c.status as any) || 'InProgress',
-            tasks: [],
+            tasks: buildChecklistTasks(templateMap.get(c.template_id), c.employee_id, c.start_date),
             signedAt: undefined,
           }));
           setChecklists(mappedChecklists);
@@ -322,16 +374,22 @@ const OnboardingChecklistPage: React.FC = () => {
           .select('id, employee_id, template_id, status, created_at, start_date');
         if (error) throw error;
 
+        const newChecklistsByEmployee = new Map(
+          newChecklists.map(c => [c.employeeId, c])
+        );
         const mappedInserted: OnboardingChecklist[] =
-          inserted?.map((c: any) => ({
+          inserted?.map((c: any) => {
+            const fallback = newChecklistsByEmployee.get(c.employee_id);
+            return {
             id: c.id,
             employeeId: c.employee_id,
             templateId: c.template_id,
             createdAt: c.created_at ? new Date(c.created_at) : new Date(),
             status: (c.status as any) || 'InProgress',
-            tasks: [],
+            tasks: fallback?.tasks || [],
             signedAt: undefined,
-          })) || [];
+            } as OnboardingChecklist;
+          }) || [];
         const insertedByEmployee = new Map(
           (inserted || []).map((c: any) => [c.employee_id, c.id])
         );

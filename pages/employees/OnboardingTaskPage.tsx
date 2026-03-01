@@ -1,13 +1,14 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { mockOnboardingChecklists, mockUsers, mockAssets } from '../../services/mockData';
-import { OnboardingTask, OnboardingTaskStatus, OnboardingTaskType, User } from '../../types';
+import { OnboardingChecklist, OnboardingChecklistTemplate, OnboardingTask, OnboardingTaskStatus, OnboardingTaskType, Role } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import FileUploader from '../../components/ui/FileUploader';
 import { logActivity } from '../../services/auditService';
+import { supabase } from '../../services/supabaseClient';
 
 const ArrowLeftIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>;
 
@@ -18,17 +19,117 @@ const OnboardingTaskPage: React.FC = () => {
 
     const [submissionValue, setSubmissionValue] = useState('');
     const [file, setFile] = useState<File | null>(null);
+    const [checklists, setChecklists] = useState<OnboardingChecklist[]>([]);
+    const [templates, setTemplates] = useState<OnboardingChecklistTemplate[]>([]);
+
+    useEffect(() => {
+        if (!user?.id) return;
+        let active = true;
+        const loadOnboardingData = async () => {
+            try {
+                const [{ data: checklistRows, error: checklistError }, { data: templateRows, error: templateError }] =
+                    await Promise.all([
+                        supabase
+                            .from('onboarding_checklists')
+                            .select('id, employee_id, template_id, status, created_at, start_date')
+                            .eq('employee_id', user.id),
+                        supabase
+                            .from('onboarding_checklist_templates')
+                            .select('id, name, target_role, template_type, tasks'),
+                    ]);
+                if (checklistError) throw checklistError;
+                if (templateError) throw templateError;
+                if (!active) return;
+
+                const mappedTemplates: OnboardingChecklistTemplate[] =
+                    (templateRows || []).map((t: any) => ({
+                        id: t.id,
+                        name: t.name,
+                        targetRole: (t.target_role as Role) || Role.Employee,
+                        templateType: t.template_type || 'Onboarding',
+                        tasks: Array.isArray(t.tasks) ? t.tasks : [],
+                    }));
+                setTemplates(mappedTemplates);
+
+                const templateMap = new Map(mappedTemplates.map(t => [t.id, t]));
+                const buildChecklistTasks = (
+                    template: OnboardingChecklistTemplate | undefined,
+                    employeeId: string,
+                    startDateRaw?: string | null
+                ): OnboardingTask[] => {
+                    if (!template) return [];
+                    const startDate = startDateRaw ? new Date(startDateRaw) : new Date();
+                    return (template.tasks || []).map((taskTemplate: any) => {
+                        const templateTaskId = taskTemplate.id || taskTemplate.name;
+                        let ownerUserId = '';
+                        if (taskTemplate.ownerUserId) {
+                            ownerUserId = taskTemplate.ownerUserId;
+                        } else if (taskTemplate.ownerRole === Role.Manager) {
+                            const employee = mockUsers.find(e => e.id === employeeId);
+                            if (employee?.managerId) {
+                                ownerUserId = employee.managerId;
+                            }
+                        } else {
+                            const owner = mockUsers.find(u => u.role === taskTemplate.ownerRole);
+                            if (owner) ownerUserId = owner.id;
+                        }
+                        const ownerUser = mockUsers.find(u => u.id === ownerUserId);
+                        const dueDate = new Date(startDate);
+                        dueDate.setDate(dueDate.getDate() + (taskTemplate.dueDays || 0));
+
+                        return {
+                            id: `ONBOARDTASK-${employeeId}-${templateTaskId}`,
+                            templateTaskId,
+                            employeeId,
+                            name: taskTemplate.name,
+                            description: taskTemplate.description,
+                            ownerUserId,
+                            ownerName: ownerUser ? ownerUser.name : 'System',
+                            videoUrl: taskTemplate.videoUrl,
+                            dueDate,
+                            status: OnboardingTaskStatus.Pending,
+                            points: taskTemplate.points || 0,
+                            taskType: taskTemplate.taskType,
+                            readContent: taskTemplate.readContent,
+                            requiresApproval: taskTemplate.requiresApproval,
+                            assetId: taskTemplate.assetId,
+                            assetDescription: taskTemplate.assetDescription,
+                        } as OnboardingTask;
+                    });
+                };
+
+                const mappedChecklists: OnboardingChecklist[] =
+                    (checklistRows || []).map((c: any) => ({
+                        id: c.id,
+                        employeeId: c.employee_id,
+                        templateId: c.template_id,
+                        createdAt: c.created_at ? new Date(c.created_at) : new Date(),
+                        status: (c.status as any) || 'InProgress',
+                        tasks: buildChecklistTasks(templateMap.get(c.template_id), c.employee_id, c.start_date),
+                        signedAt: undefined,
+                    })) || [];
+                setChecklists(mappedChecklists);
+            } catch (err) {
+                console.error('Failed to load onboarding tasks', err);
+                setChecklists([...mockOnboardingChecklists]);
+            }
+        };
+        loadOnboardingData();
+        return () => {
+            active = false;
+        };
+    }, [user?.id]);
 
     const { checklist, task } = useMemo(() => {
         if (!taskId) return { checklist: null, task: null };
-        for (const cl of mockOnboardingChecklists) {
-            const t = cl.tasks.find(task => task.id === taskId);
+        for (const cl of checklists) {
+            const t = cl.tasks.find(task => task.id === taskId || task.templateTaskId === taskId);
             if (t) {
                 return { checklist: cl, task: t };
             }
         }
         return { checklist: null, task: null };
-    }, [taskId]);
+    }, [taskId, checklists]);
 
     const { progress, completedPoints, totalPoints } = useMemo(() => {
         if (!checklist) {
