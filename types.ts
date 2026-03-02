@@ -825,7 +825,14 @@ export interface Memo {
   tags: string[];
   attachments: string[];
   acknowledgementTracker: string[];
+  acknowledgementSignatures?: MemoAcknowledgement[];
   status: 'Published' | 'Draft' | 'Archived';
+}
+
+export interface MemoAcknowledgement {
+  userId: string;
+  signatureDataUrl?: string;
+  acknowledgedAt?: Date;
 }
 
 export interface FeedbackTemplate {

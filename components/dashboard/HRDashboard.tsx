@@ -7,7 +7,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions'; // Import added
 import { supabase } from '../../services/supabaseClient';
 import { mockJobRequisitions, mockNotifications, mockResignations, mockEvaluations, mockEvaluationSubmissions, mockTickets, mockUserDocuments, mockUsers, mockOnboardingChecklists, mockChangeHistory, mockPANs, mockAssetAssignments, mockManpowerRequests, mockOnboardingTemplates, mockBenefitRequests, mockIncidentReports } from '../../services/mockData';
-import { JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, Role, NotificationType, ResignationStatus, Notification, TicketStatus, UserDocumentStatus, OnboardingTaskStatus, ChangeHistoryStatus, PANStatus, PANActionTaken, PANStepStatus, PAN, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, COERequestStatus, COETemplate, BenefitRequestStatus, IRStatus, IncidentReport, User, Evaluation, EvaluatorType } from '../../types';
+import { JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, Role, NotificationType, ResignationStatus, Notification, TicketStatus, UserDocumentStatus, OnboardingTaskStatus, ChangeHistoryStatus, PANStatus, PANActionTaken, PANStepStatus, PAN, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, COERequestStatus, COETemplate, BenefitRequestStatus, IRStatus, IncidentReport, User, Evaluation, EvaluatorType, Memo, MemoAcknowledgement } from '../../types';
 import ActionItemCard from './ActionItemCard';
 import QuickAnalyticsPreview from './QuickAnalyticsPreview';
 import UpcomingEventsWidget from './UpcomingEventsWidget';
@@ -20,6 +20,7 @@ import PrintableCOE from '../admin/PrintableCOE';
 import RejectReasonModal from '../feedback/RejectReasonModal';
 import { logActivity } from '../../services/auditService';
 import { approveCoeRequest, createCoeRequest, rejectCoeRequest, fetchCoeRequests, fetchActiveCoeTemplates } from '../../services/coeService';
+import MemoViewModal from '../feedback/MemoViewModal';
 
 
 const AcademicCapIcon: React.FC<{className?: string}> = ({className}) => <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.26 10.147a60.436 60.436 0 0 0-.491 6.347A48.627 48.627 0 0 1 12 20.904a48.627 48.627 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.57 50.57 0 0 0-2.658-.813A59.905 59.905 0 0 1 12 3.493a59.902 59.902 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5" /></svg>;
@@ -78,6 +79,52 @@ const mapPanRow = (p: any): PAN => ({
     preparerSignatureUrl: p.preparer_signature_url || undefined,
 });
 
+const extractMemoBody = (row: any) => {
+    const candidates = ['body', 'content', 'html', 'memo_body', 'memoBody', 'body_text', 'bodyHtml'];
+    for (const key of candidates) {
+        const val = row?.[key];
+        if (typeof val === 'string' && val.trim().length > 0) return val as string;
+    }
+    return '';
+};
+
+const normalizeMemoSignatures = (raw: any): MemoAcknowledgement[] => {
+    if (!Array.isArray(raw)) return [];
+    return raw
+        .map((entry: any) => ({
+            userId: entry?.userId || entry?.user_id || '',
+            signatureDataUrl: entry?.signatureDataUrl || entry?.signature_data_url,
+            acknowledgedAt: entry?.acknowledgedAt
+                ? new Date(entry.acknowledgedAt)
+                : entry?.acknowledged_at
+                ? new Date(entry.acknowledged_at)
+                : undefined,
+        }))
+        .filter((entry: MemoAcknowledgement) => entry.userId);
+};
+
+const normalizeMemoTracker = (raw: any): string[] => {
+    if (!Array.isArray(raw)) return [];
+    return raw
+        .map((entry: any) => (typeof entry === 'string' ? entry : entry?.userId || entry?.user_id))
+        .filter(Boolean);
+};
+
+const mapMemoRow = (row: any): Memo => ({
+    id: row.id,
+    title: row.title,
+    body: extractMemoBody(row),
+    effectiveDate: row.effective_date ? new Date(row.effective_date) : new Date(),
+    targetDepartments: row.target_departments || [],
+    targetBusinessUnits: row.target_business_units || [],
+    acknowledgementRequired: row.acknowledgement_required ?? false,
+    tags: row.tags || [],
+    attachments: row.attachments || [],
+    acknowledgementTracker: normalizeMemoTracker(row.acknowledgement_tracker),
+    acknowledgementSignatures: normalizeMemoSignatures(row.acknowledgement_signatures),
+    status: row.status || 'Draft',
+});
+
 const HRDashboard: React.FC = () => {
     const { user } = useAuth();
     const { isUserEligibleEvaluator, getCoeAccess } = usePermissions(); // Added hook
@@ -98,6 +145,10 @@ const HRDashboard: React.FC = () => {
     const [useSupabaseEvaluationSubmissions, setUseSupabaseEvaluationSubmissions] = useState(false);
     const [pans, setPans] = useState<PAN[]>(mockPANs);
     const [panApproverId, setPanApproverId] = useState<string | null>(null);
+    const [memos, setMemos] = useState<Memo[]>([]);
+    const [selectedMemo, setSelectedMemo] = useState<Memo | null>(null);
+    const [isMemoViewOpen, setIsMemoViewOpen] = useState(false);
+    const [memoUpdateKey, setMemoUpdateKey] = useState(0);
     const legacyUserId = useMemo(() => {
         if (!user) return null;
         const byEmail = user.email
@@ -274,6 +325,28 @@ const HRDashboard: React.FC = () => {
             clearInterval(interval);
         };
     }, [employeeProfileId, user?.id]);
+
+    useEffect(() => {
+        if (!user) return;
+        let active = true;
+        const loadMemos = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('memos')
+                    .select('*')
+                    .order('effective_date', { ascending: false });
+                if (!active) return;
+                if (error) throw error;
+                setMemos((data || []).map(mapMemoRow));
+            } catch (err) {
+                console.error('Failed to load memos', err);
+            }
+        };
+        loadMemos();
+        return () => {
+            active = false;
+        };
+    }, [user?.id, memoUpdateKey]);
 
     useEffect(() => {
         let active = true;
@@ -555,6 +628,67 @@ const HRDashboard: React.FC = () => {
         setCoeToReject(null);
     };
 
+    const handleViewMemo = (memo: Memo) => {
+        setSelectedMemo(memo);
+        setIsMemoViewOpen(true);
+    };
+
+    const handleAcknowledgeMemo = async (memoId: string, signatureDataUrl: string) => {
+        if (!user) return;
+        const memo = memos.find(m => m.id === memoId);
+        if (!memo) return;
+        const tracker = (memo.acknowledgementTracker || [])
+            .map(entry => (typeof entry === 'string' ? entry : (entry as MemoAcknowledgement).userId))
+            .filter(Boolean);
+        if (tracker.includes(user.id)) return;
+
+        const newTracker = [...tracker, user.id];
+        const newSignatures = [
+            ...(memo.acknowledgementSignatures || []),
+            { userId: user.id, signatureDataUrl, acknowledgedAt: new Date() },
+        ];
+
+        try {
+            const { error } = await supabase
+                .from('memos')
+                .update({
+                    acknowledgement_tracker: newTracker,
+                    acknowledgement_signatures: newSignatures.map(sig => ({
+                        userId: sig.userId,
+                        signatureDataUrl: sig.signatureDataUrl,
+                        acknowledgedAt: sig.acknowledgedAt ? new Date(sig.acknowledgedAt).toISOString() : undefined,
+                    })),
+                })
+                .eq('id', memoId);
+            if (error) throw error;
+
+            setMemos(prev =>
+                prev.map(m =>
+                    m.id === memoId
+                        ? {
+                              ...m,
+                              acknowledgementTracker: newTracker,
+                              acknowledgementSignatures: newSignatures,
+                          }
+                        : m
+                )
+            );
+            setSelectedMemo(prev =>
+                prev && prev.id === memoId
+                    ? {
+                          ...prev,
+                          acknowledgementTracker: newTracker,
+                          acknowledgementSignatures: newSignatures,
+                      }
+                    : prev
+            );
+            setMemoUpdateKey(prev => prev + 1);
+        } catch (err) {
+            console.error('Failed to acknowledge memo', err);
+            alert('Failed to acknowledge the memo. Please try again.');
+        }
+    };
+
 
     const actionItems = useMemo(() => {
         if (!user) return [];
@@ -590,6 +724,47 @@ const HRDashboard: React.FC = () => {
                     priority: 1
                 });
             }
+        });
+
+        const hasAcknowledgedMemo = (memo: Memo) => {
+            const tracker = memo.acknowledgementTracker || [];
+            const tracked = tracker.some(entry => {
+                if (typeof entry === 'string') return entry === user.id;
+                if (entry && typeof entry === 'object') return (entry as MemoAcknowledgement).userId === user.id;
+                return false;
+            });
+            if (tracked) return true;
+            return (memo.acknowledgementSignatures || []).some(sig => sig.userId === user.id);
+        };
+
+        const isMemoTargeted = (memo: Memo) => {
+            const buTargets = memo.targetBusinessUnits || [];
+            const deptTargets = memo.targetDepartments || [];
+            const buOk = buTargets.length === 0 || buTargets.includes('All') || (user.businessUnit && buTargets.includes(user.businessUnit));
+            const deptOk = deptTargets.length === 0 || deptTargets.includes('All') || (user.department && deptTargets.includes(user.department));
+            return buOk && deptOk;
+        };
+
+        const pendingMemos = memos.filter(
+            memo =>
+                memo.status === 'Published' &&
+                memo.acknowledgementRequired &&
+                isMemoTargeted(memo) &&
+                !hasAcknowledgedMemo(memo)
+        );
+
+        pendingMemos.forEach(memo => {
+            allItems.push({
+                id: `memo-ack-${memo.id}`,
+                icon: <DocumentTextIcon {...iconProps} />,
+                title: "Memo Acknowledgement Required",
+                subtitle: memo.title,
+                date: new Date(memo.effectiveDate).toLocaleDateString(),
+                link: '#',
+                colorClass: 'bg-indigo-500',
+                priority: 0,
+                onClick: () => handleViewMemo(memo)
+            });
         });
 
         // Pending Asset Acceptance for HR
@@ -958,7 +1133,7 @@ const HRDashboard: React.FC = () => {
         
         return allItems.sort((a,b) => (a.priority ?? 99) - (b.priority ?? 99) || new Date(b.date).getTime() - new Date(a.date).getTime());
 
-    }, [user, isHR, pendingHrRequisitions, pendingResignations, pendingProfileChanges, pendingUserRegistrations, assignments, assignedTickets, checklists, templates, pendingBenefitRequests, incidentReports, evaluationSubmissions, evaluations, useSupabaseEvaluations, isUserEligibleEvaluator, pans, panApproverId, employeeProfileId]);
+    }, [user, isHR, memos, memoUpdateKey, pendingHrRequisitions, pendingResignations, pendingProfileChanges, pendingUserRegistrations, assignments, assignedTickets, checklists, templates, pendingBenefitRequests, incidentReports, evaluationSubmissions, evaluations, useSupabaseEvaluations, isUserEligibleEvaluator, pans, panApproverId, employeeProfileId]);
 
 
     return (
@@ -1004,6 +1179,14 @@ const HRDashboard: React.FC = () => {
                 {isHR && <UnassignedTicketsWidget />}
                 {isHR && <QuickAnalyticsPreview />}
             </div>
+
+            <MemoViewModal
+                isOpen={isMemoViewOpen}
+                onClose={() => setIsMemoViewOpen(false)}
+                memo={selectedMemo}
+                onAcknowledge={handleAcknowledgeMemo}
+                user={user}
+            />
 
             <ManpowerRequestModal
                 isOpen={isManpowerModalOpen}
