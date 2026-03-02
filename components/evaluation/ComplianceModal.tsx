@@ -11,23 +11,29 @@ interface ComplianceModalProps {
     dueDate: Date;
     missingUsers: { user: User; role?: string; subjectName?: string }[]; // Enhanced to show context for evaluations
     type: 'Survey' | 'Evaluation';
+    onRemindAll?: () => Promise<void> | void;
 }
 
 const ClockIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
 const MailIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>;
 
-const ComplianceModal: React.FC<ComplianceModalProps> = ({ isOpen, onClose, title, dueDate, missingUsers, type }) => {
+const ComplianceModal: React.FC<ComplianceModalProps> = ({ isOpen, onClose, title, dueDate, missingUsers, type, onRemindAll }) => {
     const [isReminding, setIsReminding] = useState(false);
     
     const isOverdue = new Date() > new Date(dueDate);
 
-    const handleRemindAll = () => {
+    const handleRemindAll = async () => {
         setIsReminding(true);
-        setTimeout(() => {
-            alert(`Reminders sent to ${missingUsers.length} users.`);
+        try {
+            if (onRemindAll) {
+                await onRemindAll();
+            } else {
+                alert(`Reminders sent to ${missingUsers.length} users.`);
+            }
+        } finally {
             setIsReminding(false);
             onClose();
-        }, 1000);
+        }
     };
 
     return (

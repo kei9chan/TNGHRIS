@@ -1052,6 +1052,19 @@ const BODDashboard: React.FC = () => {
             }));
         allItems.push(...evaluationNotifications);
 
+        const pulseSurveyNotifications = mockNotifications
+            .filter(n => notificationUserIds.has(n.userId) && !n.isRead && n.type === NotificationType.PULSE_SURVEY_REMINDER)
+            .map(item => ({
+                id: `notif-${item.id}`,
+                icon: <ClipboardCheckIcon {...iconProps} />,
+                title: item.title || "Pulse Survey Reminder",
+                subtitle: item.message,
+                date: new Date(item.createdAt).toLocaleDateString(),
+                link: item.link,
+                colorClass: "bg-blue-500"
+            }));
+        allItems.push(...pulseSurveyNotifications);
+
         const contractNotifications = mockNotifications
             .filter(
                 n =>
