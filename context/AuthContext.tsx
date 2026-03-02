@@ -336,44 +336,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         return userCandidate;
       }
 
-      console.warn(
-        '[Auth] signInWithPassword failed, will try legacy mockUsers fallback',
-        error
-      );
-
-      // 2) Legacy fallback – allow old mock users to still log in
-      const legacyUser = findMockUserByEmail(normalizedEmail);
-      if (legacyUser) {
-        console.log('[Auth] legacy user found, attempting to mirror into Supabase');
-
-        // Attempt to create a Supabase account for this mock user so future logins can be Supabase-first.
-        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-          email: normalizedEmail,
-          password: pass,
-          options: { data: { full_name: legacyUser.name } },
-        });
-
-        if (signUpError && (signUpError as any)?.code !== 'user_already_exists') {
-          console.warn('[Auth] Supabase signUp for legacy user failed', signUpError);
-        }
-
-        if (signUpData?.session?.user) {
-          console.log('[Auth] legacy user mirrored into Supabase with active session');
-          hydrateSupabaseUser(signUpData.session.user as SupabaseUser);
-          return mergeSupabaseWithLegacyMock(signUpData.session.user as SupabaseUser, legacyUser);
-        }
-
-        console.log(
-          '[Auth] using legacy mock user; Supabase account may need email confirmation before session starts'
-        );
-        setUser(legacyUser);
-        return legacyUser;
-      }
-
-      console.warn(
-        '[Auth] no Supabase user and no legacy mock user found for email',
-        email
-      );
+      console.warn('[Auth] signInWithPassword failed', error);
       throw new SupabaseAuthError(supabaseErrorMsg, supabaseErrorCode);
     } finally {
       setLoading(false);
