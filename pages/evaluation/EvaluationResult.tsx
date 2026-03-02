@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -7,7 +7,8 @@ import Modal from '../../components/ui/Modal';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { mockEvaluations, mockEvaluationSubmissions, mockUsers, mockEvaluationQuestions, mockBusinessUnits, mockDepartments } from '../../services/mockData';
-import { Evaluation, EvaluationSubmission, User, EvaluationQuestion, Role, Permission, EvaluatorType, EvaluatorConfig } from '../../types';
+import { Evaluation, EvaluationSubmission, User, EvaluationQuestion, Role, Permission, EvaluatorType, EvaluatorConfig, RaterGroup } from '../../types';
+import { supabase } from '../../services/supabaseClient';
 
 const ArrowLeftIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>;
 const ChevronDownIcon = ({ className }: { className?: string }) => <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 transition-transform ${className}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>;
@@ -20,9 +21,11 @@ interface BreakdownItemProps {
         totalRawScore: number;
         groupAverage: number;
     };
+    businessUnits: Array<{ id: string; name: string }>;
+    departments: Array<{ id: string; name: string }>;
 }
 
-const BreakdownItem: React.FC<BreakdownItemProps> = ({ item }) => {
+const BreakdownItem: React.FC<BreakdownItemProps> = ({ item, businessUnits, departments }) => {
     const [isOpen, setIsOpen] = useState(false);
 
     const renderConfigName = (config: EvaluatorConfig) => {
@@ -30,8 +33,12 @@ const BreakdownItem: React.FC<BreakdownItemProps> = ({ item }) => {
             const rater = mockUsers.find(u => u.id === config.userId);
             return rater ? `Individual: ${rater.name}` : 'Unknown Individual';
         } else {
-            const buName = mockBusinessUnits.find(b => b.id === config.groupFilter?.businessUnitId)?.name || 'All BUs';
-            const deptName = mockDepartments.find(d => d.id === config.groupFilter?.departmentId)?.name || 'All Depts';
+            const buName = businessUnits.find(b => b.id === config.groupFilter?.businessUnitId)?.name
+                || mockBusinessUnits.find(b => b.id === config.groupFilter?.businessUnitId)?.name
+                || 'All BUs';
+            const deptName = departments.find(d => d.id === config.groupFilter?.departmentId)?.name
+                || mockDepartments.find(d => d.id === config.groupFilter?.departmentId)?.name
+                || 'All Depts';
             const label = config.type === EvaluatorType.Group ? `Group Review` : 'Group';
             return `${label}: ${buName} - ${deptName}`;
         }
@@ -105,42 +112,294 @@ const EvaluationResult: React.FC = () => {
 
     const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
     const [selectedUserForDetails, setSelectedUserForDetails] = useState<User | null>(null);
+    const [evaluation, setEvaluation] = useState<Evaluation | null>(null);
+    const [submissions, setSubmissions] = useState<EvaluationSubmission[]>([]);
+    const [questions, setQuestions] = useState<EvaluationQuestion[]>([]);
+    const [targetUsers, setTargetUsers] = useState<User[]>([]);
+    const [businessUnits, setBusinessUnits] = useState<Array<{ id: string; name: string }>>(
+        mockBusinessUnits.map(b => ({ id: b.id, name: b.name }))
+    );
+    const [departments, setDepartments] = useState<Array<{ id: string; name: string }>>(
+        mockDepartments.map(d => ({ id: d.id, name: d.name }))
+    );
+    const [isLoading, setIsLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
+    const [isSupabaseEvaluation, setIsSupabaseEvaluation] = useState(false);
 
-    const evaluation = useMemo(() => mockEvaluations.find(e => e.id === evaluationId), [evaluationId]);
-    const submissions = useMemo(() => mockEvaluationSubmissions.filter(s => s.evaluationId === evaluationId), [evaluationId]);
-    const questions = useMemo(() => {
-        if (!evaluation) return [];
-        return mockEvaluationQuestions.filter(q => evaluation.questionSetIds.includes(q.questionSetId));
-    }, [evaluation]);
-    const targetUsers = useMemo(() => mockUsers.filter(u => evaluation?.targetEmployeeIds.includes(u.id)), [evaluation]);
-    
-    const [isEmployeeVisible, setIsEmployeeVisible] = useState(evaluation?.isEmployeeVisible || false);
-    const [hasAcknowledged, setHasAcknowledged] = useState(evaluation?.acknowledgedBy?.includes(user?.id || '') || false);
+    const [isEmployeeVisible, setIsEmployeeVisible] = useState(false);
+    const [hasAcknowledged, setHasAcknowledged] = useState(false);
 
-    const handleVisibilityToggle = () => {
+    useEffect(() => {
+        if (!evaluationId) return;
+        let active = true;
+        const loadEvaluation = async () => {
+            setIsLoading(true);
+            setLoadError(null);
+            try {
+                const { data: evalRow, error: evalErr } = await supabase
+                    .from('evaluations')
+                    .select('*')
+                    .eq('id', evaluationId)
+                    .maybeSingle();
+                if (evalErr) throw evalErr;
+
+                if (evalRow) {
+                    setIsSupabaseEvaluation(true);
+                    const { data: evalerRows, error: evalerErr } = await supabase
+                        .from('evaluation_evaluators')
+                        .select('evaluation_id, type, user_id, weight, business_unit_id, department_id, is_anonymous, exclude_subject')
+                        .eq('evaluation_id', evaluationId);
+                    if (evalerErr) throw evalerErr;
+
+                    const evaluators: EvaluatorConfig[] =
+                        (evalerRows || []).map((row: any) => {
+                            const normalizedType = String(row.type || '').toLowerCase();
+                            return {
+                                id: `${row.evaluation_id}-${row.user_id || 'group'}-${row.type || 'unknown'}`,
+                                type: normalizedType === 'group' ? EvaluatorType.Group : EvaluatorType.Individual,
+                                weight: row.weight || 0,
+                                userId: row.user_id || undefined,
+                                groupFilter: row.business_unit_id || row.department_id ? {
+                                    businessUnitId: row.business_unit_id || undefined,
+                                    departmentId: row.department_id || undefined,
+                                } : undefined,
+                                isAnonymous: !!row.is_anonymous,
+                                excludeSubject: row.exclude_subject ?? true,
+                            };
+                        }) || [];
+
+                    const mappedEvaluation: Evaluation = {
+                        id: evalRow.id,
+                        name: evalRow.name,
+                        timelineId: evalRow.timeline_id || '',
+                        targetBusinessUnitIds: evalRow.target_business_unit_ids || [],
+                        targetEmployeeIds: evalRow.target_employee_ids || [],
+                        questionSetIds: evalRow.question_set_ids || [],
+                        evaluators,
+                        status: evalRow.status || 'InProgress',
+                        createdAt: evalRow.created_at ? new Date(evalRow.created_at) : new Date(),
+                        dueDate: evalRow.due_date ? new Date(evalRow.due_date) : undefined,
+                        isEmployeeVisible: !!evalRow.is_employee_visible,
+                        acknowledgedBy: evalRow.acknowledged_by || [],
+                    };
+
+                    const questionSetIds = mappedEvaluation.questionSetIds || [];
+                    const targetIds = mappedEvaluation.targetEmployeeIds || [];
+
+                    const [
+                        submissionsRes,
+                        questionsRes,
+                        employeesRes,
+                        buRes,
+                        deptRes,
+                    ] = await Promise.all([
+                        supabase
+                            .from('evaluation_submissions')
+                            .select('*')
+                            .eq('evaluation_id', evaluationId),
+                        questionSetIds.length > 0
+                            ? supabase
+                                .from('evaluation_questions')
+                                .select('*')
+                                .in('question_set_id', questionSetIds)
+                            : Promise.resolve({ data: [], error: null }),
+                        targetIds.length > 0
+                            ? supabase
+                                .from('hris_users')
+                                .select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position')
+                                .in('id', targetIds)
+                            : Promise.resolve({ data: [], error: null }),
+                        supabase.from('business_units').select('id, name'),
+                        supabase.from('departments').select('id, name'),
+                    ]);
+
+                    if (submissionsRes.error) throw submissionsRes.error;
+                    if ((questionsRes as any).error) throw (questionsRes as any).error;
+                    if ((employeesRes as any).error) throw (employeesRes as any).error;
+                    if (buRes.error) throw buRes.error;
+                    if (deptRes.error) throw deptRes.error;
+
+                    const mappedSubmissions: EvaluationSubmission[] =
+                        (submissionsRes.data || []).map((row: any) => ({
+                            id: row.id,
+                            evaluationId: row.evaluation_id,
+                            subjectEmployeeId: row.subject_employee_id,
+                            raterId: row.rater_id,
+                            raterGroup: (row.rater_group as RaterGroup) || RaterGroup.DirectSupervisor,
+                            scores: row.scores || [],
+                            submittedAt: row.submitted_at ? new Date(row.submitted_at) : new Date(),
+                        })) || [];
+
+                    const mappedQuestions: EvaluationQuestion[] =
+                        ((questionsRes as any).data || []).map((q: any) => ({
+                            id: q.id,
+                            questionSetId: q.question_set_id,
+                            title: q.title,
+                            description: q.description || '',
+                            questionType: q.question_type,
+                            isArchived: !!q.is_archived,
+                            targetEmployeeLevels: q.target_employee_levels || [],
+                            targetEvaluatorRoles: q.target_evaluator_roles || [],
+                        })) || [];
+
+                    let mappedEmployees: User[] =
+                        ((employeesRes as any).data || []).map((u: any) => ({
+                            id: u.id,
+                            name: u.full_name || 'Unknown',
+                            email: u.email || '',
+                            role: u.role,
+                            department: u.department || '',
+                            businessUnit: u.business_unit || '',
+                            departmentId: u.department_id || undefined,
+                            businessUnitId: u.business_unit_id || undefined,
+                            status: u.status || 'Active',
+                            employmentStatus: undefined,
+                            isPhotoEnrolled: false,
+                            dateHired: new Date(),
+                            position: u.position || '',
+                            managerId: undefined,
+                            activeDeviceId: undefined,
+                            isGoogleConnected: false,
+                            profilePictureUrl: undefined,
+                            signatureUrl: undefined,
+                        } as User)) || [];
+
+                    if (mappedEmployees.length === 0 && targetIds.length > 0) {
+                        const { data: authRows, error: authErr } = await supabase
+                            .from('hris_users')
+                            .select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position, auth_user_id')
+                            .in('auth_user_id', targetIds);
+                        if (authErr) throw authErr;
+                        mappedEmployees = (authRows || []).map((u: any) => ({
+                            id: u.id,
+                            name: u.full_name || 'Unknown',
+                            email: u.email || '',
+                            role: u.role,
+                            department: u.department || '',
+                            businessUnit: u.business_unit || '',
+                            departmentId: u.department_id || undefined,
+                            businessUnitId: u.business_unit_id || undefined,
+                            status: u.status || 'Active',
+                            employmentStatus: undefined,
+                            isPhotoEnrolled: false,
+                            dateHired: new Date(),
+                            position: u.position || '',
+                            managerId: undefined,
+                            activeDeviceId: undefined,
+                            isGoogleConnected: false,
+                            profilePictureUrl: undefined,
+                            signatureUrl: undefined,
+                        } as User));
+                    }
+
+                    if (mappedEmployees.length === 0 && targetIds.length > 0) {
+                        mappedEmployees = targetIds.map(id => ({
+                            id,
+                            name: `Employee ${id.slice(0, 8)}`,
+                            email: '',
+                            role: Role.Employee,
+                            department: '',
+                            businessUnit: '',
+                            status: 'Active',
+                            employmentStatus: undefined,
+                            isPhotoEnrolled: false,
+                            dateHired: new Date(),
+                            position: '',
+                            managerId: undefined,
+                            activeDeviceId: undefined,
+                            isGoogleConnected: false,
+                            profilePictureUrl: undefined,
+                            signatureUrl: undefined,
+                        } as User));
+                    }
+
+                    if (!active) return;
+                    setEvaluation(mappedEvaluation);
+                    setSubmissions(mappedSubmissions);
+                    setQuestions(mappedQuestions.filter(q => !q.isArchived));
+                    setTargetUsers(mappedEmployees);
+                    setBusinessUnits((buRes.data || []).map((b: any) => ({ id: b.id, name: b.name || 'Unknown BU' })));
+                    setDepartments((deptRes.data || []).map((d: any) => ({ id: d.id, name: d.name || 'Unknown Dept' })));
+                    return;
+                }
+
+                const mockEval = mockEvaluations.find(e => e.id === evaluationId) || null;
+                if (!active) return;
+                setIsSupabaseEvaluation(false);
+                setEvaluation(mockEval);
+                setSubmissions(mockEvaluationSubmissions.filter(s => s.evaluationId === evaluationId));
+                setQuestions(
+                    mockEval
+                        ? mockEvaluationQuestions.filter(q => mockEval.questionSetIds.includes(q.questionSetId))
+                        : []
+                );
+                setTargetUsers(mockEval ? mockUsers.filter(u => mockEval.targetEmployeeIds.includes(u.id)) : []);
+                setBusinessUnits(mockBusinessUnits.map(b => ({ id: b.id, name: b.name })));
+                setDepartments(mockDepartments.map(d => ({ id: d.id, name: d.name })));
+            } catch (err) {
+                console.error('Failed to load evaluation results', err);
+                if (!active) return;
+                setLoadError('Failed to load evaluation results.');
+            } finally {
+                if (active) setIsLoading(false);
+            }
+        };
+        loadEvaluation();
+        return () => {
+            active = false;
+        };
+    }, [evaluationId]);
+
+    useEffect(() => {
+        setIsEmployeeVisible(!!evaluation?.isEmployeeVisible);
+        setHasAcknowledged(!!evaluation?.acknowledgedBy?.includes(user?.id || ''));
+    }, [evaluation?.isEmployeeVisible, evaluation?.acknowledgedBy, user?.id]);
+
+    const handleVisibilityToggle = async () => {
         const newValue = !isEmployeeVisible;
         setIsEmployeeVisible(newValue);
-        const index = mockEvaluations.findIndex(e => e.id === evaluationId);
-        if (index > -1) {
-            mockEvaluations[index].isEmployeeVisible = newValue;
+        if (!evaluation) return;
+        if (isSupabaseEvaluation) {
+            const { error } = await supabase
+                .from('evaluations')
+                .update({ is_employee_visible: newValue })
+                .eq('id', evaluation.id);
+            if (error) {
+                console.error('Failed to update evaluation visibility', error);
+            }
+        } else {
+            const index = mockEvaluations.findIndex(e => e.id === evaluationId);
+            if (index > -1) {
+                mockEvaluations[index].isEmployeeVisible = newValue;
+            }
         }
     };
 
-    const handleAcknowledge = () => {
+    const handleAcknowledge = async () => {
         if (!evaluation || !user) return;
         
-        const index = mockEvaluations.findIndex(e => e.id === evaluation.id);
-        if (index > -1) {
-            const updatedEval = { ...mockEvaluations[index] };
-            if (!updatedEval.acknowledgedBy) {
-                updatedEval.acknowledgedBy = [];
+        const currentAcknowledgedBy = evaluation.acknowledgedBy ? [...evaluation.acknowledgedBy] : [];
+        if (!currentAcknowledgedBy.includes(user.id)) {
+            currentAcknowledgedBy.push(user.id);
+        }
+        if (isSupabaseEvaluation) {
+            const { error } = await supabase
+                .from('evaluations')
+                .update({ acknowledged_by: currentAcknowledgedBy })
+                .eq('id', evaluation.id);
+            if (error) {
+                console.error('Failed to acknowledge evaluation', error);
+                return;
             }
-            if (!updatedEval.acknowledgedBy.includes(user.id)) {
-                updatedEval.acknowledgedBy.push(user.id);
+        } else {
+            const index = mockEvaluations.findIndex(e => e.id === evaluation.id);
+            if (index > -1) {
+                const updatedEval = { ...mockEvaluations[index], acknowledgedBy: currentAcknowledgedBy };
                 mockEvaluations[index] = updatedEval;
-                setHasAcknowledged(true);
             }
         }
+        setEvaluation(prev => prev ? { ...prev, acknowledgedBy: currentAcknowledgedBy } : prev);
+        setHasAcknowledged(true);
     };
     
     // --- PHASE 4: SCORING ENGINE ---
@@ -237,8 +496,9 @@ const EvaluationResult: React.FC = () => {
             return { user: employee, finalScore, breakdown, usedWeight };
         });
 
-        const overallAverage = employeeScores.length > 0 
-            ? employeeScores.reduce((sum, es) => sum + es.finalScore, 0) / employeeScores.length 
+        const scoredEmployees = employeeScores.filter(es => es.usedWeight > 0);
+        const overallAverage = scoredEmployees.length > 0
+            ? scoredEmployees.reduce((sum, es) => sum + es.finalScore, 0) / scoredEmployees.length
             : 0;
         
         const questionAverages: Record<string, number> = {};
@@ -250,10 +510,12 @@ const EvaluationResult: React.FC = () => {
             questionAverages[q.id] = avg;
         });
 
-        return { employeeScores, overallAverage, questionAverages };
+        return { employeeScores, overallAverage, overallAverageCount: scoredEmployees.length, questionAverages };
     }, [evaluation, submissions, targetUsers, questions]);
     
-    if (!evaluation || !user) return <div>Loading...</div>;
+    if (isLoading) return <div>Loading...</div>;
+    if (loadError) return <div>{loadError}</div>;
+    if (!evaluation || !user) return <div>Evaluation not found.</div>;
     
     const isAdminView = can('Evaluation', Permission.Manage);
     const isEvaluatedEmployee = evaluation.targetEmployeeIds.includes(user.id);
@@ -264,7 +526,9 @@ const EvaluationResult: React.FC = () => {
         <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <Card title="Completion">{submissions.length} Submissions</Card>
-                <Card title="Overall Average Score">{results.overallAverage.toFixed(2)} / 5.0</Card>
+                <Card title="Overall Average Score">
+                    {results.overallAverageCount > 0 ? `${results.overallAverage.toFixed(2)} / 5.0` : 'Pending'}
+                </Card>
                 <Card title="Participants">{targetUsers.length} Employees</Card>
             </div>
 
@@ -354,10 +618,10 @@ const EvaluationResult: React.FC = () => {
                      <h4 className="font-semibold mb-4 text-lg border-b pb-2 dark:border-gray-700">Performance Breakdown</h4>
                      <div className="space-y-4">
                          {myScores.breakdown.map(item => (
-                             <BreakdownItem key={item.config.id} item={item} />
-                         ))}
-                     </div>
-                 </div>
+                                     <BreakdownItem key={item.config.id} item={item} businessUnits={businessUnits} departments={departments} />
+                                 ))}
+                             </div>
+                         </div>
                  
                 {isEvaluatedEmployee && isEmployeeVisible && (
                     <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700 text-center">
@@ -422,8 +686,8 @@ const EvaluationResult: React.FC = () => {
                             
                             <div className="space-y-6">
                                 <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-200 border-b dark:border-gray-600 pb-2">Breakdown by Component</h4>
-                                {selectedEmployeeScores.breakdown.map(item => (
-                                    <BreakdownItem key={item.config.id} item={item} />
+                                 {selectedEmployeeScores.breakdown.map(item => (
+                                    <BreakdownItem key={item.config.id} item={item} businessUnits={businessUnits} departments={departments} />
                                 ))}
                             </div>
                         </div>
