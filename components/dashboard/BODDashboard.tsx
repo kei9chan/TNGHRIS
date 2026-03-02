@@ -6,7 +6,7 @@ import Card from '../ui/Card';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { mockResolutions, mockPANs, mockJobRequisitions, mockEvaluations, mockNotifications, mockEvaluationSubmissions, mockIncidentReports, mockTickets, mockEmployeeAwards, mockUsers, mockOnboardingChecklists, mockNTEs, mockAssetAssignments, mockManpowerRequests, mockOnboardingTemplates, mockBenefitRequests, mockEnvelopes, mockWFHRequests } from '../../services/mockData';
-import { ResolutionStatus, ApproverStatus, PANStatus, PANStepStatus, JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, NotificationType, TicketStatus, OnboardingTaskStatus, PANActionTaken, NTEStatus, PAN, Resolution, NTE, JobRequisition, EmployeeAward, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, BenefitRequestStatus, Envelope, EnvelopeStatus, RoutingStepStatus, WFHRequest, WFHRequestStatus, COETemplate, User, Role, Evaluation, EvaluatorType } from '../../types';
+import { ResolutionStatus, ApproverStatus, PANStatus, PANStepStatus, JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, NotificationType, TicketStatus, OnboardingTaskStatus, PANActionTaken, NTEStatus, PAN, Resolution, NTE, JobRequisition, EmployeeAward, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, BenefitRequestStatus, Envelope, EnvelopeStatus, RoutingStepStatus, WFHRequest, WFHRequestStatus, COETemplate, User, Role, Evaluation, EvaluatorType, Memo, MemoAcknowledgement } from '../../types';
 import QuickAnalyticsPreview from './QuickAnalyticsPreview';
 import ActionItemCard from './ActionItemCard';
 import UpcomingEventsWidget from './UpcomingEventsWidget';
@@ -18,6 +18,7 @@ import { logActivity } from '../../services/auditService';
 import { createCoeRequest, fetchCoeRequests, approveCoeRequest, rejectCoeRequest, fetchActiveCoeTemplates } from '../../services/coeService';
 import COEQueue from './COEQueue';
 import PrintableCOE from '../admin/PrintableCOE';
+import MemoViewModal from '../feedback/MemoViewModal';
 import { supabase } from '../../services/supabaseClient';
 
 const GavelIcon: React.FC<{className?: string}> = ({className}) => <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>;
@@ -76,6 +77,52 @@ const mapPanRow = (p: any): PAN => ({
     preparerSignatureUrl: p.preparer_signature_url || undefined,
 });
 
+const extractMemoBody = (row: any) => {
+    const candidates = ['body', 'content', 'html', 'memo_body', 'memoBody', 'body_text', 'bodyHtml'];
+    for (const key of candidates) {
+        const val = row?.[key];
+        if (typeof val === 'string' && val.trim().length > 0) return val as string;
+    }
+    return '';
+};
+
+const normalizeMemoSignatures = (raw: any): MemoAcknowledgement[] => {
+    if (!Array.isArray(raw)) return [];
+    return raw
+        .map((entry: any) => ({
+            userId: entry?.userId || entry?.user_id || '',
+            signatureDataUrl: entry?.signatureDataUrl || entry?.signature_data_url,
+            acknowledgedAt: entry?.acknowledgedAt
+                ? new Date(entry.acknowledgedAt)
+                : entry?.acknowledged_at
+                ? new Date(entry.acknowledged_at)
+                : undefined,
+        }))
+        .filter((entry: MemoAcknowledgement) => entry.userId);
+};
+
+const normalizeMemoTracker = (raw: any): string[] => {
+    if (!Array.isArray(raw)) return [];
+    return raw
+        .map((entry: any) => (typeof entry === 'string' ? entry : entry?.userId || entry?.user_id))
+        .filter(Boolean);
+};
+
+const mapMemoRow = (row: any): Memo => ({
+    id: row.id,
+    title: row.title,
+    body: extractMemoBody(row),
+    effectiveDate: row.effective_date ? new Date(row.effective_date) : new Date(),
+    targetDepartments: row.target_departments || [],
+    targetBusinessUnits: row.target_business_units || [],
+    acknowledgementRequired: row.acknowledgement_required ?? false,
+    tags: row.tags || [],
+    attachments: row.attachments || [],
+    acknowledgementTracker: normalizeMemoTracker(row.acknowledgement_tracker),
+    acknowledgementSignatures: normalizeMemoSignatures(row.acknowledgement_signatures),
+    status: row.status || 'Draft',
+});
+
 
 const BODDashboard: React.FC = () => {
     const { user } = useAuth();
@@ -106,6 +153,10 @@ const BODDashboard: React.FC = () => {
     const [coeTemplates, setCoeTemplates] = useState<COETemplate[]>([]);
     const [coeToPrint, setCoeToPrint] = useState<{ template: COETemplate, request: COERequest, employee: User } | null>(null);
     const [isLoadingCoe, setIsLoadingCoe] = useState(false);
+    const [memos, setMemos] = useState<Memo[]>([]);
+    const [selectedMemo, setSelectedMemo] = useState<Memo | null>(null);
+    const [isMemoViewOpen, setIsMemoViewOpen] = useState(false);
+    const [memoUpdateKey, setMemoUpdateKey] = useState(0);
 
     const [isManpowerReviewModalOpen, setIsManpowerReviewModalOpen] = useState(false);
     const [selectedManpowerRequest, setSelectedManpowerRequest] = useState<ManpowerRequest | null>(null);
@@ -278,6 +329,28 @@ const BODDashboard: React.FC = () => {
             clearInterval(interval);
         };
     }, [employeeProfileId, user?.id]);
+
+    useEffect(() => {
+        if (!user) return;
+        let active = true;
+        const loadMemos = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('memos')
+                    .select('*')
+                    .order('effective_date', { ascending: false });
+                if (!active) return;
+                if (error) throw error;
+                setMemos((data || []).map(mapMemoRow));
+            } catch (err) {
+                console.error('Failed to load memos', err);
+            }
+        };
+        loadMemos();
+        return () => {
+            active = false;
+        };
+    }, [user?.id, memoUpdateKey]);
 
     useEffect(() => {
         let active = true;
@@ -557,6 +630,67 @@ const BODDashboard: React.FC = () => {
         }
     };
 
+    const handleViewMemo = (memo: Memo) => {
+        setSelectedMemo(memo);
+        setIsMemoViewOpen(true);
+    };
+
+    const handleAcknowledgeMemo = async (memoId: string, signatureDataUrl: string) => {
+        if (!user) return;
+        const memo = memos.find(m => m.id === memoId);
+        if (!memo) return;
+        const tracker = (memo.acknowledgementTracker || [])
+            .map(entry => (typeof entry === 'string' ? entry : (entry as MemoAcknowledgement).userId))
+            .filter(Boolean);
+        if (tracker.includes(user.id)) return;
+
+        const newTracker = [...tracker, user.id];
+        const newSignatures = [
+            ...(memo.acknowledgementSignatures || []),
+            { userId: user.id, signatureDataUrl, acknowledgedAt: new Date() },
+        ];
+
+        try {
+            const { error } = await supabase
+                .from('memos')
+                .update({
+                    acknowledgement_tracker: newTracker,
+                    acknowledgement_signatures: newSignatures.map(sig => ({
+                        userId: sig.userId,
+                        signatureDataUrl: sig.signatureDataUrl,
+                        acknowledgedAt: sig.acknowledgedAt ? new Date(sig.acknowledgedAt).toISOString() : undefined,
+                    })),
+                })
+                .eq('id', memoId);
+            if (error) throw error;
+
+            setMemos(prev =>
+                prev.map(m =>
+                    m.id === memoId
+                        ? {
+                              ...m,
+                              acknowledgementTracker: newTracker,
+                              acknowledgementSignatures: newSignatures,
+                          }
+                        : m
+                )
+            );
+            setSelectedMemo(prev =>
+                prev && prev.id === memoId
+                    ? {
+                          ...prev,
+                          acknowledgementTracker: newTracker,
+                          acknowledgementSignatures: newSignatures,
+                      }
+                    : prev
+            );
+            setMemoUpdateKey(prev => prev + 1);
+        } catch (err) {
+            console.error('Failed to acknowledge memo', err);
+            alert('Failed to acknowledge the memo. Please try again.');
+        }
+    };
+
     const pendingBenefitRequests = useMemo(() => {
         return benefitRequests.filter(r => r.status === BenefitRequestStatus.PendingBOD);
     }, [benefitRequests]);
@@ -594,6 +728,47 @@ const BODDashboard: React.FC = () => {
                     priority: 1
                 });
             }
+        });
+
+        const hasAcknowledgedMemo = (memo: Memo) => {
+            const tracker = memo.acknowledgementTracker || [];
+            const tracked = tracker.some(entry => {
+                if (typeof entry === 'string') return entry === user.id;
+                if (entry && typeof entry === 'object') return (entry as MemoAcknowledgement).userId === user.id;
+                return false;
+            });
+            if (tracked) return true;
+            return (memo.acknowledgementSignatures || []).some(sig => sig.userId === user.id);
+        };
+
+        const isMemoTargeted = (memo: Memo) => {
+            const buTargets = memo.targetBusinessUnits || [];
+            const deptTargets = memo.targetDepartments || [];
+            const buOk = buTargets.length === 0 || buTargets.includes('All') || (user.businessUnit && buTargets.includes(user.businessUnit));
+            const deptOk = deptTargets.length === 0 || deptTargets.includes('All') || (user.department && deptTargets.includes(user.department));
+            return buOk && deptOk;
+        };
+
+        const pendingMemos = memos.filter(
+            memo =>
+                memo.status === 'Published' &&
+                memo.acknowledgementRequired &&
+                isMemoTargeted(memo) &&
+                !hasAcknowledgedMemo(memo)
+        );
+
+        pendingMemos.forEach(memo => {
+            allItems.push({
+                id: `memo-ack-${memo.id}`,
+                icon: <DocumentTextIcon {...iconProps} />,
+                title: "Memo Acknowledgement Required",
+                subtitle: memo.title,
+                date: new Date(memo.effectiveDate).toLocaleDateString(),
+                link: '#',
+                colorClass: 'bg-indigo-500',
+                priority: 0,
+                onClick: () => handleViewMemo(memo)
+            });
         });
         
         pendingBenefitRequests.forEach(req => {
@@ -996,7 +1171,7 @@ const BODDashboard: React.FC = () => {
              // Parse the date string back to a timestamp for correct sorting
              return new Date(b.date).getTime() - new Date(a.date).getTime();
         });
-    }, [user, pans, resolutions, ntes, requisitions, awards, assignments, assignedTickets, manpowerRequests, wfhRequests, checklists, templates, isManpowerReviewModalOpen, pendingBenefitRequests, envelopes, evaluationSubmissions, evaluations, useSupabaseEvaluations, isUserEligibleEvaluator, panApproverId, employeeProfileId]); 
+    }, [user, memos, memoUpdateKey, pans, resolutions, ntes, requisitions, awards, assignments, assignedTickets, manpowerRequests, wfhRequests, checklists, templates, isManpowerReviewModalOpen, pendingBenefitRequests, envelopes, evaluationSubmissions, evaluations, useSupabaseEvaluations, isUserEligibleEvaluator, panApproverId, employeeProfileId]); 
 
     return (
         <div className="space-y-6">
@@ -1061,6 +1236,14 @@ const BODDashboard: React.FC = () => {
             )}
             
             <QuickAnalyticsPreview />
+
+            <MemoViewModal
+                isOpen={isMemoViewOpen}
+                onClose={() => setIsMemoViewOpen(false)}
+                memo={selectedMemo}
+                onAcknowledge={handleAcknowledgeMemo}
+                user={user}
+            />
             
              <ManpowerReviewModal
                 isOpen={isManpowerReviewModalOpen}

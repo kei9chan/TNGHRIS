@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Memo, Permission } from '../../types';
+import { Memo, MemoAcknowledgement, Permission } from '../../types';
 import { mockBusinessUnits } from '../../services/mockData';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -63,6 +63,28 @@ const MemoLibrary: React.FC = () => {
         return fallback;
     };
 
+    const normalizeMemoTracker = (raw: any): string[] => {
+        if (!Array.isArray(raw)) return [];
+        return raw
+            .map((entry: any) => (typeof entry === 'string' ? entry : entry?.userId || entry?.user_id))
+            .filter(Boolean);
+    };
+
+    const normalizeMemoSignatures = (raw: any): MemoAcknowledgement[] => {
+        if (!Array.isArray(raw)) return [];
+        return raw
+            .map((entry: any) => ({
+                userId: entry?.userId || entry?.user_id || '',
+                signatureDataUrl: entry?.signatureDataUrl || entry?.signature_data_url,
+                acknowledgedAt: entry?.acknowledgedAt
+                    ? new Date(entry.acknowledgedAt)
+                    : entry?.acknowledged_at
+                    ? new Date(entry.acknowledged_at)
+                    : undefined,
+            }))
+            .filter((entry: MemoAcknowledgement) => entry.userId);
+    };
+
     const loadMemos = async () => {
         setLoading(true);
         try {
@@ -83,7 +105,8 @@ const MemoLibrary: React.FC = () => {
                 acknowledgementRequired: row.acknowledgement_required ?? false,
                 tags: row.tags || [],
                 attachments: row.attachments || [],
-                acknowledgementTracker: row.acknowledgement_tracker || [],
+                acknowledgementTracker: normalizeMemoTracker(row.acknowledgement_tracker),
+                acknowledgementSignatures: normalizeMemoSignatures(row.acknowledgement_signatures),
                 status: row.status || 'Draft',
                 };
             });
@@ -157,7 +180,8 @@ const MemoLibrary: React.FC = () => {
                     acknowledgementRequired: data.acknowledgement_required ?? false,
                     tags: data.tags || [],
                     attachments: data.attachments || [],
-                    acknowledgementTracker: data.acknowledgement_tracker || [],
+                    acknowledgementTracker: normalizeMemoTracker(data.acknowledgement_tracker),
+                    acknowledgementSignatures: normalizeMemoSignatures(data.acknowledgement_signatures),
                     status: data.status || 'Draft',
                 };
                 setSelectedMemo(hydrated);
@@ -182,7 +206,7 @@ const MemoLibrary: React.FC = () => {
         setSelectedMemo(null);
     };
 
-    const handleSaveMemo = async (memoToSave: Partial<Memo>) => {
+    const handleSaveMemo = async (memoToSave: Partial<Memo>, status: Memo['status']) => {
         if (!memoToSave.title || !memoToSave.body || !memoToSave.effectiveDate) {
             return;
         }
@@ -197,7 +221,8 @@ const MemoLibrary: React.FC = () => {
             tags: memoToSave.tags || [],
             attachments: memoToSave.attachments || [],
             acknowledgement_tracker: memoToSave.acknowledgementTracker || [],
-            status: memoToSave.status || 'Draft',
+            acknowledgement_signatures: memoToSave.acknowledgementSignatures || [],
+            status: status || memoToSave.status || 'Draft',
         };
 
         try {
@@ -231,7 +256,8 @@ const MemoLibrary: React.FC = () => {
                 acknowledgementRequired: saved.acknowledgement_required ?? false,
                 tags: saved.tags || [],
                 attachments: saved.attachments || [],
-                acknowledgementTracker: saved.acknowledgement_tracker || [],
+                acknowledgementTracker: normalizeMemoTracker(saved.acknowledgement_tracker),
+                acknowledgementSignatures: normalizeMemoSignatures(saved.acknowledgement_signatures),
                 status: saved.status || 'Draft',
             };
 

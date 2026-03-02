@@ -12,7 +12,7 @@ interface MemoModalProps {
   isOpen: boolean;
   onClose: () => void;
   memo: Memo | null;
-  onSave: (memo: Partial<Memo>) => void;
+  onSave: (memo: Partial<Memo>, status: Memo['status']) => void;
 }
 
 const MemoModal: React.FC<MemoModalProps> = ({ isOpen, onClose, memo, onSave }) => {
@@ -81,10 +81,9 @@ const MemoModal: React.FC<MemoModalProps> = ({ isOpen, onClose, memo, onSave }) 
   };
 
 
-  const handleSave = () => {
-    // Basic validation
+  const handleSave = (status: Memo['status']) => {
     if (currentMemo.title && currentMemo.body && currentMemo.effectiveDate) {
-      onSave(currentMemo as Memo);
+      onSave({ ...currentMemo, status } as Memo, status);
     }
   };
 
@@ -96,7 +95,8 @@ const MemoModal: React.FC<MemoModalProps> = ({ isOpen, onClose, memo, onSave }) 
       footer={
         <div className="flex justify-end w-full space-x-2">
             <Button variant="secondary" onClick={onClose}>Cancel</Button>
-            <Button onClick={handleSave}>{memo ? 'Save Changes' : 'Create Memo'}</Button>
+            <Button variant="secondary" onClick={() => handleSave('Draft')}>Save Draft</Button>
+            <Button onClick={() => handleSave('Published')}>Submit</Button>
         </div>
       }
     >

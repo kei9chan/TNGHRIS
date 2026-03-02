@@ -4,7 +4,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { mockUsers, mockChangeHistory, mockEmployeeDrafts } from '../../services/mockData';
-import { User, ChangeHistory, ChangeHistoryStatus, EmployeeDraft, EmployeeDraftStatus, Permission } from '../../types';
+import { Memo, MemoAcknowledgement, User, ChangeHistory, ChangeHistoryStatus, EmployeeDraft, EmployeeDraftStatus, Permission } from '../../types';
 import { logActivity } from '../../services/auditService';
 import { F_SELF_SERVICE_ENABLED } from '../../constants';
 import { db } from '../../services/db';
@@ -21,6 +21,9 @@ import UserDocumentsManager from '../../components/employees/UserDocumentsManage
 import LeaveBalancesCard from '../../components/employees/LeaveBalancesCard';
 import AchievementsCard from '../../components/employees/AchievementsCard';
 import EmployeeAssetsCard from '../../components/employees/EmployeeAssetsCard';
+import Card from '../../components/ui/Card';
+import MemoViewModal from '../../components/feedback/MemoViewModal';
+import Button from '../../components/ui/Button';
 
 const EmployeeProfile: React.FC = () => {
     const { employeeId } = useParams<{ employeeId: string }>();
@@ -34,6 +37,9 @@ const EmployeeProfile: React.FC = () => {
     const [drafts, setDrafts] = useState<EmployeeDraft[]>(mockEmployeeDrafts);
 
     const [isEditModalOpen, setEditModalOpen] = useState(false);
+    const [memos, setMemos] = useState<Memo[]>([]);
+    const [isMemoViewOpen, setIsMemoViewOpen] = useState(false);
+    const [selectedMemo, setSelectedMemo] = useState<Memo | null>(null);
 
     const mapHrisUser = (row: any): User => {
         const emergencyContact = row.emergency_contact
@@ -94,6 +100,52 @@ const EmployeeProfile: React.FC = () => {
         } as User;
     };
 
+    const extractMemoBody = (row: any) => {
+        const candidates = ['body', 'content', 'html', 'memo_body', 'memoBody', 'body_text', 'bodyHtml'];
+        for (const key of candidates) {
+            const val = row?.[key];
+            if (typeof val === 'string' && val.trim().length > 0) return val as string;
+        }
+        return '';
+    };
+
+    const normalizeMemoSignatures = (raw: any): MemoAcknowledgement[] => {
+        if (!Array.isArray(raw)) return [];
+        return raw
+            .map((entry: any) => ({
+                userId: entry?.userId || entry?.user_id || '',
+                signatureDataUrl: entry?.signatureDataUrl || entry?.signature_data_url,
+                acknowledgedAt: entry?.acknowledgedAt
+                    ? new Date(entry.acknowledgedAt)
+                    : entry?.acknowledged_at
+                    ? new Date(entry.acknowledged_at)
+                    : undefined,
+            }))
+            .filter((entry: MemoAcknowledgement) => entry.userId);
+    };
+
+    const normalizeMemoTracker = (raw: any): string[] => {
+        if (!Array.isArray(raw)) return [];
+        return raw
+            .map((entry: any) => (typeof entry === 'string' ? entry : entry?.userId || entry?.user_id))
+            .filter(Boolean);
+    };
+
+    const mapMemoRow = (row: any): Memo => ({
+        id: row.id,
+        title: row.title,
+        body: extractMemoBody(row),
+        effectiveDate: row.effective_date ? new Date(row.effective_date) : new Date(),
+        targetDepartments: row.target_departments || [],
+        targetBusinessUnits: row.target_business_units || [],
+        acknowledgementRequired: row.acknowledgement_required ?? false,
+        tags: row.tags || [],
+        attachments: row.attachments || [],
+        acknowledgementTracker: normalizeMemoTracker(row.acknowledgement_tracker),
+        acknowledgementSignatures: normalizeMemoSignatures(row.acknowledgement_signatures),
+        status: row.status || 'Draft',
+    });
+
     // Load user record from Supabase hris_users and merge into local state
     useEffect(() => {
         const loadUser = async () => {
@@ -121,6 +173,22 @@ const EmployeeProfile: React.FC = () => {
         };
         loadUser();
     }, [employeeId, currentUser]);
+
+    useEffect(() => {
+        const loadMemos = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('memos')
+                    .select('*')
+                    .order('effective_date', { ascending: false });
+                if (error) throw error;
+                setMemos((data || []).map(mapMemoRow));
+            } catch (err) {
+                console.warn('Failed to load memos', err);
+            }
+        };
+        loadMemos();
+    }, []);
 
     const userToView = useMemo(() => {
         const targetId = employeeId || currentUser?.id;
@@ -164,6 +232,23 @@ const EmployeeProfile: React.FC = () => {
         if (!userToView) return null;
         return drafts.find(d => d.employeeId === userToView.id && d.status !== EmployeeDraftStatus.Approved) || null;
     }, [userToView, drafts]);
+
+    const acknowledgedMemos = useMemo(() => {
+        if (!userToView) return [];
+        const hasAcknowledged = (memo: Memo) => {
+            const tracker = memo.acknowledgementTracker || [];
+            const tracked = tracker.some(entry => {
+                if (typeof entry === 'string') return entry === userToView.id;
+                if (entry && typeof entry === 'object') return (entry as MemoAcknowledgement).userId === userToView.id;
+                return false;
+            });
+            if (tracked) return true;
+            return (memo.acknowledgementSignatures || []).some(sig => sig.userId === userToView.id);
+        };
+        return memos
+            .filter(memo => memo.acknowledgementRequired && hasAcknowledged(memo))
+            .sort((a, b) => new Date(b.effectiveDate).getTime() - new Date(a.effectiveDate).getTime());
+    }, [memos, userToView]);
     
     useEffect(() => {
         if (!userToView && employeeId) { // Only redirect when an explicit employeeId was requested
@@ -340,6 +425,47 @@ const EmployeeProfile: React.FC = () => {
                 documentTypes={['Notice to Explain', 'Notice of Decision']}
             />
 
+            <Card title="Acknowledged Memos">
+                <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead className="bg-gray-50 dark:bg-gray-700">
+                            <tr>
+                                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Title</th>
+                                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Effective Date</th>
+                                <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Acknowledged At</th>
+                                <th scope="col" className="relative px-4 py-3"><span className="sr-only">Actions</span></th>
+                            </tr>
+                        </thead>
+                        <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                            {acknowledgedMemos.map(memo => {
+                                const ack = (memo.acknowledgementSignatures || []).find(sig => sig.userId === userToView.id);
+                                return (
+                                    <tr key={memo.id}>
+                                        <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{memo.title}</td>
+                                        <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{new Date(memo.effectiveDate).toLocaleDateString()}</td>
+                                        <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                            {ack?.acknowledgedAt ? new Date(ack.acknowledgedAt).toLocaleDateString() : '—'}
+                                        </td>
+                                        <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                            <Button size="sm" variant="secondary" onClick={() => { setSelectedMemo(memo); setIsMemoViewOpen(true); }}>
+                                                View
+                                            </Button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                            {acknowledgedMemos.length === 0 && (
+                                <tr>
+                                    <td colSpan={4} className="text-center py-6 text-gray-500 dark:text-gray-400">
+                                        No acknowledged memos found.
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </Card>
+
             <ChangeHistoryCard history={userHistory} />
             
             {isEditModalOpen && (
@@ -353,6 +479,12 @@ const EmployeeProfile: React.FC = () => {
                     isAdminEdit={canAdminEdit && !isMyProfile}
                 />
             )}
+
+            <MemoViewModal
+                isOpen={isMemoViewOpen}
+                onClose={() => setIsMemoViewOpen(false)}
+                memo={selectedMemo}
+            />
         </div>
     );
 };
