@@ -1,5 +1,6 @@
 
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 interface ModalProps {
   isOpen: boolean;
@@ -8,13 +9,14 @@ interface ModalProps {
   children: React.ReactNode;
   footer?: React.ReactNode;
   size?: 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl';
+  centered?: boolean;
 }
 
 const CloseIcon = () => (
     <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
 )
 
-const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer, size = '2xl' }) => {
+const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer, size = '2xl', centered = true }) => {
   useEffect(() => {
     const handleEsc = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -45,15 +47,15 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer,
       '5xl': 'max-w-5xl',
   }
 
-  return (
+  const modalContent = (
     <div 
-        className="fixed inset-0 z-[9999] flex items-start justify-center bg-black/60 backdrop-blur-sm p-4 sm:p-6 pt-10 sm:pt-12 overflow-hidden"
+        className={`fixed inset-0 z-[9999] flex justify-center bg-black/60 backdrop-blur-sm p-4 sm:p-6 overflow-hidden ${centered ? 'items-center' : 'items-start pt-10 sm:pt-12'}`}
         onClick={onClose}
     >
       <div 
         className={`
             bg-white dark:bg-slate-800 rounded-xl shadow-2xl 
-            w-full flex flex-col mt-4
+            w-full flex flex-col ${centered ? '' : 'mt-4'}
             ${sizeClasses[size]}
         `}
         onClick={(e) => e.stopPropagation()}
@@ -89,6 +91,12 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer,
       </div>
     </div>
   );
+
+  if (typeof document === 'undefined') {
+    return modalContent;
+  }
+
+  return createPortal(modalContent, document.body);
 };
 
 export default Modal;
