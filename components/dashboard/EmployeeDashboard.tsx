@@ -1650,6 +1650,9 @@ const EmployeeDashboard: React.FC = () => {
                     case NotificationType.EVALUATION_ASSIGNED:
                         details = { icon: <AcademicCapIcon {...iconProps} />, title: item.title || "Evaluation Assigned", colorClass: "bg-teal-500", priority: 1 };
                         break;
+                    case NotificationType.PULSE_SURVEY_REMINDER:
+                        details = { icon: <ClipboardCheckIcon {...iconProps} />, title: item.title || "Pulse Survey Reminder", colorClass: "bg-blue-500", priority: 0 };
+                        break;
                     case NotificationType.CONTRACT_SIGNATURE_REQUEST:
                         details = { icon: <PencilSquareIcon {...iconProps} />, title: "Contract Signature Required", colorClass: "bg-orange-500", priority: 0 };
                         break;

@@ -958,6 +958,12 @@ const HRDashboard: React.FC = () => {
                         title: notification.title || "Evaluation Assigned",
                         colorClass: "bg-teal-500"
                     };
+                case NotificationType.PULSE_SURVEY_REMINDER:
+                    return {
+                        icon: <ClipboardCheckIcon {...iconProps} />,
+                        title: notification.title || "Pulse Survey Reminder",
+                        colorClass: "bg-blue-500"
+                    };
                 default:
                      return {
                         icon: <DocumentTextIcon {...iconProps} />,

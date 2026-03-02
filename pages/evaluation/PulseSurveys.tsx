@@ -3,10 +3,11 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import { PulseSurvey, PulseSurveyStatus, Permission, User, Role } from '../../types';
+import { PulseSurvey, PulseSurveyStatus, Permission, User, Role, NotificationType } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
 import ComplianceModal from '../../components/evaluation/ComplianceModal';
 import { supabase } from '../../services/supabaseClient';
+import { mockNotifications } from '../../services/mockData';
 
 const PulseSurveys: React.FC = () => {
     const { can } = usePermissions();
@@ -62,6 +63,25 @@ const PulseSurveys: React.FC = () => {
         setMissingRespondents(missing);
         setSelectedSurveyForCompliance(survey);
         setIsComplianceModalOpen(true);
+    };
+
+    const handleRemindAll = () => {
+        if (!selectedSurveyForCompliance) return;
+        const createdAt = new Date();
+        missingRespondents.forEach(({ user }) => {
+            mockNotifications.unshift({
+                id: `notif-pulse-${selectedSurveyForCompliance.id}-${user.id}-${createdAt.getTime()}`,
+                userId: user.id,
+                type: NotificationType.PULSE_SURVEY_REMINDER,
+                title: 'Pulse Survey Reminder',
+                message: `Please complete the pulse survey "${selectedSurveyForCompliance.title}".`,
+                link: `/evaluation/pulse/take/${selectedSurveyForCompliance.id}`,
+                isRead: false,
+                createdAt,
+                relatedEntityId: selectedSurveyForCompliance.id,
+            });
+        });
+        alert(`Reminders sent to ${missingRespondents.length} employees.`);
     };
 
     useEffect(() => {
@@ -251,6 +271,7 @@ const PulseSurveys: React.FC = () => {
                     dueDate={selectedSurveyForCompliance.endDate || new Date()}
                     missingUsers={missingRespondents}
                     type="Survey"
+                    onRemindAll={handleRemindAll}
                 />
             )}
         </div>

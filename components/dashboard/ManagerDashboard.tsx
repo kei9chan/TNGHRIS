@@ -1363,6 +1363,20 @@ const ManagerDashboard: React.FC = () => {
             }));
         items.push(...evaluationNotifications);
 
+        const pulseSurveyNotifications = mockNotifications
+            .filter(n => notificationIds.has(n.userId) && !n.isRead && n.type === NotificationType.PULSE_SURVEY_REMINDER)
+            .map(item => ({
+                id: `pulse-notif-${item.id}`,
+                icon: <ClipboardCheckIcon {...iconProps} />,
+                title: item.title || 'Pulse Survey Reminder',
+                subtitle: item.message,
+                date: new Date(item.createdAt).toLocaleDateString(),
+                link: item.link,
+                colorClass: 'bg-blue-500',
+                priority: 0
+            }));
+        items.push(...pulseSurveyNotifications);
+
         const contractNotifications = mockNotifications
             .filter(
                 n =>
