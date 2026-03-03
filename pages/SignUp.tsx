@@ -35,6 +35,7 @@ const SignUp: React.FC = () => {
   const [lastName, setLastName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [birthDate, setBirthDate] = useState('');
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -53,6 +54,7 @@ const SignUp: React.FC = () => {
       !firstName.trim() ||
       !lastName.trim() ||
       !normalizedEmail ||
+      !birthDate ||
       !password ||
       !confirmPassword ||
       !formData.businessUnit ||
@@ -71,6 +73,9 @@ const SignUp: React.FC = () => {
       errors.email = 'Email is required.';
     } else if (!emailPattern.test(normalizedEmail)) {
       errors.email = 'Enter a valid email address.';
+    }
+    if (!birthDate) {
+      errors.birthDate = 'Birth date is required.';
     }
     if (!password) {
       errors.password = 'Password is required.';
@@ -301,6 +306,7 @@ const SignUp: React.FC = () => {
         department: formData.department || null,
         department_id: departmentId,
         position: formData.position || null,
+        birth_date: birthDate || null,
         date_hired: new Date().toISOString().slice(0, 10), // YYYY-MM-DD
 
         sss_no: formData.sssNo || null,
@@ -571,6 +577,25 @@ const SignUp: React.FC = () => {
                     />
                     {fieldErrors.lastName && <p className="mt-1 text-xs text-red-600">{fieldErrors.lastName}</p>}
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1.5">Birth Date</label>
+                  <input
+                    className="glass-input w-full px-4 py-3 rounded-xl text-gray-900"
+                    type="date"
+                    value={birthDate}
+                    onChange={e => {
+                      setBirthDate(e.target.value);
+                      setFieldErrors(prev => {
+                        const { birthDate: _removed, ...rest } = prev;
+                        return rest;
+                      });
+                    }}
+                    required
+                    aria-invalid={!!fieldErrors.birthDate}
+                  />
+                  {fieldErrors.birthDate && <p className="mt-1 text-xs text-red-600">{fieldErrors.birthDate}</p>}
                 </div>
 
                 <div>
