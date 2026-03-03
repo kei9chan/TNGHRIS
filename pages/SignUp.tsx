@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { User, Role } from '../types';
-import { mockBusinessUnits, mockDepartments } from '../services/mockData';
+import { mockBusinessUnits } from '../services/mockData';
 import { useAuth } from '../hooks/useAuth';
 import GoogleIcon from '../components/icons/GoogleIcon';
 import { supabase } from '../services/supabaseClient';
@@ -19,6 +19,177 @@ const FloatingIcon: React.FC<{ children: React.ReactNode; delay?: string; classN
     {children}
   </div>
 );
+
+const DEPARTMENTS_BY_BU: Record<string, string[]> = {
+  'Corporate': [
+    'Human Resource',
+    'Audit',
+    'Inventory',
+    'Purchasing',
+    'Marketing',
+    'Sales',
+    'Reservation',
+    'Operations',
+    'Finance',
+    'Admin',
+    'IT',
+  ],
+  'Corporate HQ': [
+    'Human Resource',
+    'Audit',
+    'Inventory',
+    'Purchasing',
+    'Marketing',
+    'Sales',
+    'Reservation',
+    'Operations',
+    'Finance',
+    'Admin',
+    'IT',
+  ],
+  'The Dessert Museum': [
+    'Human Resource',
+    'Audit',
+    'Inventory',
+    'Purchasing',
+    'Marketing',
+    'Sales',
+    'Reservation',
+    'Operations',
+    'Finance',
+    'Admin',
+    'IT',
+    'Operations - Dessert Attendant',
+    'Operations - Housekeeping',
+    'Operations - Photographers',
+    'Operations - Front Desk / Cashier',
+  ],
+  'Bakebe': [
+    'Human Resource',
+    'Audit',
+    'Inventory',
+    'Purchasing',
+    'Marketing',
+    'Sales',
+    'Reservation',
+    'Operations',
+    'Finance',
+    'Admin',
+    'IT',
+    'Operations - Baking Attendant',
+    'Operations - Housekeeping',
+    'Operations - Front Desk / Cashier',
+  ],
+  'Bakebe SM Aura': [
+    'Human Resource',
+    'Audit',
+    'Inventory',
+    'Purchasing',
+    'Marketing',
+    'Sales',
+    'Reservation',
+    'Operations',
+    'Finance',
+    'Admin',
+    'IT',
+    'Operations - Baking Attendant',
+    'Operations - Housekeeping',
+    'Operations - Front Desk / Cashier',
+  ],
+  'Gootopia': [
+    'Human Resource',
+    'Audit',
+    'Inventory',
+    'Purchasing',
+    'Marketing',
+    'Sales',
+    'Reservation',
+    'Operations',
+    'Finance',
+    'Admin',
+    'IT',
+    'Operations - Game Attendant',
+    'Operations - Housekeeping',
+    'Operations - Front Desk / Cashier',
+  ],
+  'Tiki Tents': [
+    'Human Resource',
+    'Audit',
+    'Inventory',
+    'Purchasing',
+    'Marketing',
+    'Sales',
+    'Reservation',
+    'Operations',
+    'Finance',
+    'Admin',
+    'IT',
+    'Operations - Game Attendant',
+    'Operations - Housekeeping',
+    'Operations - Front Desk / Cashier',
+  ],
+  'The Fun Roof': [
+    'Human Resource',
+    'Audit',
+    'Inventory',
+    'Purchasing',
+    'Marketing',
+    'Sales',
+    'Reservation',
+    'Operations',
+    'Finance',
+    'Admin',
+    'IT',
+    'Operations - Game Attendant',
+    'Operations - Housekeeping',
+    'Operations - Cashier',
+    'Operations - Bar',
+    'Operations - Kitchen',
+    'Operations - Dining',
+  ],
+  'Inflatable Island Beach Club': [
+    'Human Resource',
+    'Audit',
+    'Inventory',
+    'Purchasing',
+    'Marketing',
+    'Sales',
+    'Reservation',
+    'Operations',
+    'Finance',
+    'Admin',
+    'IT',
+    'Operations - Lifeguard',
+    'Operations - Housekeeping',
+    'Operations - Cashier',
+    'Operations - Bar',
+    'Operations - Kitchen',
+    'Operations - Dining',
+    'Operations - Beach Guide',
+    'Operations - Front Desk / Cashier',
+  ],
+  'Inflatable Island': [
+    'Human Resource',
+    'Audit',
+    'Inventory',
+    'Purchasing',
+    'Marketing',
+    'Sales',
+    'Reservation',
+    'Operations',
+    'Finance',
+    'Admin',
+    'IT',
+    'Operations - Lifeguard',
+    'Operations - Housekeeping',
+    'Operations - Cashier',
+    'Operations - Bar',
+    'Operations - Kitchen',
+    'Operations - Dining',
+    'Operations - Beach Guide',
+    'Operations - Front Desk / Cashier',
+  ],
+};
 
 const SignUp: React.FC = () => {
   const navigate = useNavigate();
@@ -43,6 +214,10 @@ const SignUp: React.FC = () => {
   const [hasCompletedStep1, setHasCompletedStep1] = useState(false);
   const [submitIntent, setSubmitIntent] = useState(false); // ensures submit only fires from the final button
   const roleOptions = Object.values(Role);
+  const departmentOptions = useMemo(() => {
+    if (!formData.businessUnit) return [];
+    return DEPARTMENTS_BY_BU[formData.businessUnit] || [];
+  }, [formData.businessUnit]);
 
   const normalizeEmail = (raw?: string) => (raw || '').trim().toLowerCase();
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -97,7 +272,7 @@ const SignUp: React.FC = () => {
     }
     if (!formData.department) {
       errors.department = 'Select a department.';
-    } else if (!mockDepartments.some(d => d.name === formData.department)) {
+    } else if (departmentOptions.length && !departmentOptions.includes(formData.department)) {
       errors.department = 'Choose a valid department.';
     }
     if (!formData.role) {
@@ -150,10 +325,17 @@ const SignUp: React.FC = () => {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: name === 'email' ? normalizeEmail(value) : value,
-    }));
+    setFormData(prev => {
+      const nextValue = name === 'email' ? normalizeEmail(value) : value;
+      const next = { ...prev, [name]: nextValue };
+      if (name === 'businessUnit') {
+        const nextDepartments = DEPARTMENTS_BY_BU[nextValue] || [];
+        if (next.department && !nextDepartments.includes(next.department)) {
+          next.department = '';
+        }
+      }
+      return next;
+    });
     setFieldErrors(prev => {
       const { [name]: _removed, general: _g, ...rest } = prev;
       return rest;
@@ -688,10 +870,12 @@ const SignUp: React.FC = () => {
                         className="glass-input w-full px-4 py-3 rounded-xl text-gray-900 appearance-none cursor-pointer"
                         aria-invalid={!!fieldErrors.department}
                       >
-                        <option value="">Select...</option>
-                        {mockDepartments.map(d => (
-                          <option key={d.id} value={d.name}>
-                            {d.name}
+                        <option value="">
+                          {formData.businessUnit ? 'Select...' : 'Select business unit first'}
+                        </option>
+                        {departmentOptions.map(dept => (
+                          <option key={dept} value={dept}>
+                            {dept}
                           </option>
                         ))}
                       </select>
