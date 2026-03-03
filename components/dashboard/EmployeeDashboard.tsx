@@ -272,6 +272,7 @@ const EmployeeDashboard: React.FC = () => {
     const [showConfetti, setShowConfetti] = useState(false);
     
     const [toastInfo, setToastInfo] = useState<{ show: boolean, title: string, message: string, icon?: React.ReactNode }>({ show: false, title: '', message: '' });
+    const [supabaseNotifications, setSupabaseNotifications] = useState<Notification[]>([]);
     const [requests, setRequests] = useState<AssetRequest[]>(mockAssetRequests);
     // New state for asset polling
     const [assignments, setAssignments] = useState(mockAssetAssignments);
@@ -416,6 +417,43 @@ const EmployeeDashboard: React.FC = () => {
             }
         };
         loadAssignments();
+        return () => {
+            active = false;
+        };
+    }, [employeeProfileId]);
+
+    useEffect(() => {
+        if (!employeeProfileId) return;
+        let active = true;
+        const loadNotifications = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('notifications')
+                    .select('id, user_id, type, title, message, link, is_read, created_at, related_entity_id')
+                    .eq('user_id', employeeProfileId)
+                    .order('created_at', { ascending: false });
+                if (error) throw error;
+                if (!active) return;
+                const mapped: Notification[] = (data || []).map((row: any) => ({
+                    id: row.id,
+                    userId: row.user_id,
+                    type: row.type as NotificationType,
+                    title: row.title || undefined,
+                    message: row.message || '',
+                    link: row.link || '',
+                    isRead: !!row.is_read,
+                    createdAt: row.created_at ? new Date(row.created_at) : new Date(),
+                    relatedEntityId: row.related_entity_id || '',
+                }));
+                setSupabaseNotifications(mapped);
+            } catch (err) {
+                console.warn('Failed to load notifications from Supabase', err);
+                if (active) {
+                    setSupabaseNotifications([]);
+                }
+            }
+        };
+        loadNotifications();
         return () => {
             active = false;
         };
@@ -1586,7 +1624,8 @@ const EmployeeDashboard: React.FC = () => {
         });
 
 
-        const myNotifications = mockNotifications
+        const notificationSource = supabaseNotifications.length > 0 ? supabaseNotifications : mockNotifications;
+        const myNotifications = notificationSource
             .filter(n => n.userId && notificationUserIds.has(n.userId) && !n.isRead)
             .map(item => {
                 let details;

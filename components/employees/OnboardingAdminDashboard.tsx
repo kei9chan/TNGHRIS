@@ -27,7 +27,11 @@ const OnboardingAdminDashboard: React.FC<OnboardingAdminDashboardProps> = ({ che
     const calculateProgress = (checklist: OnboardingChecklist) => {
         const total = checklist.tasks.reduce((sum, task) => sum + (task.points || 0), 0);
         const completed = checklist.tasks
-            .filter(task => task.status === OnboardingTaskStatus.Completed)
+            .filter(
+                task =>
+                    task.status === OnboardingTaskStatus.Completed ||
+                    task.status === OnboardingTaskStatus.PendingApproval
+            )
             .reduce((sum, task) => sum + (task.points || 0), 0);
         return total > 0 ? (completed / total) * 100 : 0;
     };
@@ -153,7 +157,7 @@ const OnboardingAdminDashboard: React.FC<OnboardingAdminDashboardProps> = ({ che
                         <ProgressBar progress={checklist.progress} />
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <OnboardingStatusBadge status={checklist.status === 'Completed' ? OnboardingTaskStatus.Completed : OnboardingTaskStatus.Pending} />
+                        <OnboardingStatusBadge status={checklist.status || 'InProgress'} />
                     </td>
                      <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
                         {checklist.overdueCount > 0 ? (

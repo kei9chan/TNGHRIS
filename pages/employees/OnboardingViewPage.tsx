@@ -1,12 +1,15 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import AssignedOnboardingChecklist from '../../components/employees/AssignedOnboardingChecklist';
 import Card from '../../components/ui/Card';
+import Modal from '../../components/ui/Modal';
+import Button from '../../components/ui/Button';
+import Textarea from '../../components/ui/Textarea';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { supabase } from '../../services/supabaseClient';
-import { OnboardingChecklist, OnboardingTask, OnboardingTaskStatus, Role, User } from '../../types';
-import { mockOnboardingChecklists, mockOnboardingTemplates, mockUsers } from '../../services/mockData';
+import { OnboardingChecklist, OnboardingTask, OnboardingTaskStatus, Role, User, NotificationType } from '../../types';
+import { mockOnboardingChecklists, mockOnboardingTemplates, mockUsers, mockNotifications } from '../../services/mockData';
 
 const ArrowLeftIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>;
 
@@ -15,11 +18,20 @@ const OnboardingViewPage: React.FC = () => {
     const { user } = useAuth();
     const { getVisibleEmployeeIds } = usePermissions();
     const navigate = useNavigate();
+    const location = useLocation();
 
     const [checklist, setChecklist] = useState<OnboardingChecklist | null>(null);
     const [employee, setEmployee] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
     const [notFound, setNotFound] = useState(false);
+    const [isApprovalModalOpen, setIsApprovalModalOpen] = useState(false);
+    const [rejectionReason, setRejectionReason] = useState('');
+    const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
+    const isReviewer =
+        user?.role === Role.Admin ||
+        user?.role === Role.HRManager ||
+        user?.role === Role.HRStaff;
 
     useEffect(() => {
         const load = async () => {
@@ -27,7 +39,7 @@ const OnboardingViewPage: React.FC = () => {
             try {
                 const { data: checklistRows, error: checklistError } = await supabase
                     .from('onboarding_checklists')
-                    .select('id, employee_id, template_id, status, created_at, start_date')
+                    .select('id, employee_id, template_id, status, created_at, start_date, tasks')
                     .eq('id', checklistId)
                     .limit(1);
 
@@ -61,8 +73,42 @@ const OnboardingViewPage: React.FC = () => {
                     return;
                 }
 
+                const normalizeStoredTasks = (rawTasks: any[]): OnboardingTask[] =>
+                    rawTasks.map((task: any) => {
+                        const completedAt = task.completedAt ? new Date(task.completedAt) : undefined;
+                        const submittedAt = task.submittedAt ? new Date(task.submittedAt) : undefined;
+                        let status = task.status as OnboardingTaskStatus;
+                        if (submittedAt && status === OnboardingTaskStatus.Pending) {
+                            status = OnboardingTaskStatus.PendingApproval;
+                        }
+                        if (completedAt && status === OnboardingTaskStatus.Pending) {
+                            status = task.requiresApproval ? OnboardingTaskStatus.PendingApproval : OnboardingTaskStatus.Completed;
+                        }
+                        return {
+                            ...task,
+                            status,
+                            dueDate: task.dueDate ? new Date(task.dueDate) : new Date(),
+                            completedAt,
+                            submittedAt,
+                        };
+                    });
+
+                const parseStoredTasks = (raw: unknown): OnboardingTask[] => {
+                    if (!raw) return [];
+                    if (Array.isArray(raw)) return normalizeStoredTasks(raw);
+                    if (typeof raw === 'string') {
+                        try {
+                            const parsed = JSON.parse(raw);
+                            return Array.isArray(parsed) ? normalizeStoredTasks(parsed) : [];
+                        } catch {
+                            return [];
+                        }
+                    }
+                    return [];
+                };
+
                 const startDate = row?.start_date ? new Date(row.start_date) : new Date();
-                const tasks: OnboardingTask[] =
+                const templateTasks: OnboardingTask[] =
                     Array.isArray(tmpl.tasks) && tmpl.tasks.length
                         ? tmpl.tasks.map((t: any, idx: number) => {
                               const due = new Date(startDate);
@@ -85,16 +131,136 @@ const OnboardingViewPage: React.FC = () => {
                                   assetDescription: t.assetDescription,
                               } as OnboardingTask;
                           })
-                        : fallbackChecklist?.tasks || [];
+                        : [];
 
-                setChecklist({
+                const storedTasks = parseStoredTasks((row as any)?.tasks);
+                const tasks: OnboardingTask[] =
+                    storedTasks.length > 0
+                        ? storedTasks
+                        : templateTasks.length > 0
+                            ? templateTasks
+                            : fallbackChecklist?.tasks || [];
+
+                const resolvedChecklist: OnboardingChecklist = {
                     id: row?.id || fallbackChecklist?.id || '',
                     employeeId: employeeId || '',
                     templateId: templateId || '',
                     status: (row?.status as any) || fallbackChecklist?.status || 'InProgress',
                     createdAt: row?.created_at ? new Date(row.created_at) : fallbackChecklist?.createdAt || new Date(),
                     tasks,
-                });
+                };
+
+                setChecklist(resolvedChecklist);
+
+                const pendingTasks = resolvedChecklist.tasks.filter(
+                    t => t.status === OnboardingTaskStatus.Pending
+                );
+                const allNonPendingComplete = resolvedChecklist.tasks
+                    .filter(t => t.status !== OnboardingTaskStatus.Pending)
+                    .every(
+                        t =>
+                            t.status === OnboardingTaskStatus.Completed ||
+                            t.status === OnboardingTaskStatus.PendingApproval
+                    );
+                const lastPendingIndex =
+                    pendingTasks.length === 1
+                        ? resolvedChecklist.tasks.findIndex(t => t.id === pendingTasks[0].id)
+                        : -1;
+                const shouldPromotePending =
+                    pendingTasks.length === 1 &&
+                    lastPendingIndex === resolvedChecklist.tasks.length - 1 &&
+                    allNonPendingComplete &&
+                    resolvedChecklist.status !== 'Pending Approval' &&
+                    resolvedChecklist.status !== 'Approved';
+
+                if (shouldPromotePending) {
+                    const promotedTasks = resolvedChecklist.tasks.map(task => {
+                        if (task.status !== OnboardingTaskStatus.Pending) return task;
+                        return {
+                            ...task,
+                            status: OnboardingTaskStatus.PendingApproval,
+                            completedAt: task.completedAt || new Date(),
+                            submittedAt: task.submittedAt || new Date(),
+                        };
+                    });
+                    await supabase
+                        .from('onboarding_checklists')
+                        .update({
+                            tasks: promotedTasks.map(task => ({
+                                ...task,
+                                dueDate: task.dueDate ? new Date(task.dueDate).toISOString() : null,
+                                completedAt: task.completedAt ? new Date(task.completedAt).toISOString() : null,
+                                submittedAt: task.submittedAt ? new Date(task.submittedAt).toISOString() : null,
+                            })),
+                            status: 'Pending Approval',
+                        })
+                        .eq('id', resolvedChecklist.id);
+
+                    setChecklist(prev =>
+                        prev ? { ...prev, tasks: promotedTasks, status: 'Pending Approval' } : prev
+                    );
+
+                    const templateType =
+                        templateRows?.[0]?.template_type || fallbackChecklist?.templateType || 'Onboarding';
+                    const notificationType =
+                        templateType === 'Offboarding'
+                            ? NotificationType.OFFBOARDING_ASSIGNED
+                            : NotificationType.ONBOARDING_ASSIGNED;
+                    const approvalTitle =
+                        templateType === 'Offboarding'
+                            ? 'Offboarding Checklist Ready'
+                            : 'Onboarding Checklist Ready';
+                    const approvalMessage = `${templateType} checklist is ready for approval.`;
+                    const { data: hrRows } = await supabase
+                        .from('hris_users')
+                        .select('id')
+                        .in('role', [Role.HRManager, Role.HRStaff, Role.Admin]);
+
+                    const createdAt = new Date();
+                    const notificationRows: Array<{
+                        id: string;
+                        user_id: string;
+                        type: NotificationType;
+                        title: string;
+                        message: string;
+                        link: string;
+                        is_read: boolean;
+                        created_at: string;
+                        related_entity_id: string;
+                    }> = [];
+
+                    (hrRows || []).forEach((hr: any) => {
+                        mockNotifications.unshift({
+                            id: `notif-onboard-approval-${resolvedChecklist.id}-${hr.id}-${createdAt.getTime()}`,
+                            userId: hr.id,
+                            type: notificationType,
+                            title: approvalTitle,
+                            message: approvalMessage,
+                            link: `/employees/onboarding/view/${resolvedChecklist.id}?approve=1`,
+                            isRead: false,
+                            createdAt,
+                            relatedEntityId: resolvedChecklist.id,
+                        });
+                        notificationRows.push({
+                            id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${hr.id}`,
+                            user_id: hr.id,
+                            type: notificationType,
+                            title: approvalTitle,
+                            message: approvalMessage,
+                            link: `/employees/onboarding/view/${resolvedChecklist.id}?approve=1`,
+                            is_read: false,
+                            created_at: createdAt.toISOString(),
+                            related_entity_id: resolvedChecklist.id,
+                        });
+                    });
+                    if (notificationRows.length > 0) {
+                        try {
+                            await supabase.from('notifications').insert(notificationRows);
+                        } catch (err) {
+                            console.warn('Failed to persist HR notifications', err);
+                        }
+                    }
+                }
 
                 setEmployee({
                     id: emp.id,
@@ -126,6 +292,16 @@ const OnboardingViewPage: React.FC = () => {
     }, [checklistId, user]);
 
     useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const wantsApprove = params.get('approve') === '1';
+        if (wantsApprove && isReviewer && checklist?.status === 'Pending Approval') {
+            setIsApprovalModalOpen(true);
+            return;
+        }
+        setIsApprovalModalOpen(false);
+    }, [location.search, isReviewer, checklist?.status]);
+
+    useEffect(() => {
         if (user && employee) {
             const visibleIds = getVisibleEmployeeIds();
             if (!visibleIds.includes(employee.id)) {
@@ -153,8 +329,27 @@ const OnboardingViewPage: React.FC = () => {
         );
     }
     
-    // In a view-only mode, status updates do nothing
     const handleDummyUpdate = () => {};
+
+    const handleChecklistStatusUpdate = async (status: 'Approved' | 'Rejected') => {
+        if (!checklistId || !checklist) return;
+        setIsUpdatingStatus(true);
+        try {
+            const { error } = await supabase
+                .from('onboarding_checklists')
+                .update({ status })
+                .eq('id', checklistId);
+            if (error) throw error;
+            setChecklist(prev => (prev ? { ...prev, status } : prev));
+            setIsApprovalModalOpen(false);
+            setRejectionReason('');
+        } catch (err) {
+            console.error('Failed to update checklist status', err);
+            alert('Failed to update checklist status. Please try again.');
+        } finally {
+            setIsUpdatingStatus(false);
+        }
+    };
 
     return (
         <div className="space-y-6">
@@ -163,13 +358,54 @@ const OnboardingViewPage: React.FC = () => {
                     <ArrowLeftIcon />
                     Back to Onboarding Dashboard
                 </Link>
-                <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Onboarding Progress for {employee.name}</h1>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Onboarding Progress for {employee.name}</h1>
+                    {isReviewer && checklist.status === 'Pending Approval' && (
+                        <Button onClick={() => setIsApprovalModalOpen(true)}>
+                            Review Checklist
+                        </Button>
+                    )}
+                </div>
             </div>
             <AssignedOnboardingChecklist 
                 checklist={checklist} 
                 currentUser={employee} 
                 onUpdateTaskStatus={handleDummyUpdate}
             />
+            {isReviewer && (
+                <Modal
+                    isOpen={isApprovalModalOpen}
+                    onClose={() => setIsApprovalModalOpen(false)}
+                    title="Review Checklist"
+                >
+                    <div className="space-y-4">
+                        <p className="text-sm text-gray-600 dark:text-gray-300">
+                            Approve this checklist if all tasks are verified. Reject if changes are required.
+                        </p>
+                        <Textarea
+                            label="Rejection Reason (optional)"
+                            value={rejectionReason}
+                            onChange={(e) => setRejectionReason(e.target.value)}
+                            placeholder="Add a reason for rejection..."
+                        />
+                        <div className="flex justify-end gap-2">
+                            <Button
+                                variant="secondary"
+                                onClick={() => handleChecklistStatusUpdate('Rejected')}
+                                isLoading={isUpdatingStatus}
+                            >
+                                Reject
+                            </Button>
+                            <Button
+                                onClick={() => handleChecklistStatusUpdate('Approved')}
+                                isLoading={isUpdatingStatus}
+                            >
+                                Approve
+                            </Button>
+                        </div>
+                    </div>
+                </Modal>
+            )}
         </div>
     );
 };
