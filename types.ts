@@ -1909,7 +1909,7 @@ export interface OnboardingChecklist {
   employeeId: string;
   templateId: string;
   createdAt: Date;
-  status: 'InProgress' | 'Completed';
+  status: 'InProgress' | 'Pending' | 'Pending Approval' | 'Approved' | 'Rejected' | 'Completed';
   tasks: OnboardingTask[];
   signatureName?: string;
   signatureDataUrl?: string;

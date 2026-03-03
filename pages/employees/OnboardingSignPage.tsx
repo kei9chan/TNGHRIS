@@ -31,7 +31,7 @@ const OnboardingSignPage: React.FC = () => {
             try {
                 const { data: checklistRows, error: checklistError } = await supabase
                     .from('onboarding_checklists')
-                    .select('id, employee_id, template_id, status, created_at, start_date')
+                    .select('id, employee_id, template_id, status, created_at, start_date, tasks')
                     .eq('id', checklistId)
                     .limit(1);
                 if (checklistError) throw checklistError;
@@ -57,8 +57,28 @@ const OnboardingSignPage: React.FC = () => {
                       }
                     : undefined;
 
+                const normalizeStoredTasks = (rawTasks: any[]): OnboardingTask[] =>
+                    rawTasks.map((task: any) => {
+                        const completedAt = task.completedAt ? new Date(task.completedAt) : undefined;
+                        const submittedAt = task.submittedAt ? new Date(task.submittedAt) : undefined;
+                        let status = task.status as OnboardingTaskStatus;
+                        if (submittedAt && status === OnboardingTaskStatus.Pending) {
+                            status = OnboardingTaskStatus.PendingApproval;
+                        }
+                        if (completedAt && status === OnboardingTaskStatus.Pending) {
+                            status = task.requiresApproval ? OnboardingTaskStatus.PendingApproval : OnboardingTaskStatus.Completed;
+                        }
+                        return {
+                            ...task,
+                            status,
+                            dueDate: task.dueDate ? new Date(task.dueDate) : new Date(),
+                            completedAt,
+                            submittedAt,
+                        };
+                    });
+
                 const startDate = row.start_date ? new Date(row.start_date) : new Date();
-                const tasks: OnboardingTask[] = (template?.tasks || []).map((taskTemplate: any) => {
+                const templateTasks: OnboardingTask[] = (template?.tasks || []).map((taskTemplate: any) => {
                     const templateTaskId = taskTemplate.id || taskTemplate.name;
                     let ownerUserId = '';
                     if (taskTemplate.ownerUserId) {
@@ -96,6 +116,11 @@ const OnboardingSignPage: React.FC = () => {
                     } as OnboardingTask;
                 });
 
+                const tasks: OnboardingTask[] =
+                    Array.isArray((row as any).tasks) && (row as any).tasks.length > 0
+                        ? normalizeStoredTasks((row as any).tasks)
+                        : templateTasks;
+
                 if (active) {
                     setChecklist({
                         id: row.id,
@@ -126,6 +151,24 @@ const OnboardingSignPage: React.FC = () => {
 
     if (!checklist) {
         return <div className="p-4">Onboarding checklist not found.</div>;
+    }
+    if (checklist.status !== 'Approved' && checklist.status !== 'Completed') {
+        return (
+            <div className="p-4">
+                <Card>
+                    <div className="text-center py-8">
+                        <h2 className="text-xl font-semibold">Checklist Pending Approval</h2>
+                        <p className="mt-2 text-gray-600 dark:text-gray-400">
+                            Your checklist is awaiting HR/admin approval before you can sign.
+                        </p>
+                        <Link to="/employees/onboarding" className="mt-4 inline-flex items-center text-indigo-600 hover:text-indigo-800">
+                            <ArrowLeftIcon />
+                            Back to Onboarding
+                        </Link>
+                    </div>
+                </Card>
+            </div>
+        );
     }
 
     const handleAcceptAndSign = () => {

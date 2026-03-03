@@ -23,14 +23,21 @@ const AssignedOnboardingChecklist: React.FC<AssignedOnboardingChecklistProps> = 
         let completed = 0;
         let total = 0;
         checklist.tasks.forEach(task => {
-            if (task.status === OnboardingTaskStatus.Completed) {
+            if (
+                task.status === OnboardingTaskStatus.Completed ||
+                task.status === OnboardingTaskStatus.PendingApproval
+            ) {
                 completed += task.points || 0;
             }
             total += task.points || 0;
         });
 
         const calculatedProgress = total > 0 ? (completed / total) * 100 : 0;
-        const allCompleted = checklist.tasks.every(t => t.status === OnboardingTaskStatus.Completed);
+        const allCompleted = checklist.tasks.every(
+            t =>
+                t.status === OnboardingTaskStatus.Completed ||
+                t.status === OnboardingTaskStatus.PendingApproval
+        );
         
         return { progress: calculatedProgress, completedPoints: completed, totalPoints: total, allTasksCompleted: allCompleted };
     }, [checklist]);
@@ -59,29 +66,40 @@ const AssignedOnboardingChecklist: React.FC<AssignedOnboardingChecklistProps> = 
                     </div>
                 </div>
                 <ul className="divide-y divide-gray-200 dark:divide-gray-700">
-                    {checklist.tasks.map(task => (
-                         <li key={task.id} className="py-3 flex justify-between items-center">
-                            <div>
-                                <p className={`font-medium ${task.status === 'Completed' ? 'line-through text-gray-500' : 'text-gray-900 dark:text-white'}`}>{task.name}</p>
-                                <p className="text-sm text-gray-500 dark:text-gray-400">{task.points} points - Due: {new Date(task.dueDate).toLocaleDateString()}</p>
-                            </div>
-                            <div className="flex items-center space-x-4">
-                                <OnboardingStatusBadge status={task.status} />
-                                <Link to={`/employees/onboarding/task/${task.id}`}>
-                                    <Button size="sm" variant="secondary">
-                                        {task.status === 'Completed' ? 'View' : 'Start'}
-                                    </Button>
-                                </Link>
-                            </div>
-                         </li>
-                    ))}
+                    {checklist.tasks.map(task => {
+                        const isDone =
+                            task.status === OnboardingTaskStatus.Completed ||
+                            task.status === OnboardingTaskStatus.PendingApproval;
+                        const displayStatus =
+                            checklist.status === 'Pending Approval' &&
+                            task.status === OnboardingTaskStatus.Completed
+                                ? OnboardingTaskStatus.PendingApproval
+                                : task.status;
+
+                        return (
+                            <li key={task.id} className="py-3 flex justify-between items-center">
+                                <div>
+                                    <p className={`font-medium ${isDone ? 'line-through text-gray-500' : 'text-gray-900 dark:text-white'}`}>{task.name}</p>
+                                    <p className="text-sm text-gray-500 dark:text-gray-400">{task.points} points - Due: {new Date(task.dueDate).toLocaleDateString()}</p>
+                                </div>
+                                <div className="flex items-center space-x-4">
+                                    <OnboardingStatusBadge status={displayStatus} />
+                                    <Link to={`/employees/onboarding/task/${task.id}?checklistId=${checklist.id}&employeeId=${checklist.employeeId}`}>
+                                        <Button size="sm" variant="secondary">
+                                            {isDone ? 'View' : 'Start'}
+                                        </Button>
+                                    </Link>
+                                </div>
+                            </li>
+                        );
+                    })}
                 </ul>
             </Card>
 
-            {allTasksCompleted && checklist.status !== 'Completed' && (
+            {allTasksCompleted && checklist.status === 'Approved' && (
                 <Card className="mt-6 text-center">
                     <h3 className="text-xl font-bold">All tasks completed!</h3>
-                    <p className="mt-2 text-gray-600 dark:text-gray-400">You're ready for the final step. Proceed to sign and complete your onboarding.</p>
+                    <p className="mt-2 text-gray-600 dark:text-gray-400">HR has approved your checklist. Proceed to sign and complete your onboarding.</p>
                     <Link to={`/employees/onboarding/sign/${checklist.id}`} className="mt-4 inline-block">
                         <Button size="lg">Proceed to Final Acknowledgement</Button>
                     </Link>

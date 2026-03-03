@@ -72,11 +72,10 @@ const OnboardingChecklistPage: React.FC = () => {
         ] = await Promise.all([
           supabase.from('onboarding_checklist_templates').select('id, name, target_role, template_type, tasks'),
           supabase.from('hris_users').select('id, full_name, role, status, business_unit'),
-          supabase.from('onboarding_checklists').select('id, employee_id, template_id, status, created_at, start_date'),
+          supabase.from('onboarding_checklists').select('id, employee_id, template_id, status, created_at, start_date, tasks'),
         ]);
         if (templateError) throw templateError;
         if (employeeError) throw employeeError;
-        if (checklistError) throw checklistError;
 
         let mappedTemplates: OnboardingChecklistTemplate[] = [];
         if (templateRows) {
@@ -102,14 +101,56 @@ const OnboardingChecklistPage: React.FC = () => {
           setEmployees(mappedEmployees);
         }
 
+        const normalizeStoredTasks = (rawTasks: any[]): OnboardingTask[] =>
+          rawTasks.map((task: any) => {
+            const completedAt = task.completedAt ? new Date(task.completedAt) : undefined;
+            const submittedAt = task.submittedAt ? new Date(task.submittedAt) : undefined;
+            let status = task.status as OnboardingTaskStatus;
+            if (submittedAt && status === OnboardingTaskStatus.Pending) {
+              status = OnboardingTaskStatus.PendingApproval;
+            }
+            if (completedAt && status === OnboardingTaskStatus.Pending) {
+              status = task.requiresApproval ? OnboardingTaskStatus.PendingApproval : OnboardingTaskStatus.Completed;
+            }
+            return {
+              ...task,
+              status,
+              dueDate: task.dueDate ? new Date(task.dueDate) : new Date(),
+              completedAt,
+              submittedAt,
+            };
+          });
+
+        const parseStoredTasks = (raw: unknown): OnboardingTask[] => {
+          if (!raw) return [];
+          if (Array.isArray(raw)) return normalizeStoredTasks(raw);
+          if (typeof raw === 'string') {
+            try {
+              const parsed = JSON.parse(raw);
+              return Array.isArray(parsed) ? normalizeStoredTasks(parsed) : [];
+            } catch {
+              return [];
+            }
+          }
+          return [];
+        };
+        const serializeTasksForDb = (tasks: OnboardingTask[]) =>
+          tasks.map(task => ({
+            ...task,
+            dueDate: task.dueDate ? new Date(task.dueDate).toISOString() : null,
+            completedAt: task.completedAt ? new Date(task.completedAt).toISOString() : null,
+            submittedAt: task.submittedAt ? new Date(task.submittedAt).toISOString() : null,
+          }));
+
         const buildChecklistTasks = (
           template: OnboardingChecklistTemplate | undefined,
           employeeId: string,
-          startDateRaw?: string | null
+          startDateRaw?: string | null,
+          checklistId?: string
         ): OnboardingTask[] => {
           if (!template) return [];
           const startDate = startDateRaw ? new Date(startDateRaw) : new Date();
-          return (template.tasks || []).map((taskTemplate: any) => {
+          return (template.tasks || []).map((taskTemplate: any, idx: number) => {
             const templateTaskId = taskTemplate.id || taskTemplate.name;
             let ownerUserId = '';
             if (taskTemplate.ownerUserId) {
@@ -132,7 +173,7 @@ const OnboardingChecklistPage: React.FC = () => {
             dueDate.setDate(dueDate.getDate() + (taskTemplate.dueDays || 0));
 
             return {
-              id: `ONBOARDTASK-${employeeId}-${templateTaskId}`,
+              id: checklistId ? `${checklistId}-task-${idx}` : `ONBOARDTASK-${employeeId}-${templateTaskId}`,
               templateTaskId,
               employeeId,
               name: taskTemplate.name,
@@ -152,18 +193,61 @@ const OnboardingChecklistPage: React.FC = () => {
           });
         };
 
+        if (checklistError) {
+          const message = String((checklistError as any)?.message || '').toLowerCase();
+          if (message.includes('tasks')) {
+            const { data: checklistFallback, error: fallbackError } = await supabase
+              .from('onboarding_checklists')
+              .select('id, employee_id, template_id, status, created_at, start_date');
+            if (fallbackError) throw fallbackError;
+            if (checklistFallback) {
+              const templateMap = new Map(mappedTemplates.map(t => [t.id, t]));
+              const mappedChecklists: OnboardingChecklist[] = checklistFallback.map((c: any) => ({
+                id: c.id,
+                employeeId: c.employee_id,
+                templateId: c.template_id,
+                createdAt: c.created_at ? new Date(c.created_at) : new Date(),
+                status: (c.status as any) || 'InProgress',
+                tasks: buildChecklistTasks(templateMap.get(c.template_id), c.employee_id, c.start_date),
+                signedAt: undefined,
+              }));
+              setChecklists(mappedChecklists);
+            }
+            return;
+          }
+          throw checklistError;
+        }
+
         if (checklistRows && checklistRows.length > 0) {
           const templateMap = new Map(mappedTemplates.map(t => [t.id, t]));
-          const mappedChecklists: OnboardingChecklist[] = checklistRows.map((c: any) => ({
-            id: c.id,
-            employeeId: c.employee_id,
-            templateId: c.template_id,
-            createdAt: c.created_at ? new Date(c.created_at) : new Date(),
-            status: (c.status as any) || 'InProgress',
-            tasks: buildChecklistTasks(templateMap.get(c.template_id), c.employee_id, c.start_date),
-            signedAt: undefined,
-          }));
+          const mappedChecklists: OnboardingChecklist[] = checklistRows.map((c: any) => {
+            const builtTasks = buildChecklistTasks(templateMap.get(c.template_id), c.employee_id, c.start_date, c.id);
+            const storedTasks = parseStoredTasks(c.tasks);
+            const resolvedTasks = storedTasks.length > 0 ? storedTasks : builtTasks;
+            return {
+              id: c.id,
+              employeeId: c.employee_id,
+              templateId: c.template_id,
+              createdAt: c.created_at ? new Date(c.created_at) : new Date(),
+              status: (c.status as any) || 'InProgress',
+              tasks: resolvedTasks,
+              signedAt: undefined,
+            };
+          });
           setChecklists(mappedChecklists);
+
+          const tasksToPersist = checklistRows
+            .filter((row: any) => !Array.isArray(row.tasks) || row.tasks.length === 0)
+            .map((row: any) => ({
+              id: row.id,
+              tasks: serializeTasksForDb(
+                buildChecklistTasks(templateMap.get(row.template_id), row.employee_id, row.start_date, row.id)
+              ),
+            }))
+            .filter((row: any) => row.tasks.length > 0);
+          if (tasksToPersist.length > 0) {
+            await supabase.from('onboarding_checklists').upsert(tasksToPersist, { onConflict: 'id' });
+          }
         }
       } catch (err) {
         console.error('Failed to load onboarding data from Supabase', err);
@@ -184,7 +268,12 @@ const OnboardingChecklistPage: React.FC = () => {
 
   const dashboardStats = useMemo(() => {
     const activeChecklists = checklists.filter(
-      c => c.status === 'InProgress' || c.status === 'Pending' || !c.status
+      c =>
+        c.status === 'InProgress' ||
+        c.status === 'Pending' ||
+        c.status === 'Pending Approval' ||
+        c.status === 'Approved' ||
+        !c.status
     );
     const completedChecklists = checklists.filter(c => c.status === 'Completed' && c.signedAt);
 
@@ -306,19 +395,13 @@ const OnboardingChecklistPage: React.FC = () => {
     const newChecklists: OnboardingChecklist[] = [];
     const employeeNames: string[] = [];
 
-    employeeIds.forEach(employeeId => {
-      const employee =
-        employees.find(e => e.id === employeeId) ||
-        mockUsers.find(u => u.id === employeeId);
-      if (!employee) return;
-
-      const checklistId = `ONBOARD-${employee.id}-${Date.now()}`;
-      const tasks = template.tasks.flatMap((taskTemplate: any) => {
+    const buildAssignedTasks = (employeeId: string, checklistId: string) => {
+      return (template.tasks || []).map((taskTemplate: any, idx: number) => {
         let ownerUserId = '';
         if (taskTemplate.ownerUserId) {
           ownerUserId = taskTemplate.ownerUserId;
-        } else if (taskTemplate.ownerRole === Role.Manager && (employee as any).managerId) {
-          ownerUserId = (employee as any).managerId;
+        } else if (taskTemplate.ownerRole === Role.Manager && (employees.find(e => e.id === employeeId) as any)?.managerId) {
+          ownerUserId = (employees.find(e => e.id === employeeId) as any)?.managerId;
         } else {
           const owner = employees.find(u => u.role === taskTemplate.ownerRole) || mockUsers.find(u => u.role === taskTemplate.ownerRole);
           if (owner) ownerUserId = owner.id;
@@ -328,16 +411,16 @@ const OnboardingChecklistPage: React.FC = () => {
         const dueDate = new Date(startDate);
         dueDate.setDate(dueDate.getDate() + (taskTemplate.dueDays || 0));
 
-        const newTask: OnboardingTask = {
-          id: `ONBOARDTASK-${employee.id}-${taskTemplate.id || taskTemplate.name}-${Date.now()}`,
+        return {
+          id: `${checklistId}-task-${idx}`,
           templateTaskId: taskTemplate.id || taskTemplate.name,
-          employeeId: employee.id,
+          employeeId,
           name: taskTemplate.name,
           description: taskTemplate.description,
           ownerUserId,
           ownerName,
           videoUrl: taskTemplate.videoUrl,
-          dueDate,
+          dueDate: dueDate.toISOString(),
           status: OnboardingTaskStatus.Pending,
           points: taskTemplate.points || 0,
           taskType: taskTemplate.taskType,
@@ -346,8 +429,17 @@ const OnboardingChecklistPage: React.FC = () => {
           assetId: taskTemplate.assetId,
           assetDescription: taskTemplate.assetDescription,
         };
-        return [newTask];
       });
+    };
+
+    employeeIds.forEach(employeeId => {
+      const employee =
+        employees.find(e => e.id === employeeId) ||
+        mockUsers.find(u => u.id === employeeId);
+      if (!employee) return;
+
+      const checklistId = `ONBOARD-${employee.id}-${Date.now()}`;
+      const tasks = buildAssignedTasks(employee.id, checklistId);
 
       newChecklists.push({
         id: checklistId,
@@ -393,6 +485,18 @@ const OnboardingChecklistPage: React.FC = () => {
         const insertedByEmployee = new Map(
           (inserted || []).map((c: any) => [c.employee_id, c.id])
         );
+
+        const tasksPayload = (inserted || []).map((row: any) => ({
+          id: row.id,
+          tasks: buildAssignedTasks(row.employee_id, row.id),
+        }));
+        if (tasksPayload.length > 0) {
+          try {
+            await supabase.from('onboarding_checklists').upsert(tasksPayload, { onConflict: 'id' });
+          } catch (err) {
+            console.warn('Failed to persist checklist tasks', err);
+          }
+        }
         const templateType = template.templateType || 'Onboarding';
         const notificationType =
           templateType === 'Offboarding'
@@ -408,6 +512,17 @@ const OnboardingChecklistPage: React.FC = () => {
             (employeeRows || []).map((row: any) => [row.id, row])
           );
           const createdAt = new Date();
+          const notificationRows: Array<{
+            id: string;
+            user_id: string;
+            type: NotificationType;
+            title: string;
+            message: string;
+            link: string;
+            is_read: boolean;
+            created_at: string;
+            related_entity_id: string;
+          }> = [];
 
           employeeIds.forEach(empId => {
             const row = employeeMap.get(empId);
@@ -432,20 +547,43 @@ const OnboardingChecklistPage: React.FC = () => {
               if (nameMatch?.id) targets.add(nameMatch.id);
             }
 
+            const templateLabel = template?.name || `${templateType} Checklist`;
             targets.forEach(targetId => {
               mockNotifications.unshift({
                 id: `notif-onboard-${insertedByEmployee.get(empId) || template.id}-${targetId}-${createdAt.getTime()}`,
                 userId: targetId,
                 type: notificationType,
-                title: `${templateType} Assigned`,
-                message: `${templateType} checklist assigned to ${displayName}.`,
-                link: '/employees/onboarding',
+                title: `${templateLabel} Assigned`,
+                message: `${templateLabel} assigned to ${displayName}.`,
+                link: `/employees/onboarding/view/${insertedByEmployee.get(empId) || template.id}`,
                 isRead: false,
                 createdAt,
                 relatedEntityId: insertedByEmployee.get(empId) || template.id,
               });
             });
+
+            if (empId) {
+              notificationRows.push({
+                id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${empId}`,
+                user_id: empId,
+                type: notificationType,
+                title: `${templateLabel} Assigned`,
+                message: `${templateLabel} assigned to ${displayName}.`,
+                link: `/employees/onboarding/view/${insertedByEmployee.get(empId) || template.id}`,
+                is_read: false,
+                created_at: createdAt.toISOString(),
+                related_entity_id: insertedByEmployee.get(empId) || template.id,
+              });
+            }
           });
+
+          if (notificationRows.length > 0) {
+            try {
+              await supabase.from('notifications').insert(notificationRows);
+            } catch (err) {
+              console.warn('Failed to persist onboarding notifications', err);
+            }
+          }
         }
 
         logActivity(
