@@ -220,7 +220,19 @@ const EmployeeList: React.FC = () => {
   }, [changeHistory, users, userDocuments]);
 
   const handleView = (userId: string) => {
-    navigate(`/employees/view/${userId}`);
+    const targetPath = `/users/${userId}`;
+    navigate(targetPath);
+
+    const usesHashRouter = window.location.hash.startsWith('#/');
+    const fallbackPath = usesHashRouter ? `/#${targetPath}` : targetPath;
+    window.setTimeout(() => {
+      const currentPath = usesHashRouter
+        ? window.location.hash.replace(/^#/, '')
+        : window.location.pathname;
+      if (currentPath !== targetPath) {
+        window.location.assign(fallbackPath);
+      }
+    }, 0);
   };
 
   const handleEdit = (user: User) => {

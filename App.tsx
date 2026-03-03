@@ -106,6 +106,7 @@ import ThankYou from './pages/ThankYou';
 import Departments from './pages/admin/Departments';
 import ApplicationPages from './pages/recruitment/ApplicationPages';
 import CareerPagePreview from './components/recruitment/CareerPagePreview';
+import UserProfile from './pages/users/UserProfile';
 
 // Analytics Pages
 import RecruitmentAnalytics from './pages/analytics/RecruitmentAnalytics';
@@ -156,6 +157,7 @@ const AppRoutes: React.FC = () => {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="my-profile" element={<ProtectedRoute><EmployeeProfile/></ProtectedRoute>} />
+        <Route path="users/:userId" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
         <Route path="submit-resignation" element={<ProtectedRoute><SubmitResignation /></ProtectedRoute>} />
         
         <Route path="employees" element={<Outlet />}>

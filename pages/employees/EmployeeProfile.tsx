@@ -26,7 +26,8 @@ import MemoViewModal from '../../components/feedback/MemoViewModal';
 import Button from '../../components/ui/Button';
 
 const EmployeeProfile: React.FC = () => {
-    const { employeeId } = useParams<{ employeeId: string }>();
+    const { employeeId, userId } = useParams<{ employeeId?: string; userId?: string }>();
+    const resolvedEmployeeId = employeeId || userId;
     const { user: currentUser } = useAuth();
     const { can } = usePermissions();
     const navigate = useNavigate();
@@ -149,7 +150,7 @@ const EmployeeProfile: React.FC = () => {
     // Load user record from Supabase hris_users and merge into local state
     useEffect(() => {
         const loadUser = async () => {
-            const targetId = employeeId || currentUser?.id;
+            const targetId = resolvedEmployeeId || currentUser?.id;
             const email = currentUser?.email;
             if (!targetId && !email) return;
 
@@ -172,7 +173,7 @@ const EmployeeProfile: React.FC = () => {
             }
         };
         loadUser();
-    }, [employeeId, currentUser]);
+    }, [resolvedEmployeeId, currentUser]);
 
     useEffect(() => {
         const loadMemos = async () => {
@@ -191,7 +192,7 @@ const EmployeeProfile: React.FC = () => {
     }, []);
 
     const userToView = useMemo(() => {
-        const targetId = employeeId || currentUser?.id;
+        const targetId = resolvedEmployeeId || currentUser?.id;
         // Prefer direct id match
         let found = users.find(u => u.id === targetId);
         // If not found, try authUserId (Supabase) or email match to align Supabase logins to legacy mock data
@@ -208,7 +209,7 @@ const EmployeeProfile: React.FC = () => {
             return currentUser;
         }
         return found;
-    }, [employeeId, currentUser, users]);
+    }, [resolvedEmployeeId, currentUser, users]);
 
     useEffect(() => {
         if (!location.hash) return;
