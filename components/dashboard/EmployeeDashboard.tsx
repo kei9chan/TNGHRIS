@@ -137,6 +137,8 @@ const mapPanRow = (p: any): PAN => ({
     employeeId: p.employee_id,
     employeeName: p.employee_name,
     effectiveDate: p.effective_date ? new Date(p.effective_date) : new Date(),
+    updatedAt: p.updated_at ? new Date(p.updated_at) : undefined,
+    createdAt: p.created_at ? new Date(p.created_at) : undefined,
     status: p.status as PANStatus,
     actionTaken: p.action_taken || { ...emptyActions },
     particulars: p.particulars || { from: {}, to: {} },
@@ -595,6 +597,9 @@ const EmployeeDashboard: React.FC = () => {
                                 excludeSubject: row.exclude_subject ?? true,
                             };
                         });
+                        const updatedAt = e.updated_at
+                            ? new Date(e.updated_at)
+                            : (e.last_modified_at ? new Date(e.last_modified_at) : undefined);
                         return {
                             id: e.id,
                             name: e.name,
@@ -605,6 +610,7 @@ const EmployeeDashboard: React.FC = () => {
                             evaluators,
                             status: e.status || 'InProgress',
                             createdAt: e.created_at ? new Date(e.created_at) : new Date(),
+                            updatedAt,
                             dueDate: e.due_date ? new Date(e.due_date) : undefined,
                             isEmployeeVisible: !!e.is_employee_visible,
                             acknowledgedBy: e.acknowledged_by || [],
@@ -1480,12 +1486,14 @@ const EmployeeDashboard: React.FC = () => {
         
         const pendingPANs = pans.filter(p => p.employeeId === user.id && p.status === PANStatus.PendingEmployee);
         pendingPANs.forEach(pan => {
+            const panSortDate = pan.updatedAt || pan.effectiveDate || pan.createdAt;
             items.push({
                 id: `pan-${pan.id}`,
                 icon: <DocumentTextIcon {...iconProps} />,
                 title: 'PAN for Acknowledgement',
                 subtitle: `Action: ${getActionType(pan.actionTaken)}`,
                 date: new Date(pan.effectiveDate).toLocaleDateString(),
+                sortDate: panSortDate,
                 link: '/employees/pan',
                 colorClass: 'bg-purple-500',
                 priority: 1
@@ -1526,6 +1534,7 @@ const EmployeeDashboard: React.FC = () => {
                     title: "Evaluation Pending",
                     subtitle: `${isOverdue ? '⚠️ OVERDUE: ' : ''}You have ${remainingCount} pending review(s).`,
                     date: `Due: ${deadlineStr}`,
+                    sortDate: deadline,
                     link: `/evaluation/perform/${evaluation.id}`,
                     colorClass: isOverdue ? 'bg-red-500' : 'bg-teal-500',
                     priority: isOverdue ? 0 : 2
@@ -1728,10 +1737,47 @@ const EmployeeDashboard: React.FC = () => {
         });
 
 
-        return items.sort((a,b) => {
-            const dateA = a.sortDate ?? a.date ?? a.createdAt ?? new Date(0);
-            const dateB = b.sortDate ?? b.date ?? b.createdAt ?? new Date(0);
-            return new Date(dateB).getTime() - new Date(dateA).getTime();
+        const parseDateValue = (value: any): Date | null => {
+            if (!value) return null;
+            if (value instanceof Date) {
+                return Number.isNaN(value.getTime()) ? null : value;
+            }
+            if (typeof value === 'number') {
+                const parsed = new Date(value);
+                return Number.isNaN(parsed.getTime()) ? null : parsed;
+            }
+            if (typeof value === 'string') {
+                const trimmed = value.trim();
+                if (!trimmed || trimmed.toLowerCase() === 'invalid date') return null;
+                const prefixMatch = trimmed.match(/^(Due|Deadline|Effective|Assigned|Date|On)\s*:\s*(.+)$/i);
+                const raw = prefixMatch ? prefixMatch[2] : trimmed;
+                const parsed = new Date(raw);
+                return Number.isNaN(parsed.getTime()) ? null : parsed;
+            }
+            return null;
+        };
+
+        const normalizedItems = items.map(item => {
+            const sortDate = parseDateValue(
+                item.sortDate ??
+                item.updatedAt ??
+                item.lastModifiedAt ??
+                item.modifiedAt ??
+                item.updated_at ??
+                item.last_modified_at ??
+                item.createdAt ??
+                item.insertedAt ??
+                item.created_at ??
+                item.inserted_at ??
+                item.date
+            );
+            return { ...item, sortDate, date: sortDate ? sortDate.toLocaleString() : '—' };
+        });
+
+        return normalizedItems.sort((a, b) => {
+            const aTime = a.sortDate ? a.sortDate.getTime() : 0;
+            const bTime = b.sortDate ? b.sortDate.getTime() : 0;
+            return bTime - aTime;
         });
 
     }, [user, notificationUserIds, employeeProfileId, refreshKey, memoUpdateKey, memos, requests, assignments, checklists, templates, isUserEligibleEvaluator, benefitRequests, pulseSurveys, surveyResponses, coachingSessions, envelopes, pans, ntes, evaluationSubmissions, evaluations, evaluationTimelines, useSupabaseEvaluations, approvedLeaveRequests, approvedWfhRequests, approvedOtRequests, approvedManpowerRequests, rejectedLeaveRequests, rejectedWfhRequests, rejectedOtRequests, rejectedManpowerRequests, coeDecisions, assignedTickets]);

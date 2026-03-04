@@ -1420,6 +1420,8 @@ export interface PAN {
   employeeId: string;
   employeeName: string;
   effectiveDate: Date;
+  updatedAt?: Date;
+  createdAt?: Date;
   status: PANStatus;
   actionTaken: PANActionTaken;
   particulars: {
@@ -1536,6 +1538,7 @@ export interface Evaluation {
   evaluators: EvaluatorConfig[]; // Updated from { userId: string, weight: number }[]
   status: 'InProgress' | 'Completed';
   createdAt: Date;
+  updatedAt?: Date;
   isEmployeeVisible: boolean;
   acknowledgedBy?: string[];
   dueDate?: Date;
