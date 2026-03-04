@@ -17,6 +17,8 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(({ onEnd }, 
   const [typedSignature, setTypedSignature] = useState('');
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const isDrawingRef = useRef(false);
+  const lastSignatureRef = useRef<string | null>(null);
+  const lastSizeRef = useRef<{ width: number; height: number } | null>(null);
   const [isCanvasEmpty, setIsCanvasEmpty] = useState(true);
 
   const clearCanvas = useCallback(() => {
@@ -25,6 +27,7 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(({ onEnd }, 
       const ctx = canvas.getContext('2d');
       ctx?.clearRect(0, 0, canvas.width, canvas.height);
       setIsCanvasEmpty(true);
+      lastSignatureRef.current = null;
       onEnd?.();
     }
   }, [onEnd]);
@@ -100,9 +103,18 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(({ onEnd }, 
       const { width, height } = canvas.getBoundingClientRect();
       
       if (width === 0 || height === 0) return;
+      if (
+        lastSizeRef.current &&
+        Math.abs(lastSizeRef.current.width - width) < 1 &&
+        Math.abs(lastSizeRef.current.height - height) < 1
+      ) {
+        return;
+      }
+      lastSizeRef.current = { width, height };
       
       canvas.width = width * ratio;
       canvas.height = height * ratio;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.scale(ratio, ratio);
 
       const isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -113,7 +125,16 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(({ onEnd }, 
     };
 
     setCanvasDimensionsAndStyles();
-    clearCanvas();
+    if (lastSignatureRef.current) {
+      const img = new Image();
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0, canvas.width / (window.devicePixelRatio || 1), canvas.height / (window.devicePixelRatio || 1));
+        setIsCanvasEmpty(false);
+      };
+      img.src = lastSignatureRef.current;
+    } else {
+      clearCanvas();
+    }
 
     const darkModeMatcher = window.matchMedia('(prefers-color-scheme: dark)');
     const handleThemeChange = () => {
@@ -124,7 +145,15 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(({ onEnd }, 
     };
     
     const resizeObserver = new ResizeObserver(() => {
-        setCanvasDimensionsAndStyles();
+      setCanvasDimensionsAndStyles();
+      if (lastSignatureRef.current) {
+        const img = new Image();
+        img.onload = () => {
+          ctx.drawImage(img, 0, 0, canvas.width / (window.devicePixelRatio || 1), canvas.height / (window.devicePixelRatio || 1));
+          setIsCanvasEmpty(false);
+        };
+        img.src = lastSignatureRef.current;
+      }
     });
     
     resizeObserver.observe(canvas);
@@ -136,21 +165,19 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(({ onEnd }, 
     };
   }, [mode, clearCanvas]);
 
-  const getCoords = (event: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>): {x: number, y: number} => {
+  const getCoords = (event: React.PointerEvent<HTMLCanvasElement>): {x: number, y: number} => {
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
-    
-    const clientX = 'touches' in event.nativeEvent ? event.nativeEvent.touches[0].clientX : event.nativeEvent.clientX;
-    const clientY = 'touches' in event.nativeEvent ? event.nativeEvent.touches[0].clientY : event.nativeEvent.clientY;
 
     return {
-        x: (clientX - rect.left),
-        y: (clientY - rect.top)
+        x: (event.clientX - rect.left),
+        y: (event.clientY - rect.top)
     };
   };
 
-  const startDrawing = useCallback((event: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+  const startDrawing = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
     event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
     const ctx = canvasRef.current?.getContext('2d');
     if (!ctx) return;
     const { x, y } = getCoords(event);
@@ -160,7 +187,7 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(({ onEnd }, 
     setIsCanvasEmpty(false);
   }, []);
 
-  const draw = useCallback((event: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+  const draw = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
     event.preventDefault();
     if (!isDrawingRef.current) return;
     const ctx = canvasRef.current?.getContext('2d');
@@ -170,9 +197,16 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(({ onEnd }, 
     ctx.stroke();
   }, []);
 
-  const stopDrawing = useCallback(() => {
+  const stopDrawing = useCallback((event?: React.PointerEvent<HTMLCanvasElement>) => {
     if (isDrawingRef.current) {
         isDrawingRef.current = false;
+        if (event?.currentTarget && event.pointerId !== undefined) {
+          event.currentTarget.releasePointerCapture(event.pointerId);
+        }
+        const canvas = canvasRef.current;
+        if (canvas) {
+          lastSignatureRef.current = canvas.toDataURL('image/png');
+        }
         onEnd?.();
     }
   }, [onEnd]);
@@ -220,14 +254,12 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(({ onEnd }, 
                     )}
                     <canvas 
                         ref={canvasRef} 
-                        className="w-full h-full cursor-crosshair"
-                        onMouseDown={startDrawing}
-                        onMouseMove={draw}
-                        onMouseUp={stopDrawing}
-                        onMouseLeave={stopDrawing}
-                        onTouchStart={startDrawing}
-                        onTouchMove={draw}
-                        onTouchEnd={stopDrawing}
+                        className="w-full h-full cursor-crosshair touch-none"
+                        onPointerDown={startDrawing}
+                        onPointerMove={draw}
+                        onPointerUp={stopDrawing}
+                        onPointerLeave={stopDrawing}
+                        onPointerCancel={stopDrawing}
                         aria-label="Draw your signature"
                     />
                     {!isCanvasEmpty && (
