@@ -64,6 +64,8 @@ const mapPanRow = (p: any): PAN => ({
     employeeId: p.employee_id,
     employeeName: p.employee_name,
     effectiveDate: p.effective_date ? new Date(p.effective_date) : new Date(),
+    updatedAt: p.updated_at ? new Date(p.updated_at) : undefined,
+    createdAt: p.created_at ? new Date(p.created_at) : undefined,
     status: p.status as PANStatus,
     actionTaken: p.action_taken || { ...emptyActions },
     particulars: p.particulars || { from: {}, to: {} },
@@ -365,13 +367,13 @@ const HRDashboard: React.FC = () => {
                     evalerMap.get(row.evaluation_id)!.push(row);
                 });
 
-                const mappedEvaluations: Evaluation[] =
-                    (evalRows || []).map((e: any) => {
-                        const rows = evalerMap.get(e.id) || [];
-                        const evaluators = rows.map((row: any, index: number) => {
-                            const normalizedType = String(row.type || '').toLowerCase();
-                            return {
-                                id: row.id || `${e.id}-${row.user_id || 'group'}-${index}`,
+                    const mappedEvaluations: Evaluation[] =
+                        (evalRows || []).map((e: any) => {
+                            const rows = evalerMap.get(e.id) || [];
+                            const evaluators = rows.map((row: any, index: number) => {
+                                const normalizedType = String(row.type || '').toLowerCase();
+                                return {
+                                    id: row.id || `${e.id}-${row.user_id || 'group'}-${index}`,
                                 type: normalizedType === 'group' ? EvaluatorType.Group : EvaluatorType.Individual,
                                 weight: row.weight || 0,
                                 userId: row.user_id || undefined,
@@ -383,6 +385,9 @@ const HRDashboard: React.FC = () => {
                                 excludeSubject: row.exclude_subject ?? true,
                             };
                         });
+                        const updatedAt = e.updated_at
+                            ? new Date(e.updated_at)
+                            : (e.last_modified_at ? new Date(e.last_modified_at) : undefined);
                         return {
                             id: e.id,
                             name: e.name,
@@ -393,6 +398,7 @@ const HRDashboard: React.FC = () => {
                             evaluators,
                             status: e.status || 'InProgress',
                             createdAt: e.created_at ? new Date(e.created_at) : new Date(),
+                            updatedAt,
                             dueDate: e.due_date ? new Date(e.due_date) : undefined,
                             isEmployeeVisible: !!e.is_employee_visible,
                             acknowledgedBy: e.acknowledged_by || [],
@@ -785,12 +791,14 @@ const HRDashboard: React.FC = () => {
         // Check for PANs needing acknowledgement (shows up regardless of role)
         const pendingPANsForAcknowledgement = pans.filter(p => p.employeeId === user.id && p.status === PANStatus.PendingEmployee);
         pendingPANsForAcknowledgement.forEach(pan => {
+            const panSortDate = pan.updatedAt || pan.effectiveDate || pan.createdAt;
             allItems.push({
                 id: `pan-ack-${pan.id}`,
                 icon: <DocumentTextIcon {...iconProps} />,
                 title: 'PAN for Acknowledgement',
                 subtitle: `Action: ${getActionType(pan.actionTaken)}`,
                 date: new Date(pan.effectiveDate).toLocaleDateString(),
+                sortDate: panSortDate,
                 link: '/employees/pan',
                 colorClass: 'bg-purple-500',
                 priority: 1
@@ -803,12 +811,14 @@ const HRDashboard: React.FC = () => {
             pan.routingSteps.some(step => approverIds.has(step.userId) && step.status === PANStepStatus.Pending)
         );
         pendingPansForApproval.forEach(pan => {
+            const panSortDate = pan.updatedAt || pan.effectiveDate || pan.createdAt;
             allItems.push({
                 id: `pan-approve-${pan.id}`,
                 icon: <DocumentTextIcon {...iconProps} />,
                 title: 'PAN for Approval',
                 subtitle: `For ${pan.employeeName}, effective ${new Date(pan.effectiveDate).toLocaleDateString()}`,
                 date: new Date(pan.effectiveDate).toLocaleDateString(),
+                sortDate: panSortDate,
                 link: '/employees/pan',
                 colorClass: 'bg-purple-500',
                 priority: 1
@@ -1091,12 +1101,14 @@ const HRDashboard: React.FC = () => {
             const remainingCount = eligibleTargets.length - submittedTargets.length;
 
             if (remainingCount > 0) {
+                const sortDate = evaluation.updatedAt || evaluation.dueDate || evaluation.createdAt;
                 return {
                     id: `eval-perform-${evaluation.id}`,
                     icon: <AcademicCapIcon {...iconProps} />,
                     title: "Evaluation Pending",
                     subtitle: `You have ${remainingCount} submission(s) to complete for "${evaluation.name}".`,
-                    date: new Date(evaluation.createdAt).toLocaleDateString(),
+                    date: new Date(sortDate).toLocaleDateString(),
+                    sortDate,
                     link: `/evaluation/perform/${evaluation.id}`,
                     colorClass: 'bg-purple-500'
                 };
@@ -1137,7 +1149,50 @@ const HRDashboard: React.FC = () => {
             });
         });
         
-        return allItems.sort((a,b) => (a.priority ?? 99) - (b.priority ?? 99) || new Date(b.date).getTime() - new Date(a.date).getTime());
+        const parseDateValue = (value: any): Date | null => {
+            if (!value) return null;
+            if (value instanceof Date) {
+                return Number.isNaN(value.getTime()) ? null : value;
+            }
+            if (typeof value === 'number') {
+                const parsed = new Date(value);
+                return Number.isNaN(parsed.getTime()) ? null : parsed;
+            }
+            if (typeof value === 'string') {
+                const trimmed = value.trim();
+                if (!trimmed || trimmed.toLowerCase() === 'invalid date') return null;
+                const prefixMatch = trimmed.match(/^(Due|Deadline|Effective|Assigned|Date|On)\s*:\s*(.+)$/i);
+                const raw = prefixMatch ? prefixMatch[2] : trimmed;
+                const parsed = new Date(raw);
+                return Number.isNaN(parsed.getTime()) ? null : parsed;
+            }
+            return null;
+        };
+
+        const normalizedItems = allItems.map(item => {
+            const sortDate = parseDateValue(
+                item.sortDate ??
+                item.updatedAt ??
+                item.lastModifiedAt ??
+                item.modifiedAt ??
+                item.updated_at ??
+                item.last_modified_at ??
+                item.createdAt ??
+                item.insertedAt ??
+                item.created_at ??
+                item.inserted_at ??
+                item.date
+            );
+            return { ...item, sortDate, date: sortDate ? sortDate.toLocaleString() : '—' };
+        });
+
+        return normalizedItems.sort((a, b) => {
+            const priorityDiff = (a.priority ?? 99) - (b.priority ?? 99);
+            if (priorityDiff !== 0) return priorityDiff;
+            const aTime = a.sortDate ? a.sortDate.getTime() : 0;
+            const bTime = b.sortDate ? b.sortDate.getTime() : 0;
+            return bTime - aTime;
+        });
 
     }, [user, isHR, memos, memoUpdateKey, pendingHrRequisitions, pendingResignations, pendingProfileChanges, pendingUserRegistrations, assignments, assignedTickets, checklists, templates, pendingBenefitRequests, incidentReports, evaluationSubmissions, evaluations, useSupabaseEvaluations, isUserEligibleEvaluator, pans, panApproverId, employeeProfileId]);
 
