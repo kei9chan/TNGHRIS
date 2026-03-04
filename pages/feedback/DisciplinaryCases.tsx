@@ -262,9 +262,15 @@ const DisciplinaryCases: React.FC = () => {
 
     const buFilteredReports = buFilter
         ? expandedReports.filter(report => {
-            const employeeId = report.involvedEmployeeIds[0];
-            const employee = mockUsers.find(u => u.id === employeeId);
-            return employee?.businessUnit === buFilter;
+            const reportBuName =
+                report.businessUnitName ||
+                mockBusinessUnits.find(bu => bu.id === report.businessUnitId)?.name ||
+                (() => {
+                    const employeeId = report.involvedEmployeeIds[0];
+                    const employee = mockUsers.find(u => u.id === employeeId);
+                    return employee?.businessUnit;
+                })();
+            return reportBuName === buFilter;
         })
         : expandedReports;
 
