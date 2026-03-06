@@ -30,6 +30,19 @@ const OnboardingTaskPage: React.FC = () => {
     const checklistIdParam = searchParams.get('checklistId');
     const employeeIdParam = searchParams.get('employeeId');
 
+    const normalizeTaskType = (value: any): OnboardingTaskType => {
+        if (!value) return OnboardingTaskType.Read;
+        const raw = String(value).trim();
+        const normalized = raw.toLowerCase();
+        if (normalized.includes('upload')) return OnboardingTaskType.Upload;
+        if (normalized.includes('read')) return OnboardingTaskType.Read;
+        if (normalized.includes('video')) return OnboardingTaskType.Video;
+        if (normalized.includes('link')) return OnboardingTaskType.SubmitLink;
+        if (normalized.includes('assign') && normalized.includes('asset')) return OnboardingTaskType.AssignAsset;
+        if (normalized.includes('return') && normalized.includes('asset')) return OnboardingTaskType.ReturnAsset;
+        return raw as OnboardingTaskType;
+    };
+
     const normalizeStoredTasks = (rawTasks: any[]): OnboardingTask[] =>
         rawTasks.map((task: any) => {
             const completedAt = task.completedAt ? new Date(task.completedAt) : undefined;
@@ -43,6 +56,7 @@ const OnboardingTaskPage: React.FC = () => {
             }
             return {
                 ...task,
+                taskType: normalizeTaskType(task.taskType),
                 status,
                 dueDate: task.dueDate ? new Date(task.dueDate) : new Date(),
                 completedAt,
@@ -102,7 +116,7 @@ const OnboardingTaskPage: React.FC = () => {
                 dueDate,
                 status: OnboardingTaskStatus.Pending,
                 points: taskTemplate.points || 0,
-                taskType: taskTemplate.taskType,
+                taskType: normalizeTaskType(taskTemplate.taskType),
                 readContent: taskTemplate.readContent,
                 requiresApproval: taskTemplate.requiresApproval,
                 assetId: taskTemplate.assetId,
