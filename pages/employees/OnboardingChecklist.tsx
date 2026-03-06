@@ -121,13 +121,36 @@ const OnboardingChecklistPage: React.FC = () => {
             };
           });
 
+        const normalizeTaskType = (value: any): OnboardingTaskType => {
+          if (!value) return OnboardingTaskType.Read;
+          const raw = String(value).trim();
+          const normalized = raw.toLowerCase();
+          if (normalized.includes('upload')) return OnboardingTaskType.Upload;
+          if (normalized.includes('read')) return OnboardingTaskType.Read;
+          if (normalized.includes('video')) return OnboardingTaskType.Video;
+          if (normalized.includes('link')) return OnboardingTaskType.SubmitLink;
+          if (normalized.includes('assign') && normalized.includes('asset')) return OnboardingTaskType.AssignAsset;
+          if (normalized.includes('return') && normalized.includes('asset')) return OnboardingTaskType.ReturnAsset;
+          return raw as OnboardingTaskType;
+        };
+
         const parseStoredTasks = (raw: unknown): OnboardingTask[] => {
           if (!raw) return [];
-          if (Array.isArray(raw)) return normalizeStoredTasks(raw);
+          if (Array.isArray(raw)) {
+            return normalizeStoredTasks(raw).map(task => ({
+              ...task,
+              taskType: normalizeTaskType(task.taskType),
+            }));
+          }
           if (typeof raw === 'string') {
             try {
               const parsed = JSON.parse(raw);
-              return Array.isArray(parsed) ? normalizeStoredTasks(parsed) : [];
+              return Array.isArray(parsed)
+                ? normalizeStoredTasks(parsed).map(task => ({
+                    ...task,
+                    taskType: normalizeTaskType(task.taskType),
+                  }))
+                : [];
             } catch {
               return [];
             }
@@ -184,7 +207,7 @@ const OnboardingChecklistPage: React.FC = () => {
               dueDate,
               status: OnboardingTaskStatus.Pending,
               points: taskTemplate.points || 0,
-              taskType: taskTemplate.taskType,
+              taskType: normalizeTaskType(taskTemplate.taskType),
               readContent: taskTemplate.readContent,
               requiresApproval: taskTemplate.requiresApproval,
               assetId: taskTemplate.assetId,
