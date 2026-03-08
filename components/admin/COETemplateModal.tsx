@@ -1,19 +1,19 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { COETemplate } from '../../types';
+import { BusinessUnit, COETemplate } from '../../types';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
 import Button from '../ui/Button';
 import RichTextEditor from '../ui/RichTextEditor';
 import FileUploader from '../ui/FileUploader';
-import { mockBusinessUnits } from '../../services/mockData';
-import { usePermissions } from '../../hooks/usePermissions';
+import { supabase } from '../../services/supabaseClient';
 
 interface COETemplateModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSave: (template: COETemplate) => void;
     template: COETemplate | null;
+    businessUnits: BusinessUnit[];
 }
 
 const PLACEHOLDERS = [
@@ -25,24 +25,70 @@ const PLACEHOLDERS = [
     '{{date_today}}'
 ];
 
-const COETemplateModal: React.FC<COETemplateModalProps> = ({ isOpen, onClose, onSave, template }) => {
-    const { getAccessibleBusinessUnits } = usePermissions();
+const normalizeBody = (value?: string | null) => {
+    if (!value) return '';
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+    if (trimmed.includes('<') && trimmed.includes('>')) {
+        return value;
+    }
+    const escaped = trimmed
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    return `<p>${escaped.replace(/\n/g, '<br />')}</p>`;
+};
+
+const COETemplateModal: React.FC<COETemplateModalProps> = ({ isOpen, onClose, onSave, template, businessUnits }) => {
     const [current, setCurrent] = useState<Partial<COETemplate>>({});
-    
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+    const accessibleBus = useMemo(() => businessUnits, [businessUnits]);
 
     useEffect(() => {
-        if (isOpen) {
-            setCurrent(template || {
-                businessUnitId: accessibleBus[0]?.id || '',
-                address: '',
-                body: '<p>This is to certify that <strong>{{employee_name}}</strong>...</p>',
-                signatoryName: '',
-                signatoryPosition: '',
-                isActive: true
-            });
-        }
+        if (!isOpen) return;
+        setCurrent(template ? {
+            ...template,
+            body: normalizeBody(template.body),
+        } : {
+            businessUnitId: accessibleBus[0]?.id || '',
+            address: '',
+            body: '<p>This is to certify that <strong>{{employee_name}}</strong>...</p>',
+            signatoryName: '',
+            signatoryPosition: '',
+            isActive: true
+        });
     }, [isOpen, template, accessibleBus]);
+
+    useEffect(() => {
+        if (!isOpen || !template?.id) return;
+        let active = true;
+        const loadTemplate = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('coe_templates')
+                    .select('id, business_unit_id, logo_url, address, body, signatory_name, signatory_position, is_active')
+                    .eq('id', template.id)
+                    .maybeSingle();
+                if (error) throw error;
+                if (!data || !active) return;
+                setCurrent({
+                    id: data.id,
+                    businessUnitId: data.business_unit_id,
+                    logoUrl: data.logo_url || undefined,
+                    address: data.address || '',
+                    body: normalizeBody(data.body),
+                    signatoryName: data.signatory_name,
+                    signatoryPosition: data.signatory_position,
+                    isActive: !!data.is_active,
+                });
+            } catch (err) {
+                console.error('Failed to load COE template', err);
+            }
+        };
+        loadTemplate();
+        return () => {
+            active = false;
+        };
+    }, [isOpen, template?.id]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value, type } = e.target;
@@ -136,7 +182,8 @@ const COETemplateModal: React.FC<COETemplateModalProps> = ({ isOpen, onClose, on
                             ))}
                         </div>
                     </div>
-                    <RichTextEditor 
+                    <RichTextEditor
+                        key={current.id || 'new-template'}
                         label="Certificate Body" 
                         value={current.body || ''} 
                         onChange={(val) => setCurrent(prev => ({ ...prev, body: val }))} 
