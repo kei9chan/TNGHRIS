@@ -15,6 +15,7 @@ import OTLedger from '../../components/payroll/OTLedger';
 import EditableDescription from '../../components/ui/EditableDescription';
 import { logActivity } from '../../services/auditService';
 import { fetchOtRequests, saveOtRequest, approveRejectOtRequest } from '../../services/otService';
+import { supabase } from '../../services/supabaseClient';
 
 type Tab = 'my_ot' | 'team_approvals' | 'calendar' | 'ledger';
 
@@ -45,13 +46,14 @@ const OvertimeRequests: React.FC = () => {
     const navigate = useNavigate();
     
     const [requests, setRequests] = useState<OTRequest[]>([]);
+    const [reporteeIds, setReporteeIds] = useState<string[]>([]);
     
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedRequest, setSelectedRequest] = useState<OTRequest | null>(null);
     const [showSuccessToast, setShowSuccessToast] = useState(false);
 
     const otAccess = getOtAccess();
-    const canApprove = otAccess.canApprove || hasDirectReports();
+    const canApprove = otAccess.canApprove || reporteeIds.length > 0 || hasDirectReports();
     const canViewLedger = canApprove;
     
     useEffect(() => {
@@ -65,6 +67,25 @@ const OvertimeRequests: React.FC = () => {
         };
         loadRequests();
     }, []);
+
+    useEffect(() => {
+        const loadReportees = async () => {
+            if (!user?.id) {
+                setReporteeIds([]);
+                return;
+            }
+            const { data, error } = await supabase
+                .from('hris_users')
+                .select('id')
+                .eq('reports_to', user.id);
+            if (error || !data) {
+                setReporteeIds([]);
+                return;
+            }
+            setReporteeIds(data.map((row: any) => row.id).filter(Boolean));
+        };
+        loadReportees();
+    }, [user?.id]);
     
     // Dashboard State
     const [activeTab, setActiveTab] = useState<Tab>('my_ot');
@@ -140,11 +161,9 @@ const OvertimeRequests: React.FC = () => {
     // 2. "Team Approvals" Data
     const teamRequests = useMemo(() => {
         if (!user || !canApprove) return [];
-        if (isPrivilegedViewer) {
-             return buFilteredRequests.filter(r => r.status === OTStatus.Submitted);
-        }
-        return scopedRequests.filter(r => r.status === OTStatus.Submitted && r.employeeId !== user.id);
-    }, [scopedRequests, user, canApprove, isPrivilegedViewer, buFilteredRequests]);
+        if (reporteeIds.length === 0) return [];
+        return requests.filter(r => reporteeIds.includes(r.employeeId) && r.status === OTStatus.Submitted);
+    }, [requests, reporteeIds, user, canApprove]);
 
     // 3. Calendar Data Source
     const calendarRequests = useMemo(() => {
@@ -282,7 +301,8 @@ const OvertimeRequests: React.FC = () => {
         details: { approvedHours?: number, managerNote?: string }
     ) => {
         if (!user) return;
-        if (!otAccess.canActOn(requestToUpdate as OTRequest)) {
+        const canReview = reporteeIds.includes(requestToUpdate.employeeId || '');
+        if (!otAccess.canActOn(requestToUpdate as OTRequest) && !canReview) {
             alert('You do not have permission to act on this request.');
             return;
         }
@@ -396,6 +416,7 @@ const OvertimeRequests: React.FC = () => {
                         onEdit={handleEditRequest}
                         onDelete={handleDeleteRequest}
                         onWithdraw={handleWithdrawRequest}
+                        canReviewRequest={(req) => reporteeIds.includes(req.employeeId) || otAccess.canActOn(req)}
                     />
                 </Card>
             )}
@@ -406,6 +427,7 @@ const OvertimeRequests: React.FC = () => {
                 onSave={handleSaveRequest}
                 onApproveOrReject={handleApprovalAction}
                 requestToEdit={selectedRequest}
+                canApproveOverride={!!selectedRequest && reporteeIds.includes(selectedRequest.employeeId)}
                 attendanceRecords={mockAttendanceRecords}
                 shiftAssignments={relevantShifts} // Pass shifts for context awareness
                 shiftTemplates={mockShiftTemplates} // Pass templates for context awareness

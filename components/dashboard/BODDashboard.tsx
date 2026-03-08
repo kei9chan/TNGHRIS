@@ -1227,11 +1227,12 @@ const BODDashboard: React.FC = () => {
         });
 
         return normalizedItems.sort((a, b) => {
-            const priorityDiff = (a.priority ?? 99) - (b.priority ?? 99);
-            if (priorityDiff !== 0) return priorityDiff;
             const aTime = a.sortDate ? a.sortDate.getTime() : 0;
             const bTime = b.sortDate ? b.sortDate.getTime() : 0;
-            return bTime - aTime;
+            if (bTime !== aTime) return bTime - aTime;
+            const priorityDiff = (a.priority ?? 99) - (b.priority ?? 99);
+            if (priorityDiff !== 0) return priorityDiff;
+            return String(a.id).localeCompare(String(b.id));
         });
     }, [user, memos, memoUpdateKey, pans, resolutions, ntes, requisitions, awards, assignments, assignedTickets, manpowerRequests, wfhRequests, checklists, templates, isManpowerReviewModalOpen, pendingBenefitRequests, envelopes, evaluationSubmissions, evaluations, useSupabaseEvaluations, isUserEligibleEvaluator, panApproverId, employeeProfileId]); 
 

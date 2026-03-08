@@ -40,6 +40,7 @@ import {
     LeaveRequestStatus,
     WFHRequestStatus,
     OTStatus,
+    OTRequest,
     ManpowerRequestStatus
 } from '../../types';
 import { 
@@ -294,6 +295,8 @@ const EmployeeDashboard: React.FC = () => {
     const [coachingSessions, setCoachingSessions] = useState(mockCoachingSessions);
     const [envelopes, setEnvelopes] = useState<Envelope[]>(mockEnvelopes);
     const [pans, setPans] = useState<PAN[]>(mockPANs);
+    const [reporteeIds, setReporteeIds] = useState<string[]>([]);
+    const [pendingOtApprovals, setPendingOtApprovals] = useState<OTRequest[]>([]);
     const [ntes, setNTEs] = useState<NTE[]>(mockNTEs);
     const [evaluationSubmissions, setEvaluationSubmissions] = useState(mockEvaluationSubmissions);
     const [evaluations, setEvaluations] = useState<Evaluation[]>(mockEvaluations);
@@ -845,6 +848,71 @@ const EmployeeDashboard: React.FC = () => {
             clearInterval(interval);
         };
     }, [user?.id]);
+
+    useEffect(() => {
+        const loadReportees = async () => {
+            if (!user?.id) {
+                setReporteeIds([]);
+                return;
+            }
+            const { data, error } = await supabase
+                .from('hris_users')
+                .select('id')
+                .eq('reports_to', user.id);
+            if (error || !data) {
+                setReporteeIds([]);
+                return;
+            }
+            setReporteeIds(data.map((row: any) => row.id).filter(Boolean));
+        };
+        loadReportees();
+    }, [user?.id]);
+
+    useEffect(() => {
+        if (!user?.id || reporteeIds.length === 0) {
+            setPendingOtApprovals([]);
+            return;
+        }
+        let active = true;
+        const loadOtApprovals = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('ot_requests')
+                    .select('id, employee_id, employee_name, date, start_time, end_time, reason, status, submitted_at, approved_hours, manager_note, history_log, attachment_url')
+                    .in('employee_id', reporteeIds)
+                    .eq('status', OTStatus.Submitted)
+                    .order('submitted_at', { ascending: false });
+                if (error) throw error;
+                if (!active) return;
+                setPendingOtApprovals(
+                    (data || []).map((row: any) => ({
+                        id: row.id,
+                        employeeId: row.employee_id,
+                        employeeName: row.employee_name,
+                        date: row.date ? new Date(row.date) : new Date(),
+                        startTime: row.start_time,
+                        endTime: row.end_time,
+                        reason: row.reason,
+                        status: row.status as OTStatus,
+                        submittedAt: row.submitted_at ? new Date(row.submitted_at) : undefined,
+                        approvedHours: row.approved_hours ?? undefined,
+                        managerNote: row.manager_note ?? undefined,
+                        historyLog: row.history_log || [],
+                        attachmentUrl: row.attachment_url ?? undefined,
+                    }))
+                );
+            } catch (err) {
+                console.error('Failed to load OT approvals', err);
+                if (active) setPendingOtApprovals([]);
+            }
+        };
+        loadOtApprovals();
+        const interval = setInterval(loadOtApprovals, 20000);
+        return () => {
+            active = false;
+            clearInterval(interval);
+        };
+    }, [user?.id, reporteeIds]);
 
     useEffect(() => {
         if (!user) return;
@@ -1499,6 +1567,21 @@ const EmployeeDashboard: React.FC = () => {
                 priority: 1
             });
         });
+
+        pendingOtApprovals.forEach(req => {
+            const sortDate = req.submittedAt || req.date;
+            items.push({
+                id: `ot-approve-${req.id}`,
+                icon: <ClipboardCheckIcon {...iconProps} />,
+                title: "Overtime Request",
+                subtitle: `${req.employeeName} • ${new Date(req.date).toLocaleDateString()}`,
+                date: new Date(sortDate).toLocaleDateString(),
+                sortDate,
+                link: '/payroll/overtime-requests',
+                colorClass: 'bg-amber-500',
+                priority: 1
+            });
+        });
         
         // --- EVALUATION LOGIC UPDATE ---
         const evaluatorUser = { ...user, id: employeeProfileId || user.id };
@@ -1780,7 +1863,7 @@ const EmployeeDashboard: React.FC = () => {
             return bTime - aTime;
         });
 
-    }, [user, notificationUserIds, employeeProfileId, refreshKey, memoUpdateKey, memos, requests, assignments, checklists, templates, isUserEligibleEvaluator, benefitRequests, pulseSurveys, surveyResponses, coachingSessions, envelopes, pans, ntes, evaluationSubmissions, evaluations, evaluationTimelines, useSupabaseEvaluations, approvedLeaveRequests, approvedWfhRequests, approvedOtRequests, approvedManpowerRequests, rejectedLeaveRequests, rejectedWfhRequests, rejectedOtRequests, rejectedManpowerRequests, coeDecisions, assignedTickets]);
+    }, [user, notificationUserIds, employeeProfileId, refreshKey, memoUpdateKey, memos, requests, assignments, checklists, templates, isUserEligibleEvaluator, benefitRequests, pulseSurveys, surveyResponses, coachingSessions, envelopes, pans, ntes, pendingOtApprovals, evaluationSubmissions, evaluations, evaluationTimelines, useSupabaseEvaluations, approvedLeaveRequests, approvedWfhRequests, approvedOtRequests, approvedManpowerRequests, rejectedLeaveRequests, rejectedWfhRequests, rejectedOtRequests, rejectedManpowerRequests, coeDecisions, assignedTickets]);
 
     return (
         <div className="space-y-6">
