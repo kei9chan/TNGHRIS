@@ -7,7 +7,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions'; // Import added
 import { supabase } from '../../services/supabaseClient';
 import { mockJobRequisitions, mockNotifications, mockResignations, mockEvaluations, mockEvaluationSubmissions, mockTickets, mockUserDocuments, mockUsers, mockOnboardingChecklists, mockChangeHistory, mockPANs, mockAssetAssignments, mockManpowerRequests, mockOnboardingTemplates, mockBenefitRequests, mockIncidentReports } from '../../services/mockData';
-import { JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, Role, NotificationType, ResignationStatus, Notification, TicketStatus, UserDocumentStatus, OnboardingTaskStatus, ChangeHistoryStatus, PANStatus, PANActionTaken, PANStepStatus, PAN, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, COERequestStatus, COETemplate, BenefitRequestStatus, IRStatus, IncidentReport, User, Evaluation, EvaluatorType, Memo, MemoAcknowledgement } from '../../types';
+import { JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, Role, NotificationType, ResignationStatus, Notification, TicketStatus, UserDocumentStatus, OnboardingTaskStatus, ChangeHistoryStatus, PANStatus, PANActionTaken, PANStepStatus, PAN, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, COERequestStatus, COETemplate, BenefitRequestStatus, IRStatus, IncidentReport, User, Evaluation, EvaluatorType, Memo, MemoAcknowledgement, OTRequest, OTStatus } from '../../types';
 import ActionItemCard from './ActionItemCard';
 import QuickAnalyticsPreview from './QuickAnalyticsPreview';
 import UpcomingEventsWidget from './UpcomingEventsWidget';
@@ -174,6 +174,8 @@ const HRDashboard: React.FC = () => {
     const [coeToReject, setCoeToReject] = useState<COERequest | null>(null);
     const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
     const [isLoadingCoe, setIsLoadingCoe] = useState(false);
+    const [reporteeIds, setReporteeIds] = useState<string[]>([]);
+    const [pendingOtApprovals, setPendingOtApprovals] = useState<OTRequest[]>([]);
 
     useEffect(() => {
         if (location.state?.openManpowerModal) {
@@ -185,6 +187,8 @@ const HRDashboard: React.FC = () => {
             navigate(location.pathname, { replace: true, state: {} });
         }
     }, [location.state, navigate]);
+
+    // OT approvals handled at team/manager level (Manager dashboard), not HR/global.
 
     useEffect(() => {
         let active = true;
@@ -217,6 +221,71 @@ const HRDashboard: React.FC = () => {
             active = false;
         };
     }, [user]);
+
+    useEffect(() => {
+        const loadReportees = async () => {
+            if (!user?.id) {
+                setReporteeIds([]);
+                return;
+            }
+            const { data, error } = await supabase
+                .from('hris_users')
+                .select('id')
+                .eq('reports_to', user.id);
+            if (error || !data) {
+                setReporteeIds([]);
+                return;
+            }
+            setReporteeIds(data.map((row: any) => row.id).filter(Boolean));
+        };
+        loadReportees();
+    }, [user?.id]);
+
+    useEffect(() => {
+        if (!user?.id || reporteeIds.length === 0) {
+            setPendingOtApprovals([]);
+            return;
+        }
+        let active = true;
+        const loadOtApprovals = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('ot_requests')
+                    .select('id, employee_id, employee_name, date, start_time, end_time, reason, status, submitted_at, approved_hours, manager_note, history_log, attachment_url')
+                    .in('employee_id', reporteeIds)
+                    .eq('status', OTStatus.Submitted)
+                    .order('submitted_at', { ascending: false });
+                if (error) throw error;
+                if (!active) return;
+                setPendingOtApprovals(
+                    (data || []).map((row: any) => ({
+                        id: row.id,
+                        employeeId: row.employee_id,
+                        employeeName: row.employee_name,
+                        date: row.date ? new Date(row.date) : new Date(),
+                        startTime: row.start_time,
+                        endTime: row.end_time,
+                        reason: row.reason,
+                        status: row.status as OTStatus,
+                        submittedAt: row.submitted_at ? new Date(row.submitted_at) : undefined,
+                        approvedHours: row.approved_hours ?? undefined,
+                        managerNote: row.manager_note ?? undefined,
+                        historyLog: row.history_log || [],
+                        attachmentUrl: row.attachment_url ?? undefined,
+                    }))
+                );
+            } catch (err) {
+                console.error('Failed to load OT approvals', err);
+                if (active) setPendingOtApprovals([]);
+            }
+        };
+        loadOtApprovals();
+        const interval = setInterval(loadOtApprovals, 20000);
+        return () => {
+            active = false;
+            clearInterval(interval);
+        };
+    }, [user?.id, reporteeIds]);
 
     useEffect(() => {
         const loadPans = async () => {
@@ -1002,6 +1071,20 @@ const HRDashboard: React.FC = () => {
         allItems.push(...notificationItems);
         
         if (isHR) {
+            pendingOtApprovals.forEach(req => {
+                const sortDate = req.submittedAt || req.date;
+                allItems.push({
+                    id: `ot-approve-${req.id}`,
+                    icon: <ClipboardCheckIcon {...iconProps} />,
+                    title: "Overtime Request",
+                    subtitle: `${req.employeeName} • ${new Date(req.date).toLocaleDateString()}`,
+                    date: new Date(sortDate).toLocaleDateString(),
+                    sortDate,
+                    link: '/payroll/overtime-requests',
+                    colorClass: 'bg-amber-500'
+                });
+            });
+
             pendingBenefitRequests.forEach(req => {
                 allItems.push({
                     id: `ben-hr-${req.id}`,
@@ -1187,14 +1270,15 @@ const HRDashboard: React.FC = () => {
         });
 
         return normalizedItems.sort((a, b) => {
-            const priorityDiff = (a.priority ?? 99) - (b.priority ?? 99);
-            if (priorityDiff !== 0) return priorityDiff;
             const aTime = a.sortDate ? a.sortDate.getTime() : 0;
             const bTime = b.sortDate ? b.sortDate.getTime() : 0;
-            return bTime - aTime;
+            if (bTime !== aTime) return bTime - aTime;
+            const priorityDiff = (a.priority ?? 99) - (b.priority ?? 99);
+            if (priorityDiff !== 0) return priorityDiff;
+            return String(a.id).localeCompare(String(b.id));
         });
 
-    }, [user, isHR, memos, memoUpdateKey, pendingHrRequisitions, pendingResignations, pendingProfileChanges, pendingUserRegistrations, assignments, assignedTickets, checklists, templates, pendingBenefitRequests, incidentReports, evaluationSubmissions, evaluations, useSupabaseEvaluations, isUserEligibleEvaluator, pans, panApproverId, employeeProfileId]);
+    }, [user, isHR, memos, memoUpdateKey, pendingHrRequisitions, pendingResignations, pendingProfileChanges, pendingUserRegistrations, assignments, assignedTickets, checklists, templates, pendingBenefitRequests, pendingOtApprovals, incidentReports, evaluationSubmissions, evaluations, useSupabaseEvaluations, isUserEligibleEvaluator, pans, panApproverId, employeeProfileId]);
 
 
     return (

@@ -20,6 +20,7 @@ interface OTRequestModalProps {
     attendanceRecords: AttendanceRecord[];
     shiftAssignments?: ShiftAssignment[];
     shiftTemplates?: ShiftTemplate[];
+    canApproveOverride?: boolean;
 }
 
 const calculatePlannedHours = (start: string, end: string): number => {
@@ -57,7 +58,7 @@ const isTimeOverlap = (start1: string, end1: string, start2: string, end2: strin
 };
 
 
-const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave, onApproveOrReject, requestToEdit, attendanceRecords, shiftAssignments = [], shiftTemplates = [] }) => {
+const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave, onApproveOrReject, requestToEdit, attendanceRecords, shiftAssignments = [], shiftTemplates = [], canApproveOverride }) => {
     const { user } = useAuth();
     const { can } = usePermissions();
     const [request, setRequest] = useState<Partial<OTRequest>>({});
@@ -285,7 +286,7 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
     
     const isFinalized = request.status === OTStatus.Approved || request.status === OTStatus.Rejected;
     const isManagerReviewing = user?.role !== Role.Employee && requestToEdit?.employeeId !== user?.id && requestToEdit?.status === OTStatus.Submitted;
-    const canApprove = can('OT', Permission.Approve);
+    const canApprove = can('OT', Permission.Approve) || !!canApproveOverride;
 
     // Auto-set approved hours for manager convenience
     useEffect(() => {

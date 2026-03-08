@@ -1444,14 +1444,15 @@ const ManagerDashboard: React.FC = () => {
         });
 
         // 6. OT Approval (Manager Approving)
-        const otForApproval = otRequests.filter(r => subordinateIds.includes(r.employeeId) && r.status === OTStatus.Submitted);
-        otForApproval.forEach(req => {
+        pendingOtApprovals.forEach(req => {
+            const sortDate = req.submittedAt || req.date;
             items.push({
                 id: req.id,
                 icon: <BriefcaseIcon {...iconProps} />,
                 title: "Overtime Request",
                 subtitle: `From ${req.employeeName} for ${new Date(req.date).toLocaleDateString()}`,
-                date: new Date(req.submittedAt!).toLocaleDateString(),
+                date: new Date(sortDate).toLocaleDateString(),
+                sortDate,
                 link: '/payroll/overtime-requests',
                 colorClass: "bg-blue-500",
             });
@@ -1665,13 +1666,14 @@ const ManagerDashboard: React.FC = () => {
         });
 
         return normalizedItems.sort((a, b) => {
-            const priorityDiff = (a.priority ?? 99) - (b.priority ?? 99);
-            if (priorityDiff !== 0) return priorityDiff;
             const aTime = a.sortDate ? a.sortDate.getTime() : 0;
             const bTime = b.sortDate ? b.sortDate.getTime() : 0;
-            return bTime - aTime;
+            if (bTime !== aTime) return bTime - aTime;
+            const priorityDiff = (a.priority ?? 99) - (b.priority ?? 99);
+            if (priorityDiff !== 0) return priorityDiff;
+            return String(a.id).localeCompare(String(b.id));
         });
-    }, [user, notificationUserIds, employeeProfileId, memos, memoUpdateKey, requests, assignments, assignedTickets, checklists, templates, pans, otRequests, exceptions, requisitions, resolutions, ntes, awards, manpowerRequests, isApprover, isBusinessUnitManager, subordinateIds, envelopes, benefitRequests, coachingSessions, evaluationSubmissions, evaluations, useSupabaseEvaluations, isUserEligibleEvaluator, visibleEmployeeIds, panApproverId]);
+    }, [user, notificationUserIds, employeeProfileId, memos, memoUpdateKey, requests, assignments, assignedTickets, checklists, templates, pans, pendingOtApprovals, exceptions, requisitions, resolutions, ntes, awards, manpowerRequests, isApprover, isBusinessUnitManager, subordinateIds, envelopes, benefitRequests, coachingSessions, evaluationSubmissions, evaluations, useSupabaseEvaluations, isUserEligibleEvaluator, visibleEmployeeIds, panApproverId]);
 
     const teamApprovalItems = useMemo(() => {
         const items: Array<{
@@ -1918,6 +1920,7 @@ const ManagerDashboard: React.FC = () => {
                 onSave={() => {}}
                 onApproveOrReject={handleApproveRejectOT}
                 requestToEdit={selectedOTRequest}
+                canApproveOverride={!!selectedOTRequest && reporteeIds.includes(selectedOTRequest.employeeId)}
                 attendanceRecords={mockAttendanceRecords}
                 shiftAssignments={mockShiftAssignments}
                 shiftTemplates={mockShiftTemplates}

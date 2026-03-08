@@ -9,6 +9,7 @@ interface OTRequestTableProps {
     onEdit: (request: OTRequest) => void;
     onDelete: (requestId: string) => void;
     onWithdraw: (requestId: string) => void;
+    canReviewRequest?: (request: OTRequest) => boolean;
 }
 
 const statusColors: { [key in OTStatus]: string } = {
@@ -18,7 +19,7 @@ const statusColors: { [key in OTStatus]: string } = {
     [OTStatus.Rejected]: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
 };
 
-const OTRequestTable: React.FC<OTRequestTableProps> = ({ requests, onEdit, onDelete, onWithdraw }) => {
+const OTRequestTable: React.FC<OTRequestTableProps> = ({ requests, onEdit, onDelete, onWithdraw, canReviewRequest }) => {
     const { user } = useAuth();
     const { can } = usePermissions();
 
@@ -57,7 +58,7 @@ const OTRequestTable: React.FC<OTRequestTableProps> = ({ requests, onEdit, onDel
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                      <div className="flex space-x-2 justify-end">
-                                        {!isOwner && req.status === OTStatus.Submitted && can('OT', Permission.Approve) && (
+                                        {!isOwner && req.status === OTStatus.Submitted && (canReviewRequest ? canReviewRequest(req) : can('OT', Permission.Approve)) && (
                                             <Button variant="secondary" size="sm" onClick={() => onEdit(req)}>Review</Button>
                                         )}
                                         {isOwner && req.status === OTStatus.Draft && (
