@@ -342,15 +342,58 @@ const EmployeeProfile: React.FC = () => {
         if (!userToView || !currentUser) return;
 
         try {
-            const updated = await updateSupabaseUser(userToView.id, updatedProfileData);
-            if (updated) {
-                setUsers(prev => {
-                    const rest = prev.filter(u => u.id !== updated.id);
-                    return [updated, ...rest];
-                });
+            const formatDateOnly = (d?: Date | string | null) => {
+                if (!d) return null;
+                if (typeof d === 'string') {
+                    const clean = d.split('T')[0]?.trim();
+                    return clean || null;
+                }
+                return new Date(d).toISOString().split('T')[0];
+            };
+
+            const changes: Array<{ field: string; oldValue: any; newValue: any }> = [];
+            const pushIfChanged = (field: string, oldValue: any, newValue: any) => {
+                const oldJson = JSON.stringify(oldValue ?? null);
+                const newJson = JSON.stringify(newValue ?? null);
+                if (oldJson !== newJson) {
+                    changes.push({ field, oldValue, newValue });
+                }
+            };
+
+            pushIfChanged('name', userToView.name, updatedProfileData.name ?? userToView.name);
+            pushIfChanged('email', userToView.email, updatedProfileData.email ?? userToView.email);
+            pushIfChanged('position', userToView.position, updatedProfileData.position ?? userToView.position);
+            pushIfChanged('department', userToView.department, updatedProfileData.department ?? userToView.department);
+            pushIfChanged('businessUnit', userToView.businessUnit, updatedProfileData.businessUnit ?? userToView.businessUnit);
+            pushIfChanged('birthDate', formatDateOnly(userToView.birthDate ?? null), formatDateOnly(updatedProfileData.birthDate ?? userToView.birthDate ?? null));
+
+            if (changes.length === 0) {
+                alert('No changes detected to submit.');
+                return;
             }
-            logActivity(currentUser, 'UPDATE', 'EmployeeProfile', userToView.id, 'Updated profile.');
-            alert('Your changes have been submitted.');
+
+            const submissionId =
+                typeof crypto !== 'undefined' && 'randomUUID' in crypto
+                    ? crypto.randomUUID()
+                    : `submission-${Date.now()}`;
+            const createdAt = new Date().toISOString();
+
+            const rows = changes.map(change => ({
+                employee_id: userToView.id,
+                changed_by: currentUser.id,
+                field: change.field,
+                old_value: change.oldValue ?? null,
+                new_value: change.newValue ?? null,
+                status: ChangeHistoryStatus.Pending,
+                submission_id: submissionId,
+                created_at: createdAt,
+            }));
+
+            const { error } = await supabase.from('profile_change_requests').insert(rows);
+            if (error) throw error;
+
+            logActivity(currentUser, 'SUBMIT', 'EmployeeProfileChange', submissionId, 'Submitted profile changes for approval.');
+            alert('Your changes have been submitted for approval.');
         } catch (err: any) {
             alert(err?.message || 'Failed to submit changes.');
         }
