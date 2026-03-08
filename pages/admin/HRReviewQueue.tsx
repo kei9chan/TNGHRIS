@@ -21,9 +21,10 @@ interface SubmissionGroup {
 const HRReviewQueue: React.FC = () => {
     const { user } = useAuth();
     const { can } = usePermissions();
-    const [pendingChanges, setPendingChanges] = useState<ChangeHistory[]>(() => mockChangeHistory.filter(c => c.status === ChangeHistoryStatus.Pending));
+    const [pendingChanges, setPendingChanges] = useState<ChangeHistory[]>([]);
     const [pendingUsers, setPendingUsers] = useState<User[]>([]);
     const [pendingDocuments, setPendingDocuments] = useState<UserDocument[]>(() => mockUserDocuments.filter(d => d.status === UserDocumentStatus.Pending));
+    const [employeeLookup, setEmployeeLookup] = useState<Map<string, string>>(new Map());
     
     const [filterName, setFilterName] = useState('');
     const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
@@ -32,10 +33,10 @@ const HRReviewQueue: React.FC = () => {
     const submissions = useMemo(() => {
         const groups: Record<string, SubmissionGroup> = {};
         pendingChanges.forEach(change => {
-            const employee = mockUsers.find(u => u.id === change.employeeId);
+            const employeeName = employeeLookup.get(change.employeeId) || mockUsers.find(u => u.id === change.employeeId)?.name || 'Unknown Employee';
             if (!groups[change.submissionId]) {
                 groups[change.submissionId] = {
-                    employeeName: employee?.name || 'Unknown Employee',
+                    employeeName,
                     employeeId: change.employeeId,
                     submissionDate: change.timestamp,
                     changes: []
@@ -60,6 +61,53 @@ const HRReviewQueue: React.FC = () => {
     }, [pendingDocuments, filterName]);
 
     // Load new user registrations (email confirmed + inactive)
+    useEffect(() => {
+        let active = true;
+        const loadPendingChanges = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('profile_change_requests')
+                    .select('*')
+                    .eq('status', ChangeHistoryStatus.Pending)
+                    .order('created_at', { ascending: false });
+                if (error) throw error;
+                const mapped = (data || []).map((row: any) => ({
+                    id: row.id,
+                    employeeId: row.employee_id,
+                    timestamp: row.created_at ? new Date(row.created_at) : new Date(),
+                    changedBy: row.changed_by,
+                    field: row.field,
+                    oldValue: row.old_value,
+                    newValue: row.new_value,
+                    status: row.status,
+                    submissionId: row.submission_id,
+                    rejectionReason: row.rejection_reason || undefined,
+                })) as ChangeHistory[];
+
+                const employeeIds = Array.from(new Set(mapped.map(change => change.employeeId)));
+                if (employeeIds.length > 0) {
+                    const { data: employees, error: empErr } = await supabase
+                        .from('hris_users')
+                        .select('id, full_name')
+                        .in('id', employeeIds);
+                    if (!empErr && employees) {
+                        const nameMap = new Map(employees.map((row: any) => [row.id, row.full_name || 'Unknown Employee']));
+                        if (active) setEmployeeLookup(nameMap);
+                    }
+                }
+
+                if (active) setPendingChanges(mapped);
+            } catch (e) {
+                console.error('Failed to load profile change requests', e);
+                if (active) setPendingChanges([]);
+            }
+        };
+        loadPendingChanges();
+        return () => {
+            active = false;
+        };
+    }, []);
+
     useEffect(() => {
         const loadPendingUsers = async () => {
             try {
@@ -90,35 +138,74 @@ const HRReviewQueue: React.FC = () => {
     }, []);
 
 
-    const handleProfileApprovalAction = (submissionId: string, status: ChangeHistoryStatus.Approved | ChangeHistoryStatus.Rejected, reason?: string) => {
+    const handleProfileApprovalAction = async (submissionId: string, status: ChangeHistoryStatus.Approved | ChangeHistoryStatus.Rejected, reason?: string) => {
         if (!user) return;
-        
-        mockChangeHistory.forEach(c => {
-            if (c.submissionId === submissionId) {
-                c.status = status;
-                if (status === ChangeHistoryStatus.Rejected) {
-                    c.rejectionReason = reason;
+        try {
+            const { data: changeRows, error } = await supabase
+                .from('profile_change_requests')
+                .select('*')
+                .eq('submission_id', submissionId);
+            if (error) throw error;
+
+            if (status === ChangeHistoryStatus.Approved && changeRows && changeRows.length > 0) {
+                const employeeId = changeRows[0].employee_id;
+                const updates: Record<string, any> = {};
+                const formatDateOnly = (d?: string | null) => (d ? d.split('T')[0] : null);
+                changeRows.forEach((row: any) => {
+                    switch (row.field) {
+                        case 'name':
+                            updates.full_name = row.new_value;
+                            break;
+                        case 'email':
+                            updates.email = row.new_value;
+                            break;
+                        case 'position':
+                            updates.position = row.new_value;
+                            break;
+                        case 'department':
+                            updates.department = row.new_value;
+                            break;
+                        case 'businessUnit':
+                            updates.business_unit = row.new_value;
+                            break;
+                        case 'birthDate':
+                            updates.birth_date = formatDateOnly(row.new_value);
+                            break;
+                        default:
+                            break;
+                    }
+                });
+
+                if (Object.keys(updates).length > 0) {
+                    const { error: updateErr } = await supabase
+                        .from('hris_users')
+                        .update(updates)
+                        .eq('id', employeeId);
+                    if (updateErr) throw updateErr;
                 }
             }
-        });
-    
-        const draft = mockEmployeeDrafts.find(d => d.submissionId === submissionId);
-    
-        if (draft) {
-            if (status === ChangeHistoryStatus.Approved) {
-                draft.status = EmployeeDraftStatus.Approved;
-                const userIndex = mockUsers.findIndex(u => u.id === draft.employeeId);
-                if (userIndex > -1) Object.assign(mockUsers[userIndex], draft.draftData);
-            } else {
-                draft.status = EmployeeDraftStatus.Rejected;
+
+            const updatePayload: Record<string, any> = {
+                status,
+            };
+            if (status === ChangeHistoryStatus.Rejected) {
+                updatePayload.rejection_reason = reason || null;
             }
+            const { error: updateErr } = await supabase
+                .from('profile_change_requests')
+                .update(updatePayload)
+                .eq('submission_id', submissionId);
+            if (updateErr) throw updateErr;
+
+            const action = status === ChangeHistoryStatus.Approved ? 'APPROVE' : 'REJECT';
+            const details = status === ChangeHistoryStatus.Approved ? `Approved profile changes.` : `Rejected profile changes. Reason: ${reason}`;
+            logActivity(user, action, 'EmployeeProfileChange', submissionId, details);
+
+            setPendingChanges(prev => prev.filter(c => c.submissionId !== submissionId));
+        } catch (e) {
+            console.error('Failed to update profile change request', e);
+            alert('Failed to update profile change request.');
         }
-        
-        const action = status === ChangeHistoryStatus.Approved ? 'APPROVE' : 'REJECT';
-        const details = status === ChangeHistoryStatus.Approved ? `Approved profile changes.` : `Rejected profile changes. Reason: ${reason}`;
-        logActivity(user, action, 'EmployeeProfileChange', submissionId, details);
-        
-        setPendingChanges(prev => prev.filter(c => c.submissionId !== submissionId));
     };
 
     const handleDocumentApprovalAction = (documentId: string, status: UserDocumentStatus.Approved | UserDocumentStatus.Rejected, reason?: string) => {
