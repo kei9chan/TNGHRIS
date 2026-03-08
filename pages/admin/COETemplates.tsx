@@ -1,24 +1,84 @@
 
-import React, { useState, useMemo } from 'react';
-import { COETemplate, Permission } from '../../types';
-import { mockCOETemplates, mockBusinessUnits } from '../../services/mockData';
+import React, { useState, useMemo, useEffect } from 'react';
+import { BusinessUnit, COETemplate, Permission } from '../../types';
+import { mockCOETemplates } from '../../services/mockData';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import COETemplateModal from '../../components/admin/COETemplateModal';
 import { usePermissions } from '../../hooks/usePermissions';
+import { supabase } from '../../services/supabaseClient';
+import { useAuth } from '../../hooks/useAuth';
 
 const COETemplates: React.FC = () => {
     const { can, getAccessibleBusinessUnits } = usePermissions();
+    const { user } = useAuth();
     const canManage = can('COE', Permission.Manage);
 
-    const [templates, setTemplates] = useState<COETemplate[]>(mockCOETemplates);
+    const [templates, setTemplates] = useState<COETemplate[]>([]);
+    const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedTemplate, setSelectedTemplate] = useState<COETemplate | null>(null);
 
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(businessUnits), [getAccessibleBusinessUnits, businessUnits]);
     const accessibleBuIds = useMemo(() => new Set(accessibleBus.map(b => b.id)), [accessibleBus]);
 
+    useEffect(() => {
+        let active = true;
+        const loadTemplates = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('coe_templates')
+                    .select('*')
+                    .order('updated_at', { ascending: false });
+                if (error) throw error;
+                const mapped = (data || []).map((row: any) => ({
+                    id: row.id,
+                    businessUnitId: row.business_unit_id,
+                    logoUrl: row.logo_url || undefined,
+                    address: row.address || '',
+                    body: row.body,
+                    signatoryName: row.signatory_name,
+                    signatoryPosition: row.signatory_position,
+                    isActive: !!row.is_active,
+                })) as COETemplate[];
+                if (active) setTemplates(mapped);
+            } catch (err) {
+                console.error('Failed to load COE templates', err);
+                if (active) setTemplates([...mockCOETemplates]);
+            }
+        };
+        loadTemplates();
+        return () => {
+            active = false;
+        };
+    }, []);
+
+    useEffect(() => {
+        let active = true;
+        const loadBusinessUnits = async () => {
+            try {
+                const { data, error } = await supabase.from('business_units').select('*').order('name');
+                if (error) throw error;
+                const mapped = (data || []).map((row: any) => ({
+                    id: row.id,
+                    name: row.name,
+                    color: row.color || undefined,
+                    code: row.code || undefined,
+                    address: row.address || undefined,
+                })) as BusinessUnit[];
+                if (active) setBusinessUnits(mapped);
+            } catch (err) {
+                console.error('Failed to load business units', err);
+            }
+        };
+        loadBusinessUnits();
+        return () => {
+            active = false;
+        };
+    }, []);
+
     const filteredTemplates = useMemo(() => {
+        if (accessibleBuIds.size === 0) return templates;
         return templates.filter(t => accessibleBuIds.has(t.businessUnitId));
     }, [templates, accessibleBuIds]);
 
@@ -27,30 +87,88 @@ const COETemplates: React.FC = () => {
         setIsModalOpen(true);
     };
 
-    const handleSave = (template: COETemplate) => {
-        if (template.id) {
-            const updatedTemplates = templates.map(t => t.id === template.id ? template : t);
-            setTemplates(updatedTemplates);
-            // Update mock data
-            const index = mockCOETemplates.findIndex(t => t.id === template.id);
-            if (index > -1) mockCOETemplates[index] = template;
-        } else {
-            const newTemplate = { ...template, id: `COE-TPL-${Date.now()}` };
-            setTemplates([...templates, newTemplate]);
-            mockCOETemplates.push(newTemplate);
+    const handleSave = async (template: COETemplate) => {
+        try {
+            if (template.id) {
+                const { data, error } = await supabase
+                    .from('coe_templates')
+                    .update({
+                        business_unit_id: template.businessUnitId,
+                        logo_url: template.logoUrl || null,
+                        address: template.address || null,
+                        body: template.body,
+                        signatory_name: template.signatoryName,
+                        signatory_position: template.signatoryPosition,
+                        is_active: template.isActive,
+                        updated_at: new Date().toISOString(),
+                    })
+                    .eq('id', template.id)
+                    .select('*')
+                    .maybeSingle();
+                if (error) throw error;
+                const updated = data
+                    ? {
+                          id: data.id,
+                          businessUnitId: data.business_unit_id,
+                          logoUrl: data.logo_url || undefined,
+                          address: data.address || '',
+                          body: data.body,
+                          signatoryName: data.signatory_name,
+                          signatoryPosition: data.signatory_position,
+                          isActive: !!data.is_active,
+                      }
+                    : template;
+                setTemplates(prev => prev.map(t => (t.id === template.id ? updated : t)));
+            } else {
+                const { data, error } = await supabase
+                    .from('coe_templates')
+                    .insert({
+                        business_unit_id: template.businessUnitId,
+                        logo_url: template.logoUrl || null,
+                        address: template.address || null,
+                        body: template.body,
+                        signatory_name: template.signatoryName,
+                        signatory_position: template.signatoryPosition,
+                        is_active: template.isActive ?? true,
+                        created_by: user?.id || null,
+                    })
+                    .select('*')
+                    .maybeSingle();
+                if (error) throw error;
+                const created = data
+                    ? {
+                          id: data.id,
+                          businessUnitId: data.business_unit_id,
+                          logoUrl: data.logo_url || undefined,
+                          address: data.address || '',
+                          body: data.body,
+                          signatoryName: data.signatory_name,
+                          signatoryPosition: data.signatory_position,
+                          isActive: !!data.is_active,
+                      }
+                    : template;
+                setTemplates(prev => [created, ...prev]);
+            }
+            setIsModalOpen(false);
+        } catch (err) {
+            console.error('Failed to save COE template', err);
+            alert('Failed to save COE template. Please try again.');
         }
-        setIsModalOpen(false);
     };
 
-    const handleDelete = (id: string) => {
-        if (window.confirm("Are you sure you want to delete this template?")) {
+    const handleDelete = async (id: string) => {
+        if (!window.confirm("Are you sure you want to delete this template?")) return;
+        try {
+            const { error } = await supabase.from('coe_templates').delete().eq('id', id);
+            if (error) throw error;
             setTemplates(prev => prev.filter(t => t.id !== id));
-             const index = mockCOETemplates.findIndex(t => t.id === id);
-            if (index > -1) mockCOETemplates.splice(index, 1);
+        } catch (err) {
+            console.error('Failed to delete COE template', err);
+            alert('Failed to delete COE template. Please try again.');
         }
     };
 
-    const getBuName = (buId: string) => mockBusinessUnits.find(b => b.id === buId)?.name || 'Unknown BU';
+    const getBuName = (buId: string) => businessUnits.find(b => b.id === buId)?.name || 'Unknown BU';
 
     if (!canManage) {
         return <div className="p-6 text-center text-gray-500">You do not have permission to manage COE templates.</div>;
@@ -104,6 +222,7 @@ const COETemplates: React.FC = () => {
                 onClose={() => setIsModalOpen(false)}
                 onSave={handleSave}
                 template={selectedTemplate}
+                businessUnits={accessibleBus}
             />
         </div>
     );

@@ -29,9 +29,9 @@ const COERequests: React.FC = () => {
     const canManage = can('COE', Permission.Manage) || can('COE', Permission.Approve);
     const canRequest = can('COE', Permission.Create);
 
-    const [requests, setRequests] = useState<COERequest[]>(mockCOERequests);
-    const [coeTemplates, setCoeTemplates] = useState<COETemplate[]>(mockCOETemplates);
-    const [businessUnits, setBusinessUnits] = useState(mockBusinessUnits);
+    const [requests, setRequests] = useState<COERequest[]>([]);
+    const [coeTemplates, setCoeTemplates] = useState<COETemplate[]>([]);
+    const [businessUnits, setBusinessUnits] = useState([]);
     const [templatesLoaded, setTemplatesLoaded] = useState(false);
     const [statusFilter, setStatusFilter] = useState<string>('all');
     const [searchTerm, setSearchTerm] = useState('');
@@ -43,7 +43,7 @@ const COERequests: React.FC = () => {
     const [printData, setPrintData] = useState<{ template: COETemplate, request: COERequest, employee: any } | null>(null);
     const [autoOpenedRequestId, setAutoOpenedRequestId] = useState<string | null>(null);
 
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(businessUnits), [getAccessibleBusinessUnits, businessUnits]);
     const accessibleBuIds = useMemo(() => new Set(accessibleBus.map(b => b.id)), [accessibleBus]);
 
     useEffect(() => {
@@ -57,19 +57,34 @@ const COERequests: React.FC = () => {
                     supabase.from('business_units').select('id, name')
                 ]);
                 if (!isMounted) return;
-                setRequests(reqs);
+                let hydratedRequests = reqs;
+                const missingBuIds = reqs.filter(r => !r.businessUnitId).map(r => r.employeeId);
+                if (missingBuIds.length > 0) {
+                    const { data: userRows, error: userErr } = await supabase
+                        .from('hris_users')
+                        .select('id, business_unit_id')
+                        .in('id', missingBuIds);
+                    if (!userErr && userRows) {
+                        const buMap = new Map(userRows.map((row: any) => [row.id, row.business_unit_id]));
+                        hydratedRequests = reqs.map(req => ({
+                            ...req,
+                            businessUnitId: req.businessUnitId || buMap.get(req.employeeId) || ''
+                        }));
+                    }
+                }
+                setRequests(hydratedRequests);
                 setCoeTemplates(templates);
                 if (!buRows.error && buRows.data) {
                     setBusinessUnits(buRows.data.map((row: any) => ({ id: row.id, name: row.name })));
                 } else {
-                    setBusinessUnits(mockBusinessUnits);
+                    setBusinessUnits([]);
                 }
                 setTemplatesLoaded(true);
             } catch (error) {
                 if (!isMounted) return;
-                setRequests([...mockCOERequests]);
-                setCoeTemplates([...mockCOETemplates]);
-                setBusinessUnits([...mockBusinessUnits]);
+                setRequests([]);
+                setCoeTemplates([]);
+                setBusinessUnits([]);
                 setTemplatesLoaded(true);
             }
         };
@@ -147,15 +162,10 @@ const COERequests: React.FC = () => {
 
     const resolveTemplate = (businessUnitId: string): COETemplate | null => {
         const activeTemplates = coeTemplates.filter(t => t.isActive);
-        const mockActiveTemplates = mockCOETemplates.filter(t => t.isActive);
-
         return (
             activeTemplates.find(t => t.businessUnitId === businessUnitId)
-            || mockActiveTemplates.find(t => t.businessUnitId === businessUnitId)
             || activeTemplates[0]
-            || mockActiveTemplates[0]
             || coeTemplates[0]
-            || mockCOETemplates[0]
             || null
         );
     };

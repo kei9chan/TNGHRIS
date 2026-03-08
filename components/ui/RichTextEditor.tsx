@@ -54,9 +54,12 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, label,
     if (quill) {
         // Prevent cursor jump by only updating if content is different
         if (quill.root.innerHTML !== value) {
-            // 'silent' source is important to prevent firing text-change event and causing a loop
-            const delta = quill.clipboard.convert(value);
-            quill.setContents(delta, 'silent');
+            // 'silent' source prevents firing text-change and causing loops
+            if (value && value.includes('<')) {
+                quill.clipboard.dangerouslyPasteHTML(value, 'silent');
+            } else {
+                quill.setText(value || '', 'silent');
+            }
         }
     }
   }, [value, initQuill]);
