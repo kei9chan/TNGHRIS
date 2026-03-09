@@ -6,6 +6,7 @@ import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
 import ExceptionsTable from '../../components/payroll/ExceptionsTable';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 const AttendanceExceptions: React.FC = () => {
     const { user } = useAuth();
@@ -30,7 +31,12 @@ const AttendanceExceptions: React.FC = () => {
             ]);
 
             const visibleIds = getVisibleEmployeeIds();
-            const employeeMap = new Map((userData || []).map((u: any) => [u.id, { id: u.id, name: u.full_name || 'Unknown', role: u.role as Role }]));
+            const employeeMap = new Map(
+                (userData || []).map((u: any) => [
+                    u.id,
+                    { id: u.id, name: formatEmployeeName(u.full_name || 'Unknown'), role: u.role as Role },
+                ])
+            );
             // Capture names from joined events if not present in hris_users
             (eventsData || []).forEach((ev: any) => {
                 const joinedName = ev.hris_users?.full_name;

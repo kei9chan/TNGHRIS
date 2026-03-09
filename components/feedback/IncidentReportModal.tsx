@@ -10,6 +10,7 @@ import EmployeeMultiSelect from './EmployeeMultiSelect';
 import { mockUsers, mockCodeOfDiscipline, mockBusinessUnits } from '../../services/mockData';
 import SignaturePad, { SignaturePadRef } from '../ui/SignaturePad';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 import FileUploader from '../ui/FileUploader';
 
 interface IncidentReportModalProps {
@@ -129,7 +130,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
         if (data) {
           const mapped = data.map((u: any) => ({
             id: u.id,
-            name: u.full_name || 'User',
+            name: formatEmployeeName(u.full_name || 'User'),
             email: u.email || '',
             role: u.role,
             department: u.department || '',

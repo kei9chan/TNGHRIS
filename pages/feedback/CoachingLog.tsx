@@ -9,6 +9,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import CoachingModal from '../../components/feedback/CoachingModal';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 const CoachingLog: React.FC = () => {
     const { user } = useAuth();
@@ -56,7 +57,7 @@ const CoachingLog: React.FC = () => {
                 const mapped: User[] =
                     data?.map((u: any) => ({
                         id: u.id,
-                        name: u.full_name,
+                        name: formatEmployeeName(u.full_name || ''),
                         email: '',
                         role: u.role,
                         department: '',

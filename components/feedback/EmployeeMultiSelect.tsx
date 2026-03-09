@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { User } from '../../types';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 interface EmployeeMultiSelectProps {
   label: string;
@@ -21,7 +22,6 @@ const UserAvatar: React.FC = () => (
     </div>
 );
 
-
 const EmployeeMultiSelect: React.FC<EmployeeMultiSelectProps> = ({ label, allUsers, selectedUsers, onSelectionChange, disabled = false }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isDropdownOpen, setDropdownOpen] = useState(false);
@@ -39,6 +39,7 @@ const EmployeeMultiSelect: React.FC<EmployeeMultiSelectProps> = ({ label, allUse
     const lowerSearch = searchTerm.toLowerCase();
     return pool.filter(user => 
         user.name.toLowerCase().includes(lowerSearch) ||
+        formatEmployeeName(user.name).toLowerCase().includes(lowerSearch) ||
         (user.email || '').toLowerCase().includes(lowerSearch)
     );
   }, [searchTerm, allUsers, selectedUsers]);
@@ -91,7 +92,7 @@ const EmployeeMultiSelect: React.FC<EmployeeMultiSelectProps> = ({ label, allUse
                     <UserAvatar />
                     <div className="ml-3">
                         <p className="text-sm font-medium text-gray-900 dark:text-white">
-                          {user.name}
+                          {formatEmployeeName(user.name)}
                         </p>
                         {user.role && <p className="text-sm text-gray-500 dark:text-gray-400">{user.role}</p>}
                     </div>
@@ -110,7 +111,7 @@ const EmployeeMultiSelect: React.FC<EmployeeMultiSelectProps> = ({ label, allUse
                 <UserAvatar />
                 <div className="ml-3">
                     <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                      {user.name}
+                      {formatEmployeeName(user.name)}
                     </p>
                     {user.role && <p className="text-xs text-gray-500 dark:text-gray-400">{user.role}</p>}
                 </div>

@@ -9,6 +9,7 @@ import { usePermissions } from '../../hooks/usePermissions';
 import { mockEvaluations, mockEvaluationSubmissions, mockUsers, mockEvaluationQuestions, mockBusinessUnits, mockDepartments } from '../../services/mockData';
 import { Evaluation, EvaluationSubmission, User, EvaluationQuestion, Role, Permission, EvaluatorType, EvaluatorConfig, RaterGroup } from '../../types';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 const ArrowLeftIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>;
 const ChevronDownIcon = ({ className }: { className?: string }) => <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 transition-transform ${className}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>;
@@ -245,7 +246,7 @@ const EvaluationResult: React.FC = () => {
                     let mappedEmployees: User[] =
                         ((employeesRes as any).data || []).map((u: any) => ({
                             id: u.id,
-                            name: u.full_name || 'Unknown',
+                            name: formatEmployeeName(u.full_name || 'Unknown'),
                             email: u.email || '',
                             role: u.role,
                             department: u.department || '',
@@ -272,7 +273,7 @@ const EvaluationResult: React.FC = () => {
                         if (authErr) throw authErr;
                         mappedEmployees = (authRows || []).map((u: any) => ({
                             id: u.id,
-                            name: u.full_name || 'Unknown',
+                            name: formatEmployeeName(u.full_name || 'Unknown'),
                             email: u.email || '',
                             role: u.role,
                             department: u.department || '',

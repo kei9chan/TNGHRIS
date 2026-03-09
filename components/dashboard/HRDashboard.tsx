@@ -6,6 +6,7 @@ import Card from '../ui/Card';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions'; // Import added
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { mockJobRequisitions, mockNotifications, mockResignations, mockEvaluations, mockEvaluationSubmissions, mockTickets, mockUserDocuments, mockUsers, mockOnboardingChecklists, mockChangeHistory, mockPANs, mockAssetAssignments, mockManpowerRequests, mockOnboardingTemplates, mockBenefitRequests, mockIncidentReports } from '../../services/mockData';
 import { JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, Role, NotificationType, ResignationStatus, Notification, TicketStatus, UserDocumentStatus, OnboardingTaskStatus, ChangeHistoryStatus, PANStatus, PANActionTaken, PANStepStatus, PAN, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, COERequestStatus, COETemplate, BenefitRequestStatus, IRStatus, IncidentReport, User, Evaluation, EvaluatorType, Memo, MemoAcknowledgement, OTRequest, OTStatus } from '../../types';
 import ActionItemCard from './ActionItemCard';
@@ -618,7 +619,11 @@ const HRDashboard: React.FC = () => {
 
         const employee: User = {
             id: employeeRow.id,
-            name: employeeRow.full_name || `${employeeRow.first_name || ''} ${employeeRow.last_name || ''}`.trim() || 'Employee',
+            name: formatEmployeeName(
+              employeeRow.full_name ||
+                `${employeeRow.first_name || ''} ${employeeRow.last_name || ''}`.trim() ||
+                'Employee'
+            ),
             email: employeeRow.email,
             role: employeeRow.role || Role.Employee,
             department: employeeRow.department || '',

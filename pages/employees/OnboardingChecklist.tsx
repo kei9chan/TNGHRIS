@@ -18,6 +18,7 @@ import ResignationListTable from '../../components/employees/ResignationListTabl
 import EditableDescription from '../../components/ui/EditableDescription';
 import ResignationLinkModal from '../../components/employees/ResignationLinkModal';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 
 // Icons
@@ -92,7 +93,7 @@ const OnboardingChecklistPage: React.FC = () => {
         if (employeeRows && employeeRows.length > 0) {
           const mappedEmployees = employeeRows.map((e: any) => ({
             id: e.id,
-            name: e.full_name,
+            name: formatEmployeeName(e.full_name || ''),
             role: (e.role as Role) || Role.Employee,
             status: (e.status as string) || 'Active',
             businessUnit: e.business_unit || '',

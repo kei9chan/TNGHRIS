@@ -6,6 +6,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { logActivity } from '../../services/auditService';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
@@ -152,7 +153,7 @@ const AssetManagement: React.FC = () => {
                 const mapped =
                     data?.map((u: any) => ({
                         id: u.id,
-                        name: u.full_name,
+                        name: formatEmployeeName(u.full_name || ''),
                         email: '',
                         role: u.role,
                         status: u.status,

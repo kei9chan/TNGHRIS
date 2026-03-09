@@ -12,6 +12,7 @@ import Input from '../../components/ui/Input';
 import { usePermissions } from '../../hooks/usePermissions';
 import EditableDescription from '../../components/ui/EditableDescription';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 type ContractTemplateRow = {
   id: string;
@@ -79,7 +80,7 @@ const Contracts: React.FC = () => {
         if (data) {
           const mapped = data.map((u: any) => ({
             id: u.id,
-            name: u.full_name,
+            name: formatEmployeeName(u.full_name || ''),
             email: '',
             role: (u.role as Role) || Role.Employee,
             status: u.status || 'Active',

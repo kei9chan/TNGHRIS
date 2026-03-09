@@ -10,6 +10,7 @@ import RejectReasonModal from '../../components/admin/RejectReasonModal';
 import { usePermissions } from '../../hooks/usePermissions';
 import EditableDescription from '../../components/ui/EditableDescription';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 interface SubmissionGroup {
     employeeName: string;
@@ -119,7 +120,7 @@ const HRReviewQueue: React.FC = () => {
                     setPendingUsers(
                         data.map((u: any) => ({
                             id: u.id,
-                            name: u.full_name || u.email,
+                            name: formatEmployeeName(u.full_name || u.email || 'Unknown'),
                             email: u.email,
                             role: u.role as Role,
                             status: u.status as any,

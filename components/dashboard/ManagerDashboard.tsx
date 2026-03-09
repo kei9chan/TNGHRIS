@@ -23,6 +23,7 @@ import MemoViewModal from '../feedback/MemoViewModal';
 import { logActivity } from '../../services/auditService';
 import { approveCoeRequest, createCoeRequest, fetchCoeRequests, rejectCoeRequest, fetchActiveCoeTemplates } from '../../services/coeService';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 import COEQueue from './COEQueue';
 import { approveRejectOtRequest } from '../../services/otService';
 
@@ -835,7 +836,11 @@ const ManagerDashboard: React.FC = () => {
 
         const employee: User = {
             id: employeeRow.id,
-            name: employeeRow.full_name || `${employeeRow.first_name || ''} ${employeeRow.last_name || ''}`.trim() || 'Employee',
+            name: formatEmployeeName(
+              employeeRow.full_name ||
+                `${employeeRow.first_name || ''} ${employeeRow.last_name || ''}`.trim() ||
+                'Employee'
+            ),
             email: employeeRow.email,
             role: employeeRow.role || Role.Employee,
             department: employeeRow.department || '',

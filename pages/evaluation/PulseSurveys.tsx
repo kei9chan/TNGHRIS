@@ -7,6 +7,7 @@ import { PulseSurvey, PulseSurveyStatus, Permission, User, Role, NotificationTyp
 import { usePermissions } from '../../hooks/usePermissions';
 import ComplianceModal from '../../components/evaluation/ComplianceModal';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { mockNotifications } from '../../services/mockData';
 
 const PulseSurveys: React.FC = () => {
@@ -124,7 +125,7 @@ const PulseSurveys: React.FC = () => {
                 const composedName = u.full_name || [u.first_name, u.last_name].filter(Boolean).join(' ').trim();
                 return {
                     id: u.id,
-                    name: composedName || 'Unknown',
+                    name: formatEmployeeName(composedName || 'Unknown'),
                     email: u.email || '',
                     role: u.role || Role.Employee,
                     status: u.status || 'Active',

@@ -9,6 +9,7 @@ import { logActivity } from '../../services/auditService';
 import { F_SELF_SERVICE_ENABLED } from '../../constants';
 import { db } from '../../services/db';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 import ProfileHeader from '../../components/employees/ProfileHeader';
 import PersonalInformationCard from '../../components/employees/PersonalInformationCard';
@@ -64,7 +65,9 @@ const EmployeeProfile: React.FC = () => {
         return {
             id: row.id,
             authUserId: row.auth_user_id || row.auth_userid || undefined,
-            name: row.full_name || row.name || `${row.first_name || ''} ${row.last_name || ''}`.trim(),
+            name: formatEmployeeName(
+              row.full_name || row.name || `${row.first_name || ''} ${row.last_name || ''}`.trim() || 'Unknown'
+            ),
             email: row.email || '',
             role: row.role,
             department: row.department || row.department_name || '',

@@ -14,6 +14,7 @@ import { useSettings } from '../../context/SettingsContext';
 import RichTextEditor from '../../components/ui/RichTextEditor';
 import { logActivity } from '../../services/auditService';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 // Date Helpers (to avoid external libraries)
 const addDays = (date: Date, amount: number) => { const d = new Date(date); d.setDate(d.getDate() + amount); return d; };
@@ -134,7 +135,7 @@ const Interviews: React.FC = () => {
             } as JobPost)));
             setUsers((userRes.data || []).map((u: any) => ({
                 id: u.id,
-                name: u.full_name || u.email || 'User',
+                name: formatEmployeeName(u.full_name || u.email || 'User'),
                 email: u.email || '',
                 role: u.role as Role,
                 department: '',

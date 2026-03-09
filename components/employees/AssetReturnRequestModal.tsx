@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { AssetRequest, AssetRequestStatus, User, Asset, AssetAssignment, AssetStatus } from '../../types';
 import { mockUsers } from '../../services/mockData';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Textarea from '../ui/Textarea';
@@ -82,7 +83,7 @@ const AssetReturnRequestModal: React.FC<AssetReturnRequestModalProps> = ({ isOpe
                     const mapped =
                         data?.map((u: any) => ({
                             id: u.id,
-                            name: u.full_name,
+                            name: formatEmployeeName(u.full_name || ''),
                             email: '',
                             role: u.role,
                             status: u.status,

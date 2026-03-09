@@ -3,6 +3,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Asset, User, AssetStatus } from '../../types';
 import { mockAssets, mockUsers } from '../../services/mockData';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
@@ -80,7 +81,7 @@ const AssetAssignmentModal: React.FC<AssetAssignmentModalProps> = ({ isOpen, onC
                     const mapped =
                         data?.map((u: any) => ({
                             id: u.id,
-                            name: u.full_name,
+                            name: formatEmployeeName(u.full_name || ''),
                             email: '',
                             role: u.role,
                             status: u.status,

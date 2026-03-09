@@ -8,6 +8,7 @@ import { mockUsers } from '../../services/mockData';
 import { useAuth } from '../../hooks/useAuth';
 import { logActivity } from '../../services/auditService';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 interface ResignationLinkModalProps {
     isOpen: boolean;
@@ -49,7 +50,7 @@ const ResignationLinkModal: React.FC<ResignationLinkModalProps> = ({ isOpen, onC
                 if (data) {
                     const mapped: User[] = data.map((u: any) => ({
                         id: u.id,
-                        name: u.full_name || u.email,
+                        name: formatEmployeeName(u.full_name || u.email || 'Unknown'),
                         email: u.email,
                         role: (u.role as Role) || Role.Employee,
                         department: u.department || '',

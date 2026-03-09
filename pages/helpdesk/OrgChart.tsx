@@ -8,6 +8,7 @@ import { logActivity } from '../../services/auditService';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 const OrgChart: React.FC = () => {
     const { user: currentUser } = useAuth();
@@ -48,7 +49,7 @@ const OrgChart: React.FC = () => {
 
         setUsers((userData || []).map((u: any) => ({
             id: u.id,
-            name: u.full_name || 'Unknown',
+            name: formatEmployeeName(u.full_name || 'Unknown'),
             email: u.email || '',
             role: (u.role as Role) || Role.Employee,
             department: u.department || '',
