@@ -159,9 +159,6 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
     if (!deadline) {
         errors.push('Set a response deadline.');
     }
-    if (memoIds.length === 0 && disciplineCodeIds.length === 0) {
-        errors.push('Cite at least one Memo or Code of Discipline entry.');
-    }
      if (selectedApprovers.length === 0 || !selectedApprovers.some(a => a.role === Role.BOD)) {
         errors.push('Select at least one approver, including at least one Board of Director.');
     }
