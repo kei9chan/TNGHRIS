@@ -245,9 +245,17 @@ const DisciplinaryCases: React.FC = () => {
                 const nte = ntes.find(n => n.id === report.nteIds[0]);
                 if (nte) {
                     const stageForThisNte = getDerivedPipelineStage(nte, resolutions);
+                    const resolvedNames = report.involvedEmployeeNames.length
+                        ? report.involvedEmployeeNames
+                        : [nte.employeeName];
+                    const resolvedIds = report.involvedEmployeeIds.length
+                        ? report.involvedEmployeeIds
+                        : [nte.employeeId];
                     expandedReports.push({
                         ...report,
                         pipelineStage: stageForThisNte,
+                        involvedEmployeeIds: resolvedIds,
+                        involvedEmployeeNames: resolvedNames,
                     });
                 } else {
                     // Fallback if NTE is somehow missing

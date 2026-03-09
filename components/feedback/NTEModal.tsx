@@ -377,12 +377,6 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
                         onSelectionChange={setDisciplineCodeIds}
                         variant="danger"
                     />
-                    <EmployeeMultiSelect
-                        label="Request Approval From (at least one BOD required)"
-                        allUsers={approverDisplay}
-                        selectedUsers={selectedApprovers}
-                        onSelectionChange={setSelectedApprovers}
-                    />
                 </div>
 
                 {/* Preview */}
@@ -405,6 +399,17 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
                             <p>Select an employee to see a preview.</p>
                          </div>
                      )}
+                </div>
+
+                <div className="p-3 border rounded-md dark:border-gray-600">
+                    <h4 className="font-semibold text-gray-800 dark:text-gray-200">Approvals:</h4>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">Select who must approve this NTE (at least one BOD required).</p>
+                    <EmployeeMultiSelect
+                        label="Request Approval From"
+                        allUsers={approverDisplay}
+                        selectedUsers={selectedApprovers}
+                        onSelectionChange={setSelectedApprovers}
+                    />
                 </div>
             </div>
         </Modal>
