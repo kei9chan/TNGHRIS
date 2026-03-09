@@ -70,47 +70,104 @@ export const saveIncidentReport = async (
   report: Partial<IncidentReport>,
   user: User
 ): Promise<IncidentReport> => {
-  // resolve BU from hris_users if missing or not uuid
-  let buId = report.businessUnitId || null;
-  let buName = report.businessUnitName || undefined;
+  const isUpdate = !!report.id;
 
-  if (!isUuid(buId) && user.id) {
-    const { data: requester } = await supabase
-      .from('hris_users')
-      .select('business_unit_id, business_unit')
-      .eq('id', user.id)
-      .maybeSingle();
-    buId = buId || requester?.business_unit_id || null;
-    buName = buName || requester?.business_unit || undefined;
+  const payload: Partial<IncidentReportRow> = {};
+  const hasBuInput =
+    report.businessUnitId !== undefined || report.businessUnitName !== undefined;
+
+  if (isUpdate) {
+    if (report.category !== undefined) payload.category = report.category;
+    if (report.description !== undefined) payload.description = report.description;
+    if (report.location !== undefined) payload.location = report.location;
+    if (report.dateTime !== undefined) {
+      payload.date_time = report.dateTime.toISOString();
+    }
+    if (report.reportedBy !== undefined) payload.reported_by = report.reportedBy;
+    if (report.involvedEmployeeIds !== undefined) {
+      payload.involved_employee_ids = report.involvedEmployeeIds;
+    }
+    if (report.involvedEmployeeNames !== undefined) {
+      payload.involved_employee_names = report.involvedEmployeeNames;
+    }
+    if (report.witnessIds !== undefined) payload.witness_ids = report.witnessIds;
+    if (report.witnessNames !== undefined) payload.witness_names = report.witnessNames;
+    if (report.status !== undefined) payload.status = report.status;
+    if (report.pipelineStage !== undefined) payload.pipeline_stage = report.pipelineStage;
+    if (report.nteIds !== undefined) payload.nte_ids = report.nteIds;
+    if (report.resolutionId !== undefined) payload.resolution_id = report.resolutionId;
+    if (report.chatThread !== undefined) {
+      payload.chat_thread = report.chatThread.map(m => ({
+        ...m,
+        timestamp: m.timestamp instanceof Date ? m.timestamp.toISOString() : m.timestamp,
+      }));
+    }
+    if (report.attachmentUrl !== undefined) payload.attachment_url = report.attachmentUrl;
+    if (report.signatureDataUrl !== undefined) {
+      payload.signature_data_url = report.signatureDataUrl;
+    }
+    if (report.assignedToId !== undefined) payload.assigned_to_id = report.assignedToId;
+    if (report.assignedToName !== undefined) payload.assigned_to_name = report.assignedToName;
+
+    if (hasBuInput) {
+      // resolve BU from hris_users if missing or not uuid
+      let buId = report.businessUnitId || null;
+      let buName = report.businessUnitName || undefined;
+
+      if (!isUuid(buId) && user.id) {
+        const { data: requester } = await supabase
+          .from('hris_users')
+          .select('business_unit_id, business_unit')
+          .eq('id', user.id)
+          .maybeSingle();
+        buId = buId || requester?.business_unit_id || null;
+        buName = buName || requester?.business_unit || undefined;
+      }
+
+      payload.business_unit_id = isUuid(buId) ? buId : null;
+      payload.business_unit_name = buName || null;
+    }
+  } else {
+    // resolve BU from hris_users if missing or not uuid
+    let buId = report.businessUnitId || null;
+    let buName = report.businessUnitName || undefined;
+
+    if (!isUuid(buId) && user.id) {
+      const { data: requester } = await supabase
+        .from('hris_users')
+        .select('business_unit_id, business_unit')
+        .eq('id', user.id)
+        .maybeSingle();
+      buId = buId || requester?.business_unit_id || null;
+      buName = buName || requester?.business_unit || undefined;
+    }
+
+    const chatThread = (report.chatThread || []).map(m => ({
+      ...m,
+      timestamp: m.timestamp instanceof Date ? m.timestamp.toISOString() : m.timestamp,
+    }));
+
+    payload.category = report.category;
+    payload.description = report.description;
+    payload.location = report.location;
+    payload.date_time = (report.dateTime || new Date()).toISOString();
+    payload.reported_by = report.reportedBy || user.id;
+    payload.involved_employee_ids = report.involvedEmployeeIds || [];
+    payload.involved_employee_names = report.involvedEmployeeNames || [];
+    payload.witness_ids = report.witnessIds || [];
+    payload.witness_names = report.witnessNames || [];
+    payload.status = report.status || IRStatus.Submitted;
+    payload.pipeline_stage = report.pipelineStage || 'ir-review';
+    payload.nte_ids = report.nteIds || [];
+    payload.resolution_id = report.resolutionId || null;
+    payload.chat_thread = chatThread;
+    payload.attachment_url = report.attachmentUrl || null;
+    payload.signature_data_url = report.signatureDataUrl || null;
+    payload.assigned_to_id = report.assignedToId || null;
+    payload.assigned_to_name = report.assignedToName || null;
+    payload.business_unit_id = isUuid(buId) ? buId : null;
+    payload.business_unit_name = buName || null;
   }
-
-  const chatThread = (report.chatThread || []).map(m => ({
-    ...m,
-    timestamp: m.timestamp instanceof Date ? m.timestamp.toISOString() : m.timestamp,
-  }));
-
-  const payload: Partial<IncidentReportRow> = {
-    category: report.category,
-    description: report.description,
-    location: report.location,
-    date_time: (report.dateTime || new Date()).toISOString(),
-    reported_by: report.reportedBy || user.id,
-    involved_employee_ids: report.involvedEmployeeIds || [],
-    involved_employee_names: report.involvedEmployeeNames || [],
-    witness_ids: report.witnessIds || [],
-    witness_names: report.witnessNames || [],
-    status: report.status || IRStatus.Submitted,
-    pipeline_stage: report.pipelineStage || 'ir-review',
-    nte_ids: report.nteIds || [],
-    resolution_id: report.resolutionId || null,
-    chat_thread: chatThread,
-    attachment_url: report.attachmentUrl || null,
-    signature_data_url: report.signatureDataUrl || null,
-    assigned_to_id: report.assignedToId || null,
-    assigned_to_name: report.assignedToName || null,
-    business_unit_id: isUuid(buId) ? buId : null,
-    business_unit_name: buName || null,
-  };
 
   const query = report.id
     ? supabase.from('incident_reports').update(payload).eq('id', report.id).select().single()
