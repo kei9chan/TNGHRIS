@@ -6,6 +6,7 @@ import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 interface ProfileEditModalProps {
   isOpen: boolean;
@@ -88,7 +89,7 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
             .filter((row: any) => row.id !== user.id)
             .map((row: any) => ({
               id: row.id,
-              label: `${row.full_name || 'Unknown'} (${row.role || 'Employee'})`,
+              label: `${formatEmployeeName(row.full_name || 'Unknown')} (${row.role || 'Employee'})`,
             }));
           setReportsToOptions(options);
         })

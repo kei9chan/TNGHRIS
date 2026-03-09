@@ -10,6 +10,7 @@ import FileUploader from '../ui/FileUploader';
 import Card from '../ui/Card';
 import ChatThread from '../feedback/ChatThread';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 interface TicketAccess {
   canSubmit: boolean;
@@ -82,7 +83,7 @@ const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, ticket, onSa
         if (data) {
           setAssignees(data.map((u: any) => ({
             id: u.id,
-            name: u.full_name || 'User',
+            name: formatEmployeeName(u.full_name || 'User'),
             email: u.email || '',
             role: u.role,
             department: u.department || '',

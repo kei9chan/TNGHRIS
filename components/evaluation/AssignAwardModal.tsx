@@ -9,6 +9,7 @@ import CertificateRenderer from './CertificateRenderer';
 import html2canvas from 'html2canvas';
 import { fetchAwardTemplates } from '../../services/awardService';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 interface AssignAwardModalProps {
     isOpen: boolean;
@@ -48,7 +49,7 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
                     loadedPeople = userRows.map((u: any) => ({
                         id: u.id,
                         authUserId: undefined,
-                        name: u.full_name || u.email,
+                        name: formatEmployeeName(u.full_name || u.email || 'Unknown'),
                         email: u.email,
                         role: u.role,
                         department: '',

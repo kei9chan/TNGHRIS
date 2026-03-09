@@ -7,6 +7,7 @@ import Button from '../../components/ui/Button';
 import UserRoleEditModal from '../../components/admin/UserRoleEditModal';
 import Input from '../../components/ui/Input';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 const ChevronUpIcon: React.FC = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -71,7 +72,9 @@ const UserManagement: React.FC = () => {
             setRoles((roleRows || []).map((r: any) => r.id as string));
             setUsers((userRows || []).map((u: any) => ({
                 id: u.id,
-                name: u.full_name || `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown',
+                name: formatEmployeeName(
+                  u.full_name || `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
+                ),
                 email: u.email || '',
                 role: (u.role as Role) || Role.Employee,
                 status: u.status || '',

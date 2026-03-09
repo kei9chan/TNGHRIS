@@ -7,6 +7,7 @@ import Input from '../ui/Input';
 import RichTextEditor from '../ui/RichTextEditor';
 import EmployeeMultiSelect from '../feedback/EmployeeMultiSelect';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 interface EnvelopeCreationDrawerProps {
   isOpen: boolean;
@@ -87,7 +88,7 @@ const EnvelopeCreationDrawer: React.FC<EnvelopeCreationDrawerProps> = ({ isOpen,
         const mapped =
           data?.map((u: any) => ({
             id: u.id,
-            name: u.full_name,
+            name: formatEmployeeName(u.full_name || ''),
             email: '',
             role: (u.role as Role) || Role.Employee,
             status: (u.status as any) || 'Active',

@@ -5,6 +5,7 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import ClockLogTable from '../../components/payroll/ClockLogTable';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { usePermissions } from '../../hooks/usePermissions';
 
 const ClockLog: React.FC = () => {
@@ -72,7 +73,12 @@ const ClockLog: React.FC = () => {
             supabase.from('hris_users').select('id, full_name').order('full_name'),
             supabase.from('sites').select('id, name').order('name'),
         ]);
-        setEmployees((empData || []).map((e: any) => ({ id: e.id, name: e.full_name || 'Unknown' })));
+        setEmployees(
+          (empData || []).map((e: any) => ({
+            id: e.id,
+            name: formatEmployeeName(e.full_name || 'Unknown'),
+          }))
+        );
         setSites((siteData || []).map((s: any) => ({ id: s.id, name: s.name || 'Unknown' })));
     };
 

@@ -10,6 +10,7 @@ import NTEPreview from './NTEPreview';
 import { useAuth } from '../../hooks/useAuth';
 import EmployeeMultiSelect from './EmployeeMultiSelect';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 interface NTEModalProps {
   isOpen: boolean;
@@ -80,7 +81,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
         if (data) {
           const mapped = data.map((u: any) => ({
             id: u.id,
-            name: u.full_name || 'User',
+            name: formatEmployeeName(u.full_name || 'User'),
             email: u.email || '',
             role: u.role,
             department: u.department || '',

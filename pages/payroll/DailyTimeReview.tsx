@@ -8,6 +8,7 @@ import DailyRecordModal from '../../components/payroll/DailyRecordModal';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 const DailyTimeReview: React.FC = () => {
     const { user } = useAuth();
@@ -30,7 +31,13 @@ const DailyTimeReview: React.FC = () => {
             supabase.from('hris_users').select('id, full_name, business_unit').order('full_name'),
         ]);
         setBusinessUnits((buData || []).map((b: any) => ({ id: b.id, name: b.name })));
-        setEmployees((empData || []).map((e: any) => ({ id: e.id, name: e.full_name || 'Unknown', businessUnit: e.business_unit })));
+        setEmployees(
+          (empData || []).map((e: any) => ({
+            id: e.id,
+            name: formatEmployeeName(e.full_name || 'Unknown'),
+            businessUnit: e.business_unit,
+          }))
+        );
     };
 
     const refreshRecords = async () => {

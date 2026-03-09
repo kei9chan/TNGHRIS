@@ -15,6 +15,7 @@ import TimelineView from '../../components/payroll/TimelineView';
 import LiveShiftStatusDashboard from '../../components/payroll/LiveShiftStatusDashboard';
 import { logActivity } from '../../services/auditService';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 // --- Helper Types ---
 interface Gap {
@@ -134,7 +135,7 @@ const Timekeeping: React.FC = () => {
             if (!usersRes.error && usersRes.data) {
                 setEmployees(usersRes.data.map((row: any) => ({
                     id: row.id,
-                    name: row.full_name || row.email || 'Unknown',
+                    name: formatEmployeeName(row.full_name || row.email || 'Unknown'),
                     email: row.email || '',
                     role: row.role || Role.Employee,
                     department: row.department || '',

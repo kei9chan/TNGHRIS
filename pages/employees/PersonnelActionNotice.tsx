@@ -13,6 +13,7 @@ import EditableDescription from '../../components/ui/EditableDescription';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { logActivity } from '../../services/auditService';
 import { mockUsers, mockNotifications } from '../../services/mockData';
 import {
@@ -98,7 +99,7 @@ const PersonnelActionNotice: React.FC = () => {
           setEmployees(
             empRows.map((u: any) => ({
               id: u.id,
-              name: u.full_name || u.email,
+              name: formatEmployeeName(u.full_name || u.email || 'Unknown'),
               email: u.email,
               role: u.role as Role,
               status: (u.status as any) || 'Active',

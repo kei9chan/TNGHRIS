@@ -9,6 +9,7 @@ import { usePermissions } from '../../hooks/usePermissions';
 import { logActivity } from '../../services/auditService';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { mockNotifications, mockUsers } from '../../services/mockData';
 
 // Icons
@@ -54,7 +55,7 @@ const NewEvaluation: React.FC = () => {
         setBusinessUnits((buData || []).map((b:any)=>({id:b.id,name:b.name||'Unknown BU'})));
         setEmployees((empData || []).map((u:any)=>({
             id: u.id,
-            name: u.full_name || 'Unknown',
+            name: formatEmployeeName(u.full_name || 'Unknown'),
             email: u.email || '',
             authUserId: u.auth_user_id || undefined,
             role: u.role,

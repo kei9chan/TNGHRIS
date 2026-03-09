@@ -12,6 +12,7 @@ import { useAuth } from '../../hooks/useAuth';
 import HRReviewQueue from '../admin/HRReviewQueue';
 import EditableDescription from '../../components/ui/EditableDescription';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 const EmployeeList: React.FC = () => {
   const navigate = useNavigate();
@@ -57,7 +58,7 @@ const EmployeeList: React.FC = () => {
         if (data) {
           const mapped: User[] = data.map((u: any) => ({
             id: u.id,
-            name: u.full_name || u.email,
+            name: formatEmployeeName(u.full_name || u.email || 'Unknown'),
             email: u.email,
             role: (u.role as Role) || Role.Employee,
             department: u.department || '',
@@ -335,7 +336,7 @@ const EmployeeList: React.FC = () => {
       if (!refreshed.error && refreshed.data) {
         const mapped: User[] = refreshed.data.map((u: any) => ({
           id: u.id,
-          name: u.full_name || u.email,
+          name: formatEmployeeName(u.full_name || u.email || 'Unknown'),
           email: u.email,
           role: (u.role as Role) || Role.Employee,
           department: u.department || '',

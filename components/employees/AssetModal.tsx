@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Asset, AssetStatus, User } from '../../types';
 import { mockUsers, mockBusinessUnits } from '../../services/mockData';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
 import Button from '../ui/Button';
@@ -45,7 +46,7 @@ const AssetModal: React.FC<AssetModalProps> = ({ isOpen, onClose, onSave, asset 
                     const mapped =
                         data?.map((u: any) => ({
                             id: u.id,
-                            name: u.full_name,
+                            name: formatEmployeeName(u.full_name || ''),
                             email: '',
                             role: u.role,
                             status: u.status,

@@ -10,6 +10,7 @@ import { COERequest, COERequestStatus, COETemplate, NotificationType, Permission
 import { mockCOERequests, mockCOETemplates, mockUsers, mockBusinessUnits, mockNotifications } from '../../services/mockData';
 import { approveCoeRequest, fetchActiveCoeTemplates, fetchCoeRequestById, fetchCoeRequests, rejectCoeRequest } from '../../services/coeService';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import Card from '../../components/ui/Card';
@@ -145,7 +146,7 @@ const COERequests: React.FC = () => {
 
         return {
             id: data.id,
-            name: data.full_name || 'Unknown',
+            name: formatEmployeeName(data.full_name || 'Unknown'),
             email: data.email || '',
             role: roleValue,
             department: data.department || '',

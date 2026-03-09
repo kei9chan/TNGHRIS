@@ -3,6 +3,7 @@ import React, { useMemo, useEffect, useState } from 'react';
 import { AssetAssignment, EnrichedAsset, User } from '../../types';
 import { mockUsers, mockAssetRepairs } from '../../services/mockData';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 import Modal from '../ui/Modal';
 import { useSettings } from '../../context/SettingsContext';
 
@@ -62,7 +63,7 @@ const AssetHistoryModal: React.FC<AssetHistoryModalProps> = ({ isOpen, onClose, 
                 const mapped =
                     data?.map((u: any) => ({
                         id: u.id,
-                        name: u.full_name,
+                        name: formatEmployeeName(u.full_name || ''),
                         email: '',
                         role: u.role,
                         status: u.status,

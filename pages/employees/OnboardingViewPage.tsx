@@ -8,6 +8,7 @@ import Textarea from '../../components/ui/Textarea';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { OnboardingChecklist, OnboardingTask, OnboardingTaskStatus, Role, User, NotificationType } from '../../types';
 import { mockOnboardingChecklists, mockOnboardingTemplates, mockUsers, mockNotifications } from '../../services/mockData';
 
@@ -264,7 +265,7 @@ const OnboardingViewPage: React.FC = () => {
 
                 setEmployee({
                     id: emp.id,
-                    name: emp.full_name || (emp as any).name,
+                    name: formatEmployeeName(emp.full_name || (emp as any).name || 'Unknown'),
                     email: '',
                     role: (emp.role as Role) || Role.Employee,
                     department: '',

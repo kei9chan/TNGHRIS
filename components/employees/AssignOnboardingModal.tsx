@@ -6,6 +6,7 @@ import Button from '../ui/Button';
 import { useAuth } from '../../hooks/useAuth';
 import EmployeeMultiSelect from '../feedback/EmployeeMultiSelect';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 interface AssignOnboardingModalProps {
   isOpen: boolean;
@@ -55,7 +56,7 @@ const AssignOnboardingModal: React.FC<AssignOnboardingModalProps> = ({ isOpen, o
       const mappedEmployees: User[] =
         employeeRows?.map((r: any) => ({
           id: r.id,
-          name: r.full_name,
+          name: formatEmployeeName(r.full_name || ''),
           role: (r.role as Role) || Role.Employee,
           status: r.status || 'Active',
         })) || [];

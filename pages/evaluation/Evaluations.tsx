@@ -8,6 +8,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import ComplianceModal from '../../components/evaluation/ComplianceModal';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 const Evaluations: React.FC = () => {
     const { user } = useAuth();
@@ -241,7 +242,7 @@ const Evaluations: React.FC = () => {
 
             const allUsers: User[] = (userRows || []).map((u: any) => ({
                 id: u.id,
-                name: u.full_name || 'Unknown',
+                name: formatEmployeeName(u.full_name || 'Unknown'),
                 email: u.email || '',
                 role: u.role,
                 department: u.department || '',

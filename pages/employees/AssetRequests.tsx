@@ -15,6 +15,7 @@ import AssetReturnSubmissionModal from '../../components/employees/AssetReturnSu
 import AssetRejectionModal from '../../components/employees/AssetRejectionModal';
 import AssetReturnRequestModal from '../../components/employees/AssetReturnRequestModal';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 type AssetRequestRow = {
     id: string;
@@ -111,7 +112,7 @@ const AssetRequests: React.FC = () => {
                 const mapped =
                     data?.map((u: any) => ({
                         id: u.id,
-                        name: u.full_name,
+                        name: formatEmployeeName(u.full_name || ''),
                         email: '',
                         role: u.role,
                         status: u.status,

@@ -17,6 +17,7 @@ import RejectReasonModal from '../../components/feedback/RejectReasonModal';
 import { logActivity } from '../../services/auditService';
 import { fetchAwardTemplates, fetchEmployeeAwards, createEmployeeAward, updateEmployeeAwardStatus, saveAwardTemplate } from '../../services/awardService';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 import CertificateRenderer from '../../components/evaluation/CertificateRenderer';
 import html2canvas from 'html2canvas';
 
@@ -118,7 +119,7 @@ const Awards: React.FC = () => {
           setUsers(userRows.map((u: any) => ({
             id: u.id,
             authUserId: undefined,
-            name: u.full_name || u.email,
+            name: formatEmployeeName(u.full_name || u.email || 'Unknown'),
             email: u.email,
             role: (u.role as Role) || Role.Employee,
             department: u.department || '',
