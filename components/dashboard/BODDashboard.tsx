@@ -21,6 +21,7 @@ import PrintableCOE from '../admin/PrintableCOE';
 import MemoViewModal from '../feedback/MemoViewModal';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
+import { mergePanParticulars } from '../../services/panUtils';
 
 const GavelIcon: React.FC<{className?: string}> = ({className}) => <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>;
 const DocumentTextIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m5.231 13.5h-8.021a1.125 1.125 0 0 1-1.125-1.125v-1.5A1.125 1.125 0 0 1 5.625 15h12.75a1.125 1.125 0 0 1 1.125 1.125v1.5a1.125 1.125 0 0 1-1.125 1.125H13.5m-3.031-1.125a3 3 0 1 0-5.962 0 3 3 0 0 0 5.962 0ZM15 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" /></svg>);
@@ -58,27 +59,30 @@ const emptyActions: PANActionTaken = {
     others: ''
 };
 
-const mapPanRow = (p: any): PAN => ({
-    id: p.id,
-    employeeId: p.employee_id,
-    employeeName: p.employee_name,
-    effectiveDate: p.effective_date ? new Date(p.effective_date) : new Date(),
-    updatedAt: p.updated_at ? new Date(p.updated_at) : undefined,
-    createdAt: p.created_at ? new Date(p.created_at) : undefined,
-    status: p.status as PANStatus,
-    actionTaken: p.action_taken || { ...emptyActions },
-    particulars: p.particulars || { from: {}, to: {} },
-    tenure: p.tenure || '',
-    notes: p.notes || '',
-    routingSteps: p.routing_steps || [],
-    signedAt: p.signed_at ? new Date(p.signed_at) : undefined,
-    signatureDataUrl: p.signature_data_url || undefined,
-    signatureName: p.signature_name || undefined,
-    logoUrl: p.logo_url || undefined,
-    pdfHash: p.pdf_hash || undefined,
-    preparerName: p.preparer_name || undefined,
-    preparerSignatureUrl: p.preparer_signature_url || undefined,
-});
+const mapPanRow = (p: any): PAN => {
+    const baseParticulars = mergePanParticulars(p.particulars, p.salary_from);
+    return {
+        id: p.id,
+        employeeId: p.employee_id,
+        employeeName: p.employee_name,
+        effectiveDate: p.effective_date ? new Date(p.effective_date) : new Date(),
+        updatedAt: p.updated_at ? new Date(p.updated_at) : undefined,
+        createdAt: p.created_at ? new Date(p.created_at) : undefined,
+        status: p.status as PANStatus,
+        actionTaken: p.action_taken || { ...emptyActions },
+        particulars: baseParticulars,
+        tenure: p.tenure || '',
+        notes: p.notes || '',
+        routingSteps: p.routing_steps || [],
+        signedAt: p.signed_at ? new Date(p.signed_at) : undefined,
+        signatureDataUrl: p.signature_data_url || undefined,
+        signatureName: p.signature_name || undefined,
+        logoUrl: p.logo_url || undefined,
+        pdfHash: p.pdf_hash || undefined,
+        preparerName: p.preparer_name || undefined,
+        preparerSignatureUrl: p.preparer_signature_url || undefined,
+    };
+};
 
 const extractMemoBody = (row: any) => {
     const candidates = ['body', 'content', 'html', 'memo_body', 'memoBody', 'body_text', 'bodyHtml'];

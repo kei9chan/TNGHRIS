@@ -153,24 +153,24 @@ const PANModal: React.FC<PANModalProps> = ({ isOpen, onClose, pan, templates, em
   }, [pan, isOpen, user, isForAcknowledgement, employees]);
 
   useEffect(() => {
-    if (selectedEmployee) {
-      setEmployeeSearch(selectedEmployee.name);
-      const fromParticulars = {
-        employmentStatus: 'Regular',
-        position: selectedEmployee.position,
-        department: selectedEmployee.department,
-        salary: selectedEmployee.salary || { ...emptySalary },
-      };
-      setCurrent(prev => ({
-        ...prev,
-        tenure: calculateTenure(selectedEmployee.dateHired),
-        particulars: {
-          from: fromParticulars,
-          to: prev.particulars?.to && Object.keys(prev.particulars.to).length > 1 ? prev.particulars.to : fromParticulars,
-        },
-      }));
-    }
-  }, [selectedEmployee]);
+    if (!selectedEmployee) return;
+    setEmployeeSearch(selectedEmployee.name);
+    if (!isNew) return;
+    const fromParticulars = {
+      employmentStatus: 'Regular',
+      position: selectedEmployee.position,
+      department: selectedEmployee.department,
+      salary: selectedEmployee.salary || { ...emptySalary },
+    };
+    setCurrent(prev => ({
+      ...prev,
+      tenure: calculateTenure(selectedEmployee.dateHired),
+      particulars: {
+        from: fromParticulars,
+        to: prev.particulars?.to && Object.keys(prev.particulars.to).length > 1 ? prev.particulars.to : fromParticulars,
+      },
+    }));
+  }, [selectedEmployee, isNew]);
 
   const availableEmployees = useMemo(() => {
     if (!employeeSearch || employeeSearch === selectedEmployee?.name) return [];
@@ -365,6 +365,15 @@ const PANModal: React.FC<PANModalProps> = ({ isOpen, onClose, pan, templates, em
               <Input label="Position" value={current.particulars?.to?.position || ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, to: { ...(prev.particulars?.to || {}), position: e.target.value } } }))} />
               <Input label="Department" value={current.particulars?.to?.department || ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, to: { ...(prev.particulars?.to || {}), department: e.target.value } } }))} />
             </div>
+          </div>
+        </div>
+
+        <div>
+          <h4 className="font-semibold text-sm mb-2">Salary (From)</h4>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Input label="Basic" type="number" value={current.particulars?.from?.salary?.basic ?? ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, from: { ...(prev.particulars?.from || {}), salary: { ...(prev.particulars?.from?.salary || {}), basic: Number(e.target.value) || 0 } } } }))} />
+            <Input label="Deminimis" type="number" value={current.particulars?.from?.salary?.deminimis ?? ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, from: { ...(prev.particulars?.from || {}), salary: { ...(prev.particulars?.from?.salary || {}), deminimis: Number(e.target.value) || 0 } } } }))} />
+            <Input label="Reimbursable" type="number" value={current.particulars?.from?.salary?.reimbursable ?? ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, from: { ...(prev.particulars?.from || {}), salary: { ...(prev.particulars?.from?.salary || {}), reimbursable: Number(e.target.value) || 0 } } } }))} />
           </div>
         </div>
 
