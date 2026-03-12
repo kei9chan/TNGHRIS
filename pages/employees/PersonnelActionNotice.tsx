@@ -14,6 +14,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
+import { mergePanParticulars } from '../../services/panUtils';
 import { logActivity } from '../../services/auditService';
 import { mockUsers, mockNotifications } from '../../services/mockData';
 import {
@@ -64,25 +65,28 @@ const PersonnelActionNotice: React.FC = () => {
   const canViewTemplatesTab = panAccess.canCreate;
   const canRespond = panAccess.canRespond;
 
-  const mapPanRow = (p: any): PAN => ({
-    id: p.id,
-    employeeId: p.employee_id,
-    employeeName: p.employee_name,
-    effectiveDate: p.effective_date ? new Date(p.effective_date) : new Date(),
-    status: p.status as PANStatus,
-    actionTaken: p.action_taken || { ...emptyActions },
-    particulars: p.particulars || { from: {}, to: {} },
-    tenure: p.tenure || '',
-    notes: p.notes || '',
-    routingSteps: p.routing_steps || [],
-    signedAt: p.signed_at ? new Date(p.signed_at) : undefined,
-    signatureDataUrl: p.signature_data_url || undefined,
-    signatureName: p.signature_name || undefined,
-    logoUrl: p.logo_url || undefined,
-    pdfHash: p.pdf_hash || undefined,
-    preparerName: p.preparer_name || undefined,
-    preparerSignatureUrl: p.preparer_signature_url || undefined,
-  });
+  const mapPanRow = (p: any): PAN => {
+    const baseParticulars = mergePanParticulars(p.particulars, p.salary_from);
+    return {
+      id: p.id,
+      employeeId: p.employee_id,
+      employeeName: p.employee_name,
+      effectiveDate: p.effective_date ? new Date(p.effective_date) : new Date(),
+      status: p.status as PANStatus,
+      actionTaken: p.action_taken || { ...emptyActions },
+      particulars: baseParticulars,
+      tenure: p.tenure || '',
+      notes: p.notes || '',
+      routingSteps: p.routing_steps || [],
+      signedAt: p.signed_at ? new Date(p.signed_at) : undefined,
+      signatureDataUrl: p.signature_data_url || undefined,
+      signatureName: p.signature_name || undefined,
+      logoUrl: p.logo_url || undefined,
+      pdfHash: p.pdf_hash || undefined,
+      preparerName: p.preparer_name || undefined,
+      preparerSignatureUrl: p.preparer_signature_url || undefined,
+    };
+  };
 
   useEffect(() => {
     const loadAll = async () => {
@@ -165,6 +169,7 @@ const PersonnelActionNotice: React.FC = () => {
       preparer_signature_url: recordToSave.preparerSignatureUrl || null,
       template_id: (recordToSave as any).templateId || null,
       created_by_user_id: user.id,
+      salary_from: recordToSave.particulars?.from?.salary || null,
       updated_at: new Date().toISOString(),
     };
     if (recordToSave.id) payload.id = recordToSave.id;
@@ -445,9 +450,13 @@ const PersonnelActionNotice: React.FC = () => {
         getActionType(record.actionTaken).toLowerCase().includes(searchTerm.toLowerCase()) ||
         record.status.toLowerCase().includes(searchTerm.toLowerCase());
 
+      if (panAccess.scope === 'global') {
+        return yearMatch && monthMatch && searchTermMatch;
+      }
+
       return yearMatch && monthMatch && searchTermMatch && (routingMatch || employeeMatch);
     });
-  }, [records, searchTerm, yearFilter, monthFilter, user]);
+  }, [records, searchTerm, yearFilter, monthFilter, user, panAccess.scope]);
 
   return (
     <div className="space-y-6">

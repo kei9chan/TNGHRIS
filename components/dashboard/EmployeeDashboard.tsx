@@ -83,6 +83,7 @@ import { logActivity } from '../../services/auditService';
 import { createCoeRequest, fetchCoeRequestById, fetchCoeRequests } from '../../services/coeService';
 import { usePermissions } from '../../hooks/usePermissions';
 import { supabase } from '../../services/supabaseClient';
+import { mergePanParticulars } from '../../services/panUtils';
 
 
 // --- ICONS ---
@@ -133,27 +134,30 @@ const emptyActions: PANActionTaken = {
     others: ''
 };
 
-const mapPanRow = (p: any): PAN => ({
-    id: p.id,
-    employeeId: p.employee_id,
-    employeeName: p.employee_name,
-    effectiveDate: p.effective_date ? new Date(p.effective_date) : new Date(),
-    updatedAt: p.updated_at ? new Date(p.updated_at) : undefined,
-    createdAt: p.created_at ? new Date(p.created_at) : undefined,
-    status: p.status as PANStatus,
-    actionTaken: p.action_taken || { ...emptyActions },
-    particulars: p.particulars || { from: {}, to: {} },
-    tenure: p.tenure || '',
-    notes: p.notes || '',
-    routingSteps: p.routing_steps || [],
-    signedAt: p.signed_at ? new Date(p.signed_at) : undefined,
-    signatureDataUrl: p.signature_data_url || undefined,
-    signatureName: p.signature_name || undefined,
-    logoUrl: p.logo_url || undefined,
-    pdfHash: p.pdf_hash || undefined,
-    preparerName: p.preparer_name || undefined,
-    preparerSignatureUrl: p.preparer_signature_url || undefined,
-});
+const mapPanRow = (p: any): PAN => {
+    const baseParticulars = mergePanParticulars(p.particulars, p.salary_from);
+    return {
+        id: p.id,
+        employeeId: p.employee_id,
+        employeeName: p.employee_name,
+        effectiveDate: p.effective_date ? new Date(p.effective_date) : new Date(),
+        updatedAt: p.updated_at ? new Date(p.updated_at) : undefined,
+        createdAt: p.created_at ? new Date(p.created_at) : undefined,
+        status: p.status as PANStatus,
+        actionTaken: p.action_taken || { ...emptyActions },
+        particulars: baseParticulars,
+        tenure: p.tenure || '',
+        notes: p.notes || '',
+        routingSteps: p.routing_steps || [],
+        signedAt: p.signed_at ? new Date(p.signed_at) : undefined,
+        signatureDataUrl: p.signature_data_url || undefined,
+        signatureName: p.signature_name || undefined,
+        logoUrl: p.logo_url || undefined,
+        pdfHash: p.pdf_hash || undefined,
+        preparerName: p.preparer_name || undefined,
+        preparerSignatureUrl: p.preparer_signature_url || undefined,
+    };
+};
 
 const extractMemoBody = (row: any) => {
     const candidates = ['body', 'content', 'html', 'memo_body', 'memoBody', 'body_text', 'bodyHtml'];
