@@ -181,23 +181,38 @@ const OnboardingSignPage: React.FC = () => {
         
         const signatureDataUrl = signaturePadRef.current?.getSignatureDataUrl();
 
-        // Find and update the master checklist object
-        const checklistIndex = mockOnboardingChecklists.findIndex(c => c.id === checklist.id);
-        if (checklistIndex !== -1) {
-            mockOnboardingChecklists[checklistIndex] = {
-                ...mockOnboardingChecklists[checklistIndex],
-                status: 'Completed',
-                signatureName: fullName,
-                signatureDataUrl: signatureDataUrl || undefined,
-                signedAt: new Date(),
-            };
-        }
-        
-        // Simulate API delay
-        setTimeout(() => {
-            setIsLoading(false);
-            navigate('/employees/onboarding');
-        }, 1000);
+        const persistCompletion = async () => {
+            try {
+                const { error } = await supabase
+                    .from('onboarding_checklists')
+                    .update({ status: 'Completed' })
+                    .eq('id', checklist.id);
+                if (error) throw error;
+            } catch (err) {
+                console.warn('Failed to persist onboarding completion', err);
+            }
+
+            const checklistIndex = mockOnboardingChecklists.findIndex(c => c.id === checklist.id);
+            if (checklistIndex !== -1) {
+                mockOnboardingChecklists[checklistIndex] = {
+                    ...mockOnboardingChecklists[checklistIndex],
+                    status: 'Completed',
+                    signatureName: fullName,
+                    signatureDataUrl: signatureDataUrl || undefined,
+                    signedAt: new Date(),
+                };
+            }
+        };
+
+        persistCompletion()
+            .then(() => {
+                setIsLoading(false);
+                navigate('/employees/onboarding');
+            })
+            .catch(() => {
+                setIsLoading(false);
+                navigate('/employees/onboarding');
+            });
     };
 
     return (
