@@ -164,10 +164,10 @@ const CoachingModal: React.FC<CoachingModalProps> = ({ isOpen, onClose, session,
         });
     };
     
-    const isExecutionPhase = current.status === CoachingStatus.Scheduled;
+    const isExecutionPhase = current.status === CoachingStatus.Scheduled || current.status === CoachingStatus.Accepted;
     const isCompleted = current.status === CoachingStatus.Completed;
     const isAcknowledged = current.status === CoachingStatus.Acknowledged;
-    const isReadOnly = isCompleted || isAcknowledged;
+    const isReadOnly = isCompleted || isAcknowledged || current.status === CoachingStatus.Declined;
     const isDraft = current.status === CoachingStatus.Draft || !current.status;
 
     const isEmployeeUser = user?.id === current.employeeId;
@@ -177,6 +177,17 @@ const CoachingModal: React.FC<CoachingModalProps> = ({ isOpen, onClose, session,
     const formatDateForInput = (date?: Date) => date ? new Date(date).toISOString().split('T')[0] : '';
 
     const renderFooter = () => {
+        // Employee Invitation View
+        if (isEmployeeUser && current.status === CoachingStatus.Scheduled) {
+            return (
+                <div className="flex justify-end space-x-2">
+                    <Button variant="secondary" onClick={onClose}>Close</Button>
+                    <Button variant="danger" onClick={() => handleSave(CoachingStatus.Declined)}>Decline</Button>
+                    <Button onClick={() => handleSave(CoachingStatus.Accepted)}>Accept</Button>
+                </div>
+            );
+        }
+
         // Employee Acknowledgment View
         if (isEmployeeUser && isCompleted) {
              return (
