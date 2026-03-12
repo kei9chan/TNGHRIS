@@ -20,6 +20,7 @@ const PLACEHOLDERS = [
     '{{employee_name}}',
     '{{position}}',
     '{{date_hired}}',
+    '{{end_date}}',
     '{{salary}}',
     '{{purpose}}',
     '{{date_today}}'
