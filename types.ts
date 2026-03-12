@@ -115,8 +115,10 @@ export interface WFHRequest {
 export enum CoachingStatus {
   Draft = 'Draft',
   Scheduled = 'Scheduled',
+  Accepted = 'Accepted',
   Completed = 'Completed',
-  Acknowledged = 'Acknowledged'
+  Acknowledged = 'Acknowledged',
+  Declined = 'Declined'
 }
 
 export enum CoachingTrigger {

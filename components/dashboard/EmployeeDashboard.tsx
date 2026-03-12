@@ -1191,7 +1191,11 @@ const EmployeeDashboard: React.FC = () => {
         });
         
         // Scheduled Coaching Sessions where I am the Employee (The Coachee)
-        const myScheduledSessions = coachingSessions.filter(s => s.employeeId === user.id && s.status === CoachingStatus.Scheduled);
+        const myScheduledSessions = coachingSessions.filter(
+            s =>
+                s.employeeId === user.id &&
+                (s.status === CoachingStatus.Scheduled || s.status === CoachingStatus.Accepted)
+        );
         myScheduledSessions.forEach(session => {
              items.push({
                 id: `coaching-attend-${session.id}`,

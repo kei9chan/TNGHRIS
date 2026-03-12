@@ -4,11 +4,12 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-import { CoachingSession, CoachingStatus, CoachingTrigger, Permission, Role, User } from '../../types';
+import { CoachingSession, CoachingStatus, CoachingTrigger, Permission, Role, User, NotificationType } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import CoachingModal from '../../components/feedback/CoachingModal';
 import { supabase } from '../../services/supabaseClient';
+import { mockNotifications } from '../../services/mockData';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 const CoachingLog: React.FC = () => {
@@ -109,6 +110,18 @@ const CoachingLog: React.FC = () => {
         }
     }, [location.pathname, location.state, navigate, sessions]);
 
+    useEffect(() => {
+        const search = new URLSearchParams(location.search);
+        const sessionId = search.get('sessionId');
+        if (!sessionId || sessions.length === 0) return;
+        const sessionToOpen = sessions.find(s => s.id === sessionId);
+        if (sessionToOpen) {
+            setSelectedSession(sessionToOpen);
+            setIsModalOpen(true);
+            navigate(location.pathname, { replace: true, state: {} });
+        }
+    }, [location.search, location.pathname, navigate, sessions]);
+
     const filteredSessions = useMemo(() => {
         let baseList = sessions;
         
@@ -138,8 +151,10 @@ const CoachingLog: React.FC = () => {
         switch (status) {
             case CoachingStatus.Draft: return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
             case CoachingStatus.Scheduled: return 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300';
+            case CoachingStatus.Accepted: return 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300';
             case CoachingStatus.Completed: return 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300';
             case CoachingStatus.Acknowledged: return 'bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-300';
+            case CoachingStatus.Declined: return 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300';
             default: return 'bg-gray-100 text-gray-800';
         }
     };
@@ -153,6 +168,7 @@ const CoachingLog: React.FC = () => {
     const handleSave = async (sessionData: Partial<CoachingSession>) => {
         const isNew = !sessionData.id;
         try {
+            const prior = sessionData.id ? sessions.find(s => s.id === sessionData.id) : undefined;
             const payload = {
                 employee_id: sessionData.employeeId,
                 employee_name: sessionData.employeeName,
@@ -202,6 +218,41 @@ const CoachingLog: React.FC = () => {
                 return prev.map(s => (s.id === mapped.id ? mapped : s));
             });
             setIsModalOpen(false);
+
+            const isNowScheduled = mapped.status === CoachingStatus.Scheduled;
+            const wasScheduled = prior?.status === CoachingStatus.Scheduled;
+            if (isNowScheduled && !wasScheduled) {
+                const createdAt = new Date();
+                const notif = {
+                    id: `coaching-invite-${mapped.id}-${mapped.employeeId}-${createdAt.getTime()}`,
+                    userId: mapped.employeeId,
+                    type: NotificationType.COACHING_INVITE,
+                    title: 'Coaching Session Invitation',
+                    message: `You have a coaching session scheduled with ${mapped.coachName}.`,
+                    link: `/feedback/coaching?sessionId=${mapped.id}`,
+                    isRead: false,
+                    createdAt,
+                    relatedEntityId: mapped.id,
+                };
+                mockNotifications.unshift(notif);
+                try {
+                    await supabase.from('notifications').insert([
+                        {
+                            id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${mapped.employeeId}`,
+                            user_id: mapped.employeeId,
+                            type: NotificationType.COACHING_INVITE,
+                            title: notif.title,
+                            message: notif.message,
+                            link: notif.link,
+                            is_read: false,
+                            created_at: createdAt.toISOString(),
+                            related_entity_id: mapped.id,
+                        },
+                    ]);
+                } catch (err) {
+                    console.warn('Failed to persist coaching invite notification', err);
+                }
+            }
         } catch (err) {
             console.error('Failed to save coaching session', err);
             alert('Failed to save coaching session. Please try again.');
@@ -212,7 +263,7 @@ const CoachingLog: React.FC = () => {
         const isCoach = user?.id === session.coachId;
         const isEmployee = user?.id === session.employeeId;
 
-        if (session.status === CoachingStatus.Scheduled) {
+        if (session.status === CoachingStatus.Scheduled || session.status === CoachingStatus.Accepted) {
             return isCoach ? 'Conduct' : 'View';
         }
         if (session.status === CoachingStatus.Completed && isEmployee) {
