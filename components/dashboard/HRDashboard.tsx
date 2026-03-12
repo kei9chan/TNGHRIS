@@ -1048,6 +1048,12 @@ const HRDashboard: React.FC = () => {
                         title: notification.title || "Pulse Survey Reminder",
                         colorClass: "bg-blue-500"
                     };
+                case NotificationType.PROFILE_CHANGE_APPROVED:
+                    return {
+                        icon: <UserCircleIcon {...iconProps} />,
+                        title: notification.title || "Profile Update Approved",
+                        colorClass: "bg-green-500"
+                    };
                 default:
                      return {
                         icon: <DocumentTextIcon {...iconProps} />,

@@ -1346,6 +1346,20 @@ const ManagerDashboard: React.FC = () => {
             }));
         items.push(...panApprovalNotifications);
 
+        const profileChangeNotifications = mockNotifications
+            .filter(n => notificationIds.has(n.userId) && !n.isRead && n.type === NotificationType.PROFILE_CHANGE_APPROVED)
+            .map(item => ({
+                id: `profile-approve-${item.id}`,
+                icon: <DocumentTextIcon {...iconProps} />,
+                title: item.title || 'Profile Update Approved',
+                subtitle: item.message,
+                date: new Date(item.createdAt).toLocaleDateString(),
+                link: item.link || '/my-profile',
+                colorClass: 'bg-green-500',
+                priority: 0
+            }));
+        items.push(...profileChangeNotifications);
+
         const onboardingNotifications = mockNotifications
             .filter(n => notificationIds.has(n.userId) && !n.isRead && (n.type === NotificationType.ONBOARDING_ASSIGNED || n.type === NotificationType.OFFBOARDING_ASSIGNED))
             .map(item => ({
