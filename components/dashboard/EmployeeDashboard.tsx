@@ -1790,6 +1790,9 @@ const EmployeeDashboard: React.FC = () => {
                     case NotificationType.CONTRACT_APPROVAL_REQUEST:
                         details = { icon: <PencilSquareIcon {...iconProps} />, title: "Contract Approval Required", colorClass: "bg-pink-500", priority: 0 };
                         break;
+                    case NotificationType.PROFILE_CHANGE_APPROVED:
+                        details = { icon: <UserCircleIcon {...iconProps} />, title: item.title || "Profile Update Approved", colorClass: "bg-green-500", priority: 0 };
+                        break;
                     case NotificationType.TICKET_ASSIGNED_TO_YOU:
                         details = { icon: <TicketIcon {...iconProps} />, title: "New Ticket Assigned", colorClass: "bg-cyan-500", priority: 1 };
                         break;

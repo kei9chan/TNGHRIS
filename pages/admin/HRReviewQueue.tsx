@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { mockChangeHistory, mockUsers, mockEmployeeDrafts, mockUserDocuments } from '../../services/mockData';
-import { ChangeHistory, ChangeHistoryStatus, EmployeeDraftStatus, User, Role, Permission, UserDocument, UserDocumentStatus } from '../../types';
+import { mockChangeHistory, mockUsers, mockEmployeeDrafts, mockUserDocuments, mockNotifications } from '../../services/mockData';
+import { ChangeHistory, ChangeHistoryStatus, EmployeeDraftStatus, User, Role, Permission, UserDocument, UserDocumentStatus, NotificationType } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
@@ -201,6 +201,39 @@ const HRReviewQueue: React.FC = () => {
             const action = status === ChangeHistoryStatus.Approved ? 'APPROVE' : 'REJECT';
             const details = status === ChangeHistoryStatus.Approved ? `Approved profile changes.` : `Rejected profile changes. Reason: ${reason}`;
             logActivity(user, action, 'EmployeeProfileChange', submissionId, details);
+
+            if (status === ChangeHistoryStatus.Approved && changeRows && changeRows.length > 0) {
+                const employeeId = changeRows[0].employee_id;
+                const createdAt = new Date();
+                mockNotifications.unshift({
+                    id: `notif-profile-change-${submissionId}-${employeeId}-${createdAt.getTime()}`,
+                    userId: employeeId,
+                    type: NotificationType.PROFILE_CHANGE_APPROVED,
+                    title: 'Profile Update Approved',
+                    message: 'Your profile update request was approved.',
+                    link: '/my-profile',
+                    isRead: false,
+                    createdAt,
+                    relatedEntityId: submissionId,
+                });
+                try {
+                    await supabase.from('notifications').insert([
+                        {
+                            id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${employeeId}`,
+                            user_id: employeeId,
+                            type: NotificationType.PROFILE_CHANGE_APPROVED,
+                            title: 'Profile Update Approved',
+                            message: 'Your profile update request was approved.',
+                            link: '/my-profile',
+                            is_read: false,
+                            created_at: createdAt.toISOString(),
+                            related_entity_id: submissionId,
+                        },
+                    ]);
+                } catch (err) {
+                    console.warn('Failed to persist profile approval notification', err);
+                }
+            }
 
             setPendingChanges(prev => prev.filter(c => c.submissionId !== submissionId));
         } catch (e) {

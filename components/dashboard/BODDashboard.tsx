@@ -1041,6 +1041,19 @@ const BODDashboard: React.FC = () => {
             }));
         allItems.push(...panApprovalNotifications);
 
+        const profileChangeNotifications = mockNotifications
+            .filter(n => notificationUserIds.has(n.userId) && !n.isRead && n.type === NotificationType.PROFILE_CHANGE_APPROVED)
+            .map(item => ({
+                id: `notif-${item.id}`,
+                icon: <DocumentTextIcon {...iconProps} />,
+                title: item.title || "Profile Update Approved",
+                subtitle: item.message,
+                date: new Date(item.createdAt).toLocaleDateString(),
+                link: item.link || '/my-profile',
+                colorClass: "bg-green-500"
+            }));
+        allItems.push(...profileChangeNotifications);
+
         const onboardingNotifications = mockNotifications
             .filter(n => notificationUserIds.has(n.userId) && !n.isRead && (n.type === NotificationType.ONBOARDING_ASSIGNED || n.type === NotificationType.OFFBOARDING_ASSIGNED))
             .map(item => ({
