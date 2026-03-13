@@ -450,13 +450,17 @@ const PersonnelActionNotice: React.FC = () => {
         getActionType(record.actionTaken).toLowerCase().includes(searchTerm.toLowerCase()) ||
         record.status.toLowerCase().includes(searchTerm.toLowerCase());
 
+      if (!canRespond && record.status !== PANStatus.Completed && record.status !== PANStatus.PendingEmployee) {
+        return false;
+      }
+
       if (panAccess.scope === 'global') {
         return yearMatch && monthMatch && searchTermMatch;
       }
 
       return yearMatch && monthMatch && searchTermMatch && (routingMatch || employeeMatch);
     });
-  }, [records, searchTerm, yearFilter, monthFilter, user, panAccess.scope]);
+  }, [records, searchTerm, yearFilter, monthFilter, user, panAccess.scope, canRespond]);
 
   return (
     <div className="space-y-6">
