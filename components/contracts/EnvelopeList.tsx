@@ -1,9 +1,14 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Envelope, EnvelopeStatus } from '../../types';
+import Button from '../ui/Button';
 
 interface EnvelopeListProps {
     envelopes: Envelope[];
+    currentUserId?: string | null;
+    onEdit?: (envelope: Envelope) => void;
+    onDelete?: (envelope: Envelope) => void;
+    onWithdraw?: (envelope: Envelope) => void;
 }
 
 const getStatusColor = (status: EnvelopeStatus) => {
@@ -17,7 +22,7 @@ const getStatusColor = (status: EnvelopeStatus) => {
     }
 };
 
-const EnvelopeList: React.FC<EnvelopeListProps> = ({ envelopes }) => {
+const EnvelopeList: React.FC<EnvelopeListProps> = ({ envelopes, currentUserId, onEdit, onDelete, onWithdraw }) => {
     return (
         <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -27,10 +32,19 @@ const EnvelopeList: React.FC<EnvelopeListProps> = ({ envelopes }) => {
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Title</th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Due Date</th>
+                        {(onEdit || onDelete || onWithdraw) && (
+                            <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+                        )}
                     </tr>
                 </thead>
                 <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                    {envelopes.map(envelope => (
+                    {envelopes.map(envelope => {
+                        const isOwner = !!currentUserId && envelope.employeeId === currentUserId;
+                        const canEdit = isOwner && [EnvelopeStatus.Draft, EnvelopeStatus.PendingApproval].includes(envelope.status);
+                        const canDelete = isOwner && envelope.status === EnvelopeStatus.Draft;
+                        const canWithdraw = isOwner && [EnvelopeStatus.PendingApproval, EnvelopeStatus.OutForSignature].includes(envelope.status);
+                        const showActions = !!(onEdit || onDelete || onWithdraw) && (canEdit || canDelete || canWithdraw);
+                        return (
                         <tr key={envelope.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
                                 <Link to={`/employees/contracts/${envelope.id}`} className="hover:underline">
@@ -48,8 +62,34 @@ const EnvelopeList: React.FC<EnvelopeListProps> = ({ envelopes }) => {
                                 </span>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{new Date(envelope.dueDate).toLocaleDateString()}</td>
+                            {(onEdit || onDelete || onWithdraw) && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
+                                    {showActions ? (
+                                        <div className="flex justify-end gap-2">
+                                            {canEdit && onEdit && (
+                                                <Button size="sm" variant="secondary" onClick={() => onEdit(envelope)}>
+                                                    Edit
+                                                </Button>
+                                            )}
+                                            {canWithdraw && onWithdraw && (
+                                                <Button size="sm" variant="secondary" onClick={() => onWithdraw(envelope)}>
+                                                    Withdraw
+                                                </Button>
+                                            )}
+                                            {canDelete && onDelete && (
+                                                <Button size="sm" variant="danger" onClick={() => onDelete(envelope)}>
+                                                    Delete
+                                                </Button>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <span className="text-gray-400">—</span>
+                                    )}
+                                </td>
+                            )}
                         </tr>
-                    ))}
+                        );
+                    })}
                 </tbody>
             </table>
             {envelopes.length === 0 && (

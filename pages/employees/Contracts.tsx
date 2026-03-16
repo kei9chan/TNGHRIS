@@ -66,24 +66,26 @@ const Contracts: React.FC = () => {
   const [envelopes, setEnvelopes] = useState<Envelope[]>([]);
   const [employees, setEmployees] = useState(mockUsers);
   const [isEnvelopeDrawerOpen, setIsEnvelopeDrawerOpen] = useState(false);
+  const [selectedEnvelope, setSelectedEnvelope] = useState<Envelope | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
   const canManage = can('Employees', Permission.Edit);
-  const canViewAll = can('Employees', Permission.View);
+  const canViewAll = user?.role === Role.Admin;
 
   // Load employees for envelope creation
   React.useEffect(() => {
     const loadEmployees = async () => {
       try {
-        const { data, error } = await supabase.from('hris_users').select('id, full_name, role, status');
+        const { data, error } = await supabase.from('hris_users').select('id, full_name, email, role, status, reports_to');
         if (error) throw error;
         if (data) {
           const mapped = data.map((u: any) => ({
             id: u.id,
             name: formatEmployeeName(u.full_name || ''),
-            email: '',
+            email: u.email || '',
             role: (u.role as Role) || Role.Employee,
             status: u.status || 'Active',
+            reportsTo: u.reports_to || undefined,
           }));
           setEmployees(mapped);
         } else {
@@ -138,17 +140,43 @@ const Contracts: React.FC = () => {
     loadEnvelopes();
   }, []);
 
+  const resolvedUserId = useMemo(() => {
+    if (!user) return null;
+    if (employees.some(emp => emp.id === user.id)) return user.id;
+    if (user.email) {
+      const match = employees.find(emp => emp.email?.toLowerCase() === user.email?.toLowerCase());
+      if (match?.id) return match.id;
+    }
+    return user.id;
+  }, [user, employees]);
+
   const filteredEnvelopes = useMemo(() => {
+    if (!user || !resolvedUserId) return [];
+    const teamIds = new Set(
+      employees
+        .filter(emp => emp.reportsTo && emp.reportsTo === resolvedUserId)
+        .map(emp => emp.id)
+    );
+    const visibleEnvelopes = canViewAll
+      ? envelopes
+      : envelopes.filter(env => {
+          const isInvolved =
+            env.employeeId === resolvedUserId ||
+            env.createdByUserId === resolvedUserId ||
+            (env.routingSteps || []).some(step => step.userId === resolvedUserId);
+          if (isInvolved) return true;
+          return teamIds.has(env.employeeId);
+        });
     if (!searchTerm) {
-        return envelopes;
+        return visibleEnvelopes;
     }
     const lowercasedTerm = searchTerm.toLowerCase();
-    return envelopes.filter(env => 
+    return visibleEnvelopes.filter(env => 
         env.employeeName.toLowerCase().includes(lowercasedTerm) ||
         env.title.toLowerCase().includes(lowercasedTerm) ||
         env.status.toLowerCase().includes(lowercasedTerm)
     );
-  }, [envelopes, searchTerm]);
+  }, [envelopes, searchTerm, user, resolvedUserId, canViewAll, employees]);
 
   const tabClass = (tabName: 'documents' | 'templates') =>
     `px-4 py-2 text-sm font-medium transition-colors ${
@@ -287,7 +315,8 @@ const Contracts: React.FC = () => {
       });
   };
   
-  const handleOpenEnvelopeDrawer = () => {
+  const handleOpenEnvelopeDrawer = (envelope?: Envelope | null) => {
+    setSelectedEnvelope(envelope || null);
     setIsEnvelopeDrawerOpen(true);
   };
 
@@ -304,8 +333,10 @@ const Contracts: React.FC = () => {
 
       if (!employee || !template) return;
 
-      let initialStatus = EnvelopeStatus.Draft;
-      if (send) {
+      const isEdit = !!envelopeToSave.id;
+      const existing = isEdit ? envelopes.find(e => e.id === envelopeToSave.id) : null;
+      let initialStatus = existing?.status || EnvelopeStatus.Draft;
+      if (send && (!existing || existing.status === EnvelopeStatus.Draft)) {
           const firstStep = envelopeToSave.routingSteps[0];
           initialStatus = firstStep.role === 'Approver' ? EnvelopeStatus.PendingApproval : EnvelopeStatus.OutForSignature;
       }
@@ -319,23 +350,31 @@ const Contracts: React.FC = () => {
       const templateTitleForDb = template?.title || envelopeToSave.templateId;
 
       try {
-        const { data, error } = await supabase
-          .from('envelopes')
-          .insert({
-            template_id: templateIdForDb,
-            template_title: templateTitleForDb,
-            employee_id: employee.id,
-            employee_name: employee.name,
-            title: `Contract for ${employee.name}`,
-            routing_steps: envelopeToSave.routingSteps,
-            due_date: envelopeToSave.dueDate ? envelopeToSave.dueDate.toISOString().split('T')[0] : null,
-            status: initialStatus,
-            created_by_user_id: user.id,
-            events: events.map(ev => ({ ...ev, timestamp: new Date(ev.timestamp).toISOString() })),
-            content_snapshot: envelopeToSave.contentSnapshot || null,
-          })
-          .select()
-          .single();
+        const payload = {
+          template_id: templateIdForDb,
+          template_title: templateTitleForDb,
+          employee_id: employee.id,
+          employee_name: employee.name,
+          title: `Contract for ${employee.name}`,
+          routing_steps: envelopeToSave.routingSteps,
+          due_date: envelopeToSave.dueDate ? envelopeToSave.dueDate.toISOString().split('T')[0] : null,
+          status: initialStatus,
+          created_by_user_id: existing?.createdByUserId || user.id,
+          events: (existing?.events?.length ? existing.events : events).map(ev => ({ ...ev, timestamp: new Date(ev.timestamp).toISOString() })),
+          content_snapshot: envelopeToSave.contentSnapshot || null,
+        };
+        const { data, error } = isEdit
+          ? await supabase
+              .from('envelopes')
+              .update(payload)
+              .eq('id', envelopeToSave.id)
+              .select()
+              .single()
+          : await supabase
+              .from('envelopes')
+              .insert(payload)
+              .select()
+              .single();
 
         if (error) throw error;
 
@@ -355,7 +394,7 @@ const Contracts: React.FC = () => {
           contentSnapshot: data.content_snapshot || undefined,
         };
 
-        if (send) {
+        if (!isEdit && send) {
           const createdAt = new Date();
           const link = `/employees/contracts/${newEnvelope.id}`;
           const approvalIds = new Set(
@@ -390,14 +429,57 @@ const Contracts: React.FC = () => {
           });
         }
 
-        setEnvelopes(prev => [newEnvelope, ...prev]);
+        setEnvelopes(prev => {
+          if (isEdit) {
+            return prev.map(env => (env.id === newEnvelope.id ? newEnvelope : env));
+          }
+          return [newEnvelope, ...prev];
+        });
       } catch (err) {
         console.error('Failed to save envelope', err);
         const message = (err as any)?.message || 'Failed to save envelope. Please try again.';
         alert(message);
       } finally {
         setIsEnvelopeDrawerOpen(false);
+        setSelectedEnvelope(null);
       }
+  };
+
+  const handleDeleteEnvelope = async (envelope: Envelope) => {
+    if (!window.confirm('Delete this request? This cannot be undone.')) return;
+    try {
+      const { error } = await supabase.from('envelopes').delete().eq('id', envelope.id);
+      if (error) throw error;
+      setEnvelopes(prev => prev.filter(env => env.id !== envelope.id));
+    } catch (err) {
+      console.error('Failed to delete envelope', err);
+      alert('Failed to delete request. Please try again.');
+    }
+  };
+
+  const handleWithdrawEnvelope = async (envelope: Envelope) => {
+    if (!user) return;
+    if (!window.confirm('Withdraw this request?')) return;
+    try {
+      const nextEvents = [
+        ...(envelope.events || []),
+        { timestamp: new Date(), type: EnvelopeEventType.Voided, userName: user.name, details: 'Request withdrawn by requester.' },
+      ];
+      const { data, error } = await supabase
+        .from('envelopes')
+        .update({
+          status: EnvelopeStatus.Voided,
+          events: nextEvents.map(ev => ({ ...ev, timestamp: new Date(ev.timestamp).toISOString() })),
+        })
+        .eq('id', envelope.id)
+        .select()
+        .single();
+      if (error) throw error;
+      setEnvelopes(prev => prev.map(env => (env.id === envelope.id ? mapEnvelopeRow(data as EnvelopeRow) : env)));
+    } catch (err) {
+      console.error('Failed to withdraw envelope', err);
+      alert('Failed to withdraw request. Please try again.');
+    }
   };
 
 
@@ -427,11 +509,17 @@ const Contracts: React.FC = () => {
                 </div>
                 {canManage && (
                     <div className="flex-shrink-0 self-end md:self-center">
-                        <Button onClick={handleOpenEnvelopeDrawer}>Create New Document</Button>
+                        <Button onClick={() => handleOpenEnvelopeDrawer(null)}>Create New Document</Button>
                     </div>
                 )}
             </div>
-           <EnvelopeList envelopes={filteredEnvelopes} />
+           <EnvelopeList
+              envelopes={filteredEnvelopes}
+              currentUserId={resolvedUserId}
+              onEdit={handleOpenEnvelopeDrawer}
+              onDelete={handleDeleteEnvelope}
+              onWithdraw={handleWithdrawEnvelope}
+            />
         </Card>
       )}
 
@@ -454,13 +542,14 @@ const Contracts: React.FC = () => {
         />
       )}
 
-      {isEnvelopeDrawerOpen && canManage && (
+      {isEnvelopeDrawerOpen && (canManage || !!selectedEnvelope) && (
           <EnvelopeCreationDrawer
             isOpen={isEnvelopeDrawerOpen}
             onClose={() => setIsEnvelopeDrawerOpen(false)}
             onSave={handleSaveEnvelope}
             employees={employees}
             templates={templates}
+            envelope={selectedEnvelope}
           />
       )}
     </div>
