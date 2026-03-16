@@ -398,37 +398,78 @@ const Contracts: React.FC = () => {
 
         if (!isEdit && send) {
           const createdAt = new Date();
-          const link = `/employees/contracts/${newEnvelope.id}`;
+          const baseLink = `/employees/contracts/${newEnvelope.id}`;
+          const link = baseLink;
           const approvalIds = new Set(
             (newEnvelope.routingSteps || [])
               .filter(step => step.role === 'Approver' && step.userId)
               .map(step => step.userId)
           );
 
-          mockNotifications.unshift({
-            id: `notif-contract-sign-${newEnvelope.id}-${newEnvelope.employeeId}-${createdAt.getTime()}`,
-            userId: newEnvelope.employeeId,
-            type: NotificationType.CONTRACT_SIGNATURE_REQUEST,
-            message: `Contract "${newEnvelope.title}" is ready for your signature.`,
-            link,
-            isRead: false,
-            createdAt,
-            relatedEntityId: newEnvelope.id,
-          });
-
-          approvalIds.forEach(approverId => {
-            if (approverId === newEnvelope.employeeId) return;
+          const recipientRows = await supabase
+            .from('hris_users')
+            .select('id, email, auth_user_id')
+            .in('id', [newEnvelope.employeeId, ...Array.from(approvalIds)]);
+          const idToRow = new Map(
+            (recipientRows.data || []).map((row: any) => [row.id, row])
+          );
+          const pushNotificationFor = (
+            targetId: string,
+            type: NotificationType,
+            message: string
+          ) => {
             mockNotifications.unshift({
-              id: `notif-contract-approve-${newEnvelope.id}-${approverId}-${createdAt.getTime()}`,
-              userId: approverId,
-              type: NotificationType.CONTRACT_APPROVAL_REQUEST,
-              message: `Approval required for "${newEnvelope.title}" for ${newEnvelope.employeeName}.`,
+              id: `notif-contract-${type}-${newEnvelope.id}-${targetId}-${createdAt.getTime()}`,
+              userId: targetId,
+              type,
+              message,
               link,
               isRead: false,
               createdAt,
               relatedEntityId: newEnvelope.id,
             });
+          };
+
+          const addTargets = (userId: string) => {
+            const targets = new Set<string>();
+            targets.add(userId);
+            const row = idToRow.get(userId);
+            if (row?.auth_user_id) targets.add(row.auth_user_id);
+            if (row?.email) {
+              const mockMatch = mockUsers.find(
+                u => u.email?.toLowerCase() === String(row.email).toLowerCase()
+              );
+              if (mockMatch?.id) targets.add(mockMatch.id);
+            }
+            return targets;
+          };
+
+          addTargets(newEnvelope.employeeId).forEach(targetId => {
+            pushNotificationFor(
+              targetId,
+              NotificationType.CONTRACT_SIGNATURE_REQUEST,
+              `Contract "${newEnvelope.title}" is ready for your signature.`
+            );
           });
+
+          approvalIds.forEach(approverId => {
+            if (approverId === newEnvelope.employeeId) return;
+            addTargets(approverId).forEach(targetId => {
+              pushNotificationFor(
+                targetId,
+                NotificationType.CONTRACT_APPROVAL_REQUEST,
+                `Approval required for "${newEnvelope.title}" for ${newEnvelope.employeeName}.`
+              );
+            });
+          });
+
+          // Override links so signature and approval land on distinct actions.
+          mockNotifications
+            .filter(n => n.relatedEntityId === newEnvelope.id && n.type === NotificationType.CONTRACT_SIGNATURE_REQUEST)
+            .forEach(n => { n.link = `${baseLink}?action=sign`; });
+          mockNotifications
+            .filter(n => n.relatedEntityId === newEnvelope.id && n.type === NotificationType.CONTRACT_APPROVAL_REQUEST)
+            .forEach(n => { n.link = `${baseLink}?action=approve`; });
         }
 
         setEnvelopes(prev => {

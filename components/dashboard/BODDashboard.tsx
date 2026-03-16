@@ -1109,7 +1109,8 @@ const BODDashboard: React.FC = () => {
                 icon: <PencilSquareIcon {...iconProps} />,
                 title: item.type === NotificationType.CONTRACT_APPROVAL_REQUEST ? "Contract Approval Required" : "Contract Signature Required",
                 subtitle: item.message,
-                date: new Date(item.createdAt).toLocaleDateString(),
+                date: new Date(item.createdAt).toLocaleString(),
+                createdAt: item.createdAt,
                 link: item.link,
                 colorClass: item.type === NotificationType.CONTRACT_APPROVAL_REQUEST ? "bg-pink-500" : "bg-orange-500"
             }));

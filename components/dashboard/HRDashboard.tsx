@@ -31,6 +31,7 @@ const UserMinusIcon: React.FC<{className?: string}> = ({className}) => (<svg xml
 const DocumentTextIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>);
 const TicketIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 6v.75m0 3v.75m0 3v.75m0 3V18m-9-12v.75m0 3v.75m0 3v.75m0 3V18m-3 .75h18A2.25 2.25 0 0021 16.5V7.5A2.25 2.25 0 0018.75 5.25H5.25A2.25 2.25 0 003 7.5v9A2.25 2.25 0 005.25 18.75h1.5M12 4.5v15" /></svg>);
 const DocumentPlusIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m.75 12.375 3.375-3.375m0 0A2.25 2.25 0 0 1 12.75 12h3.375a2.25 2.25 0 0 1 2.25 2.25v3.375M12.75 12v3.375m0 0a2.25 2.25 0 0 0 2.25 2.25h3.375M12.75 12h-3.375a2.25 2.25 0 0 0-2.25 2.25v3.375m0 0a2.25 2.25 0 0 0 2.25 2.25h3.375M9 2.25h.375a9 9 0 0 1 9 9v.375M9 2.25A2.625 2.625 0 0 0 6.375 5.625v1.5c0 .621.504 1.125 1.125 1.125h1.5" /></svg>);
+const PencilSquareIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125" /></svg>);
 const ClipboardCheckIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M10.125 2.25h-4.5c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125v-9M10.125 2.25h.375a9 9 0 0 1 9 9v.375M10.125 2.25A3.375 3.375 0 0 1 13.5 5.625v1.5c0 .621.504 1.125 1.125 1.125h1.5a3.375 3.375 0 0 1 3.375 3.375M9 15l2.25 2.25L15 12" /></svg>);
 const UserPlusIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" className={className || "h-6 w-6 text-white"} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125c0-.621.504-1.125 1.125-1.125h5.25c.621 0 1.125.504 1.125 1.125v6.75c0 .621-.504 1.125-1.125 1.125H9.75a1.125 1.125 0 0 1-1.125-1.125V9.75Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M12 14v-2" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12h-3" /></svg>);
 const UserCircleIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" className={className || "h-6 w-6 text-white"} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>);
@@ -156,6 +157,7 @@ const HRDashboard: React.FC = () => {
     const [selectedMemo, setSelectedMemo] = useState<Memo | null>(null);
     const [isMemoViewOpen, setIsMemoViewOpen] = useState(false);
     const [memoUpdateKey, setMemoUpdateKey] = useState(0);
+    const [resolvedUserId, setResolvedUserId] = useState<string | null>(null);
     const legacyUserId = useMemo(() => {
         if (!user) return null;
         const byEmail = user.email
@@ -774,12 +776,32 @@ const HRDashboard: React.FC = () => {
     };
 
 
+    useEffect(() => {
+        const resolveUserId = async () => {
+            if (!user?.email) {
+                setResolvedUserId(user?.id || null);
+                return;
+            }
+            try {
+                const { data } = await supabase
+                    .from('hris_users')
+                    .select('id')
+                    .eq('email', user.email)
+                    .maybeSingle();
+                setResolvedUserId(data?.id || user.id);
+            } catch {
+                setResolvedUserId(user.id);
+            }
+        };
+        resolveUserId();
+    }, [user]);
+
     const actionItems = useMemo(() => {
         if (!user) return [];
 
         const allItems: any[] = [];
         const iconProps = { className: "h-6 w-6 text-white" };
-        const notificationUserIds = new Set([user.id, user.authUserId, panApproverId, legacyUserId].filter(Boolean));
+        const notificationUserIds = new Set([user.id, user.authUserId, panApproverId, legacyUserId, resolvedUserId].filter(Boolean));
 
         // Retrieve ALL active checklists (Onboarding/Offboarding) assigned to the user
         // Use state variable 'checklists' instead of mock directly for reactivity
@@ -1058,6 +1080,18 @@ const HRDashboard: React.FC = () => {
                         title: notification.title || "Profile Update Approved",
                         colorClass: "bg-green-500"
                     };
+                case NotificationType.CONTRACT_SIGNATURE_REQUEST:
+                    return {
+                        icon: <PencilSquareIcon {...iconProps} />,
+                        title: "Contract Signature Required",
+                        colorClass: "bg-orange-500"
+                    };
+                case NotificationType.CONTRACT_APPROVAL_REQUEST:
+                    return {
+                        icon: <PencilSquareIcon {...iconProps} />,
+                        title: "Contract Approval Required",
+                        colorClass: "bg-pink-500"
+                    };
                 default:
                      return {
                         icon: <DocumentTextIcon {...iconProps} />,
@@ -1077,7 +1111,8 @@ const HRDashboard: React.FC = () => {
                     icon: details.icon,
                     title: details.title,
                     subtitle: item.message,
-                    date: new Date(item.createdAt).toLocaleDateString(),
+                    date: new Date(item.createdAt).toLocaleString(),
+                    createdAt: item.createdAt,
                     link: item.link,
                     colorClass: details.colorClass
                 };

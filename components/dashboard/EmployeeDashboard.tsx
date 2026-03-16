@@ -1820,7 +1820,7 @@ const EmployeeDashboard: React.FC = () => {
                     icon: notif.icon,
                     title: notif.title,
                     subtitle: notif.message,
-                    date: new Date(notif.createdAt).toLocaleDateString(),
+                    date: new Date(notif.createdAt).toLocaleString(),
                     sortDate: notif.createdAt,
                     link: notif.link,
                     state: notif.relatedEntityId ? { openSessionId: notif.relatedEntityId } : undefined, // Pass related ID if relevant (generic)
