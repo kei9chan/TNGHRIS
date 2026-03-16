@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { mockEnvelopes, mockUsers } from '../../services/mockData';
 import { Envelope, RoutingStepStatus, EnvelopeStatus, EnvelopeEventType } from '../../types';
@@ -39,6 +39,7 @@ const EnvelopeDetail: React.FC = () => {
     const { envelopeId } = useParams<{ envelopeId: string }>();
     const { user } = useAuth();
     const navigate = useNavigate();
+    const location = useLocation();
 
     const [envelope, setEnvelope] = useState<Envelope | null>(null);
     const [employeeProfile, setEmployeeProfile] = useState<{
@@ -53,19 +54,73 @@ const EnvelopeDetail: React.FC = () => {
     const [emailRecipient, setEmailRecipient] = useState('');
     const [isSending, setIsSending] = useState(false);
     const pdfRef = useRef<HTMLDivElement | null>(null);
+    const [resolvedUserId, setResolvedUserId] = useState<string | null>(null);
+    const [showApprovalWaitBanner, setShowApprovalWaitBanner] = useState(false);
 
     const currentUserRecipient = useMemo(() => {
-        if (!user || !envelope) return null;
-        return envelope.routingSteps.find(r => r.userId === user.id);
-    }, [user, envelope]);
+        if (!envelope) return null;
+        const lookupId = resolvedUserId || user?.id;
+        if (!lookupId) return null;
+        return envelope.routingSteps.find(r => r.userId === lookupId);
+    }, [user, envelope, resolvedUserId]);
+
+    useEffect(() => {
+        const resolveUserId = async () => {
+            if (!user?.email) {
+                setResolvedUserId(user?.id || null);
+                return;
+            }
+            try {
+                const { data } = await supabase
+                    .from('hris_users')
+                    .select('id')
+                    .eq('email', user.email)
+                    .maybeSingle();
+                setResolvedUserId(data?.id || user.id);
+            } catch {
+                setResolvedUserId(user.id);
+            }
+        };
+        resolveUserId();
+    }, [user]);
 
     const isMyTurnToSign = useMemo(() => {
         if (!currentUserRecipient || currentUserRecipient.status !== RoutingStepStatus.Pending) {
             return false;
         }
+        if (currentUserRecipient.role !== 'Signer') {
+            return false;
+        }
         const firstPending = envelope?.routingSteps.find(r => r.status === RoutingStepStatus.Pending);
-        return firstPending?.userId === user?.id;
-    }, [currentUserRecipient, envelope, user]);
+        return firstPending?.userId === (resolvedUserId || user?.id);
+    }, [currentUserRecipient, envelope, user, resolvedUserId]);
+
+    const isMyTurnToApprove = useMemo(() => {
+        if (!currentUserRecipient || currentUserRecipient.role !== 'Approver') {
+            return false;
+        }
+        if (currentUserRecipient.status !== RoutingStepStatus.Pending) {
+            return false;
+        }
+        const firstPending = envelope?.routingSteps.find(r => r.status === RoutingStepStatus.Pending);
+        return firstPending?.userId === (resolvedUserId || user?.id);
+    }, [currentUserRecipient, envelope, user, resolvedUserId]);
+
+    useEffect(() => {
+        if (!envelope || !user) return;
+        const params = new URLSearchParams(location.search);
+        const action = params.get('action');
+        if (action === 'sign') {
+            if (isMyTurnToSign) {
+                setIsSigningModalOpen(true);
+                setShowApprovalWaitBanner(false);
+            } else {
+                setShowApprovalWaitBanner(envelope.status !== EnvelopeStatus.Completed);
+            }
+        } else {
+            setShowApprovalWaitBanner(false);
+        }
+    }, [location.search, envelope, user, isMyTurnToSign]);
     
     const processedContent = useMemo(() => {
         if (!envelope?.contentSnapshot) return { body: '', sections: [] };
@@ -163,34 +218,118 @@ const EnvelopeDetail: React.FC = () => {
         return <div>Envelope not found.</div>;
     }
     
-    const handleSign = (signatureDataUrl: string) => {
-        if (!user || !currentUserRecipient) return;
+    const mapEnvelopeRow = (data: any): Envelope => ({
+        id: data.id,
+        templateId: data.template_id || '',
+        templateTitle: data.template_title || '',
+        employeeId: data.employee_id,
+        employeeName: data.employee_name,
+        title: data.title,
+        routingSteps: Array.isArray(data.routing_steps) ? data.routing_steps : [],
+        dueDate: data.due_date ? new Date(data.due_date) : new Date(),
+        status: data.status as EnvelopeStatus,
+        createdByUserId: data.created_by_user_id,
+        createdAt: data.created_at ? new Date(data.created_at) : new Date(),
+        events: Array.isArray(data.events)
+            ? data.events.map((ev: any) => ({ ...ev, timestamp: new Date(ev.timestamp) }))
+            : [],
+        contentSnapshot: data.content_snapshot || undefined,
+    });
 
-        const envelopeIndex = mockEnvelopes.findIndex(e => e.id === envelope.id);
-        if (envelopeIndex === -1) return;
-
-        const updatedEnvelope = { ...mockEnvelopes[envelopeIndex] };
-        
-        updatedEnvelope.routingSteps = updatedEnvelope.routingSteps.map(r => r.userId === user.id ? { ...r, status: RoutingStepStatus.Completed, action: 'Signed', timestamp: new Date(), signatureDataUrl } : r);
-
-        updatedEnvelope.events.push({
-            timestamp: new Date(),
-            type: EnvelopeEventType.Signed,
-            userName: user.name,
-        });
-
-        const allSigned = updatedEnvelope.routingSteps.every(r => r.role !== 'Signer' || r.status === RoutingStepStatus.Completed);
-        if (allSigned) {
-            updatedEnvelope.status = EnvelopeStatus.Completed;
-            updatedEnvelope.events.push({
-                timestamp: new Date(),
-                type: EnvelopeEventType.Completed,
-                userName: 'System',
-            });
+    const deriveStatus = (steps: Envelope['routingSteps']) => {
+        if (steps.some(step => step.status === RoutingStepStatus.Declined)) {
+            return EnvelopeStatus.Declined;
         }
-        
-        mockEnvelopes[envelopeIndex] = updatedEnvelope;
-        setEnvelope(updatedEnvelope);
+        const allCompleted = steps.every(step => step.status === RoutingStepStatus.Completed);
+        if (allCompleted) {
+            return EnvelopeStatus.Completed;
+        }
+        const hasPendingApprover = steps.some(step => step.role === 'Approver' && step.status !== RoutingStepStatus.Completed);
+        if (hasPendingApprover) {
+            return EnvelopeStatus.PendingApproval;
+        }
+        const hasPendingSigner = steps.some(step => step.role === 'Signer' && step.status !== RoutingStepStatus.Completed);
+        if (hasPendingSigner) {
+            return EnvelopeStatus.OutForSignature;
+        }
+        return EnvelopeStatus.PendingApproval;
+    };
+
+    const updateEnvelope = async (
+        updatedSteps: Envelope['routingSteps'],
+        eventType: EnvelopeEventType,
+        details?: string,
+        statusOverride?: EnvelopeStatus
+    ) => {
+        if (!user || !envelope) return;
+        const nextStatus = statusOverride || deriveStatus(updatedSteps);
+        const nextEvents = [
+            ...(envelope.events || []),
+            { timestamp: new Date(), type: eventType, userName: user.name, details },
+        ];
+
+        const { data, error } = await supabase
+            .from('envelopes')
+            .update({
+                routing_steps: updatedSteps,
+                status: nextStatus,
+                events: nextEvents.map(ev => ({ ...ev, timestamp: new Date(ev.timestamp).toISOString() })),
+            })
+            .eq('id', envelope.id)
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Failed to update envelope', error);
+            alert('Failed to update contract status. Please try again.');
+            return;
+        }
+        setEnvelope(mapEnvelopeRow(data));
+    };
+
+    const handleApprove = async () => {
+        if (!user || !currentUserRecipient || !envelope) return;
+        const updatedSteps = envelope.routingSteps.map(step =>
+            step.userId === (resolvedUserId || user.id)
+                ? { ...step, status: RoutingStepStatus.Completed, action: 'Approved', timestamp: new Date() }
+                : step
+        );
+        await updateEnvelope(updatedSteps, EnvelopeEventType.Approved);
+    };
+
+    const handleReject = async () => {
+        if (!user || !currentUserRecipient || !envelope) return;
+        const confirmed = window.confirm('Reject this contract request?');
+        if (!confirmed) return;
+        const updatedSteps = envelope.routingSteps.map(step =>
+            step.userId === (resolvedUserId || user.id)
+                ? { ...step, status: RoutingStepStatus.Declined, action: 'Declined', timestamp: new Date() }
+                : step
+        );
+        await updateEnvelope(updatedSteps, EnvelopeEventType.Declined);
+    };
+
+    const handleReturn = async () => {
+        if (!user || !currentUserRecipient || !envelope) return;
+        const reason = window.prompt('Return this request for edits. Optional reason:') || 'Returned for edits.';
+        const resetSteps = envelope.routingSteps.map(step => ({
+            ...step,
+            status: RoutingStepStatus.Pending,
+            action: undefined,
+            timestamp: undefined,
+            rejectionReason: undefined,
+        }));
+        await updateEnvelope(resetSteps, EnvelopeEventType.CommentAdded, reason, EnvelopeStatus.Draft);
+    };
+
+    const handleSign = async (signatureDataUrl: string) => {
+        if (!user || !currentUserRecipient || !envelope) return;
+        const updatedSteps = envelope.routingSteps.map(r =>
+            r.userId === (resolvedUserId || user.id)
+                ? { ...r, status: RoutingStepStatus.Completed, action: 'Signed', timestamp: new Date(), signatureDataUrl }
+                : r
+        );
+        await updateEnvelope(updatedSteps, EnvelopeEventType.Signed);
         setIsSigningModalOpen(false);
     };
 
@@ -300,6 +439,14 @@ ${processedContent.sections
                 </div>
             </div>
             
+            {showApprovalWaitBanner && (
+                <Card>
+                    <div className="p-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md">
+                        Waiting for approvals. You will be able to sign once all approvals are completed.
+                    </div>
+                </Card>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2">
                      <Card title="Document Viewer">
@@ -333,6 +480,13 @@ ${processedContent.sections
                         <EnvelopeTimeline events={envelope.events} />
                     </Card>
 
+                    {isMyTurnToApprove && (
+                        <div className="space-y-2">
+                            <Button onClick={handleApprove} size="lg" className="w-full">Approve</Button>
+                            <Button variant="secondary" onClick={handleReject} size="lg" className="w-full">Reject</Button>
+                            <Button variant="secondary" onClick={handleReturn} size="lg" className="w-full">Return</Button>
+                        </div>
+                    )}
                     {isMyTurnToSign && (
                          <Button onClick={() => setIsSigningModalOpen(true)} size="lg" className="w-full">Review & Sign</Button>
                     )}
