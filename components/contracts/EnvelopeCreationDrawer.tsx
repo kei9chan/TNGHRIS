@@ -83,7 +83,7 @@ const EnvelopeCreationDrawer: React.FC<EnvelopeCreationDrawerProps> = ({ isOpen,
       try {
         const { data, error } = await supabase
           .from('hris_users')
-          .select('id, full_name, role, status');
+          .select('id, full_name, role, status, position, business_unit');
         if (error) throw error;
         const mapped =
           data?.map((u: any) => ({
@@ -92,6 +92,8 @@ const EnvelopeCreationDrawer: React.FC<EnvelopeCreationDrawerProps> = ({ isOpen,
             email: '',
             role: (u.role as Role) || Role.Employee,
             status: (u.status as any) || 'Active',
+            position: u.position || '',
+            businessUnit: u.business_unit || '',
           })) || [];
         setEmployees(mapped);
       } catch (err) {
@@ -134,6 +136,15 @@ const EnvelopeCreationDrawer: React.FC<EnvelopeCreationDrawerProps> = ({ isOpen,
       setSelectedEmployee(employee);
       setEmployeeSearch(employee.name);
       setIsEmployeeSearchOpen(false);
+      setContent(prev => ({
+        ...prev,
+        employeeSignatory: {
+          ...(prev.employeeSignatory || {}),
+          name: employee.name,
+          position: employee.role || '',
+          company: employee.businessUnit || '',
+        },
+      }));
   };
 
   const handleSaveAndSend = (send: boolean) => {
