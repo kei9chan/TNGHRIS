@@ -76,7 +76,7 @@ const Contracts: React.FC = () => {
   React.useEffect(() => {
     const loadEmployees = async () => {
       try {
-        const { data, error } = await supabase.from('hris_users').select('id, full_name, email, role, status, reports_to');
+        const { data, error } = await supabase.from('hris_users').select('id, full_name, email, role, status, reports_to, position, business_unit');
         if (error) throw error;
         if (data) {
           const mapped = data.map((u: any) => ({
@@ -86,6 +86,8 @@ const Contracts: React.FC = () => {
             role: (u.role as Role) || Role.Employee,
             status: u.status || 'Active',
             reportsTo: u.reports_to || undefined,
+            position: u.position || '',
+            businessUnit: u.business_unit || '',
           }));
           setEmployees(mapped);
         } else {
