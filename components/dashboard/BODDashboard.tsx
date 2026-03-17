@@ -490,6 +490,19 @@ const BODDashboard: React.FC = () => {
             mockManpowerRequests[index].status = ManpowerRequestStatus.Approved;
             mockManpowerRequests[index].approvedBy = user?.id;
             mockManpowerRequests[index].approvedAt = new Date();
+            if (mockManpowerRequests[index].requestedBy) {
+                mockNotifications.unshift({
+                    id: `manpower-approve-${requestId}-${Date.now()}`,
+                    userId: mockManpowerRequests[index].requestedBy,
+                    type: NotificationType.MANPOWER_REQUEST_APPROVED,
+                    title: 'On-Call Approved',
+                    message: `Your on-call request for ${mockManpowerRequests[index].businessUnitName || 'Unknown BU'} on ${new Date(mockManpowerRequests[index].date).toLocaleDateString()} has been approved.`,
+                    link: '/payroll/manpower-planning',
+                    isRead: false,
+                    createdAt: new Date(),
+                    relatedEntityId: requestId,
+                });
+            }
             setManpowerRequests([...mockManpowerRequests]);
             setIsManpowerReviewModalOpen(false);
             alert("Manpower Request Approved.");
@@ -503,6 +516,19 @@ const BODDashboard: React.FC = () => {
         if (index > -1) {
             mockManpowerRequests[index].status = ManpowerRequestStatus.Rejected;
             mockManpowerRequests[index].rejectionReason = reason;
+            if (mockManpowerRequests[index].requestedBy) {
+                mockNotifications.unshift({
+                    id: `manpower-reject-${requestId}-${Date.now()}`,
+                    userId: mockManpowerRequests[index].requestedBy,
+                    type: NotificationType.MANPOWER_REQUEST_REJECTED,
+                    title: 'On-Call Rejected',
+                    message: `Your on-call request for ${mockManpowerRequests[index].businessUnitName || 'Unknown BU'} on ${new Date(mockManpowerRequests[index].date).toLocaleDateString()} has been rejected${reason ? `: ${reason}` : '.'}`,
+                    link: '/payroll/manpower-planning',
+                    isRead: false,
+                    createdAt: new Date(),
+                    relatedEntityId: requestId,
+                });
+            }
             setManpowerRequests([...mockManpowerRequests]);
             setIsManpowerReviewModalOpen(false);
             alert("Manpower Request Rejected.");
@@ -1134,6 +1160,25 @@ const BODDashboard: React.FC = () => {
                 colorClass: "bg-pink-500"
             }));
         allItems.push(...manpowerNotifications);
+
+        const manpowerDecisionNotifications = mockNotifications
+            .filter(
+                n =>
+                    notificationUserIds.has(n.userId) &&
+                    !n.isRead &&
+                    (n.type === NotificationType.MANPOWER_REQUEST_APPROVED || n.type === NotificationType.MANPOWER_REQUEST_REJECTED)
+            )
+            .map(item => ({
+                id: `notif-${item.id}`,
+                icon: <UserGroupIcon />,
+                title: item.type === NotificationType.MANPOWER_REQUEST_APPROVED ? "On-Call Approved" : "On-Call Rejected",
+                subtitle: item.message,
+                date: new Date(item.createdAt).toLocaleString(),
+                createdAt: item.createdAt,
+                link: item.link,
+                colorClass: item.type === NotificationType.MANPOWER_REQUEST_APPROVED ? "bg-green-500" : "bg-red-500"
+            }));
+        allItems.push(...manpowerDecisionNotifications);
 
         const assetNotifications = mockNotifications
             .filter(n => notificationUserIds.has(n.userId) && !n.isRead && n.type === NotificationType.ASSET_ASSIGNED)

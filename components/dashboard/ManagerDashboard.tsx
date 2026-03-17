@@ -907,6 +907,21 @@ const ManagerDashboard: React.FC = () => {
             return;
         }
 
+        const approvedRequest = manpowerRequests.find(r => r.id === requestId);
+        if (approvedRequest?.requestedBy) {
+            mockNotifications.unshift({
+                id: `manpower-approve-${requestId}-${Date.now()}`,
+                userId: approvedRequest.requestedBy,
+                type: NotificationType.MANPOWER_REQUEST_APPROVED,
+                title: 'On-Call Approved',
+                message: `Your on-call request for ${approvedRequest.businessUnitName || 'Unknown BU'} on ${new Date(approvedRequest.date).toLocaleDateString()} has been approved.`,
+                link: '/payroll/manpower-planning',
+                isRead: false,
+                createdAt: new Date(),
+                relatedEntityId: requestId,
+            });
+        }
+
         const index = mockManpowerRequests.findIndex(r => r.id === requestId);
         if (index > -1) {
             mockManpowerRequests[index].status = ManpowerRequestStatus.Approved;
@@ -929,6 +944,21 @@ const ManagerDashboard: React.FC = () => {
         if (error) {
             alert("Error rejecting request.");
             return;
+        }
+
+        const rejectedRequest = manpowerRequests.find(r => r.id === requestId);
+        if (rejectedRequest?.requestedBy) {
+            mockNotifications.unshift({
+                id: `manpower-reject-${requestId}-${Date.now()}`,
+                userId: rejectedRequest.requestedBy,
+                type: NotificationType.MANPOWER_REQUEST_REJECTED,
+                title: 'On-Call Rejected',
+                message: `Your on-call request for ${rejectedRequest.businessUnitName || 'Unknown BU'} on ${new Date(rejectedRequest.date).toLocaleDateString()} has been rejected${reason ? `: ${reason}` : '.'}`,
+                link: '/payroll/manpower-planning',
+                isRead: false,
+                createdAt: new Date(),
+                relatedEntityId: requestId,
+            });
         }
 
         const index = mockManpowerRequests.findIndex(r => r.id === requestId);
@@ -1445,6 +1475,26 @@ const ManagerDashboard: React.FC = () => {
                 priority: 0
             }));
         items.push(...manpowerNotifications);
+
+        const manpowerDecisionNotifications = mockNotifications
+            .filter(
+                n =>
+                    notificationIds.has(n.userId) &&
+                    !n.isRead &&
+                    (n.type === NotificationType.MANPOWER_REQUEST_APPROVED || n.type === NotificationType.MANPOWER_REQUEST_REJECTED)
+            )
+            .map(item => ({
+                id: `manpower-decision-${item.id}`,
+                icon: <UserGroupIcon />,
+                title: item.type === NotificationType.MANPOWER_REQUEST_APPROVED ? 'On-Call Approved' : 'On-Call Rejected',
+                subtitle: item.message,
+                date: new Date(item.createdAt).toLocaleString(),
+                createdAt: item.createdAt,
+                link: item.link,
+                colorClass: item.type === NotificationType.MANPOWER_REQUEST_APPROVED ? 'bg-green-500' : 'bg-red-500',
+                priority: 0
+            }));
+        items.push(...manpowerDecisionNotifications);
         
         // 4. Manpower Request Approvals (For Approvers)
         if (isApprover || isBusinessUnitManager) {

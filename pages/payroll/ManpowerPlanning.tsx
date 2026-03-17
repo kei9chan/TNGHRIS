@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
-import { ManpowerRequest, ManpowerRequestStatus, Role } from '../../types';
+import { ManpowerRequest, ManpowerRequestStatus, NotificationType, Role } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -9,6 +9,7 @@ import ManpowerRequestModal from '../../components/payroll/ManpowerRequestModal'
 import ManpowerReviewModal from '../../components/payroll/ManpowerReviewModal';
 import { logActivity } from '../../services/auditService';
 import { supabase } from '../../services/supabaseClient';
+import { mockNotifications } from '../../services/mockData';
 
 const getStatusColor = (status: ManpowerRequestStatus) => {
     switch (status) {
@@ -134,6 +135,41 @@ const ManpowerPlanning: React.FC = () => {
         loadRequests();
     }, [loadRequests]);
 
+    const notifyRequester = (request: ManpowerRequest, status: ManpowerRequestStatus, reason?: string) => {
+        if (!request.requestedBy) return;
+        const createdAt = new Date();
+        const dateLabel = request.date ? new Date(request.date).toLocaleDateString() : 'N/A';
+        const baseMessage = `Your on-call request for ${request.businessUnitName || 'Unknown BU'} on ${dateLabel}`;
+        const message =
+            status === ManpowerRequestStatus.Approved
+                ? `${baseMessage} has been approved.`
+                : `${baseMessage} has been rejected${reason ? `: ${reason}` : '.'}`;
+        const type =
+            status === ManpowerRequestStatus.Approved
+                ? NotificationType.MANPOWER_REQUEST_APPROVED
+                : NotificationType.MANPOWER_REQUEST_REJECTED;
+
+        const exists = mockNotifications.some(
+            n =>
+                n.userId === request.requestedBy &&
+                n.type === type &&
+                n.relatedEntityId === request.id
+        );
+        if (exists) return;
+
+        mockNotifications.unshift({
+            id: `manpower-${request.id}-${status}-${Date.now()}`,
+            userId: request.requestedBy,
+            type,
+            title: status === ManpowerRequestStatus.Approved ? 'On-Call Approved' : 'On-Call Rejected',
+            message,
+            link: '/payroll/manpower-planning',
+            isRead: false,
+            createdAt,
+            relatedEntityId: request.id,
+        });
+    };
+
     useEffect(() => {
         const params = new URLSearchParams(location.search);
         const requestId = params.get('requestId');
@@ -168,6 +204,10 @@ const ManpowerPlanning: React.FC = () => {
         }
 
         logActivity(user, 'APPROVE', 'ManpowerRequest', requestId, 'Approved On-Call Request');
+        const request = requests.find(r => r.id === requestId);
+        if (request) {
+            notifyRequester(request, ManpowerRequestStatus.Approved);
+        }
         setIsReviewModalOpen(false);
         loadRequests();
     };
@@ -185,6 +225,10 @@ const ManpowerPlanning: React.FC = () => {
         }
 
         logActivity(user, 'REJECT', 'ManpowerRequest', requestId, `Rejected On-Call Request. Reason: ${reason}`);
+        const request = requests.find(r => r.id === requestId);
+        if (request) {
+            notifyRequester(request, ManpowerRequestStatus.Rejected, reason);
+        }
         setIsReviewModalOpen(false);
         loadRequests();
     };
