@@ -298,12 +298,14 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
     const renderFooter = () => {
         if (isManagerReviewing) {
             return (
-                <div className="flex justify-between items-center w-full">
-                    <span className="text-sm text-gray-600 dark:text-gray-400">Planned: {plannedHours.toFixed(2)}h</span>
-                    <div className="space-x-2">
-                        <Button variant="secondary" onClick={onClose}>Cancel</Button>
-                        <Button variant="danger" onClick={handleReject} disabled={!canApprove}>Reject</Button>
-                        <Button variant="primary" onClick={handleApprove} disabled={!canApprove}>Approve</Button>
+                <div className="flex flex-col gap-3 w-full sm:flex-row sm:items-center sm:justify-between">
+                    <span className="text-sm text-gray-600 dark:text-gray-400 text-center sm:text-left">
+                        Planned: {plannedHours.toFixed(2)}h
+                    </span>
+                    <div className="flex flex-col gap-2 w-full sm:w-auto sm:flex-row sm:gap-2">
+                        <Button variant="secondary" onClick={onClose} className="w-full sm:w-auto">Cancel</Button>
+                        <Button variant="danger" onClick={handleReject} disabled={!canApprove} className="w-full sm:w-auto">Reject</Button>
+                        <Button variant="primary" onClick={handleApprove} disabled={!canApprove} className="w-full sm:w-auto">Approve</Button>
                     </div>
                 </div>
             )
@@ -314,12 +316,14 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
         }
 
         return (
-            <div className="flex justify-between items-center w-full">
-                <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400">Duration: {plannedHours.toFixed(2)} Hours</span>
-                <div className="space-x-2">
-                    <Button variant="secondary" onClick={onClose}>Cancel</Button>
-                    <Button onClick={() => handleSaveDraftOrSubmit(OTStatus.Draft)}>Save Draft</Button>
-                    <Button variant="primary" onClick={() => handleSaveDraftOrSubmit(OTStatus.Submitted)}>Submit</Button>
+            <div className="flex flex-col gap-3 w-full sm:flex-row sm:items-center sm:justify-between">
+                <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400 text-center sm:text-left">
+                    Duration: {plannedHours.toFixed(2)} Hours
+                </span>
+                <div className="flex flex-col gap-2 w-full sm:w-auto sm:flex-row sm:gap-2">
+                    <Button variant="secondary" onClick={onClose} className="w-full sm:w-auto">Cancel</Button>
+                    <Button onClick={() => handleSaveDraftOrSubmit(OTStatus.Draft)} className="w-full sm:w-auto">Save Draft</Button>
+                    <Button variant="primary" onClick={() => handleSaveDraftOrSubmit(OTStatus.Submitted)} className="w-full sm:w-auto">Submit</Button>
                 </div>
             </div>
         )
