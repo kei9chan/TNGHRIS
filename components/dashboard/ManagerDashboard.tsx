@@ -1425,6 +1425,26 @@ const ManagerDashboard: React.FC = () => {
                 priority: 0
             }));
         items.push(...contractNotifications);
+
+        const manpowerNotifications = mockNotifications
+            .filter(
+                n =>
+                    notificationIds.has(n.userId) &&
+                    !n.isRead &&
+                    n.type === NotificationType.MANPOWER_REQUEST_SUBMITTED
+            )
+            .map(item => ({
+                id: `manpower-notif-${item.id}`,
+                icon: <UserGroupIcon />,
+                title: 'On-Call Request Approval',
+                subtitle: item.message,
+                date: new Date(item.createdAt).toLocaleString(),
+                createdAt: item.createdAt,
+                link: item.link,
+                colorClass: 'bg-pink-500',
+                priority: 0
+            }));
+        items.push(...manpowerNotifications);
         
         // 4. Manpower Request Approvals (For Approvers)
         if (isApprover || isBusinessUnitManager) {

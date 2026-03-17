@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { ManpowerRequest, ManpowerRequestStatus, Role } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import Card from '../../components/ui/Card';
@@ -20,6 +21,7 @@ const getStatusColor = (status: ManpowerRequestStatus) => {
 
 const ManpowerPlanning: React.FC = () => {
     const { user } = useAuth();
+    const location = useLocation();
 
     const [requests, setRequests] = useState<ManpowerRequest[]>([]);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -131,6 +133,17 @@ const ManpowerPlanning: React.FC = () => {
     useEffect(() => {
         loadRequests();
     }, [loadRequests]);
+
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const requestId = params.get('requestId');
+        if (!requestId || requests.length === 0) return;
+        const match = requests.find(r => r.id === requestId);
+        if (match) {
+            setSelectedRequest(match);
+            setIsReviewModalOpen(true);
+        }
+    }, [location.search, requests]);
 
     const filteredRequests = useMemo(() => {
         return requests.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());

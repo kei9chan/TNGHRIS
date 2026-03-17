@@ -1116,6 +1116,25 @@ const BODDashboard: React.FC = () => {
             }));
         allItems.push(...contractNotifications);
 
+        const manpowerNotifications = mockNotifications
+            .filter(
+                n =>
+                    notificationUserIds.has(n.userId) &&
+                    !n.isRead &&
+                    n.type === NotificationType.MANPOWER_REQUEST_SUBMITTED
+            )
+            .map(item => ({
+                id: `notif-${item.id}`,
+                icon: <UserGroupIcon />,
+                title: "On-Call Request Approval",
+                subtitle: item.message,
+                date: new Date(item.createdAt).toLocaleString(),
+                createdAt: item.createdAt,
+                link: item.link,
+                colorClass: "bg-pink-500"
+            }));
+        allItems.push(...manpowerNotifications);
+
         const assetNotifications = mockNotifications
             .filter(n => notificationUserIds.has(n.userId) && !n.isRead && n.type === NotificationType.ASSET_ASSIGNED)
             .map(item => {
