@@ -1099,6 +1099,18 @@ const HRDashboard: React.FC = () => {
                         title: "On-Call Request Approval",
                         colorClass: "bg-pink-500"
                     };
+                case NotificationType.MANPOWER_REQUEST_APPROVED:
+                    return {
+                        icon: <UserGroupIcon {...iconProps} />,
+                        title: "On-Call Approved",
+                        colorClass: "bg-green-500"
+                    };
+                case NotificationType.MANPOWER_REQUEST_REJECTED:
+                    return {
+                        icon: <UserGroupIcon {...iconProps} />,
+                        title: "On-Call Rejected",
+                        colorClass: "bg-red-500"
+                    };
                 default:
                      return {
                         icon: <DocumentTextIcon {...iconProps} />,
