@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { ManpowerRequest, ManpowerRequestStatus, ManpowerRequestItem, Role } from '../../types';
-import { mockUsers, mockShiftAssignments, mockBusinessUnits } from '../../services/mockData';
+import { ManpowerRequest, ManpowerRequestStatus, ManpowerRequestItem, NotificationType, Role } from '../../types';
+import { mockUsers, mockShiftAssignments, mockBusinessUnits, mockNotifications } from '../../services/mockData';
 import { supabase } from '../../services/supabaseClient';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
@@ -45,6 +45,108 @@ const ManpowerRequestModal: React.FC<ManpowerRequestModalProps> = ({ isOpen, onC
         loadBus();
     }, []);
     const isPrivileged = user && [Role.Admin, Role.HRManager, Role.HRStaff].includes(user.role);
+
+    const notifyApprovers = async (requestId: string, requestDate: string, buName: string, buId: string | null, deptId: string | null) => {
+        if (!user) return;
+        const candidateRoles = [
+            Role.Admin,
+            Role.HRManager,
+            Role.HRStaff,
+            Role.BOD,
+            Role.GeneralManager,
+            Role.OperationsDirector,
+            Role.BusinessUnitManager,
+            Role.Manager,
+        ];
+
+        try {
+            const { data, error } = await supabase
+                .from('hris_users')
+                .select('id, auth_user_id, role, business_unit_id, department_id')
+                .in('role', candidateRoles);
+            if (error || !data) return;
+
+            const approverIds = new Set<string>();
+            data.forEach(row => {
+                const targetUserId = row.auth_user_id || row.id;
+                const role = row.role as Role | null;
+                const approverBuId = row.business_unit_id || null;
+                const approverDeptId = row.department_id || null;
+                if (!role) return;
+
+                if ([Role.Admin, Role.HRManager, Role.HRStaff, Role.BOD].includes(role)) {
+                    approverIds.add(targetUserId);
+                    return;
+                }
+
+                if ([Role.GeneralManager, Role.OperationsDirector, Role.BusinessUnitManager].includes(role)) {
+                    if (buId && approverBuId === buId) {
+                        approverIds.add(targetUserId);
+                    }
+                    return;
+                }
+
+                if (role === Role.Manager) {
+                    if (deptId && approverDeptId === deptId) {
+                        approverIds.add(targetUserId);
+                    } else if (!deptId && buId && approverBuId === buId) {
+                        approverIds.add(targetUserId);
+                    }
+                }
+            });
+
+            const requesterIsApprover = (() => {
+                if (!user.role) return false;
+                if ([Role.Admin, Role.HRManager, Role.HRStaff, Role.BOD].includes(user.role)) return true;
+                if ([Role.GeneralManager, Role.OperationsDirector, Role.BusinessUnitManager].includes(user.role)) {
+                    return !!buId && user.businessUnitId === buId;
+                }
+                if (user.role === Role.Manager) {
+                    if (deptId && user.departmentId) {
+                        return user.departmentId === deptId;
+                    }
+                    return !!buId && user.businessUnitId === buId;
+                }
+                return false;
+            })();
+
+            if (!requesterIsApprover) {
+                approverIds.delete(user.id);
+                if (user.authUserId) {
+                    approverIds.delete(user.authUserId);
+                }
+            }
+            if (approverIds.size === 0) return;
+
+            const createdAt = new Date();
+            const dateLabel = requestDate ? new Date(requestDate).toLocaleDateString() : 'N/A';
+            const message = `${user.name} requested on-call manpower for ${buName || user.businessUnit || 'Unknown BU'} on ${dateLabel}.`;
+            const link = `/payroll/manpower-planning?requestId=${requestId}`;
+
+            approverIds.forEach(approverId => {
+                const exists = mockNotifications.some(
+                    n =>
+                        n.userId === approverId &&
+                        n.type === NotificationType.MANPOWER_REQUEST_SUBMITTED &&
+                        n.relatedEntityId === requestId
+                );
+                if (exists) return;
+                mockNotifications.unshift({
+                    id: `manpower-${requestId}-${approverId}-${Date.now()}`,
+                    userId: approverId,
+                    type: NotificationType.MANPOWER_REQUEST_SUBMITTED,
+                    title: 'On-Call Request Approval',
+                    message,
+                    link,
+                    isRead: false,
+                    createdAt,
+                    relatedEntityId: requestId,
+                });
+            });
+        } catch (err) {
+            console.error('Failed to notify manpower approvers', err);
+        }
+    };
 
     useEffect(() => {
         if (!isOpen || !user) return;
@@ -191,6 +293,14 @@ const ManpowerRequestModal: React.FC<ManpowerRequestModalProps> = ({ isOpen, onC
             approvedAt: data.approved_at ? new Date(data.approved_at) : undefined,
             rejectionReason: data.rejection_reason || undefined,
         };
+
+        await notifyApprovers(
+            data.id,
+            data.date_needed || date,
+            data.business_unit_name || bu?.name || user.businessUnit || 'Unknown BU',
+            data.business_unit_id || selectedBuId || user.businessUnitId || null,
+            data.department_id || user.departmentId || null
+        );
 
         onSave(newRequest);
         setIsSubmitting(false);
