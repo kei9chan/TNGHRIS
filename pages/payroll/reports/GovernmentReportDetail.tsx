@@ -1,7 +1,7 @@
+import { mockUsers, mockBusinessUnits, mockGovernmentReports } from '../../../services/mockDataCompat';
 
 import React, { useState, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { mockGovernmentReports, mockUsers, mockBusinessUnits } from '../../../services/mockData';
 import Card from '../../../components/ui/Card';
 import Button from '../../../components/ui/Button';
 import NotFound from '../../NotFound';

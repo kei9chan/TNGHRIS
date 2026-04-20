@@ -1,6 +1,6 @@
+import { mockBusinessUnits, mockAnnouncements } from '../../services/mockDataCompat';
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { mockAnnouncements, mockBusinessUnits } from '../../services/mockData';
 import { Announcement, Permission, Role } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';

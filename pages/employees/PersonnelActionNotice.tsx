@@ -1,3 +1,4 @@
+import { mockUsers, mockNotifications } from '../../services/mockDataCompat';
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Card from '../../components/ui/Card';
@@ -16,7 +17,6 @@ import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { mergePanParticulars } from '../../services/panUtils';
 import { logActivity } from '../../services/auditService';
-import { mockUsers, mockNotifications } from '../../services/mockData';
 import {
   PAN,
   PANStatus,
@@ -212,9 +212,9 @@ const PersonnelActionNotice: React.FC = () => {
       const stepIds = (panToSend.routingSteps || []).map(step => step.userId).filter(Boolean);
       const stepUserRows = stepIds.length
         ? (await supabase
-            .from('hris_users')
-            .select('id, email, auth_user_id')
-            .in('id', stepIds)).data
+          .from('hris_users')
+          .select('id, email, auth_user_id')
+          .in('id', stepIds)).data
         : [];
       const stepUserMap = new Map(
         (stepUserRows || []).map((row: any) => [row.id, row])
@@ -423,7 +423,7 @@ const PersonnelActionNotice: React.FC = () => {
   };
 
   const yearOptions = useMemo(() => {
-    const years = new Set(records.map(r => new Date(r.effectiveDate).getFullYear()));
+    const years = new Set<number>(records.map(r => new Date(r.effectiveDate).getFullYear()));
     const currentYear = new Date().getFullYear();
     years.add(currentYear);
     return Array.from(years).sort((a, b) => b - a);
@@ -539,7 +539,7 @@ const PersonnelActionNotice: React.FC = () => {
             onSaveDraft={handleSaveDraft}
             onSendForAcknowledgement={handleSendForAcknowledgement}
             onAcknowledge={handleAcknowledge}
-            onDownloadPdf={() => {}}
+            onDownloadPdf={() => { }}
             onApprove={handleApprovePAN}
             onReject={handleRejectPANRequest}
           />,

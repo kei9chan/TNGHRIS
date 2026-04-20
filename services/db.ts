@@ -1,120 +1,108 @@
-
-import { User, AuditLog, AuditAction, Role, EmployeeDraft, EmployeeDraftStatus } from '../types';
-import { mockUsers, mockAuditLogs, mockEmployeeDrafts } from './mockData';
+import { User, AuditAction, EmployeeDraft, EmployeeDraftStatus } from '../types';
+import { supabase } from './supabaseClient';
 
 /**
- * Database Service (Simulated Backend Middleware)
+ * Database Service (Supabase Backend)
  * 
- * In a real application, this logic resides in the Backend API/Database Triggers.
- * This service ensures that NO data modification happens without a corresponding
- * Audit Log entry, satisfying the "Audit Trail Reliability" requirement.
+ * Handles user CRUD and draft operations against the live Supabase database,
+ * with corresponding audit log entries for every mutation.
  */
 
+const writeAuditLog = async (actor: User, action: AuditAction, entity: string, entityId: string, details: string) => {
+    const { error } = await supabase.from('audit_logs').insert({
+        user_id: actor.id,
+        user_email: actor.email,
+        action,
+        entity,
+        entity_id: entityId,
+        details,
+    });
+    if (error) console.error('Audit log write failed:', error.message);
+};
+
 class UserRepo {
-    private _log(actor: User, action: AuditAction, entityId: string, details: string) {
-        const newLog: AuditLog = {
-            id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-            timestamp: new Date(),
-            userId: actor.id,
-            userEmail: actor.email,
-            action,
-            entity: 'User',
-            entityId,
-            details
+    async create(actor: User, newUser: Partial<User>): Promise<User | null> {
+        const payload: Record<string, unknown> = {
+            email: newUser.email,
+            first_name: newUser.name?.split(' ')[0] || '',
+            last_name: newUser.name?.split(' ').slice(1).join(' ') || '',
+            full_name: newUser.name || '',
+            role: newUser.role || 'Employee',
+            status: 'Active',
+            is_photo_enrolled: false,
+            business_unit: newUser.businessUnit || null,
+            business_unit_id: newUser.businessUnitId || null,
+            department: newUser.department || null,
+            department_id: newUser.departmentId || null,
+            position: newUser.position || null,
         };
-        // "Append Only" - we unshift to show newest first in UI, but conceptually it's appending
-        mockAuditLogs.unshift(newLog);
+
+        const { data, error } = await supabase.from('hris_users').insert(payload).select().single();
+        if (error) { console.error('Create user failed:', error.message); return null; }
+
+        await writeAuditLog(actor, 'CREATE', 'User', data.id, `Created new user: ${newUser.name} (${newUser.email})`);
+        return data as unknown as User;
     }
 
-    /**
-     * Create a new user and log the action.
-     */
-    create(actor: User, newUser: User): User {
-        mockUsers.push(newUser);
-        this._log(actor, 'CREATE', newUser.id, `Created new user: ${newUser.name} (${newUser.email})`);
-        return newUser;
+    async update(actor: User, userId: string, updates: Partial<User>): Promise<boolean> {
+        const payload: Record<string, unknown> = {};
+        if (updates.name !== undefined) payload.full_name = updates.name;
+        if (updates.email !== undefined) payload.email = updates.email;
+        if (updates.role !== undefined) payload.role = updates.role;
+        if (updates.status !== undefined) payload.status = updates.status;
+        if (updates.department !== undefined) payload.department = updates.department;
+        if (updates.businessUnit !== undefined) payload.business_unit = updates.businessUnit;
+        if (updates.position !== undefined) payload.position = updates.position;
+
+        if (Object.keys(payload).length === 0) return true;
+
+        const { error } = await supabase.from('hris_users').update(payload).eq('id', userId);
+        if (error) { console.error('Update user failed:', error.message); return false; }
+
+        await writeAuditLog(actor, 'UPDATE', 'User', userId, `Updated fields: ${Object.keys(payload).join(', ')}`);
+        return true;
     }
 
-    /**
-     * Update an existing user and log the action.
-     * Detects changes to log specific fields.
-     */
-    update(actor: User, userId: string, updates: Partial<User>): User | null {
-        const index = mockUsers.findIndex(u => u.id === userId);
-        if (index === -1) return null;
+    async deactivate(actor: User, userId: string): Promise<boolean> {
+        const { error } = await supabase.from('hris_users').update({ status: 'Inactive' }).eq('id', userId);
+        if (error) { console.error('Deactivate user failed:', error.message); return false; }
 
-        const oldUser = mockUsers[index];
-        const updatedUser = { ...oldUser, ...updates };
-        
-        // Identify what changed for the audit log
-        const changes: string[] = [];
-        (Object.keys(updates) as Array<keyof User>).forEach(key => {
-            if (JSON.stringify(oldUser[key]) !== JSON.stringify(updates[key])) {
-                changes.push(key);
-            }
-        });
-
-        if (changes.length > 0) {
-            mockUsers[index] = updatedUser;
-            this._log(actor, 'UPDATE', userId, `Updated fields: ${changes.join(', ')}`);
-        }
-
-        return updatedUser;
-    }
-
-    /**
-     * Soft delete or deactivate a user.
-     */
-    deactivate(actor: User, userId: string): boolean {
-        const index = mockUsers.findIndex(u => u.id === userId);
-        if (index === -1) return false;
-
-        mockUsers[index].status = 'Inactive';
-        this._log(actor, 'UPDATE', userId, `Deactivated user account.`);
+        await writeAuditLog(actor, 'UPDATE', 'User', userId, 'Deactivated user account.');
         return true;
     }
 }
 
 class DraftRepo {
-     private _log(actor: User, action: AuditAction, entityId: string, details: string) {
-        const newLog: AuditLog = {
-            id: `log-${Date.now()}`,
-            timestamp: new Date(),
-            userId: actor.id,
-            userEmail: actor.email,
-            action,
-            entity: 'EmployeeDraft',
-            entityId,
-            details
-        };
-        mockAuditLogs.unshift(newLog);
-    }
+    async createOrUpdate(actor: User, employeeId: string, draftData: Partial<User>, status: EmployeeDraftStatus, submissionId?: string) {
+        // Check for existing pending draft
+        const { data: existing } = await supabase
+            .from('employee_drafts')
+            .select('id')
+            .eq('employee_id', employeeId)
+            .neq('status', EmployeeDraftStatus.Approved)
+            .limit(1);
 
-    createOrUpdate(actor: User, employeeId: string, draftData: Partial<User>, status: EmployeeDraftStatus, submissionId?: string) {
-        const existingIndex = mockEmployeeDrafts.findIndex(d => d.employeeId === employeeId && d.status !== EmployeeDraftStatus.Approved);
-        
-        if (existingIndex > -1) {
-            // Update
-            const draft = mockEmployeeDrafts[existingIndex];
-            mockEmployeeDrafts[existingIndex] = {
-                ...draft,
-                draftData: { ...draft.draftData, ...draftData },
+        if (existing && existing.length > 0) {
+            // Update existing draft
+            const { error } = await supabase.from('employee_drafts').update({
+                draft_data: draftData,
                 status,
-                submissionId: submissionId || draft.submissionId
-            };
-            this._log(actor, 'UPDATE', draft.id, `Updated profile draft. Status: ${status}`);
+                submission_id: submissionId || null,
+            }).eq('id', existing[0].id);
+
+            if (error) { console.error('Update draft failed:', error.message); return; }
+            await writeAuditLog(actor, 'UPDATE', 'EmployeeDraft', existing[0].id, `Updated profile draft. Status: ${status}`);
         } else {
-            // Create
-            const newDraft: EmployeeDraft = {
-                id: `draft-${employeeId}-${Date.now()}`,
-                employeeId,
-                draftData,
+            // Create new draft
+            const { data, error } = await supabase.from('employee_drafts').insert({
+                employee_id: employeeId,
+                draft_data: draftData,
                 status,
-                createdAt: new Date(),
-                submissionId
-            };
-            mockEmployeeDrafts.push(newDraft);
-             this._log(actor, 'CREATE', newDraft.id, `Created profile draft. Status: ${status}`);
+                submission_id: submissionId || null,
+            }).select('id').single();
+
+            if (error) { console.error('Create draft failed:', error.message); return; }
+            await writeAuditLog(actor, 'CREATE', 'EmployeeDraft', data?.id || '', `Created profile draft. Status: ${status}`);
         }
     }
 }

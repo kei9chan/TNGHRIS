@@ -1,6 +1,6 @@
+import { mockApplications, mockCandidates } from '../../services/mockDataCompat';
 import React from 'react';
 import { Interview } from '../../types';
-import { mockApplications, mockCandidates } from '../../services/mockData';
 
 interface WeekViewProps {
     currentDate: Date;

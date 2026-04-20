@@ -1,6 +1,6 @@
+import { mockBusinessUnits, mockDepartments, mockJobRequisitions, mockApplications, mockOffers } from '../../services/mockDataCompat';
 import React, { useMemo, useState } from 'react';
 import StatCard from '../../components/dashboard/StatCard';
-import { mockOffers, mockApplications, mockJobRequisitions, mockBusinessUnits, mockDepartments } from '../../services/mockData';
 import { OfferStatus, ApplicationStage, JobRequisition } from '../../types';
 import SimplePieChart from '../../components/analytics/SimplePieChart';
 import AnalyticsCard from '../../components/analytics/AnalyticsCard';

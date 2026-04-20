@@ -1,6 +1,6 @@
+import { mockUsers } from '../../services/mockDataCompat';
 import React, { useState, useEffect, useMemo } from 'react';
 import { HearingDetails, User } from '../../types';
-import { mockUsers } from '../../services/mockData';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';

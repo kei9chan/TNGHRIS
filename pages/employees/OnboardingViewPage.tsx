@@ -1,3 +1,4 @@
+import { mockUsers, mockNotifications, mockOnboardingTemplates, mockOnboardingChecklists } from '../../services/mockDataCompat';
 import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import AssignedOnboardingChecklist from '../../components/employees/AssignedOnboardingChecklist';
@@ -10,7 +11,6 @@ import { usePermissions } from '../../hooks/usePermissions';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { OnboardingChecklist, OnboardingTask, OnboardingTaskStatus, Role, User, NotificationType } from '../../types';
-import { mockOnboardingChecklists, mockOnboardingTemplates, mockUsers, mockNotifications } from '../../services/mockData';
 
 const ArrowLeftIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>;
 
@@ -112,26 +112,26 @@ const OnboardingViewPage: React.FC = () => {
                 const templateTasks: OnboardingTask[] =
                     Array.isArray(tmpl.tasks) && tmpl.tasks.length
                         ? tmpl.tasks.map((t: any, idx: number) => {
-                              const due = new Date(startDate);
-                              due.setDate(due.getDate() + (t.dueDays || 0));
-                              return {
-                                  id: `${row?.id || fallbackChecklist?.id}-task-${idx}`,
-                                  templateTaskId: t.id || `tmpl-${idx}`,
-                                  employeeId: employeeId || '',
-                                  name: t.name || 'Task',
-                                  description: t.description || '',
-                                  ownerUserId: user?.id || '',
-                                  ownerName: user?.fullName || user?.name || 'System',
-                                  dueDate: due,
-                                  status: OnboardingTaskStatus.Pending,
-                                  points: t.points || 0,
-                                  taskType: t.taskType || 'Read',
-                                  readContent: t.readContent,
-                                  requiresApproval: t.requiresApproval,
-                                  assetId: t.assetId,
-                                  assetDescription: t.assetDescription,
-                              } as OnboardingTask;
-                          })
+                            const due = new Date(startDate);
+                            due.setDate(due.getDate() + (t.dueDays || 0));
+                            return {
+                                id: `${row?.id || fallbackChecklist?.id}-task-${idx}`,
+                                templateTaskId: t.id || `tmpl-${idx}`,
+                                employeeId: employeeId || '',
+                                name: t.name || 'Task',
+                                description: t.description || '',
+                                ownerUserId: user?.id || '',
+                                ownerName: user?.fullName || user?.name || 'System',
+                                dueDate: due,
+                                status: OnboardingTaskStatus.Pending,
+                                points: t.points || 0,
+                                taskType: t.taskType || 'Read',
+                                readContent: t.readContent,
+                                requiresApproval: t.requiresApproval,
+                                assetId: t.assetId,
+                                assetDescription: t.assetDescription,
+                            } as OnboardingTask;
+                        })
                         : [];
 
                 const storedTasks = parseStoredTasks((row as any)?.tasks);
@@ -202,7 +202,7 @@ const OnboardingViewPage: React.FC = () => {
                     );
 
                     const templateType =
-                        templateRows?.[0]?.template_type || fallbackChecklist?.templateType || 'Onboarding';
+                        templateRows?.[0]?.template_type || tmpl?.templateType || 'Onboarding';
                     const notificationType =
                         templateType === 'Offboarding'
                             ? NotificationType.OFFBOARDING_ASSIGNED
@@ -329,8 +329,8 @@ const OnboardingViewPage: React.FC = () => {
             </Card>
         );
     }
-    
-    const handleDummyUpdate = () => {};
+
+    const handleDummyUpdate = () => { };
 
     const handleChecklistStatusUpdate = async (status: 'Approved' | 'Rejected') => {
         if (!checklistId || !checklist) return;
@@ -368,9 +368,9 @@ const OnboardingViewPage: React.FC = () => {
                     )}
                 </div>
             </div>
-            <AssignedOnboardingChecklist 
-                checklist={checklist} 
-                currentUser={employee} 
+            <AssignedOnboardingChecklist
+                checklist={checklist}
+                currentUser={employee}
                 onUpdateTaskStatus={handleDummyUpdate}
             />
             {isReviewer && (

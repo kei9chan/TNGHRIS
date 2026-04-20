@@ -1,7 +1,7 @@
+import { mockJobRequisitions, mockApplications, mockCandidates, mockOffers } from '../../services/mockDataCompat';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Offer, OfferStatus, ApplicationStage, JobRequisition } from '../../types';
 // FIX: Added import for mockOffers to use in component logic.
-import { mockApplications, mockCandidates, mockJobRequisitions, mockOffers } from '../../services/mockData';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';

@@ -1,6 +1,6 @@
+import { mockUsers, mockOnboardingChecklists } from '../../services/mockDataCompat';
 import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { mockOnboardingChecklists, mockUsers } from '../../services/mockData';
 import { useAuth } from '../../hooks/useAuth';
 import SignaturePad, { SignaturePadRef } from '../../components/ui/SignaturePad';
 import Card from '../../components/ui/Card';

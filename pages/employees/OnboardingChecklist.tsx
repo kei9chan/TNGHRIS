@@ -1,3 +1,4 @@
+import { mockUsers, mockNotifications, mockOnboardingTemplates, mockOnboardingChecklists, mockResignations } from '../../services/mockDataCompat';
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
@@ -5,7 +6,6 @@ import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import { OnboardingChecklistTemplate, Permission, Role, OnboardingChecklist, OnboardingTask, OnboardingTaskStatus, Resignation, OnboardingTaskType, NotificationType } from '../../types';
-import { mockOnboardingTemplates, mockUsers, mockResignations, mockAssetAssignments, mockAssets, mockNotifications } from '../../services/mockData';
 import { usePermissions } from '../../hooks/usePermissions';
 import OnboardingTemplateModal from '../../components/employees/OnboardingTemplateModal';
 import { useAuth } from '../../hooks/useAuth';

@@ -1,7 +1,6 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from './useAuth';
-import { mockShiftAssignments } from '../services/mockData';
 import { TimeEvent, TimeEventType, ShiftAssignment, TimeEventExtra, AnomalyTag, TimeEventSource } from '../types';
 import { getAppVersion } from '../services/deviceSecurity';
 import { supabase } from '../services/supabaseClient';
@@ -31,10 +30,10 @@ async function retryWithBackoff<T>(
 }
 
 export class DebounceError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'DebounceError';
-  }
+    constructor(message: string) {
+        super(message);
+        this.name = 'DebounceError';
+    }
 }
 
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -157,11 +156,7 @@ export const useTimeClock = (simulateFailures: boolean = false) => {
                 assignedAreaId: row.assigned_area_id,
             } as ShiftAssignment);
         } else {
-            const fallback = mockShiftAssignments.find(sa =>
-                sa.employeeId === user?.id &&
-                new Date(sa.date).toDateString() === new Date().toDateString()
-            );
-            setTodaysShift(fallback);
+            setTodaysShift(undefined);
         }
     };
 
@@ -172,7 +167,7 @@ export const useTimeClock = (simulateFailures: boolean = false) => {
             await Promise.all([loadLastEvent(), loadTodaysShift()]);
             setIsLoading(false);
         })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user]);
 
     const clockInStatus: 'in' | 'out' = useMemo(() => {
@@ -186,15 +181,15 @@ export const useTimeClock = (simulateFailures: boolean = false) => {
         const finalExtra: TimeEventExtra = { ...newEventData.extra, anomaly_tags: newEventData.extra.anomaly_tags || [] };
         const previousEvent = lastEvent;
         const now = new Date();
-        
+
         // 1. Debounce check: Prevent duplicate events within 2 minutes
         if (previousEvent) {
             const timeDiff = now.getTime() - new Date(previousEvent.timestamp).getTime();
             if (previousEvent.type === newEventData.type && timeDiff < 2 * 60 * 1000) {
-                 throw new DebounceError(`Duplicate ${newEventData.type} event detected within 2 minutes.`);
+                throw new DebounceError(`Duplicate ${newEventData.type} event detected within 2 minutes.`);
             }
         }
-        
+
         // 2. Clock-out without Clock-in check
         if (newEventData.type === TimeEventType.ClockOut && clockInStatus === 'out') {
             finalExtra.anomaly_tags.push(AnomalyTag.MissingIn);
@@ -234,7 +229,7 @@ export const useTimeClock = (simulateFailures: boolean = false) => {
                 setLastEvent(mapped);
             }
         };
-        
+
         try {
             await retryWithBackoff(operation, {
                 onRetry: (attempt) => {
@@ -247,7 +242,7 @@ export const useTimeClock = (simulateFailures: boolean = false) => {
             setRetryCount(0);
         }
     };
-    
+
     // New Function for Batch Processing
     const addBatchTimeEvents = async (events: TimeEvent[]) => {
         if (!events.length) return;
@@ -271,7 +266,7 @@ export const useTimeClock = (simulateFailures: boolean = false) => {
         await supabase.from('time_events').insert(payload);
         await loadLastEvent();
     };
-    
+
     const autoCloseStaleShifts = async (staleAfterHours: number): Promise<number> => {
         if (!user || !lastEvent) return 0;
         const staleThreshold = Date.now() - staleAfterHours * 60 * 60 * 1000;

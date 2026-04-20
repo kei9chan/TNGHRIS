@@ -1,7 +1,7 @@
+import { mockNTEs, mockResolutions } from '../../services/mockDataCompat';
 
 import React from 'react';
 import { IncidentReport, IRStatus, ResolutionStatus } from '../../types';
-import { mockNTEs, mockResolutions } from '../../services/mockData';
 import Card from '../ui/Card';
 
 interface CaseListTableProps {

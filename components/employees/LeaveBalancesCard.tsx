@@ -1,8 +1,8 @@
+import { mockLeaveTypes } from '../../services/mockDataCompat';
 
 import React from 'react';
 import { User } from '../../types';
 import Card from '../ui/Card';
-import { mockLeaveTypes } from '../../services/mockData';
 
 interface LeaveBalancesCardProps {
   user: User;

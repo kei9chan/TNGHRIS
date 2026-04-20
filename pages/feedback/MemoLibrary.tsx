@@ -1,6 +1,6 @@
+import { mockBusinessUnits } from '../../services/mockDataCompat';
 import React, { useState, useMemo, useEffect } from 'react';
 import { Memo, MemoAcknowledgement, Permission } from '../../types';
-import { mockBusinessUnits } from '../../services/mockData';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import MemoModal from '../../components/feedback/MemoModal';

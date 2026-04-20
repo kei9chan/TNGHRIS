@@ -1,9 +1,9 @@
+import { mockUsers, mockBusinessUnits, mockUserDocuments, mockChangeHistory } from '../../services/mockDataCompat';
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
-import { mockUsers, mockChangeHistory, mockUserDocuments, mockBusinessUnits } from '../../services/mockData';
 import { User, Permission, ChangeHistory, ChangeHistoryStatus, Role, UserDocument, UserDocumentStatus } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
 import EmployeeTable from '../../components/employees/EmployeeTable';

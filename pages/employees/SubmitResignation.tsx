@@ -1,8 +1,8 @@
+import { mockUsers, mockNotifications, mockResignations } from '../../services/mockDataCompat';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { Resignation, ResignationStatus, NotificationType } from '../../types';
-import { mockResignations, mockNotifications, mockUsers } from '../../services/mockData';
 import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
 import Textarea from '../../components/ui/Textarea';

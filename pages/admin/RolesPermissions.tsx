@@ -23,6 +23,7 @@ const roleDescriptions: Record<Role, string> = {
     [Role.FinanceStaff]: 'Manages financial aspects of payroll, including staging and final pay.',
     [Role.Auditor]: 'View-only access to sensitive logs and reports for auditing purposes.',
     [Role.Recruiter]: 'Manages recruitment processes, including requisitions, job posts, and candidates.',
+    [Role.IT]: 'Manages IT systems, hardware, user accounts, and infrastructure.',
 };
 
 const RolesPermissions: React.FC = () => {
@@ -265,7 +266,7 @@ const RolesPermissions: React.FC = () => {
                     updatedPermissions = updatedPermissions.filter(p => p === Permission.Manage);
                 }
             }
-            
+
             if (!newMatrix[role]) {
                 newMatrix[role] = {};
             }
@@ -275,7 +276,7 @@ const RolesPermissions: React.FC = () => {
             return newMatrix;
         });
     };
-    
+
     const handleSave = async () => {
         await persistMatrix(permissions);
         setShowSuccess(true);
@@ -313,7 +314,7 @@ const RolesPermissions: React.FC = () => {
                     <div className="p-4 text-sm text-gray-600 dark:text-gray-300">Loading roles and permissions...</div>
                 </Card>
             )}
-            
+
             <Card title="Roles Catalog">
                 {canManage && (
                     <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-end">
@@ -355,9 +356,9 @@ const RolesPermissions: React.FC = () => {
                                 {canManage && (
                                     <>
                                         <Button size="sm" variant="secondary" onClick={() => handleOpenBuModal(bu)}>Edit</Button>
-                                        <Button 
-                                            size="sm" 
-                                            variant="danger" 
+                                        <Button
+                                            size="sm"
+                                            variant="danger"
                                             onClick={() => handleDeleteBu(bu)}
                                         >
                                             Delete
@@ -371,12 +372,12 @@ const RolesPermissions: React.FC = () => {
             </Card>
 
             <Card title="Permissions Matrix">
-               <PermissionsMatrixTable 
+                <PermissionsMatrixTable
                     roles={allRoles}
                     resourceGroups={resourceGroups}
                     permissionsMatrix={permissions}
                     onPermissionChange={canManage ? handlePermissionChange : undefined}
-               />
+                />
             </Card>
 
             <BusinessUnitModal

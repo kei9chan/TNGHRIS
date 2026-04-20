@@ -1,8 +1,8 @@
+import { mockUsers, mockOtRequests, mockAttendanceRecords, mockPayslips } from '../../services/mockDataCompat';
 import React, { useState, useMemo, useEffect } from 'react';
 import { PayrollStagingRecord, Role, PayslipRecord, Permission } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
-import { mockAttendanceRecords, mockOtRequests, mockUsers, mockPayslips } from '../../services/mockData';
 import { logActivity } from '../../services/auditService';
 import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';

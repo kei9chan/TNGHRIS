@@ -1,7 +1,7 @@
+import { mockNTEs, mockResolutions } from '../../services/mockDataCompat';
 
 import React from 'react';
 import { IncidentReport, IRStatus, NTEStatus, ResolutionStatus } from '../../types';
-import { mockNTEs, mockResolutions } from '../../services/mockData';
 
 interface KanbanCardProps {
     report: IncidentReport;

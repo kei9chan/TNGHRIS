@@ -1,7 +1,7 @@
+import { mockCOETemplates } from '../../services/mockDataCompat';
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { BusinessUnit, COETemplate, Permission } from '../../types';
-import { mockCOETemplates } from '../../services/mockData';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import COETemplateModal from '../../components/admin/COETemplateModal';

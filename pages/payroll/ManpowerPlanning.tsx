@@ -1,3 +1,4 @@
+import { mockNotifications } from '../../services/mockDataCompat';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
@@ -9,7 +10,6 @@ import ManpowerRequestModal from '../../components/payroll/ManpowerRequestModal'
 import ManpowerReviewModal from '../../components/payroll/ManpowerReviewModal';
 import { logActivity } from '../../services/auditService';
 import { supabase } from '../../services/supabaseClient';
-import { mockNotifications } from '../../services/mockData';
 
 const getStatusColor = (status: ManpowerRequestStatus) => {
     switch (status) {

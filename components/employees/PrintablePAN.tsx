@@ -1,6 +1,6 @@
+import { mockUsers } from '../../services/mockDataCompat';
 import React, { useEffect, useMemo, useRef } from 'react';
 import { PAN, PANRole, PANStepStatus } from '../../types';
-import { mockUsers } from '../../services/mockData';
 import { useSettings } from '../../context/SettingsContext';
 
 interface PrintablePANProps {

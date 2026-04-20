@@ -139,7 +139,7 @@ export interface CoachingSession {
   context: string; // The issue or reason
   date: Date;
   status: CoachingStatus;
-  
+
   // Phase 2 fields
   rootCause?: string;
   actionPlan?: string;
@@ -191,8 +191,8 @@ export interface SurveyResponse {
   surveyId: string;
   respondentId: string; // User ID. If anonymous, this is still stored to track completion but hidden in reporting.
   submittedAt: Date;
-  answers: { 
-    questionId: string; 
+  answers: {
+    questionId: string;
     value: number | string; // number for rating, string for text
   }[];
   comments?: string; // General comments for the survey
@@ -231,17 +231,17 @@ export interface BenefitRequest {
   dateNeeded: Date;
   status: BenefitRequestStatus;
   submissionDate: Date;
-  
+
   // Approval Trail
   hrEndorsedBy?: string;
   hrEndorsedAt?: Date;
   bodApprovedBy?: string;
   bodApprovedAt?: Date;
-  
+
   // Fulfillment
   fulfilledBy?: string;
   fulfilledAt?: Date;
-  voucherCode?: string; 
+  voucherCode?: string;
   rejectionReason?: string;
 }
 
@@ -297,37 +297,37 @@ export interface COERequest {
 // =================================================================================
 
 export interface ServiceArea {
-    id: string;
-    businessUnitId: string;
-    name: string;
-    capacity?: number;
-    description?: string;
+  id: string;
+  businessUnitId: string;
+  name: string;
+  capacity?: number;
+  description?: string;
 }
 
 export enum DayTypeTier {
-    OffPeak = 'Off-Peak',
-    Peak = 'Peak',
-    SuperPeak = 'Super Peak',
+  OffPeak = 'Off-Peak',
+  Peak = 'Peak',
+  SuperPeak = 'Super Peak',
 }
 
 export interface DemandTypeConfig {
-    id: string;
-    businessUnitId: string;
-    tier: DayTypeTier;
-    color: string; // Tailwind class or hex
-    label: string; // Custom label
-    description?: string;
+  id: string;
+  businessUnitId: string;
+  tier: DayTypeTier;
+  color: string; // Tailwind class or hex
+  label: string; // Custom label
+  description?: string;
 }
 
 export interface StaffingRequirement {
-    id: string;
-    areaId: string;
-    role: string; // Job Position
-    dayTypeTier: DayTypeTier;
-    minCount: number;
-    maxCount?: number;
-    startTime?: string; // Optional shift block specifics
-    endTime?: string;
+  id: string;
+  areaId: string;
+  role: string; // Job Position
+  dayTypeTier: DayTypeTier;
+  minCount: number;
+  maxCount?: number;
+  startTime?: string; // Optional shift block specifics
+  endTime?: string;
 }
 
 // =================================================================================
@@ -375,35 +375,35 @@ export interface ManpowerRequest {
 // =================================================================================
 
 export interface SSSTableRow {
-    rangeStart: number;
-    rangeEnd: number;
-    regularSS: number;
-    wisp: number;
-    ec: number; // Employee Compensation
-    totalContribution: number; // Employer + Employee
-    employeeShare: number;
-    employerShare: number;
+  rangeStart: number;
+  rangeEnd: number;
+  regularSS: number;
+  wisp: number;
+  ec: number; // Employee Compensation
+  totalContribution: number; // Employer + Employee
+  employeeShare: number;
+  employerShare: number;
 }
 
 export interface PhilHealthConfig {
-    minSalary: number;
-    maxSalary: number;
-    rate: number; // Percentage (e.g., 0.05 for 5%)
-    employerShareRatio: number; // e.g., 0.5 for 50%
+  minSalary: number;
+  maxSalary: number;
+  rate: number; // Percentage (e.g., 0.05 for 5%)
+  employerShareRatio: number; // e.g., 0.5 for 50%
 }
 
 export interface TaxTableRow {
-    level: number;
-    rangeStart: number;
-    rangeEnd: number;
-    baseTax: number;
-    rate: number; // Percentage excess
+  level: number;
+  rangeStart: number;
+  rangeEnd: number;
+  baseTax: number;
+  rate: number; // Percentage excess
 }
 
 export interface HolidayPolicy {
-    type: HolidayType;
-    rate: number; // Multiplier (e.g., 1.0, 0.3, 2.0)
-    description: string;
+  type: HolidayType;
+  rate: number; // Multiplier (e.g., 1.0, 0.3, 2.0)
+  description: string;
 }
 
 
@@ -418,19 +418,19 @@ export interface SalaryBreakdown {
 }
 
 export enum RateType {
-    Monthly = 'Monthly',
-    Daily = 'Daily',
+  Monthly = 'Monthly',
+  Daily = 'Daily',
 }
 
 export enum TaxStatus {
-    Single = 'Single',
-    Married = 'Married',
-    HeadOfFamily = 'Head of Family',
+  Single = 'Single',
+  Married = 'Married',
+  HeadOfFamily = 'Head of Family',
 }
 
 export interface AccessScope {
-    type: 'GLOBAL' | 'SPECIFIC' | 'HOME_ONLY';
-    allowedBuIds?: string[]; // Only required if type is 'SPECIFIC'
+  type: 'GLOBAL' | 'SPECIFIC' | 'HOME_ONLY';
+  allowedBuIds?: string[]; // Only required if type is 'SPECIFIC'
 }
 
 export type EmploymentStatus = 'Regular' | 'Probationary' | 'Contractual';
@@ -461,7 +461,7 @@ export interface User {
   profilePictureUrl?: string;
   securityPin?: string;
   isGoogleConnected?: boolean;
-  
+
   // Access Control
   accessScope?: AccessScope;
 
@@ -487,12 +487,12 @@ export interface User {
   leaveQuotaSick?: number;
   leaveLastCreditDate?: Date;
   leaveInfo?: {
-      balances: {
-          vacation: number;
-          sick: number;
-      };
-      lastCreditDate?: Date;
-      accrualRate: number;
+    balances: {
+      vacation: number;
+      sick: number;
+    };
+    lastCreditDate?: Date;
+    accrualRate: number;
   }
 }
 
@@ -507,86 +507,86 @@ export interface DeviceBind {
 }
 
 export interface DeviceSecurityProfile {
-    platform: string;
-    jailbreak_flag: boolean;
-    emulator_flag: boolean;
-    deviceId: string;
+  platform: string;
+  jailbreak_flag: boolean;
+  emulator_flag: boolean;
+  deviceId: string;
 }
 
 // =================================================================================
 // ASSET MANAGEMENT TYPES
 // =================================================================================
 export enum AssetStatus {
-    Available = 'Available',
-    Assigned = 'Assigned',
-    InRepair = 'In Repair',
-    Retired = 'Retired',
+  Available = 'Available',
+  Assigned = 'Assigned',
+  InRepair = 'In Repair',
+  Retired = 'Retired',
 }
 
 export interface Asset {
-    id: string;
-    assetTag: string;
-    name: string;
-    type: 'Laptop' | 'Mobile Phone' | 'Monitor' | 'Software License' | 'Other';
-    businessUnitId: string;
-    serialNumber?: string;
-    purchaseDate: Date;
-    value: number;
-    status: AssetStatus;
-    notes?: string;
+  id: string;
+  assetTag: string;
+  name: string;
+  type: 'Laptop' | 'Mobile Phone' | 'Monitor' | 'Software License' | 'Other';
+  businessUnitId: string;
+  serialNumber?: string;
+  purchaseDate: Date;
+  value: number;
+  status: AssetStatus;
+  notes?: string;
 }
 
 export interface AssetAssignment {
-    id: string;
-    assetId: string;
-    employeeId: string;
-    dateAssigned: Date;
-    dateReturned?: Date;
-    conditionOnAssign: string;
-    conditionOnReturn?: string;
-    managerProofUrlOnReturn?: string;
-    isAcknowledged?: boolean;
-    acknowledgedAt?: Date;
-    signedDocumentUrl?: string; // The URL/Base64 of the signed policy PDF
+  id: string;
+  assetId: string;
+  employeeId: string;
+  dateAssigned: Date;
+  dateReturned?: Date;
+  conditionOnAssign: string;
+  conditionOnReturn?: string;
+  managerProofUrlOnReturn?: string;
+  isAcknowledged?: boolean;
+  acknowledgedAt?: Date;
+  signedDocumentUrl?: string; // The URL/Base64 of the signed policy PDF
 }
 
 export interface AssetRepair {
-    id: string;
-    assetId: string;
-    dateIn: Date;
-    dateOut?: Date;
-    notes: string;
-    cost?: number;
+  id: string;
+  assetId: string;
+  dateIn: Date;
+  dateOut?: Date;
+  notes: string;
+  cost?: number;
 }
 
 export enum AssetRequestStatus {
-    Pending = 'Pending',
-    Returned = 'Returned',
-    Approved = 'Approved',
-    Rejected = 'Rejected',
-    Fulfilled = 'Fulfilled',
+  Pending = 'Pending',
+  Returned = 'Returned',
+  Approved = 'Approved',
+  Rejected = 'Rejected',
+  Fulfilled = 'Fulfilled',
 }
 
 
 export interface AssetRequest {
-    id: string;
-    requestType: 'Request' | 'Return';
-    employeeId: string;
-    employeeName: string;
-    assetDescription: string;
-    justification: string;
-    status: AssetRequestStatus;
-    requestedAt: Date;
-    managerId: string;
-    managerNotes?: string;
-    approvedAt?: Date;
-    rejectedAt?: Date;
-    fulfilledAt?: Date;
-    assetId?: string; // Optional, for return requests
-    employeeSubmissionNotes?: string;
-    employeeProofUrl?: string;
-    employeeSubmittedAt?: Date;
-    rejectionReason?: string;
+  id: string;
+  requestType: 'Request' | 'Return';
+  employeeId: string;
+  employeeName: string;
+  assetDescription: string;
+  justification: string;
+  status: AssetRequestStatus;
+  requestedAt: Date;
+  managerId: string;
+  managerNotes?: string;
+  approvedAt?: Date;
+  rejectedAt?: Date;
+  fulfilledAt?: Date;
+  assetId?: string; // Optional, for return requests
+  employeeSubmissionNotes?: string;
+  employeeProofUrl?: string;
+  employeeSubmittedAt?: Date;
+  rejectionReason?: string;
 }
 
 // =================================================================================
@@ -594,23 +594,23 @@ export interface AssetRequest {
 // =================================================================================
 
 export interface EnrichedAsset extends Asset {
-    assignedTo?: User;
-    dateAssigned?: Date;
-    businessUnitName: string;
+  assignedTo?: User;
+  dateAssigned?: Date;
+  businessUnitName: string;
 }
 
 export interface EnrichedAssetRequest extends AssetRequest {
-    assetName: string;
-    assetTag?: string;
-    businessUnitName: string;
-    requester: User | undefined;
+  assetName: string;
+  assetTag?: string;
+  businessUnitName: string;
+  requester: User | undefined;
 }
 
 // =================================================================================
 // AUDIT & HISTORY TYPES
 // =================================================================================
 
-export type AuditAction = 'CREATE' | 'READ' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'LOGOUT' | 'APPROVE' | 'REJECT' | 'GENERATE' | 'EXPORT';
+export type AuditAction = 'CREATE' | 'READ' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'LOGOUT' | 'APPROVE' | 'REJECT' | 'GENERATE' | 'EXPORT' | 'SUBMIT';
 
 export interface AuditLog {
   id: string;
@@ -650,12 +650,12 @@ export enum EmployeeDraftStatus {
 }
 
 export interface EmployeeDraft {
-    id: string;
-    employeeId: string;
-    draftData: Partial<User>;
-    status: EmployeeDraftStatus;
-    createdAt: Date;
-    submissionId?: string;
+  id: string;
+  employeeId: string;
+  draftData: Partial<User>;
+  status: EmployeeDraftStatus;
+  createdAt: Date;
+  submissionId?: string;
 }
 
 // =================================================================================
@@ -666,6 +666,8 @@ export interface PipelineStage {
   id: string;
   name: string;
   isLocked?: boolean;
+  sort_order?: number;
+  code?: string;
 }
 
 export enum IRStatus {
@@ -721,19 +723,19 @@ export enum NTEStatus {
 }
 
 export interface HearingAcknowledgment {
-    userId: string;
-    userName: string;
-    role: 'Employee' | 'Panel';
-    date: Date;
+  userId: string;
+  userName: string;
+  role: 'Employee' | 'Panel';
+  date: Date;
 }
 
 export interface HearingDetails {
-    date: Date;
-    location: string; // URL for virtual, or physical address
-    type: 'Virtual' | 'Face-to-Face';
-    panelIds: string[];
-    notes?: string;
-    acknowledgments: HearingAcknowledgment[];
+  date: Date;
+  location: string; // URL for virtual, or physical address
+  type: 'Virtual' | 'Face-to-Face';
+  panelIds: string[];
+  notes?: string;
+  acknowledgments: HearingAcknowledgment[];
 }
 
 export interface NTE {
@@ -760,12 +762,12 @@ export interface NTE {
 }
 
 export enum ResolutionStatus {
-    Draft = 'Draft',
-    PendingApproval = 'Pending Approval',
-    Approved = 'Approved',
-    PendingAcknowledgement = 'Pending Acknowledgement',
-    Acknowledged = 'Acknowledged',
-    Rejected = 'Rejected',
+  Draft = 'Draft',
+  PendingApproval = 'Pending Approval',
+  Approved = 'Approved',
+  PendingAcknowledgement = 'Pending Acknowledgement',
+  Acknowledged = 'Acknowledged',
+  Rejected = 'Rejected',
 }
 
 export enum ResolutionType {
@@ -777,17 +779,17 @@ export enum ResolutionType {
 }
 
 export enum ApproverStatus {
-    Pending = 'Pending',
-    Approved = 'Approved',
-    Rejected = 'Rejected',
+  Pending = 'Pending',
+  Approved = 'Approved',
+  Rejected = 'Rejected',
 }
 
 export interface ApproverStep {
-    userId: string;
-    userName: string;
-    status: ApproverStatus;
-    timestamp?: Date;
-    rejectionReason?: string;
+  userId: string;
+  userName: string;
+  status: ApproverStatus;
+  timestamp?: Date;
+  rejectionReason?: string;
 }
 
 export interface Resolution {
@@ -807,7 +809,7 @@ export interface Resolution {
   acknowledgementDeadline?: Date;
   sentToEmployeeAt?: Date;
   manualClosureReason?: string;
-  
+
   // Suspension Specifics
   suspensionType?: 'Consecutive' | 'Non-Consecutive';
   suspensionDays?: number;
@@ -941,10 +943,10 @@ export enum AttendanceException {
 }
 
 export enum AttendanceStatus {
-    Pending = 'Pending',
-    Reviewed = 'Reviewed',
-    Disputed = 'Disputed',
-    Finalized = 'Finalized'
+  Pending = 'Pending',
+  Reviewed = 'Reviewed',
+  Disputed = 'Disputed',
+  Finalized = 'Finalized'
 }
 
 export interface AttendanceRecord {
@@ -1029,11 +1031,11 @@ export enum OTStatus {
 }
 
 export interface OTRequestHistory {
-    userId: string;
-    userName: string;
-    timestamp: Date;
-    action: string;
-    details?: string;
+  userId: string;
+  userName: string;
+  timestamp: Date;
+  action: string;
+  details?: string;
 }
 
 export interface OTRequest {
@@ -1053,14 +1055,14 @@ export interface OTRequest {
 }
 
 export enum ExceptionType {
-    LateIn = 'LateIn',
-    Undertime = 'Undertime',
-    MissingIn = 'MissingIn',
-    MissingOut = 'MissingOut',
-    OutsideFence = 'OutsideFence',
-    DoubleLog = 'DoubleLog',
-    MissingBreak = 'MissingBreak',
-    ExtendedBreak = 'ExtendedBreak',
+  LateIn = 'LateIn',
+  Undertime = 'Undertime',
+  MissingIn = 'MissingIn',
+  MissingOut = 'MissingOut',
+  OutsideFence = 'OutsideFence',
+  DoubleLog = 'DoubleLog',
+  MissingBreak = 'MissingBreak',
+  ExtendedBreak = 'ExtendedBreak',
 }
 
 export interface AttendanceExceptionRecord {
@@ -1106,65 +1108,65 @@ export interface GovernmentReport {
 }
 
 export enum TemplateStatus {
-    Active = 'Active',
-    Archived = 'Archived',
+  Active = 'Active',
+  Archived = 'Archived',
 }
 
 export interface GovernmentReportTemplate {
-    id: string;
-    businessUnit: string;
-    reportType: string;
-    frequency: 'Monthly' | 'Quarterly' | 'Annually';
-    status: TemplateStatus;
+  id: string;
+  businessUnit: string;
+  reportType: string;
+  frequency: 'Monthly' | 'Quarterly' | 'Annually';
+  status: TemplateStatus;
 }
 
 export enum FinalPayStatus {
-    Draft = 'Draft',
-    HRApproved = 'HR Approved',
-    FinanceApproved = 'Finance Approved',
-    Released = 'Released',
+  Draft = 'Draft',
+  HRApproved = 'HR Approved',
+  FinanceApproved = 'Finance Approved',
+  Released = 'Released',
 }
 
 export interface FinalPayRecord {
-    id: string;
-    employeeId: string;
-    employeeName: string;
-    lastDay: Date;
-    unusedLeaves: number;
-    prorated13thMonth: number;
-    leaveConversionPay: number;
-    deductions: { description: string, amount: number }[];
-    totalFinalPay: number;
-    status: FinalPayStatus;
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  lastDay: Date;
+  unusedLeaves: number;
+  prorated13thMonth: number;
+  leaveConversionPay: number;
+  deductions: { description: string, amount: number }[];
+  totalFinalPay: number;
+  status: FinalPayStatus;
 }
 
 export enum OTRateType {
-    Weekday = 'Weekday',
-    Weekend = 'Weekend',
-    Holiday = 'Holiday',
+  Weekday = 'Weekday',
+  Weekend = 'Weekend',
+  Holiday = 'Holiday',
 }
 
 export interface OTStaging {
-    id: string;
-    employeeId: string;
-    date: Date;
-    approvedHours: number;
-    rateType: OTRateType;
-    sourceOtId: string;
+  id: string;
+  employeeId: string;
+  date: Date;
+  approvedHours: number;
+  rateType: OTRateType;
+  sourceOtId: string;
 }
 
 export interface PayrollStagingRecord {
-    id: string;
-    employeeId: string;
-    employeeName: string;
-    payPeriodStart: Date;
-    payPeriodEnd: Date;
-    regularHours: number;
-    overtimeHours: number;
-    allowances: number;
-    deductions: number;
-    grossPay: number;
-    netPay: number;
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  payPeriodStart: Date;
+  payPeriodEnd: Date;
+  regularHours: number;
+  overtimeHours: number;
+  allowances: number;
+  deductions: number;
+  grossPay: number;
+  netPay: number;
 }
 
 export interface OperatingHours {
@@ -1240,36 +1242,36 @@ export interface LeaveRequest {
 }
 
 export enum LeaveLedgerEntryType {
-    Accrual = 'Accrual',
-    Usage = 'Usage',
-    Adjustment = 'Adjustment',
-    CarryOverApplied = 'Carry-Over Applied',
-    CarryOverExpired = 'Carry-Over Expired',
+  Accrual = 'Accrual',
+  Usage = 'Usage',
+  Adjustment = 'Adjustment',
+  CarryOverApplied = 'Carry-Over Applied',
+  CarryOverExpired = 'Carry-Over Expired',
 }
 
 export interface LeaveLedgerEntry {
-    id: string;
-    employeeId: string;
-    leaveTypeId: string;
-    date: Date;
-    type: LeaveLedgerEntryType;
-    change: number; // positive for additions, negative for deductions
-    balanceAfter: number;
-    notes?: string;
+  id: string;
+  employeeId: string;
+  leaveTypeId: string;
+  date: Date;
+  type: LeaveLedgerEntryType;
+  change: number; // positive for additions, negative for deductions
+  balanceAfter: number;
+  notes?: string;
 }
 
 export enum HolidayType {
-    Regular = 'Regular',
-    SpecialNonWorking = 'Special Non-Working',
-    DoublePay = 'Double Pay'
+  Regular = 'Regular',
+  SpecialNonWorking = 'Special Non-Working',
+  DoublePay = 'Double Pay'
 }
 
 export interface Holiday {
-    id: string;
-    date: Date;
-    name: string;
-    type: HolidayType;
-    isPaid: boolean;
+  id: string;
+  date: Date;
+  name: string;
+  type: HolidayType;
+  isPaid: boolean;
 }
 
 // =================================================================================
@@ -1337,11 +1339,11 @@ export interface Announcement {
 }
 
 export interface CalendarEvent {
-    id: string;
-    title: string;
-    start: Date;
-    end: Date;
-    color: 'blue' | 'green' | 'red' | 'yellow' | 'purple';
+  id: string;
+  title: string;
+  start: Date;
+  end: Date;
+  color: 'blue' | 'green' | 'red' | 'yellow' | 'purple';
 }
 
 export interface KnowledgeBaseCategory {
@@ -1394,27 +1396,27 @@ export interface PANActionTaken {
 }
 
 export enum PANRole {
-    Recommender = 'Recommender',
-    Endorser = 'Endorser',
-    Approver = 'Approver',
-    Acknowledger = 'Acknowledger',
+  Recommender = 'Recommender',
+  Endorser = 'Endorser',
+  Approver = 'Approver',
+  Acknowledger = 'Acknowledger',
 }
 
 export enum PANStepStatus {
-    Pending = 'Pending',
-    Approved = 'Approved',
-    Declined = 'Declined',
+  Pending = 'Pending',
+  Approved = 'Approved',
+  Declined = 'Declined',
 }
 
 export interface PANRoutingStep {
-    id: string;
-    userId: string;
-    name: string;
-    role: PANRole;
-    status: PANStepStatus;
-    order: number;
-    timestamp?: Date;
-    notes?: string;
+  id: string;
+  userId: string;
+  name: string;
+  role: PANRole;
+  status: PANStepStatus;
+  order: number;
+  timestamp?: Date;
+  notes?: string;
 }
 
 export interface PAN {
@@ -1443,17 +1445,17 @@ export interface PAN {
 }
 
 export interface PANTemplate {
-    id: string;
-    name: string;
-    actionTaken: Partial<PANActionTaken>;
-    notes: string;
-    logoUrl?: string;
-    preparerName?: string;
-    preparerSignatureUrl?: string;
-    createdByUserId: string;
-    createdAt: Date;
-    updatedAt: Date;
-    isDefault?: boolean;
+  id: string;
+  name: string;
+  actionTaken: Partial<PANActionTaken>;
+  notes: string;
+  logoUrl?: string;
+  preparerName?: string;
+  preparerSignatureUrl?: string;
+  createdByUserId: string;
+  createdAt: Date;
+  updatedAt: Date;
+  isDefault?: boolean;
 }
 
 
@@ -1461,10 +1463,10 @@ export interface PANTemplate {
 // EVALUATION TYPES
 // =================================================================================
 export enum EmployeeLevel {
-    RankAndFile = 'Rank and File',
-    Supervisory = 'Supervisory',
-    Managerial = 'Managerial',
-    Executive = 'Executive',
+  RankAndFile = 'Rank and File',
+  Supervisory = 'Supervisory',
+  Managerial = 'Managerial',
+  Executive = 'Executive',
 }
 
 export interface QuestionSet {
@@ -1486,9 +1488,9 @@ export interface EvaluationQuestion {
 }
 
 export enum TimelineStatus {
-    Draft = 'Draft',
-    Active = 'Active',
-    Completed = 'Completed',
+  Draft = 'Draft',
+  Active = 'Active',
+  Completed = 'Completed',
 }
 
 export interface EvaluationTimeline {
@@ -1502,11 +1504,11 @@ export interface EvaluationTimeline {
 }
 
 export enum RaterGroup {
-    Self = 'Self',
-    DirectSupervisor = 'Direct Supervisor',
-    GeneralManager = 'General Manager',
-    Peer = 'Peer',
-    DirectReport = 'Direct Report',
+  Self = 'Self',
+  DirectSupervisor = 'Direct Supervisor',
+  GeneralManager = 'General Manager',
+  Peer = 'Peer',
+  DirectReport = 'Direct Report',
 }
 
 // NEW: Evaluator Types for Group Assignment
@@ -1516,18 +1518,18 @@ export enum EvaluatorType {
 }
 
 export interface EvaluatorGroupFilter {
-    businessUnitId?: string;
-    departmentId?: string;
+  businessUnitId?: string;
+  departmentId?: string;
 }
 
 export interface EvaluatorConfig {
-    id: string;
-    type: EvaluatorType;
-    weight: number;
-    userId?: string; // For Individual
-    groupFilter?: EvaluatorGroupFilter; // For Group
-    isAnonymous: boolean;
-    excludeSubject: boolean;
+  id: string;
+  type: EvaluatorType;
+  weight: number;
+  userId?: string; // For Individual
+  groupFilter?: EvaluatorGroupFilter; // For Group
+  isAnonymous: boolean;
+  excludeSubject: boolean;
 }
 
 export interface Evaluation {
@@ -1569,14 +1571,14 @@ export enum JobRequisitionStatus {
 }
 
 export enum JobRequisitionRole {
-    HR = 'HR',
-    Final = 'Final',
+  HR = 'HR',
+  Final = 'Final',
 }
 
 export enum JobRequisitionStepStatus {
-    Pending = 'Pending',
-    Approved = 'Approved',
-    Rejected = 'Rejected',
+  Pending = 'Pending',
+  Approved = 'Approved',
+  Rejected = 'Rejected',
 }
 
 export interface JobRequisition {
@@ -1598,14 +1600,14 @@ export interface JobRequisition {
   updatedAt: Date;
   isUrgent?: boolean;
   routingSteps: {
-      id: string;
-      userId: string;
-      name: string;
-      role: JobRequisitionRole;
-      status: JobRequisitionStepStatus;
-      order: number;
-      timestamp?: Date;
-      notes?: string;
+    id: string;
+    userId: string;
+    name: string;
+    role: JobRequisitionRole;
+    status: JobRequisitionStepStatus;
+    order: number;
+    timestamp?: Date;
+    notes?: string;
   }[];
 }
 
@@ -1704,6 +1706,11 @@ export interface Interview {
   panelUserIds: string[];
   calendarEventId?: string;
   status: InterviewStatus;
+  interviewerId?: string;
+  startAt?: string;
+  endAt?: string;
+  type?: string;
+  notes?: string;
 }
 
 export enum HireRecommendation {
@@ -1763,8 +1770,8 @@ export interface Offer {
 export type TemplateMode = 'Solo' | 'Mass';
 
 export interface JobPostIconDetail {
-    icon: string; // Base64 or URL
-    label: string;
+  icon: string; // Base64 or URL
+  label: string;
 }
 
 export interface JobPostVisualTemplate {
@@ -1772,7 +1779,7 @@ export interface JobPostVisualTemplate {
   name: string; // Template Name
   updatedAt: Date;
   createdBy: string;
-  
+
   // Visuals
   backgroundColor: string;
   cardColor: string;
@@ -1805,38 +1812,42 @@ export interface JobPostVisualTemplate {
 
 // --- NEW: Application Page / Career Site Builder Types ---
 export interface ApplicantPageTheme {
-    id: string;
-    businessUnitId: string;
-    name: string;
-    slug: string; // e.g., 'inflatable-island'
-    isActive: boolean;
-    
-    // Visuals
-    pageTitle: string;
-    heroHeadline: string;
-    heroDescription: string;
-    heroOverlayColor: string; // e.g., 'rgba(0,0,0,0.3)'
-    heroImage?: string; // Base64 or URL
-    primaryColor: string; // Button backgrounds, accents
-    backgroundColor: string; // Page background
-    
-    // Content Sections
-    benefits: {
-        id: string;
-        title: string;
-        description: string;
-        icon: 'rocket' | 'smile' | 'wallet' | 'heart' | 'star';
-    }[];
-    
-    testimonials: {
-        id: string;
-        quote: string;
-        author: string;
-        role: string;
-    }[];
+  id: string;
+  businessUnitId: string;
+  name: string;
+  slug: string; // e.g., 'inflatable-island'
+  isActive: boolean;
 
-    // Contact Info for Footer
-    contactEmail: string;
+  // Visuals
+  pageTitle: string;
+  heroHeadline: string;
+  heroDescription: string;
+  heroOverlayColor: string; // e.g., 'rgba(0,0,0,0.3)'
+  heroImage?: string; // Base64 or URL
+  logoImage?: string;
+  primaryColor: string; // Button backgrounds, accents
+  backgroundColor: string; // Page background
+
+  // Content Sections
+  sections?: any;
+  benefits: {
+    id: string;
+    title: string;
+    description: string;
+    icon: 'rocket' | 'smile' | 'wallet' | 'heart' | 'star';
+  }[];
+
+  testimonials: {
+    id: string;
+    quote: string;
+    author: string;
+    role: string;
+  }[];
+
+  // Contact Info for Footer
+  contactEmail: string;
+  ctaText?: string;
+  ctaLink?: string;
 }
 
 // =================================================================================
@@ -1931,39 +1942,39 @@ export interface Milestone {
 // OFFBOARDING TYPES
 // =================================================================================
 export enum ResignationStatus {
-    PendingHRReview = 'Pending HR Review',
-    ForClearance = 'For Clearance',
-    Processing = 'Processing',
-    Completed = 'Completed',
-    ReturnedForEdits = 'Returned for Edits',
+  PendingHRReview = 'Pending HR Review',
+  ForClearance = 'For Clearance',
+  Processing = 'Processing',
+  Completed = 'Completed',
+  ReturnedForEdits = 'Returned for Edits',
 }
 
 export interface Resignation {
-    id: string;
-    employeeId: string;
-    employeeName: string;
-    submissionDate: Date;
-    lastWorkingDay: Date;
-    reason: string;
-    status: ResignationStatus;
-    attachmentUrl?: string;
-    offboardingChecklistId?: string;
-    rejectionReason?: string;
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  submissionDate: Date;
+  lastWorkingDay: Date;
+  reason: string;
+  status: ResignationStatus;
+  attachmentUrl?: string;
+  offboardingChecklistId?: string;
+  rejectionReason?: string;
 }
 
 // =================================================================================
 // CONTRACTS & SIGNING TYPES
 // =================================================================================
 export interface SignatoryBlock {
-    name?: string;
-    position?: string;
-    company?: string;
+  name?: string;
+  position?: string;
+  company?: string;
 }
 
 export interface ContractTemplateSection {
-    id: string;
-    title: string;
-    body: string;
+  id: string;
+  title: string;
+  body: string;
 }
 
 export interface ContractTemplate {
@@ -1984,12 +1995,12 @@ export interface ContractTemplate {
   acknowledgmentBody?: string;
   acknowledgmentParties?: { id: string, name: string, idProof: string, idIssue: string }[];
   versions?: {
-      id: string;
-      version: number;
-      createdAt: Date;
-      createdByUserId: string;
-      notes: string;
-      fileName: string;
+    id: string;
+    version: number;
+    createdAt: Date;
+    createdByUserId: string;
+    notes: string;
+    fileName: string;
   }[];
   activeVersion?: number;
 }
@@ -2025,22 +2036,22 @@ export interface RoutingStep {
 }
 
 export enum EnvelopeEventType {
-    Created = 'Created',
-    Sent = 'Sent',
-    Viewed = 'Viewed',
-    Signed = 'Signed',
-    Approved = 'Approved',
-    Declined = 'Declined',
-    Completed = 'Completed',
-    Voided = 'Voided',
-    CommentAdded = 'Comment Added',
+  Created = 'Created',
+  Sent = 'Sent',
+  Viewed = 'Viewed',
+  Signed = 'Signed',
+  Approved = 'Approved',
+  Declined = 'Declined',
+  Completed = 'Completed',
+  Voided = 'Voided',
+  CommentAdded = 'Comment Added',
 }
 
 export interface EnvelopeEvent {
-    timestamp: Date;
-    type: EnvelopeEventType;
-    userName: string;
-    details?: string;
+  timestamp: Date;
+  type: EnvelopeEventType;
+  userName: string;
+  details?: string;
 }
 
 export interface Envelope {
@@ -2060,141 +2071,141 @@ export interface Envelope {
 }
 
 export enum NotificationType {
-    BIRTHDAY = 'BIRTHDAY',
-    AWARD_RECEIVED = 'AWARD_RECEIVED',
-    AWARD_APPROVAL_REQUEST = 'AWARD_APPROVAL_REQUEST',
-    ResignationSubmitted = 'ResignationSubmitted',
-    ResignationReturned = 'ResignationReturned',
-    TICKET_ASSIGNED_TO_YOU = 'TICKET_ASSIGNED_TO_YOU',
-    TICKET_UPDATE_REQUESTER = 'TICKET_UPDATE_REQUESTER',
-    InterviewInvite = 'InterviewInvite',
-    OFFBOARDING_STARTED = 'OFFBOARDING_STARTED',
-    NTE_ISSUED = 'NTE_ISSUED',
-    RESOLUTION_ISSUED = 'RESOLUTION_ISSUED',
-    SCHEDULE_PUBLISHED = 'SCHEDULE_PUBLISHED',
-    AssetRequestUpdate = 'AssetRequestUpdate',
-    ASSET_ASSIGNED = 'ASSET_ASSIGNED',
-    LEAVE_REQUEST = 'LEAVE_REQUEST',
-    LEAVE_DECISION = 'LEAVE_DECISION',
-    MANPOWER_REQUEST_SUBMITTED = 'MANPOWER_REQUEST_SUBMITTED',
-    MANPOWER_REQUEST_APPROVED = 'MANPOWER_REQUEST_APPROVED',
-    MANPOWER_REQUEST_REJECTED = 'MANPOWER_REQUEST_REJECTED',
-    COE_UPDATE = 'COE_UPDATE',
-    COACHING_INVITE = 'COACHING_INVITE',
-    PAN_UPDATE = 'PAN_UPDATE',
-    CASE_ASSIGNED = 'CASE_ASSIGNED',
-    BENEFIT_REQUEST_SUBMITTED = 'BENEFIT_REQUEST_SUBMITTED',
-    PAN_APPROVAL_REQUEST = 'PAN_APPROVAL_REQUEST',
-    ONBOARDING_ASSIGNED = 'ONBOARDING_ASSIGNED',
-    OFFBOARDING_ASSIGNED = 'OFFBOARDING_ASSIGNED',
-    EVALUATION_ASSIGNED = 'EVALUATION_ASSIGNED',
-    PULSE_SURVEY_REMINDER = 'PULSE_SURVEY_REMINDER',
-    CONTRACT_SIGNATURE_REQUEST = 'CONTRACT_SIGNATURE_REQUEST',
-    CONTRACT_APPROVAL_REQUEST = 'CONTRACT_APPROVAL_REQUEST',
-    PROFILE_CHANGE_APPROVED = 'PROFILE_CHANGE_APPROVED'
+  BIRTHDAY = 'BIRTHDAY',
+  AWARD_RECEIVED = 'AWARD_RECEIVED',
+  AWARD_APPROVAL_REQUEST = 'AWARD_APPROVAL_REQUEST',
+  ResignationSubmitted = 'ResignationSubmitted',
+  ResignationReturned = 'ResignationReturned',
+  TICKET_ASSIGNED_TO_YOU = 'TICKET_ASSIGNED_TO_YOU',
+  TICKET_UPDATE_REQUESTER = 'TICKET_UPDATE_REQUESTER',
+  InterviewInvite = 'InterviewInvite',
+  OFFBOARDING_STARTED = 'OFFBOARDING_STARTED',
+  NTE_ISSUED = 'NTE_ISSUED',
+  RESOLUTION_ISSUED = 'RESOLUTION_ISSUED',
+  SCHEDULE_PUBLISHED = 'SCHEDULE_PUBLISHED',
+  AssetRequestUpdate = 'AssetRequestUpdate',
+  ASSET_ASSIGNED = 'ASSET_ASSIGNED',
+  LEAVE_REQUEST = 'LEAVE_REQUEST',
+  LEAVE_DECISION = 'LEAVE_DECISION',
+  MANPOWER_REQUEST_SUBMITTED = 'MANPOWER_REQUEST_SUBMITTED',
+  MANPOWER_REQUEST_APPROVED = 'MANPOWER_REQUEST_APPROVED',
+  MANPOWER_REQUEST_REJECTED = 'MANPOWER_REQUEST_REJECTED',
+  COE_UPDATE = 'COE_UPDATE',
+  COACHING_INVITE = 'COACHING_INVITE',
+  PAN_UPDATE = 'PAN_UPDATE',
+  CASE_ASSIGNED = 'CASE_ASSIGNED',
+  BENEFIT_REQUEST_SUBMITTED = 'BENEFIT_REQUEST_SUBMITTED',
+  PAN_APPROVAL_REQUEST = 'PAN_APPROVAL_REQUEST',
+  ONBOARDING_ASSIGNED = 'ONBOARDING_ASSIGNED',
+  OFFBOARDING_ASSIGNED = 'OFFBOARDING_ASSIGNED',
+  EVALUATION_ASSIGNED = 'EVALUATION_ASSIGNED',
+  PULSE_SURVEY_REMINDER = 'PULSE_SURVEY_REMINDER',
+  CONTRACT_SIGNATURE_REQUEST = 'CONTRACT_SIGNATURE_REQUEST',
+  CONTRACT_APPROVAL_REQUEST = 'CONTRACT_APPROVAL_REQUEST',
+  PROFILE_CHANGE_APPROVED = 'PROFILE_CHANGE_APPROVED'
 }
 
 export interface Notification {
-    id: string;
-    userId: string;
-    type: NotificationType;
-    title?: string;
-    message: string;
-    link: string;
-    isRead: boolean;
-    createdAt: Date;
-    relatedEntityId: string;
+  id: string;
+  userId: string;
+  type: NotificationType;
+  title?: string;
+  message: string;
+  link: string;
+  isRead: boolean;
+  createdAt: Date;
+  relatedEntityId?: string;
 }
 
 export interface AwardSignatory {
-    name: string;
-    title: string;
-    signatureUrl?: string;
+  name: string;
+  title: string;
+  signatureUrl?: string;
 }
 
 export interface AwardDesign {
-    backgroundColor: string;
-    backgroundImageUrl?: string;
-    borderWidth: number;
-    borderColor: string;
-    fontFamily: string;
-    titleColor: string;
-    textColor: string;
-    headerText: string; // e.g. "CERTIFICATE OF APPRECIATION"
-    bodyText: string; // e.g. "This is awarded to {{employee_name}}..."
-    signatories: AwardSignatory[];
-    logoUrl?: string;
+  backgroundColor: string;
+  backgroundImageUrl?: string;
+  borderWidth: number;
+  borderColor: string;
+  fontFamily: string;
+  titleColor: string;
+  textColor: string;
+  headerText: string; // e.g. "CERTIFICATE OF APPRECIATION"
+  bodyText: string; // e.g. "This is awarded to {{employee_name}}..."
+  signatories: AwardSignatory[];
+  logoUrl?: string;
 }
 
 export interface Award {
-    id: string;
-    title: string;
-    description: string;
-    badgeIconUrl: string;
-    isActive: boolean;
-    design?: AwardDesign;
+  id: string;
+  title: string;
+  description: string;
+  badgeIconUrl: string;
+  isActive: boolean;
+  design?: AwardDesign;
 }
 
 export enum BadgeLevel {
-    Bronze = 'Bronze',
-    Silver = 'Silver',
-    Gold = 'Gold',
+  Bronze = 'Bronze',
+  Silver = 'Silver',
+  Gold = 'Gold',
 }
 
 export interface EmployeeAward {
-    id: string;
-    employeeId: string;
-    awardId: string;
-    dateAwarded: Date;
-    notes: string;
-    createdByUserId: string;
-    level: BadgeLevel;
-    businessUnitId?: string;
-    status: ResolutionStatus;
-    approverSteps: ApproverStep[];
-    rejectionReason?: string;
-    isAcknowledgedByEmployee?: boolean;
-    certificateSnapshotUrl?: string; // NEW: Stores the Base64 image of the certificate
-    approverId?: string;
-    approverName?: string;
+  id: string;
+  employeeId: string;
+  awardId: string;
+  dateAwarded: Date;
+  notes: string;
+  createdByUserId: string;
+  level: BadgeLevel;
+  businessUnitId?: string;
+  status: ResolutionStatus;
+  approverSteps: ApproverStep[];
+  rejectionReason?: string;
+  isAcknowledgedByEmployee?: boolean;
+  certificateSnapshotUrl?: string; // NEW: Stores the Base64 image of the certificate
+  approverId?: string;
+  approverName?: string;
 }
 
-export type UserDocumentType = 
-    | 'PSA Birth Certificate'
-    | 'Diploma or Transcript of Records'
-    | 'NBI Clearance'
-    | 'Government ID (e.g., UMID, Driver\'s License)'
-    | 'Proof of Bank Account'
-    | 'BIR Form 2316 (from previous employer)'
-    | 'Others';
+export type UserDocumentType =
+  | 'PSA Birth Certificate'
+  | 'Diploma or Transcript of Records'
+  | 'NBI Clearance'
+  | 'Government ID (e.g., UMID, Driver\'s License)'
+  | 'Proof of Bank Account'
+  | 'BIR Form 2316 (from previous employer)'
+  | 'Others';
 
 export const USER_DOCUMENT_TYPES: UserDocumentType[] = [
-    'PSA Birth Certificate',
-    'Diploma or Transcript of Records',
-    'NBI Clearance',
-    'Government ID (e.g., UMID, Driver\'s License)',
-    'Proof of Bank Account',
-    'BIR Form 2316 (from previous employer)',
-    'Others'
+  'PSA Birth Certificate',
+  'Diploma or Transcript of Records',
+  'NBI Clearance',
+  'Government ID (e.g., UMID, Driver\'s License)',
+  'Proof of Bank Account',
+  'BIR Form 2316 (from previous employer)',
+  'Others'
 ];
 
 
 export enum UserDocumentStatus {
-    Pending = 'Pending',
-    Approved = 'Approved',
-    Rejected = 'Rejected',
+  Pending = 'Pending',
+  Approved = 'Approved',
+  Rejected = 'Rejected',
 }
 
 export interface UserDocument {
-    id: string;
-    employeeId: string;
-    documentType: UserDocumentType;
-    customDocumentType?: string;
-    fileName: string;
-    fileUrl: string;
-    submittedAt: Date;
-    status: UserDocumentStatus;
-    reviewedBy?: string;
-    reviewedAt?: Date;
-    rejectionReason?: string;
+  id: string;
+  employeeId: string;
+  documentType: UserDocumentType;
+  customDocumentType?: string;
+  fileName: string;
+  fileUrl: string;
+  submittedAt: Date;
+  status: UserDocumentStatus;
+  reviewedBy?: string;
+  reviewedAt?: Date;
+  rejectionReason?: string;
 }

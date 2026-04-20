@@ -1,8 +1,8 @@
+import { mockUsers } from '../../services/mockDataCompat';
 import React from 'react';
 import { PANTemplate, Permission } from '../../types';
 import Button from '../ui/Button';
 import { usePermissions } from '../../hooks/usePermissions';
-import { mockUsers } from '../../services/mockData';
 
 interface PANTemplateTableProps {
     templates: PANTemplate[];

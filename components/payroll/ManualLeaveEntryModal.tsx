@@ -1,7 +1,7 @@
+import { mockUsers, mockLeaveTypes } from '../../services/mockDataCompat';
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { User, LeaveLedgerEntryType } from '../../types';
-import { mockUsers, mockLeaveTypes } from '../../services/mockData';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';

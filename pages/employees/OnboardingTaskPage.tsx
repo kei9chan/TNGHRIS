@@ -1,6 +1,6 @@
+import { mockUsers, mockNotifications, mockAssets, mockOnboardingChecklists } from '../../services/mockDataCompat';
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
-import { mockOnboardingChecklists, mockUsers, mockAssets, mockNotifications } from '../../services/mockData';
 import { OnboardingChecklist, OnboardingChecklistTemplate, OnboardingTask, OnboardingTaskStatus, OnboardingTaskType, Role, NotificationType } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import Card from '../../components/ui/Card';

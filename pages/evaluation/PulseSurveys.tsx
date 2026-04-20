@@ -1,3 +1,4 @@
+import { mockNotifications } from '../../services/mockDataCompat';
 
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -8,7 +9,6 @@ import { usePermissions } from '../../hooks/usePermissions';
 import ComplianceModal from '../../components/evaluation/ComplianceModal';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
-import { mockNotifications } from '../../services/mockData';
 
 const PulseSurveys: React.FC = () => {
     const { can } = usePermissions();

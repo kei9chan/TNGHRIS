@@ -1,10 +1,10 @@
+import { mockUsers, mockAssets } from '../../services/mockDataCompat';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { OnboardingChecklistTemplate, OnboardingTaskTemplate, Role, OnboardingTaskType, Asset, AssetStatus } from '../../types';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
 import Button from '../ui/Button';
-import { mockUsers, mockAssets } from '../../services/mockData';
 
 // Icons
 const PlusIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>;

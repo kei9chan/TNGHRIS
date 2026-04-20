@@ -1,7 +1,7 @@
+import { mockShiftTemplates, mockSites } from '../../services/mockDataCompat';
 import React, { useState, useEffect } from 'react';
 import { TimeEvent, TimeEventType, ShiftAssignment, TimeEventSource, DeviceSecurityProfile, AnomalyTag, TimeEventExtra } from '../../types';
 import Button from '../ui/Button';
-import { mockShiftTemplates, mockSites } from '../../services/mockData';
 import { getAppVersion } from '../../services/deviceSecurity';
 
 

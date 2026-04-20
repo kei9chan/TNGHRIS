@@ -1,7 +1,7 @@
+import { mockBusinessUnits, mockDepartments, mockApplications } from '../../services/mockDataCompat';
 import React from 'react';
 import { JobRequisition, JobRequisitionStatus, ApplicationStage } from '../../types';
 import Button from '../ui/Button';
-import { mockDepartments, mockBusinessUnits, mockApplications } from '../../services/mockData';
 
 interface RequisitionTableProps {
     requisitions: JobRequisition[];

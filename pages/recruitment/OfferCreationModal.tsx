@@ -1,13 +1,11 @@
+import { mockJobRequisitions, mockApplications, mockCandidates, mockOffers } from '../../services/mockDataCompat';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Offer, OfferStatus, ApplicationStage, JobRequisition } from '../../types';
-// FIX: Added import for mockOffers to use in component logic.
-import { mockApplications, mockCandidates, mockJobRequisitions, mockOffers } from '../../services/mockData';
-import Modal from '../ui/Modal';
-import Button from '../ui/Button';
-import Input from '../ui/Input';
-import Textarea from '../ui/Textarea';
-// FIX: Added import for Card component.
-import Card from '../ui/Card';
+import Modal from '../../components/ui/Modal';
+import Button from '../../components/ui/Button';
+import Input from '../../components/ui/Input';
+import Textarea from '../../components/ui/Textarea';
+import Card from '../../components/ui/Card';
 import { useSettings } from '../../context/SettingsContext';
 
 interface OfferCreationModalProps {
@@ -46,7 +44,7 @@ const OfferCreationModal: React.FC<OfferCreationModalProps> = ({ isOpen, onClose
                 }
             });
     }, []);
-    
+
     const totalCompensation = useMemo(() => {
         const totalAllowances = allowances.reduce((sum, allowance) => sum + allowance.amount, 0);
         return basePay + totalAllowances;
@@ -77,15 +75,15 @@ const OfferCreationModal: React.FC<OfferCreationModalProps> = ({ isOpen, onClose
             }
         }
     }, [applicationId]);
-    
+
     const handleAddAllowance = () => {
-        setAllowances([...allowances, {id: Date.now(), type: '', amount: 0}]);
+        setAllowances([...allowances, { id: Date.now(), type: '', amount: 0 }]);
     }
     const handleRemoveAllowance = (id: number) => {
         setAllowances(allowances.filter(a => a.id !== id));
     }
     const handleAllowanceChange = (id: number, field: 'type' | 'amount', value: string) => {
-        setAllowances(allowances.map(a => a.id === id ? {...a, [field]: field === 'amount' ? parseFloat(value) || 0 : value} : a));
+        setAllowances(allowances.map(a => a.id === id ? { ...a, [field]: field === 'amount' ? parseFloat(value) || 0 : value } : a));
     }
 
     const handleSave = (status: OfferStatus) => {
@@ -95,7 +93,7 @@ const OfferCreationModal: React.FC<OfferCreationModalProps> = ({ isOpen, onClose
         }
 
         const allowanceObject = allowances.reduce((obj, item) => {
-            if(item.type) obj[item.type.toLowerCase()] = item.amount;
+            if (item.type) obj[item.type.toLowerCase()] = item.amount;
             return obj;
         }, {} as Record<string, number>);
 
@@ -111,7 +109,7 @@ const OfferCreationModal: React.FC<OfferCreationModalProps> = ({ isOpen, onClose
             status,
             offerNumber: offer?.offerNumber || `OFFER-${Date.now().toString().slice(-6)}`
         };
-        
+
         onSave(payload);
     };
 
@@ -135,7 +133,7 @@ const OfferCreationModal: React.FC<OfferCreationModalProps> = ({ isOpen, onClose
         >
             <div className="space-y-6">
                 {error && <p className="text-sm text-red-500 bg-red-50 p-3 rounded-md">{error}</p>}
-                
+
                 <Card title="Applicant & Position" className="!p-0">
                     <div className="p-4 space-y-4">
                         <div>
@@ -145,13 +143,13 @@ const OfferCreationModal: React.FC<OfferCreationModalProps> = ({ isOpen, onClose
                                 {applicantsInOfferStage.map(opt => <option key={opt.appId} value={opt.appId}>{opt.label}</option>)}
                             </select>
                         </div>
-                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <Input label="Start Date" type="date" value={startDate} onChange={e => setStartDate(e.target.value)} required />
-                             <Input label="Probation (Months)" type="number" value={probationMonths} onChange={e => setProbationMonths(parseInt(e.target.value))} />
+                            <Input label="Probation (Months)" type="number" value={probationMonths} onChange={e => setProbationMonths(parseInt(e.target.value))} />
                         </div>
                     </div>
                 </Card>
-                
+
                 <Card title="Compensation Details" className="!p-0">
                     <div className="p-4 space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -177,7 +175,7 @@ const OfferCreationModal: React.FC<OfferCreationModalProps> = ({ isOpen, onClose
                             ))}
                             <Button variant="secondary" size="sm" onClick={handleAddAllowance} className="mt-2">+ Add Allowance</Button>
                         </div>
-                         <div className="mt-4 p-3 bg-gray-100 dark:bg-gray-700/50 rounded-md flex justify-between items-center">
+                        <div className="mt-4 p-3 bg-gray-100 dark:bg-gray-700/50 rounded-md flex justify-between items-center">
                             <span className="font-bold text-lg">Total Compensation Package</span>
                             <span className="font-bold text-xl text-green-600 dark:text-green-400">{settings.currency} {totalCompensation.toLocaleString()}</span>
                         </div>

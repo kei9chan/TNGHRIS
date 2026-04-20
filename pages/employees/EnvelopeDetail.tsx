@@ -1,7 +1,7 @@
+import { mockUsers, mockEnvelopes } from '../../services/mockDataCompat';
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { createPortal } from 'react-dom';
-import { mockEnvelopes, mockUsers } from '../../services/mockData';
 import { Envelope, RoutingStepStatus, EnvelopeStatus, EnvelopeEventType } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import Card from '../../components/ui/Card';

@@ -1,8 +1,8 @@
+import { mockIncidentReports, mockNTEs, mockResolutions, mockCOERequests, mockPANs, mockEnvelopes } from '../../services/mockDataCompat';
 
 import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PANStatus, NTEStatus, ResolutionStatus, PAN, NTE, Resolution, COERequest, COERequestStatus, Envelope, EnvelopeStatus } from '../../types';
-import { mockPANs, mockNTEs, mockResolutions, mockIncidentReports, mockCOERequests, mockEnvelopes } from '../../services/mockData';
 import Card from '../ui/Card';
 import Button from '../ui/Button';
 

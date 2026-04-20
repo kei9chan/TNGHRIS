@@ -1,7 +1,7 @@
+import { mockBusinessUnits } from '../../services/mockDataCompat';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Ticket, TicketCategory, TicketPriority, TicketStatus, User, ChatMessage } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
-import { mockBusinessUnits } from '../../services/mockData';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
@@ -54,28 +54,30 @@ const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, ticket, onSa
     const justClosed = !isOpen && prevOpenRef.current;
 
     if (justClosed) {
-        prevOpenRef.current = false;
-        initializedKeyRef.current = null;
-        return;
+      prevOpenRef.current = false;
+      initializedKeyRef.current = null;
+      return;
     }
 
     if (!justOpened) return;
 
     if (initializedKeyRef.current === key) {
-        // Already initialized for this ticket while open
-        prevOpenRef.current = true;
-        return;
+      // Already initialized for this ticket while open
+      prevOpenRef.current = true;
+      return;
     }
 
     initializedKeyRef.current = key;
     prevOpenRef.current = true;
 
     // Load assignee list from Supabase
-    supabase
-      .from('hris_users')
-      .select('id, full_name, role, department, business_unit, business_unit_id, position, email')
-      .order('full_name', { ascending: true })
-      .then(({ data, error }) => {
+    const fetchAssignees = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('hris_users')
+          .select('id, full_name, role, department, business_unit, business_unit_id, position, email')
+          .order('full_name', { ascending: true });
+
         if (error) {
           console.warn('Failed to load assignees', error);
           return;
@@ -95,8 +97,11 @@ const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, ticket, onSa
             position: u.position || '',
           })));
         }
-      })
-      .catch((err) => console.warn('Assignee fetch error', err));
+      } catch (err) {
+        console.warn('Assignee fetch error', err);
+      }
+    };
+    fetchAssignees();
 
     const initialTicket = ticket || {
       requesterId: user?.id,
@@ -124,7 +129,7 @@ const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, ticket, onSa
         })
       ).then(results => {
         setAttachmentPreviews(results.filter(Boolean) as { path: string; url: string }[]);
-      }).catch(() => {});
+      }).catch(() => { });
     }
   }, [ticket, isOpen, user]);
 
@@ -169,7 +174,7 @@ const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, ticket, onSa
     const { name, value } = e.target;
     setCurrentTicket(prev => ({ ...prev, [name]: value }));
   };
-  
+
   const handleFile = async (file: File) => {
     if (!user) {
       alert('You must be signed in to upload attachments.');
@@ -200,24 +205,24 @@ const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, ticket, onSa
 
   const handleSave = () => {
     if (isNewTicket && !canSubmit) {
-        alert('You do not have permission to submit tickets.');
-        return;
+      alert('You do not have permission to submit tickets.');
+      return;
     }
     if (!isNewTicket && !(canRespond || isRequester)) {
-        alert('You do not have permission to update this ticket.');
-        return;
+      alert('You do not have permission to update this ticket.');
+      return;
     }
     const finalAttachments = [...(currentTicket.attachments || [])];
     if (attachmentLink.trim()) {
-        finalAttachments.push(attachmentLink.trim());
+      finalAttachments.push(attachmentLink.trim());
     }
-    
+
     const assignedUser = assignees.find(u => u.id === currentTicket.assignedToId);
     const payload: Partial<Ticket> = {
-        ...currentTicket,
-        attachments: finalAttachments.length > 0 ? finalAttachments : undefined,
-        assignedToName: assignedUser?.name,
-        ...(!currentTicket.id && { slaDeadline: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) })
+      ...currentTicket,
+      attachments: finalAttachments.length > 0 ? finalAttachments : undefined,
+      assignedToName: assignedUser?.name,
+      ...(!currentTicket.id && { slaDeadline: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) })
     };
     onSave(payload);
   };
@@ -228,7 +233,7 @@ const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, ticket, onSa
     if (!lowerSearch) return pool;
 
     if (currentTicket.assignedToName && lowerSearch === currentTicket.assignedToName.toLowerCase()) {
-        return pool.filter(u => u.name.toLowerCase().includes(lowerSearch) && u.id !== currentTicket.assignedToId);
+      return pool.filter(u => u.name.toLowerCase().includes(lowerSearch) && u.id !== currentTicket.assignedToId);
     }
 
     return pool.filter(u => u.name.toLowerCase().includes(lowerSearch));
@@ -236,55 +241,55 @@ const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, ticket, onSa
 
   const handleSelectAssignee = (user: User | null) => {
     setCurrentTicket(prev => ({
-        ...prev,
-        assignedToId: user?.id,
-        assignedToName: user?.name,
+      ...prev,
+      assignedToId: user?.id,
+      assignedToName: user?.name,
     }));
     setAssigneeSearch(user?.name || '');
     setAssigneeDropdownOpen(false);
   };
-  
+
   const renderFooter = () => {
-      if (isNewTicket) {
-          return (
-            <div className="flex justify-end w-full space-x-2">
-                <Button variant="secondary" onClick={onClose}>Cancel</Button>
-                <Button onClick={handleSave} disabled={!canSubmit}>Submit Ticket</Button>
-            </div>
-          );
-      }
+    if (isNewTicket) {
+      return (
+        <div className="flex justify-end w-full space-x-2">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSave} disabled={!canSubmit}>Submit Ticket</Button>
+        </div>
+      );
+    }
 
-      if (canRespond && (currentTicket.status === TicketStatus.Assigned || currentTicket.status === TicketStatus.InProgress)) {
-        return (
-            <div className="flex justify-end w-full space-x-2">
-                <Button variant="secondary" onClick={onClose}>Cancel</Button>
-                <Button onClick={handleSave}>Save Changes</Button>
-                <Button variant="success" onClick={() => onResolve(currentTicket.id!)}>Mark as Resolved</Button>
-            </div>
-        );
-      }
-      
-      if (isRequester && currentTicket.status === TicketStatus.PendingResolution) {
-        return (
-            <div className="flex justify-end w-full space-x-2">
-                <Button variant="danger" onClick={() => onRejectResolution(currentTicket.id!)}>Resolution Not Accepted</Button>
-                <Button variant="success" onClick={() => onApproveResolution(currentTicket.id!)}>Approve Resolution</Button>
-            </div>
-        );
-      }
-      
-      if (canRespond && currentTicket.status !== TicketStatus.Resolved && currentTicket.status !== TicketStatus.Closed) {
-           return (
-            <div className="flex justify-end w-full space-x-2">
-                <Button variant="secondary" onClick={onClose}>Cancel</Button>
-                <Button onClick={handleSave}>Save Changes</Button>
-            </div>
-          );
-      }
+    if (canRespond && (currentTicket.status === TicketStatus.Assigned || currentTicket.status === TicketStatus.InProgress)) {
+      return (
+        <div className="flex justify-end w-full space-x-2">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSave}>Save Changes</Button>
+          <Button variant="success" onClick={() => onResolve(currentTicket.id!)}>Mark as Resolved</Button>
+        </div>
+      );
+    }
 
-      return <div className="flex justify-end w-full"><Button variant="secondary" onClick={onClose}>Close</Button></div>;
+    if (isRequester && currentTicket.status === TicketStatus.PendingResolution) {
+      return (
+        <div className="flex justify-end w-full space-x-2">
+          <Button variant="danger" onClick={() => onRejectResolution(currentTicket.id!)}>Resolution Not Accepted</Button>
+          <Button variant="success" onClick={() => onApproveResolution(currentTicket.id!)}>Approve Resolution</Button>
+        </div>
+      );
+    }
+
+    if (canRespond && currentTicket.status !== TicketStatus.Resolved && currentTicket.status !== TicketStatus.Closed) {
+      return (
+        <div className="flex justify-end w-full space-x-2">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSave}>Save Changes</Button>
+        </div>
+      );
+    }
+
+    return <div className="flex justify-end w-full"><Button variant="secondary" onClick={onClose}>Close</Button></div>;
   }
-  
+
   const canChat = currentTicket.id && user && (user.id === currentTicket.requesterId || user.id === currentTicket.assignedToId || canRespond);
 
   return (
@@ -295,137 +300,137 @@ const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, ticket, onSa
       footer={renderFooter()}
       size={currentTicket.status === TicketStatus.New ? "lg" : "4xl"}
     >
-        <div className={`grid grid-cols-1 ${currentTicket.status !== TicketStatus.New ? 'md:grid-cols-2' : ''} gap-6`}>
-            <div className="space-y-4">
-                {!isNewTicket && (
-                    <Card title="Requester Info">
-                        <p><span className="font-semibold">Name:</span> {currentTicket.requesterName}</p>
-                        <p><span className="font-semibold">Submitted:</span> {currentTicket.createdAt ? new Date(currentTicket.createdAt).toLocaleString() : 'N/A'}</p>
-                    </Card>
-                )}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                        <label htmlFor="category" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Category</label>
-                        <select id="category" name="category" value={currentTicket.category || ''} onChange={handleChange} disabled={!isNewTicket} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:bg-gray-200 dark:disabled:bg-gray-800">
-                            {Object.values(TicketCategory).map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label htmlFor="priority" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Priority</label>
-                        <select id="priority" name="priority" value={currentTicket.priority || ''} onChange={handleChange} disabled={!canEditFields} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:bg-gray-200 dark:disabled:bg-gray-800">
-                            {Object.values(TicketPriority).map(p => <option key={p} value={p}>{p}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label htmlFor="businessUnitId" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
-                        <select id="businessUnitId" name="businessUnitId" value={currentTicket.businessUnitId || ''} onChange={handleChange} disabled={!isNewTicket} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:bg-gray-200 dark:disabled:bg-gray-800">
-                            <option value="" disabled>Select a BU</option>
-                            {mockBusinessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
-                        </select>
-                    </div>
-                </div>
-                <Textarea label="Description" id="description" name="description" value={currentTicket.description || ''} onChange={handleChange} rows={5} required disabled={!canEditFields} />
-                
-                {isNewTicket ? (
-                  <>
-                    <FileUploader onFileUpload={handleFile} maxSize={2 * 1024 * 1024} />
-                    <div className="relative my-2">
-                        <div className="absolute inset-0 flex items-center" aria-hidden="true">
-                            <div className="w-full border-t border-gray-300 dark:border-gray-600" />
-                        </div>
-                        <div className="relative flex justify-center">
-                            <span className="bg-white dark:bg-slate-800 px-2 text-sm text-gray-500">
-                            OR
-                            </span>
-                        </div>
-                    </div>
-                    <Input 
-                        label="Add a link for supporting documents"
-                        id="attachmentLink"
-                        name="attachmentLink"
-                        type="url"
-                        placeholder="https://example.com/document"
-                        value={attachmentLink}
-                        onChange={(e) => setAttachmentLink(e.target.value)}
-                    />
-                    {attachmentPreviews.length > 0 && (
-                      <div className="mt-2 space-y-1 text-sm text-gray-600 dark:text-gray-400">
-                        <p className="font-semibold">Uploaded files:</p>
-                        {attachmentPreviews.map(att => (
-                          <div key={att.path}>
-                            <a className="text-indigo-600 hover:underline" href={att.url} target="_blank" rel="noopener noreferrer">
-                              {att.path.split('/').pop()}
-                            </a>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="space-y-1 text-sm text-gray-600 dark:text-gray-400">
-                    <p className="font-semibold">Attachments</p>
-                    {attachmentPreviews.length === 0 && <p>No attachments submitted.</p>}
-                    {attachmentPreviews.map(att => (
-                      <div key={att.path}>
-                        <a className="text-indigo-600 hover:underline" href={att.url} target="_blank" rel="noopener noreferrer">
-                          {att.path.split('/').pop()}
-                        </a>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {!isNewTicket && canRespond && (
-                    <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                        <h3 className="text-lg font-medium text-gray-900 dark:text-white">Management</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label htmlFor="status" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
-                                <select id="status" name="status" value={currentTicket.status || ''} onChange={handleChange} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                                    {Object.values(TicketStatus).map(s => <option key={s} value={s}>{s}</option>)}
-                                </select>
-                            </div>
-                            <div className="relative" ref={assigneeRef}>
-                                <Input
-                                  label="Assign To"
-                                  id="assignee-search"
-                                  value={assigneeSearch}
-                                  onChange={(e) => {
-                                    setAssigneeSearch(e.target.value);
-                                    if (!isAssigneeDropdownOpen) setAssigneeDropdownOpen(true);
-                                  }}
-                                  onFocus={() => setAssigneeDropdownOpen(true)}
-                                  autoComplete="off"
-                                  placeholder="Search by name..."
-                                />
-                                {isAssigneeDropdownOpen && (
-                                  <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-md shadow-lg max-h-48 overflow-y-auto">
-                                    <div onClick={() => handleSelectAssignee(null)} className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer text-gray-500 italic">
-                                      Unassigned
-                                    </div>
-                                    {filteredAssignees.map(u => (
-                                      <div key={u.id} onClick={() => handleSelectAssignee(u)} className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
-                                        <p className="text-sm font-medium">{u.name}</p>
-                                        <p className="text-xs text-gray-500">{u.role}</p>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                )}
+      <div className={`grid grid-cols-1 ${currentTicket.status !== TicketStatus.New ? 'md:grid-cols-2' : ''} gap-6`}>
+        <div className="space-y-4">
+          {!isNewTicket && (
+            <Card title="Requester Info">
+              <p><span className="font-semibold">Name:</span> {currentTicket.requesterName}</p>
+              <p><span className="font-semibold">Submitted:</span> {currentTicket.createdAt ? new Date(currentTicket.createdAt).toLocaleString() : 'N/A'}</p>
+            </Card>
+          )}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label htmlFor="category" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Category</label>
+              <select id="category" name="category" value={currentTicket.category || ''} onChange={handleChange} disabled={!isNewTicket} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:bg-gray-200 dark:disabled:bg-gray-800">
+                {Object.values(TicketCategory).map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
             </div>
             <div>
-                {currentTicket.status && currentTicket.status !== TicketStatus.New && (
-                    <ChatThread
-                        messages={currentTicket.chatThread || []}
-                        onSendMessage={onSendMessage}
-                        disabled={!canChat}
-                    />
-                )}
+              <label htmlFor="priority" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Priority</label>
+              <select id="priority" name="priority" value={currentTicket.priority || ''} onChange={handleChange} disabled={!canEditFields} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:bg-gray-200 dark:disabled:bg-gray-800">
+                {Object.values(TicketPriority).map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
             </div>
+            <div>
+              <label htmlFor="businessUnitId" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
+              <select id="businessUnitId" name="businessUnitId" value={currentTicket.businessUnitId || ''} onChange={handleChange} disabled={!isNewTicket} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:bg-gray-200 dark:disabled:bg-gray-800">
+                <option value="" disabled>Select a BU</option>
+                {mockBusinessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <Textarea label="Description" id="description" name="description" value={currentTicket.description || ''} onChange={handleChange} rows={5} required disabled={!canEditFields} />
+
+          {isNewTicket ? (
+            <>
+              <FileUploader onFileUpload={handleFile} maxSize={2 * 1024 * 1024} />
+              <div className="relative my-2">
+                <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                  <div className="w-full border-t border-gray-300 dark:border-gray-600" />
+                </div>
+                <div className="relative flex justify-center">
+                  <span className="bg-white dark:bg-slate-800 px-2 text-sm text-gray-500">
+                    OR
+                  </span>
+                </div>
+              </div>
+              <Input
+                label="Add a link for supporting documents"
+                id="attachmentLink"
+                name="attachmentLink"
+                type="url"
+                placeholder="https://example.com/document"
+                value={attachmentLink}
+                onChange={(e) => setAttachmentLink(e.target.value)}
+              />
+              {attachmentPreviews.length > 0 && (
+                <div className="mt-2 space-y-1 text-sm text-gray-600 dark:text-gray-400">
+                  <p className="font-semibold">Uploaded files:</p>
+                  {attachmentPreviews.map(att => (
+                    <div key={att.path}>
+                      <a className="text-indigo-600 hover:underline" href={att.url} target="_blank" rel="noopener noreferrer">
+                        {att.path.split('/').pop()}
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="space-y-1 text-sm text-gray-600 dark:text-gray-400">
+              <p className="font-semibold">Attachments</p>
+              {attachmentPreviews.length === 0 && <p>No attachments submitted.</p>}
+              {attachmentPreviews.map(att => (
+                <div key={att.path}>
+                  <a className="text-indigo-600 hover:underline" href={att.url} target="_blank" rel="noopener noreferrer">
+                    {att.path.split('/').pop()}
+                  </a>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!isNewTicket && canRespond && (
+            <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">Management</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="status" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
+                  <select id="status" name="status" value={currentTicket.status || ''} onChange={handleChange} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                    {Object.values(TicketStatus).map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div className="relative" ref={assigneeRef}>
+                  <Input
+                    label="Assign To"
+                    id="assignee-search"
+                    value={assigneeSearch}
+                    onChange={(e) => {
+                      setAssigneeSearch(e.target.value);
+                      if (!isAssigneeDropdownOpen) setAssigneeDropdownOpen(true);
+                    }}
+                    onFocus={() => setAssigneeDropdownOpen(true)}
+                    autoComplete="off"
+                    placeholder="Search by name..."
+                  />
+                  {isAssigneeDropdownOpen && (
+                    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                      <div onClick={() => handleSelectAssignee(null)} className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer text-gray-500 italic">
+                        Unassigned
+                      </div>
+                      {filteredAssignees.map(u => (
+                        <div key={u.id} onClick={() => handleSelectAssignee(u)} className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
+                          <p className="text-sm font-medium">{u.name}</p>
+                          <p className="text-xs text-gray-500">{u.role}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
+        <div>
+          {currentTicket.status && currentTicket.status !== TicketStatus.New && (
+            <ChatThread
+              messages={currentTicket.chatThread || []}
+              onSendMessage={onSendMessage}
+              disabled={!canChat}
+            />
+          )}
+        </div>
+      </div>
     </Modal>
   );
 };

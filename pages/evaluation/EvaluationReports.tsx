@@ -1,6 +1,6 @@
+import { mockUsers, mockBusinessUnits, mockEvaluations, mockEvaluationSubmissions, mockEvaluationTimelines } from '../../services/mockDataCompat';
 import React, { useState, useMemo, useEffect } from 'react';
 import Card from '../../components/ui/Card';
-import { mockEvaluations, mockEvaluationSubmissions, mockUsers, mockEvaluationTimelines, mockBusinessUnits, mockDepartments } from '../../services/mockData';
 import { Evaluation, EvaluationSubmission, User } from '../../types';
 import EvaluationKPIs from '../../components/evaluation/reports/EvaluationKPIs';
 import PerformanceDistributionChart from '../../components/evaluation/reports/PerformanceDistributionChart';

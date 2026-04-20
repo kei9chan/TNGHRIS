@@ -1,8 +1,8 @@
+import { mockUsers } from '../../services/mockDataCompat';
 import React from 'react';
 import { ContractTemplate } from '../../types';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
-import { mockUsers } from '../../services/mockData';
 
 interface VersionHistoryModalProps {
     isOpen: boolean;

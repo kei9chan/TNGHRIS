@@ -32,11 +32,11 @@ const DailyTimeReview: React.FC = () => {
         ]);
         setBusinessUnits((buData || []).map((b: any) => ({ id: b.id, name: b.name })));
         setEmployees(
-          (empData || []).map((e: any) => ({
-            id: e.id,
-            name: formatEmployeeName(e.full_name || 'Unknown'),
-            businessUnit: e.business_unit,
-          }))
+            (empData || []).map((e: any) => ({
+                id: e.id,
+                name: formatEmployeeName(e.full_name || 'Unknown'),
+                businessUnit: e.business_unit,
+            }))
         );
     };
 
@@ -71,7 +71,7 @@ const DailyTimeReview: React.FC = () => {
         });
 
         const records: AttendanceRecord[] = [];
-        const employeeMap = new Map(employees.map(e => [e.id, e]));
+        const employeeMap = new Map<string, { id: string; name: string; businessUnit?: string | null }>(employees.map(e => [e.id, e]));
 
         const employeesToProcess = new Set<string>();
         eventsByEmp.forEach((_, empId) => employeesToProcess.add(empId));
@@ -134,7 +134,7 @@ const DailyTimeReview: React.FC = () => {
 
     useEffect(() => {
         refreshRecords();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [filterDate, buFilter, employees.length, businessUnits.length]);
 
     const filteredRecords = useMemo(() => {
@@ -160,7 +160,7 @@ const DailyTimeReview: React.FC = () => {
         setSelectedRecord(record);
         setIsModalOpen(true);
     };
-    
+
     const getStatusBadge = (status: AttendanceStatus) => {
         const colors = {
             [AttendanceStatus.Pending]: 'bg-yellow-100 text-yellow-800',
@@ -175,13 +175,13 @@ const DailyTimeReview: React.FC = () => {
         <div className="space-y-6">
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Daily Timekeeping Review</h1>
             <p className="text-gray-600 dark:text-gray-400">Review daily logs, flag discrepancies, and correct attendance records before payroll.</p>
-            
+
             <Card>
                 <div className="flex flex-wrap gap-4 p-4 items-end">
                     <Input label="Date" type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} />
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
-                         <select value={buFilter} onChange={e => setBuFilter(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        <select value={buFilter} onChange={e => setBuFilter(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
                             <option value="">All Accessible</option>
                             {accessibleBus.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
                         </select>
@@ -208,15 +208,15 @@ const DailyTimeReview: React.FC = () => {
                                 <tr key={record.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{record.employeeName}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                                        {record.shiftName} <br/>
+                                        {record.shiftName} <br />
                                         <span className="text-xs text-gray-400">
-                                            {record.scheduledStart ? new Date(record.scheduledStart).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : 'OFF'} - 
-                                            {record.scheduledEnd ? new Date(record.scheduledEnd).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : ''}
+                                            {record.scheduledStart ? new Date(record.scheduledStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'OFF'} -
+                                            {record.scheduledEnd ? new Date(record.scheduledEnd).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                                        {record.firstIn ? new Date(record.firstIn).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '--:--'} - 
-                                        {record.lastOut ? new Date(record.lastOut).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '--:--'}
+                                        {record.firstIn ? new Date(record.firstIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'} -
+                                        {record.lastOut ? new Date(record.lastOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
                                         {record.hasManualEntry && <span className="ml-2 text-xs text-gray-400 italic">(Edited)</span>}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
@@ -250,7 +250,7 @@ const DailyTimeReview: React.FC = () => {
                 </div>
             </Card>
 
-            <DailyRecordModal 
+            <DailyRecordModal
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
                 record={selectedRecord}

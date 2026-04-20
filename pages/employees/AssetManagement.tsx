@@ -1,7 +1,7 @@
+import { mockUsers, mockBusinessUnits, mockNotifications } from '../../services/mockDataCompat';
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Asset, AssetAssignment, AssetStatus, Permission, User, NotificationType, EnrichedAsset } from '../../types';
-import { mockUsers, mockBusinessUnits, mockAssetRequests, mockNotifications } from '../../services/mockData';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { logActivity } from '../../services/auditService';

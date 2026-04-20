@@ -1,6 +1,6 @@
+import { mockUsers } from '../../services/mockDataCompat';
 import React, { useEffect } from 'react';
 import { NTE } from '../../types';
-import { mockUsers } from '../../services/mockData';
 
 interface PrintableNTEResponseProps {
     nte: NTE;

@@ -1,6 +1,16 @@
 import React, { createContext, useState, ReactNode, useContext, useCallback } from 'react';
 import { Settings } from '../types';
-import { mockAppSettings } from '../services/mockData';
+
+const defaultAppSettings: Settings = {
+  appName: 'TNG HRIS',
+  appLogoUrl: '',
+  reminderCadence: 3,
+  emailProvider: 'SendGrid',
+  smsProvider: 'Twilio',
+  pdfHeader: 'The Nines Group',
+  pdfFooter: 'Confidential',
+  currency: 'PHP'
+};
 
 interface SettingsContextType {
   settings: Settings;
@@ -12,16 +22,11 @@ interface SettingsContextType {
 export const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
 
 export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [settings, setSettings] = useState<Settings>(mockAppSettings);
+  const [settings, setSettings] = useState<Settings>(defaultAppSettings);
   const [isRbacEnabled, setIsRbacEnabled] = useState(true);
 
   const updateSettings = useCallback((newSettings: Partial<Settings>) => {
-    setSettings(prev => {
-        const updated = { ...prev, ...newSettings };
-        // Also update the mock object to persist across re-renders/hot-reloads
-        Object.assign(mockAppSettings, updated);
-        return updated;
-    });
+    setSettings(prev => ({ ...prev, ...newSettings }));
   }, []);
 
   return (

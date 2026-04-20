@@ -1,6 +1,6 @@
+import { mockUsers } from '../../services/mockDataCompat';
 import React, { useEffect, useMemo } from 'react';
 import { Envelope } from '../../types';
-import { mockUsers } from '../../services/mockData';
 // FIX: Import the 'Button' component to resolve the 'Cannot find name' error.
 import Button from '../ui/Button';
 

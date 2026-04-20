@@ -1,7 +1,7 @@
+import { mockUsers } from '../../services/mockDataCompat';
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Asset, User, AssetStatus } from '../../types';
-import { mockAssets, mockUsers } from '../../services/mockData';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import Modal from '../ui/Modal';

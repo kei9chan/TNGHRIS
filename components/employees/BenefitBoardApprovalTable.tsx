@@ -1,9 +1,9 @@
+import { mockUsers } from '../../services/mockDataCompat';
 
 import React from 'react';
 import { BenefitRequest, BenefitRequestStatus } from '../../types';
 import Button from '../ui/Button';
 import { useSettings } from '../../context/SettingsContext';
-import { mockUsers } from '../../services/mockData';
 
 interface BenefitBoardApprovalTableProps {
     requests: BenefitRequest[];

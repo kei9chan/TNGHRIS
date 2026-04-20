@@ -1,7 +1,7 @@
+import { mockJobPosts, mockCandidates } from '../../services/mockDataCompat';
 
 import React, { useState, useEffect } from 'react';
 import { Candidate, Application } from '../../types';
-import { mockCandidates, mockJobPosts } from '../../services/mockData';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';

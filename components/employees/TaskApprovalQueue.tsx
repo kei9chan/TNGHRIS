@@ -1,6 +1,6 @@
+import { mockUsers } from '../../services/mockDataCompat';
 import React, { useMemo } from 'react';
 import { OnboardingChecklist, OnboardingTask, OnboardingTaskStatus, OnboardingTaskType } from '../../types';
-import { mockUsers } from '../../services/mockData';
 import Button from '../ui/Button';
 
 interface TaskApprovalQueueProps {

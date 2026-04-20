@@ -1,7 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { AssetRequest, AssetRequestStatus, User, Asset, AssetAssignment, AssetStatus } from '../../types';
-import { mockUsers } from '../../services/mockData';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import Modal from '../ui/Modal';

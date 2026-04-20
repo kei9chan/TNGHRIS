@@ -1,7 +1,7 @@
+import { mockUsers, mockNotifications, mockIncidentReports, mockNTEs, mockResolutions, mockCodeOfDiscipline } from '../../services/mockDataCompat';
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
-import { mockNTEs, mockIncidentReports, mockUsers, mockCodeOfDiscipline, mockResolutions, mockNotifications } from '../../services/mockData';
 import { NTE, IncidentReport, User, ChatMessage, NTEStatus, Permission, Resolution, ResolutionStatus, ApproverStatus, ApproverStep, NotificationType, HearingDetails } from '../../types';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';

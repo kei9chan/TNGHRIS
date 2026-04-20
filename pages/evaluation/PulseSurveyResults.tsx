@@ -1,7 +1,7 @@
+import { mockUsers, mockPulseSurveys, mockSurveyResponses } from '../../services/mockDataCompat';
 
 import React, { useState, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { mockPulseSurveys, mockSurveyResponses, mockUsers } from '../../services/mockData';
 import Card from '../../components/ui/Card';
 import PulseHeatmap from '../../components/evaluation/PulseHeatmap';
 import { useAuth } from '../../hooks/useAuth';

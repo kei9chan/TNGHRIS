@@ -1,6 +1,6 @@
+import { mockUserDocuments } from '../../services/mockDataCompat';
 import React, { useState, useEffect } from 'react';
 import { UserDocument, UserDocumentStatus } from '../../types';
-import { mockUserDocuments } from '../../services/mockData';
 import Card from '../ui/Card';
 import Button from '../ui/Button';
 import DocumentUploadModal from './DocumentUploadModal';

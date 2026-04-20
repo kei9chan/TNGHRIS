@@ -1,7 +1,7 @@
+import { mockUsers, mockSites } from '../../services/mockDataCompat';
 
 import React, { useState } from 'react';
 import { TimeEvent, TimeEventType, TimeEventSource, TimeEventExtra, AnomalyTag } from '../../types';
-import { mockUsers, mockSites } from '../../services/mockData';
 import { useTimeClock } from '../../hooks/useTimeClock';
 import Card from '../ui/Card';
 import Button from '../ui/Button';

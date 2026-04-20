@@ -1,7 +1,7 @@
+import { mockGovernmentReportTemplates } from '../../services/mockDataCompat';
 
 import React from 'react';
 import Card from '../../components/ui/Card';
-import { mockGovernmentReportTemplates } from '../../services/mockData';
 import { GovernmentReportTemplate, TemplateStatus } from '../../types';
 
 const getStatusChipColor = (status: TemplateStatus) => {

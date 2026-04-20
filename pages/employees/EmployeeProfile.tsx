@@ -1,9 +1,9 @@
+import { mockUsers, mockChangeHistory, mockEmployeeDrafts } from '../../services/mockDataCompat';
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
-import { mockUsers, mockChangeHistory, mockEmployeeDrafts } from '../../services/mockData';
 import { Memo, MemoAcknowledgement, User, ChangeHistory, ChangeHistoryStatus, EmployeeDraft, EmployeeDraftStatus, Permission } from '../../types';
 import { logActivity } from '../../services/auditService';
 import { F_SELF_SERVICE_ENABLED } from '../../constants';

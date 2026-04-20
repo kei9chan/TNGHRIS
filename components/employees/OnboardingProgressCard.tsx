@@ -1,8 +1,8 @@
+import { mockOnboardingTemplates } from '../../services/mockDataCompat';
 import React, { useMemo } from 'react';
 import { OnboardingChecklist, OnboardingTaskStatus } from '../../types';
 import Card from '../ui/Card';
 import Button from '../ui/Button';
-import { mockOnboardingTemplates } from '../../services/mockData';
 
 interface OnboardingProgressCardProps {
   checklist?: OnboardingChecklist;

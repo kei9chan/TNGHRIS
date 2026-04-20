@@ -1,3 +1,4 @@
+import { mockUsers, mockBusinessUnits, mockDepartments, mockEvaluations, mockEvaluationSubmissions, mockEvaluationQuestions } from '../../services/mockDataCompat';
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
@@ -6,7 +7,6 @@ import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
-import { mockEvaluations, mockEvaluationSubmissions, mockUsers, mockEvaluationQuestions, mockBusinessUnits, mockDepartments } from '../../services/mockData';
 import { Evaluation, EvaluationSubmission, User, EvaluationQuestion, Role, Permission, EvaluatorType, EvaluatorConfig, RaterGroup } from '../../types';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';

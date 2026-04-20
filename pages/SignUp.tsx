@@ -1,7 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { User, Role } from '../types';
-import { mockBusinessUnits } from '../services/mockData';
+import { User, Role, BusinessUnit } from '../types';
 import { useAuth } from '../hooks/useAuth';
 import GoogleIcon from '../components/icons/GoogleIcon';
 import { supabase } from '../services/supabaseClient';
@@ -20,176 +19,7 @@ const FloatingIcon: React.FC<{ children: React.ReactNode; delay?: string; classN
   </div>
 );
 
-const DEPARTMENTS_BY_BU: Record<string, string[]> = {
-  'Corporate': [
-    'Human Resource',
-    'Audit',
-    'Inventory',
-    'Purchasing',
-    'Marketing',
-    'Sales',
-    'Reservation',
-    'Operations',
-    'Finance',
-    'Admin',
-    'IT',
-  ],
-  'Corporate HQ': [
-    'Human Resource',
-    'Audit',
-    'Inventory',
-    'Purchasing',
-    'Marketing',
-    'Sales',
-    'Reservation',
-    'Operations',
-    'Finance',
-    'Admin',
-    'IT',
-  ],
-  'The Dessert Museum': [
-    'Human Resource',
-    'Audit',
-    'Inventory',
-    'Purchasing',
-    'Marketing',
-    'Sales',
-    'Reservation',
-    'Operations',
-    'Finance',
-    'Admin',
-    'IT',
-    'Operations - Dessert Attendant',
-    'Operations - Housekeeping',
-    'Operations - Photographers',
-    'Operations - Front Desk / Cashier',
-  ],
-  'Bakebe': [
-    'Human Resource',
-    'Audit',
-    'Inventory',
-    'Purchasing',
-    'Marketing',
-    'Sales',
-    'Reservation',
-    'Operations',
-    'Finance',
-    'Admin',
-    'IT',
-    'Operations - Baking Attendant',
-    'Operations - Housekeeping',
-    'Operations - Front Desk / Cashier',
-  ],
-  'Bakebe SM Aura': [
-    'Human Resource',
-    'Audit',
-    'Inventory',
-    'Purchasing',
-    'Marketing',
-    'Sales',
-    'Reservation',
-    'Operations',
-    'Finance',
-    'Admin',
-    'IT',
-    'Operations - Baking Attendant',
-    'Operations - Housekeeping',
-    'Operations - Front Desk / Cashier',
-  ],
-  'Gootopia': [
-    'Human Resource',
-    'Audit',
-    'Inventory',
-    'Purchasing',
-    'Marketing',
-    'Sales',
-    'Reservation',
-    'Operations',
-    'Finance',
-    'Admin',
-    'IT',
-    'Operations - Game Attendant',
-    'Operations - Housekeeping',
-    'Operations - Front Desk / Cashier',
-  ],
-  'Tiki Tents': [
-    'Human Resource',
-    'Audit',
-    'Inventory',
-    'Purchasing',
-    'Marketing',
-    'Sales',
-    'Reservation',
-    'Operations',
-    'Finance',
-    'Admin',
-    'IT',
-    'Operations - Game Attendant',
-    'Operations - Housekeeping',
-    'Operations - Front Desk / Cashier',
-  ],
-  'The Fun Roof': [
-    'Human Resource',
-    'Audit',
-    'Inventory',
-    'Purchasing',
-    'Marketing',
-    'Sales',
-    'Reservation',
-    'Operations',
-    'Finance',
-    'Admin',
-    'IT',
-    'Operations - Game Attendant',
-    'Operations - Housekeeping',
-    'Operations - Cashier',
-    'Operations - Bar',
-    'Operations - Kitchen',
-    'Operations - Dining',
-  ],
-  'Inflatable Island Beach Club': [
-    'Human Resource',
-    'Audit',
-    'Inventory',
-    'Purchasing',
-    'Marketing',
-    'Sales',
-    'Reservation',
-    'Operations',
-    'Finance',
-    'Admin',
-    'IT',
-    'Operations - Lifeguard',
-    'Operations - Housekeeping',
-    'Operations - Cashier',
-    'Operations - Bar',
-    'Operations - Kitchen',
-    'Operations - Dining',
-    'Operations - Beach Guide',
-    'Operations - Front Desk / Cashier',
-  ],
-  'Inflatable Island': [
-    'Human Resource',
-    'Audit',
-    'Inventory',
-    'Purchasing',
-    'Marketing',
-    'Sales',
-    'Reservation',
-    'Operations',
-    'Finance',
-    'Admin',
-    'IT',
-    'Operations - Lifeguard',
-    'Operations - Housekeeping',
-    'Operations - Cashier',
-    'Operations - Bar',
-    'Operations - Kitchen',
-    'Operations - Dining',
-    'Operations - Beach Guide',
-    'Operations - Front Desk / Cashier',
-  ],
-};
+
 
 const SignUp: React.FC = () => {
   const navigate = useNavigate();
@@ -214,10 +44,46 @@ const SignUp: React.FC = () => {
   const [hasCompletedStep1, setHasCompletedStep1] = useState(false);
   const [submitIntent, setSubmitIntent] = useState(false); // ensures submit only fires from the final button
   const roleOptions = Object.values(Role);
-  const departmentOptions = useMemo(() => {
-    if (!formData.businessUnit) return [];
-    return DEPARTMENTS_BY_BU[formData.businessUnit] || [];
-  }, [formData.businessUnit]);
+
+  // Fetch business units from Supabase on mount
+  const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
+  useEffect(() => {
+    const loadBUs = async () => {
+      const { data } = await supabase.from('business_units').select('id, name').order('name');
+      if (data) setBusinessUnits(data.map(row => ({ id: row.id, name: row.name })) as BusinessUnit[]);
+    };
+    loadBUs();
+  }, []);
+
+  const [departmentOptions, setDepartmentOptions] = useState<string[]>([]);
+
+  useEffect(() => {
+    const fetchDepartments = async () => {
+      if (!formData.businessUnit || !businessUnits.length) {
+        setDepartmentOptions([]);
+        return;
+      }
+      
+      const selectedBu = businessUnits.find(bu => bu.name === formData.businessUnit);
+      if (!selectedBu) {
+        setDepartmentOptions([]);
+        return;
+      }
+
+      const { data } = await supabase
+        .from('departments')
+        .select('id, name')
+        .eq('business_unit_id', selectedBu.id)
+        .order('name');
+        
+      if (data) {
+        setDepartmentOptions(data.map(d => d.name));
+      } else {
+        setDepartmentOptions([]);
+      }
+    };
+    fetchDepartments();
+  }, [formData.businessUnit, businessUnits]);
 
   const normalizeEmail = (raw?: string) => (raw || '').trim().toLowerCase();
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -267,7 +133,7 @@ const SignUp: React.FC = () => {
     }
     if (!formData.businessUnit) {
       errors.businessUnit = 'Select a business unit.';
-    } else if (!mockBusinessUnits.some(bu => bu.name === formData.businessUnit)) {
+    } else if (businessUnits.length > 0 && !businessUnits.some(bu => bu.name === formData.businessUnit)) {
       errors.businessUnit = 'Choose a valid business unit.';
     }
     if (!formData.department) {
@@ -328,11 +194,8 @@ const SignUp: React.FC = () => {
     setFormData(prev => {
       const nextValue = name === 'email' ? normalizeEmail(value) : value;
       const next = { ...prev, [name]: nextValue };
-      if (name === 'businessUnit') {
-        const nextDepartments = DEPARTMENTS_BY_BU[nextValue] || [];
-        if (next.department && !nextDepartments.includes(next.department)) {
-          next.department = '';
-        }
+      if (name === 'businessUnit' && prev.businessUnit !== nextValue) {
+        next.department = '';
       }
       return next;
     });
@@ -527,7 +390,7 @@ const SignUp: React.FC = () => {
       }
 
       // Optional: ensure user is logged out so they return to login flow
-      await supabase.auth.signOut().catch(() => {});
+      await supabase.auth.signOut().catch(() => { });
 
       // 3) Only after both writes succeed, redirect to login
       navigate('/login', {
@@ -852,7 +715,7 @@ const SignUp: React.FC = () => {
                         aria-invalid={!!fieldErrors.businessUnit}
                       >
                         <option value="">Select...</option>
-                        {mockBusinessUnits.map(bu => (
+                        {businessUnits.map(bu => (
                           <option key={bu.id} value={bu.name}>
                             {bu.name}
                           </option>
@@ -913,56 +776,56 @@ const SignUp: React.FC = () => {
                     <div>
                       <label className="block text-xs font-bold text-gray-500 mb-1">SSS Number</label>
                       <input
-                      className="glass-input w-full px-3 py-2.5 rounded-xl text-sm"
-                      name="sssNo"
-                      value={formData.sssNo || ''}
-                      onChange={handleChange}
-                      placeholder="00-0000000-0"
-                      aria-invalid={!!fieldErrors.sssNo}
-                    />
-                    {fieldErrors.sssNo && <p className="mt-1 text-xs text-red-600">{fieldErrors.sssNo}</p>}
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 mb-1">Pag-IBIG</label>
-                    <input
-                      className="glass-input w-full px-3 py-2.5 rounded-xl text-sm"
-                      name="pagibigNo"
-                      value={formData.pagibigNo || ''}
-                      onChange={handleChange}
-                      placeholder="0000-0000-0000"
-                      aria-invalid={!!fieldErrors.pagibigNo}
-                    />
-                    {fieldErrors.pagibigNo && <p className="mt-1 text-xs text-red-600">{fieldErrors.pagibigNo}</p>}
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 mb-1">PhilHealth</label>
-                    <input
-                      className="glass-input w-full px-3 py-2.5 rounded-xl text-sm"
-                      name="philhealthNo"
-                      value={formData.philhealthNo || ''}
-                      onChange={handleChange}
-                      placeholder="00-000000000-0"
-                      aria-invalid={!!fieldErrors.philhealthNo}
-                    />
-                    {fieldErrors.philhealthNo && <p className="mt-1 text-xs text-red-600">{fieldErrors.philhealthNo}</p>}
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 mb-1">TIN</label>
-                    <input
-                      className="glass-input w-full px-3 py-2.5 rounded-xl text-sm"
-                      name="tin"
-                      value={formData.tin || ''}
-                      onChange={handleChange}
-                      placeholder="000-000-000-000"
-                      aria-invalid={!!fieldErrors.tin}
-                    />
-                    {fieldErrors.tin && <p className="mt-1 text-xs text-red-600">{fieldErrors.tin}</p>}
+                        className="glass-input w-full px-3 py-2.5 rounded-xl text-sm"
+                        name="sssNo"
+                        value={formData.sssNo || ''}
+                        onChange={handleChange}
+                        placeholder="00-0000000-0"
+                        aria-invalid={!!fieldErrors.sssNo}
+                      />
+                      {fieldErrors.sssNo && <p className="mt-1 text-xs text-red-600">{fieldErrors.sssNo}</p>}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 mb-1">Pag-IBIG</label>
+                      <input
+                        className="glass-input w-full px-3 py-2.5 rounded-xl text-sm"
+                        name="pagibigNo"
+                        value={formData.pagibigNo || ''}
+                        onChange={handleChange}
+                        placeholder="0000-0000-0000"
+                        aria-invalid={!!fieldErrors.pagibigNo}
+                      />
+                      {fieldErrors.pagibigNo && <p className="mt-1 text-xs text-red-600">{fieldErrors.pagibigNo}</p>}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 mb-1">PhilHealth</label>
+                      <input
+                        className="glass-input w-full px-3 py-2.5 rounded-xl text-sm"
+                        name="philhealthNo"
+                        value={formData.philhealthNo || ''}
+                        onChange={handleChange}
+                        placeholder="00-000000000-0"
+                        aria-invalid={!!fieldErrors.philhealthNo}
+                      />
+                      {fieldErrors.philhealthNo && <p className="mt-1 text-xs text-red-600">{fieldErrors.philhealthNo}</p>}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 mb-1">TIN</label>
+                      <input
+                        className="glass-input w-full px-3 py-2.5 rounded-xl text-sm"
+                        name="tin"
+                        value={formData.tin || ''}
+                        onChange={handleChange}
+                        placeholder="000-000-000-000"
+                        aria-invalid={!!fieldErrors.tin}
+                      />
+                      {fieldErrors.tin && <p className="mt-1 text-xs text-red-600">{fieldErrors.tin}</p>}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div>
-                <h3 className="text-sm font-bold text-gray-900 border-b border-gray-100 pb-2 mb-4 uppercase tracking-wider">
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900 border-b border-gray-100 pb-2 mb-4 uppercase tracking-wider">
                     Emergency Contact
                   </h3>
                   <div className="space-y-3">

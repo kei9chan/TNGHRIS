@@ -1,7 +1,7 @@
+import { mockBusinessUnits } from '../../services/mockDataCompat';
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { AssetRequest, AssetRequestStatus, Permission, AssetStatus, NotificationType, EnrichedAssetRequest, User, Asset, AssetAssignment } from '../../types';
-import { mockBusinessUnits, mockNotifications } from '../../services/mockData';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import Card from '../../components/ui/Card';
@@ -188,8 +188,8 @@ const AssetRequests: React.FC = () => {
     };
 
     const enrichedRequests = useMemo(() => {
-        const userMap = new Map(employees.map(u => [u.id, u]));
-        const assetMap = new Map(assets.map(a => [a.id, a]));
+        const userMap = new Map<string, User>(employees.map(u => [u.id, u]));
+        const assetMap = new Map<string, Asset>(assets.map(a => [a.id, a]));
         const buMap = new Map(mockBusinessUnits.map(b => [b.id, b.name]));
 
         return requests.map(req => {
@@ -211,7 +211,7 @@ const AssetRequests: React.FC = () => {
             };
         });
     }, [requests, user, canManage, employees, assets, assignments]);
-    
+
     const filteredRequests = useMemo(() => {
         return enrichedRequests.filter(req => {
             const search = filters.searchTerm.toLowerCase();
@@ -219,10 +219,10 @@ const AssetRequests: React.FC = () => {
                 req.employeeName.toLowerCase().includes(search) ||
                 req.assetName.toLowerCase().includes(search) ||
                 req.id.toLowerCase().includes(search);
-            
+
             const statusMatch = filters.status === 'all' || req.status === filters.status;
             const typeMatch = filters.type === 'all' || req.requestType === filters.type;
-            
+
             const buMatch = !filters.bu || req.businessUnitName === mockBusinessUnits.find(b => b.id === filters.bu)?.name;
 
             return searchMatch && statusMatch && typeMatch && buMatch;
@@ -238,13 +238,13 @@ const AssetRequests: React.FC = () => {
             } else if (request.status === AssetRequestStatus.Rejected) {
                 setIsRejectionViewModalOpen(true);
             } else {
-                 setIsReturnConfirmModalOpen(true);
+                setIsReturnConfirmModalOpen(true);
             }
         } else { // It's the requester or a third-party viewer
             setIsReturnConfirmModalOpen(true);
         }
     };
-    
+
     const updateRequestState = (updated: AssetRequest) => {
         setRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
     };
@@ -275,7 +275,7 @@ const AssetRequests: React.FC = () => {
             setIsReturnConfirmModalOpen(false);
         }
     };
-    
+
     const handleSaveSubmission = async (notes: string, proofUrl: string) => {
         if (!selectedRequest || !user) return;
         try {
@@ -356,7 +356,7 @@ const AssetRequests: React.FC = () => {
             setIsReturnConfirmModalOpen(false);
         }
     };
-    
+
     const handleResubmit = () => {
         setIsRejectionViewModalOpen(false);
         setTimeout(() => setIsSubmissionModalOpen(true), 150);
@@ -412,7 +412,7 @@ const AssetRequests: React.FC = () => {
 
             <Card>
                 <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                     <Input label="Search" name="searchTerm" placeholder="Request ID, asset, or employee..." value={filters.searchTerm} onChange={handleFilterChange} />
+                    <Input label="Search" name="searchTerm" placeholder="Request ID, asset, or employee..." value={filters.searchTerm} onChange={handleFilterChange} />
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
                         <select name="status" value={filters.status} onChange={handleFilterChange} className="mt-1 block w-full pl-3 pr-10 py-2 border-gray-300 dark:bg-slate-700 dark:border-slate-600 rounded-md">
@@ -428,7 +428,7 @@ const AssetRequests: React.FC = () => {
                             <option value="Return">Return</option>
                         </select>
                     </div>
-                     <div>
+                    <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
                         <select name="bu" value={filters.bu} onChange={handleFilterChange} className="mt-1 block w-full pl-3 pr-10 py-2 border-gray-300 dark:bg-slate-700 dark:border-slate-600 rounded-md">
                             <option value="">All</option>
@@ -446,7 +446,7 @@ const AssetRequests: React.FC = () => {
                     canManage={canManage}
                 />
             </Card>
-            
+
             {selectedRequest && isSubmissionModalOpen && (
                 <AssetReturnSubmissionModal
                     isOpen={isSubmissionModalOpen}
@@ -475,7 +475,7 @@ const AssetRequests: React.FC = () => {
                     assignments={assignments}
                 />
             )}
-            
+
             {selectedRequest && isRejectionViewModalOpen && (
                 <AssetRejectionModal
                     isOpen={isRejectionViewModalOpen}

@@ -1,6 +1,6 @@
+import { mockLeaveTypes } from '../../services/mockDataCompat';
 import React from 'react';
 import { LeaveLedgerEntry, LeaveLedgerEntryType } from '../../types';
-import { mockLeaveTypes } from '../../services/mockData';
 
 interface LeaveLedgerTableProps {
     ledgerEntries: LeaveLedgerEntry[];

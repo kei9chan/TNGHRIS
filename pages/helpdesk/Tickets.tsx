@@ -1,8 +1,8 @@
+import { mockBusinessUnits, mockNotifications } from '../../services/mockDataCompat';
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { mockBusinessUnits, mockNotifications } from '../../services/mockData';
-import { Ticket, TicketStatus, TicketPriority, ChatMessage, TicketCategory, NotificationType, Role } from '../../types';
+import { Ticket, TicketStatus, TicketPriority, ChatMessage, TicketCategory, NotificationType, Role, BusinessUnit } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import Card from '../../components/ui/Card';
@@ -61,7 +61,7 @@ const Tickets: React.FC = () => {
     useEffect(() => {
         const params = new URLSearchParams(location.search);
         const ticketIdToView = params.get('ticketId');
-        
+
         if (!ticketIdToView) return;
 
         const tryLoad = async () => {
@@ -96,9 +96,9 @@ const Tickets: React.FC = () => {
         };
 
         tryLoad();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [location.search, tickets, filterTicketsByScope, navigate]);
-    
+
     useEffect(() => {
         if (location.state?.openNewTicketModal) {
             handleNewTicket();
@@ -107,7 +107,7 @@ const Tickets: React.FC = () => {
         }
     }, [location.state, navigate, handleNewTicket]);
 
-    
+
     useEffect(() => {
         const loadTickets = async () => {
             try {
@@ -122,7 +122,7 @@ const Tickets: React.FC = () => {
 
     const filteredTickets = useMemo(() => {
         const lowercasedTerm = searchTerm.toLowerCase();
-        
+
         return tickets.filter(ticket => {
             const searchMatch = !lowercasedTerm || (
                 ticket.id.toLowerCase().includes(lowercasedTerm) ||
@@ -162,7 +162,7 @@ const Tickets: React.FC = () => {
         let payload: Partial<Ticket> = { ...ticketToSave };
         let newlyAssigned = false;
 
-        if (ticketToSave.id) { 
+        if (ticketToSave.id) {
             const existing = tickets.find(t => t.id === ticketToSave.id);
             newlyAssigned = !!(ticketToSave.assignedToId && existing?.assignedToId !== ticketToSave.assignedToId);
 
@@ -177,7 +177,7 @@ const Tickets: React.FC = () => {
                 payload.resolvedAt = new Date();
             }
 
-        } else { 
+        } else {
             const bu = mockBusinessUnits.find(b => b.id === ticketToSave.businessUnitId);
             payload = {
                 requesterId: user.id,
@@ -194,7 +194,7 @@ const Tickets: React.FC = () => {
             const sla = slaHours[(payload.priority || TicketPriority.Medium) as TicketPriority];
             payload.slaDeadline = new Date(Date.now() + sla * 3600 * 1000);
         }
-        
+
         try {
             const saved = await saveTicket(payload);
             setTickets(prev => {
@@ -261,38 +261,38 @@ const Tickets: React.FC = () => {
     };
 
     const handleSendMessage = async (text: string) => {
-      if (!user || !selectedTicket?.id) return;
+        if (!user || !selectedTicket?.id) return;
 
-      const newMessage: ChatMessage = {
-        id: `msg-${Date.now()}`,
-        userId: user.id,
-        userName: user.name,
-        timestamp: new Date(),
-        text,
-      };
+        const newMessage: ChatMessage = {
+            id: `msg-${Date.now()}`,
+            userId: user.id,
+            userName: user.name,
+            timestamp: new Date(),
+            text,
+        };
 
-      const current = tickets.find(t => t.id === selectedTicket.id);
-      if (!current) return;
+        const current = tickets.find(t => t.id === selectedTicket.id);
+        if (!current) return;
 
-      const updated: Partial<Ticket> = {
-        ...current,
-        chatThread: [...(current.chatThread || []), newMessage],
-      };
+        const updated: Partial<Ticket> = {
+            ...current,
+            chatThread: [...(current.chatThread || []), newMessage],
+        };
 
-      if (current.status === TicketStatus.Assigned) {
-        updated.status = TicketStatus.InProgress;
-      }
+        if (current.status === TicketStatus.Assigned) {
+            updated.status = TicketStatus.InProgress;
+        }
 
-      try {
-        const saved = await saveTicket(updated);
-        setTickets(prev => {
-            const rest = prev.filter(t => t.id !== saved.id);
-            return filterTicketsByScope([...rest, saved]);
-        });
-        setSelectedTicket(saved);
-      } catch (error: any) {
-        alert(error?.message || 'Failed to send message.');
-      }
+        try {
+            const saved = await saveTicket(updated);
+            setTickets(prev => {
+                const rest = prev.filter(t => t.id !== saved.id);
+                return filterTicketsByScope([...rest, saved]);
+            });
+            setSelectedTicket(saved);
+        } catch (error: any) {
+            alert(error?.message || 'Failed to send message.');
+        }
     };
 
     const handleResolveTicket = async (ticketId: string) => {
@@ -407,7 +407,7 @@ const Tickets: React.FC = () => {
             alert(error?.message || 'Failed to update ticket.');
         }
     };
-    
+
     const selectClasses = "mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white";
 
     return (
@@ -416,10 +416,10 @@ const Tickets: React.FC = () => {
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Helpdesk Tickets</h1>
                 <Button onClick={handleNewTicket} className="hidden md:inline-flex mt-4 md:mt-0">New Ticket</Button>
             </div>
-            
+
             <EditableDescription descriptionKey={descriptionKey} />
-            
-             <Card>
+
+            <Card>
                 <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div className="md:col-span-2 lg:col-span-4">
                         <Input
@@ -454,13 +454,13 @@ const Tickets: React.FC = () => {
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
                         <select value={buFilter} onChange={e => setBuFilter(e.target.value)} className={selectClasses}>
-                             <option value="">All Accessible BUs</option>
-                             {accessibleBus.map((bu: BusinessUnit) => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
+                            <option value="">All Accessible BUs</option>
+                            {accessibleBus.map((bu: BusinessUnit) => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
                         </select>
                     </div>
                 </div>
             </Card>
-            
+
             <Card>
                 <TicketTable tickets={filteredTickets} onViewTicket={handleViewTicket} />
             </Card>

@@ -1,6 +1,6 @@
+import { mockUsers } from '../../services/mockDataCompat';
 import React from 'react';
 import { ChangeHistory } from '../../types';
-import { mockUsers } from '../../services/mockData';
 
 interface ChangeHistoryTableProps {
     history: ChangeHistory[];

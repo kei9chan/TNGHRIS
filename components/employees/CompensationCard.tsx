@@ -1,6 +1,5 @@
 import React, { useMemo } from 'react';
 import { User } from '../../types';
-import { mockUsers } from '../../services/mockData';
 import Card from '../ui/Card';
 import { useSettings } from '../../context/SettingsContext';
 

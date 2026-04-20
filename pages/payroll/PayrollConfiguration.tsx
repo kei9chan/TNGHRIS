@@ -1,7 +1,7 @@
+import { mockHolidayPolicies, mockSSSTable, mockPhilHealthConfig, mockTaxTable } from '../../services/mockDataCompat';
 
 import React, { useState } from 'react';
 import Card from '../../components/ui/Card';
-import { mockSSSTable, mockPhilHealthConfig, mockTaxTable, mockHolidayPolicies } from '../../services/mockData';
 import { SSSTableRow, PhilHealthConfig, TaxTableRow, HolidayPolicy } from '../../types';
 import Button from '../../components/ui/Button';
 import { logActivity } from '../../services/auditService';

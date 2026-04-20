@@ -1,3 +1,4 @@
+import { mockNotifications } from '../../services/mockDataCompat';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -9,7 +10,6 @@ import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import CoachingModal from '../../components/feedback/CoachingModal';
 import { supabase } from '../../services/supabaseClient';
-import { mockNotifications } from '../../services/mockData';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 const CoachingLog: React.FC = () => {

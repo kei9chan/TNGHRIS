@@ -1,6 +1,6 @@
+import { mockUsers } from '../../services/mockDataCompat';
 import React, { useState } from 'react';
 import { Role } from '../../types';
-import { mockUsers } from '../../services/mockData';
 import Input from '../ui/Input';
 import Button from '../ui/Button';
 

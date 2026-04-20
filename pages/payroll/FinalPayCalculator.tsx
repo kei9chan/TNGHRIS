@@ -1,9 +1,9 @@
+import { mockUsers, mockBusinessUnits, mockFinalPayRecords } from '../../services/mockDataCompat';
 
 import React, { useState, useMemo } from 'react';
 import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
-import { mockUsers, mockFinalPayRecords, mockBusinessUnits } from '../../services/mockData';
 import { User, FinalPayRecord, FinalPayStatus, Role } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
 

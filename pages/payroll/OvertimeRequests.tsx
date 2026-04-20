@@ -1,10 +1,10 @@
+import { mockUsers, mockBusinessUnits, mockOtRequests, mockAttendanceRecords, mockShiftAssignments, mockShiftTemplates } from '../../services/mockDataCompat';
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { OTRequest, OTStatus, Role, OTRequestHistory, Permission } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
-import { mockOtRequests, mockAttendanceRecords, mockShiftAssignments, mockShiftTemplates, mockUsers, mockBusinessUnits } from '../../services/mockData';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import OTRequestTable from '../../components/payroll/OTRequestTable';

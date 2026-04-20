@@ -1,6 +1,6 @@
+import { mockTickets } from '../../services/mockDataCompat';
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { mockTickets } from '../../services/mockData';
 import { Ticket, TicketStatus } from '../../types';
 import Card from '../ui/Card';
 

@@ -1,15 +1,16 @@
+import { mockUsers, mockNotifications, mockAnnouncements, mockIncidentReports, mockNTEs, mockResolutions, mockMemos, mockCoachingSessions, mockEvaluations, mockEvaluationSubmissions, mockEvaluationTimelines, mockAwards, mockEmployeeAwards, mockPulseSurveys, mockSurveyResponses, mockTickets, mockAttendanceExceptions, mockCOERequests, mockPANs, mockBenefitRequests, mockAssetAssignments, mockAssetRequests, mockEmployeeDrafts, mockEnvelopes, mockOnboardingTemplates, mockOnboardingChecklists, mockResignations } from '../../services/mockDataCompat';
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Card from '../ui/Card';
 import Button from '../ui/Button';
 import { useAuth } from '../../hooks/useAuth';
-import { 
-    EmployeeDraftStatus, 
-    RoutingStepStatus, 
-    EnvelopeStatus, 
-    NTEStatus, 
-    AnnouncementType, 
+import {
+    EmployeeDraftStatus,
+    RoutingStepStatus,
+    EnvelopeStatus,
+    NTEStatus,
+    AnnouncementType,
     ExceptionType,
     OnboardingChecklist,
     OnboardingTaskStatus,
@@ -43,35 +44,6 @@ import {
     OTRequest,
     ManpowerRequestStatus
 } from '../../types';
-import { 
-    mockEmployeeDrafts, 
-    mockOnboardingChecklists, 
-    mockOnboardingTemplates,
-    mockEnvelopes,
-    mockNTEs,
-    mockIncidentReports,
-    mockAnnouncements,
-    mockAttendanceExceptions,
-    mockPANs,
-    mockResolutions,
-    mockEvaluations,
-    mockNotifications,
-    mockResignations,
-    mockMemos,
-    mockEvaluationSubmissions,
-    mockTickets,
-    mockEmployeeAwards,
-    mockAwards,
-    mockAssetRequests,
-    mockAssetAssignments,
-    mockCOERequests,
-    mockEvaluationTimelines,
-    mockUsers,
-    mockBenefitRequests,
-    mockPulseSurveys,
-    mockSurveyResponses,
-    mockCoachingSessions
-} from '../../services/mockData';
 import ActionItemCard from './ActionItemCard';
 import RecentMemosWidget from './RecentMemosWidget';
 import MemoViewModal from '../feedback/MemoViewModal';
@@ -99,14 +71,14 @@ const BriefcaseIcon = ({ className }: { className?: string }) => (<svg xmlns="ht
 const QuestionMarkCircleIcon = ({ className }: { className?: string }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 5.25h.008v.008H12v-.008Z" /></svg>);
 const AcademicCapIcon = ({ className }: { className?: string }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.26 10.147a60.436 60.436 0 0 0-.491 6.347A48.627 48.627 0 0 1 12 20.904a48.627 48.627 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.57 50.57 0 0 0-2.658-.813A59.905 59.905 0 0 1 12 3.493a59.902 59.902 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5" /></svg>);
 const ArrowRightIcon = ({ className }: { className?: string }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" /></svg>);
-const CalendarDaysIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0h18" /></svg>);
-const UserMinusIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M22 10.5h-6m-2.25-4.125a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0ZM4 19.235v-.11a6.375 6.375 0 0 1 12.75 0v.109A12.318 12.318 0 0 1 10.5 21c-2.39 0-4.64-.666-6.5-1.765Z" /></svg>);
-const TicketIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 6v.75m0 3v.75m0 3v.75m0 3V18m-9-12v.75m0 3v.75m0 3v.75m0 3V18m-3 .75h18A2.25 2.25 0 0021 16.5V7.5A2.25 2.25 0 0018.75 5.25H5.25A2.25 2.25 0 003 7.5v9A2.25 2.25 0 005.25 18.75h1.5M12 4.5v15" /></svg>);
+const CalendarDaysIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0h18" /></svg>);
+const UserMinusIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M22 10.5h-6m-2.25-4.125a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0ZM4 19.235v-.11a6.375 6.375 0 0 1 12.75 0v.109A12.318 12.318 0 0 1 10.5 21c-2.39 0-4.64-.666-6.5-1.765Z" /></svg>);
+const TicketIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 6v.75m0 3v.75m0 3v.75m0 3V18m-9-12v.75m0 3v.75m0 3v.75m0 3V18m-3 .75h18A2.25 2.25 0 0021 16.5V7.5A2.25 2.25 0 0018.75 5.25H5.25A2.25 2.25 0 003 7.5v9A2.25 2.25 0 005.25 18.75h1.5M12 4.5v15" /></svg>);
 const TrophyIcon = ({ className }: { className?: string }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 18.75h-9a9 9 0 0 0 9 0Zm0 0a9 9 0 0 0-9 0m9 0h-9M9 11.25V7.5A3 3 0 0 1 12 4.5h0A3 3 0 0 1 15 7.5v3.75m-3 6.75h.01M12 12h.01M12 6h.01M12 18h.01M7.5 15h.01M16.5 15h.01M19.5 12h.01M4.5 12h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>);
 const CakeIcon = ({ className }: { className?: string }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M21 15.75a.75.75 0 0 1-.75.75H3.75a.75.75 0 0 1 0-1.5H4.5V11.25a.75.75 0 0 1 .75-.75h13.5a.75.75 0 0 1 .75.75v4.5Zm-1.5-4.5H5.25v3.75h14.25V11.25Zm-3.75-5.25a.75.75 0 0 1-.75-.75V3a.75.75 0 0 1 1.5 0v2.25a.75.75 0 0 1-.75.75Zm-3.75 0a.75.75 0 0 1-.75-.75V3a.75.75 0 0 1 1.5 0v2.25a.75.75 0 0 1-.75.75Zm-3.75 0a.75.75 0 0 1-.75-.75V3a.75.75 0 0 1 1.5 0v2.25a.75.75 0 0 1-.75.75Z" /></svg>);
-const GavelIcon: React.FC<{className?: string}> = ({className}) => <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>;
-const ArchiveBoxArrowDownIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>);
-const TagIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6Z" /></svg>);
+const GavelIcon: React.FC<{ className?: string }> = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>;
+const ArchiveBoxArrowDownIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>);
+const TagIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6Z" /></svg>);
 const SunIcon = ({ className }: { className?: string }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" /></svg>);
 const GiftIcon = ({ className }: { className?: string }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 00-2-2v-7" /></svg>);
 const HeartIcon = ({ className }: { className?: string }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>);
@@ -177,8 +149,8 @@ const normalizeMemoSignatures = (raw: any): MemoAcknowledgement[] => {
             acknowledgedAt: entry?.acknowledgedAt
                 ? new Date(entry.acknowledgedAt)
                 : entry?.acknowledged_at
-                ? new Date(entry.acknowledged_at)
-                : undefined,
+                    ? new Date(entry.acknowledged_at)
+                    : undefined,
         }))
         .filter((entry: MemoAcknowledgement) => entry.userId);
 };
@@ -207,19 +179,19 @@ const mapMemoRow = (row: any): Memo => ({
 
 const AnniversaryBanner: React.FC = () => {
     const { user } = useAuth();
-    
+
     const isAnniversary = useMemo(() => {
         if (!user || !user.dateHired) return false;
-        
+
         const today = new Date();
         const hireDate = new Date(user.dateHired);
 
         const isSameDay = today.getMonth() === hireDate.getMonth() && today.getDate() === hireDate.getDate();
         const isNotFirstDay = today.getFullYear() > hireDate.getFullYear();
-        
+
         return isSameDay && isNotFirstDay;
     }, [user]);
-    
+
     const yearsOfService = useMemo(() => {
         if (!user || !user.dateHired) return 0;
         const today = new Date();
@@ -230,7 +202,7 @@ const AnniversaryBanner: React.FC = () => {
     if (!isAnniversary) {
         return null;
     }
-    
+
     const yearSuffix = (y: number) => {
         if (y % 100 >= 11 && y % 100 <= 13) return 'th';
         switch (y % 10) {
@@ -244,7 +216,7 @@ const AnniversaryBanner: React.FC = () => {
     return (
         <Card className="!p-0 overflow-hidden bg-gradient-to-r from-yellow-300 via-amber-300 to-orange-400 text-gray-900 shadow-lg mb-6">
             <div className="p-6 relative">
-                 <div className="absolute top-4 right-4 text-5xl opacity-20">🎉</div>
+                <div className="absolute top-4 right-4 text-5xl opacity-20">🎉</div>
                 <h2 className="text-2xl font-bold">Happy Work Anniversary, {user?.name.split(' ')[0]}!</h2>
                 <p className="mt-2 text-lg">
                     Congratulations on your <strong>{yearsOfService}{yearSuffix(yearsOfService)} year</strong> with the team! We appreciate your dedication and hard work.
@@ -260,24 +232,24 @@ const EmployeeDashboard: React.FC = () => {
     const { isUserEligibleEvaluator, getCoeAccess } = usePermissions();
     const location = useLocation();
     const navigate = useNavigate();
-    const [refreshKey, setRefreshKey] = useState(0); 
+    const [refreshKey, setRefreshKey] = useState(0);
     const notificationUserIds = useMemo(
         () => new Set([user?.id, user?.authUserId].filter(Boolean)),
         [user?.id, user?.authUserId]
     );
-    
+
     // --- Memo Modal State ---
     const [isMemoViewOpen, setIsMemoViewOpen] = useState(false);
     const [selectedMemo, setSelectedMemo] = useState<Memo | null>(null);
     const [memoUpdateKey, setMemoUpdateKey] = useState(0);
     const [memos, setMemos] = useState<Memo[]>([]);
-    
+
     // --- COE Request State ---
     const [isRequestCOEModalOpen, setIsRequestCOEModalOpen] = useState(false);
 
     // --- Award Celebration State ---
     const [showConfetti, setShowConfetti] = useState(false);
-    
+
     const [toastInfo, setToastInfo] = useState<{ show: boolean, title: string, message: string, icon?: React.ReactNode }>({ show: false, title: '', message: '' });
     const [supabaseNotifications, setSupabaseNotifications] = useState<Notification[]>([]);
     const [requests, setRequests] = useState<AssetRequest[]>(mockAssetRequests);
@@ -329,7 +301,7 @@ const EmployeeDashboard: React.FC = () => {
     useEffect(() => {
         if (!user) return;
 
-        const unacknowledgedAwards = mockEmployeeAwards.filter(award => 
+        const unacknowledgedAwards = mockEmployeeAwards.filter(award =>
             award.employeeId === user.id &&
             award.status === ResolutionStatus.Approved &&
             !award.isAcknowledgedByEmployee
@@ -340,8 +312,8 @@ const EmployeeDashboard: React.FC = () => {
             const confettiTimer = setTimeout(() => setShowConfetti(false), 6000);
 
             unacknowledgedAwards.forEach(newAward => {
-                 const awardDetails = mockAwards.find(a => a.id === newAward.awardId);
-                 mockNotifications.unshift({
+                const awardDetails = mockAwards.find(a => a.id === newAward.awardId);
+                mockNotifications.unshift({
                     id: `notif-award-${Date.now()}`,
                     userId: user.id,
                     type: NotificationType.AWARD_RECEIVED,
@@ -359,7 +331,7 @@ const EmployeeDashboard: React.FC = () => {
                     mockEmployeeAwards[awardIndex].isAcknowledgedByEmployee = true;
                 }
             });
-            
+
             return () => clearTimeout(confettiTimer);
         }
     }, [user]);
@@ -749,11 +721,11 @@ const EmployeeDashboard: React.FC = () => {
                     ? leaveRes.data
                         .filter((row: any) => row.status === LeaveRequestStatus.Approved)
                         .map((row: any) => ({
-                        id: row.id,
-                        startDate: new Date(row.start_date),
-                        endDate: new Date(row.end_date),
-                        decisionDate: getLeaveDecisionDate(row, 'Approved'),
-                    }))
+                            id: row.id,
+                            startDate: new Date(row.start_date),
+                            endDate: new Date(row.end_date),
+                            decisionDate: getLeaveDecisionDate(row, 'Approved'),
+                        }))
                     : []
             );
             setRejectedLeaveRequests(
@@ -779,10 +751,10 @@ const EmployeeDashboard: React.FC = () => {
                     ? wfhRes.data
                         .filter((row: any) => row.status === WFHRequestStatus.Approved)
                         .map((row: any) => ({
-                        id: row.id,
-                        date: new Date(row.date),
-                        decisionDate: row.approved_at ? new Date(row.approved_at) : (row.updated_at ? new Date(row.updated_at) : new Date(row.date)),
-                    }))
+                            id: row.id,
+                            date: new Date(row.date),
+                            decisionDate: row.approved_at ? new Date(row.approved_at) : (row.updated_at ? new Date(row.updated_at) : new Date(row.date)),
+                        }))
                     : []
             );
             setRejectedWfhRequests(
@@ -802,10 +774,10 @@ const EmployeeDashboard: React.FC = () => {
                     ? otRes.data
                         .filter((row: any) => row.status === OTStatus.Approved)
                         .map((row: any) => ({
-                        id: row.id,
-                        date: new Date(row.date),
-                        decisionDate: row.updated_at ? new Date(row.updated_at) : new Date(row.date),
-                    }))
+                            id: row.id,
+                            date: new Date(row.date),
+                            decisionDate: row.updated_at ? new Date(row.updated_at) : new Date(row.date),
+                        }))
                     : []
             );
             setRejectedOtRequests(
@@ -825,10 +797,10 @@ const EmployeeDashboard: React.FC = () => {
                     ? manpowerRes.data
                         .filter((row: any) => row.status === ManpowerRequestStatus.Approved)
                         .map((row: any) => ({
-                        id: row.id,
-                        date: row.date_needed ? new Date(row.date_needed) : new Date(),
-                        decisionDate: row.approved_at ? new Date(row.approved_at) : (row.updated_at ? new Date(row.updated_at) : (row.date_needed ? new Date(row.date_needed) : new Date())),
-                    }))
+                            id: row.id,
+                            date: row.date_needed ? new Date(row.date_needed) : new Date(),
+                            decisionDate: row.approved_at ? new Date(row.approved_at) : (row.updated_at ? new Date(row.updated_at) : (row.date_needed ? new Date(row.date_needed) : new Date())),
+                        }))
                     : []
             );
             setRejectedManpowerRequests(
@@ -1071,20 +1043,20 @@ const EmployeeDashboard: React.FC = () => {
                 prev.map(m =>
                     m.id === memoId
                         ? {
-                              ...m,
-                              acknowledgementTracker: newTracker,
-                              acknowledgementSignatures: newSignatures,
-                          }
+                            ...m,
+                            acknowledgementTracker: newTracker,
+                            acknowledgementSignatures: newSignatures,
+                        }
                         : m
                 )
             );
             setSelectedMemo(prev =>
                 prev && prev.id === memoId
                     ? {
-                          ...prev,
-                          acknowledgementTracker: newTracker,
-                          acknowledgementSignatures: newSignatures,
-                      }
+                        ...prev,
+                        acknowledgementTracker: newTracker,
+                        acknowledgementSignatures: newSignatures,
+                    }
                     : prev
             );
             setMemoUpdateKey(prev => prev + 1);
@@ -1093,7 +1065,7 @@ const EmployeeDashboard: React.FC = () => {
             alert('Failed to acknowledge the memo. Please try again.');
         }
     };
-    
+
     const coeAccess = getCoeAccess();
 
     const handleSaveCOERequest = async (request: Partial<COERequest>) => {
@@ -1122,7 +1094,7 @@ const EmployeeDashboard: React.FC = () => {
         if (!user) return [];
         const items: any[] = [];
         const iconProps = { className: "h-6 w-6 text-white" };
-        
+
         // Helper for countdown logic
         const getCountdownString = (deadline: Date) => {
             const now = new Date();
@@ -1189,7 +1161,7 @@ const EmployeeDashboard: React.FC = () => {
                 onClick: () => handleViewMemo(memo)
             });
         });
-        
+
         // Scheduled Coaching Sessions where I am the Employee (The Coachee)
         const myScheduledSessions = coachingSessions.filter(
             s =>
@@ -1197,7 +1169,7 @@ const EmployeeDashboard: React.FC = () => {
                 (s.status === CoachingStatus.Scheduled || s.status === CoachingStatus.Accepted)
         );
         myScheduledSessions.forEach(session => {
-             items.push({
+            items.push({
                 id: `coaching-attend-${session.id}`,
                 icon: <SparklesIcon {...iconProps} />,
                 title: "Coaching Session Invitation",
@@ -1212,7 +1184,7 @@ const EmployeeDashboard: React.FC = () => {
         // Pending Coaching Acknowledgment
         const pendingCoaching = coachingSessions.filter(s => s.employeeId === user.id && s.status === CoachingStatus.Completed);
         pendingCoaching.forEach(session => {
-             items.push({
+            items.push({
                 id: `coaching-ack-${session.id}`,
                 icon: <SparklesIcon {...iconProps} />,
                 title: "Coaching Session Completed",
@@ -1364,14 +1336,14 @@ const EmployeeDashboard: React.FC = () => {
 
         // Pulse Surveys
         const pendingSurveys = pulseSurveys.filter(survey => {
-             if (survey.status !== PulseSurveyStatus.Active) return false;
-             // Check if user has already responded
-             const hasResponded = surveyResponses.some(r => r.surveyId === survey.id && r.respondentId === user.id);
-             return !hasResponded;
+            if (survey.status !== PulseSurveyStatus.Active) return false;
+            // Check if user has already responded
+            const hasResponded = surveyResponses.some(r => r.surveyId === survey.id && r.respondentId === user.id);
+            return !hasResponded;
         });
 
         pendingSurveys.forEach(survey => {
-             items.push({
+            items.push({
                 id: `pulse-${survey.id}`,
                 icon: <HeartIcon {...iconProps} />,
                 title: "Pulse Check",
@@ -1386,12 +1358,12 @@ const EmployeeDashboard: React.FC = () => {
         // Retrieve ALL active checklists (Onboarding/Offboarding) assigned to the user
         // Use state variable 'checklists' instead of mock directly for reactivity
         const myChecklists = checklists.filter(c => c.employeeId === user.id && c.status === 'InProgress');
-        
+
         myChecklists.forEach(checklist => {
             const template = templates.find(t => t.id === checklist.templateId);
             const templateType = template?.templateType || 'Onboarding';
             const taskLabel = templateType === 'Offboarding' ? 'Offboarding Task' : 'Onboarding Task';
-            
+
             // Find the first pending task to show as the "Next Step"
             const pendingTasks = checklist.tasks
                 .filter(t => t.status === OnboardingTaskStatus.Pending)
@@ -1410,8 +1382,8 @@ const EmployeeDashboard: React.FC = () => {
                     priority: 1
                 });
             } else if (checklist.tasks.length > 0 && checklist.tasks.every(t => t.status === OnboardingTaskStatus.Completed)) {
-                 // If ALL tasks are completed but checklist is still InProgress (meaning pending sign-off)
-                 items.push({
+                // If ALL tasks are completed but checklist is still InProgress (meaning pending sign-off)
+                items.push({
                     id: `checklist-sign-${checklist.id}`,
                     icon: <ClipboardCheckIcon {...iconProps} />,
                     title: `Finalize ${templateType} Checklist`,
@@ -1423,22 +1395,22 @@ const EmployeeDashboard: React.FC = () => {
                 });
             }
         });
-        
+
         // Benefit Updates
         // Show Fulfilled (Ready) and Rejected (Alert)
         // Limit to recent ones to avoid clutter
-        const recentBenefitUpdates = benefitRequests.filter(r => 
-            r.employeeId === user.id && 
+        const recentBenefitUpdates = benefitRequests.filter(r =>
+            r.employeeId === user.id &&
             (r.status === BenefitRequestStatus.Fulfilled || r.status === BenefitRequestStatus.Rejected)
-        ).sort((a,b) => {
+        ).sort((a, b) => {
             const dateA = a.fulfilledAt || a.submissionDate;
             const dateB = b.fulfilledAt || b.submissionDate;
             return new Date(dateB).getTime() - new Date(dateA).getTime();
         }).slice(0, 2);
 
         recentBenefitUpdates.forEach(req => {
-             if (req.status === BenefitRequestStatus.Fulfilled) {
-                 items.push({
+            if (req.status === BenefitRequestStatus.Fulfilled) {
+                items.push({
                     id: `ben-ready-${req.id}`,
                     icon: <GiftIcon {...iconProps} />,
                     title: "Benefit Released",
@@ -1448,8 +1420,8 @@ const EmployeeDashboard: React.FC = () => {
                     colorClass: 'bg-blue-500',
                     priority: 0
                 });
-             } else if (req.status === BenefitRequestStatus.Rejected) {
-                  items.push({
+            } else if (req.status === BenefitRequestStatus.Rejected) {
+                items.push({
                     id: `ben-reject-${req.id}`,
                     icon: <GiftIcon {...iconProps} />,
                     title: "Benefit Request Rejected",
@@ -1459,10 +1431,10 @@ const EmployeeDashboard: React.FC = () => {
                     colorClass: 'bg-red-500',
                     priority: 1
                 });
-             }
+            }
         });
 
-        
+
         const pendingAssetAcceptance = assignments.filter(a => a.employeeId === (employeeProfileId || user.id) && !a.isAcknowledged && !a.dateReturned);
         pendingAssetAcceptance.forEach(assignment => {
             items.push({
@@ -1495,7 +1467,7 @@ const EmployeeDashboard: React.FC = () => {
                 priority: 0
             });
         }
-        
+
         const pendingProfileDraft = mockEmployeeDrafts.find(d => d.employeeId === user.id && d.status === EmployeeDraftStatus.Submitted);
         if (pendingProfileDraft) {
             items.push({
@@ -1509,17 +1481,17 @@ const EmployeeDashboard: React.FC = () => {
                 priority: 3
             });
         }
-        
+
         // UPDATED: Pending Signatures/Approvals logic
-        const pendingEnvelopes = envelopes.filter(e => 
+        const pendingEnvelopes = envelopes.filter(e =>
             (e.status === EnvelopeStatus.PendingApproval || e.status === EnvelopeStatus.OutForSignature) &&
             e.routingSteps.some(s => s.userId === user.id && s.status === RoutingStepStatus.Pending)
         );
-        
+
         pendingEnvelopes.forEach(env => {
             const myStep = env.routingSteps.find(s => s.userId === user.id && s.status === RoutingStepStatus.Pending);
             const actionLabel = myStep?.role === 'Approver' ? 'Contract Approval Required' : 'Contract Signature Required';
-            
+
             items.push({
                 id: `env-${env.id}`,
                 icon: <PencilSquareIcon {...iconProps} />,
@@ -1547,7 +1519,7 @@ const EmployeeDashboard: React.FC = () => {
         });
 
         const pendingExceptions = mockAttendanceExceptions.filter(ex => ex.employeeId === user.id && ex.status === 'Pending');
-        if(pendingExceptions.length > 0) {
+        if (pendingExceptions.length > 0) {
             items.push({
                 id: 'ex-group',
                 icon: <ShieldExclamationIcon {...iconProps} />,
@@ -1559,7 +1531,7 @@ const EmployeeDashboard: React.FC = () => {
                 priority: 2
             });
         }
-        
+
         const pendingPANs = pans.filter(p => p.employeeId === user.id && p.status === PANStatus.PendingEmployee);
         pendingPANs.forEach(pan => {
             const panSortDate = pan.updatedAt || pan.effectiveDate || pan.createdAt;
@@ -1590,7 +1562,7 @@ const EmployeeDashboard: React.FC = () => {
                 priority: 1
             });
         });
-        
+
         // --- EVALUATION LOGIC UPDATE ---
         const evaluatorUser = { ...user, id: employeeProfileId || user.id };
         const mySubmissions = evaluationSubmissions.filter(sub => sub.raterId === (employeeProfileId || user.id));
@@ -1598,7 +1570,7 @@ const EmployeeDashboard: React.FC = () => {
 
         evaluationsToPerform.forEach(evaluation => {
             // Find who the user needs to evaluate for this evaluation cycle using robust helper
-            const eligibleTargets = evaluation.targetEmployeeIds.filter(targetId => 
+            const eligibleTargets = evaluation.targetEmployeeIds.filter(targetId =>
                 isUserEligibleEvaluator(evaluatorUser, evaluation, targetId)
             );
 
@@ -1606,15 +1578,15 @@ const EmployeeDashboard: React.FC = () => {
             const submittedTargets = mySubmissions
                 .filter(s => s.evaluationId === evaluation.id && eligibleTargets.includes(s.subjectEmployeeId))
                 .map(s => s.subjectEmployeeId);
-            
+
             const remainingCount = eligibleTargets.length - submittedTargets.length;
-            
+
             // Get deadline
             // Check if evaluation has specific due date, otherwise fallback to timeline or default
-            const deadline = evaluation.dueDate 
-                ? evaluation.dueDate 
-                : ((useSupabaseEvaluations ? evaluationTimelines : mockEvaluationTimelines).find((t: any) => t.id === evaluation.timelineId)?.endDate || new Date(evaluation.createdAt.getTime() + 14*24*60*60*1000));
-            
+            const deadline = evaluation.dueDate
+                ? evaluation.dueDate
+                : ((useSupabaseEvaluations ? evaluationTimelines : mockEvaluationTimelines).find((t: any) => t.id === evaluation.timelineId)?.endDate || new Date(evaluation.createdAt.getTime() + 14 * 24 * 60 * 60 * 1000));
+
             const deadlineStr = new Date(deadline).toLocaleDateString();
             const isOverdue = new Date() > new Date(deadline);
 
@@ -1632,7 +1604,7 @@ const EmployeeDashboard: React.FC = () => {
                 });
             }
         });
-        
+
         const myResignation = mockResignations.find(r => r.employeeId === user.id && r.status === ResignationStatus.ReturnedForEdits);
         if (myResignation) {
             items.push({
@@ -1646,7 +1618,7 @@ const EmployeeDashboard: React.FC = () => {
                 priority: 0
             });
         }
-        
+
         assignedTickets.forEach(ticket => {
             const sortDate = ticket.assignedAt || ticket.createdAt;
             const statusLabel = ticket.status === TicketStatus.PendingResolution ? 'Ticket Resolution Pending' : 'Assigned Ticket';
@@ -1677,10 +1649,10 @@ const EmployeeDashboard: React.FC = () => {
                 priority: 1
             });
         });
-        
+
         // Pending Acknowledgement for Resolutions - Manual check in addition to notifications
-        const pendingResolutions = mockResolutions.filter(r => 
-            r.employeeId === user.id && 
+        const pendingResolutions = mockResolutions.filter(r =>
+            r.employeeId === user.id &&
             r.status === ResolutionStatus.PendingAcknowledgement
         );
 
@@ -1688,7 +1660,7 @@ const EmployeeDashboard: React.FC = () => {
             const ir = mockIncidentReports.find(i => i.id === res.incidentReportId);
             // Find the NTE for linking
             const nte = mockNTEs.find(n => n.incidentReportId === ir?.id && n.employeeId === user.id);
-            
+
             if (nte) {
                 items.push({
                     id: `res-ack-${res.id}`,
@@ -1702,16 +1674,16 @@ const EmployeeDashboard: React.FC = () => {
                 });
             }
         });
-        
+
         // Pending Hearing Acknowledgement
-        const pendingHearings = mockNTEs.filter(nte => 
-            nte.employeeId === user.id && 
-            nte.hearingDetails && 
+        const pendingHearings = mockNTEs.filter(nte =>
+            nte.employeeId === user.id &&
+            nte.hearingDetails &&
             !nte.hearingDetails.acknowledgments?.some(ack => ack.userId === user.id)
         );
-        
+
         pendingHearings.forEach(nte => {
-             items.push({
+            items.push({
                 id: `hearing-ack-${nte.id}`,
                 icon: <GavelIcon {...iconProps} />,
                 title: "Hearing Scheduled",
@@ -1740,31 +1712,31 @@ const EmployeeDashboard: React.FC = () => {
                         details = { icon: <TrophyIcon {...iconProps} />, title: "You've Received an Award!", colorClass: 'bg-yellow-500', priority: 0 };
                         break;
                     case NotificationType.NTE_ISSUED:
-                         // This is often covered by specific action items above, but good as a fallback
-                         // We should deduplicate if possible.
-                         if (items.some((i: any) => i.id === `hearing-ack-${item.relatedEntityId}`) || items.some((i: any) => i.id === `nte-response-${item.relatedEntityId}`)) return null;
+                        // This is often covered by specific action items above, but good as a fallback
+                        // We should deduplicate if possible.
+                        if (items.some((i: any) => i.id === `hearing-ack-${item.relatedEntityId}`) || items.some((i: any) => i.id === `nte-response-${item.relatedEntityId}`)) return null;
                         details = { icon: <DocumentTextIcon {...iconProps} />, title: "NTE for Your Response", colorClass: "bg-red-500", priority: 0 };
                         break;
                     case NotificationType.RESOLUTION_ISSUED:
                         // We handle this explicitly above via pendingResolutions check to be robust
-                         if (items.some((i: any) => i.id === `res-ack-${item.relatedEntityId}`)) return null;
+                        if (items.some((i: any) => i.id === `res-ack-${item.relatedEntityId}`)) return null;
                         details = { icon: <GavelIcon {...iconProps} />, title: "Decision for Your Review", colorClass: "bg-orange-500", priority: 0 };
                         break;
                     case NotificationType.AssetRequestUpdate:
                         details = { icon: <ArchiveBoxArrowDownIcon {...iconProps} />, title: item.title || "Asset Update", colorClass: "bg-orange-500", priority: 1 };
                         break;
                     case NotificationType.COE_UPDATE:
-                         details = { 
-                            icon: <DocumentTextIcon {...iconProps} />, 
-                            title: item.title || "COE Update", 
-                            colorClass: "bg-blue-500", 
+                        details = {
+                            icon: <DocumentTextIcon {...iconProps} />,
+                            title: item.title || "COE Update",
+                            colorClass: "bg-blue-500",
                             priority: 1,
                             link: item.relatedEntityId ? `/employees/coe/requests?requestId=${item.relatedEntityId}` : (item.link || '/employees/coe/requests')
-                         };
-                         break;
+                        };
+                        break;
                     case NotificationType.ASSET_ASSIGNED:
-                         // We handle this explicitly above, checking for dups
-                         if (items.some((i: any) => i.id === `asset-accept-${item.relatedEntityId}`)) return null;
+                        // We handle this explicitly above, checking for dups
+                        if (items.some((i: any) => i.id === `asset-accept-${item.relatedEntityId}`)) return null;
                         details = { icon: <TagIcon {...iconProps} />, title: "Asset Assigned", colorClass: "bg-indigo-500", priority: 0 };
                         break;
                     case NotificationType.LEAVE_REQUEST:
@@ -1879,16 +1851,16 @@ const EmployeeDashboard: React.FC = () => {
     return (
         <div className="space-y-6">
             {showConfetti && <Confetti />}
-            <Toast 
-                show={toastInfo.show} 
-                onClose={() => setToastInfo(prev => ({ ...prev, show: false }))} 
+            <Toast
+                show={toastInfo.show}
+                onClose={() => setToastInfo(prev => ({ ...prev, show: false }))}
                 title={toastInfo.title}
                 message={toastInfo.message}
                 icon={toastInfo.icon}
             />
             <QuickLinks />
             <AnniversaryBanner />
-           
+
             <Card title="My Action Items">
                 <div className="space-y-4">
                     {actionItems.length > 0 ? (
@@ -1905,7 +1877,7 @@ const EmployeeDashboard: React.FC = () => {
                     )}
                 </div>
             </Card>
-            
+
             <RecentMemosWidget onViewMemo={handleViewMemo} />
 
             <MemoViewModal
@@ -1915,8 +1887,8 @@ const EmployeeDashboard: React.FC = () => {
                 onAcknowledge={handleAcknowledge}
                 user={user}
             />
-            
-             <RequestCOEModal
+
+            <RequestCOEModal
                 isOpen={isRequestCOEModalOpen}
                 onClose={() => setIsRequestCOEModalOpen(false)}
                 onSave={handleSaveCOERequest}

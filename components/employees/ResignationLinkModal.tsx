@@ -4,7 +4,6 @@ import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
 import { Role, User } from '../../types';
-import { mockUsers } from '../../services/mockData';
 import { useAuth } from '../../hooks/useAuth';
 import { logActivity } from '../../services/auditService';
 import { supabase } from '../../services/supabaseClient';

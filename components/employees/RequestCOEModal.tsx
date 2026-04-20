@@ -1,7 +1,7 @@
+import { mockBusinessUnits } from '../../services/mockDataCompat';
 
 import React, { useState, useEffect } from 'react';
 import { COEPurpose, COERequest, COERequestStatus } from '../../types';
-import { mockBusinessUnits } from '../../services/mockData';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';

@@ -1,9 +1,9 @@
+import { mockUsers, mockBusinessUnits, mockAwards, mockEmployeeAwards } from '../../services/mockDataCompat';
 
 import React from 'react';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { Award, EmployeeAward, User, Permission, NotificationType, BadgeLevel, BusinessUnit, Role, ResolutionStatus, ApproverStatus, ApproverStep } from '../../types';
-import { mockAwards, mockEmployeeAwards, mockUsers, mockNotifications, mockBusinessUnits } from '../../services/mockData';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import AwardTemplateModal from '../../components/evaluation/AwardTemplateModal';

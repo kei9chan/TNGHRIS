@@ -145,15 +145,17 @@ const ApplicationPages: React.FC = () => {
 
     const handleDelete = (id: string) => {
         if (!window.confirm("Are you sure you want to delete this page?")) return;
-        supabase.from('applicant_page_themes').delete().eq('id', id)
-        .then(({ error }) => {
-            if (error) throw error;
-            setThemes(prev => prev.filter(t => t.id !== id));
-        })
-        .catch(err => {
-            console.error('Failed to delete page', err);
-            alert('Failed to delete page.');
-        });
+        const deleteTheme = async () => {
+            try {
+                const { error } = await supabase.from('applicant_page_themes').delete().eq('id', id);
+                if (error) throw error;
+                setThemes(prev => prev.filter(t => t.id !== id));
+            } catch (err) {
+                console.error('Failed to delete page', err);
+                alert('Failed to delete page.');
+            }
+        };
+        deleteTheme();
     };
 
     return (
@@ -192,20 +194,20 @@ const ApplicationPages: React.FC = () => {
                                         </span>
                                     </div>
                                 </div>
-                                
+
                                 <div className="p-4 flex-grow flex flex-col justify-between bg-white dark:bg-slate-800">
                                     <div className="mb-4">
                                         <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Public Link</p>
-                                        <Link 
-                                            to={`/careers/${theme.slug}`} 
-                                            target="_blank" 
+                                        <Link
+                                            to={`/careers/${theme.slug}`}
+                                            target="_blank"
                                             className="text-indigo-600 hover:text-indigo-500 text-sm flex items-center truncate"
                                         >
                                             <GlobeAltIcon />
                                             /careers/{theme.slug}
                                         </Link>
                                     </div>
-                                    
+
                                     <div className="flex space-x-2 pt-4 border-t dark:border-slate-700">
                                         <Button size="sm" variant="secondary" className="w-full" onClick={() => handleEdit(theme)} disabled={!canManage}>Edit</Button>
                                         <Button size="sm" variant="danger" onClick={() => handleDelete(theme.id)} disabled={!canManage}>Delete</Button>

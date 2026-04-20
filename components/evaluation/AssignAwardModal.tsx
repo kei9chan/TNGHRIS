@@ -10,6 +10,7 @@ import html2canvas from 'html2canvas';
 import { fetchAwardTemplates } from '../../services/awardService';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
+import { useAuth } from '../../hooks/useAuth';
 
 interface AssignAwardModalProps {
     isOpen: boolean;
@@ -21,6 +22,7 @@ interface AssignAwardModalProps {
 }
 
 const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, onAssign, employees, businessUnits, awardTemplates }) => {
+    const { user } = useAuth();
     const [step, setStep] = useState<'details' | 'preview'>('details');
     const [employeeId, setEmployeeId] = useState('');
     const [awardId, setAwardId] = useState('');
@@ -112,7 +114,7 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
                 setSelectedApprovers([]);
             });
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen]);
 
     // Update BU when employee changes
@@ -230,10 +232,10 @@ ${notes ? `<p><strong>Citation:</strong> ${notes}</p>` : ''}
         <div className="space-y-4">
             <div>
                 <label htmlFor="employeeId" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Employee</label>
-                <select 
-                    id="employeeId" 
-                    value={employeeId} 
-                    onChange={e => setEmployeeId(e.target.value)} 
+                <select
+                    id="employeeId"
+                    value={employeeId}
+                    onChange={e => setEmployeeId(e.target.value)}
                     className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 >
                     {(people.length ? people : employees).filter(u => u.status === 'Active').map(user => (
@@ -243,10 +245,10 @@ ${notes ? `<p><strong>Citation:</strong> ${notes}</p>` : ''}
             </div>
             <div>
                 <label htmlFor="businessUnitId" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
-                <select 
-                    id="businessUnitId" 
-                    value={businessUnitId} 
-                    onChange={e => setBusinessUnitId(e.target.value)} 
+                <select
+                    id="businessUnitId"
+                    value={businessUnitId}
+                    onChange={e => setBusinessUnitId(e.target.value)}
                     className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 >
                     {(bus.length ? bus : businessUnits).map(bu => (
@@ -256,10 +258,10 @@ ${notes ? `<p><strong>Citation:</strong> ${notes}</p>` : ''}
             </div>
             <div>
                 <label htmlFor="awardId" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Award Template</label>
-                <select 
-                    id="awardId" 
-                    value={awardId} 
-                    onChange={e => setAwardId(e.target.value)} 
+                <select
+                    id="awardId"
+                    value={awardId}
+                    onChange={e => setAwardId(e.target.value)}
                     className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 >
                     {(templates.length ? templates : awardTemplates).filter(a => a.isActive).map(award => (
@@ -267,14 +269,14 @@ ${notes ? `<p><strong>Citation:</strong> ${notes}</p>` : ''}
                     ))}
                 </select>
             </div>
-            <Textarea 
-                label="Notes / Reason for Award" 
-                value={notes} 
-                onChange={e => setNotes(e.target.value)} 
-                rows={3} 
+            <Textarea
+                label="Notes / Reason for Award"
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+                rows={3}
                 placeholder="e.g., For demonstrating exceptional leadership during the project..."
             />
-            <EmployeeMultiSelect 
+            <EmployeeMultiSelect
                 label="Request Approval From"
                 allUsers={(people.length ? people : employees).filter(u => u.role !== 'Employee')}
                 selectedUsers={selectedApprovers}
@@ -288,28 +290,28 @@ ${notes ? `<p><strong>Citation:</strong> ${notes}</p>` : ''}
             <p className="text-sm text-gray-600 dark:text-gray-300 text-center">
                 Review the certificate below. This image will be generated and emailed to the employee upon approval.
             </p>
-            
+
             {/* Certificate Preview Container */}
-            <div 
+            <div
                 className="border shadow-lg bg-gray-100 dark:bg-gray-900 p-2 w-full overflow-auto"
                 style={{ maxWidth: '100%' }}
             >
                 <div
-                  ref={certificateRef}
-                  className="w-full flex justify-center"
-                  style={{ minHeight: '760px' }}
+                    ref={certificateRef}
+                    className="w-full flex justify-center"
+                    style={{ minHeight: '760px' }}
                 >
                     <div
-                      className="inline-block"
-                      style={{
-                        transform: 'scale(0.6)',
-                        transformOrigin: 'top center',
-                        margin: '0 auto',
-                      }}
+                        className="inline-block"
+                        style={{
+                            transform: 'scale(0.6)',
+                            transformOrigin: 'top center',
+                            margin: '0 auto',
+                        }}
                     >
                         {selectedAward?.design && selectedEmployee && (
                             <div id="certificate-preview">
-                                <CertificateRenderer 
+                                <CertificateRenderer
                                     design={selectedAward.design}
                                     data={{
                                         employeeName: selectedEmployee.name,
@@ -333,7 +335,7 @@ ${notes ? `<p><strong>Citation:</strong> ${notes}</p>` : ''}
             ) : (
                 <Button variant="secondary" onClick={onClose}>Cancel</Button>
             )}
-            
+
             {step === 'details' ? (
                 <Button onClick={handleNext}>Preview Certificate</Button>
             ) : (

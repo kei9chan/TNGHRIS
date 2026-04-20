@@ -1,10 +1,10 @@
+import { mockUsers, mockNotifications, mockBenefitTypes, mockBenefitRequests } from '../../services/mockDataCompat';
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { BenefitType, BenefitRequest, Permission, Role, BenefitRequestStatus, User, NotificationType } from '../../types';
-import { mockBenefitTypes, mockBenefitRequests, mockUsers, mockNotifications } from '../../services/mockData';
 import { logActivity } from '../../services/auditService';
 import { useSettings } from '../../context/SettingsContext';
 import { supabase } from '../../services/supabaseClient';
@@ -25,14 +25,14 @@ import EmployeeMultiSelect from '../../components/feedback/EmployeeMultiSelect';
 const getStatusColor = (status: BenefitRequestStatus) => {
     switch (status) {
         case BenefitRequestStatus.Approved: return 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300';
-        case BenefitRequestStatus.PendingHR: 
+        case BenefitRequestStatus.PendingHR:
         case BenefitRequestStatus.PendingBOD:
             return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-200';
         case BenefitRequestStatus.Rejected:
         case BenefitRequestStatus.Cancelled:
             return 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200';
         case BenefitRequestStatus.Fulfilled:
-             return 'bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-200';
+            return 'bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-200';
         default: return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
     }
 };
@@ -106,7 +106,7 @@ const Benefits: React.FC = () => {
 
     // --- State Management ---
     const [activeTab, setActiveTab] = useState('my_benefits');
-    
+
     // Sync active tab with URL query param
     useEffect(() => {
         const params = new URLSearchParams(location.search);
@@ -126,7 +126,7 @@ const Benefits: React.FC = () => {
     const [typesLoading, setTypesLoading] = useState(true);
     const [allRequests, setAllRequests] = useState<BenefitRequest[]>(mockBenefitRequests);
     const [myRequests, setMyRequests] = useState<BenefitRequest[]>([]);
-    
+
     // Configuration Modal State
     const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
     const [selectedBenefitType, setSelectedBenefitType] = useState<BenefitType | null>(null);
@@ -203,7 +203,7 @@ const Benefits: React.FC = () => {
     useEffect(() => {
         if (user) {
             const userRequests = allRequests.filter(r => r.employeeId === user.id);
-            setMyRequests(userRequests.sort((a,b) => new Date(b.submissionDate).getTime() - new Date(a.submissionDate).getTime()));
+            setMyRequests(userRequests.sort((a, b) => new Date(b.submissionDate).getTime() - new Date(a.submissionDate).getTime()));
         }
     }, [user, allRequests]);
 
@@ -271,7 +271,7 @@ const Benefits: React.FC = () => {
 
     const handleSubmitRequest = (requestData: Partial<BenefitRequest>) => {
         if (!user) return;
-        
+
         const persist = async () => {
             const payload = {
                 employee_id: user.id,
@@ -346,26 +346,26 @@ const Benefits: React.FC = () => {
     const pendingHRRequests = useMemo(() => {
         return allRequests.filter(r => r.status === BenefitRequestStatus.PendingHR);
     }, [allRequests]);
-    
+
     const processedHRRequests = useMemo(() => {
         // Shows requests that were either approved or rejected/endorsed by HR (status is not PendingHR)
         return allRequests.filter(r => r.status !== BenefitRequestStatus.PendingHR && r.status !== BenefitRequestStatus.PendingBOD).concat(
-             allRequests.filter(r => r.status === BenefitRequestStatus.PendingBOD) // Also show what we endorsed
-        ).sort((a,b) => new Date(b.submissionDate).getTime() - new Date(a.submissionDate).getTime());
+            allRequests.filter(r => r.status === BenefitRequestStatus.PendingBOD) // Also show what we endorsed
+        ).sort((a, b) => new Date(b.submissionDate).getTime() - new Date(a.submissionDate).getTime());
     }, [allRequests]);
 
     const pendingBODRequests = useMemo(() => {
         return allRequests.filter(r => r.status === BenefitRequestStatus.PendingBOD);
     }, [allRequests]);
-    
+
     const processedBODRequests = useMemo(() => {
-         // Shows Board history
-         return allRequests.filter(r => 
-             (r.status === BenefitRequestStatus.Approved || r.status === BenefitRequestStatus.Rejected || r.status === BenefitRequestStatus.Fulfilled) && 
-             r.bodApprovedBy // Only show ones BOD touched
-         ).sort((a,b) => new Date(b.submissionDate).getTime() - new Date(a.submissionDate).getTime());
+        // Shows Board history
+        return allRequests.filter(r =>
+            (r.status === BenefitRequestStatus.Approved || r.status === BenefitRequestStatus.Rejected || r.status === BenefitRequestStatus.Fulfilled) &&
+            r.bodApprovedBy // Only show ones BOD touched
+        ).sort((a, b) => new Date(b.submissionDate).getTime() - new Date(a.submissionDate).getTime());
     }, [allRequests]);
-    
+
     const approvedForFulfillmentRequests = useMemo(() => {
         return allRequests.filter(r => r.status === BenefitRequestStatus.Approved);
     }, [allRequests]);
@@ -373,14 +373,14 @@ const Benefits: React.FC = () => {
     const fulfilledRequests = useMemo(() => {
         return allRequests
             .filter(r => r.status === BenefitRequestStatus.Fulfilled)
-            .sort((a,b) => new Date(b.fulfilledAt || b.submissionDate).getTime() - new Date(a.fulfilledAt || a.submissionDate).getTime());
+            .sort((a, b) => new Date(b.fulfilledAt || b.submissionDate).getTime() - new Date(a.fulfilledAt || a.submissionDate).getTime());
     }, [allRequests]);
 
     const handleHRApprove = (request: BenefitRequest) => {
         if (!user) return;
-        
+
         const benefitType = benefitTypes.find(bt => bt.id === request.benefitTypeId);
-        
+
         if (benefitType?.requiresBodApproval) {
             // Open Endorsement Modal
             setRequestToEndorse(request);
@@ -388,17 +388,18 @@ const Benefits: React.FC = () => {
             setIsEndorseModalOpen(true);
         } else {
             // Direct Approval
-            supabase.from('benefit_requests')
-                .update({
-                    status: BenefitRequestStatus.Approved,
-                    hr_endorsed_by: user.id,
-                    hr_endorsed_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString()
-                })
-                .eq('id', request.id)
-                .select('*')
-                .single()
-                .then(({ data, error }) => {
+            const approve = async () => {
+                try {
+                    const { data, error } = await supabase.from('benefit_requests')
+                        .update({
+                            status: BenefitRequestStatus.Approved,
+                            hr_endorsed_by: user.id,
+                            hr_endorsed_at: new Date().toISOString(),
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq('id', request.id)
+                        .select('*')
+                        .single();
                     if (error) throw error;
                     const mapped = mapRequestRow(data as BenefitRequestRow);
                     setAllRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
@@ -416,33 +417,35 @@ const Benefits: React.FC = () => {
                     });
                     logActivity(user, 'APPROVE', 'BenefitRequest', request.id, `HR approved request for ${request.benefitTypeName}`);
                     alert(`Request approved successfully.`);
-                })
-                .catch(err => {
+                } catch (err) {
                     console.error('Failed to approve request', err);
                     alert('Failed to approve request. Please try again.');
-                });
+                }
+            };
+            approve();
         }
     };
 
     const handleConfirmEndorse = () => {
         if (!user || !requestToEndorse) return;
-        
+
         if (selectedApprovers.length === 0) {
-             alert("Please select at least one Board Member.");
-             return;
+            alert("Please select at least one Board Member.");
+            return;
         }
 
-        supabase.from('benefit_requests')
-            .update({
-                status: BenefitRequestStatus.PendingBOD,
-                hr_endorsed_by: user.id,
-                hr_endorsed_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', requestToEndorse.id)
-            .select('*')
-            .single()
-            .then(({ data, error }) => {
+        const endorse = async () => {
+            try {
+                const { data, error } = await supabase.from('benefit_requests')
+                    .update({
+                        status: BenefitRequestStatus.PendingBOD,
+                        hr_endorsed_by: user.id,
+                        hr_endorsed_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', requestToEndorse.id)
+                    .select('*')
+                    .single();
                 if (error) throw error;
                 const mapped = mapRequestRow(data as BenefitRequestRow);
                 setAllRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
@@ -462,31 +465,32 @@ const Benefits: React.FC = () => {
                 });
                 logActivity(user, 'APPROVE', 'BenefitRequest', requestToEndorse.id, `HR endorsed request for ${requestToEndorse.benefitTypeName} to Board.`);
                 alert(`Request endorsed to ${selectedApprovers.length} board member(s).`);
-            })
-            .catch(err => {
+            } catch (err) {
                 console.error('Failed to endorse request', err);
                 alert('Failed to endorse request. Please try again.');
-            })
-            .finally(() => {
+            } finally {
                 setIsEndorseModalOpen(false);
                 setRequestToEndorse(null);
-            });
+            }
+        };
+        endorse();
     };
-    
+
     const handleBODApprove = (request: BenefitRequest) => {
         if (!user) return;
-        
-        supabase.from('benefit_requests')
-            .update({
-                status: BenefitRequestStatus.Approved,
-                bod_approved_by: user.id,
-                bod_approved_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', request.id)
-            .select('*')
-            .single()
-            .then(({ data, error }) => {
+
+        const bodApprove = async () => {
+            try {
+                const { data, error } = await supabase.from('benefit_requests')
+                    .update({
+                        status: BenefitRequestStatus.Approved,
+                        bod_approved_by: user.id,
+                        bod_approved_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', request.id)
+                    .select('*')
+                    .single();
                 if (error) throw error;
                 const mapped = mapRequestRow(data as BenefitRequestRow);
                 setAllRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
@@ -495,7 +499,7 @@ const Benefits: React.FC = () => {
                 mockNotifications.unshift({
                     id: `notif-benefit-bod-app-${Date.now()}`,
                     userId: request.employeeId,
-                    type: NotificationType.AWARD_RECEIVED, 
+                    type: NotificationType.AWARD_RECEIVED,
                     title: 'Benefit Approved',
                     message: `Your request for ${request.benefitTypeName} has been approved by the Board.`,
                     link: '/employees/benefits',
@@ -506,7 +510,7 @@ const Benefits: React.FC = () => {
 
                 const hrUsers = mockUsers.filter(u => [Role.Admin, Role.HRManager, Role.HRStaff].includes(u.role));
                 hrUsers.forEach(hrUser => {
-                     mockNotifications.unshift({
+                    mockNotifications.unshift({
                         id: `notif-benefit-fulfill-${Date.now()}-${hrUser.id}`,
                         userId: hrUser.id,
                         type: NotificationType.AWARD_APPROVAL_REQUEST,
@@ -521,11 +525,12 @@ const Benefits: React.FC = () => {
 
                 logActivity(user, 'APPROVE', 'BenefitRequest', request.id, `Board approved request for ${request.benefitTypeName}`);
                 alert("Request approved by Board. HR has been notified for fulfillment.");
-            })
-            .catch(err => {
+            } catch (err) {
                 console.error('Failed to record board approval', err);
                 alert('Failed to approve request. Please try again.');
-            });
+            }
+        };
+        bodApprove();
     };
 
     const handleReject = (request: BenefitRequest) => {
@@ -535,17 +540,18 @@ const Benefits: React.FC = () => {
 
     const handleConfirmReject = (reason: string) => {
         if (!user || !requestToReject) return;
-        
-        supabase.from('benefit_requests')
-            .update({
-                status: BenefitRequestStatus.Rejected,
-                rejection_reason: reason,
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', requestToReject.id)
-            .select('*')
-            .single()
-            .then(({ data, error }) => {
+
+        const rejectReq = async () => {
+            try {
+                const { data, error } = await supabase.from('benefit_requests')
+                    .update({
+                        status: BenefitRequestStatus.Rejected,
+                        rejection_reason: reason,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', requestToReject.id)
+                    .select('*')
+                    .single();
                 if (error) throw error;
                 const mapped = mapRequestRow(data as BenefitRequestRow);
                 setAllRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
@@ -564,38 +570,39 @@ const Benefits: React.FC = () => {
                 });
 
                 logActivity(user, 'REJECT', 'BenefitRequest', requestToReject.id, `Rejected request. Reason: ${reason}`);
-            })
-            .catch(err => {
+            } catch (err) {
                 console.error('Failed to reject request', err);
                 alert('Failed to reject request. Please try again.');
-            })
-            .finally(() => {
+            } finally {
                 setIsRejectModalOpen(false);
                 setRequestToReject(null);
-            });
+            }
+        };
+        rejectReq();
     };
-    
+
     // --- Fulfillment Handlers ---
     const handleOpenFulfillModal = (request: BenefitRequest) => {
         setRequestToFulfill(request);
         setIsFulfillmentModalOpen(true);
     };
-    
+
     const handleConfirmFulfillment = (voucherCode: string) => {
         if (!user || !requestToFulfill) return;
-        
-        supabase.from('benefit_requests')
-            .update({
-                status: BenefitRequestStatus.Fulfilled,
-                fulfilled_by: user.id,
-                fulfilled_at: new Date().toISOString(),
-                voucher_code: voucherCode || null,
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', requestToFulfill.id)
-            .select('*')
-            .single()
-            .then(({ data, error }) => {
+
+        const fulfill = async () => {
+            try {
+                const { data, error } = await supabase.from('benefit_requests')
+                    .update({
+                        status: BenefitRequestStatus.Fulfilled,
+                        fulfilled_by: user.id,
+                        fulfilled_at: new Date().toISOString(),
+                        voucher_code: voucherCode || null,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', requestToFulfill.id)
+                    .select('*')
+                    .single();
                 if (error) throw error;
                 const mapped = mapRequestRow(data as BenefitRequestRow);
                 setAllRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
@@ -612,22 +619,22 @@ const Benefits: React.FC = () => {
                     createdAt: new Date(),
                     relatedEntityId: requestToFulfill.id
                 });
-                
+
                 logActivity(user, 'UPDATE', 'BenefitRequest', requestToFulfill.id, `Fulfilled request. Code: ${voucherCode}`);
                 alert("Request marked as fulfilled.");
-            })
-            .catch(err => {
+            } catch (err) {
                 console.error('Failed to mark as fulfilled', err);
                 alert('Failed to mark as fulfilled. Please try again.');
-            })
-            .finally(() => {
+            } finally {
                 setIsFulfillmentModalOpen(false);
                 setRequestToFulfill(null);
-            });
+            }
+        };
+        fulfill();
     };
 
 
-    const getTabClass = (tabName: string) => 
+    const getTabClass = (tabName: string) =>
         `px-4 py-2 text-sm font-medium rounded-md focus:outline-none transition-colors ${activeTab === tabName ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`;
 
     const activeBenefitTypes = useMemo(() => benefitTypes.filter(bt => bt.isActive), [benefitTypes]);
@@ -640,31 +647,31 @@ const Benefits: React.FC = () => {
                     <Button onClick={() => handleOpenConfigModal(null)}>Add Benefit Type</Button>
                 )}
             </div>
-            
+
             <div className="flex space-x-2 border-b border-gray-200 dark:border-gray-700 pb-2 overflow-x-auto">
                 <button className={getTabClass('my_benefits')} onClick={() => handleTabChange('my_benefits')}>My Benefits</button>
-                
+
                 {(isAdminOrHR || isBOD) && (
                     <button className={getTabClass('approvals')} onClick={() => handleTabChange('approvals')}>
-                        Approvals 
+                        Approvals
                         {isAdminOrHR && pendingHRRequests.length > 0 && (
                             <span className="ml-2 bg-red-100 text-red-800 text-xs font-semibold px-2 py-0.5 rounded-full">{pendingHRRequests.length}</span>
                         )}
                         {isBOD && pendingBODRequests.length > 0 && (
-                             <span className="ml-2 bg-red-100 text-red-800 text-xs font-semibold px-2 py-0.5 rounded-full">{pendingBODRequests.length}</span>
+                            <span className="ml-2 bg-red-100 text-red-800 text-xs font-semibold px-2 py-0.5 rounded-full">{pendingBODRequests.length}</span>
                         )}
                     </button>
                 )}
-                
+
                 {isAdminOrHR && (
                     <button className={getTabClass('fulfillment')} onClick={() => handleTabChange('fulfillment')}>
                         Fulfillment
-                         {approvedForFulfillmentRequests.length > 0 && (
+                        {approvedForFulfillmentRequests.length > 0 && (
                             <span className="ml-2 bg-green-100 text-green-800 text-xs font-semibold px-2 py-0.5 rounded-full">{approvedForFulfillmentRequests.length}</span>
                         )}
                     </button>
                 )}
-                
+
                 {isAdminOrHR && (
                     <button className={getTabClass('configuration')} onClick={() => handleTabChange('configuration')}>Configuration</button>
                 )}
@@ -677,10 +684,10 @@ const Benefits: React.FC = () => {
                         {typesLoading && (
                             <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">Loading benefit types…</p>
                         )}
-                        <BenefitTypeTable 
-                            benefitTypes={benefitTypes} 
-                            onEdit={handleOpenConfigModal} 
-                            onDelete={handleDeleteBenefitType} 
+                        <BenefitTypeTable
+                            benefitTypes={benefitTypes}
+                            onEdit={handleOpenConfigModal}
+                            onDelete={handleDeleteBenefitType}
                         />
                     </Card>
                 </div>
@@ -751,7 +758,7 @@ const Benefits: React.FC = () => {
                                                     {req.status}
                                                 </span>
                                             </td>
-                                             <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate">
+                                            <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate">
                                                 {req.voucherCode || req.rejectionReason || '-'}
                                             </td>
                                         </tr>
@@ -773,22 +780,22 @@ const Benefits: React.FC = () => {
                     {isAdminOrHR && (
                         <>
                             <Card title="Pending HR Review">
-                                <BenefitApprovalsTable 
-                                    requests={pendingHRRequests} 
+                                <BenefitApprovalsTable
+                                    requests={pendingHRRequests}
                                     benefitTypes={benefitTypes}
                                     onApprove={handleHRApprove}
                                     onReject={handleReject}
                                 />
                             </Card>
                             <Card title="HR Processed History">
-                                <BenefitApprovalsTable 
-                                    requests={processedHRRequests} 
+                                <BenefitApprovalsTable
+                                    requests={processedHRRequests}
                                     benefitTypes={benefitTypes}
                                 />
                             </Card>
                         </>
                     )}
-                    
+
                     {isBOD && (
                         <>
                             <Card title="Pending Board Approval">
@@ -807,19 +814,19 @@ const Benefits: React.FC = () => {
                     )}
                 </div>
             )}
-            
+
             {activeTab === 'fulfillment' && isAdminOrHR && (
                 <div className="space-y-6">
                     <Card title="Ready for Fulfillment">
-                         <BenefitFulfillmentTable
+                        <BenefitFulfillmentTable
                             requests={approvedForFulfillmentRequests}
                             onFulfill={handleOpenFulfillModal}
-                         />
+                        />
                     </Card>
                     <Card title="Fulfillment History">
-                         <BenefitFulfillmentTable
+                        <BenefitFulfillmentTable
                             requests={fulfilledRequests}
-                         />
+                        />
                     </Card>
                 </div>
             )}
@@ -859,7 +866,7 @@ const Benefits: React.FC = () => {
                             <p>This benefit request requires approval from the Board of Directors. Please select the board members who should be notified to review this request.</p>
                             <p className="mt-2">Only one approval is required to proceed, but all selected members will be notified.</p>
                         </div>
-                        <EmployeeMultiSelect 
+                        <EmployeeMultiSelect
                             label="Request Approval From (at least one BOD required)"
                             allUsers={bodApproverPool}
                             selectedUsers={selectedApprovers}

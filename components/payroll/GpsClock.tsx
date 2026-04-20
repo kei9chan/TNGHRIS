@@ -1,6 +1,6 @@
+import { mockShiftTemplates, mockSites } from '../../services/mockDataCompat';
 import React, { useState, useEffect } from 'react';
 import { TimeEvent, TimeEventType, ShiftAssignment, TimeEventSource, Site, DeviceSecurityProfile, AnomalyTag, TimeEventExtra } from '../../types';
-import { mockSites, mockShiftTemplates } from '../../services/mockData';
 import Button from '../ui/Button';
 import { getAppVersion } from '../../services/deviceSecurity';
 
@@ -76,16 +76,27 @@ const GpsClock: React.FC<GpsClockProps> = ({ clockInStatus, addTimeEvent, todays
             setError(`Failed to get location: ${err.message}`);
         });
     };
-    
+
     useEffect(() => {
-        if(userLocation){
-            verifyLocation({coords: { latitude: userLocation.lat, longitude: userLocation.lng, accuracy: 0, altitude: null, altitudeAccuracy: null, heading: null, speed: null }, timestamp: Date.now()})
+        if (userLocation) {
+            verifyLocation({
+                coords: {
+                    latitude: userLocation.lat,
+                    longitude: userLocation.lng,
+                    accuracy: 0,
+                    altitude: null,
+                    altitudeAccuracy: null,
+                    heading: null,
+                    speed: null
+                } as unknown as GeolocationCoordinates,
+                timestamp: Date.now()
+            } as GeolocationPosition)
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [useWifi, todaysShift]);
-    
+
     const isClockingDisabled = status !== 'success' || (useWifi && todaysShift?.locationId !== validationResult?.site.id);
-    
+
     const getButtonText = () => {
         const action = clockInStatus === 'in' ? 'Clock Out via GPS' : 'Clock In via GPS';
         if (isRetrying) {
@@ -103,14 +114,14 @@ const GpsClock: React.FC<GpsClockProps> = ({ clockInStatus, addTimeEvent, todays
         const nextType = clockInStatus === 'in' ? TimeEventType.ClockOut : TimeEventType.ClockIn;
         const anomaly_tags: AnomalyTag[] = [];
 
-        if(useWifi) {
+        if (useWifi) {
             anomaly_tags.push(AnomalyTag.OutsideFence);
         }
-        
+
         if (todaysShift && nextType === TimeEventType.ClockIn) {
             const shiftTemplate = mockShiftTemplates.find(st => st.id === todaysShift.shiftTemplateId);
             const site = mockSites.find(s => s.id === todaysShift.locationId);
-            if(shiftTemplate) {
+            if (shiftTemplate) {
                 const gracePeriod = site?.gracePeriodMinutes ?? shiftTemplate.gracePeriodMinutes;
                 const [hours, minutes] = shiftTemplate.startTime.split(':').map(Number);
                 const shiftStart = new Date(todaysShift.date);
@@ -120,19 +131,19 @@ const GpsClock: React.FC<GpsClockProps> = ({ clockInStatus, addTimeEvent, todays
                 }
             }
         }
-        
+
         const extra: TimeEventExtra = {
             ...deviceSecurityProfile,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             app_version: getAppVersion(),
-            ip_hash: `hash_${deviceSecurityProfile.deviceId.substring(4,10)}`,
+            ip_hash: `hash_${deviceSecurityProfile.deviceId.substring(4, 10)}`,
             site_name: validationResult.site.name,
             anomaly_tags,
             lat: userLocation?.lat,
             lng: userLocation?.lng,
-            wifi_ssid: useWifi ? mockSites.find(s=>s.id === validationResult.site.id)?.allowedWifiSSIDs?.[0] : undefined,
+            wifi_ssid: useWifi ? mockSites.find(s => s.id === validationResult.site.id)?.allowedWifiSSIDs?.[0] : undefined,
         };
-        
+
         try {
             await addTimeEvent({
                 timestamp: now,
@@ -144,7 +155,7 @@ const GpsClock: React.FC<GpsClockProps> = ({ clockInStatus, addTimeEvent, todays
             alert(`Clock event for ${nextType} at ${validationResult.site.name} submitted!`);
             setStatus('idle');
         } catch (err) {
-             alert('Failed to submit event after multiple retries. Please check your connection and try again.');
+            alert('Failed to submit event after multiple retries. Please check your connection and try again.');
         } finally {
             setIsSubmitting(false);
         }
@@ -155,26 +166,26 @@ const GpsClock: React.FC<GpsClockProps> = ({ clockInStatus, addTimeEvent, todays
             {status === 'idle' && (
                 <Button onClick={handleGetLocation} size="lg">Verify My Location</Button>
             )}
-            
+
             {(status === 'requesting' || status === 'verifying') && (
-                 <div className="flex items-center text-gray-600 dark:text-gray-400">
+                <div className="flex items-center text-gray-600 dark:text-gray-400">
                     <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-blue-500 mr-3"></div>
                     {status === 'requesting' ? 'Requesting location...' : 'Verifying against work sites...'}
                 </div>
             )}
-            
+
             {error && <p className="text-red-500 text-sm">{error}</p>}
-            
+
             {validationResult && (
                 <div className="w-full max-w-md">
-                     <div className={`p-4 rounded-lg border ${status === 'success' ? 'bg-green-50 border-green-300 dark:bg-green-900/20 dark:border-green-700' : 'bg-red-50 border-red-300 dark:bg-red-900/20 dark:border-red-700'}`}>
+                    <div className={`p-4 rounded-lg border ${status === 'success' ? 'bg-green-50 border-green-300 dark:bg-green-900/20 dark:border-green-700' : 'bg-red-50 border-red-300 dark:bg-red-900/20 dark:border-red-700'}`}>
                         {status === 'success' ? (
                             <div>
                                 <h3 className="text-lg font-semibold text-green-800 dark:text-green-200">Location Verified!</h3>
                                 <p className="text-green-700 dark:text-green-300">You are at <strong>{validationResult.site.name}</strong> ({validationResult.distance.toFixed(0)}m away).</p>
                             </div>
                         ) : (
-                             <div>
+                            <div>
                                 <h3 className="text-lg font-semibold text-red-800 dark:text-red-200">Outside Geo-fence</h3>
                                 <p className="text-red-700 dark:text-red-300">
                                     You are not at an approved work site.
@@ -183,15 +194,15 @@ const GpsClock: React.FC<GpsClockProps> = ({ clockInStatus, addTimeEvent, todays
                             </div>
                         )}
                     </div>
-                     <div className="mt-4 flex items-center justify-center">
-                        <input id="wifi-check" type="checkbox" checked={useWifi} onChange={(e) => setUseWifi(e.target.checked)} className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"/>
+                    <div className="mt-4 flex items-center justify-center">
+                        <input id="wifi-check" type="checkbox" checked={useWifi} onChange={(e) => setUseWifi(e.target.checked)} className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded" />
                         <label htmlFor="wifi-check" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">Simulate being on approved WiFi for your assigned site.</label>
                     </div>
                 </div>
             )}
-           
+
             {(status === 'success' || status === 'outside_fence') && (
-                 <Button onClick={handleClockEvent} disabled={isClockingDisabled} className="mt-4 w-full max-w-sm" size="lg" isLoading={isSubmitting}>
+                <Button onClick={handleClockEvent} disabled={isClockingDisabled} className="mt-4 w-full max-w-sm" size="lg" isLoading={isSubmitting}>
                     {getButtonText()}
                 </Button>
             )}

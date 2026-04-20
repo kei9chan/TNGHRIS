@@ -1,6 +1,6 @@
+import { mockUsers, mockBusinessUnits, mockPayslips } from '../../services/mockDataCompat';
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { mockPayslips as allMockPayslips, mockUsers, mockBusinessUnits } from '../../services/mockData';
 import { PayslipRecord, Role } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -13,35 +13,35 @@ import PayslipCard from '../../components/payroll/PayslipCard';
 const Payslips: React.FC = () => {
     const { user } = useAuth();
     const { getAccessibleBusinessUnits } = usePermissions();
-    const [allPayslips, setAllPayslips] = useState<PayslipRecord[]>(allMockPayslips);
+    const [allPayslips, setAllPayslips] = useState<PayslipRecord[]>(mockPayslips);
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
     const [isPrinting, setIsPrinting] = useState(false);
     const [payslipToPrint, setPayslipToPrint] = useState<PayslipRecord | null>(null);
     const [selectedPayslip, setSelectedPayslip] = useState<PayslipRecord | null>(null);
-    
+
     const isHRView = user?.role === Role.Admin || user?.role === Role.HRManager;
     const isBODView = user?.role === Role.BOD;
-    
+
     const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
 
     const viewablePayslips = useMemo(() => {
         if (!user) return [];
-        
+
         // Filter logic for Admin/HR: Must respect access scope
         if (isHRView || isBODView) {
             const accessibleBuNames = new Set(accessibleBus.map(b => b.name));
-            
+
             return allPayslips.filter(p => {
                 const employee = mockUsers.find(u => u.id === p.employeeId);
                 const isAccessible = employee && accessibleBuNames.has(employee.businessUnit);
-                
+
                 // BOD sees only published, HR sees all within scope
                 const statusCheck = isBODView ? p.status === 'published' : true;
-                
+
                 return isAccessible && statusCheck;
             });
         }
-        
+
         // Employee View: Only own payslips
         return allPayslips.filter(p => p.employeeId === user.id && p.status === 'published');
     }, [user, allPayslips, isHRView, isBODView, accessibleBus]);
@@ -55,9 +55,9 @@ const Payslips: React.FC = () => {
         // FIX: Explicitly type the sort callback parameters to resolve the 'unknown' type error.
         return uniquePeriods.sort((a: string, b: string) => new Date(b.split(' - ')[0]).getTime() - new Date(a.split(' - ')[0]).getTime());
     }, [viewablePayslips]);
-    
+
     const [selectedPeriod, setSelectedPeriod] = useState<string>('');
-    
+
     useEffect(() => {
         if (payPeriods.length > 0 && !payPeriods.includes(selectedPeriod)) {
             setSelectedPeriod(payPeriods[0]);
@@ -97,7 +97,7 @@ const Payslips: React.FC = () => {
                         (updatedPayslip.deductionsBreakdown?.pagibig || 0) +
                         (updatedPayslip.deductionsBreakdown?.philhealth || 0) +
                         (updatedPayslip.deductionsBreakdown?.tax || 0);
-                    
+
                     updatedPayslip.totalEarnings = totalEarnings;
                     updatedPayslip.totalDeductions = totalDeductions;
                     updatedPayslip.netPay = totalEarnings - totalDeductions;
@@ -113,14 +113,14 @@ const Payslips: React.FC = () => {
         setSelectedPayslip(payslip);
         setIsPreviewOpen(true);
     };
-    
+
     const handleRegenerate = (payslip: PayslipRecord) => {
         setAllPayslips(prevPayslips =>
             prevPayslips.map(p => (p.id === payslip.id ? { ...payslip, lastGenerated: new Date() } : p))
         );
         handlePreview({ ...payslip, lastGenerated: new Date() });
     };
-    
+
     const handlePublish = (payslipId: string) => {
         setAllPayslips(prev => prev.map(p => p.id === payslipId ? { ...p, status: 'published' } : p));
     };
@@ -129,7 +129,7 @@ const Payslips: React.FC = () => {
     const handleUnpublish = (payslipId: string) => {
         setAllPayslips(prev => prev.map(p => p.id === payslipId ? { ...p, status: 'unpublished' } : p));
     };
-    
+
     const handleDownloadSingle = (payslip: PayslipRecord) => {
         setPayslipToPrint(payslip);
     };
@@ -161,12 +161,12 @@ const Payslips: React.FC = () => {
                         {isHRView ? 'Generated Payslip Records' : isBODView ? 'Published Payslips' : 'My Payslips'}
                     </h1>
                     <p className="text-gray-600 dark:text-gray-400">
-                         {isHRView 
+                        {isHRView
                             ? "This is an administrative view of all payslip records generated from the Payroll Staging module."
                             : isBODView
-                            ? "Oversight view of all published payslip records."
-                            : "View your published payslip records."
-                         }
+                                ? "Oversight view of all published payslip records."
+                                : "View your published payslip records."
+                        }
                     </p>
                 </div>
                 {isHRView && (
@@ -178,7 +178,7 @@ const Payslips: React.FC = () => {
                     </div>
                 )}
             </div>
-            
+
             <Card>
                 <div className="p-4 flex items-center space-x-4">
                     <label htmlFor="pay-period-filter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">
@@ -196,7 +196,7 @@ const Payslips: React.FC = () => {
             </Card>
 
             {filteredPayslips.length === 0 ? (
-                 <Card>
+                <Card>
                     <div className="text-center py-10 text-gray-500 dark:text-gray-400">
                         <p>No payslip records found for the selected period.</p>
                     </div>
@@ -220,13 +220,13 @@ const Payslips: React.FC = () => {
                     ))}
                 </div>
             )}
-            <PayslipPreviewModal 
+            <PayslipPreviewModal
                 isOpen={isPreviewOpen}
                 onClose={() => setIsPreviewOpen(false)}
                 payslip={selectedPayslip}
             />
             {isPrinting && (
-                <PrintablePayslips 
+                <PrintablePayslips
                     payslips={filteredPayslips}
                     onClose={() => setIsPrinting(false)}
                 />

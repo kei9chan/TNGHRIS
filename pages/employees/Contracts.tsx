@@ -1,3 +1,4 @@
+import { mockUsers, mockNotifications, mockContractTemplates } from '../../services/mockDataCompat';
 import React, { useState, useMemo } from 'react';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -7,7 +8,6 @@ import TemplateList from '../../components/contracts/TemplateList';
 import TemplateDrawer from '../../components/contracts/TemplateDrawer';
 import EnvelopeList from '../../components/contracts/EnvelopeList';
 import EnvelopeCreationDrawer from '../../components/contracts/EnvelopeCreationDrawer';
-import { mockContractTemplates, mockNotifications, mockUsers } from '../../services/mockData';
 import Input from '../../components/ui/Input';
 import { usePermissions } from '../../hooks/usePermissions';
 import EditableDescription from '../../components/ui/EditableDescription';

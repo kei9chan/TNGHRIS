@@ -1,3 +1,4 @@
+import { mockOnboardingChecklists } from '../../services/mockDataCompat';
 
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
@@ -6,7 +7,6 @@ import { NAV_LINKS } from '../../constants';
 import type { NavLink as NavLinkType } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { Role } from '../../types';
-import { mockOnboardingChecklists } from '../../services/mockData';
 
 
 // SVG Icon Components

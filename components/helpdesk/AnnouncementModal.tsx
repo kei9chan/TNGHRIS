@@ -1,7 +1,7 @@
+import { mockBusinessUnits } from '../../services/mockDataCompat';
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Announcement, AnnouncementType } from '../../types';
-import { mockBusinessUnits } from '../../services/mockData';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';

@@ -1,7 +1,7 @@
+import { mockUsers, mockBusinessUnits, mockAttendanceRecords, mockShiftAssignments, mockSites } from '../../../services/mockDataCompat';
 
 import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { mockAttendanceRecords, mockUsers, mockShiftAssignments, mockSites, mockBusinessUnits } from '../../../services/mockData';
 import Card from '../../../components/ui/Card';
 import Input from '../../../components/ui/Input';
 import Button from '../../../components/ui/Button';

@@ -1,3 +1,4 @@
+import { mockKbArticles } from '../../services/mockDataCompat';
 import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { KnowledgeBaseArticle, KnowledgeBaseCategory, Permission } from '../../types';

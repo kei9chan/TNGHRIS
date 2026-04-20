@@ -1,7 +1,7 @@
+import { mockLeaveTypes } from '../../services/mockDataCompat';
 import React, { useState, useMemo } from 'react';
 import { AttendanceRecord, AttendanceException, OTRequest, LeaveRequest, User } from '../../types';
 import Input from '../ui/Input';
-import { mockLeaveTypes } from '../../services/mockData';
 
 interface AttendanceTableProps {
   records: AttendanceRecord[];

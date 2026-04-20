@@ -1,6 +1,6 @@
+import { mockUsers } from '../../services/mockDataCompat';
 import React, { useEffect, useState, useMemo } from 'react';
 import { IncidentReport } from '../../types';
-import { mockUsers } from '../../services/mockData';
 import { supabase } from '../../services/supabaseClient';
 
 interface PrintableIncidentReportProps {

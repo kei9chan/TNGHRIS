@@ -1,8 +1,8 @@
+import { mockShiftTemplates, mockSites } from '../../services/mockDataCompat';
 import React, { useState, useRef, useCallback } from 'react';
 import { TimeEvent, TimeEventType, ShiftAssignment, TimeEventSource, DeviceSecurityProfile, AnomalyTag, TimeEventExtra } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import Button from '../ui/Button';
-import { mockShiftTemplates, mockSites } from '../../services/mockData';
 import { getAppVersion } from '../../services/deviceSecurity';
 
 interface PhotoClockProps {

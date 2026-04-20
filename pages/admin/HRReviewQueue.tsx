@@ -1,5 +1,5 @@
+import { mockUsers, mockNotifications, mockUserDocuments } from '../../services/mockDataCompat';
 import React, { useState, useMemo, useEffect } from 'react';
-import { mockChangeHistory, mockUsers, mockEmployeeDrafts, mockUserDocuments, mockNotifications } from '../../services/mockData';
 import { ChangeHistory, ChangeHistoryStatus, EmployeeDraftStatus, User, Role, Permission, UserDocument, UserDocumentStatus, NotificationType } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import Card from '../../components/ui/Card';

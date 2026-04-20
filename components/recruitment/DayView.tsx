@@ -1,7 +1,7 @@
+import { mockUsers, mockApplications, mockCandidates } from '../../services/mockDataCompat';
 import React from 'react';
 import { Interview } from '../../types';
 // FIX: Imported `mockUsers` to get interview panelist names.
-import { mockApplications, mockCandidates, mockUsers } from '../../services/mockData';
 
 interface DayViewProps {
     currentDate: Date;

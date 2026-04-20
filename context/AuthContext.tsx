@@ -2,7 +2,6 @@
 import React, { createContext, useEffect, useState, ReactNode } from 'react';
 import { User, Role } from '../types';
 import { supabase } from '../services/supabaseClient';
-import { mockUsers } from '../services/mockData';
 
 // Keep this so existing imports don't break.
 export class DeviceConflictError extends Error {
@@ -74,34 +73,13 @@ const setHrPendingNotice = () => {
 };
 
 /**
- * Legacy mock lookup by email – used as fallback while migrating.
+ * Build a User directly from Supabase data — no more legacy mock merging.
  */
-const findMockUserByEmail = (email: string): User | null => {
-  const lower = email.trim().toLowerCase();
-  const found = mockUsers.find((u) => u.email.toLowerCase() === lower);
-  return found ?? null;
-};
-
-// Merge a Supabase-derived user with any matching mock user (by email)
-// so the rest of the app that still expects mockData fields keeps working.
-const mergeSupabaseWithLegacyMock = (
+const applyAuthUserId = (
   sbUser: SupabaseUser,
   base: User
 ): User => {
-  const mock = sbUser.email ? findMockUserByEmail(sbUser.email) : null;
-  if (!mock) {
-    return { ...base, authUserId: sbUser.id };
-  }
-
-  // Keep the mock IDs/structure for compatibility, but remember the Supabase auth id.
-  return {
-    ...mock,
-    name: base.name || mock.name,
-    email: base.email || mock.email,
-    role: base.role || mock.role,
-    status: base.status || mock.status,
-    authUserId: sbUser.id,
-  } as User;
+  return { ...base, authUserId: sbUser.id };
 };
 
 /**
@@ -147,7 +125,7 @@ const buildAppUserFromSupabase = async (
       isPhotoEnrolled: false,
     } as User;
 
-    return mergeSupabaseWithLegacyMock(sbUser, fallback);
+    return applyAuthUserId(sbUser, fallback);
   }
 
   const mappedRole = mapRoleFromDb(data.role);
@@ -167,7 +145,7 @@ const buildAppUserFromSupabase = async (
     isPhotoEnrolled: data.is_photo_enrolled ?? false,
   } as User;
 
-  return mergeSupabaseWithLegacyMock(sbUser, appUser);
+  return applyAuthUserId(sbUser, appUser);
 };
 
 // --- provider -------------------------------------------------------
@@ -228,7 +206,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
    * then hydrate from hris_users in the background to avoid blocking login UI.
    */
   const hydrateSupabaseUser = async (sbUser: SupabaseUser, preserveExisting = false) => {
-    const minimal: User = mergeSupabaseWithLegacyMock(sbUser, {
+    const minimal: User = applyAuthUserId(sbUser, {
       id: sbUser.id,
       name: sbUser.email ?? 'User',
       email: sbUser.email ?? '',
@@ -250,7 +228,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       if (hydrated) {
         if (!isActiveStatus(hydrated.status)) {
           setHrPendingNotice();
-          await supabase.auth.signOut().catch(() => {});
+          await supabase.auth.signOut().catch(() => { });
           setUser(null);
           return;
         }
@@ -259,12 +237,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       }
       // No HRIS profile yet -> treat as pending HR approval
       setHrPendingNotice();
-      await supabase.auth.signOut().catch(() => {});
+      await supabase.auth.signOut().catch(() => { });
       setUser(null);
     } catch (err) {
       console.error('[Auth] hydrateSupabaseUser failed to load HRIS profile', err);
       setHrPendingNotice();
-      await supabase.auth.signOut().catch(() => {});
+      await supabase.auth.signOut().catch(() => { });
       setUser(null);
     }
   };
@@ -314,7 +292,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         const profile = await buildAppUserFromSupabase(sbUser);
         if (!profile) {
           setHrPendingNotice();
-          await supabase.auth.signOut().catch(() => {});
+          await supabase.auth.signOut().catch(() => { });
           throw new SupabaseAuthError(
             'Your account is pending HR approval.',
             'hr_pending'
@@ -325,7 +303,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         const isActive = statusLower === 'active';
         if (!isActive) {
           setHrPendingNotice();
-          await supabase.auth.signOut().catch(() => {});
+          await supabase.auth.signOut().catch(() => { });
           throw new SupabaseAuthError(
             'Your account is pending HR approval.',
             'hr_pending'

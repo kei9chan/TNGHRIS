@@ -1,7 +1,7 @@
+import { mockBusinessUnits } from '../../services/mockDataCompat';
 import React from 'react';
 import { ContractTemplate, Role } from '../../types';
 import Button from '../ui/Button';
-import { mockBusinessUnits } from '../../services/mockData';
 
 interface TemplateListProps {
     templates: ContractTemplate[];

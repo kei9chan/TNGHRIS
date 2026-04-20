@@ -1,3 +1,4 @@
+import { mockUsers } from '../../services/mockDataCompat';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { IncidentReport, Resolution, ResolutionType, Permission, Role, User, ResolutionStatus, ApproverStatus } from '../../types';
@@ -8,7 +9,6 @@ import Card from '../ui/Card';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import SignaturePad, { SignaturePadRef } from '../ui/SignaturePad';
-import { mockUsers } from '../../services/mockData';
 import EmployeeMultiSelect from './EmployeeMultiSelect';
 import Input from '../ui/Input';
 import RejectReasonModal from './RejectReasonModal';

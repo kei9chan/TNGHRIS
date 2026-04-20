@@ -1,10 +1,10 @@
+import { mockBusinessUnits, mockDepartments } from '../../services/mockDataCompat';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Memo } from '../../types';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
 import Button from '../ui/Button';
 import SearchableMultiSelect, { SearchableItem } from '../ui/SearchableMultiSelect';
-import { mockBusinessUnits, mockDepartments } from '../../services/mockData';
 import RichTextEditor from '../ui/RichTextEditor';
 import { usePermissions } from '../../hooks/usePermissions';
 

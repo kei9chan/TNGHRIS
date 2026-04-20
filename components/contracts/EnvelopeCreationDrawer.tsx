@@ -1,6 +1,6 @@
+import { mockUsers, mockContractTemplates } from '../../services/mockDataCompat';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Envelope, Role, User, RoutingStep, RoutingStepStatus, ContractTemplate, SignatoryBlock, ContractTemplateSection } from '../../types';
-import { mockContractTemplates, mockUsers } from '../../services/mockData';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';

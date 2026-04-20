@@ -1,6 +1,6 @@
+import { mockOtRequests } from '../../services/mockDataCompat';
 import React, { useState, useMemo } from 'react';
 import { OTRequest, OTStatus, OTRateType, OTStaging, Permission } from '../../types';
-import { mockOtRequests } from '../../services/mockData';
 import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';

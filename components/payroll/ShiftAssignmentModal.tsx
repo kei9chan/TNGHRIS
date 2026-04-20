@@ -1,9 +1,9 @@
+import { mockBusinessUnits } from '../../services/mockDataCompat';
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, ShiftTemplate, ShiftAssignment } from '../../types';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
 import Button from '../ui/Button';
-import { mockBusinessUnits } from '../../services/mockData';
 
 interface ShiftAssignmentModalProps {
   isOpen: boolean;

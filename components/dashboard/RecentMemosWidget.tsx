@@ -1,7 +1,7 @@
+import { mockMemos } from '../../services/mockDataCompat';
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Memo } from '../../types';
-import { mockMemos } from '../../services/mockData';
 import { useAuth } from '../../hooks/useAuth';
 import Card from '../ui/Card';
 

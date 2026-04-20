@@ -1,3 +1,4 @@
+import { mockUsers, mockNotifications, mockJobRequisitions, mockIncidentReports, mockNTEs, mockResolutions, mockEvaluations, mockEvaluationSubmissions, mockEmployeeAwards, mockTickets, mockCOERequests, mockPANs, mockBenefitRequests, mockManpowerRequests, mockAssetAssignments, mockEnvelopes, mockOnboardingTemplates, mockOnboardingChecklists, mockWFHRequests } from '../../services/mockDataCompat';
 
 import React, { useMemo, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
@@ -5,7 +6,6 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Card from '../ui/Card';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
-import { mockResolutions, mockPANs, mockJobRequisitions, mockEvaluations, mockNotifications, mockEvaluationSubmissions, mockIncidentReports, mockTickets, mockEmployeeAwards, mockUsers, mockOnboardingChecklists, mockNTEs, mockAssetAssignments, mockManpowerRequests, mockOnboardingTemplates, mockBenefitRequests, mockEnvelopes, mockWFHRequests } from '../../services/mockData';
 import { ResolutionStatus, ApproverStatus, PANStatus, PANStepStatus, JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, NotificationType, TicketStatus, OnboardingTaskStatus, PANActionTaken, NTEStatus, PAN, Resolution, NTE, JobRequisition, EmployeeAward, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, BenefitRequestStatus, Envelope, EnvelopeStatus, RoutingStepStatus, WFHRequest, WFHRequestStatus, COETemplate, User, Role, Evaluation, EvaluatorType, Memo, MemoAcknowledgement } from '../../types';
 import QuickAnalyticsPreview from './QuickAnalyticsPreview';
 import ActionItemCard from './ActionItemCard';

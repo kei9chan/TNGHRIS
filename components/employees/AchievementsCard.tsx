@@ -1,8 +1,8 @@
+import { mockAwards, mockEmployeeAwards } from '../../services/mockDataCompat';
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import Card from '../ui/Card';
 import { BadgeLevel, ResolutionStatus } from '../../types';
 import { fetchEmployeeAwards } from '../../services/awardService';
-import { mockAwards, mockEmployeeAwards } from '../../services/mockData';
 
 interface AchievementsCardProps {
     employeeId: string;

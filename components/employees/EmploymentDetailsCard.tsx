@@ -1,7 +1,7 @@
+import { mockUsers } from '../../services/mockDataCompat';
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { User } from '../../types';
-import { mockUsers } from '../../services/mockData';
 import Card from '../ui/Card';
 
 // FIX: Inlined DetailItem component to remove dependency on a non-existent file.

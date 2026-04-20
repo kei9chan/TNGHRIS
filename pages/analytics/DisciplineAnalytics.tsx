@@ -1,10 +1,10 @@
+import { mockIncidentReports, mockResolutions, mockCoachingSessions } from '../../services/mockDataCompat';
 import React, { useMemo } from 'react';
 import AnalyticsCard from '../../components/analytics/AnalyticsCard';
 import SimpleBarChart from '../../components/analytics/SimpleBarChart';
 import SimplePieChart from '../../components/analytics/SimplePieChart';
 import SimpleLineChart from '../../components/analytics/SimpleLineChart';
 import CoachingImpactChart from '../../components/analytics/CoachingImpactChart';
-import { mockIncidentReports, mockResolutions, mockCoachingSessions } from '../../services/mockData';
 import { ResolutionType, CoachingTrigger } from '../../types';
 import EditableDescription from '../../components/ui/EditableDescription';
 import Card from '../../components/ui/Card';

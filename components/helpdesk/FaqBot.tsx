@@ -1,7 +1,7 @@
+import { mockMemos, mockCodeOfDiscipline, mockKbArticles } from '../../services/mockDataCompat';
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { mockKbArticles, mockMemos, mockCodeOfDiscipline } from '../../services/mockData';
 import Button from '../ui/Button';
 
 // Icons

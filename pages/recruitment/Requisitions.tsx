@@ -1,8 +1,8 @@
+import { mockUsers, mockBusinessUnits, mockDepartments, mockJobRequisitions } from '../../services/mockDataCompat';
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { JobRequisition, JobRequisitionStatus, Permission, Role, JobRequisitionRole, JobRequisitionStepStatus } from '../../types';
-import { mockJobRequisitions, mockUsers, mockBusinessUnits, mockDepartments } from '../../services/mockData';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import Card from '../../components/ui/Card';

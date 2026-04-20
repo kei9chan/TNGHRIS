@@ -1,6 +1,6 @@
+import { mockCalendarEvents } from '../../services/mockDataCompat';
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { mockCalendarEvents } from '../../services/mockData';
 import { CalendarEvent, Role } from '../../types';
 import Card from '../ui/Card';
 import { useAuth } from '../../hooks/useAuth';

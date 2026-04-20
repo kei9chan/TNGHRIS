@@ -1,3 +1,4 @@
+import { mockUsers, mockBusinessUnits, mockDepartments, mockApplications } from '../../services/mockDataCompat';
 import React, { useState, useEffect, useMemo } from 'react';
 import { JobRequisition, JobRequisitionStatus, User, Role, JobRequisitionRole, JobRequisitionStepStatus, ApplicationStage } from '../../types';
 import Modal from '../ui/Modal';
@@ -6,7 +7,6 @@ import Textarea from '../ui/Textarea';
 import Button from '../ui/Button';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
-import { mockDepartments, mockBusinessUnits, mockUsers, mockApplications } from '../../services/mockData';
 import EmployeeMultiSelect from '../feedback/EmployeeMultiSelect';
 import { supabase } from '../../services/supabaseClient';
 

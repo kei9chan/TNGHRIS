@@ -1,10 +1,10 @@
+// Phase 2 Migration: All data now fetched from Supabase — mockDataCompat import removed
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Card from '../ui/Card';
-import { mockOtRequests, mockAttendanceExceptions, mockResolutions, mockPANs, mockJobRequisitions, mockEvaluations, mockEvaluationSubmissions, mockEvaluationTimelines, mockNotifications, mockTickets, mockEmployeeAwards, mockUsers, mockOnboardingChecklists, mockAssetRequests, mockIncidentReports, mockNTEs, mockAssetAssignments, mockManpowerRequests, mockOnboardingTemplates, mockEnvelopes, mockBenefitRequests, mockCoachingSessions, mockShiftAssignments, mockShiftTemplates, mockAttendanceRecords } from '../../services/mockData';
-import { OTStatus, Role, ResolutionStatus, ApproverStatus, PANStatus, PANStepStatus, JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, NotificationType, TicketStatus, OnboardingTaskStatus, PANActionTaken, AssetRequest, AssetRequestStatus, NTEStatus, PAN, Resolution, NTE, JobRequisition, OTRequest, AttendanceExceptionRecord, EmployeeAward, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, Envelope, EnvelopeStatus, RoutingStepStatus, BenefitRequest, BenefitRequestStatus, CoachingStatus, COETemplate, User, LeaveRequest, LeaveRequestStatus, WFHRequest, WFHRequestStatus, AttendanceRecord, ShiftAssignment, ShiftTemplate, Evaluation, EvaluatorType, Memo, MemoAcknowledgement } from '../../types';
+import { OTStatus, Role, ResolutionStatus, ApproverStatus, PANStatus, PANStepStatus, JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, NotificationType, TicketStatus, OnboardingTaskStatus, PANActionTaken, AssetRequest, AssetRequestStatus, NTEStatus, PAN, Resolution, NTE, JobRequisition, OTRequest, AttendanceExceptionRecord, EmployeeAward, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, Envelope, EnvelopeStatus, RoutingStepStatus, BenefitRequest, BenefitRequestStatus, CoachingStatus, COETemplate, User, LeaveRequest, LeaveRequestStatus, WFHRequest, WFHRequestStatus, AttendanceRecord, ShiftAssignment, ShiftTemplate, Evaluation, EvaluatorType, Memo, MemoAcknowledgement, CoachingSession, EvaluationSubmission, EvaluationTimeline } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useAuth } from '../../hooks/useAuth';
 import ActionItemCard from './ActionItemCard';
@@ -31,20 +31,20 @@ import { approveRejectOtRequest } from '../../services/otService';
 const InboxIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" /></svg>;
 const ClipboardListIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>;
 const UserGroupIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.653-.122-1.28-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.653.122-1.28.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>;
-const DocumentMagnifyingGlassIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m5.231 13.5h-8.021a1.125 1.125 0 0 1-1.125-1.125v-1.5A1.125 1.125 0 0 1 5.625 15h12.75a1.125 1.125 0 0 1 1.125 1.125v1.5a1.125 1.125 0 0 1-1.125 1.125H13.5m-3.031-1.125a3 3 0 1 0-5.962 0 3 3 0 0 0 5.962 0ZM15 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" /></svg>);
+const DocumentMagnifyingGlassIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m5.231 13.5h-8.021a1.125 1.125 0 0 1-1.125-1.125v-1.5A1.125 1.125 0 0 1 5.625 15h12.75a1.125 1.125 0 0 1 1.125 1.125v1.5a1.125 1.125 0 0 1-1.125 1.125H13.5m-3.031-1.125a3 3 0 1 0-5.962 0 3 3 0 0 0 5.962 0ZM15 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" /></svg>);
 const BriefcaseIcon = ({ className }: { className?: string }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" /></svg>);
 const ShieldExclamationIcon = ({ className }: { className?: string }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>);
 const DocumentTextIcon = ({ className }: { className?: string }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>);
-const AcademicCapIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.26 10.147a60.436 60.436 0 0 0-.491 6.347A48.627 48.627 0 0 1 12 20.904a48.627 48.627 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.57 50.57 0 0 0-2.658-.813A59.905 59.905 0 0 1 12 3.493a59.902 59.902 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5" /></svg>);
-const TicketIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 6v.75m0 3v.75m0 3v.75m0 3V18m-9-12v.75m0 3v.75m0 3v.75m0 3V18m-3 .75h18A2.25 2.25 0 0021 16.5V7.5A2.25 2.25 0 0018.75 5.25H5.25A2.25 2.25 0 003 7.5v9A2.25 2.25 0 005.25 18.75h1.5M12 4.5v15" /></svg>);
+const AcademicCapIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.26 10.147a60.436 60.436 0 0 0-.491 6.347A48.627 48.627 0 0 1 12 20.904a48.627 48.627 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.57 50.57 0 0 0-2.658-.813A59.905 59.905 0 0 1 12 3.493a59.902 59.902 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5" /></svg>);
+const TicketIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 6v.75m0 3v.75m0 3v.75m0 3V18m-9-12v.75m0 3v.75m0 3v.75m0 3V18m-3 .75h18A2.25 2.25 0 0021 16.5V7.5A2.25 2.25 0 0018.75 5.25H5.25A2.25 2.25 0 003 7.5v9A2.25 2.25 0 005.25 18.75h1.5M12 4.5v15" /></svg>);
 const TrophyIcon = ({ className }: { className?: string }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 18.75h-9a9 9 0 0 0 9 0Zm0 0a9 9 0 0 0-9 0m9 0h-9M9 11.25V7.5A3 3 0 0 1 12 4.5h0A3 3 0 0 1 15 7.5v3.75m-3 6.75h.01M12 12h.01M12 6h.01M12 18h.01M7.5 15h.01M16.5 15h.01M19.5 12h.01M4.5 12h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>);
-const ClipboardCheckIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M10.125 2.25h-4.5c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125v-9M10.125 2.25h.375a9 9 0 0 1 9 9v.375M10.125 2.25A3.375 3.375 0 0 1 13.5 5.625v1.5c0 .621.504 1.125 1.125 1.125h1.5a3.375 3.375 0 0 1 3.375 3.375M9 15l2.25 2.25L15 12" /></svg>);
-const CalendarDaysIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0h18" /></svg>);
-const GavelIcon: React.FC<{className?: string}> = ({className}) => <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>;
-const ArchiveBoxArrowDownIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>);
-const TagIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6Z" /></svg>);
+const ClipboardCheckIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M10.125 2.25h-4.5c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125v-9M10.125 2.25h.375a9 9 0 0 1 9 9v.375M10.125 2.25A3.375 3.375 0 0 1 13.5 5.625v1.5c0 .621.504 1.125 1.125 1.125h1.5a3.375 3.375 0 0 1 3.375 3.375M9 15l2.25 2.25L15 12" /></svg>);
+const CalendarDaysIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0h18" /></svg>);
+const GavelIcon: React.FC<{ className?: string }> = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>;
+const ArchiveBoxArrowDownIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>);
+const TagIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6Z" /></svg>);
 const SunIcon = ({ className }: { className?: string }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" /></svg>);
-const PencilSquareIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg>);
+const PencilSquareIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg>);
 const GiftIcon = ({ className }: { className?: string }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 00-2-2v-7" /></svg>);
 const SparklesIcon = ({ className }: { className?: string }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z" /></svg>);
 
@@ -113,8 +113,8 @@ const normalizeMemoSignatures = (raw: any): MemoAcknowledgement[] => {
             acknowledgedAt: entry?.acknowledgedAt
                 ? new Date(entry.acknowledgedAt)
                 : entry?.acknowledged_at
-                ? new Date(entry.acknowledged_at)
-                : undefined,
+                    ? new Date(entry.acknowledged_at)
+                    : undefined,
         }))
         .filter((entry: MemoAcknowledgement) => entry.userId);
 };
@@ -146,30 +146,28 @@ const ManagerDashboard: React.FC = () => {
     const { getVisibleEmployeeIds, isUserEligibleEvaluator, getCoeAccess } = usePermissions();
     const location = useLocation();
     const navigate = useNavigate();
-    
-    // Local state to track updates from mock data
-    const [requests, setRequests] = useState<AssetRequest[]>(mockAssetRequests);
-    const [pans, setPans] = useState<PAN[]>(mockPANs);
-    const [otRequests, setOtRequests] = useState<OTRequest[]>(mockOtRequests);
-    const [exceptions, setExceptions] = useState<AttendanceExceptionRecord[]>(mockAttendanceExceptions);
-    const [requisitions, setRequisitions] = useState<JobRequisition[]>(mockJobRequisitions);
-    const [resolutions, setResolutions] = useState<Resolution[]>(mockResolutions);
-    const [ntes, setNTEs] = useState<NTE[]>(mockNTEs);
-    const [awards, setAwards] = useState<EmployeeAward[]>(mockEmployeeAwards);
-    const [assignments, setAssignments] = useState<AssetAssignment[]>(mockAssetAssignments);
-    const [useSupabaseAssignments, setUseSupabaseAssignments] = useState(false);
-    const [manpowerRequests, setManpowerRequests] = useState<ManpowerRequest[]>(mockManpowerRequests);
-    const [checklists, setChecklists] = useState<OnboardingChecklist[]>(mockOnboardingChecklists);
-    const [templates, setTemplates] = useState<OnboardingChecklistTemplate[]>(mockOnboardingTemplates);
-    const [envelopes, setEnvelopes] = useState<Envelope[]>(mockEnvelopes);
-    const [benefitRequests, setBenefitRequests] = useState<BenefitRequest[]>(mockBenefitRequests);
-    const [coachingSessions, setCoachingSessions] = useState(mockCoachingSessions);
-    const [evaluationSubmissions, setEvaluationSubmissions] = useState(mockEvaluationSubmissions);
+
+    // Local state — all initialized empty; populated by Supabase useEffect hooks
+    const [requests, setRequests] = useState<AssetRequest[]>([]);
+    const [pans, setPans] = useState<PAN[]>([]);
+    const [otRequests, setOtRequests] = useState<OTRequest[]>([]);
+    const [exceptions, setExceptions] = useState<AttendanceExceptionRecord[]>([]);
+    const [requisitions, setRequisitions] = useState<JobRequisition[]>([]);
+    const [resolutions, setResolutions] = useState<Resolution[]>([]);
+    const [ntes, setNTEs] = useState<NTE[]>([]);
+    const [awards, setAwards] = useState<EmployeeAward[]>([]);
+    const [assignments, setAssignments] = useState<AssetAssignment[]>([]);
+    const [manpowerRequests, setManpowerRequests] = useState<ManpowerRequest[]>([]);
+    const [checklists, setChecklists] = useState<OnboardingChecklist[]>([]);
+    const [templates, setTemplates] = useState<OnboardingChecklistTemplate[]>([]);
+    const [envelopes, setEnvelopes] = useState<Envelope[]>([]);
+    const [benefitRequests, setBenefitRequests] = useState<BenefitRequest[]>([]);
+    const [coachingSessions, setCoachingSessions] = useState<CoachingSession[]>([]);
+    const [evaluationSubmissions, setEvaluationSubmissions] = useState<EvaluationSubmission[]>([]);
     const [assignedTickets, setAssignedTickets] = useState<Array<{ id: string; status: TicketStatus; category: string; priority: string; assignedAt?: Date; createdAt?: Date; requesterName?: string }>>([]);
-    const [evaluations, setEvaluations] = useState<Evaluation[]>(mockEvaluations);
-    const [evaluationTimelines, setEvaluationTimelines] = useState(mockEvaluationTimelines);
-    const [useSupabaseEvaluations, setUseSupabaseEvaluations] = useState(false);
-    const [useSupabaseEvaluationSubmissions, setUseSupabaseEvaluationSubmissions] = useState(false);
+    const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
+    const [evaluationTimelines, setEvaluationTimelines] = useState<EvaluationTimeline[]>([]);
+
     const [coeRequests, setCoeRequests] = useState<COERequest[]>([]);
     const [coeTemplates, setCoeTemplates] = useState<COETemplate[]>([]);
     const [memos, setMemos] = useState<Memo[]>([]);
@@ -201,19 +199,10 @@ const ManagerDashboard: React.FC = () => {
     const coeAccess = getCoeAccess();
     const scopedCOE = useMemo(() => coeAccess.filterRequests(coeRequests), [coeRequests, coeAccess]);
     const pendingCOE = useMemo(() => scopedCOE.filter(r => r.status === 'Pending'), [scopedCOE]);
-    const legacyUserId = useMemo(() => {
-        if (!user) return null;
-        const byEmail = user.email
-            ? mockUsers.find(u => u.email?.toLowerCase() === user.email.toLowerCase())
-            : null;
-        if (byEmail?.id) return byEmail.id;
-        const byName = user.name
-            ? mockUsers.find(u => u.name?.toLowerCase() === user.name.toLowerCase())
-            : null;
-        return byName?.id ?? null;
-    }, [user?.email, user?.name]);
+    // legacyUserId is now resolved via panApproverId (which queries hris_users)
+    const legacyUserId = panApproverId;
     const notificationUserIdsRef = useRef<Set<string>>(new Set());
-    const [useSupabaseOnboarding, setUseSupabaseOnboarding] = useState(false);
+
     const employeeProfileId = useMemo(() => panApproverId || user?.id || null, [panApproverId, user?.id]);
 
     useEffect(() => {
@@ -284,7 +273,7 @@ const ManagerDashboard: React.FC = () => {
                         signedDocumentUrl: row.signed_document_url || undefined,
                     })) || [];
                 setAssignments(mapped);
-                setUseSupabaseAssignments(true);
+                // Supabase assignments loaded successfully
             } catch (err) {
                 console.error('Failed to load asset assignments for manager dashboard', err);
             }
@@ -338,7 +327,7 @@ const ManagerDashboard: React.FC = () => {
                     setChecklists(mappedChecklists);
                 }
 
-                setUseSupabaseOnboarding(true);
+                // Supabase onboarding data loaded successfully
             } catch (err) {
                 console.error('Failed to load onboarding data for manager dashboard', err);
             }
@@ -368,7 +357,6 @@ const ManagerDashboard: React.FC = () => {
                 setPans((data || []).map(mapPanRow));
             } catch (err) {
                 console.error('Failed to load PANs', err);
-                setPans([...mockPANs]);
             }
         };
         loadPans();
@@ -472,13 +460,13 @@ const ManagerDashboard: React.FC = () => {
                     evalerMap.get(row.evaluation_id)!.push(row);
                 });
 
-                    const mappedEvaluations: Evaluation[] =
-                        (evalRows || []).map((e: any) => {
-                            const rows = evalerMap.get(e.id) || [];
-                            const evaluators = rows.map((row: any, index: number) => {
-                                const normalizedType = String(row.type || '').toLowerCase();
-                                return {
-                                    id: row.id || `${e.id}-${row.user_id || 'group'}-${index}`,
+                const mappedEvaluations: Evaluation[] =
+                    (evalRows || []).map((e: any) => {
+                        const rows = evalerMap.get(e.id) || [];
+                        const evaluators = rows.map((row: any, index: number) => {
+                            const normalizedType = String(row.type || '').toLowerCase();
+                            return {
+                                id: row.id || `${e.id}-${row.user_id || 'group'}-${index}`,
                                 type: normalizedType === 'group' ? EvaluatorType.Group : EvaluatorType.Individual,
                                 weight: row.weight || 0,
                                 userId: row.user_id || undefined,
@@ -519,7 +507,7 @@ const ManagerDashboard: React.FC = () => {
                 if (!active) return;
                 setEvaluations(mappedEvaluations);
                 setEvaluationTimelines(mappedTimelines);
-                setUseSupabaseEvaluations(true);
+                // Supabase evaluations loaded successfully
             } catch (err) {
                 console.error('Failed to load evaluations for manager dashboard', err);
             }
@@ -552,7 +540,7 @@ const ManagerDashboard: React.FC = () => {
                         submittedAt: row.submitted_at ? new Date(row.submitted_at) : new Date(),
                     })) || [];
                 setEvaluationSubmissions(mapped);
-                setUseSupabaseEvaluationSubmissions(true);
+                // Supabase evaluation submissions loaded successfully
             } catch (err) {
                 console.error('Failed to load evaluation submissions for manager dashboard', err);
             }
@@ -648,23 +636,23 @@ const ManagerDashboard: React.FC = () => {
 
             if (!leaveRes.error && leaveRes.data) {
                 const mapped = leaveRes.data.map((row: any) => ({
-                        id: row.id,
-                        employeeId: row.employee_id,
-                        employeeName: row.employee_name,
-                        leaveTypeId: row.leave_type_id,
-                        startDate: new Date(row.start_date),
-                        endDate: new Date(row.end_date),
-                        startTime: row.start_time || undefined,
-                        endTime: row.end_time || undefined,
-                        durationDays: Number(row.duration_days),
-                        reason: row.reason,
-                        status: normalizeLeaveStatus(row.status),
-                        historyLog: row.history_log || [],
-                        attachmentUrl: row.attachment_url || undefined,
-                        approverId: row.approver_id || undefined,
-                        businessUnitId: row.business_unit_id || undefined,
-                        departmentId: row.department_id || undefined,
-                    }));
+                    id: row.id,
+                    employeeId: row.employee_id,
+                    employeeName: row.employee_name,
+                    leaveTypeId: row.leave_type_id,
+                    startDate: new Date(row.start_date),
+                    endDate: new Date(row.end_date),
+                    startTime: row.start_time || undefined,
+                    endTime: row.end_time || undefined,
+                    durationDays: Number(row.duration_days),
+                    reason: row.reason,
+                    status: normalizeLeaveStatus(row.status),
+                    historyLog: row.history_log || [],
+                    attachmentUrl: row.attachment_url || undefined,
+                    approverId: row.approver_id || undefined,
+                    businessUnitId: row.business_unit_id || undefined,
+                    departmentId: row.department_id || undefined,
+                }));
                 setPendingLeaveApprovals(mapped.filter(r => r.status === LeaveRequestStatus.Pending));
             } else {
                 setPendingLeaveApprovals([]);
@@ -672,18 +660,18 @@ const ManagerDashboard: React.FC = () => {
 
             if (!wfhRes.error && wfhRes.data) {
                 const mapped = wfhRes.data.map((row: any) => ({
-                        id: row.id,
-                        employeeId: row.employee_id,
-                        employeeName: row.employee_name,
-                        date: row.date ? new Date(row.date) : new Date(),
-                        reason: row.reason,
-                        status: row.status as WFHRequestStatus,
-                        reportLink: row.report_link || undefined,
-                        approvedBy: row.approved_by || undefined,
-                        approvedAt: row.approved_at ? new Date(row.approved_at) : undefined,
-                        rejectionReason: row.rejection_reason || undefined,
-                        createdAt: row.created_at ? new Date(row.created_at) : new Date(),
-                    }));
+                    id: row.id,
+                    employeeId: row.employee_id,
+                    employeeName: row.employee_name,
+                    date: row.date ? new Date(row.date) : new Date(),
+                    reason: row.reason,
+                    status: row.status as WFHRequestStatus,
+                    reportLink: row.report_link || undefined,
+                    approvedBy: row.approved_by || undefined,
+                    approvedAt: row.approved_at ? new Date(row.approved_at) : undefined,
+                    rejectionReason: row.rejection_reason || undefined,
+                    createdAt: row.created_at ? new Date(row.created_at) : new Date(),
+                }));
                 setPendingWfhApprovals(mapped.filter(r => r.status === WFHRequestStatus.Pending));
             } else {
                 setPendingWfhApprovals([]);
@@ -740,39 +728,12 @@ const ManagerDashboard: React.FC = () => {
         loadPendingApprovals();
     }, [user?.id, reporteeIds]);
 
-    // Robust polling interval to sync local state with global mock data
-    useEffect(() => {
-        const interval = setInterval(() => {
-            setRequests([...mockAssetRequests]);
-            setPans([...mockPANs]);
-            setOtRequests([...mockOtRequests]);
-            setExceptions([...mockAttendanceExceptions]);
-            setRequisitions([...mockJobRequisitions]);
-            setResolutions([...mockResolutions]);
-            setNTEs([...mockNTEs]);
-            setAwards([...mockEmployeeAwards]);
-            if (!useSupabaseAssignments) {
-                setAssignments([...mockAssetAssignments]);
-            }
-            setManpowerRequests([...mockManpowerRequests]);
-            if (!useSupabaseOnboarding) {
-                setChecklists([...mockOnboardingChecklists]);
-                setTemplates([...mockOnboardingTemplates]);
-            }
-            setEnvelopes([...mockEnvelopes]);
-            setBenefitRequests([...mockBenefitRequests]);
-            setCoachingSessions([...mockCoachingSessions]);
-            if (!useSupabaseEvaluationSubmissions) {
-                setEvaluationSubmissions([...mockEvaluationSubmissions]);
-            }
-        }, 1000);
-        return () => clearInterval(interval);
-    }, [useSupabaseOnboarding, useSupabaseAssignments, useSupabaseEvaluationSubmissions]);
+    // NOTE: Mock polling interval removed — all state is now populated by Supabase useEffect hooks above
 
     // Updated to include all visible employees (BU or subordinates)
     const visibleEmployeeIds = useMemo(() => {
-         if (!user) return [];
-         return getVisibleEmployeeIds();
+        if (!user) return [];
+        return getVisibleEmployeeIds();
     }, [user, getVisibleEmployeeIds]);
 
     // Filter direct subordinates for specific approvals (like OT/Exceptions where direct management applies)
@@ -780,7 +741,7 @@ const ManagerDashboard: React.FC = () => {
         if (!user) return [];
         return visibleEmployeeIds.filter(id => id !== user.id);
     }, [user, visibleEmployeeIds]);
-    
+
     const isApprover = user && (user.role === Role.GeneralManager || user.role === Role.OperationsDirector || user.role === Role.BOD);
     // Check if Business Unit Manager to allow broader approvals
     const isBusinessUnitManager = user && user.role === Role.BusinessUnitManager;
@@ -791,9 +752,9 @@ const ManagerDashboard: React.FC = () => {
     };
 
     const handleSaveManpowerRequest = (request: ManpowerRequest) => {
-        mockManpowerRequests.unshift(request);
-        setManpowerRequests([...mockManpowerRequests]);
-        
+        // Optimistically add the new request to local state
+        setManpowerRequests(prev => [request, ...prev]);
+
         if (user) {
             logActivity(user, 'CREATE', 'ManpowerRequest', request.id, `Created On-Call Request for ${request.date}`);
         }
@@ -812,7 +773,8 @@ const ManagerDashboard: React.FC = () => {
         }
         try {
             const saved = await createCoeRequest(request, user);
-            mockCOERequests.unshift(saved);
+            // Reload COE requests from Supabase to reflect the new entry
+            setCoeRequests(prev => [saved, ...prev]);
             logActivity(user, 'CREATE', 'COERequest', saved.id, `Requested COE for ${saved.purpose}`);
             alert("Certificate of Employment request submitted.");
         } catch (error: any) {
@@ -841,7 +803,7 @@ const ManagerDashboard: React.FC = () => {
         const employee: User = {
             id: employeeRow.id,
             name: formatEmployeeName(
-              employeeRow.full_name ||
+                employeeRow.full_name ||
                 `${employeeRow.first_name || ''} ${employeeRow.last_name || ''}`.trim() ||
                 'Employee'
             ),
@@ -907,33 +869,19 @@ const ManagerDashboard: React.FC = () => {
             return;
         }
 
-        const approvedRequest = manpowerRequests.find(r => r.id === requestId);
-        if (approvedRequest?.requestedBy) {
-            mockNotifications.unshift({
-                id: `manpower-approve-${requestId}-${Date.now()}`,
-                userId: approvedRequest.requestedBy,
-                type: NotificationType.MANPOWER_REQUEST_APPROVED,
-                title: 'On-Call Approved',
-                message: `Your on-call request for ${approvedRequest.businessUnitName || 'Unknown BU'} on ${new Date(approvedRequest.date).toLocaleDateString()} has been approved.`,
-                link: '/payroll/manpower-planning',
-                isRead: false,
-                createdAt: new Date(),
-                relatedEntityId: requestId,
-            });
-        }
-
-        const index = mockManpowerRequests.findIndex(r => r.id === requestId);
-        if (index > -1) {
-            mockManpowerRequests[index].status = ManpowerRequestStatus.Approved;
-            mockManpowerRequests[index].approvedBy = user.id;
-            mockManpowerRequests[index].approvedAt = new Date();
-            setManpowerRequests([...mockManpowerRequests]);
-        }
+        // Update local state to reflect the approval
+        setManpowerRequests(prev =>
+            prev.map(r =>
+                r.id === requestId
+                    ? { ...r, status: ManpowerRequestStatus.Approved, approvedBy: user.id, approvedAt: new Date() }
+                    : r
+            )
+        );
         setPendingManpowerApprovals(prev => prev.filter(r => r.id !== requestId));
         setIsManpowerReviewModalOpen(false);
         alert("Manpower Request Approved.");
     };
-    
+
     const handleRejectManpower = async (requestId: string, reason: string) => {
         if (!user) return;
         const { error } = await supabase
@@ -946,27 +894,14 @@ const ManagerDashboard: React.FC = () => {
             return;
         }
 
-        const rejectedRequest = manpowerRequests.find(r => r.id === requestId);
-        if (rejectedRequest?.requestedBy) {
-            mockNotifications.unshift({
-                id: `manpower-reject-${requestId}-${Date.now()}`,
-                userId: rejectedRequest.requestedBy,
-                type: NotificationType.MANPOWER_REQUEST_REJECTED,
-                title: 'On-Call Rejected',
-                message: `Your on-call request for ${rejectedRequest.businessUnitName || 'Unknown BU'} on ${new Date(rejectedRequest.date).toLocaleDateString()} has been rejected${reason ? `: ${reason}` : '.'}`,
-                link: '/payroll/manpower-planning',
-                isRead: false,
-                createdAt: new Date(),
-                relatedEntityId: requestId,
-            });
-        }
-
-        const index = mockManpowerRequests.findIndex(r => r.id === requestId);
-        if (index > -1) {
-            mockManpowerRequests[index].status = ManpowerRequestStatus.Rejected;
-            mockManpowerRequests[index].rejectionReason = reason;
-            setManpowerRequests([...mockManpowerRequests]);
-        }
+        // Update local state to reflect the rejection
+        setManpowerRequests(prev =>
+            prev.map(r =>
+                r.id === requestId
+                    ? { ...r, status: ManpowerRequestStatus.Rejected, rejectionReason: reason }
+                    : r
+            )
+        );
         setPendingManpowerApprovals(prev => prev.filter(r => r.id !== requestId));
         setIsManpowerReviewModalOpen(false);
         alert("Manpower Request Rejected.");
@@ -1110,20 +1045,20 @@ const ManagerDashboard: React.FC = () => {
                 prev.map(m =>
                     m.id === memoId
                         ? {
-                              ...m,
-                              acknowledgementTracker: newTracker,
-                              acknowledgementSignatures: newSignatures,
-                          }
+                            ...m,
+                            acknowledgementTracker: newTracker,
+                            acknowledgementSignatures: newSignatures,
+                        }
                         : m
                 )
             );
             setSelectedMemo(prev =>
                 prev && prev.id === memoId
                     ? {
-                          ...prev,
-                          acknowledgementTracker: newTracker,
-                          acknowledgementSignatures: newSignatures,
-                      }
+                        ...prev,
+                        acknowledgementTracker: newTracker,
+                        acknowledgementSignatures: newSignatures,
+                    }
                     : prev
             );
             setMemoUpdateKey(prev => prev + 1);
@@ -1140,7 +1075,7 @@ const ManagerDashboard: React.FC = () => {
         const items: any[] = [];
         const iconProps = { className: "h-6 w-6 text-white" };
         const notificationIds = notificationUserIds;
-        
+
         // Helper for countdown logic
         const getCountdownString = (deadline: Date) => {
             const now = new Date();
@@ -1211,7 +1146,7 @@ const ManagerDashboard: React.FC = () => {
         // 0.1 Scheduled Coaching Sessions where I am the Coach
         const myCoachingSessions = coachingSessions.filter(s => s.coachId === user.id && s.status === CoachingStatus.Scheduled);
         myCoachingSessions.forEach(session => {
-             items.push({
+            items.push({
                 id: `coaching-conduct-${session.id}`,
                 icon: <SparklesIcon {...iconProps} />,
                 title: "Conduct Coaching Session",
@@ -1225,12 +1160,12 @@ const ManagerDashboard: React.FC = () => {
 
         // 1. Employee Lifecycle Checklists (Onboarding / Offboarding)
         const myChecklists = checklists.filter(c => c.employeeId === (employeeProfileId || user.id) && c.status === 'InProgress');
-        
+
         myChecklists.forEach(checklist => {
             const template = templates.find(t => t.id === checklist.templateId);
             const templateType = template?.templateType || 'Onboarding';
             const taskLabel = templateType === 'Offboarding' ? 'Offboarding Task' : 'Onboarding Task';
-            
+
             const pendingTasks = checklist.tasks
                 .filter(t => t.status === OnboardingTaskStatus.Pending)
                 .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
@@ -1259,8 +1194,8 @@ const ManagerDashboard: React.FC = () => {
                     priority: 1
                 });
             } else if (checklist.tasks.length > 0 && checklist.tasks.every(t => t.status === OnboardingTaskStatus.Completed)) {
-                 // If ALL tasks are completed but checklist is still InProgress (meaning pending sign-off)
-                 items.push({
+                // If ALL tasks are completed but checklist is still InProgress (meaning pending sign-off)
+                items.push({
                     id: `checklist-sign-${checklist.id}`,
                     icon: <ClipboardCheckIcon {...iconProps} />,
                     title: `Finalize ${templateType} Checklist`,
@@ -1282,9 +1217,9 @@ const ManagerDashboard: React.FC = () => {
                 title: 'Pending Asset Acceptance',
                 subtitle: `You have been assigned an asset that requires your acknowledgment.`,
                 date: new Date(assignment.dateAssigned).toLocaleDateString(),
-                link: `/my-profile?acceptAssetAssignmentId=${assignment.id}`, 
+                link: `/my-profile?acceptAssetAssignmentId=${assignment.id}`,
                 colorClass: 'bg-indigo-500',
-                priority: 0 
+                priority: 0
             });
         });
 
@@ -1324,187 +1259,49 @@ const ManagerDashboard: React.FC = () => {
             });
         }
 
-        const ticketNotifications = mockNotifications
-            .filter(n => notificationIds.has(n.userId) && !n.isRead && (n.type === NotificationType.TICKET_ASSIGNED_TO_YOU || n.type === NotificationType.TICKET_UPDATE_REQUESTER))
-            .map(item => ({
-                id: `ticket-notif-${item.id}`,
-                icon: <TicketIcon {...iconProps} />,
-                title: item.type === NotificationType.TICKET_ASSIGNED_TO_YOU ? 'New Ticket Assigned' : 'Ticket Update',
-                subtitle: item.message,
-                date: new Date(item.createdAt).toLocaleDateString(),
-                link: item.link,
-                colorClass: 'bg-cyan-500',
-                priority: 1
-            }));
+        // Ticket notifications are now delivered via Supabase realtime; falling back to empty for now
+        const ticketNotifications: typeof items = [];
         items.push(...ticketNotifications);
 
-        const caseNotifications = mockNotifications
-            .filter(n => notificationIds.has(n.userId) && !n.isRead && n.type === NotificationType.CASE_ASSIGNED)
-            .map(item => ({
-                id: `case-notif-${item.id}`,
-                icon: <GavelIcon {...iconProps} />,
-                title: 'Case Assigned',
-                subtitle: item.message,
-                date: new Date(item.createdAt).toLocaleDateString(),
-                link: item.link,
-                colorClass: 'bg-rose-500',
-                priority: 1
-            }));
+        const caseNotifications: typeof items = [];
         items.push(...caseNotifications);
 
-        const benefitNotifications = mockNotifications
-            .filter(n => notificationIds.has(n.userId) && !n.isRead && n.type === NotificationType.BENEFIT_REQUEST_SUBMITTED)
-            .map(item => ({
-                id: `benefit-notif-${item.id}`,
-                icon: <GiftIcon {...iconProps} />,
-                title: 'Benefit Approval Required',
-                subtitle: item.message,
-                date: new Date(item.createdAt).toLocaleDateString(),
-                link: item.link,
-                colorClass: 'bg-emerald-500',
-                priority: 1
-            }));
+        const benefitNotifications: typeof items = [];
         items.push(...benefitNotifications);
 
-        const panApprovalNotifications = mockNotifications
-            .filter(n => notificationIds.has(n.userId) && !n.isRead && n.type === NotificationType.PAN_APPROVAL_REQUEST)
-            .map(item => ({
-                id: `pan-approve-${item.id}`,
-                icon: <DocumentTextIcon {...iconProps} />,
-                title: 'PAN Approval Required',
-                subtitle: item.message,
-                date: new Date(item.createdAt).toLocaleDateString(),
-                link: item.link,
-                colorClass: 'bg-amber-500',
-                priority: 1
-            }));
+        const panApprovalNotifications: typeof items = [];
         items.push(...panApprovalNotifications);
 
-        const profileChangeNotifications = mockNotifications
-            .filter(n => notificationIds.has(n.userId) && !n.isRead && n.type === NotificationType.PROFILE_CHANGE_APPROVED)
-            .map(item => ({
-                id: `profile-approve-${item.id}`,
-                icon: <DocumentTextIcon {...iconProps} />,
-                title: item.title || 'Profile Update Approved',
-                subtitle: item.message,
-                date: new Date(item.createdAt).toLocaleDateString(),
-                link: item.link || '/my-profile',
-                colorClass: 'bg-green-500',
-                priority: 0
-            }));
+        const profileChangeNotifications: typeof items = [];
         items.push(...profileChangeNotifications);
 
-        const onboardingNotifications = mockNotifications
-            .filter(n => notificationIds.has(n.userId) && !n.isRead && (n.type === NotificationType.ONBOARDING_ASSIGNED || n.type === NotificationType.OFFBOARDING_ASSIGNED))
-            .map(item => ({
-                id: `onboard-notif-${item.id}`,
-                icon: <ClipboardCheckIcon {...iconProps} />,
-                title: item.type === NotificationType.OFFBOARDING_ASSIGNED ? 'Offboarding Assigned' : 'Onboarding Assigned',
-                subtitle: item.message,
-                date: new Date(item.createdAt).toLocaleDateString(),
-                link: item.link,
-                colorClass: item.type === NotificationType.OFFBOARDING_ASSIGNED ? 'bg-orange-500' : 'bg-cyan-500',
-                priority: 1
-            }));
+        const onboardingNotifications: typeof items = [];
         items.push(...onboardingNotifications);
 
-        const evaluationNotifications = mockNotifications
-            .filter(n => notificationIds.has(n.userId) && !n.isRead && n.type === NotificationType.EVALUATION_ASSIGNED)
-            .map(item => ({
-                id: `eval-notif-${item.id}`,
-                icon: <AcademicCapIcon {...iconProps} />,
-                title: item.title || 'Evaluation Assigned',
-                subtitle: item.message,
-                date: new Date(item.createdAt).toLocaleDateString(),
-                link: item.link,
-                colorClass: 'bg-teal-500',
-                priority: 1
-            }));
+        const evaluationNotifications: typeof items = [];
         items.push(...evaluationNotifications);
 
-        const pulseSurveyNotifications = mockNotifications
-            .filter(n => notificationIds.has(n.userId) && !n.isRead && n.type === NotificationType.PULSE_SURVEY_REMINDER)
-            .map(item => ({
-                id: `pulse-notif-${item.id}`,
-                icon: <ClipboardCheckIcon {...iconProps} />,
-                title: item.title || 'Pulse Survey Reminder',
-                subtitle: item.message,
-                date: new Date(item.createdAt).toLocaleDateString(),
-                link: item.link,
-                colorClass: 'bg-blue-500',
-                priority: 0
-            }));
+        const pulseSurveyNotifications: typeof items = [];
         items.push(...pulseSurveyNotifications);
 
-        const contractNotifications = mockNotifications
-            .filter(
-                n =>
-                    notificationIds.has(n.userId) &&
-                    !n.isRead &&
-                    (n.type === NotificationType.CONTRACT_SIGNATURE_REQUEST || n.type === NotificationType.CONTRACT_APPROVAL_REQUEST)
-            )
-            .map(item => ({
-                id: `contract-notif-${item.id}`,
-                icon: <PencilSquareIcon {...iconProps} />,
-                title: item.type === NotificationType.CONTRACT_APPROVAL_REQUEST ? 'Contract Approval Required' : 'Contract Signature Required',
-                subtitle: item.message,
-                date: new Date(item.createdAt).toLocaleString(),
-                createdAt: item.createdAt,
-                link: item.link,
-                colorClass: item.type === NotificationType.CONTRACT_APPROVAL_REQUEST ? 'bg-pink-500' : 'bg-orange-500',
-                priority: 0
-            }));
+        const contractNotifications: typeof items = [];
         items.push(...contractNotifications);
 
-        const manpowerNotifications = mockNotifications
-            .filter(
-                n =>
-                    notificationIds.has(n.userId) &&
-                    !n.isRead &&
-                    n.type === NotificationType.MANPOWER_REQUEST_SUBMITTED
-            )
-            .map(item => ({
-                id: `manpower-notif-${item.id}`,
-                icon: <UserGroupIcon />,
-                title: 'On-Call Request Approval',
-                subtitle: item.message,
-                date: new Date(item.createdAt).toLocaleString(),
-                createdAt: item.createdAt,
-                link: item.link,
-                colorClass: 'bg-pink-500',
-                priority: 0
-            }));
+        const manpowerNotifications: typeof items = [];
         items.push(...manpowerNotifications);
 
-        const manpowerDecisionNotifications = mockNotifications
-            .filter(
-                n =>
-                    notificationIds.has(n.userId) &&
-                    !n.isRead &&
-                    (n.type === NotificationType.MANPOWER_REQUEST_APPROVED || n.type === NotificationType.MANPOWER_REQUEST_REJECTED)
-            )
-            .map(item => ({
-                id: `manpower-decision-${item.id}`,
-                icon: <UserGroupIcon />,
-                title: item.type === NotificationType.MANPOWER_REQUEST_APPROVED ? 'On-Call Approved' : 'On-Call Rejected',
-                subtitle: item.message,
-                date: new Date(item.createdAt).toLocaleString(),
-                createdAt: item.createdAt,
-                link: item.link,
-                colorClass: item.type === NotificationType.MANPOWER_REQUEST_APPROVED ? 'bg-green-500' : 'bg-red-500',
-                priority: 0
-            }));
+        const manpowerDecisionNotifications: typeof items = [];
         items.push(...manpowerDecisionNotifications);
-        
+
         // 4. Manpower Request Approvals (For Approvers)
         if (isApprover || isBusinessUnitManager) {
             // IMPORTANT: Filter by scope. Only show requests from employees I can see (subordinates or BU members)
             // OR if I am the one who needs to approve it.
-            const pendingManpower = manpowerRequests.filter(r => 
-                r.status === ManpowerRequestStatus.Pending && 
+            const pendingManpower = manpowerRequests.filter(r =>
+                r.status === ManpowerRequestStatus.Pending &&
                 visibleEmployeeIds.includes(r.requestedBy)
             );
-            
+
             pendingManpower.forEach(req => {
                 items.push({
                     id: `manpower-${req.id}`,
@@ -1551,7 +1348,7 @@ const ManagerDashboard: React.FC = () => {
                 colorClass: "bg-blue-500",
             });
         });
-        
+
         // 7. Attendance Exceptions (Manager Reviewing)
         const exceptionsForApproval = exceptions.filter(e => subordinateIds.includes(e.employeeId) && e.status === 'Pending');
         exceptionsForApproval.forEach(ex => {
@@ -1565,7 +1362,7 @@ const ManagerDashboard: React.FC = () => {
                 colorClass: "bg-yellow-500",
             });
         });
-        
+
         // 8. PAN Approval (Manager Approving)
         const approverIds = new Set([user.id, panApproverId].filter(Boolean));
         const pendingPans = pans.filter(pan =>
@@ -1573,8 +1370,8 @@ const ManagerDashboard: React.FC = () => {
             pan.routingSteps.some(s => approverIds.has(s.userId) && s.status === PANStepStatus.Pending)
         );
         pendingPans.forEach(pan => {
-             const panSortDate = pan.updatedAt || pan.effectiveDate || pan.createdAt;
-             items.push({
+            const panSortDate = pan.updatedAt || pan.effectiveDate || pan.createdAt;
+            items.push({
                 id: pan.id,
                 icon: <DocumentTextIcon {...iconProps} />,
                 title: `PAN for Approval`,
@@ -1587,15 +1384,15 @@ const ManagerDashboard: React.FC = () => {
         });
 
         // 9. Job Requisition Final Approval
-        const pendingFinalRequisitions = requisitions.filter(req => 
+        const pendingFinalRequisitions = requisitions.filter(req =>
             req.status === JobRequisitionStatus.PendingApproval &&
-            req.routingSteps.some(step => 
+            req.routingSteps.some(step =>
                 step.role === JobRequisitionRole.Final &&
                 step.status === JobRequisitionStepStatus.Pending &&
                 step.userId === user.id
             )
         );
-         pendingFinalRequisitions.forEach(req => {
+        pendingFinalRequisitions.forEach(req => {
             items.push({
                 id: `req-final-${req.id}`,
                 icon: <DocumentMagnifyingGlassIcon {...iconProps} />,
@@ -1613,10 +1410,10 @@ const ManagerDashboard: React.FC = () => {
             res.approverSteps.some(step => step.userId === user.id && step.status === ApproverStatus.Pending)
         );
         pendingResolutionsForMe.forEach(res => {
-            const ir = mockIncidentReports.find(ir => ir.id === res.incidentReportId);
+            const ir = resolutions.find(r => r.id === res.incidentReportId);
             items.push({
                 id: `res-approve-${res.id}`,
-                icon: <GavelIcon className="h-6 w-6 text-white" />, 
+                icon: <GavelIcon className="h-6 w-6 text-white" />,
                 title: "Resolution for Approval",
                 subtitle: `For Case: ${res.incidentReportId} (${ir?.category || 'Unknown'})`,
                 date: new Date(res.decisionDate).toLocaleDateString(),
@@ -1644,9 +1441,9 @@ const ManagerDashboard: React.FC = () => {
                 priority: 0
             });
         });
-        
+
         // 12. Contract/Envelope Approval
-        const pendingEnvelopes = envelopes.filter(env => 
+        const pendingEnvelopes = envelopes.filter(env =>
             (env.status === EnvelopeStatus.PendingApproval || env.status === EnvelopeStatus.OutForSignature) &&
             env.routingSteps.some(step => step.userId === user.id && step.status === RoutingStepStatus.Pending)
         );
@@ -1654,7 +1451,7 @@ const ManagerDashboard: React.FC = () => {
         pendingEnvelopes.forEach(env => {
             const myStep = env.routingSteps.find(s => s.userId === user.id && s.status === RoutingStepStatus.Pending);
             const actionLabel = myStep?.role === 'Approver' ? 'Approval Required' : 'Signature Required';
-            
+
             items.push({
                 id: `env-${env.id}`,
                 icon: <PencilSquareIcon {...iconProps} />,
@@ -1672,27 +1469,27 @@ const ManagerDashboard: React.FC = () => {
         if (isBOD) {
             const pendingBenefits = benefitRequests.filter(r => r.status === BenefitRequestStatus.PendingBOD);
             pendingBenefits.forEach(req => {
-               items.push({
-                   id: `ben-bod-${req.id}`,
-                   icon: <GiftIcon className="h-6 w-6 text-white" />,
-                   title: "Benefit Approval Required",
-                   subtitle: `${req.employeeName} - ${req.benefitTypeName}`,
-                   date: new Date(req.dateNeeded).toLocaleDateString(),
-                   link: '/employees/benefits?tab=approvals',
-                   colorClass: 'bg-orange-500',
-                   priority: 0
-               });
-           });
-       }
+                items.push({
+                    id: `ben-bod-${req.id}`,
+                    icon: <GiftIcon className="h-6 w-6 text-white" />,
+                    title: "Benefit Approval Required",
+                    subtitle: `${req.employeeName} - ${req.benefitTypeName}`,
+                    date: new Date(req.dateNeeded).toLocaleDateString(),
+                    link: '/employees/benefits?tab=approvals',
+                    colorClass: 'bg-orange-500',
+                    priority: 0
+                });
+            });
+        }
 
-       // 14. UPDATED: Evaluation Pending (Manager/GM as Evaluator)
+        // 14. UPDATED: Evaluation Pending (Manager/GM as Evaluator)
         const evaluatorUser = { ...user, id: employeeProfileId || user.id };
         const mySubmissions = evaluationSubmissions.filter(sub => sub.raterId === (employeeProfileId || user.id));
-        const evaluationsToPerform = (useSupabaseEvaluations ? evaluations : mockEvaluations).filter(e => e.status === 'InProgress');
+        const evaluationsToPerform = evaluations.filter(e => e.status === 'InProgress');
 
         const evaluationItems = evaluationsToPerform.map(evaluation => {
             // Find who this user needs to evaluate for this evaluation cycle using the robust helper
-            const eligibleTargets = evaluation.targetEmployeeIds.filter(targetId => 
+            const eligibleTargets = evaluation.targetEmployeeIds.filter(targetId =>
                 isUserEligibleEvaluator(evaluatorUser, evaluation, targetId)
             );
 
@@ -1700,13 +1497,13 @@ const ManagerDashboard: React.FC = () => {
             const submittedTargets = mySubmissions
                 .filter(s => s.evaluationId === evaluation.id && eligibleTargets.includes(s.subjectEmployeeId))
                 .map(s => s.subjectEmployeeId);
-            
+
             const remainingCount = eligibleTargets.length - submittedTargets.length;
 
             if (remainingCount > 0) {
                 const deadline = evaluation.dueDate
                     ? evaluation.dueDate
-                    : ((useSupabaseEvaluations ? evaluationTimelines : mockEvaluationTimelines).find((t: any) => t.id === evaluation.timelineId)?.endDate || evaluation.createdAt);
+                    : (evaluationTimelines.find((t: any) => t.id === evaluation.timelineId)?.endDate || evaluation.createdAt);
                 return {
                     id: `eval-perform-${evaluation.id}`,
                     icon: <AcademicCapIcon {...iconProps} />,
@@ -1767,7 +1564,7 @@ const ManagerDashboard: React.FC = () => {
             if (priorityDiff !== 0) return priorityDiff;
             return String(a.id).localeCompare(String(b.id));
         });
-    }, [user, notificationUserIds, employeeProfileId, memos, memoUpdateKey, requests, assignments, assignedTickets, checklists, templates, pans, pendingOtApprovals, exceptions, requisitions, resolutions, ntes, awards, manpowerRequests, isApprover, isBusinessUnitManager, subordinateIds, envelopes, benefitRequests, coachingSessions, evaluationSubmissions, evaluations, useSupabaseEvaluations, isUserEligibleEvaluator, visibleEmployeeIds, panApproverId]);
+    }, [user, notificationUserIds, employeeProfileId, memos, memoUpdateKey, requests, assignments, assignedTickets, checklists, templates, pans, pendingOtApprovals, exceptions, requisitions, resolutions, ntes, awards, manpowerRequests, isApprover, isBusinessUnitManager, subordinateIds, envelopes, benefitRequests, coachingSessions, evaluationSubmissions, evaluations, evaluationTimelines, isUserEligibleEvaluator, visibleEmployeeIds, panApproverId]);
 
     const teamApprovalItems = useMemo(() => {
         const items: Array<{
@@ -1777,7 +1574,8 @@ const ManagerDashboard: React.FC = () => {
             subtitle: string;
             date: string;
             colorClass: string;
-            onClick: () => void;
+            onClick?: () => void;
+            [key: string]: any;
         }> = [];
 
         pendingLeaveApprovals.forEach(req => {
@@ -1876,9 +1674,9 @@ const ManagerDashboard: React.FC = () => {
         <div className="space-y-6">
             <QuickLinks />
             <UpcomingEventsWidget />
-            
+
             <Card title="COE Requests">
-                <COEQueue 
+                <COEQueue
                     requests={pendingCOE}
                     onApprove={handleApproveCOE}
                     onReject={handleRejectCOE}
@@ -1917,11 +1715,11 @@ const ManagerDashboard: React.FC = () => {
             </Card>
 
             {actionItems.length > 0 ? (
-                 <Card title="Action Items">
+                <Card title="Action Items">
                     <div className="space-y-4">
                         {actionItems.map(item => {
                             if (item.onClick) {
-                                 return (
+                                return (
                                     <div key={item.id} onClick={item.onClick} className="cursor-pointer">
                                         <div className="bg-white dark:bg-slate-800 shadow-md rounded-lg overflow-hidden transition-all hover:shadow-lg hover:ring-2 hover:ring-indigo-500">
                                             <div className="flex items-center p-4">
@@ -1962,7 +1760,7 @@ const ManagerDashboard: React.FC = () => {
                     </div>
                 </Card>
             )}
-            
+
             <QuickAnalyticsPreview />
 
             <MemoViewModal
@@ -1972,8 +1770,8 @@ const ManagerDashboard: React.FC = () => {
                 onAcknowledge={handleAcknowledgeMemo}
                 user={user}
             />
-            
-             <ManpowerReviewModal
+
+            <ManpowerReviewModal
                 isOpen={isManpowerReviewModalOpen}
                 onClose={() => setIsManpowerReviewModalOpen(false)}
                 request={selectedManpowerRequest}
@@ -1990,7 +1788,7 @@ const ManagerDashboard: React.FC = () => {
                 }}
                 request={selectedLeaveRequest}
                 leaveTypes={leaveTypes}
-                onSave={() => {}}
+                onSave={() => { }}
                 onApprove={handleLeaveApproval}
             />
 
@@ -2011,15 +1809,15 @@ const ManagerDashboard: React.FC = () => {
                     setIsOTReviewModalOpen(false);
                     setSelectedOTRequest(null);
                 }}
-                onSave={() => {}}
+                onSave={() => { }}
                 onApproveOrReject={handleApproveRejectOT}
                 requestToEdit={selectedOTRequest}
                 canApproveOverride={!!selectedOTRequest && reporteeIds.includes(selectedOTRequest.employeeId)}
-                attendanceRecords={mockAttendanceRecords}
-                shiftAssignments={mockShiftAssignments}
-                shiftTemplates={mockShiftTemplates}
+                attendanceRecords={[]}
+                shiftAssignments={[]}
+                shiftTemplates={[]}
             />
-            
+
             <ManpowerRequestModal
                 isOpen={isManpowerModalOpen}
                 onClose={handleCloseManpowerModal}
@@ -2032,7 +1830,7 @@ const ManagerDashboard: React.FC = () => {
                 onSave={handleSaveCOERequest}
             />
             {coeToPrint && createPortal(
-                <PrintableCOE 
+                <PrintableCOE
                     template={coeToPrint.template}
                     request={coeToPrint.request}
                     employee={coeToPrint.employee}

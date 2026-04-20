@@ -1,9 +1,9 @@
+import { mockShiftTemplates, mockSites } from '../../services/mockDataCompat';
 import React, { useState } from 'react';
 import { TimeEvent, TimeEventType, ShiftAssignment, TimeEventSource, DeviceSecurityProfile, AnomalyTag, TimeEventExtra } from '../../types';
 import Input from '../ui/Input';
 import Button from '../ui/Button';
 import Textarea from '../ui/Textarea';
-import { mockShiftTemplates, mockSites } from '../../services/mockData';
 import { getAppVersion } from '../../services/deviceSecurity';
 
 interface ManualClockProps {

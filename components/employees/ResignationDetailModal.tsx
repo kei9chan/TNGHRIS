@@ -1,6 +1,6 @@
+import { mockUsers, mockNotifications, mockAssets, mockAssetAssignments, mockResignations } from '../../services/mockDataCompat';
 import React, { useState, useMemo } from 'react';
 import { Resignation, ResignationStatus, Role, OnboardingChecklist, OnboardingTask, OnboardingTaskStatus, NotificationType, Asset, AssetAssignment, AssetStatus } from '../../types';
-import { mockResignations, mockOnboardingChecklists, mockOnboardingTemplates, mockUsers, mockNotifications, mockAssets, mockAssetAssignments } from '../../services/mockData';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import AssignOnboardingModal from './AssignOnboardingModal';

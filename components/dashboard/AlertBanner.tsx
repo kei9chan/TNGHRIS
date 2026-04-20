@@ -1,6 +1,6 @@
+import { mockAnnouncements } from '../../services/mockDataCompat';
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { mockAnnouncements } from '../../services/mockData';
 import { useAuth } from '../../hooks/useAuth';
 
 const MegaphoneIcon = () => (

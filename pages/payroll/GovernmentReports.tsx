@@ -1,7 +1,7 @@
+import { mockGovernmentReports } from '../../services/mockDataCompat';
 import React from 'react';
 import { Link } from 'react-router-dom';
 import Card from '../../components/ui/Card';
-import { mockGovernmentReports } from '../../services/mockData';
 import { GovernmentReport } from '../../types';
 
 const getStatusChipColor = (status: GovernmentReport['status']) => {

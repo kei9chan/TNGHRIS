@@ -1,6 +1,6 @@
+import { mockUsers } from './mockDataCompat';
 
 import { ShiftAssignment, TimeEvent, ShiftTemplate, Site, AttendanceExceptionRecord, ExceptionType, TimeEventType, User, AttendanceRecord, AttendanceStatus, AttendanceException } from '../types';
-import { mockUsers } from './mockData';
 
 // Helper to get minutes from "HH:MM" string
 const getMinutes = (time: string): number => {
@@ -22,19 +22,20 @@ const getShiftDateTime = (date: Date, timeStr: string, isNextDay: boolean = fals
 export const generateDailyRecords = (
     assignments: ShiftAssignment[],
     events: TimeEvent[],
-    templates: ShiftTemplate[]
+    templates: ShiftTemplate[],
+    users: User[] = []
 ): AttendanceRecord[] => {
     const records: AttendanceRecord[] = [];
 
     assignments.forEach(assignment => {
         const template = templates.find(t => t.id === assignment.shiftTemplateId);
         const assignmentDateStr = new Date(assignment.date).toDateString();
-        const dayEvents = events.filter(e => 
-            e.employeeId === assignment.employeeId && 
+        const dayEvents = events.filter(e =>
+            e.employeeId === assignment.employeeId &&
             new Date(e.timestamp).toDateString() === assignmentDateStr
         );
 
-        const employee = mockUsers.find(u => u.id === assignment.employeeId);
+        const employee = users.find(u => u.id === assignment.employeeId);
         const employeeName = employee?.name || 'Unknown';
 
         const record: AttendanceRecord = {
@@ -56,27 +57,27 @@ export const generateDailyRecords = (
         };
 
         if (template && template.name !== 'OFF') {
-             const shiftStartMinutes = getMinutes(template.startTime);
-             const shiftEndMinutes = getMinutes(template.endTime);
-             const isOvernight = shiftEndMinutes < shiftStartMinutes;
-             record.scheduledStart = getShiftDateTime(assignment.date, template.startTime);
-             record.scheduledEnd = getShiftDateTime(assignment.date, template.endTime, isOvernight);
+            const shiftStartMinutes = getMinutes(template.startTime);
+            const shiftEndMinutes = getMinutes(template.endTime);
+            const isOvernight = shiftEndMinutes < shiftStartMinutes;
+            record.scheduledStart = getShiftDateTime(assignment.date, template.startTime);
+            record.scheduledEnd = getShiftDateTime(assignment.date, template.endTime, isOvernight);
         }
 
         // Simplified Log Logic: First In, Last Out
-        const clockIns = dayEvents.filter(e => e.type === TimeEventType.ClockIn).sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-        const clockOuts = dayEvents.filter(e => e.type === TimeEventType.ClockOut).sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+        const clockIns = dayEvents.filter(e => e.type === TimeEventType.ClockIn).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+        const clockOuts = dayEvents.filter(e => e.type === TimeEventType.ClockOut).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
         if (clockIns.length > 0) record.firstIn = new Date(clockIns[0].timestamp);
         if (clockOuts.length > 0) record.lastOut = new Date(clockOuts[clockOuts.length - 1].timestamp);
 
         // Calculate basic hours (naive implementation)
         if (record.firstIn && record.lastOut) {
-             const durationMs = record.lastOut.getTime() - record.firstIn.getTime();
-             record.totalWorkMinutes = Math.floor(durationMs / 60000);
-             // Deduct Break
-             if (template) record.totalWorkMinutes -= template.breakMinutes;
-             if (record.totalWorkMinutes < 0) record.totalWorkMinutes = 0;
+            const durationMs = record.lastOut.getTime() - record.firstIn.getTime();
+            record.totalWorkMinutes = Math.floor(durationMs / 60000);
+            // Deduct Break
+            if (template) record.totalWorkMinutes -= template.breakMinutes;
+            if (record.totalWorkMinutes < 0) record.totalWorkMinutes = 0;
         }
 
         // Exception Logic (Re-using logic conceptually)
@@ -88,11 +89,11 @@ export const generateDailyRecords = (
                 record.exceptions.push(AttendanceException.Absent); // Or Missing In
             }
         }
-        
+
         if (record.scheduledEnd && record.lastOut) {
             if (record.lastOut < record.scheduledEnd) record.exceptions.push(AttendanceException.Undertime);
         } else if (record.scheduledEnd && record.firstIn && !record.lastOut && new Date() > record.scheduledEnd) {
-             record.exceptions.push(AttendanceException.MissingOut);
+            record.exceptions.push(AttendanceException.MissingOut);
         }
 
         records.push(record);
@@ -105,7 +106,8 @@ export const generateDailyRecords = (
 export const generateAttendanceExceptions = (
     assignments: ShiftAssignment[],
     events: TimeEvent[],
-    templates: ShiftTemplate[]
+    templates: ShiftTemplate[],
+    users: User[] = []
 ): AttendanceExceptionRecord[] => {
     const exceptions: AttendanceExceptionRecord[] = [];
 
@@ -119,14 +121,14 @@ export const generateAttendanceExceptions = (
     Object.keys(eventsByEmployee).forEach(empId => {
         const empEvents = eventsByEmployee[empId].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
         let lastType: TimeEventType | null = null;
-        
+
         empEvents.forEach(event => {
             // Check for double INs
             if (event.type === TimeEventType.ClockIn && lastType === TimeEventType.ClockIn) {
                 exceptions.push({
                     id: `EX-DL-IN-${event.id}`,
                     employeeId: empId,
-                    employeeName: mockUsers.find(u => u.id === empId)?.name || 'Unknown',
+                    employeeName: users.find(u => u.id === empId)?.name || 'Unknown',
                     date: event.timestamp,
                     type: ExceptionType.DoubleLog,
                     details: "Double Clock-In detected.",
@@ -136,7 +138,7 @@ export const generateAttendanceExceptions = (
             }
             // Check for double OUTs
             if (event.type === TimeEventType.ClockOut && lastType === TimeEventType.ClockOut) {
-                 exceptions.push({
+                exceptions.push({
                     id: `EX-DL-OUT-${event.id}`,
                     employeeId: empId,
                     employeeName: mockUsers.find(u => u.id === empId)?.name || 'Unknown',
@@ -147,7 +149,7 @@ export const generateAttendanceExceptions = (
                     sourceEventId: event.id
                 });
             }
-            
+
             // Only update lastType for main clock events, ignore breaks for double-log sequence check to be simple
             if (event.type === TimeEventType.ClockIn || event.type === TimeEventType.ClockOut) {
                 lastType = event.type;
@@ -165,8 +167,8 @@ export const generateAttendanceExceptions = (
         // Get logs for this specific shift/day
         // Logic: Find logs that occurred on the assignment date (simplification for prototype)
         const assignmentDateStr = new Date(assignment.date).toDateString();
-        const dayEvents = events.filter(e => 
-            e.employeeId === assignment.employeeId && 
+        const dayEvents = events.filter(e =>
+            e.employeeId === assignment.employeeId &&
             new Date(e.timestamp).toDateString() === assignmentDateStr
         );
 
@@ -174,8 +176,8 @@ export const generateAttendanceExceptions = (
         const clockOut = dayEvents.find(e => e.type === TimeEventType.ClockOut);
         const breakStart = dayEvents.find(e => e.type === TimeEventType.StartBreak);
         const breakEnd = dayEvents.find(e => e.type === TimeEventType.EndBreak);
-        
-        const employeeName = mockUsers.find(u => u.id === assignment.employeeId)?.name || 'Unknown';
+
+        const employeeName = users.find(u => u.id === assignment.employeeId)?.name || 'Unknown';
 
         const shiftStartMinutes = getMinutes(template.startTime);
         const shiftEndMinutes = getMinutes(template.endTime);
@@ -188,7 +190,7 @@ export const generateAttendanceExceptions = (
         if (clockIn) {
             const gracePeriod = template.gracePeriodMinutes || 0;
             const lateThreshold = new Date(shiftStart.getTime() + gracePeriod * 60000);
-            
+
             if (new Date(clockIn.timestamp) > lateThreshold) {
                 const diffMins = Math.floor((new Date(clockIn.timestamp).getTime() - shiftStart.getTime()) / 60000);
                 exceptions.push({
@@ -203,8 +205,8 @@ export const generateAttendanceExceptions = (
                 });
             }
         } else if (now > shiftEnd) {
-             // Missing In check could go here
-             exceptions.push({
+            // Missing In check could go here
+            exceptions.push({
                 id: `EX-MISSIN-${assignment.id}`,
                 employeeId: assignment.employeeId,
                 employeeName,
@@ -218,7 +220,7 @@ export const generateAttendanceExceptions = (
 
         // --- MISSING OUT ---
         if (clockIn && !clockOut && now > shiftEnd) {
-             exceptions.push({
+            exceptions.push({
                 id: `EX-MISSOUT-${assignment.id}`,
                 employeeId: assignment.employeeId,
                 employeeName,
@@ -235,8 +237,8 @@ export const generateAttendanceExceptions = (
             const outTime = new Date(clockOut.timestamp);
             // Allow 1 minute buffer for seconds difference
             if (outTime < new Date(shiftEnd.getTime() - 60000)) {
-                 const diffMins = Math.floor((shiftEnd.getTime() - outTime.getTime()) / 60000);
-                 exceptions.push({
+                const diffMins = Math.floor((shiftEnd.getTime() - outTime.getTime()) / 60000);
+                exceptions.push({
                     id: `EX-UNDER-${assignment.id}`,
                     employeeId: assignment.employeeId,
                     employeeName,
@@ -252,7 +254,7 @@ export const generateAttendanceExceptions = (
         // --- BREAK VALIDATIONS ---
         if (clockIn && clockOut && template.breakMinutes > 0) {
             if (!breakStart && !breakEnd) {
-                 exceptions.push({
+                exceptions.push({
                     id: `EX-NOBREAK-${assignment.id}`,
                     employeeId: assignment.employeeId,
                     employeeName,
@@ -263,7 +265,7 @@ export const generateAttendanceExceptions = (
                     sourceEventId: clockIn.id
                 });
             } else if (breakStart && !breakEnd) {
-                 exceptions.push({
+                exceptions.push({
                     id: `EX-NB-END-${assignment.id}`,
                     employeeId: assignment.employeeId,
                     employeeName,
@@ -276,7 +278,7 @@ export const generateAttendanceExceptions = (
             } else if (breakStart && breakEnd) {
                 const durationMins = (new Date(breakEnd.timestamp).getTime() - new Date(breakStart.timestamp).getTime()) / 60000;
                 if (durationMins > (template.breakMinutes + 5)) { // 5 min buffer
-                     exceptions.push({
+                    exceptions.push({
                         id: `EX-EXTBREAK-${assignment.id}`,
                         employeeId: assignment.employeeId,
                         employeeName,

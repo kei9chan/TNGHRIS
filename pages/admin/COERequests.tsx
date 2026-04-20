@@ -1,3 +1,4 @@
+import { mockUsers, mockNotifications, mockCOERequests, mockCOETemplates } from '../../services/mockDataCompat';
 
 
 
@@ -7,7 +8,6 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
 import { COERequest, COERequestStatus, COETemplate, NotificationType, Permission, Role, User } from '../../types';
-import { mockCOERequests, mockCOETemplates, mockUsers, mockBusinessUnits, mockNotifications } from '../../services/mockData';
 import { approveCoeRequest, fetchActiveCoeTemplates, fetchCoeRequestById, fetchCoeRequests, rejectCoeRequest } from '../../services/coeService';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
