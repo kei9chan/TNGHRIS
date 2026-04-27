@@ -1,5 +1,3 @@
-import { mockLeaveTypes } from '../../services/mockDataCompat';
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, EmployeeDraft, SalaryBreakdown, RateType, TaxStatus, EmploymentStatus } from '../../types';
 import Modal from '../ui/Modal';
@@ -421,7 +419,10 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
             )}
             <h3 className="text-lg font-medium text-gray-900 dark:text-white">Leave Balances (computed, days)</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {mockLeaveTypes.map(type => (
+              {[
+                { id: 'lt1', name: 'Vacation Leave' },
+                { id: 'lt2', name: 'Sick Leave' }
+              ].map(type => (
                 <Input
                   key={type.id}
                   label={`${type.name} Balance`}

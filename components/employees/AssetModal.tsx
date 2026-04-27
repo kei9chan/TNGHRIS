@@ -1,8 +1,6 @@
-import { mockUsers, mockBusinessUnits } from '../../services/mockDataCompat';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Asset, AssetStatus, User } from '../../types';
-import { supabase } from '../../services/supabaseClient';
-import { formatEmployeeName } from '../../services/formatEmployeeName';
+import { useUsers, useBusinessUnits } from '../../hooks/useHRData';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
 import Button from '../ui/Button';
@@ -18,10 +16,11 @@ interface AssetModalProps {
 const AssetModal: React.FC<AssetModalProps> = ({ isOpen, onClose, onSave, asset }) => {
     const [current, setCurrent] = useState<Partial<Asset>>({});
     const [employeeToAssign, setEmployeeToAssign] = useState<string>('');
-    const [employees, setEmployees] = useState<User[]>([]);
     const [employeeSearch, setEmployeeSearch] = useState('');
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const searchWrapperRef = useRef<HTMLDivElement>(null);
+    const { users } = useUsers();
+    const { businessUnits } = useBusinessUnits();
 
     const isEditing = !!asset;
     const isAvailable = isEditing ? asset?.status === AssetStatus.Available : true;
@@ -32,34 +31,12 @@ const AssetModal: React.FC<AssetModalProps> = ({ isOpen, onClose, onSave, asset 
                 type: 'Laptop',
                 status: AssetStatus.Available,
                 purchaseDate: new Date(),
-                businessUnitId: mockBusinessUnits[0]?.id || '',
+                businessUnitId: businessUnits[0]?.id || '',
             });
             setEmployeeToAssign('');
             setEmployeeSearch('');
-
-            const loadEmployees = async () => {
-                try {
-                    const { data, error } = await supabase
-                        .from('hris_users')
-                        .select('id, full_name, role, status');
-                    if (error) throw error;
-                    const mapped =
-                        data?.map((u: any) => ({
-                            id: u.id,
-                            name: formatEmployeeName(u.full_name || ''),
-                            email: '',
-                            role: u.role,
-                            status: u.status,
-                        })) || [];
-                    setEmployees(mapped);
-                } catch (err) {
-                    console.error('Failed to load employees for asset modal', err);
-                    setEmployees(mockUsers);
-                }
-            };
-            loadEmployees();
         }
-    }, [asset, isOpen]);
+    }, [asset, isOpen, businessUnits]);
 
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
@@ -94,8 +71,8 @@ const AssetModal: React.FC<AssetModalProps> = ({ isOpen, onClose, onSave, asset 
     };
 
     const assignableUsers = useMemo(() => {
-        return (employees.length ? employees : mockUsers).filter(u => (u as any).status === 'Active');
-    }, [employees]);
+        return users.filter(u => u.status === 'Active');
+    }, [users]);
 
     const filteredUsers = useMemo(() => {
         if (!employeeSearch) return [];
@@ -129,7 +106,7 @@ const AssetModal: React.FC<AssetModalProps> = ({ isOpen, onClose, onSave, asset 
                 <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
                     <select name="businessUnitId" value={current.businessUnitId || ''} onChange={handleChange} className="mt-1 block w-full pl-3 pr-10 py-2 border-gray-300 dark:bg-slate-700 dark:border-slate-600 rounded-md">
-                        {mockBusinessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
+                        {businessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
                     </select>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

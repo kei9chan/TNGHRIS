@@ -1,4 +1,4 @@
-import { mockUsers, mockBusinessUnits, mockDepartments, mockJobRequisitions } from '../../services/mockDataCompat';
+// Phase D complete: mockDataCompat removed from Requisitions
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -27,8 +27,9 @@ const Requisitions: React.FC = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedRequisition, setSelectedRequisition] = useState<JobRequisition | null>(null);
     const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
-    const [businessUnits, setBusinessUnits] = useState(mockBusinessUnits);
-    const [departments, setDepartments] = useState(mockDepartments);
+    const [businessUnits, setBusinessUnits] = useState<{ id: string; name: string; code?: string }[]>([]);
+    const [departments, setDepartments] = useState<{ id: string; name: string; businessUnitId: string }[]>([]);
+    const [applications, setApplications] = useState<{ requisitionId: string; stage: string }[]>([]);
     
     // State for filters
     const [searchTerm, setSearchTerm] = useState('');
@@ -46,7 +47,6 @@ const Requisitions: React.FC = () => {
                 setRequisitions(data);
             } catch (err) {
                 console.error('Failed to load job requisitions', err);
-                setRequisitions(mockJobRequisitions);
             }
         };
         loadReqs();
@@ -55,23 +55,16 @@ const Requisitions: React.FC = () => {
     useEffect(() => {
         const loadMeta = async () => {
             try {
-                const { data: buData, error: buErr } = await supabase.from('business_units').select('id, name, code');
-                if (!buErr && buData && buData.length > 0) {
-                    setBusinessUnits(buData.map((b: any) => ({ id: b.id, name: b.name, code: b.code || '' })));
-                } else {
-                    setBusinessUnits(mockBusinessUnits);
-                }
+                const { data: buData } = await supabase.from('business_units').select('id, name, code');
+                if (buData) setBusinessUnits(buData.map((b: any) => ({ id: b.id, name: b.name, code: b.code || '' })));
 
-                const { data: deptData, error: deptErr } = await supabase.from('departments').select('id, name, business_unit_id');
-                if (!deptErr && deptData && deptData.length > 0) {
-                    setDepartments(deptData.map((d: any) => ({ id: d.id, name: d.name, businessUnitId: d.business_unit_id })));
-                } else {
-                    setDepartments(mockDepartments);
-                }
+                const { data: deptData } = await supabase.from('departments').select('id, name, business_unit_id');
+                if (deptData) setDepartments(deptData.map((d: any) => ({ id: d.id, name: d.name, businessUnitId: d.business_unit_id })));
+
+                const { data: appData } = await supabase.from('applications').select('requisition_id, stage');
+                if (appData) setApplications(appData.map((a: any) => ({ requisitionId: a.requisition_id, stage: a.stage })));
             } catch (err) {
-                console.warn('Failed to load BU/Departments for requisitions filters', err);
-                setBusinessUnits(mockBusinessUnits);
-                setDepartments(mockDepartments);
+                console.warn('Failed to load metadata for requisitions', err);
             }
         };
         loadMeta();
@@ -97,11 +90,10 @@ const Requisitions: React.FC = () => {
     }, [buFilter, departments]);
 
     const yearOptions = useMemo(() => {
-        const years = new Set(mockJobRequisitions.map(r => new Date(r.createdAt).getFullYear()));
-        const currentYear = new Date().getFullYear();
-        years.add(currentYear);
-        return Array.from(years).sort((a, b) => b - a);
-    }, []);
+        const years = new Set(requisitions.map(r => new Date(r.createdAt).getFullYear()));
+        years.add(new Date().getFullYear());
+        return Array.from(years).sort((a: number, b: number) => b - a);
+    }, [requisitions]);
 
     const monthOptions = [
         { value: '1', name: 'January' }, { value: '2', name: 'February' }, { value: '3', name: 'March' },
@@ -225,22 +217,26 @@ const Requisitions: React.FC = () => {
     const handleAddFinalApprovers = async (requisitionId: string, finalApproverIds: string[]) => {
         const existing = requisitions.find(r => r.id === requisitionId);
         if (!existing) return;
-        
+
+        // Resolve approver names from Supabase
+        const { data: approverData } = await supabase
+            .from('hris_users')
+            .select('id, name')
+            .in('id', finalApproverIds);
+        const approverMap = new Map((approverData || []).map((u: any) => [u.id, u.name]));
+
         const updatedReq = { ...existing };
-        const finalSteps = finalApproverIds.map((id, index) => {
-            const approver = mockUsers.find(u => u.id === id);
-            return {
-                id: `req-step-${requisitionId}-final-${index}`,
-                userId: id,
-                name: approver?.name || 'Final Approver',
-                role: JobRequisitionRole.Final,
-                status: JobRequisitionStepStatus.Pending,
-                order: 2 // All final approvers are at the same level
-            }
-        });
+        const finalSteps = finalApproverIds.map((id, index) => ({
+            id: `req-step-${requisitionId}-final-${index}`,
+            userId: id,
+            name: approverMap.get(id) || 'Final Approver',
+            role: JobRequisitionRole.Final,
+            status: JobRequisitionStepStatus.Pending,
+            order: 2,
+        }));
 
         updatedReq.routingSteps.push(...finalSteps);
-        
+
         try {
             const saved = await saveJobRequisition(updatedReq);
             setRequisitions(prev => {
@@ -320,11 +316,12 @@ const Requisitions: React.FC = () => {
                         </select>
                     </div>
                 </div>
-                <RequisitionTable 
-                    requisitions={filteredRequisitions} 
-                    onEdit={handleOpenModal} 
+                <RequisitionTable
+                    requisitions={filteredRequisitions}
+                    onEdit={handleOpenModal}
                     businessUnits={businessUnits}
                     departments={departments}
+                    applications={applications}
                 />
             </Card>
 

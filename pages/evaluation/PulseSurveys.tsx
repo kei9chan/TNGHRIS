@@ -1,4 +1,4 @@
-import { mockNotifications } from '../../services/mockDataCompat';
+// Phase 2 Migration: mockNotifications removed — notifications inserted via Supabase
 
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -66,22 +66,23 @@ const PulseSurveys: React.FC = () => {
         setIsComplianceModalOpen(true);
     };
 
-    const handleRemindAll = () => {
+    const handleRemindAll = async () => {
         if (!selectedSurveyForCompliance) return;
-        const createdAt = new Date();
-        missingRespondents.forEach(({ user }) => {
-            mockNotifications.unshift({
-                id: `notif-pulse-${selectedSurveyForCompliance.id}-${user.id}-${createdAt.getTime()}`,
-                userId: user.id,
-                type: NotificationType.PULSE_SURVEY_REMINDER,
-                title: 'Pulse Survey Reminder',
-                message: `Please complete the pulse survey "${selectedSurveyForCompliance.title}".`,
-                link: `/evaluation/pulse/take/${selectedSurveyForCompliance.id}`,
-                isRead: false,
-                createdAt,
-                relatedEntityId: selectedSurveyForCompliance.id,
-            });
-        });
+        const createdAt = new Date().toISOString();
+        const rows = missingRespondents.map(({ user }) => ({
+            user_id: user.id,
+            type: NotificationType.PULSE_SURVEY_REMINDER,
+            title: 'Pulse Survey Reminder',
+            message: `Please complete the pulse survey "${selectedSurveyForCompliance.title}".`,
+            link: `/evaluation/pulse/take/${selectedSurveyForCompliance.id}`,
+            is_read: false,
+            created_at: createdAt,
+            related_entity_id: selectedSurveyForCompliance.id,
+        }));
+        if (rows.length > 0) {
+            const { error } = await supabase.from('notifications').insert(rows);
+            if (error) console.warn('Failed to insert pulse survey reminders', error);
+        }
         alert(`Reminders sent to ${missingRespondents.length} employees.`);
     };
 

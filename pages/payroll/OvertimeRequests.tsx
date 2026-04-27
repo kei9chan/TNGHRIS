@@ -1,10 +1,9 @@
-import { mockUsers, mockBusinessUnits, mockOtRequests, mockAttendanceRecords, mockShiftAssignments, mockShiftTemplates } from '../../services/mockDataCompat';
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { OTRequest, OTStatus, Role, OTRequestHistory, Permission } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
+import { useUsers, useBusinessUnits, useShiftTemplates, useAttendanceRecords, useShiftAssignments } from '../../hooks/useHRData';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import OTRequestTable from '../../components/payroll/OTRequestTable';
@@ -14,7 +13,7 @@ import OTCalendar from '../../components/payroll/OTCalendar';
 import OTLedger from '../../components/payroll/OTLedger';
 import EditableDescription from '../../components/ui/EditableDescription';
 import { logActivity } from '../../services/auditService';
-import { fetchOtRequests, saveOtRequest, approveRejectOtRequest } from '../../services/otService';
+import { fetchOtRequests, saveOtRequest, approveRejectOtRequest, deleteOtRequest, withdrawOtRequest } from '../../services/otService';
 import { supabase } from '../../services/supabaseClient';
 
 type Tab = 'my_ot' | 'team_approvals' | 'calendar' | 'ledger';
@@ -51,6 +50,12 @@ const OvertimeRequests: React.FC = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedRequest, setSelectedRequest] = useState<OTRequest | null>(null);
     const [showSuccessToast, setShowSuccessToast] = useState(false);
+
+    const { users: hrUsers } = useUsers();
+    const { businessUnits: hrBusinessUnits } = useBusinessUnits();
+    const { shiftTemplates: hrShiftTemplates } = useShiftTemplates();
+    const { attendanceRecords: hrAttendanceRecords } = useAttendanceRecords();
+    const { shiftAssignments: hrShiftAssignments } = useShiftAssignments();
 
     const otAccess = getOtAccess();
     const canApprove = otAccess.canApprove || reporteeIds.length > 0 || hasDirectReports();
@@ -94,7 +99,7 @@ const OvertimeRequests: React.FC = () => {
     // BU Filter State (for privileged roles)
     const [selectedBuFilter, setSelectedBuFilter] = useState<string>('all');
     
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(hrBusinessUnits), [getAccessibleBusinessUnits, hrBusinessUnits]);
     const scopedRequests = useMemo(() => otAccess.filterRequests(requests), [otAccess, requests]);
 
     useEffect(() => {
@@ -134,22 +139,22 @@ const OvertimeRequests: React.FC = () => {
         
         // Filter down to accessible BUs first
         let filtered = scopedRequests.filter(r => {
-             const employee = mockUsers.find(u => u.id === r.employeeId);
-             const employeeBuId = mockBusinessUnits.find(b => b.name === employee?.businessUnit)?.id;
+             const employee = hrUsers.find(u => u.id === r.employeeId);
+             const employeeBuId = hrBusinessUnits.find(b => b.name === employee?.businessUnit)?.id;
              return employeeBuId && accessibleBuIds.has(employeeBuId);
         });
 
         if (selectedBuFilter !== 'all') {
-            const buName = mockBusinessUnits.find(b => b.id === selectedBuFilter)?.name;
+            const buName = hrBusinessUnits.find(b => b.id === selectedBuFilter)?.name;
             if (buName) {
                 filtered = filtered.filter(r => {
-                    const employee = mockUsers.find(u => u.id === r.employeeId);
+                    const employee = hrUsers.find(u => u.id === r.employeeId);
                     return employee?.businessUnit === buName;
                 });
             }
         }
         return filtered;
-    }, [requests, selectedBuFilter, accessibleBus]);
+    }, [requests, selectedBuFilter, accessibleBus, hrUsers, hrBusinessUnits]);
 
 
     // 1. "My OT" Data
@@ -197,9 +202,8 @@ const OvertimeRequests: React.FC = () => {
     // Passed to calendar and modal for context-aware features (e.g., auto-fill shift end time)
     const relevantShifts = useMemo(() => {
          if (!user) return [];
-         // In a real app, we'd fetch specific shifts. For mock, pass all.
-         return mockShiftAssignments;
-    }, [user]);
+         return hrShiftAssignments;
+    }, [user, hrShiftAssignments]);
 
     // 7. Filtered Display Data based on Active Tab & Sub-filter (For Table View)
     const displayedTableRequests = useMemo(() => {
@@ -225,33 +229,32 @@ const OvertimeRequests: React.FC = () => {
         setIsModalOpen(true);
     };
 
-    const handleDeleteRequest = (requestId: string) => {
+    const handleDeleteRequest = async (requestId: string) => {
         if (window.confirm('Are you sure you want to delete this draft?')) {
-            setRequests(prev => prev.filter(r => r.id !== requestId));
-             const idx = mockOtRequests.findIndex(r => r.id === requestId);
-             if (idx > -1) mockOtRequests.splice(idx, 1);
-             if (user) {
-                 logActivity(user, 'DELETE', 'OTRequest', requestId, 'Deleted draft OT request.');
-             }
+            try {
+                await deleteOtRequest(requestId);
+                setRequests(prev => prev.filter(r => r.id !== requestId));
+                if (user) {
+                    logActivity(user, 'DELETE', 'OTRequest', requestId, 'Deleted draft OT request.');
+                }
+            } catch (err: any) {
+                alert(err?.message || 'Failed to delete request.');
+            }
         }
     };
 
-    const handleWithdrawRequest = (requestId: string) => {
+    const handleWithdrawRequest = async (requestId: string) => {
         if (!user) return;
-        const newHistoryEntry: OTRequestHistory = {
-            userId: user.id,
-            userName: user.name,
-            timestamp: new Date(),
-            action: 'Withdrawn',
-            details: 'Request withdrawn by employee.'
-        };
-        const update = (r: OTRequest) => r.id === requestId ? { ...r, status: OTStatus.Draft, submittedAt: undefined, historyLog: [...(r.historyLog || []), newHistoryEntry] } : r;
-        
-        setRequests(prev => prev.map(update));
-        const idx = mockOtRequests.findIndex(r => r.id === requestId);
-        if (idx > -1) mockOtRequests[idx] = update(mockOtRequests[idx]) as OTRequest;
-        
-        logActivity(user, 'UPDATE', 'OTRequest', requestId, 'Withdrew OT request.');
+        const reqToWithdraw = requests.find(r => r.id === requestId);
+        if (!reqToWithdraw) return;
+
+        try {
+            const updated = await withdrawOtRequest(reqToWithdraw, user);
+            setRequests(prev => prev.map(r => r.id === requestId ? updated : r));
+            logActivity(user, 'UPDATE', 'OTRequest', requestId, 'Withdrew OT request.');
+        } catch (err: any) {
+            alert(err?.message || 'Failed to withdraw request.');
+        }
     };
 
     const handleSaveRequest = async (requestToSave: Partial<OTRequest>, status: OTStatus) => {
@@ -405,7 +408,7 @@ const OvertimeRequests: React.FC = () => {
                  <OTCalendar 
                     requests={calendarRequests} 
                     shifts={relevantShifts}
-                    templates={mockShiftTemplates}
+                    templates={hrShiftTemplates}
                  />
             ) : activeTab === 'ledger' && canViewLedger ? (
                 <OTLedger requests={ledgerRequests} />
@@ -428,9 +431,9 @@ const OvertimeRequests: React.FC = () => {
                 onApproveOrReject={handleApprovalAction}
                 requestToEdit={selectedRequest}
                 canApproveOverride={!!selectedRequest && reporteeIds.includes(selectedRequest.employeeId)}
-                attendanceRecords={mockAttendanceRecords}
+                attendanceRecords={hrAttendanceRecords}
                 shiftAssignments={relevantShifts} // Pass shifts for context awareness
-                shiftTemplates={mockShiftTemplates} // Pass templates for context awareness
+                shiftTemplates={hrShiftTemplates} // Pass templates for context awareness
             />
         </div>
     );

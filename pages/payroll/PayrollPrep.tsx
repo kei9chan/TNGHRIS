@@ -1,14 +1,15 @@
-import { mockOtRequests } from '../../services/mockDataCompat';
-import React, { useState, useMemo } from 'react';
+// Phase 2 Migration: mockOtRequests removed — OT requests fetched from Supabase
+import React, { useState, useMemo, useEffect } from 'react';
 import { OTRequest, OTStatus, OTRateType, OTStaging, Permission } from '../../types';
 import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import { usePermissions } from '../../hooks/usePermissions';
+import { supabase } from '../../services/supabaseClient';
 
 const PayrollPrep: React.FC = () => {
     const { can } = usePermissions();
-    const [requests] = useState<OTRequest[]>(mockOtRequests);
+    const [requests, setRequests] = useState<OTRequest[]>([]);
 
     const today = new Date();
     const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
@@ -16,6 +17,32 @@ const PayrollPrep: React.FC = () => {
 
     const [startDate, setStartDate] = useState(firstDayOfMonth);
     const [endDate, setEndDate] = useState(lastDayOfMonth);
+
+    useEffect(() => {
+        supabase
+            .from('ot_requests')
+            .select('*')
+            .eq('status', OTStatus.Approved)
+            .then(({ data, error }) => {
+                if (error) { console.error('Failed to load OT requests', error); return; }
+                const mapped: OTRequest[] = (data || []).map((r: any) => ({
+                    id: r.id,
+                    employeeId: r.employee_id,
+                    employeeName: r.employee_name || '',
+                    date: r.date,
+                    startTime: r.start_time,
+                    endTime: r.end_time,
+                    reason: r.reason || '',
+                    status: r.status as OTStatus,
+                    requestedHours: r.requested_hours ?? 0,
+                    approvedHours: r.approved_hours ?? r.requested_hours ?? 0,
+                    approvedBy: r.approved_by,
+                    approvedAt: r.approved_at ? new Date(r.approved_at) : undefined,
+                    historyLog: r.history_log || [],
+                }));
+                setRequests(mapped);
+            });
+    }, []);
     const [copySuccess, setCopySuccess] = useState('');
 
 

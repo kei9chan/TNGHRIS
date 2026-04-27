@@ -1,4 +1,4 @@
-import { mockUsers, mockNotifications, mockJobRequisitions, mockIncidentReports, mockNTEs, mockResolutions, mockEvaluations, mockEvaluationSubmissions, mockEmployeeAwards, mockTickets, mockCOERequests, mockPANs, mockBenefitRequests, mockManpowerRequests, mockAssetAssignments, mockEnvelopes, mockOnboardingTemplates, mockOnboardingChecklists, mockWFHRequests } from '../../services/mockDataCompat';
+// Migration complete: mockDataCompat removed from BODDashboard
 
 import React, { useMemo, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
@@ -137,25 +137,23 @@ const BODDashboard: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
     
-    const [pans, setPans] = useState<PAN[]>(mockPANs);
+    const [pans, setPans] = useState<PAN[]>([]);
     const [panApproverId, setPanApproverId] = useState<string | null>(null);
-    const [resolutions, setResolutions] = useState<Resolution[]>(mockResolutions);
-    const [ntes, setNTEs] = useState<NTE[]>(mockNTEs);
-    const [requisitions, setRequisitions] = useState<JobRequisition[]>(mockJobRequisitions);
-    const [awards, setAwards] = useState<EmployeeAward[]>(mockEmployeeAwards);
-    const [assignments, setAssignments] = useState<AssetAssignment[]>(mockAssetAssignments);
-    const [useSupabaseAssignments, setUseSupabaseAssignments] = useState(false);
-    const [manpowerRequests, setManpowerRequests] = useState<ManpowerRequest[]>(mockManpowerRequests);
-    const [wfhRequests, setWfhRequests] = useState<WFHRequest[]>(mockWFHRequests);
-    const [checklists, setChecklists] = useState<OnboardingChecklist[]>(mockOnboardingChecklists);
-    const [templates, setTemplates] = useState<OnboardingChecklistTemplate[]>(mockOnboardingTemplates);
-    const [benefitRequests, setBenefitRequests] = useState(mockBenefitRequests);
-    const [envelopes, setEnvelopes] = useState<Envelope[]>(mockEnvelopes);
-    const [evaluationSubmissions, setEvaluationSubmissions] = useState(mockEvaluationSubmissions);
+    const [resolutions, setResolutions] = useState<Resolution[]>([]);
+    const [ntes, setNTEs] = useState<NTE[]>([]);
+    const [requisitions, setRequisitions] = useState<JobRequisition[]>([]);
+    const [awards, setAwards] = useState<EmployeeAward[]>([]);
+    const [assignments, setAssignments] = useState<AssetAssignment[]>([]);
+    const [manpowerRequests, setManpowerRequests] = useState<ManpowerRequest[]>([]);
+    const [wfhRequests, setWfhRequests] = useState<WFHRequest[]>([]);
+    const [checklists, setChecklists] = useState<OnboardingChecklist[]>([]);
+    const [templates, setTemplates] = useState<OnboardingChecklistTemplate[]>([]);
+    const [benefitRequests, setBenefitRequests] = useState<any[]>([]);
+    const [envelopes, setEnvelopes] = useState<Envelope[]>([]);
+    const [evaluationSubmissions, setEvaluationSubmissions] = useState<any[]>([]);
     const [assignedTickets, setAssignedTickets] = useState<Array<{ id: string; status: TicketStatus; category: string; priority: string; assignedAt?: Date; createdAt?: Date; requesterName?: string }>>([]);
-    const [evaluations, setEvaluations] = useState<Evaluation[]>(mockEvaluations);
-    const [useSupabaseEvaluations, setUseSupabaseEvaluations] = useState(false);
-    const [useSupabaseEvaluationSubmissions, setUseSupabaseEvaluationSubmissions] = useState(false);
+    const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
+    const [supabaseNotifications, setSupabaseNotifications] = useState<any[]>([]);
     const [coeRequests, setCoeRequests] = useState<COERequest[]>([]);
     const [coeTemplates, setCoeTemplates] = useState<COETemplate[]>([]);
     const [coeToPrint, setCoeToPrint] = useState<{ template: COETemplate, request: COERequest, employee: User } | null>(null);
@@ -176,17 +174,7 @@ const BODDashboard: React.FC = () => {
     const coeAccess = getCoeAccess();
     const scopedCOE = useMemo(() => coeAccess.filterRequests(coeRequests), [coeRequests, coeAccess]);
     const pendingCOE = useMemo(() => scopedCOE.filter(r => r.status === 'Pending'), [scopedCOE]);
-    const legacyUserId = useMemo(() => {
-        if (!user) return null;
-        const byEmail = user.email
-            ? mockUsers.find(u => u.email?.toLowerCase() === user.email.toLowerCase())
-            : null;
-        if (byEmail?.id) return byEmail.id;
-        const byName = user.name
-            ? mockUsers.find(u => u.name?.toLowerCase() === user.name.toLowerCase())
-            : null;
-        return byName?.id ?? null;
-    }, [user?.email, user?.name]);
+    const legacyUserId = useMemo(() => user?.id ?? null, [user?.id]);
     const employeeProfileId = useMemo(() => panApproverId || user?.id || null, [panApproverId, user?.id]);
 
     useEffect(() => {
@@ -258,7 +246,6 @@ const BODDashboard: React.FC = () => {
                 setPans((data || []).map(mapPanRow));
             } catch (err) {
                 console.error('Failed to load PANs', err);
-                setPans([...mockPANs]);
             }
         };
         loadPans();
@@ -289,7 +276,6 @@ const BODDashboard: React.FC = () => {
                         signedDocumentUrl: row.signed_document_url || undefined,
                     })) || [];
                 setAssignments(mapped);
-                setUseSupabaseAssignments(true);
             } catch (err) {
                 console.error('Failed to load asset assignments for BOD dashboard', err);
             }
@@ -416,7 +402,6 @@ const BODDashboard: React.FC = () => {
 
                 if (!active) return;
                 setEvaluations(mappedEvaluations);
-                setUseSupabaseEvaluations(true);
             } catch (err) {
                 console.error('Failed to load evaluations for BOD dashboard', err);
             }
@@ -449,7 +434,6 @@ const BODDashboard: React.FC = () => {
                         submittedAt: row.submitted_at ? new Date(row.submitted_at) : new Date(),
                     })) || [];
                 setEvaluationSubmissions(mapped);
-                setUseSupabaseEvaluationSubmissions(true);
             } catch (err) {
                 console.error('Failed to load evaluation submissions for BOD dashboard', err);
             }
@@ -460,81 +444,55 @@ const BODDashboard: React.FC = () => {
         };
     }, [employeeProfileId]);
 
-    // Sync with mock data to ensure approvals are reflected immediately when navigating back
+    // Load live data: resolutions, NTEs, requisitions, awards, manpower, WFH, benefits, envelopes, checklists, templates
     useEffect(() => {
-        const interval = setInterval(() => {
-             setPans([...mockPANs]);
-             setResolutions([...mockResolutions]);
-             setNTEs([...mockNTEs]);
-             setRequisitions([...mockJobRequisitions]);
-             setAwards([...mockEmployeeAwards]);
-             if (!useSupabaseAssignments) {
-                 setAssignments([...mockAssetAssignments]);
-             }
-             setManpowerRequests([...mockManpowerRequests]);
-             setWfhRequests([...mockWFHRequests]);
-             setChecklists([...mockOnboardingChecklists]);
-             setTemplates([...mockOnboardingTemplates]);
-             setBenefitRequests([...mockBenefitRequests]);
-             setEnvelopes([...mockEnvelopes]);
-             if (!useSupabaseEvaluationSubmissions) {
-                 setEvaluationSubmissions([...mockEvaluationSubmissions]);
-             }
-        }, 1000);
-        return () => clearInterval(interval);
-    }, [useSupabaseAssignments, useSupabaseEvaluationSubmissions]);
+        let active = true;
+        const load = async () => {
+            const [resRes, nteRes, reqRes, awardRes, manRes, wfhRes, benRes, envRes, clRes, tmplRes, notifRes] = await Promise.all([
+                supabase.from('resolutions').select('*').order('decision_date', { ascending: false }),
+                supabase.from('ntes').select('*').order('issued_date', { ascending: false }),
+                supabase.from('job_requisitions').select('*').order('created_at', { ascending: false }),
+                supabase.from('employee_awards').select('*').order('date_awarded', { ascending: false }),
+                supabase.from('manpower_requests').select('*').order('created_at', { ascending: false }),
+                supabase.from('wfh_requests').select('*').order('created_at', { ascending: false }),
+                supabase.from('benefit_requests').select('*'),
+                supabase.from('envelopes').select('*').order('created_at', { ascending: false }),
+                supabase.from('onboarding_checklists').select('*'),
+                supabase.from('onboarding_templates').select('*'),
+                supabase.from('notifications').select('*').order('created_at', { ascending: false }).limit(200),
+            ]);
+            if (!active) return;
+            const mapDate = (v: any) => v ? new Date(v) : new Date();
+            if (!resRes.error && resRes.data) setResolutions(resRes.data.map((r: any) => ({ ...r, employeeId: r.employee_id, incidentReportId: r.incident_report_id, decisionDate: mapDate(r.decision_date), approverSteps: r.approver_steps || [] })));
+            if (!nteRes.error && nteRes.data) setNTEs(nteRes.data.map((r: any) => ({ ...r, employeeId: r.employee_id, incidentReportId: r.incident_report_id, issuedDate: mapDate(r.issued_date), deadline: mapDate(r.deadline), approverSteps: r.approver_steps || [], hearingDetails: r.hearing_details })));
+            if (!reqRes.error && reqRes.data) setRequisitions(reqRes.data.map((r: any) => ({ ...r, createdAt: mapDate(r.created_at), routingSteps: r.routing_steps || [] })));
+            if (!awardRes.error && awardRes.data) setAwards(awardRes.data.map((r: any) => ({ ...r, employeeId: r.employee_id, awardId: r.award_id, dateAwarded: mapDate(r.date_awarded), approverSteps: r.approver_steps || [] })));
+            if (!manRes.error && manRes.data) setManpowerRequests(manRes.data.map((r: any) => ({ ...r, requestedBy: r.requested_by, businessUnitName: r.business_unit_name, date: mapDate(r.date), createdAt: mapDate(r.created_at), approvedAt: r.approved_at ? mapDate(r.approved_at) : undefined })));
+            if (!wfhRes.error && wfhRes.data) setWfhRequests(wfhRes.data.map((r: any) => ({ ...r, employeeId: r.employee_id, employeeName: r.employee_name, date: mapDate(r.date), createdAt: mapDate(r.created_at) })));
+            if (!benRes.error && benRes.data) setBenefitRequests(benRes.data.map((r: any) => ({ ...r, employeeId: r.employee_id, employeeName: r.employee_name, benefitTypeName: r.benefit_type_name || '', dateNeeded: mapDate(r.date_needed) })));
+            if (!envRes.error && envRes.data) setEnvelopes(envRes.data.map((r: any) => ({ ...r, createdAt: mapDate(r.created_at), routingSteps: r.routing_steps || [], employeeName: r.employee_name || '' })));
+            if (!clRes.error && clRes.data) setChecklists(clRes.data.map((r: any) => ({ ...r, employeeId: r.employee_id, templateId: r.template_id, tasks: r.tasks || [] })));
+            if (!tmplRes.error && tmplRes.data) setTemplates(tmplRes.data.map((r: any) => ({ ...r, templateType: r.template_type || 'Onboarding' })));
+            if (!notifRes.error && notifRes.data) setSupabaseNotifications(notifRes.data.map((r: any) => ({ ...r, userId: r.user_id, isRead: r.is_read, createdAt: mapDate(r.created_at), relatedEntityId: r.related_entity_id })));
+        };
+        load();
+        return () => { active = false; };
+    }, []);
 
-    const handleApproveManpower = (requestId: string) => {
-        const index = mockManpowerRequests.findIndex(r => r.id === requestId);
-        if (index > -1) {
-            mockManpowerRequests[index].status = ManpowerRequestStatus.Approved;
-            mockManpowerRequests[index].approvedBy = user?.id;
-            mockManpowerRequests[index].approvedAt = new Date();
-            if (mockManpowerRequests[index].requestedBy) {
-                mockNotifications.unshift({
-                    id: `manpower-approve-${requestId}-${Date.now()}`,
-                    userId: mockManpowerRequests[index].requestedBy,
-                    type: NotificationType.MANPOWER_REQUEST_APPROVED,
-                    title: 'On-Call Approved',
-                    message: `Your on-call request for ${mockManpowerRequests[index].businessUnitName || 'Unknown BU'} on ${new Date(mockManpowerRequests[index].date).toLocaleDateString()} has been approved.`,
-                    link: '/payroll/manpower-planning',
-                    isRead: false,
-                    createdAt: new Date(),
-                    relatedEntityId: requestId,
-                });
-            }
-            setManpowerRequests([...mockManpowerRequests]);
-            setIsManpowerReviewModalOpen(false);
-            alert("Manpower Request Approved.");
-        } else {
-             alert("Error: Request not found.");
-        }
+    const handleApproveManpower = async (requestId: string) => {
+        const { error } = await supabase.from('manpower_requests').update({ status: ManpowerRequestStatus.Approved, approved_by: user?.id, approved_at: new Date().toISOString() }).eq('id', requestId);
+        if (error) { alert('Failed to approve request.'); return; }
+        setManpowerRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: ManpowerRequestStatus.Approved } : r));
+        setIsManpowerReviewModalOpen(false);
+        alert('Manpower Request Approved.');
     };
 
-    const handleRejectManpower = (requestId: string, reason: string) => {
-        const index = mockManpowerRequests.findIndex(r => r.id === requestId);
-        if (index > -1) {
-            mockManpowerRequests[index].status = ManpowerRequestStatus.Rejected;
-            mockManpowerRequests[index].rejectionReason = reason;
-            if (mockManpowerRequests[index].requestedBy) {
-                mockNotifications.unshift({
-                    id: `manpower-reject-${requestId}-${Date.now()}`,
-                    userId: mockManpowerRequests[index].requestedBy,
-                    type: NotificationType.MANPOWER_REQUEST_REJECTED,
-                    title: 'On-Call Rejected',
-                    message: `Your on-call request for ${mockManpowerRequests[index].businessUnitName || 'Unknown BU'} on ${new Date(mockManpowerRequests[index].date).toLocaleDateString()} has been rejected${reason ? `: ${reason}` : '.'}`,
-                    link: '/payroll/manpower-planning',
-                    isRead: false,
-                    createdAt: new Date(),
-                    relatedEntityId: requestId,
-                });
-            }
-            setManpowerRequests([...mockManpowerRequests]);
-            setIsManpowerReviewModalOpen(false);
-            alert("Manpower Request Rejected.");
-        } else {
-             alert("Error: Request not found.");
-        }
+    const handleRejectManpower = async (requestId: string, reason: string) => {
+        const { error } = await supabase.from('manpower_requests').update({ status: ManpowerRequestStatus.Rejected, rejection_reason: reason }).eq('id', requestId);
+        if (error) { alert('Failed to reject request.'); return; }
+        setManpowerRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: ManpowerRequestStatus.Rejected } : r));
+        setIsManpowerReviewModalOpen(false);
+        alert('Manpower Request Rejected.');
     };
 
     const openReviewModal = (req: ManpowerRequest) => {
@@ -543,33 +501,22 @@ const BODDashboard: React.FC = () => {
     };
 
     // WFH Handlers
-    const handleApproveWFH = (requestId: string) => {
-        const index = mockWFHRequests.findIndex(r => r.id === requestId);
-        if (index > -1) {
-            mockWFHRequests[index].status = WFHRequestStatus.Approved;
-            mockWFHRequests[index].approvedBy = user?.id;
-            mockWFHRequests[index].approvedAt = new Date();
-            setWfhRequests([...mockWFHRequests]);
-            setIsWFHReviewModalOpen(false);
-            if (user) {
-                logActivity(user, 'APPROVE', 'WFHRequest', requestId, `Approved WFH request.`);
-            }
-            alert("WFH Request Approved.");
-        }
+    const handleApproveWFH = async (requestId: string) => {
+        const { error } = await supabase.from('wfh_requests').update({ status: WFHRequestStatus.Approved, approved_by: user?.id, approved_at: new Date().toISOString() }).eq('id', requestId);
+        if (error) { alert('Failed to approve WFH request.'); return; }
+        setWfhRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: WFHRequestStatus.Approved } : r));
+        setIsWFHReviewModalOpen(false);
+        if (user) logActivity(user, 'APPROVE', 'WFHRequest', requestId, 'Approved WFH request.');
+        alert('WFH Request Approved.');
     };
 
-    const handleRejectWFH = (requestId: string, reason: string) => {
-        const index = mockWFHRequests.findIndex(r => r.id === requestId);
-        if (index > -1) {
-            mockWFHRequests[index].status = WFHRequestStatus.Rejected;
-            mockWFHRequests[index].rejectionReason = reason;
-            setWfhRequests([...mockWFHRequests]);
-            setIsWFHReviewModalOpen(false);
-            if (user) {
-                logActivity(user, 'REJECT', 'WFHRequest', requestId, `Rejected WFH request. Reason: ${reason}`);
-            }
-            alert("WFH Request Rejected.");
-        }
+    const handleRejectWFH = async (requestId: string, reason: string) => {
+        const { error } = await supabase.from('wfh_requests').update({ status: WFHRequestStatus.Rejected, rejection_reason: reason }).eq('id', requestId);
+        if (error) { alert('Failed to reject WFH request.'); return; }
+        setWfhRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: WFHRequestStatus.Rejected } : r));
+        setIsWFHReviewModalOpen(false);
+        if (user) logActivity(user, 'REJECT', 'WFHRequest', requestId, `Rejected WFH request. Reason: ${reason}`);
+        alert('WFH Request Rejected.');
     };
 
     const openWFHReviewModal = (req: WFHRequest) => {
@@ -588,7 +535,7 @@ const BODDashboard: React.FC = () => {
         }
         try {
             const saved = await createCoeRequest(request, user);
-            mockCOERequests.unshift(saved);
+            // saved persisted in Supabase via createCoeRequest
             logActivity(user, 'CREATE', 'COERequest', saved.id, `Requested COE for ${saved.purpose}`);
             alert("Certificate of Employment request submitted.");
         } catch (error: any) {
@@ -953,12 +900,11 @@ const BODDashboard: React.FC = () => {
         });
 
         pendingResolutionsForMe.forEach(res => {
-            const ir = mockIncidentReports.find(ir => ir.id === res.incidentReportId);
             allItems.push({
                 id: `res-approve-${res.id}`,
                 icon: <GavelIcon {...iconProps} />,
                 title: "Resolution for Approval",
-                subtitle: `For Case: ${res.incidentReportId} (${ir?.category})`,
+                subtitle: `For Case: ${res.incidentReportId}`,
                 date: new Date(res.decisionDate).toLocaleDateString(),
                 link: '/feedback/cases?filter=pending_my_approval',
                 colorClass: 'bg-orange-500'
@@ -971,12 +917,11 @@ const BODDashboard: React.FC = () => {
         );
     
         awardsForApproval.forEach(award => {
-            const employeeName = mockUsers.find(u => u.id === award.employeeId)?.name || 'Unknown';
             allItems.push({
                 id: `award-approve-${award.id}`,
                 icon: <TrophyIcon {...iconProps} />,
                 title: "Award for Approval",
-                subtitle: `For ${employeeName}`,
+                subtitle: `For ${award.employeeId}`,
                 date: new Date(award.dateAwarded).toLocaleDateString(),
                 link: '/evaluation/awards',
                 colorClass: 'bg-yellow-500',
@@ -1006,7 +951,7 @@ const BODDashboard: React.FC = () => {
         });
 
 
-        const interviewInvites = mockNotifications
+        const interviewInvites = supabaseNotifications
             .filter(n => notificationUserIds.has(n.userId) && !n.isRead && n.type === NotificationType.InterviewInvite)
             .map(item => ({
                 id: `notif-${item.id}`,
@@ -1019,7 +964,7 @@ const BODDashboard: React.FC = () => {
             }));
         allItems.push(...interviewInvites);
         
-        const ticketNotifications = mockNotifications
+        const ticketNotifications = supabaseNotifications
             .filter(n => notificationUserIds.has(n.userId) && !n.isRead && (n.type === NotificationType.TICKET_ASSIGNED_TO_YOU || n.type === NotificationType.TICKET_UPDATE_REQUESTER))
             .map(item => ({
                 id: `notif-${item.id}`,
@@ -1032,7 +977,7 @@ const BODDashboard: React.FC = () => {
             }));
         allItems.push(...ticketNotifications);
         
-        const caseNotifications = mockNotifications
+        const caseNotifications = supabaseNotifications
             .filter(n => notificationUserIds.has(n.userId) && !n.isRead && n.type === NotificationType.CASE_ASSIGNED)
             .map(item => ({
                 id: `notif-${item.id}`,
@@ -1045,7 +990,7 @@ const BODDashboard: React.FC = () => {
             }));
         allItems.push(...caseNotifications);
 
-        const benefitNotifications = mockNotifications
+        const benefitNotifications = supabaseNotifications
             .filter(n => notificationUserIds.has(n.userId) && !n.isRead && n.type === NotificationType.BENEFIT_REQUEST_SUBMITTED)
             .map(item => ({
                 id: `notif-${item.id}`,
@@ -1058,7 +1003,7 @@ const BODDashboard: React.FC = () => {
             }));
         allItems.push(...benefitNotifications);
 
-        const panApprovalNotifications = mockNotifications
+        const panApprovalNotifications = supabaseNotifications
             .filter(n => notificationUserIds.has(n.userId) && !n.isRead && n.type === NotificationType.PAN_APPROVAL_REQUEST)
             .map(item => ({
                 id: `notif-${item.id}`,
@@ -1071,7 +1016,7 @@ const BODDashboard: React.FC = () => {
             }));
         allItems.push(...panApprovalNotifications);
 
-        const profileChangeNotifications = mockNotifications
+        const profileChangeNotifications = supabaseNotifications
             .filter(n => notificationUserIds.has(n.userId) && !n.isRead && n.type === NotificationType.PROFILE_CHANGE_APPROVED)
             .map(item => ({
                 id: `notif-${item.id}`,
@@ -1084,7 +1029,7 @@ const BODDashboard: React.FC = () => {
             }));
         allItems.push(...profileChangeNotifications);
 
-        const onboardingNotifications = mockNotifications
+        const onboardingNotifications = supabaseNotifications
             .filter(n => notificationUserIds.has(n.userId) && !n.isRead && (n.type === NotificationType.ONBOARDING_ASSIGNED || n.type === NotificationType.OFFBOARDING_ASSIGNED))
             .map(item => ({
                 id: `notif-${item.id}`,
@@ -1097,7 +1042,7 @@ const BODDashboard: React.FC = () => {
             }));
         allItems.push(...onboardingNotifications);
 
-        const evaluationNotifications = mockNotifications
+        const evaluationNotifications = supabaseNotifications
             .filter(n => notificationUserIds.has(n.userId) && !n.isRead && n.type === NotificationType.EVALUATION_ASSIGNED)
             .map(item => ({
                 id: `notif-${item.id}`,
@@ -1110,7 +1055,7 @@ const BODDashboard: React.FC = () => {
             }));
         allItems.push(...evaluationNotifications);
 
-        const pulseSurveyNotifications = mockNotifications
+        const pulseSurveyNotifications = supabaseNotifications
             .filter(n => notificationUserIds.has(n.userId) && !n.isRead && n.type === NotificationType.PULSE_SURVEY_REMINDER)
             .map(item => ({
                 id: `notif-${item.id}`,
@@ -1123,7 +1068,7 @@ const BODDashboard: React.FC = () => {
             }));
         allItems.push(...pulseSurveyNotifications);
 
-        const contractNotifications = mockNotifications
+        const contractNotifications = supabaseNotifications
             .filter(
                 n =>
                     notificationUserIds.has(n.userId) &&
@@ -1142,7 +1087,7 @@ const BODDashboard: React.FC = () => {
             }));
         allItems.push(...contractNotifications);
 
-        const manpowerNotifications = mockNotifications
+        const manpowerNotifications = supabaseNotifications
             .filter(
                 n =>
                     notificationUserIds.has(n.userId) &&
@@ -1161,7 +1106,7 @@ const BODDashboard: React.FC = () => {
             }));
         allItems.push(...manpowerNotifications);
 
-        const manpowerDecisionNotifications = mockNotifications
+        const manpowerDecisionNotifications = supabaseNotifications
             .filter(
                 n =>
                     notificationUserIds.has(n.userId) &&
@@ -1180,7 +1125,7 @@ const BODDashboard: React.FC = () => {
             }));
         allItems.push(...manpowerDecisionNotifications);
 
-        const assetNotifications = mockNotifications
+        const assetNotifications = supabaseNotifications
             .filter(n => notificationUserIds.has(n.userId) && !n.isRead && n.type === NotificationType.ASSET_ASSIGNED)
             .map(item => {
                  if (allItems.some((i: any) => i.id === `asset-accept-${item.relatedEntityId}`)) return null;
@@ -1196,8 +1141,8 @@ const BODDashboard: React.FC = () => {
             }).filter(Boolean);
         allItems.push(...assetNotifications);
 
-        const leaveRequestNotifications = mockNotifications
-            .filter(n => notificationUserIds.has(n.userId) && !n.isRead && n.type === NotificationType.LEAVE_REQUEST)
+        const leaveRequestNotifications = supabaseNotifications
+            .filter((n: any) => notificationUserIds.has(n.userId) && !n.isRead && n.type === NotificationType.LEAVE_REQUEST)
             .map(item => ({
                 id: `notif-${item.id}`,
                 icon: <SunIcon {...iconProps} />,
@@ -1213,7 +1158,7 @@ const BODDashboard: React.FC = () => {
         // UPDATED: Robust Evaluation Logic
         const evaluatorUser = { ...user, id: employeeProfileId || user.id };
         const mySubmissions = evaluationSubmissions.filter(sub => sub.raterId === (employeeProfileId || user.id));
-        const evaluationsToPerform = (useSupabaseEvaluations ? evaluations : mockEvaluations).filter(e => e.status === 'InProgress');
+        const evaluationsToPerform = evaluations.filter(e => e.status === 'InProgress');
 
         const evaluationItems = evaluationsToPerform.map(evaluation => {
             // Find who this user needs to evaluate for this evaluation cycle using the robust helper
@@ -1255,23 +1200,6 @@ const BODDashboard: React.FC = () => {
                 subtitle: `${ticket.category} • ${ticket.priority}${ticket.requesterName ? ` • ${ticket.requesterName}` : ''}`,
                 date: new Date(sortDate || new Date()).toLocaleDateString(),
                 link: `/helpdesk/tickets?ticketId=${ticket.id}`,
-                colorClass: 'bg-cyan-500'
-            });
-        });
-
-        const myTickets = mockTickets.filter(t => 
-            t.assignedToId === user.id && 
-            ![TicketStatus.Resolved, TicketStatus.Closed].includes(t.status)
-        );
-
-        myTickets.forEach(ticket => {
-            allItems.push({
-                id: `ticket-${ticket.id}`,
-                icon: <TicketIcon {...iconProps} />,
-                title: `Ticket Assigned: ${ticket.id}`,
-                subtitle: `From ${ticket.requesterName}: ${ticket.description}`,
-                date: new Date(ticket.createdAt).toLocaleDateString(),
-                link: '/helpdesk/tickets',
                 colorClass: 'bg-cyan-500'
             });
         });
@@ -1321,7 +1249,7 @@ const BODDashboard: React.FC = () => {
             if (priorityDiff !== 0) return priorityDiff;
             return String(a.id).localeCompare(String(b.id));
         });
-    }, [user, memos, memoUpdateKey, pans, resolutions, ntes, requisitions, awards, assignments, assignedTickets, manpowerRequests, wfhRequests, checklists, templates, isManpowerReviewModalOpen, pendingBenefitRequests, envelopes, evaluationSubmissions, evaluations, useSupabaseEvaluations, isUserEligibleEvaluator, panApproverId, employeeProfileId]); 
+    }, [user, memos, memoUpdateKey, pans, resolutions, ntes, requisitions, awards, assignments, assignedTickets, manpowerRequests, wfhRequests, checklists, templates, isManpowerReviewModalOpen, pendingBenefitRequests, envelopes, evaluationSubmissions, evaluations, isUserEligibleEvaluator, panApproverId, employeeProfileId]); 
 
     return (
         <div className="space-y-6">

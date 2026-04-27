@@ -1,4 +1,4 @@
-import { mockUsers, mockNotifications, mockUserDocuments } from '../../services/mockDataCompat';
+// Migration complete: mockDataCompat removed from HRReviewQueue
 import React, { useState, useMemo, useEffect } from 'react';
 import { ChangeHistory, ChangeHistoryStatus, EmployeeDraftStatus, User, Role, Permission, UserDocument, UserDocumentStatus, NotificationType } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
@@ -24,7 +24,7 @@ const HRReviewQueue: React.FC = () => {
     const { can } = usePermissions();
     const [pendingChanges, setPendingChanges] = useState<ChangeHistory[]>([]);
     const [pendingUsers, setPendingUsers] = useState<User[]>([]);
-    const [pendingDocuments, setPendingDocuments] = useState<UserDocument[]>(() => mockUserDocuments.filter(d => d.status === UserDocumentStatus.Pending));
+    const [pendingDocuments, setPendingDocuments] = useState<UserDocument[]>([]);
     const [employeeLookup, setEmployeeLookup] = useState<Map<string, string>>(new Map());
     
     const [filterName, setFilterName] = useState('');
@@ -34,7 +34,7 @@ const HRReviewQueue: React.FC = () => {
     const submissions = useMemo(() => {
         const groups: Record<string, SubmissionGroup> = {};
         pendingChanges.forEach(change => {
-            const employeeName = employeeLookup.get(change.employeeId) || mockUsers.find(u => u.id === change.employeeId)?.name || 'Unknown Employee';
+            const employeeName = employeeLookup.get(change.employeeId) || 'Unknown Employee';
             if (!groups[change.submissionId]) {
                 groups[change.submissionId] = {
                     employeeName,
@@ -55,10 +55,7 @@ const HRReviewQueue: React.FC = () => {
     }, [pendingUsers, filterName]);
 
     const filteredPendingDocuments = useMemo(() => {
-        return pendingDocuments.map(doc => ({
-            ...doc,
-            employeeName: mockUsers.find(u => u.id === doc.employeeId)?.name || 'Unknown'
-        })).filter(doc => doc.employeeName.toLowerCase().includes(filterName.toLowerCase()));
+        return pendingDocuments.filter(doc => (doc as any).employeeName?.toLowerCase().includes(filterName.toLowerCase()));
     }, [pendingDocuments, filterName]);
 
     // Load new user registrations (email confirmed + inactive)
@@ -138,6 +135,37 @@ const HRReviewQueue: React.FC = () => {
         loadPendingUsers();
     }, []);
 
+    useEffect(() => {
+        const loadPendingDocuments = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('user_documents')
+                    .select('*, hris_users(full_name)')
+                    .eq('status', UserDocumentStatus.Pending);
+                if (error) throw error;
+                if (data) {
+                    setPendingDocuments(
+                        data.map((d: any) => ({
+                            id: d.id,
+                            employeeId: d.user_id,
+                            documentType: d.document_type,
+                            customDocumentType: d.custom_document_type,
+                            fileName: d.file_name,
+                            fileUrl: d.file_url,
+                            status: d.status,
+                            submittedAt: d.created_at ? new Date(d.created_at) : new Date(),
+                            employeeName: d.hris_users?.full_name || 'Unknown'
+                        }))
+                    );
+                }
+            } catch (e) {
+                console.error('Failed to load pending documents', e);
+                setPendingDocuments([]);
+            }
+        };
+        loadPendingDocuments();
+    }, []);
+
 
     const handleProfileApprovalAction = async (submissionId: string, status: ChangeHistoryStatus.Approved | ChangeHistoryStatus.Rejected, reason?: string) => {
         if (!user) return;
@@ -205,17 +233,6 @@ const HRReviewQueue: React.FC = () => {
             if (status === ChangeHistoryStatus.Approved && changeRows && changeRows.length > 0) {
                 const employeeId = changeRows[0].employee_id;
                 const createdAt = new Date();
-                mockNotifications.unshift({
-                    id: `notif-profile-change-${submissionId}-${employeeId}-${createdAt.getTime()}`,
-                    userId: employeeId,
-                    type: NotificationType.PROFILE_CHANGE_APPROVED,
-                    title: 'Profile Update Approved',
-                    message: 'Your profile update request was approved.',
-                    link: '/my-profile',
-                    isRead: false,
-                    createdAt,
-                    relatedEntityId: submissionId,
-                });
                 try {
                     await supabase.from('notifications').insert([
                         {
@@ -242,20 +259,27 @@ const HRReviewQueue: React.FC = () => {
         }
     };
 
-    const handleDocumentApprovalAction = (documentId: string, status: UserDocumentStatus.Approved | UserDocumentStatus.Rejected, reason?: string) => {
+    const handleDocumentApprovalAction = async (documentId: string, status: UserDocumentStatus.Approved | UserDocumentStatus.Rejected, reason?: string) => {
         if (!user) return;
-        const docIndex = mockUserDocuments.findIndex(d => d.id === documentId);
-        if (docIndex > -1) {
-            mockUserDocuments[docIndex].status = status;
-            mockUserDocuments[docIndex].reviewedAt = new Date();
-            mockUserDocuments[docIndex].reviewedBy = user.id;
+        try {
+            const updatePayload: any = {
+                status,
+                reviewed_at: new Date().toISOString(),
+                reviewed_by: user.id
+            };
             if (status === UserDocumentStatus.Rejected) {
-                mockUserDocuments[docIndex].rejectionReason = reason;
+                updatePayload.rejection_reason = reason;
             }
+            const { error } = await supabase.from('user_documents').update(updatePayload).eq('id', documentId);
+            if (error) throw error;
+
             const action = status === UserDocumentStatus.Approved ? 'APPROVE' : 'REJECT';
             const details = status === UserDocumentStatus.Approved ? `Approved document.` : `Rejected document. Reason: ${reason}`;
             logActivity(user, action, 'UserDocument', documentId, details);
             setPendingDocuments(prev => prev.filter(d => d.id !== documentId));
+        } catch (e) {
+            console.error('Failed to update document status', e);
+            alert('Failed to update document status.');
         }
     };
 

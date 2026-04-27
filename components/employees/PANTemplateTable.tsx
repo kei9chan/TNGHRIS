@@ -1,8 +1,8 @@
-import { mockUsers } from '../../services/mockDataCompat';
 import React from 'react';
 import { PANTemplate, Permission } from '../../types';
 import Button from '../ui/Button';
 import { usePermissions } from '../../hooks/usePermissions';
+import { useUsers } from '../../hooks/useHRData';
 
 interface PANTemplateTableProps {
     templates: PANTemplate[];
@@ -13,8 +13,9 @@ interface PANTemplateTableProps {
 const PANTemplateTable: React.FC<PANTemplateTableProps> = ({ templates, onEdit, onDelete }) => {
     const { can } = usePermissions();
     const canManage = can('PAN', Permission.Manage);
+    const { users } = useUsers();
 
-    const getUserName = (id: string) => mockUsers.find(u => u.id === id)?.name || 'N/A';
+    const getUserName = (id: string) => users.find(u => u.id === id)?.name || 'N/A';
 
     return (
         <div className="overflow-x-auto">

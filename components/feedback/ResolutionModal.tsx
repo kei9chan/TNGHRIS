@@ -1,4 +1,4 @@
-import { mockUsers } from '../../services/mockDataCompat';
+import { useUsers } from '../../hooks/useHRData';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { IncidentReport, Resolution, ResolutionType, Permission, Role, User, ResolutionStatus, ApproverStatus } from '../../types';
@@ -32,6 +32,7 @@ interface ResolutionModalProps {
 const ResolutionModal: React.FC<ResolutionModalProps> = ({ isOpen, onClose, incidentReport, resolution, onSave, isApproverView = false, onApprove, onReject, isEmployeeAcknowledgeView = false, onAcknowledge }) => {
   const { user } = useAuth();
   const { can } = usePermissions();
+  const { users } = useUsers();
   
   // Main Resolution State
   const [currentResolution, setCurrentResolution] = useState<Partial<Resolution>>(resolution || {});
@@ -62,8 +63,8 @@ const ResolutionModal: React.FC<ResolutionModalProps> = ({ isOpen, onClose, inci
                  (isRejectedByApprover && !canEditResolution);
 
   const approverPool = useMemo(() => {
-    return mockUsers.filter(u => u.role === Role.BOD || u.role === Role.GeneralManager);
-  }, []);
+    return users.filter(u => u.role === Role.BOD || u.role === Role.GeneralManager);
+  }, [users]);
 
   const rejectionReasons = useMemo(() => {
     if (!isRejectedByApprover || !resolution?.approverSteps) return [];
@@ -113,7 +114,7 @@ const ResolutionModal: React.FC<ResolutionModalProps> = ({ isOpen, onClose, inci
         }
 
         if(resolution?.approverSteps) {
-            setSelectedApprovers(mockUsers.filter(u => resolution.approverSteps.some(s => s.userId === u.id)));
+            setSelectedApprovers(users.filter(u => resolution.approverSteps.some(s => s.userId === u.id)));
         } else {
             setSelectedApprovers([]);
         }

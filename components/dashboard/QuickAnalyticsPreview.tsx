@@ -1,59 +1,103 @@
-import { mockUsers, mockJobRequisitions, mockApplications, mockOffers, mockIncidentReports, mockResignations } from '../../services/mockDataCompat';
-import React, { useMemo, useState } from 'react';
+// Phase A complete: mockDataCompat removed from QuickAnalyticsPreview
+import React, { useMemo, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Card from '../ui/Card';
 import SimpleBarChart from '../analytics/SimpleBarChart';
-import { ApplicationStage, OfferStatus, IRStatus, ResignationStatus } from '../../types';
+import { ApplicationStage, OfferStatus, IRStatus, User, Application, JobRequisition, Offer, IncidentReport } from '../../types';
+import { fetchUsers } from '../../services/userService';
+import { fetchApplications, fetchJobRequisitions, fetchOffers } from '../../services/recruitmentService';
+import { fetchIncidentReports } from '../../services/incidentReportService';
+import { supabase } from '../../services/supabaseClient';
 
 const ArrowRightIcon: React.FC = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>;
 
+// ---------------------------------------------------------------------------
+// Date helpers
+// ---------------------------------------------------------------------------
 const getQuarterDateRange = (year: number, quarter: number) => {
-    if (quarter === 0) { // Yearly summary
+    if (quarter === 0) {
         const start = new Date(year, 0, 1);
         const end = new Date(year, 11, 31);
         end.setHours(23, 59, 59, 999);
         return { start, end };
     }
-    
-    let startMonth, endMonth;
+    let startMonth: number, endMonth: number;
     switch (quarter) {
-        case 1: startMonth = 0; endMonth = 2; break; // Jan-Mar
-        case 2: startMonth = 3; endMonth = 5; break; // Apr-Jun
-        case 3: startMonth = 6; endMonth = 8; break; // Jul-Sep
-        case 4: startMonth = 9; endMonth = 11; break; // Oct-Dec
+        case 1: startMonth = 0; endMonth = 2; break;
+        case 2: startMonth = 3; endMonth = 5; break;
+        case 3: startMonth = 6; endMonth = 8; break;
+        case 4: startMonth = 9; endMonth = 11; break;
         default: return { start: new Date(), end: new Date() };
     }
     const start = new Date(year, startMonth, 1);
     const end = new Date(year, endMonth + 1, 0);
-    end.setHours(23, 59, 59, 999); // Include the whole end day
+    end.setHours(23, 59, 59, 999);
     return { start, end };
 };
 
+// ---------------------------------------------------------------------------
+// Data shape for resignations (light fetch — only lastWorkingDay needed)
+// ---------------------------------------------------------------------------
+interface ResignationRow { last_working_day: string; }
 
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 const QuickAnalyticsPreview: React.FC = () => {
-    const availableYears = useMemo(() => 
-        [...new Set(mockJobRequisitions.map(r => new Date(r.createdAt).getFullYear()))]
-        .sort((a,b) => b-a)
-    , []);
+    // --- Data state ---
+    const [users, setUsers] = useState<User[]>([]);
+    const [applications, setApplications] = useState<Application[]>([]);
+    const [requisitions, setRequisitions] = useState<JobRequisition[]>([]);
+    const [offers, setOffers] = useState<Offer[]>([]);
+    const [incidentReports, setIncidentReports] = useState<IncidentReport[]>([]);
+    const [resignations, setResignations] = useState<ResignationRow[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        let cancelled = false;
+        Promise.all([
+            fetchUsers(),
+            fetchApplications(),
+            fetchJobRequisitions(),
+            fetchOffers(),
+            fetchIncidentReports(),
+            supabase.from('resignations').select('last_working_day'),
+        ]).then(([u, apps, reqs, ofs, irs, { data: resData }]) => {
+            if (cancelled) return;
+            setUsers(u);
+            setApplications(apps);
+            setRequisitions(reqs);
+            setOffers(ofs);
+            setIncidentReports(irs);
+            setResignations((resData as ResignationRow[]) || []);
+            setIsLoading(false);
+        }).catch(() => {
+            if (!cancelled) setIsLoading(false);
+        });
+        return () => { cancelled = true; };
+    }, []);
+
+    // --- Filter controls ---
+    const availableYears = useMemo(() => {
+        const years = [...new Set(requisitions.map(r => new Date(r.createdAt).getFullYear()))];
+        if (!years.includes(new Date().getFullYear())) years.push(new Date().getFullYear());
+        return years.sort((a: number, b: number) => b - a);
+    }, [requisitions]);
 
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
     const [selectedQuarter, setSelectedQuarter] = useState(Math.floor(new Date().getMonth() / 3) + 1);
     const [activeTab, setActiveTab] = useState<'employees' | 'recruitment' | 'discipline'>('employees');
 
-
     const dateRange = useMemo(() => getQuarterDateRange(selectedYear, selectedQuarter), [selectedYear, selectedQuarter]);
 
-    // Employee Analytics
+    // --- Employee analytics ---
     const employeeData = useMemo(() => {
-        const activeUsers = mockUsers.filter(u => u.status === 'Active');
-        
-        const resignationsInPeriod = mockResignations.filter(res => {
-            const lastDay = new Date(res.lastWorkingDay);
+        const activeUsers = users.filter(u => u.status === 'Active');
+        const resignationsInPeriod = resignations.filter(res => {
+            const lastDay = new Date(res.last_working_day);
             return lastDay >= dateRange.start && lastDay <= dateRange.end;
         }).length;
-        
         const turnoverRate = activeUsers.length > 0 ? (resignationsInPeriod / activeUsers.length) * 100 : 0;
-        
         const headcountByDept: Record<string, number> = {};
         activeUsers.forEach(user => {
             headcountByDept[user.department] = (headcountByDept[user.department] || 0) + 1;
@@ -62,57 +106,43 @@ const QuickAnalyticsPreview: React.FC = () => {
             .map(([label, value]) => ({ label, value }))
             .sort((a, b) => b.value - a.value)
             .slice(0, 3);
+        return { headcount: activeUsers.length, turnover: turnoverRate.toFixed(1) + '%', deptData };
+    }, [users, resignations, dateRange]);
 
-        return {
-            headcount: activeUsers.length,
-            turnover: turnoverRate.toFixed(1) + '%',
-            deptData,
-        };
-    }, [dateRange]);
-
-    // Recruitment Analytics
+    // --- Recruitment analytics ---
     const recruitmentData = useMemo(() => {
-        const hiredApps = mockApplications.filter(app => 
+        const hiredApps = applications.filter(app =>
             app.stage === ApplicationStage.Hired &&
             new Date(app.updatedAt) >= dateRange.start &&
             new Date(app.updatedAt) <= dateRange.end
         );
-
         let timeToFill = 0;
         if (hiredApps.length > 0) {
             const totalDays = hiredApps.reduce((sum, app) => {
-                const requisition = mockJobRequisitions.find(r => r.id === app.requisitionId);
-                if (!requisition) return sum;
-                const diffTime = Math.abs(new Date(app.updatedAt).getTime() - new Date(requisition.createdAt).getTime());
+                const req = requisitions.find(r => r.id === app.requisitionId);
+                if (!req) return sum;
+                const diffTime = Math.abs(new Date(app.updatedAt).getTime() - new Date(req.createdAt).getTime());
                 return sum + Math.ceil(diffTime / (1000 * 60 * 60 * 24));
             }, 0);
             timeToFill = Math.round(totalDays / hiredApps.length);
         }
-
-        const offersInPeriod = mockOffers.filter(offer => {
-            const app = mockApplications.find(a => a.id === offer.applicationId);
+        const offersInPeriod = offers.filter(offer => {
+            const app = applications.find(a => a.id === offer.applicationId);
             return app && new Date(app.updatedAt) >= dateRange.start && new Date(app.updatedAt) <= dateRange.end;
         });
-
         const sentOffers = offersInPeriod.filter(o => o.status !== OfferStatus.Draft);
         const acceptedCount = sentOffers.filter(o => [OfferStatus.Signed, OfferStatus.Converted].includes(o.status)).length;
         const acceptanceRate = sentOffers.length > 0 ? (acceptedCount / sentOffers.length) * 100 : 0;
+        return { timeToFill: `${timeToFill} days`, acceptanceRate: acceptanceRate.toFixed(1) + '%' };
+    }, [applications, requisitions, offers, dateRange]);
 
-        return {
-            timeToFill: `${timeToFill} days`,
-            acceptanceRate: acceptanceRate.toFixed(1) + '%',
-        };
-    }, [dateRange]);
-    
-    // Discipline Analytics
+    // --- Discipline analytics ---
     const disciplineData = useMemo(() => {
-        const reportsInPeriod = mockIncidentReports.filter(report => {
+        const reportsInPeriod = incidentReports.filter(report => {
             const reportDate = new Date(report.dateTime);
             return reportDate >= dateRange.start && reportDate <= dateRange.end;
         });
-
         const openCases = reportsInPeriod.filter(r => r.status !== IRStatus.Closed && r.status !== IRStatus.NoAction).length;
-
         const violationCounts: Record<string, number> = {};
         reportsInPeriod.forEach(report => {
             violationCounts[report.category] = (violationCounts[report.category] || 0) + 1;
@@ -121,12 +151,8 @@ const QuickAnalyticsPreview: React.FC = () => {
             .map(([label, value]) => ({ label, value }))
             .sort((a, b) => b.value - a.value)
             .slice(0, 3);
-            
-        return {
-            openCases,
-            commonViolations
-        }
-    }, [dateRange]);
+        return { openCases, commonViolations };
+    }, [incidentReports, dateRange]);
 
     const tabClass = (tabName: typeof activeTab) =>
         `py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
@@ -136,6 +162,7 @@ const QuickAnalyticsPreview: React.FC = () => {
         }`;
 
     const renderTabContent = () => {
+        if (isLoading) return <p className="text-center text-gray-500 dark:text-gray-400 py-8">Loading analytics…</p>;
         switch (activeTab) {
             case 'employees':
                 return (
@@ -162,7 +189,7 @@ const QuickAnalyticsPreview: React.FC = () => {
                     </div>
                 );
             case 'recruitment':
-                 return (
+                return (
                     <div className="space-y-6">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="p-4 bg-gray-50 dark:bg-slate-800/50 rounded-lg text-center">
@@ -181,10 +208,10 @@ const QuickAnalyticsPreview: React.FC = () => {
                             </Link>
                         </div>
                     </div>
-                 );
+                );
             case 'discipline':
                 return (
-                     <div className="space-y-6">
+                    <div className="space-y-6">
                         <div className="p-4 bg-gray-50 dark:bg-slate-800/50 rounded-lg text-center">
                             <p className="text-sm text-gray-500 dark:text-gray-400">{selectedQuarter === 0 ? 'Open Cases this Year' : 'Open Cases this Quarter'}</p>
                             <p className="text-4xl font-bold text-gray-900 dark:text-white">{disciplineData.openCases}</p>
@@ -202,8 +229,7 @@ const QuickAnalyticsPreview: React.FC = () => {
                 );
             default: return null;
         }
-    }
-
+    };
 
     return (
         <Card title="Quick Analytics Preview" className="!p-0">
@@ -227,7 +253,7 @@ const QuickAnalyticsPreview: React.FC = () => {
                     </div>
                 </div>
             </div>
-             <div className="px-4 border-b border-gray-200 dark:border-gray-700">
+            <div className="px-4 border-b border-gray-200 dark:border-gray-700">
                 <nav className="-mb-px flex space-x-8" aria-label="Tabs">
                     <button onClick={() => setActiveTab('employees')} className={tabClass('employees')}>Employees</button>
                     <button onClick={() => setActiveTab('recruitment')} className={tabClass('recruitment')}>Recruitment</button>

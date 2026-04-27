@@ -1,7 +1,6 @@
-import { mockLeaveTypes } from '../../services/mockDataCompat';
-
-import React from 'react';
-import { User } from '../../types';
+import React, { useState, useEffect } from 'react';
+import { User, LeaveType } from '../../types';
+import { fetchLeaveTypes } from '../../services/leaveService';
 import Card from '../ui/Card';
 
 interface LeaveBalancesCardProps {
@@ -18,6 +17,11 @@ const DetailItem: React.FC<{ label: string; value: React.ReactNode }> = ({ label
 const LeaveBalancesCard: React.FC<LeaveBalancesCardProps> = ({ user }) => {
     const { leaveInfo } = user;
     const balances = leaveInfo?.balances;
+    const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
+
+    useEffect(() => {
+        fetchLeaveTypes().then(setLeaveTypes).catch(console.error);
+    }, []);
 
     const formatDays = (value?: number) => {
         if (value === undefined || value === null) return 'N/A';
@@ -36,7 +40,7 @@ const LeaveBalancesCard: React.FC<LeaveBalancesCardProps> = ({ user }) => {
     return (
         <Card title="Leave Balances">
             <dl className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-6">
-                {mockLeaveTypes.map(type => (
+                {leaveTypes.map(type => (
                     <DetailItem 
                         key={type.id} 
                         label={type.name} 

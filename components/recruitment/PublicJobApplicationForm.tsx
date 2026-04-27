@@ -1,5 +1,4 @@
-import { mockApplications, mockCandidates } from '../../services/mockDataCompat';
-
+import { supabase } from '../../services/supabaseClient';
 import React, { useState } from 'react';
 import { JobPost, Candidate, CandidateSource, Application, ApplicationStage } from '../../types';
 import Input from '../ui/Input';
@@ -37,56 +36,52 @@ const PublicJobApplicationForm: React.FC<PublicJobApplicationFormProps> = ({ job
 
         setIsSubmitting(true);
 
-        // Simulate API Call delay
-        setTimeout(() => {
-            const finalResumeUrl = resumeFile ? `file_upload/${resumeFile.name}` : resumeLink;
-
-            const newCandidate: Candidate = {
-                id: `CAND-${Date.now()}`,
-                firstName: firstName || '',
-                lastName: lastName || '',
-                email,
-                phone: mobile,
-                source: CandidateSource.CareerSite,
-                portfolioUrl: finalResumeUrl, 
-                consentAt: new Date(),
-                tags: [],
-            };
-            
-            // Update In-Memory Mock Data
-            mockCandidates.push(newCandidate);
-
-            const newApplication: Application = {
-                id: `APP-${Date.now()}`,
-                candidateId: newCandidate.id,
-                jobPostId: jobPost.id,
-                requisitionId: jobPost.requisitionId,
-                stage: ApplicationStage.New,
-                notes: coverLetter,
-                referrer: referredBy,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-            };
-            mockApplications.push(newApplication);
-
-            // PERSIST TO LOCAL STORAGE
-            // This ensures that if the admin dashboard is in another tab or refreshed, it can pick up this new data.
+        // Use Supabase API for insertion
+        const submitData = async () => {
             try {
-                const storedCandidates = JSON.parse(localStorage.getItem('tng_candidates') || '[]');
-                localStorage.setItem('tng_candidates', JSON.stringify([...storedCandidates, newCandidate]));
+                const finalResumeUrl = resumeFile ? `file_upload/${resumeFile.name}` : resumeLink;
+                const candidateId = `CAND-${Date.now()}`;
 
-                const storedApplications = JSON.parse(localStorage.getItem('tng_applications') || '[]');
-                localStorage.setItem('tng_applications', JSON.stringify([...storedApplications, newApplication]));
-                
-                // Signal DB update event for other tabs
-                localStorage.setItem('tng_hris_db_update', JSON.stringify({ entity: 'applications', timestamp: Date.now() }));
-            } catch (err) {
-                console.error("Failed to persist application to local storage", err);
+                const { error: candError } = await supabase.from('candidates').insert({
+                    id: candidateId,
+                    first_name: firstName || '',
+                    last_name: lastName || '',
+                    email,
+                    phone: mobile,
+                    source: CandidateSource.CareerSite,
+                    portfolio_url: finalResumeUrl, 
+                    consent_at: new Date().toISOString(),
+                    tags: [],
+                });
+
+                if (candError) throw candError;
+
+                const newApplication = {
+                    id: `APP-${Date.now()}`,
+                    candidate_id: candidateId,
+                    job_post_id: jobPost.id,
+                    requisition_id: jobPost.requisitionId,
+                    stage: ApplicationStage.New,
+                    notes: coverLetter,
+                    referrer: referredBy,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                };
+
+                const { error: appError } = await supabase.from('applications').insert(newApplication);
+
+                if (appError) throw appError;
+
+                setIsSubmitting(false);
+                onSuccess();
+            } catch (err: any) {
+                console.error("Failed to persist application", err);
+                setError(err.message || 'Failed to submit application. Please try again.');
+                setIsSubmitting(false);
             }
-
-            setIsSubmitting(false);
-            onSuccess();
-        }, 800);
+        };
+        
+        submitData();
     };
 
     return (

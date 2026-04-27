@@ -1,4 +1,4 @@
-import { mockUsers, mockBusinessUnits, mockDepartments, mockApplications } from '../../services/mockDataCompat';
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { JobRequisition, JobRequisitionStatus, User, Role, JobRequisitionRole, JobRequisitionStepStatus, ApplicationStage } from '../../types';
 import Modal from '../ui/Modal';
@@ -21,8 +21,19 @@ interface RequisitionModalProps {
 }
 
 const LifecycleTracker: React.FC<{ requisition: JobRequisition }> = ({ requisition }) => {
+    const [applications, setApplications] = useState<any[]>([]);
+
+    useEffect(() => {
+        const loadApps = async () => {
+            if (!requisition.id) return;
+            const { data } = await supabase.from('applications').select('stage').eq('requisition_id', requisition.id);
+            if (data) setApplications(data);
+        };
+        loadApps();
+    }, [requisition.id]);
+
     const stats = useMemo(() => {
-        const apps = mockApplications.filter(app => app.requisitionId === requisition.id);
+        const apps = applications;
         const hiredCount = apps.filter(app => app.stage === ApplicationStage.Hired).length;
         const offerCount = apps.filter(app => app.stage === ApplicationStage.Offer).length;
         const interviewCount = apps.filter(app => app.stage === ApplicationStage.Interview).length;
@@ -38,7 +49,7 @@ const LifecycleTracker: React.FC<{ requisition: JobRequisition }> = ({ requisiti
             candidates: candidateCount,
             applicants: applicantCount,
         };
-    }, [requisition]);
+    }, [requisition, applications]);
 
     const steps = [
         { name: 'Approved', active: true },
@@ -74,8 +85,10 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
     const { getAccessibleBusinessUnits } = usePermissions();
     const [current, setCurrent] = useState<Partial<JobRequisition>>({});
     const [finalApprovers, setFinalApprovers] = useState<User[]>([]);
-    const [businessUnits, setBusinessUnits] = useState(mockBusinessUnits);
-    const [departments, setDepartments] = useState(mockDepartments);
+    const [businessUnits, setBusinessUnits] = useState<{ id: string; name: string; code?: string }[]>([]);
+    const [departments, setDepartments] = useState<{ id: string; name: string; businessUnitId: string }[]>([]);
+    const [approverPool, setApproverPool] = useState<User[]>([]);
+    const [hrHead, setHrHead] = useState<User | null>(null);
     const initializedRef = React.useRef(false);
 
     const accessibleBus = useMemo(() => {
@@ -88,22 +101,19 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
     useEffect(() => {
         const loadMeta = async () => {
             try {
-                const { data: buData, error: buErr } = await supabase.from('business_units').select('id, name, code');
-                if (buErr || !buData || buData.length === 0) {
-                    setBusinessUnits(mockBusinessUnits);
-                } else {
-                    setBusinessUnits(buData.map((b: any) => ({ id: b.id, name: b.name, code: b.code || '' })));
-                }
-                const { data: deptData, error: deptErr } = await supabase.from('departments').select('id, name, business_unit_id');
-                if (deptErr || !deptData || deptData.length === 0) {
-                    setDepartments(mockDepartments);
-                } else {
-                    setDepartments(deptData.map((d: any) => ({ id: d.id, name: d.name, businessUnitId: d.business_unit_id })));
+                const { data: buData } = await supabase.from('business_units').select('id, name, code');
+                if (buData) setBusinessUnits(buData.map((b: any) => ({ id: b.id, name: b.name, code: b.code || '' })));
+                
+                const { data: deptData } = await supabase.from('departments').select('id, name, business_unit_id');
+                if (deptData) setDepartments(deptData.map((d: any) => ({ id: d.id, name: d.name, businessUnitId: d.business_unit_id })));
+                
+                const { data: usersData } = await supabase.from('hris_users').select('*').in('role', ['BOD', 'GeneralManager', 'HRManager']);
+                if (usersData) {
+                    setApproverPool(usersData.filter((u: any) => u.role === 'BOD' || u.role === 'GeneralManager') as User[]);
+                    setHrHead(usersData.find((u: any) => u.role === 'HRManager') as User || null);
                 }
             } catch (err) {
-                console.warn('Failed to load BU/Departments for requisition', err);
-                setBusinessUnits(mockBusinessUnits);
-                setDepartments(mockDepartments);
+                console.warn('Failed to load metadata for requisition', err);
             }
         };
         loadMeta();
@@ -147,7 +157,7 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
         }
     }, [isOpen, buOptions, current.businessUnitId, current.departmentId, departments]);
     
-    const approverPool = useMemo(() => mockUsers.filter(u => u.role === Role.BOD || u.role === Role.GeneralManager), []);
+
 
     const generateReqCode = () => {
         const now = new Date();
@@ -199,7 +209,6 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
         }
 
         if (status === JobRequisitionStatus.PendingApproval && (!payload.routingSteps || payload.routingSteps.length === 0)) {
-            const hrHead = mockUsers.find(u => u.role === Role.HRManager);
             if (hrHead) {
                 payload.routingSteps = [{
                     id: `req-step-${payload.id || Date.now()}-1`,
@@ -208,7 +217,7 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
                     role: JobRequisitionRole.HR,
                     status: JobRequisitionStepStatus.Pending,
                     order: 1
-                }]
+                }];
             }
         }
         

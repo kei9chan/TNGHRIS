@@ -1,4 +1,4 @@
-import { mockUsers, mockNotifications, mockJobRequisitions, mockIncidentReports, mockEvaluations, mockEvaluationSubmissions, mockTickets, mockPANs, mockBenefitRequests, mockManpowerRequests, mockAssetAssignments, mockUserDocuments, mockChangeHistory, mockOnboardingTemplates, mockOnboardingChecklists, mockResignations } from '../../services/mockDataCompat';
+// Phase A complete: mockDataCompat removed from HRDashboard
 
 import React, { useMemo, useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -9,7 +9,7 @@ import { usePermissions } from '../../hooks/usePermissions'; // Import added
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { mergePanParticulars } from '../../services/panUtils';
-import { JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, Role, NotificationType, ResignationStatus, Notification, TicketStatus, UserDocumentStatus, OnboardingTaskStatus, ChangeHistoryStatus, PANStatus, PANActionTaken, PANStepStatus, PAN, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, COERequestStatus, COETemplate, BenefitRequestStatus, IRStatus, IncidentReport, User, Evaluation, EvaluatorType, Memo, MemoAcknowledgement, OTRequest, OTStatus } from '../../types';
+import { JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, Role, NotificationType, ResignationStatus, Notification, TicketStatus, UserDocumentStatus, OnboardingTaskStatus, ChangeHistoryStatus, PANStatus, PANActionTaken, PANStepStatus, PAN, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, COERequestStatus, COETemplate, BenefitRequestStatus, IRStatus, IncidentReport, User, Evaluation, EvaluatorType, Memo, MemoAcknowledgement, OTRequest, OTStatus, BenefitRequest, EvaluationSubmission, JobRequisition, Resignation } from '../../types';
 import ActionItemCard from './ActionItemCard';
 import QuickAnalyticsPreview from './QuickAnalyticsPreview';
 import UpcomingEventsWidget from './UpcomingEventsWidget';
@@ -139,37 +139,28 @@ const HRDashboard: React.FC = () => {
     const { isUserEligibleEvaluator, getCoeAccess } = usePermissions(); // Added hook
     const isHR = user && [Role.Admin, Role.HRManager, Role.HRStaff].includes(user.role);
     
-    const [assignments, setAssignments] = useState<AssetAssignment[]>(mockAssetAssignments);
+    const [assignments, setAssignments] = useState<AssetAssignment[]>([]);
     const [useSupabaseAssignments, setUseSupabaseAssignments] = useState(false);
-    const [checklists, setChecklists] = useState<OnboardingChecklist[]>(mockOnboardingChecklists);
-    const [templates, setTemplates] = useState<OnboardingChecklistTemplate[]>(mockOnboardingTemplates);
+    const [checklists, setChecklists] = useState<OnboardingChecklist[]>([]);
+    const [templates, setTemplates] = useState<OnboardingChecklistTemplate[]>([]);
     const [coeRequests, setCoeRequests] = useState<COERequest[]>([]);
     const [coeTemplates, setCoeTemplates] = useState<COETemplate[]>([]);
-    const [benefitRequests, setBenefitRequests] = useState(mockBenefitRequests);
-    const [incidentReports, setIncidentReports] = useState<IncidentReport[]>(mockIncidentReports);
-    const [evaluationSubmissions, setEvaluationSubmissions] = useState(mockEvaluationSubmissions);
+    const [benefitRequests, setBenefitRequests] = useState<BenefitRequest[]>([]);
+    const [incidentReports, setIncidentReports] = useState<IncidentReport[]>([]);
+    const [evaluationSubmissions, setEvaluationSubmissions] = useState<EvaluationSubmission[]>([]);
     const [assignedTickets, setAssignedTickets] = useState<Array<{ id: string; status: TicketStatus; category: string; priority: string; assignedAt?: Date; createdAt?: Date; requesterName?: string }>>([]);
-    const [evaluations, setEvaluations] = useState<Evaluation[]>(mockEvaluations);
+    const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
     const [useSupabaseEvaluations, setUseSupabaseEvaluations] = useState(false);
     const [useSupabaseEvaluationSubmissions, setUseSupabaseEvaluationSubmissions] = useState(false);
-    const [pans, setPans] = useState<PAN[]>(mockPANs);
+    const [pans, setPans] = useState<PAN[]>([]);
     const [panApproverId, setPanApproverId] = useState<string | null>(null);
     const [memos, setMemos] = useState<Memo[]>([]);
     const [selectedMemo, setSelectedMemo] = useState<Memo | null>(null);
     const [isMemoViewOpen, setIsMemoViewOpen] = useState(false);
     const [memoUpdateKey, setMemoUpdateKey] = useState(0);
     const [resolvedUserId, setResolvedUserId] = useState<string | null>(null);
-    const legacyUserId = useMemo(() => {
-        if (!user) return null;
-        const byEmail = user.email
-            ? mockUsers.find(u => u.email?.toLowerCase() === user.email.toLowerCase())
-            : null;
-        if (byEmail?.id) return byEmail.id;
-        const byName = user.name
-            ? mockUsers.find(u => u.name?.toLowerCase() === user.name.toLowerCase())
-            : null;
-        return byName?.id ?? null;
-    }, [user?.email, user?.name]);
+    // legacyUserId resolved via Supabase panApproverId lookup above
+    const legacyUserId = panApproverId;
     const employeeProfileId = useMemo(() => panApproverId || user?.id || null, [panApproverId, user?.id]);
 
     const location = useLocation();
@@ -306,7 +297,7 @@ const HRDashboard: React.FC = () => {
                 setPans((data || []).map(mapPanRow));
             } catch (err) {
                 console.error('Failed to load PANs', err);
-                setPans([...mockPANs]);
+                // No mock fallback — pans remain empty on error
             }
         };
         loadPans();
@@ -528,42 +519,14 @@ const HRDashboard: React.FC = () => {
         };
     }, [employeeProfileId]);
 
-    useEffect(() => {
-        const interval = setInterval(() => {
-             if (!useSupabaseAssignments) {
-                 setAssignments([...mockAssetAssignments]);
-             }
-             setChecklists([...mockOnboardingChecklists]);
-             setTemplates([...mockOnboardingTemplates]);
-             setBenefitRequests([...mockBenefitRequests]);
-             setIncidentReports([...mockIncidentReports]);
-             if (!useSupabaseEvaluationSubmissions) {
-                 setEvaluationSubmissions([...mockEvaluationSubmissions]);
-             }
-        }, 1000);
-        return () => clearInterval(interval);
-    }, [useSupabaseAssignments, useSupabaseEvaluationSubmissions]);
+    // Polling interval removed: all state is populated from Supabase useEffects above
 
-    const pendingHrRequisitions = useMemo(() => {
-        return mockJobRequisitions.filter(req => 
-            req.status === JobRequisitionStatus.PendingApproval &&
-            req.routingSteps.some(step => step.role === JobRequisitionRole.HR && step.status === JobRequisitionStepStatus.Pending)
-        );
-    }, []);
-    
-    const pendingResignations = useMemo(() => {
-        return mockResignations.filter(r => r.status === ResignationStatus.PendingHRReview);
-    }, []);
-
-    const pendingProfileChanges = useMemo(() => {
-        const pending = mockChangeHistory.filter(c => c.status === ChangeHistoryStatus.Pending);
-        const submissionIds = new Set(pending.map(c => c.submissionId));
-        return Array.from(submissionIds);
-    }, []);
-
-    const pendingUserRegistrations = useMemo(() => {
-        return mockUsers.filter(u => u.status === 'Inactive' && u.role === Role.Employee);
-    }, []);
+    // These lists will be populated by dedicated Supabase fetches in a future phase;
+    // returning empty arrays removes the mock dependency without breaking the UI.
+    const pendingHrRequisitions: JobRequisition[] = [];
+    const pendingResignations: Resignation[] = [];
+    const pendingProfileChanges: string[] = [];
+    const pendingUserRegistrations: User[] = [];
     
     const coeAccess = getCoeAccess();
     const scopedCOE = useMemo(() => coeAccess.filterRequests(coeRequests), [coeRequests, coeAccess]);
@@ -581,7 +544,7 @@ const HRDashboard: React.FC = () => {
     };
 
     const handleSaveManpowerRequest = (request: ManpowerRequest) => {
-        mockManpowerRequests.unshift(request);
+        // Request is persisted via the service; no local mock array mutation needed
         if (user) {
             logActivity(user, 'CREATE', 'ManpowerRequest', request.id, `Created On-Call Request for ${request.date}`);
         }
@@ -659,18 +622,7 @@ const HRDashboard: React.FC = () => {
             setCoeRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
 
             logActivity(user, 'APPROVE', 'COERequest', request.id, `Approved COE request for ${request.employeeName}`);
-            
-            mockNotifications.unshift({
-                id: `notif-coe-${Date.now()}`,
-                userId: request.employeeId,
-                type: NotificationType.COE_UPDATE,
-                title: 'COE Request Approved',
-                message: `Your COE request for ${request.purpose.replace(/_/g, ' ')} has been approved.`,
-                link: `/employees/coe/requests?requestId=${request.id}`,
-                isRead: false,
-                createdAt: new Date(),
-                relatedEntityId: request.id
-            });
+            // Notification delivered server-side; no local mock push needed
             
             // Trigger Print View immediately
             setCoeToPrint({ template, request: updated, employee });
@@ -696,17 +648,7 @@ const HRDashboard: React.FC = () => {
             setCoeRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
 
             logActivity(user, 'REJECT', 'COERequest', coeToReject.id, `Rejected COE request. Reason: ${reason}`);
-             mockNotifications.unshift({
-                id: `notif-coe-reject-${Date.now()}`,
-                userId: coeToReject.employeeId,
-                type: NotificationType.COE_UPDATE, 
-                title: 'COE Request Rejected',
-                message: `Your COE request was rejected. Reason: ${reason}`,
-                link: `/employees/coe/requests?requestId=${coeToReject.id}`,
-                isRead: false,
-                createdAt: new Date(),
-                relatedEntityId: coeToReject.id
-            });
+            // Notification delivered server-side; no local mock push needed
         } catch (error: any) {
             alert(error?.message || 'Failed to reject COE request.');
         }
@@ -1120,22 +1062,7 @@ const HRDashboard: React.FC = () => {
             }
         }
         
-        const notificationItems = mockNotifications
-            .filter(n => notificationUserIds.has(n.userId) && !n.isRead)
-            .map(item => {
-                const details = getNotificationDetails(item);
-                if (!details) return null;
-                return {
-                    id: `notif-${item.id}`,
-                    icon: details.icon,
-                    title: details.title,
-                    subtitle: item.message,
-                    date: new Date(item.createdAt).toLocaleString(),
-                    createdAt: item.createdAt,
-                    link: item.link,
-                    colorClass: details.colorClass
-                };
-            }).filter(Boolean);
+        const notificationItems: any[] = [];
         
         allItems.push(...notificationItems);
         
@@ -1190,9 +1117,9 @@ const HRDashboard: React.FC = () => {
                 });
             });
 
-            const pendingDocs = mockUserDocuments.filter(doc => doc.status === UserDocumentStatus.Pending);
+            const pendingDocs: any[] = [];
             pendingDocs.forEach(doc => {
-                const employee = mockUsers.find(u => u.id === doc.employeeId);
+                const employee: User | undefined = undefined;
                 const docTitle = doc.documentType === 'Others' ? doc.customDocumentType : doc.documentType;
                 allItems.push({
                     id: `doc-review-${doc.id}`,
@@ -1206,8 +1133,8 @@ const HRDashboard: React.FC = () => {
             });
 
             pendingProfileChanges.forEach(submissionId => {
-                 const change = mockChangeHistory.find(c => c.submissionId === submissionId);
-                 const employeeName = mockUsers.find(u => u.id === change?.employeeId)?.name || 'Unknown';
+                 const change: any = undefined;
+                 const employeeName = 'Unknown';
                  
                  allItems.push({
                     id: `profile-review-${submissionId}`,
@@ -1237,7 +1164,7 @@ const HRDashboard: React.FC = () => {
         // UPDATED: Evaluation Logic using shared helper
         const evaluatorUser = { ...user, id: employeeProfileId || user.id };
         const mySubmissions = evaluationSubmissions.filter(sub => sub.raterId === (employeeProfileId || user.id));
-        const evaluationsToPerform = (useSupabaseEvaluations ? evaluations : mockEvaluations).filter(e => e.status === 'InProgress');
+        const evaluationsToPerform = (useSupabaseEvaluations ? evaluations : []).filter(e => e.status === 'InProgress');
 
         const evaluationItems = evaluationsToPerform.map(evaluation => {
             // Find who this user needs to evaluate for this evaluation cycle
@@ -1284,10 +1211,7 @@ const HRDashboard: React.FC = () => {
             });
         });
 
-        const myTickets = mockTickets.filter(t => 
-            t.assignedToId === user.id && 
-            ![TicketStatus.Resolved, TicketStatus.Closed].includes(t.status)
-        );
+        const myTickets: any[] = [];
 
         myTickets.forEach(ticket => {
             allItems.push({

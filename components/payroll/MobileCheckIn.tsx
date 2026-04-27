@@ -1,10 +1,11 @@
-import { mockShiftTemplates, mockSites } from '../../services/mockDataCompat';
+// Phase 2 Migration: mock imports removed (shift data passed via todaysShift prop)
 
 import React, { useState, useRef, useEffect } from 'react';
 import { TimeEvent, TimeEventType, ShiftAssignment, TimeEventSource, DeviceSecurityProfile, AnomalyTag, TimeEventExtra, Site } from '../../types';
 import Button from '../ui/Button';
 import { getAppVersion } from '../../services/deviceSecurity';
 import Card from '../ui/Card';
+import { useSites, useShiftTemplates } from '../../hooks/useHRData';
 
 interface MobileCheckInProps {
     clockInStatus: 'in' | 'out';
@@ -39,6 +40,9 @@ const MobileCheckIn: React.FC<MobileCheckInProps> = ({ clockInStatus, addTimeEve
     const [photoData, setPhotoData] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     
+    const { sites } = useSites();
+    const { shiftTemplates } = useShiftTemplates();
+    
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -47,7 +51,7 @@ const MobileCheckIn: React.FC<MobileCheckInProps> = ({ clockInStatus, addTimeEve
         setGpsCoords({ lat: latitude, lng: longitude });
         
         let foundSite: { site: Site, distance: number } | null = null;
-        for (const site of mockSites) {
+        for (const site of sites) {
             const distance = getHaversineDistance(latitude, longitude, site.latitude, site.longitude);
             if (!foundSite || distance < foundSite.distance) {
                 foundSite = { site, distance };
@@ -126,8 +130,8 @@ const MobileCheckIn: React.FC<MobileCheckInProps> = ({ clockInStatus, addTimeEve
         
         // Logic for Late In check
         if (todaysShift && nextType === TimeEventType.ClockIn) {
-             const shiftTemplate = mockShiftTemplates.find(st => st.id === todaysShift.shiftTemplateId);
-             const site = mockSites.find(s => s.id === todaysShift.locationId);
+             const shiftTemplate = shiftTemplates.find(st => st.id === todaysShift.shiftTemplateId);
+             const site = sites.find(s => s.id === todaysShift.locationId);
              if (shiftTemplate) {
                  const grace = site?.gracePeriodMinutes ?? shiftTemplate.gracePeriodMinutes;
                  const [h, m] = shiftTemplate.startTime.split(':').map(Number);

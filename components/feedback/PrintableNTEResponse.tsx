@@ -1,6 +1,6 @@
-import { mockUsers } from '../../services/mockDataCompat';
 import React, { useEffect } from 'react';
 import { NTE } from '../../types';
+import { useUsers } from '../../hooks/useHRData';
 
 interface PrintableNTEResponseProps {
     nte: NTE;
@@ -8,6 +8,7 @@ interface PrintableNTEResponseProps {
 }
 
 const PrintableNTEResponse: React.FC<PrintableNTEResponseProps> = ({ nte, onClose }) => {
+    const { users } = useUsers();
     useEffect(() => {
         const handleAfterPrint = () => {
             onClose();
@@ -25,7 +26,7 @@ const PrintableNTEResponse: React.FC<PrintableNTEResponseProps> = ({ nte, onClos
         };
     }, [onClose]);
 
-    const employee = mockUsers.find(u => u.id === nte.employeeId);
+    const employee = users.find(u => u.id === nte.employeeId);
 
     return (
         <div className="print-overlay">

@@ -1,15 +1,33 @@
-import { mockUsers, mockOnboardingTemplates } from '../../services/mockDataCompat';
-import React, { useMemo } from 'react';
+// Phase E: mockDataCompat removed from OnboardingPreviewPage
+import React, { useMemo, useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { OnboardingChecklist, OnboardingTask, OnboardingTaskStatus, Role, User } from '../../types';
+import { OnboardingChecklist, OnboardingChecklistTemplate, OnboardingTask, OnboardingTaskStatus, Role, User } from '../../types';
 import AssignedOnboardingChecklist from '../../components/employees/AssignedOnboardingChecklist';
 import Card from '../../components/ui/Card';
+import { supabase } from '../../services/supabaseClient';
 
 const ArrowLeftIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>;
 
 const OnboardingPreviewPage: React.FC = () => {
     const { templateId } = useParams<{ templateId: string }>();
+    const [templates, setTemplates] = useState<OnboardingChecklistTemplate[]>([]);
 
+    useEffect(() => {
+        supabase
+            .from('onboarding_checklist_templates')
+            .select('id, name, target_role, template_type, tasks')
+            .then(({ data }) => {
+                if (data) {
+                    setTemplates(data.map((t: any) => ({
+                        id: t.id,
+                        name: t.name,
+                        targetRole: t.target_role as Role,
+                        templateType: t.template_type || 'Onboarding',
+                        tasks: Array.isArray(t.tasks) ? t.tasks : [],
+                    })));
+                }
+            });
+    }, []);
     const mockEmployee: User = useMemo(() => ({
         id: 'preview-user-123',
         name: 'Jane Doe (Preview)',
@@ -27,7 +45,7 @@ const OnboardingPreviewPage: React.FC = () => {
     const previewChecklist = useMemo<OnboardingChecklist | null>(() => {
         if (!templateId) return null;
 
-        const template = mockOnboardingTemplates.find(t => t.id === templateId);
+        const template = templates.find(t => t.id === templateId);
         if (!template) return null;
 
         const checklist: OnboardingChecklist = {
@@ -35,33 +53,21 @@ const OnboardingPreviewPage: React.FC = () => {
             employeeId: mockEmployee.id,
             templateId: template.id,
             createdAt: new Date(),
-            // FIX: Added the missing 'status' property to satisfy the OnboardingChecklist type.
             status: 'InProgress',
-            tasks: template.tasks.map(taskTemplate => {
-                let ownerUserId = '';
-                if (taskTemplate.ownerRole === Role.Manager && mockEmployee.managerId) {
-                    ownerUserId = mockEmployee.managerId;
-                } else {
-                    const owner = mockUsers.find(u => u.role === taskTemplate.ownerRole);
-                    ownerUserId = owner?.id || 'system-user';
-                }
-
-                const ownerUser = mockUsers.find(u => u.id === ownerUserId);
-                const ownerName = ownerUser ? ownerUser.name : 'System';
-
+            tasks: template.tasks.map((taskTemplate: any) => {
+                const ownerUserId = taskTemplate.ownerUserId || 'system-user';
                 const dueDate = new Date(mockEmployee.dateHired!);
-                dueDate.setDate(dueDate.getDate() + taskTemplate.dueDays);
+                dueDate.setDate(dueDate.getDate() + (taskTemplate.dueDays || 0));
 
-                // FIX: Added missing properties to satisfy the OnboardingTask type.
                 const newTask: OnboardingTask = {
                     id: `PREVIEWTASK-${taskTemplate.id}`,
                     templateTaskId: taskTemplate.id,
                     employeeId: mockEmployee.id,
                     name: taskTemplate.name,
                     description: taskTemplate.description,
-                    ownerUserId: ownerUserId,
-                    ownerName: ownerName,
-                    dueDate: dueDate,
+                    ownerUserId,
+                    ownerName: taskTemplate.ownerName || 'System',
+                    dueDate,
                     status: OnboardingTaskStatus.Pending,
                     points: taskTemplate.points,
                     taskType: taskTemplate.taskType,
@@ -75,7 +81,7 @@ const OnboardingPreviewPage: React.FC = () => {
             }),
         };
         return checklist;
-    }, [templateId, mockEmployee]);
+    }, [templateId, mockEmployee, templates]);
 
     if (!previewChecklist) {
         return (
@@ -105,7 +111,7 @@ const OnboardingPreviewPage: React.FC = () => {
                         <ArrowLeftIcon />
                         Back to Template Management
                     </Link>
-                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Live Preview: {mockOnboardingTemplates.find(t=>t.id === previewChecklist.templateId)?.name}</h1>
+                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Live Preview: {templates.find(t=>t.id === previewChecklist.templateId)?.name}</h1>
                     <p className="text-gray-500 dark:text-gray-400">This is how the onboarding journey will appear to an employee assigned this template.</p>
                 </div>
             </div>

@@ -1,4 +1,4 @@
-import { mockBusinessUnits, mockAnnouncements } from '../../services/mockDataCompat';
+// Phase 2 Migration: mockBusinessUnits + mockAnnouncements removed — data fetched from Supabase
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Announcement, Permission, Role } from '../../types';
@@ -25,7 +25,7 @@ const Announcements: React.FC = () => {
     const [announcements, setAnnouncements] = useState<Announcement[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedAnnouncement, setSelectedAnnouncement] = useState<Announcement | null>(null);
-    const [businessUnits, setBusinessUnits] = useState(mockBusinessUnits);
+    const [businessUnits, setBusinessUnits] = useState<{ id: string; name: string; code?: string }[]>([]);
     
     const announcementAccess = getAnnouncementAccess();
     const canManage = announcementAccess.canManage;
@@ -52,18 +52,14 @@ const Announcements: React.FC = () => {
                 setAnnouncements(data);
             } catch (err) {
                 console.error('Failed to load announcements', err);
-                setAnnouncements(mockAnnouncements);
             }
             try {
                 const { data: buData, error: buErr } = await supabase.from('business_units').select('id, name, code');
-                if (!buErr && buData && buData.length > 0) {
+                if (!buErr && buData) {
                     setBusinessUnits(buData.map((b: any) => ({ id: b.id, name: b.name, code: b.code || '' })));
-                } else {
-                    setBusinessUnits(mockBusinessUnits);
                 }
             } catch (err) {
                 console.warn('Failed to load business units for announcements', err);
-                setBusinessUnits(mockBusinessUnits);
             }
         };
         loadData();

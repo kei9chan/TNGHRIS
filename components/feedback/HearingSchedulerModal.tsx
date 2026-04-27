@@ -1,6 +1,6 @@
-import { mockUsers } from '../../services/mockDataCompat';
 import React, { useState, useEffect, useMemo } from 'react';
 import { HearingDetails, User } from '../../types';
+import { useUsers } from '../../hooks/useHRData';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
@@ -15,13 +15,14 @@ interface HearingSchedulerModalProps {
 }
 
 const HearingSchedulerModal: React.FC<HearingSchedulerModalProps> = ({ isOpen, onClose, hearingDetails, onSave }) => {
+    const { users } = useUsers();
     const [current, setCurrent] = useState<Partial<HearingDetails>>(hearingDetails || {});
     const [selectedPanel, setSelectedPanel] = useState<User[]>([]);
 
     // Filter out employees (only show management/HR) for panel
     const potentialPanelists = useMemo(() => {
-        return mockUsers.filter(u => u.role !== 'Employee');
-    }, []);
+        return users.filter(u => u.role !== 'Employee');
+    }, [users]);
 
     useEffect(() => {
         if (isOpen) {
@@ -40,7 +41,7 @@ const HearingSchedulerModal: React.FC<HearingSchedulerModalProps> = ({ isOpen, o
             });
 
             if (hearingDetails?.panelIds) {
-                const panelists = mockUsers.filter(u => hearingDetails.panelIds.includes(u.id));
+                const panelists = users.filter(u => hearingDetails.panelIds.includes(u.id));
                 setSelectedPanel(panelists);
             } else {
                 setSelectedPanel([]);

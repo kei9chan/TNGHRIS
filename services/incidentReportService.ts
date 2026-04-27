@@ -57,6 +57,16 @@ const mapRow = (row: IncidentReportRow): IncidentReport => ({
   businessUnitName: row.business_unit_name || undefined,
 });
 
+export const fetchIncidentReportById = async (id: string): Promise<IncidentReport | null> => {
+  const { data, error } = await supabase
+    .from('incident_reports')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw new Error(error.message || 'Failed to fetch incident report');
+  return data ? mapRow(data as IncidentReportRow) : null;
+};
+
 export const fetchIncidentReports = async (): Promise<IncidentReport[]> => {
   const { data, error } = await supabase
     .from('incident_reports')

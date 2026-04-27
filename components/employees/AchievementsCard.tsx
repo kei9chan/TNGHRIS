@@ -1,5 +1,4 @@
-import { mockAwards, mockEmployeeAwards } from '../../services/mockDataCompat';
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Card from '../ui/Card';
 import { BadgeLevel, ResolutionStatus } from '../../types';
 import { fetchEmployeeAwards } from '../../services/awardService';
@@ -54,21 +53,9 @@ const AchievementsCard: React.FC<AchievementsCardProps> = ({ employeeId }) => {
                 setAchievements(approved);
                 prevCountRef.current = approved.length;
             } catch (err) {
-                // Fallback to mock if Supabase fails
-                const local = mockEmployeeAwards
-                    .filter(ea => ea.employeeId === employeeId && ea.status === ResolutionStatus.Approved)
-                    .map(ea => {
-                        const awardDetails = mockAwards.find(a => a.id === ea.awardId);
-                        return {
-                            ...ea,
-                            title: awardDetails?.title || 'Unknown Award',
-                            badgeIconUrl: awardDetails?.badgeIconUrl,
-                        };
-                    })
-                    .sort((a, b) => new Date(b.dateAwarded).getTime() - new Date(a.dateAwarded).getTime());
-                setAchievements(local);
-                setError((err as any)?.message || null);
-                prevCountRef.current = local.length;
+                setAchievements([]);
+                setError((err as any)?.message || 'Failed to load awards.');
+                prevCountRef.current = 0;
             } finally {
                 setLoading(false);
             }

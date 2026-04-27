@@ -1,7 +1,7 @@
-import { mockUsers } from '../../services/mockDataCompat';
 import React, { useMemo } from 'react';
 import { OnboardingChecklist, OnboardingTask, OnboardingTaskStatus, OnboardingTaskType } from '../../types';
 import Button from '../ui/Button';
+import { useUsers } from '../../hooks/useHRData';
 
 interface TaskApprovalQueueProps {
   checklists: OnboardingChecklist[];
@@ -20,10 +20,12 @@ const isUrl = (str: string | undefined): boolean => {
 };
 
 const TaskApprovalQueue: React.FC<TaskApprovalQueueProps> = ({ checklists, onApprove, onReject }) => {
+    const { users } = useUsers();
+    
     const tasksToApprove = useMemo(() => {
         const allTasks: (OnboardingTask & { employeeName: string })[] = [];
         checklists.forEach(cl => {
-            const employee = mockUsers.find(u => u.id === cl.employeeId);
+            const employee = users.find(u => u.id === cl.employeeId);
             cl.tasks.forEach(task => {
                 if (task.status === OnboardingTaskStatus.PendingApproval) {
                     allTasks.push({ ...task, employeeName: employee?.name || 'Unknown' });

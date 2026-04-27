@@ -1,9 +1,9 @@
-import { mockBusinessUnits } from '../../services/mockDataCompat';
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, ShiftTemplate, ShiftAssignment } from '../../types';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
 import Button from '../ui/Button';
+import { supabase } from '../../services/supabaseClient';
 
 interface ShiftAssignmentModalProps {
   isOpen: boolean;
@@ -23,13 +23,19 @@ const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({ isOpen, onC
     const [locationId, setLocationId] = useState('OFFICE-MAIN');
     const [buFilterId, setBuFilterId] = useState<string>('');
     const [error, setError] = useState('');
+    const [businessUnits, setBusinessUnits] = useState<{ id: string; name: string }[]>([]);
+
+    useEffect(() => {
+        const loadBus = async () => {
+            const { data, error } = await supabase.from('business_units').select('id, name').order('name');
+            if (!error && data) setBusinessUnits(data.map(d => ({ id: d.id, name: d.name })));
+        };
+        loadBus();
+    }, []);
 
     const filteredEmployees = useMemo(() => {
-        if (!buFilterId) {
-            return employees;
-        }
-        const buName = mockBusinessUnits.find(bu => bu.id === buFilterId)?.name;
-        return employees.filter(e => e.businessUnit === buName);
+        if (!buFilterId) return employees;
+        return employees.filter(e => e.businessUnitId === buFilterId);
     }, [employees, buFilterId]);
 
     useEffect(() => {
@@ -125,7 +131,7 @@ const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({ isOpen, onC
                             className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                         >
                             <option value="">Filter by Business Unit...</option>
-                            {mockBusinessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
+                            {businessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
                         </select>
                     </div>
                     <div className="mt-2 p-2 border border-gray-300 dark:border-gray-600 rounded-md max-h-40 overflow-y-auto">

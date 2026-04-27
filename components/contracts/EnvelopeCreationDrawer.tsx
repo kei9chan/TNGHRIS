@@ -1,4 +1,3 @@
-import { mockUsers, mockContractTemplates } from '../../services/mockDataCompat';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Envelope, Role, User, RoutingStep, RoutingStepStatus, ContractTemplate, SignatoryBlock, ContractTemplateSection } from '../../types';
 import Modal from '../ui/Modal';
@@ -8,6 +7,7 @@ import RichTextEditor from '../ui/RichTextEditor';
 import EmployeeMultiSelect from '../feedback/EmployeeMultiSelect';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
+import { fetchContractTemplates } from '../../services/envelopeService';
 
 interface EnvelopeCreationDrawerProps {
   isOpen: boolean;
@@ -39,17 +39,36 @@ const EnvelopeCreationDrawer: React.FC<EnvelopeCreationDrawerProps> = ({ isOpen,
   const [isEmployeeSearchOpen, setIsEmployeeSearchOpen] = useState(false);
   const [selectedApprovers, setSelectedApprovers] = useState<User[]>([]);
   const [employees, setEmployees] = useState<User[]>(employeesProp || []);
+  const [internalTemplates, setInternalTemplates] = useState<ContractTemplate[]>([]);
 
   const searchWrapperRef = useRef<HTMLDivElement>(null);
   const logoUploadRef = useRef<HTMLInputElement>(null);
 
-  const templates = templatesProp && templatesProp.length ? templatesProp : mockContractTemplates;
+  const templates = templatesProp && templatesProp.length ? templatesProp : internalTemplates;
 
   useEffect(() => {
-    if (isOpen) {
-        const defaultTemplate = templates.find(t => t.isDefault);
-        const initialTemplateId = defaultTemplate?.id || (templates.length > 0 ? templates[0].id : '');
-        setTemplateId(initialTemplateId);
+      const loadTemplates = async () => {
+          if (!templatesProp || !templatesProp.length) {
+              try {
+                  const data = await fetchContractTemplates();
+                  setInternalTemplates(data);
+              } catch (err) {
+                  console.error("Failed to load contract templates", err);
+              }
+          }
+      };
+      if (isOpen) {
+          loadTemplates();
+      }
+  }, [isOpen, templatesProp]);
+
+  useEffect(() => {
+    if (isOpen && templates.length > 0) {
+        if (!templateId) {
+            const defaultTemplate = templates.find(t => t.isDefault);
+            const initialTemplateId = defaultTemplate?.id || templates[0].id;
+            setTemplateId(initialTemplateId);
+        }
         
         const futureDate = new Date();
         futureDate.setDate(futureDate.getDate() + 14);
@@ -59,7 +78,7 @@ const EnvelopeCreationDrawer: React.FC<EnvelopeCreationDrawerProps> = ({ isOpen,
         setSelectedEmployee(null);
         setSelectedApprovers([]);
     }
-  }, [isOpen]);
+  }, [isOpen, templates.length]);
 
   useEffect(() => {
     if (templateId) {
@@ -98,7 +117,7 @@ const EnvelopeCreationDrawer: React.FC<EnvelopeCreationDrawerProps> = ({ isOpen,
         setEmployees(mapped);
       } catch (err) {
         console.error('Failed to load employees for envelopes', err);
-        setEmployees(mockUsers);
+        setEmployees([]);
       }
     };
     loadEmployees();
@@ -106,7 +125,7 @@ const EnvelopeCreationDrawer: React.FC<EnvelopeCreationDrawerProps> = ({ isOpen,
 
   const approverPool = useMemo(() => {
     // Allow any non-employee active user to be an approver (Managers, HR, Admin, etc.)
-    return (employees.length ? employees : mockUsers).filter(u => 
+    return employees.filter(u => 
         (u as any).status === 'Active' && u.role !== Role.Employee
     );
   }, [employees]);
@@ -114,7 +133,7 @@ const EnvelopeCreationDrawer: React.FC<EnvelopeCreationDrawerProps> = ({ isOpen,
   const availableEmployees = useMemo(() => {
     if (!employeeSearch || employeeSearch === selectedEmployee?.name) return [];
     const lowerSearch = employeeSearch.toLowerCase();
-    return (employees.length ? employees : mockUsers).filter(u => 
+    return employees.filter(u => 
         (u as any).status === 'Active' && 
         u.name.toLowerCase().includes(lowerSearch)
     ).slice(0, 5); // Limit results
@@ -189,7 +208,7 @@ const EnvelopeCreationDrawer: React.FC<EnvelopeCreationDrawerProps> = ({ isOpen,
     });
     
     // Add final HR signer
-    const hrHead = (employees.length ? employees : mockUsers).find(u => u.id === '5'); // Assuming HR Head has ID '5'
+    const hrHead = employees.find(u => u.id === '5'); // Assuming HR Head has ID '5'
     if (hrHead) {
          steps.push({ 
              id: `step-new-finalsigner-${order}`, 

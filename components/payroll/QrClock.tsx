@@ -1,9 +1,9 @@
-import { mockShiftTemplates, mockSites } from '../../services/mockDataCompat';
+// Phase 2 Migration: mock imports removed (shift data passed via todaysShift prop)
 import React, { useState, useEffect } from 'react';
 import { TimeEvent, TimeEventType, ShiftAssignment, TimeEventSource, DeviceSecurityProfile, AnomalyTag, TimeEventExtra } from '../../types';
 import Button from '../ui/Button';
 import { getAppVersion } from '../../services/deviceSecurity';
-
+import { useSites, useShiftTemplates } from '../../hooks/useHRData';
 
 interface QrClockProps {
     clockInStatus: 'in' | 'out';
@@ -28,6 +28,9 @@ const QrClock: React.FC<QrClockProps> = ({ clockInStatus, addTimeEvent, todaysSh
     const [timeLeft, setTimeLeft] = useState(30);
     const [isExpired, setIsExpired] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    
+    const { sites } = useSites();
+    const { shiftTemplates } = useShiftTemplates();
 
     const generateTotp = () => {
         const code = Math.floor(100000 + Math.random() * 900000).toString();
@@ -65,8 +68,8 @@ const QrClock: React.FC<QrClockProps> = ({ clockInStatus, addTimeEvent, todaysSh
         }
         
         if (todaysShift && nextType === TimeEventType.ClockIn) {
-            const shiftTemplate = mockShiftTemplates.find(st => st.id === todaysShift.shiftTemplateId);
-            const site = mockSites.find(s => s.id === todaysShift.locationId);
+            const shiftTemplate = shiftTemplates.find(st => st.id === todaysShift.shiftTemplateId);
+            const site = sites.find(s => s.id === todaysShift.locationId);
             if(shiftTemplate) {
                 const gracePeriod = site?.gracePeriodMinutes ?? shiftTemplate.gracePeriodMinutes;
                 const [hours, minutes] = shiftTemplate.startTime.split(':').map(Number);
@@ -78,7 +81,7 @@ const QrClock: React.FC<QrClockProps> = ({ clockInStatus, addTimeEvent, todaysSh
             }
         }
 
-        const siteName = mockSites.find(s => s.id === todaysShift?.locationId)?.name || 'Unknown Site';
+        const siteName = sites.find(s => s.id === todaysShift?.locationId)?.name || 'Unknown Site';
         const extra: TimeEventExtra = {
             ...deviceSecurityProfile,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,

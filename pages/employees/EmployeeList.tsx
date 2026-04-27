@@ -1,4 +1,4 @@
-import { mockUsers, mockBusinessUnits, mockUserDocuments, mockChangeHistory } from '../../services/mockDataCompat';
+// Migration complete: mockDataCompat removed from EmployeeList
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -13,6 +13,7 @@ import HRReviewQueue from '../admin/HRReviewQueue';
 import EditableDescription from '../../components/ui/EditableDescription';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
+import { useUsers, useBusinessUnits } from '../../hooks/useHRData';
 
 const EmployeeList: React.FC = () => {
   const navigate = useNavigate();
@@ -31,7 +32,7 @@ const EmployeeList: React.FC = () => {
   const initialTab = queryParams.get('tab') === 'review' ? 'review' : 'list';
   const [activeTab, setActiveTab] = useState(initialTab);
 
-  const [businessUnits, setBusinessUnits] = useState(mockBusinessUnits);
+  const { businessUnits } = useBusinessUnits();
   const accessibleBus = useMemo(() => getAccessibleBusinessUnits(businessUnits), [getAccessibleBusinessUnits, businessUnits]);
 
   useEffect(() => {
@@ -44,86 +45,10 @@ const EmployeeList: React.FC = () => {
       }
   }, [location.search]);
   
-  // State to ensure reactivity to mock data changes
-  const [changeHistory] = useState<ChangeHistory[]>(mockChangeHistory);
-  const [users, setUsers] = useState<User[]>([]);
-  const [userDocuments] = useState<UserDocument[]>(mockUserDocuments);
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const { data } = await supabase
-          .from('hris_users')
-          .select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position, reports_to, birth_date, date_hired, sss_no, pagibig_no, philhealth_no, tin, emergency_contact_name, emergency_contact_relationship, emergency_contact_phone, bank_name, bank_account_number, bank_account_type, leave_quota_vacation, leave_quota_sick, leave_last_credit_date, employment_status, rate_type, rate_amount, tax_status, salary_basic, salary_deminimis, salary_reimbursable');
-        if (data) {
-          const mapped: User[] = data.map((u: any) => ({
-            id: u.id,
-            name: formatEmployeeName(u.full_name || u.email || 'Unknown'),
-            email: u.email,
-            role: (u.role as Role) || Role.Employee,
-            department: u.department || '',
-            businessUnit: u.business_unit || '',
-            departmentId: u.department_id || undefined,
-            businessUnitId: u.business_unit_id || undefined,
-            status: (u.status as 'Active' | 'Inactive') || 'Active',
-            isPhotoEnrolled: false,
-            birthDate: u.birth_date ? new Date(u.birth_date) : undefined,
-            dateHired: u.date_hired ? new Date(u.date_hired) : new Date(),
-            position: u.position || '',
-            reportsTo: u.reports_to || undefined,
-            leaveQuotaVacation: u.leave_quota_vacation ?? undefined,
-            leaveQuotaSick: u.leave_quota_sick ?? undefined,
-            leaveLastCreditDate: u.leave_last_credit_date ? new Date(u.leave_last_credit_date) : undefined,
-            employmentStatus: u.employment_status || undefined,
-            rateType: u.rate_type || undefined,
-            rateAmount: u.rate_amount !== null && u.rate_amount !== undefined ? Number(u.rate_amount) : undefined,
-            taxStatus: u.tax_status || undefined,
-            salary: {
-              basic: u.salary_basic !== null && u.salary_basic !== undefined ? Number(u.salary_basic) : 0,
-              deminimis: u.salary_deminimis !== null && u.salary_deminimis !== undefined ? Number(u.salary_deminimis) : 0,
-              reimbursable: u.salary_reimbursable !== null && u.salary_reimbursable !== undefined ? Number(u.salary_reimbursable) : 0,
-            },
-            sssNo: u.sss_no || '',
-            pagibigNo: u.pagibig_no || '',
-            philhealthNo: u.philhealth_no || '',
-            tin: u.tin || '',
-            emergencyContact: {
-              name: u.emergency_contact_name || '',
-              relationship: u.emergency_contact_relationship || '',
-              phone: u.emergency_contact_phone || '',
-            },
-            bankingDetails: {
-              bankName: u.bank_name || '',
-              accountNumber: u.bank_account_number || '',
-              accountType: (u.bank_account_type as any) || 'Savings',
-            },
-          }));
-          setUsers(mapped);
-        } else {
-          setUsers(mockUsers);
-        }
-      } catch {
-        setUsers(mockUsers);
-      }
-
-      try {
-        const { data: buRows } = await supabase.from('business_units').select('id, name, code, color');
-        if (buRows) {
-          setBusinessUnits(buRows.map((b: any) => ({
-            id: b.id,
-            name: b.name,
-            code: b.code,
-            color: b.color || '#4F46E5',
-          })));
-        } else {
-          setBusinessUnits(mockBusinessUnits);
-        }
-      } catch {
-        setBusinessUnits(mockBusinessUnits);
-      }
-    };
-    load();
-  }, []);
+  // State for pending review counts
+  const [pendingChangeCount, setPendingChangeCount] = useState(0);
+  const [pendingDocCount, setPendingDocCount] = useState(0);
+  const { users, loading: usersLoading, refetchUsers } = useUsers();
 
   const departments = useMemo(() => [...new Set(users.map(u => u.department))].sort(), [users]);
 
@@ -158,6 +83,37 @@ const EmployeeList: React.FC = () => {
     }
     return accessibleBus;
   }, [accessControl.scope, accessibleBus, businessUnits]);
+
+  useEffect(() => {
+    if (currentUser?.role !== Role.HRManager && currentUser?.role !== Role.HRStaff) return;
+
+    const fetchCounts = async () => {
+      try {
+        // Fetch pending documents
+        const { count: docCount } = await supabase
+          .from('user_documents')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', UserDocumentStatus.Pending);
+        
+        setPendingDocCount(docCount || 0);
+
+        // Fetch pending changes (distinct submissions)
+        const { data: changes } = await supabase
+          .from('profile_change_requests')
+          .select('submission_id')
+          .eq('status', ChangeHistoryStatus.Pending);
+        
+        if (changes) {
+          const distinctSubmissions = new Set(changes.map(c => c.submission_id)).size;
+          setPendingChangeCount(distinctSubmissions);
+        }
+      } catch (err) {
+        console.error('Failed to fetch pending counts', err);
+      }
+    };
+
+    fetchCounts();
+  }, [currentUser]);
 
   // Filter users based on RBAC scope + UI filters
   const filteredUsers = useMemo(() => {
@@ -203,22 +159,12 @@ const EmployeeList: React.FC = () => {
   }, [searchTerm, buFilter, departmentFilter, statusFilter, accessibleBus, users, accessControl, currentUser]);
 
   const pendingReviewCount = useMemo(() => {
-    const pendingChangeSubmissions = new Set(
-        changeHistory
-            .filter(c => c.status === ChangeHistoryStatus.Pending)
-            .map(c => c.submissionId)
-    ).size;
-    
     const pendingUserRegistrations = users.filter(
         u => u.status === 'Inactive' && u.role === Role.Employee
     ).length;
     
-    const pendingDocumentSubmissions = userDocuments.filter(
-        d => d.status === UserDocumentStatus.Pending
-    ).length;
-
-    return pendingChangeSubmissions + pendingUserRegistrations + pendingDocumentSubmissions;
-  }, [changeHistory, users, userDocuments]);
+    return pendingChangeCount + pendingUserRegistrations + pendingDocCount;
+  }, [pendingChangeCount, users, pendingDocCount]);
 
   const handleView = (userId: string) => {
     const targetPath = `/users/${userId}`;
@@ -330,58 +276,7 @@ const EmployeeList: React.FC = () => {
       }
 
       // Refresh list to reflect updates
-      const refreshed = await supabase
-        .from('hris_users')
-        .select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position, reports_to, birth_date, date_hired, sss_no, pagibig_no, philhealth_no, tin, emergency_contact_name, emergency_contact_relationship, emergency_contact_phone, bank_name, bank_account_number, bank_account_type, leave_quota_vacation, leave_quota_sick, leave_last_credit_date, employment_status, rate_type, rate_amount, tax_status, salary_basic, salary_deminimis, salary_reimbursable');
-      if (!refreshed.error && refreshed.data) {
-        const mapped: User[] = refreshed.data.map((u: any) => ({
-          id: u.id,
-          name: formatEmployeeName(u.full_name || u.email || 'Unknown'),
-          email: u.email,
-          role: (u.role as Role) || Role.Employee,
-          department: u.department || '',
-          businessUnit: u.business_unit || '',
-          departmentId: u.department_id || undefined,
-          businessUnitId: u.business_unit_id || undefined,
-          status: (u.status as 'Active' | 'Inactive') || 'Active',
-          isPhotoEnrolled: false,
-          birthDate: u.birth_date ? new Date(u.birth_date) : undefined,
-          dateHired: u.date_hired ? new Date(u.date_hired) : new Date(),
-          position: u.position || '',
-          reportsTo: u.reports_to || undefined,
-          employmentStatus: u.employment_status || undefined,
-          rateType: u.rate_type || undefined,
-          rateAmount: u.rate_amount !== null && u.rate_amount !== undefined ? Number(u.rate_amount) : undefined,
-          taxStatus: u.tax_status || undefined,
-          salary: {
-            basic: u.salary_basic !== null && u.salary_basic !== undefined ? Number(u.salary_basic) : 0,
-            deminimis: u.salary_deminimis !== null && u.salary_deminimis !== undefined ? Number(u.salary_deminimis) : 0,
-            reimbursable: u.salary_reimbursable !== null && u.salary_reimbursable !== undefined ? Number(u.salary_reimbursable) : 0,
-          },
-          leaveQuotaVacation: u.leave_quota_vacation ?? undefined,
-          leaveQuotaSick: u.leave_quota_sick ?? undefined,
-          leaveLastCreditDate: u.leave_last_credit_date ? new Date(u.leave_last_credit_date) : undefined,
-          sssNo: u.sss_no || '',
-          pagibigNo: u.pagibig_no || '',
-          philhealthNo: u.philhealth_no || '',
-          tin: u.tin || '',
-          emergencyContact: {
-            name: u.emergency_contact_name || '',
-            relationship: u.emergency_contact_relationship || '',
-            phone: u.emergency_contact_phone || '',
-          },
-          bankingDetails: {
-            bankName: u.bank_name || '',
-            accountNumber: u.bank_account_number || '',
-            accountType: u.bank_account_type || 'Savings',
-          },
-          leaveInfo: {
-            balances: { vacation: 0, sick: 0 },
-            accrualRate: 0,
-          },
-        }));
-        setUsers(mapped);
-      }
+      await refetchUsers();
 
       handleCloseModal();
       alert(`Profile for ${userToEdit.name} updated.`);

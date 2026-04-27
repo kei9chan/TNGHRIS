@@ -1,4 +1,4 @@
-import { mockUsers, mockChangeHistory, mockEmployeeDrafts } from '../../services/mockDataCompat';
+// Phase E: mockDataCompat removed from EmployeeProfile
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
@@ -34,9 +34,9 @@ const EmployeeProfile: React.FC = () => {
     const navigate = useNavigate();
     const location = useLocation();
 
-    const [users, setUsers] = useState<User[]>(mockUsers);
-    const [history, setHistory] = useState<ChangeHistory[]>(mockChangeHistory);
-    const [drafts, setDrafts] = useState<EmployeeDraft[]>(mockEmployeeDrafts);
+    const [users, setUsers] = useState<User[]>([]);
+    const [history, setHistory] = useState<ChangeHistory[]>([]);
+    const [drafts, setDrafts] = useState<EmployeeDraft[]>([]);
 
     const [isEditModalOpen, setEditModalOpen] = useState(false);
     const [memos, setMemos] = useState<Memo[]>([]);
@@ -268,12 +268,12 @@ const EmployeeProfile: React.FC = () => {
     const canEditProfile = (isMyProfile && F_SELF_SERVICE_ENABLED) || can('Employees', Permission.Edit);
     const canAdminEdit = can('Employees', Permission.Edit);
 
-    const handleSaveDraft = (draftData: Partial<User>) => {
+    const handleSaveDraft = async (draftData: Partial<User>) => {
         if (!userToView || !currentUser) return;
-        
-        db.drafts.createOrUpdate(currentUser, userToView.id, draftData, EmployeeDraftStatus.Draft);
-
-        setDrafts([...mockEmployeeDrafts]);
+        await db.drafts.createOrUpdate(currentUser, userToView.id, draftData, EmployeeDraftStatus.Draft);
+        // Re-read drafts from the live source after saving
+        const { data } = await (supabase as any).from('employee_drafts').select('*').eq('employee_id', userToView.id);
+        if (data) setDrafts(data as EmployeeDraft[]);
         setEditModalOpen(false);
         alert('Draft saved!');
     };

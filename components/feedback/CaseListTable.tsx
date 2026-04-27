@@ -1,4 +1,4 @@
-import { mockNTEs, mockResolutions } from '../../services/mockDataCompat';
+// Phase C complete: mockDataCompat removed from CaseListTable
 
 import React from 'react';
 import { IncidentReport, IRStatus, ResolutionStatus } from '../../types';
@@ -7,10 +7,12 @@ import Card from '../ui/Card';
 interface CaseListTableProps {
   reports: IncidentReport[];
   onRowClick: (report: IncidentReport) => void;
+  ntes?: { id: string; incidentReportId?: string; status?: string; hearingDetails?: any }[];
+  resolutions?: { id: string; incidentReportId?: string; status: string }[];
 }
 
-const getTag = (report: IncidentReport) => {
-    const resolution = mockResolutions.find(r => r.id === report.resolutionId || r.incidentReportId === report.id.split('_VIRTUAL_')[0]);
+const getTag = (report: IncidentReport, resolutions: CaseListTableProps['resolutions'] = []) => {
+    const resolution = (resolutions || []).find(r => r.id === report.resolutionId || r.incidentReportId === report.id.split('_VIRTUAL_')[0]);
 
     if (resolution && resolution.status === ResolutionStatus.Rejected) {
         return { text: 'Rejected', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200' };
@@ -47,7 +49,7 @@ const getTag = (report: IncidentReport) => {
     return { text: report.status, color: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200' };
 };
 
-const CaseListTable: React.FC<CaseListTableProps> = ({ reports, onRowClick }) => {
+const CaseListTable: React.FC<CaseListTableProps> = ({ reports, onRowClick, ntes = [], resolutions = [] }) => {
     return (
         <Card>
             <div className="overflow-x-auto">
@@ -64,8 +66,8 @@ const CaseListTable: React.FC<CaseListTableProps> = ({ reports, onRowClick }) =>
                     </thead>
                     <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                         {reports.map(report => {
-                            const tag = getTag(report);
-                            const nte = report.nteIds.length > 0 ? mockNTEs.find(n => n.id === report.nteIds[0]) : null;
+                            const tag = getTag(report, resolutions);
+                            const nte = report.nteIds.length > 0 ? (ntes || []).find(n => n.id === report.nteIds[0]) : null;
                             const displayId = (report.pipelineStage === 'nte-sent' || report.pipelineStage === 'hr-review-response') && nte ? nte.id : report.id.split('_VIRTUAL_')[0];
 
                             return (

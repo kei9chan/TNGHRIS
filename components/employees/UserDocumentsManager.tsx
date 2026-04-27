@@ -1,4 +1,4 @@
-import { mockUserDocuments } from '../../services/mockDataCompat';
+import { supabase } from '../../services/supabaseClient';
 import React, { useState, useEffect } from 'react';
 import { UserDocument, UserDocumentStatus } from '../../types';
 import Card from '../ui/Card';
@@ -27,38 +27,90 @@ const UserDocumentsManager: React.FC<UserDocumentsManagerProps> = ({ employeeId,
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     useEffect(() => {
-        setDocuments(mockUserDocuments.filter(doc => doc.employeeId === employeeId));
-    }, [employeeId]);
-    
-    // Polling to see updates from HR Review Queue
-    useEffect(() => {
-        const interval = setInterval(() => {
-            const updatedDocs = mockUserDocuments.filter(doc => doc.employeeId === employeeId);
-            if (JSON.stringify(updatedDocs) !== JSON.stringify(documents)) {
-                setDocuments(updatedDocs);
+        let active = true;
+        const fetchDocuments = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('user_documents')
+                    .select('*')
+                    .eq('user_id', employeeId)
+                    .order('created_at', { ascending: false });
+
+                if (error) throw error;
+                
+                if (active && data) {
+                    const mappedDocs = data.map((d: any) => ({
+                        id: d.id,
+                        employeeId: d.user_id,
+                        documentType: d.document_type,
+                        customDocumentType: d.custom_document_type,
+                        fileName: d.file_name,
+                        fileUrl: d.file_url,
+                        status: d.status,
+                        submittedAt: d.created_at ? new Date(d.created_at) : new Date(),
+                        rejectionReason: d.rejection_reason
+                    }));
+                    setDocuments(mappedDocs as UserDocument[]);
+                }
+            } catch (error) {
+                console.error("Error fetching documents:", error);
             }
-        }, 2000);
-        return () => clearInterval(interval);
-    }, [documents, employeeId]);
+        };
 
+        fetchDocuments();
 
-    const handleSaveDocument = (data: Omit<UserDocument, 'id' | 'employeeId' | 'submittedAt' | 'status'>, file: File) => {
+        const subscription = supabase
+            .channel(`user_documents_${employeeId}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'user_documents', filter: `user_id=eq.${employeeId}` }, () => {
+                fetchDocuments();
+            })
+            .subscribe();
+
+        return () => {
+            active = false;
+            subscription.unsubscribe();
+        };
+    }, [employeeId]);
+
+    const handleSaveDocument = async (data: Omit<UserDocument, 'id' | 'employeeId' | 'submittedAt' | 'status'>, file: File) => {
         if (!user) return;
 
-        const newDocument: UserDocument = {
-            id: `DOC-${Date.now()}`,
-            employeeId: employeeId,
-            submittedAt: new Date(),
-            status: UserDocumentStatus.Pending,
-            fileName: file.name,
-            fileUrl: URL.createObjectURL(file), // For mock preview
-            ...data,
-        };
-        
-        mockUserDocuments.unshift(newDocument);
-        setDocuments(prev => [newDocument, ...prev]);
-        logActivity(user, 'CREATE', 'UserDocument', newDocument.id, `Submitted document: ${newDocument.documentType} - ${newDocument.fileName}`);
-        setIsModalOpen(false);
+        try {
+            const documentId = `DOC-${Date.now()}`;
+            
+            // Note: In a real app, you would upload the file to Supabase Storage here and get a public URL.
+            // For now, keeping the mock blob URL or relying on the file logic in DocumentUploadModal.
+            const fileUrl = URL.createObjectURL(file);
+
+            const { error } = await supabase.from('user_documents').insert([{
+                id: documentId,
+                user_id: employeeId,
+                document_type: data.documentType,
+                custom_document_type: data.customDocumentType,
+                file_name: file.name,
+                file_url: fileUrl,
+                status: UserDocumentStatus.Pending
+            }]);
+
+            if (error) throw error;
+
+            const newDocument: UserDocument = {
+                id: documentId,
+                employeeId: employeeId,
+                submittedAt: new Date(),
+                status: UserDocumentStatus.Pending,
+                fileName: file.name,
+                fileUrl: fileUrl,
+                ...data,
+            };
+            
+            setDocuments(prev => [newDocument, ...prev]);
+            logActivity(user, 'CREATE', 'UserDocument', newDocument.id, `Submitted document: ${newDocument.documentType} - ${newDocument.fileName}`);
+            setIsModalOpen(false);
+        } catch (error) {
+            console.error("Failed to save document:", error);
+            alert("Failed to save document.");
+        }
     };
 
     return (

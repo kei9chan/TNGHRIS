@@ -1,4 +1,4 @@
-import { mockNotifications } from '../../services/mockDataCompat';
+// Phase 2 Migration: mockNotifications removed — notifications inserted via Supabase
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
@@ -135,9 +135,8 @@ const ManpowerPlanning: React.FC = () => {
         loadRequests();
     }, [loadRequests]);
 
-    const notifyRequester = (request: ManpowerRequest, status: ManpowerRequestStatus, reason?: string) => {
+    const notifyRequester = async (request: ManpowerRequest, status: ManpowerRequestStatus, reason?: string) => {
         if (!request.requestedBy) return;
-        const createdAt = new Date();
         const dateLabel = request.date ? new Date(request.date).toLocaleDateString() : 'N/A';
         const baseMessage = `Your on-call request for ${request.businessUnitName || 'Unknown BU'} on ${dateLabel}`;
         const message =
@@ -149,24 +148,17 @@ const ManpowerPlanning: React.FC = () => {
                 ? NotificationType.MANPOWER_REQUEST_APPROVED
                 : NotificationType.MANPOWER_REQUEST_REJECTED;
 
-        const exists = mockNotifications.some(
-            n =>
-                n.userId === request.requestedBy &&
-                n.type === type &&
-                n.relatedEntityId === request.id
-        );
-        if (exists) return;
-
-        mockNotifications.unshift({
-            id: `manpower-${request.id}-${status}-${Date.now()}`,
-            userId: request.requestedBy,
+        await supabase.from('notifications').insert({
+            user_id: request.requestedBy,
             type,
             title: status === ManpowerRequestStatus.Approved ? 'On-Call Approved' : 'On-Call Rejected',
             message,
             link: '/payroll/manpower-planning',
-            isRead: false,
-            createdAt,
-            relatedEntityId: request.id,
+            is_read: false,
+            created_at: new Date().toISOString(),
+            related_entity_id: request.id,
+        }).then(({ error }) => {
+            if (error) console.warn('Failed to insert manpower notification', error);
         });
     };
 

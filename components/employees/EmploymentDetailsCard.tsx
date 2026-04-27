@@ -1,8 +1,8 @@
-import { mockUsers } from '../../services/mockDataCompat';
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { User } from '../../types';
 import Card from '../ui/Card';
+import { useUsers } from '../../hooks/useHRData';
 
 // FIX: Inlined DetailItem component to remove dependency on a non-existent file.
 const DetailItem: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
@@ -17,10 +17,12 @@ interface EmploymentDetailsCardProps {
 }
 
 const EmploymentDetailsCard: React.FC<EmploymentDetailsCardProps> = ({ user }) => {
+    const { users } = useUsers();
+    
     const manager = useMemo(() => {
         if (!user.managerId) return null;
-        return mockUsers.find(u => u.id === user.managerId);
-    }, [user.managerId]);
+        return users.find(u => u.id === user.managerId);
+    }, [user.managerId, users]);
 
     return (
         <Card title="Employment Details">

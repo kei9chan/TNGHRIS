@@ -1,4 +1,4 @@
-import { mockPermissions } from './mockDataCompat';
+// settingsService.ts — mockDataCompat removed
 import { supabase } from './supabaseClient';
 import { Settings, AuditLog, PermissionsMatrix, COETemplate, COERequest } from '../types';
 
@@ -83,7 +83,7 @@ export const createAuditLog = async (log: Partial<AuditLog>): Promise<void> => {
 export const fetchPermissionsMatrix = async (): Promise<PermissionsMatrix> => {
   const { data, error } = await supabase.from('permissions_matrix').select('*').single();
   if (error || !data) {
-    return mockPermissions as PermissionsMatrix;
+    return {} as PermissionsMatrix;
   }
   return data.matrix as PermissionsMatrix;
 };

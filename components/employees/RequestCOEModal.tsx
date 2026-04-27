@@ -1,7 +1,6 @@
-import { mockBusinessUnits } from '../../services/mockDataCompat';
-
 import React, { useState, useEffect } from 'react';
 import { COEPurpose, COERequest, COERequestStatus } from '../../types';
+import { useBusinessUnits } from '../../hooks/useHRData';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
@@ -16,6 +15,7 @@ interface RequestCOEModalProps {
 
 const RequestCOEModal: React.FC<RequestCOEModalProps> = ({ isOpen, onClose, onSave }) => {
     const { user } = useAuth();
+    const { businessUnits } = useBusinessUnits();
     const [purpose, setPurpose] = useState<COEPurpose>(COEPurpose.LoanApplication);
     const [otherPurpose, setOtherPurpose] = useState('');
     const [positionLabel, setPositionLabel] = useState<string | undefined>(user?.role);
@@ -50,7 +50,7 @@ const RequestCOEModal: React.FC<RequestCOEModalProps> = ({ isOpen, onClose, onSa
             return;
         }
         
-        const businessUnit = mockBusinessUnits.find(b => b.name === user?.businessUnit);
+        const businessUnit = businessUnits.find(b => b.name === user?.businessUnit);
 
         const request: Partial<COERequest> = {
             employeeId: user?.id,

@@ -1,11 +1,12 @@
-import { mockUsers, mockBusinessUnits, mockLeaveTypes } from '../../services/mockDataCompat';
+// Phase 2 Migration: mockUsers, mockBusinessUnits, mockLeaveTypes removed — BUs from Supabase; request carries name fields
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { LeaveRequest, LeaveRequestStatus } from '../../types';
 import Card from '../ui/Card';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import { usePermissions } from '../../hooks/usePermissions';
+import { supabase } from '../../services/supabaseClient';
 
 interface LeaveLedgerProps {
     requests: LeaveRequest[];
@@ -19,6 +20,16 @@ const DocumentArrowDownIcon = () => (
 
 const LeaveLedger: React.FC<LeaveLedgerProps> = ({ requests }) => {
     const { getAccessibleBusinessUnits } = usePermissions();
+    const [dbBus, setDbBus] = useState<{ id: string; name: string; code?: string }[]>([]);
+
+    useEffect(() => {
+        supabase.from('business_units').select('id, name').order('name').then(({ data }) => {
+            if (data) setDbBus(data.map(d => ({ id: d.id, name: d.name })));
+        });
+    }, []);
+
+    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(dbBus), [getAccessibleBusinessUnits, dbBus]);
+
     const today = new Date();
     const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
     const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
@@ -29,9 +40,8 @@ const LeaveLedger: React.FC<LeaveLedgerProps> = ({ requests }) => {
     const [deptFilter, setDeptFilter] = useState('');
     const [statusFilter, setStatusFilter] = useState<string>('Approved');
 
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
-
     const filteredRequests = useMemo(() => {
+        const accessibleBuNames = new Set(accessibleBus.map(bu => bu.name));
         return requests.filter(req => {
             const reqStart = new Date(req.startDate);
             const reqEnd = new Date(req.endDate);
@@ -39,57 +49,48 @@ const LeaveLedger: React.FC<LeaveLedgerProps> = ({ requests }) => {
             const filterEnd = new Date(endDate);
             filterEnd.setHours(23, 59, 59, 999);
 
-            // Check for date overlap
             const dateMatch = reqStart <= filterEnd && reqEnd >= filterStart;
-            
-            const employee = mockUsers.find(u => u.id === req.employeeId);
-            
+
+            // LeaveRequest carries businessUnit directly on the request
+            const reqBu: string = (req as any).businessUnit || '';
             let buMatch = true;
             if (buFilter) {
-                const buName = mockBusinessUnits.find(b => b.id === buFilter)?.name;
-                buMatch = employee?.businessUnit === buName;
+                const buName = dbBus.find(b => b.id === buFilter)?.name;
+                buMatch = reqBu === buName;
             } else {
-                // Ensure we only show requests for accessible BUs if no specific filter is set
-                const accessibleBuNames = accessibleBus.map(bu => bu.name);
-                buMatch = accessibleBuNames.includes(employee?.businessUnit || '');
+                buMatch = accessibleBuNames.size === 0 || accessibleBuNames.has(reqBu);
             }
 
-            let deptMatch = true;
-            if (deptFilter) {
-                deptMatch = employee?.department === deptFilter;
-            }
-
+            const reqDept: string = (req as any).department || '';
+            const deptMatch = !deptFilter || reqDept === deptFilter;
             const statusMatch = statusFilter === 'All' || req.status === statusFilter;
 
             return dateMatch && buMatch && deptMatch && statusMatch;
         }).sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
-    }, [requests, startDate, endDate, buFilter, deptFilter, statusFilter, accessibleBus]);
+    }, [requests, startDate, endDate, buFilter, deptFilter, statusFilter, accessibleBus, dbBus]);
 
     const totals = useMemo(() => {
         let totalDays = 0;
-        filteredRequests.forEach(r => {
-            totalDays += r.durationDays || 0;
-        });
-        return {
-            totalDays,
-            count: filteredRequests.length
-        };
+        filteredRequests.forEach(r => { totalDays += r.durationDays || 0; });
+        return { totalDays, count: filteredRequests.length };
     }, [filteredRequests]);
 
-    const getLeaveTypeName = (id: string) => mockLeaveTypes.find(lt => lt.id === id)?.name || 'Unknown';
+    // Leave type name: use leaveTypeName if present, else fall back to the id string
+    const getLeaveTypeName = (req: LeaveRequest) =>
+        (req as any).leaveTypeName || req.leaveTypeId || 'Leave';
 
     const exportToCSV = () => {
         const headers = ['Request ID', 'Employee Name', 'Business Unit', 'Department', 'Leave Type', 'Start Date', 'End Date', 'Days', 'Status', 'Reason'];
         const csvRows = [headers.join(',')];
-
         for (const req of filteredRequests) {
-            const employee = mockUsers.find(u => u.id === req.employeeId);
+            const buVal = (req as any).businessUnit || '';
+            const deptVal = (req as any).department || '';
             const values = [
                 req.id,
                 `"${req.employeeName}"`,
-                `"${employee?.businessUnit || ''}"`,
-                `"${employee?.department || ''}"`,
-                `"${getLeaveTypeName(req.leaveTypeId)}"`,
+                `"${buVal}"`,
+                `"${deptVal}"`,
+                `"${getLeaveTypeName(req)}"`,
                 new Date(req.startDate).toLocaleDateString(),
                 new Date(req.endDate).toLocaleDateString(),
                 req.durationDays.toFixed(1),
@@ -98,7 +99,6 @@ const LeaveLedger: React.FC<LeaveLedgerProps> = ({ requests }) => {
             ];
             csvRows.push(values.join(','));
         }
-
         const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -110,7 +110,9 @@ const LeaveLedger: React.FC<LeaveLedgerProps> = ({ requests }) => {
         document.body.removeChild(a);
     };
 
-    const departments = [...new Set(mockUsers.map(u => u.department))].sort();
+    const departments = useMemo(() =>
+        [...new Set(requests.map(r => (r as any).department || '').filter(Boolean))].sort()
+    , [requests]);
 
     return (
         <div className="space-y-6">
@@ -177,12 +179,12 @@ const LeaveLedger: React.FC<LeaveLedgerProps> = ({ requests }) => {
                         </thead>
                         <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                             {filteredRequests.map(req => {
-                                const employee = mockUsers.find(u => u.id === req.employeeId);
+                                const buVal = (req as any).businessUnit || 'N/A';
                                 return (
                                     <tr key={req.id}>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{req.employeeName}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{employee?.businessUnit || 'N/A'}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{getLeaveTypeName(req.leaveTypeId)}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{buVal}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{getLeaveTypeName(req)}</td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{new Date(req.startDate).toLocaleDateString()} - {new Date(req.endDate).toLocaleDateString()}</td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-700 dark:text-gray-300">{req.durationDays.toFixed(1)}</td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm">

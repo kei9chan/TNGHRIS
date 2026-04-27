@@ -1,7 +1,7 @@
-import { mockUsers } from '../../services/mockDataCompat';
 import React, { useEffect, useMemo, useRef } from 'react';
 import { PAN, PANRole, PANStepStatus } from '../../types';
 import { useSettings } from '../../context/SettingsContext';
+import { useUsers } from '../../hooks/useHRData';
 
 interface PrintablePANProps {
     pan: PAN;
@@ -20,20 +20,21 @@ const DetailRow: React.FC<{ label: string; from: string | number; to: string | n
 
 const PrintablePAN: React.FC<PrintablePANProps> = ({ pan, onClose, onRendered, isVisible = true }) => {
     const { settings } = useSettings();
-    const employee = mockUsers.find(u => u.id === pan.employeeId);
+    const { users } = useUsers();
+    const employee = users.find(u => u.id === pan.employeeId);
     const printContentRef = useRef<HTMLDivElement>(null);
     
     const approvers = useMemo(() => pan.routingSteps
         .filter(step => step.role !== PANRole.Acknowledger)
         .sort((a, b) => a.order - b.order)
         .map(step => {
-            const approverUser = mockUsers.find(u => u.id === step.userId);
+            const approverUser = users.find(u => u.id === step.userId);
             return {
                 ...step,
                 position: approverUser?.position || step.role,
                 signatureUrl: approverUser?.signatureUrl,
             };
-        }), [pan.routingSteps]);
+        }), [pan.routingSteps, users]);
 
     const preparer = pan.preparerName ? {
         name: pan.preparerName,

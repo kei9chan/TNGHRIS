@@ -1,11 +1,11 @@
-import { mockUsers, mockBusinessUnits, mockFinalPayRecords } from '../../services/mockDataCompat';
-
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
-import { User, FinalPayRecord, FinalPayStatus, Role } from '../../types';
+import { User, FinalPayRecord, FinalPayStatus, Role, BusinessUnit } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
+import { fetchUsers, fetchBusinessUnits } from '../../services/userService';
+import { fetchFinalPayRecords } from '../../services/payrollService';
 
 interface Deduction {
     id: number;
@@ -17,26 +17,47 @@ const TrashIcon: React.FC = () => <svg xmlns="http://www.w3.org/2000/svg" classN
 
 const FinalPayCalculator: React.FC = () => {
     const { getAccessibleBusinessUnits } = usePermissions();
-    const [savedRecords, setSavedRecords] = useState<FinalPayRecord[]>(mockFinalPayRecords);
+    const [allUsers, setAllUsers] = useState<User[]>([]);
+    const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
+    const [savedRecords, setSavedRecords] = useState<FinalPayRecord[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
     const [lastDay, setLastDay] = useState<string>(new Date().toISOString().split('T')[0]);
     const [unusedLeaves, setUnusedLeaves] = useState<number>(0);
     const [deductions, setDeductions] = useState<Deduction[]>([]);
     const [newDeduction, setNewDeduction] = useState({ description: '', amount: '' });
     const [summary, setSummary] = useState<FinalPayRecord | null>(null);
+
+    useEffect(() => {
+        const load = async () => {
+            try {
+                setIsLoading(true);
+                const [users, bus, records] = await Promise.all([
+                    fetchUsers(), fetchBusinessUnits(), fetchFinalPayRecords(),
+                ]);
+                setAllUsers(users); setBusinessUnits(bus); setSavedRecords(records);
+            } catch (err: any) {
+                setError(err.message || 'Failed to load data.');
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        load();
+    }, []);
     
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(businessUnits), [getAccessibleBusinessUnits, businessUnits]);
 
     const accessibleEmployees = useMemo(() => {
         const accessibleBuNames = new Set(accessibleBus.map(b => b.name));
-        return mockUsers.filter(u => 
+        return allUsers.filter(u => 
             u.role === Role.Employee && accessibleBuNames.has(u.businessUnit)
         );
-    }, [accessibleBus]);
+    }, [accessibleBus, allUsers]);
 
     const selectedEmployee = useMemo(() => {
-        return mockUsers.find(u => u.id === selectedEmployeeId);
-    }, [selectedEmployeeId]);
+        return allUsers.find(u => u.id === selectedEmployeeId);
+    }, [selectedEmployeeId, allUsers]);
 
     const handleAddDeduction = () => {
         if (newDeduction.description && parseFloat(newDeduction.amount) > 0) {
@@ -99,7 +120,6 @@ const FinalPayCalculator: React.FC = () => {
         if (!summary) return;
         const approvedRecord = { ...summary, status: FinalPayStatus.HRApproved };
         setSavedRecords(prev => [...prev, approvedRecord]);
-        mockFinalPayRecords.push(approvedRecord);
         alert(`Final pay for ${summary.employeeName} has been approved and locked.`);
         handleReset();
     };
@@ -107,9 +127,12 @@ const FinalPayCalculator: React.FC = () => {
     const isLocked = summary?.status !== FinalPayStatus.Draft;
     const totalDeductions = useMemo(() => deductions.reduce((sum, d) => sum + d.amount, 0), [deductions]);
 
+    if (isLoading) return <div className="text-center py-20 text-gray-500 dark:text-gray-400">Loading...</div>;
+
     return (
         <div className="space-y-6">
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Final Pay Calculator</h1>
+            {error && <div className="bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 px-4 py-3 rounded-md">{error}</div>}
             
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
                 {/* Inputs Column */}

@@ -1,7 +1,8 @@
-import { mockUsers, mockBusinessUnits, mockCodeOfDiscipline } from '../../services/mockDataCompat';
+import { fetchBusinessUnits } from '../../services/userService';
+import { fetchCodeOfDiscipline } from '../../services/disciplineService';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { IncidentReport, IRStatus, User, Role } from '../../types';
+import { IncidentReport, IRStatus, User, Role, BusinessUnit, CodeOfDiscipline } from '../../types';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
@@ -61,6 +62,10 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
   const signaturePathRef = useRef<string | null>(null);
   const signatureCacheRef = useRef<Map<string, string>>(new Map());
 
+  // Fetched data
+  const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
+  const [disciplineEntries, setDisciplineEntries] = useState<CodeOfDiscipline[]>([]);
+
   const loadSignatureCache = () => {
     if (signatureCacheRef.current.size > 0) return;
     try {
@@ -105,12 +110,11 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
   };
 
   const categories = useMemo(() => {
-    return [...new Set(mockCodeOfDiscipline.entries.map(e => e.category))].sort();
-  }, []);
+    return [...new Set(disciplineEntries.map(e => e.category))].sort();
+  }, [disciplineEntries]);
 
   const potentialHandlers = useMemo(() => {
-    const pool = allUsers.length ? allUsers : mockUsers;
-    return pool.filter(u => [Role.HRManager, Role.HRStaff, Role.Admin].includes(u.role) && u.status === 'Active');
+    return allUsers.filter(u => [Role.HRManager, Role.HRStaff, Role.Admin].includes(u.role) && u.status === 'Active');
   }, [allUsers]);
 
   const canAssign = user?.role === Role.Admin || user?.role === Role.HRManager;
@@ -118,6 +122,21 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
   // Load users from Supabase for selectors
   useEffect(() => {
     if (!isOpen) return;
+
+    const fetchData = async () => {
+      try {
+        const [buData, disciplineData] = await Promise.all([
+          fetchBusinessUnits(),
+          fetchCodeOfDiscipline()
+        ]);
+        setBusinessUnits(buData);
+        setDisciplineEntries(disciplineData.entries || []);
+      } catch (err) {
+        console.warn('Failed to load IR reference data', err);
+      }
+    };
+    fetchData();
+
     const fetchUsers = async () => {
       try {
         const { data, error } = await supabase
@@ -155,11 +174,10 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
 
   useEffect(() => {
     if (isOpen) {
-      const pool = allUsers.length ? allUsers : mockUsers;
       if (report) {
         setCurrentReport(report);
-        setInvolvedEmployees(pool.filter(u => report.involvedEmployeeIds.includes(u.id)));
-        setWitnesses(pool.filter(u => report.witnessIds.includes(u.id)));
+        setInvolvedEmployees(allUsers.filter(u => report.involvedEmployeeIds.includes(u.id)));
+        setWitnesses(allUsers.filter(u => report.witnessIds.includes(u.id)));
         setAttachmentPreview(report.attachmentUrl || null);
         signaturePathRef.current = report.signatureDataUrl || null;
         setSignaturePreview(report.signatureDataUrl || null);
@@ -217,7 +235,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
     if (name === 'dateTime') {
       setCurrentReport(prev => ({ ...prev, dateTime: new Date(value) }));
     } else if (name === 'businessUnitId') {
-      const bu = mockBusinessUnits.find(b => b.id === value);
+      const bu = businessUnits.find(b => b.id === value);
       setCurrentReport(prev => ({ ...prev, businessUnitId: value, businessUnitName: bu?.name }));
     } else if (name === 'assignedToId') {
       const handler = potentialHandlers.find(u => u.id === value);
@@ -306,7 +324,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
     onSave(reportToSave);
   };
 
-  const reporterName = report ? mockUsers.find(u => u.id === report.reportedBy)?.name : user?.name;
+  const reporterName = report ? allUsers.find(u => u.id === report.reportedBy)?.name : user?.name;
   const statusTag = report ? getStatusTag(report.status, report.pipelineStage) : null;
 
   // Only show assignment if editing an existing report AND it is in the initial review stage
@@ -454,7 +472,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
             className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white"
           >
             <option value="" disabled>Select a Business Unit</option>
-            {mockBusinessUnits.map(bu => (
+            {businessUnits.map(bu => (
               <option key={bu.id} value={bu.id}>{bu.name}</option>
             ))}
           </select>
@@ -464,7 +482,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
         <div className="md:col-span-2">
           <EmployeeMultiSelect
             label="Involved Employees*"
-            allUsers={allUsers.length ? allUsers : mockUsers}
+            allUsers={allUsers}
             selectedUsers={involvedEmployees}
             onSelectionChange={setInvolvedEmployees}
           />
@@ -474,7 +492,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
         <div className="md:col-span-2">
           <EmployeeMultiSelect
             label="Witnesses"
-            allUsers={allUsers.length ? allUsers : mockUsers}
+            allUsers={allUsers}
             selectedUsers={witnesses}
             onSelectionChange={setWitnesses}
           />

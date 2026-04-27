@@ -1,4 +1,4 @@
-import { mockBusinessUnits } from '../../services/mockDataCompat';
+// Phase 2 Migration: mockBusinessUnits fallback removed — parent must supply businessUnits prop
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Announcement, AnnouncementType } from '../../types';
@@ -27,7 +27,7 @@ const AnnouncementModal: React.FC<AnnouncementModalProps> = ({ isOpen, onClose, 
 
   // Get BUs accessible to the creator (usually admin/HR)
   const accessibleBus = useMemo(
-    () => getAccessibleBusinessUnits(businessUnits && businessUnits.length ? businessUnits : mockBusinessUnits),
+    () => getAccessibleBusinessUnits(businessUnits ?? []),
     [getAccessibleBusinessUnits, businessUnits]
   );
 

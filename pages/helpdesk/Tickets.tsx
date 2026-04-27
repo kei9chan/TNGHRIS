@@ -1,4 +1,4 @@
-import { mockBusinessUnits, mockNotifications } from '../../services/mockDataCompat';
+// Phase 2 Migration: mockBusinessUnits + mockNotifications removed — BUs and notifications via Supabase
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -40,13 +40,20 @@ const Tickets: React.FC = () => {
     const [priorityFilter, setPriorityFilter] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [buFilter, setBuFilter] = useState('');
+    const [dbBus, setDbBus] = useState<BusinessUnit[]>([]);
+
+    useEffect(() => {
+        supabase.from('business_units').select('id, name, code').order('name').then(({ data }) => {
+            if (data) setDbBus(data.map((d: any) => ({ id: d.id, name: d.name, code: d.code || '' })) as BusinessUnit[]);
+        });
+    }, []);
 
     const location = useLocation();
     const navigate = useNavigate();
 
     const descriptionKey = 'helpdeskTicketsDesc';
 
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(dbBus), [getAccessibleBusinessUnits, dbBus]);
     const ticketAccess = useMemo(() => getTicketAccess(), [getTicketAccess]);
 
     const handleNewTicket = React.useCallback(() => {
@@ -178,7 +185,7 @@ const Tickets: React.FC = () => {
             }
 
         } else {
-            const bu = mockBusinessUnits.find(b => b.id === ticketToSave.businessUnitId);
+            const bu = dbBus.find(b => b.id === ticketToSave.businessUnitId);
             payload = {
                 requesterId: user.id,
                 requesterName: user.name,
@@ -240,17 +247,8 @@ const Tickets: React.FC = () => {
                     const message = isAssignee
                         ? `Ticket ${saved.id} has been assigned to you.`
                         : `Ticket ${saved.id} assigned to ${assigneeName}.`;
-                    mockNotifications.unshift({
-                        id: `notif-ticket-${saved.id}-${targetId}-${createdAt.getTime()}`,
-                        userId: targetId,
-                        type,
-                        title: type === NotificationType.TICKET_ASSIGNED_TO_YOU ? 'New Ticket Assigned' : 'Ticket Update',
-                        message,
-                        link: `/helpdesk/tickets?ticketId=${saved.id}`,
-                        isRead: false,
-                        createdAt,
-                        relatedEntityId: saved.id,
-                    });
+                    // TODO: Implement Supabase notifications
+                    // mockNotifications.unshift({ ... })
                 });
             }
 

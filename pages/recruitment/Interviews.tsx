@@ -288,12 +288,12 @@ const Interviews: React.FC = () => {
     const renderView = () => {
         switch (view) {
             case 'day':
-                return <DayView currentDate={currentDate} interviews={interviews} onInterviewClick={handleOpenDetail} />;
+                return <DayView currentDate={currentDate} interviews={interviews} applications={applications} candidates={candidates} users={users} onInterviewClick={handleOpenDetail} />;
             case 'month':
                 return <MonthView currentDate={currentDate} interviews={interviews} onDateClick={(date) => { setCurrentDate(date); setView('day'); }} />;
             case 'week':
             default:
-                return <WeekView currentDate={currentDate} interviews={interviews} onInterviewClick={handleOpenDetail} />;
+                return <WeekView currentDate={currentDate} interviews={interviews} applications={applications} candidates={candidates} onInterviewClick={handleOpenDetail} />;
         }
     };
 

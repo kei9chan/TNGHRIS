@@ -1,15 +1,16 @@
-import { mockUsers, mockApplications, mockCandidates } from '../../services/mockDataCompat';
 import React from 'react';
-import { Interview } from '../../types';
-// FIX: Imported `mockUsers` to get interview panelist names.
+import { Interview, Application, Candidate, User } from '../../types';
 
 interface DayViewProps {
     currentDate: Date;
     interviews: Interview[];
+    applications: Application[];
+    candidates: Candidate[];
+    users: User[];
     onInterviewClick: (interview: Interview) => void;
 }
 
-const DayView: React.FC<DayViewProps> = ({ currentDate, interviews, onInterviewClick }) => {
+const DayView: React.FC<DayViewProps> = ({ currentDate, interviews, applications, candidates, users, onInterviewClick }) => {
     const interviewsForDay = interviews
         .filter(i => new Date(i.scheduledStart).toDateString() === currentDate.toDateString())
         .sort((a,b) => new Date(a.scheduledStart).getTime() - new Date(b.scheduledStart).getTime());
@@ -19,9 +20,9 @@ const DayView: React.FC<DayViewProps> = ({ currentDate, interviews, onInterviewC
             {interviewsForDay.length > 0 ? (
                 <ul className="divide-y divide-gray-200 dark:divide-gray-700">
                     {interviewsForDay.map(interview => {
-                        const application = mockApplications.find(a => a.id === interview.applicationId);
-                        const candidate = mockCandidates.find(c => c.id === application?.candidateId);
-                        const panel = mockUsers.filter(u => interview.panelUserIds.includes(u.id));
+                        const application = applications.find(a => a.id === interview.applicationId);
+                        const candidate = candidates.find(c => c.id === application?.candidateId);
+                        const panel = users.filter(u => interview.panelUserIds.includes(u.id));
 
                         return (
                             <li key={interview.id} onClick={() => onInterviewClick(interview)} className="py-4 px-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-md">

@@ -1,4 +1,7 @@
-import { mockUsers, mockNotifications, mockIncidentReports, mockNTEs, mockResolutions, mockCodeOfDiscipline } from '../../services/mockDataCompat';
+import { DisciplineEntry } from '../../types';
+import { fetchUsers } from '../../services/userService';
+import { fetchCodeOfDiscipline } from '../../services/disciplineService';
+import { createNotification } from '../../services/notificationService';
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
@@ -16,6 +19,9 @@ import { usePermissions } from '../../hooks/usePermissions';
 import RejectReasonModal from '../../components/feedback/RejectReasonModal';
 import HearingSchedulerModal from '../../components/feedback/HearingSchedulerModal';
 import { logActivity } from '../../services/auditService';
+import { fetchNTEById, updateNTE } from '../../services/nteService';
+import { fetchIncidentReportById, addIncidentReportMessage, saveIncidentReport } from '../../services/incidentReportService';
+import { fetchResolutionsByIncidentReportId, createResolution, updateResolution } from '../../services/resolutionService';
 
 const PaperclipIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>;
 const PaperAirplaneIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>;
@@ -53,23 +59,51 @@ const NTEDetail: React.FC = () => {
     const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
     const [isHearingModalOpen, setIsHearingModalOpen] = useState(false);
     
-    const [nte, setNte] = useState<NTE | null>(() => mockNTEs.find(n => n.id === nteId) || null);
-    const [incidentReport, setIncidentReport] = useState<IncidentReport | null>(() => mockIncidentReports.find(ir => ir.id === nte?.incidentReportId) || null);
-    
-    const [resolution, setResolution] = useState<Resolution | null>(() => 
-        mockResolutions.find(r => r.incidentReportId === nte?.incidentReportId && r.employeeId === nte?.employeeId) || null
-    );
+    const [nte, setNte] = useState<NTE | null>(null);
+    const [incidentReport, setIncidentReport] = useState<IncidentReport | null>(null);
+    const [resolution, setResolution] = useState<Resolution | null>(null);
+    const [users, setUsers] = useState<User[]>([]);
+    const [disciplineEntries, setDisciplineEntries] = useState<DisciplineEntry[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
 
     const { recipient, nteIssuer } = useMemo(() => {
-        if (!nte) return { recipient: null, nteIssuer: null };
-        const foundRecipient = mockUsers.find(u => u.id === nte.employeeId);
-        const foundIssuer = mockUsers.find(u => u.id === nte.issuedByUserId);
+        if (!nte || !users.length) return { recipient: null, nteIssuer: null };
+        const foundRecipient = users.find(u => u.id === nte.employeeId);
+        const foundIssuer = users.find(u => u.id === nte.issuedByUserId);
         return { recipient: foundRecipient, nteIssuer: foundIssuer };
-    }, [nte]);
+    }, [nte, users]);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [incidentReport?.chatThread]);
+
+    useEffect(() => {
+        const load = async () => {
+            if (!nteId) { setIsLoading(false); return; }
+            setIsLoading(true);
+            try {
+                const nteData = await fetchNTEById(nteId);
+                if (!nteData) { setIsLoading(false); return; }
+                setNte(nteData);
+                const [irData, resData, usersData, disciplineData] = await Promise.all([
+                    fetchIncidentReportById(nteData.incidentReportId),
+                    fetchResolutionsByIncidentReportId(nteData.incidentReportId),
+                    fetchUsers(),
+                    fetchCodeOfDiscipline()
+                ]);
+                setIncidentReport(irData);
+                const resForEmployee = resData.find(r => r.employeeId === nteData.employeeId) || null;
+                setResolution(resForEmployee);
+                setUsers(usersData);
+                setDisciplineEntries(disciplineData.entries);
+            } catch (err) {
+                console.error('Failed to load NTE detail:', err);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        load();
+    }, [nteId]);
 
     const currentUserStep = useMemo(() => {
         if (!user || !nte || nte.status !== NTEStatus.PendingApproval) return null;
@@ -78,112 +112,84 @@ const NTEDetail: React.FC = () => {
 
     const isEmployeeAcknowledgeNeeded = user?.id === nte?.employeeId && resolution?.status === ResolutionStatus.PendingAcknowledgement;
 
-    const handleApprove = () => {
+    const handleApprove = async () => {
         if (!user || !nte || !currentUserStep) return;
 
-        const nteIndex = mockNTEs.findIndex(n => n.id === nte.id);
-        if (nteIndex === -1) return;
+        const updatedSteps = (nte.approverSteps || []).map((s: ApproverStep) =>
+            s.userId === user.id ? { ...s, status: ApproverStatus.Approved, timestamp: new Date() } : s
+        );
+        const allApproved = updatedSteps.every((s: ApproverStep) => s.status === ApproverStatus.Approved);
 
-        const updatedNte = JSON.parse(JSON.stringify(mockNTEs[nteIndex]));
-
-        const stepIndex = updatedNte.approverSteps.findIndex((s: ApproverStep) => s.userId === user.id);
-        if (stepIndex > -1) {
-            updatedNte.approverSteps[stepIndex].status = ApproverStatus.Approved;
-            updatedNte.approverSteps[stepIndex].timestamp = new Date();
-        }
-
-        const allApproved = updatedNte.approverSteps.every((s: ApproverStep) => s.status === ApproverStatus.Approved);
-
-        if (allApproved) {
-            updatedNte.status = NTEStatus.Issued;
-            updatedNte.issuedDate = new Date(); 
-
-            mockNotifications.unshift({
-                id: `notif-nte-issued-${updatedNte.id}`,
-                userId: updatedNte.employeeId,
-                type: NotificationType.NTE_ISSUED,
-                message: `You have been issued a Notice to Explain (NTE) regarding case ${updatedNte.incidentReportId}.`,
-                link: `/feedback/nte/${updatedNte.id}`,
-                isRead: false,
-                createdAt: new Date(),
-                relatedEntityId: updatedNte.id,
+        try {
+            const saved = await updateNTE({
+                ...nte,
+                approverSteps: updatedSteps,
+                ...(allApproved ? { status: NTEStatus.Issued, issuedDate: new Date() } : {}),
             });
+            setNte(saved);
+            if (allApproved) {
+                await createNotification({
+                    userId: saved.employeeId,
+                    type: NotificationType.NTE_ISSUED,
+                    message: `You have been issued a Notice to Explain (NTE) regarding case ${saved.incidentReportId}.`,
+                    link: `/feedback/nte/${saved.id}`,
+                });
+            }
+            logActivity(user, 'APPROVE', 'NTE', nte.id, `Approved NTE for ${nte.employeeName}.`);
+            alert('NTE step approved.');
+        } catch (err: any) {
+            alert(err?.message || 'Failed to approve NTE.');
         }
-
-        mockNTEs[nteIndex] = updatedNte;
-        setNte(updatedNte);
-        logActivity(user, 'APPROVE', 'NTE', nte.id, `Approved NTE for ${nte.employeeName}.`);
-        alert('NTE step approved.');
     };
 
-    const handleConfirmReject = (reason: string) => {
+    const handleConfirmReject = async (reason: string) => {
         if (!user || !nte || !currentUserStep) return;
 
-        const nteIndex = mockNTEs.findIndex(n => n.id === nte.id);
-        if (nteIndex === -1) return;
+        const updatedSteps = (nte.approverSteps || []).map((s: ApproverStep) =>
+            s.userId === user.id
+                ? { ...s, status: ApproverStatus.Rejected, timestamp: new Date(), rejectionReason: reason }
+                : s
+        );
 
-        const updatedNte = JSON.parse(JSON.stringify(mockNTEs[nteIndex]));
-
-        const stepIndex = updatedNte.approverSteps.findIndex((s: ApproverStep) => s.userId === user.id);
-        if (stepIndex > -1) {
-            updatedNte.approverSteps[stepIndex].status = ApproverStatus.Rejected;
-            updatedNte.approverSteps[stepIndex].timestamp = new Date();
-            updatedNte.approverSteps[stepIndex].rejectionReason = reason;
+        try {
+            const saved = await updateNTE({ ...nte, approverSteps: updatedSteps, status: NTEStatus.Rejected });
+            setNte(saved);
+            logActivity(user, 'REJECT', 'NTE', nte.id, `Rejected NTE for ${nte.employeeName}. Reason: ${reason}`);
+            await createNotification({
+                userId: saved.issuedByUserId,
+                type: NotificationType.RESOLUTION_ISSUED,
+                message: `NTE ${saved.id} for ${saved.employeeName} was rejected by ${user.name}.`,
+                link: `/feedback/nte/${saved.id}`,
+            });
+            setIsRejectModalOpen(false);
+            alert('NTE rejected.');
+        } catch (err: any) {
+            alert(err?.message || 'Failed to reject NTE.');
         }
-
-        updatedNte.status = NTEStatus.Rejected;
-
-        mockNTEs[nteIndex] = updatedNte;
-        setNte(updatedNte);
-        logActivity(user, 'REJECT', 'NTE', nte.id, `Rejected NTE for ${nte.employeeName}. Reason: ${reason}`);
-
-        mockNotifications.unshift({
-            id: `notif-nte-rejected-${updatedNte.id}`,
-            userId: updatedNte.issuedByUserId,
-            type: NotificationType.RESOLUTION_ISSUED, 
-            message: `NTE ${updatedNte.id} for ${updatedNte.employeeName} was rejected by ${user.name}.`,
-            link: `/feedback/nte/${updatedNte.id}`,
-            isRead: false,
-            createdAt: new Date(),
-            relatedEntityId: updatedNte.id,
-        });
-
-        setIsRejectModalOpen(false);
-        alert('NTE rejected.');
     };
 
-    const handleAcknowledgeResolution = (signatureDataUrl: string, fullName: string) => {
-        if (!resolution || !user) return;
-        
-        const resIndex = mockResolutions.findIndex(r => r.id === resolution.id);
-        if (resIndex > -1) {
-            const updatedResolution = {
-                ...mockResolutions[resIndex],
+    const handleAcknowledgeResolution = async (signatureDataUrl: string, _fullName: string) => {
+        if (!resolution || !user || !nte) return;
+        try {
+            const updatedRes = await updateResolution(resolution.id, {
                 status: ResolutionStatus.Acknowledged,
                 employeeAcknowledgedAt: new Date(),
-                employeeAcknowledgementSignatureUrl: signatureDataUrl
-            };
-            mockResolutions[resIndex] = updatedResolution;
-            setResolution(updatedResolution);
+                employeeAcknowledgementSignatureUrl: signatureDataUrl,
+            });
+            setResolution(updatedRes);
+            const updatedNte = await updateNTE({ ...nte, status: NTEStatus.Closed });
+            setNte(updatedNte);
+            logActivity(user, 'APPROVE', 'Resolution', resolution.id, 'Employee acknowledged resolution.');
+            setResolutionModalOpen(false);
+            alert('You have acknowledged the decision. This case is now closed.');
+            navigate('/feedback/cases');
+        } catch (err: any) {
+            alert(err?.message || 'Failed to acknowledge resolution.');
         }
-        
-        // Update NTE Status to Closed as well to reflect end of process
-        const nteIndex = mockNTEs.findIndex(n => n.id === nte!.id);
-        if (nteIndex > -1) {
-            mockNTEs[nteIndex] = { ...mockNTEs[nteIndex], status: NTEStatus.Closed };
-            setNte(mockNTEs[nteIndex]);
-        }
-        
-        logActivity(user, 'APPROVE', 'Resolution', resolution.id, `Employee acknowledged resolution.`);
-        setResolutionModalOpen(false);
-        alert("You have acknowledged the decision. This case is now closed.");
-        navigate('/feedback/cases');
     };
 
-
-    const handleSendMessage = () => {
+    const handleSendMessage = async () => {
         if (!newMessage.trim() || !incidentReport || !user) return;
-
         const newChatMessage: ChatMessage = {
             id: `msg-${Date.now()}`,
             userId: user.id,
@@ -191,178 +197,122 @@ const NTEDetail: React.FC = () => {
             timestamp: new Date(),
             text: newMessage.trim(),
         };
-
-        const updatedChatThread = [...incidentReport.chatThread, newChatMessage];
-
-        const irIndex = mockIncidentReports.findIndex(ir => ir.id === incidentReport.id);
-        if (irIndex !== -1) {
-            mockIncidentReports[irIndex].chatThread = updatedChatThread;
+        try {
+            const saved = await addIncidentReportMessage(incidentReport, newChatMessage, user);
+            setIncidentReport(saved);
+            setNewMessage('');
+        } catch (err: any) {
+            alert(err?.message || 'Failed to send message.');
         }
-
-        setIncidentReport(prev => prev ? { ...prev, chatThread: updatedChatThread } : null);
-        setNewMessage('');
     };
 
-    const handleSubmitResponse = () => {
+    const handleSubmitResponse = async () => {
         if (!responseText.trim() || signaturePadRef.current?.isEmpty()) {
             alert('Please provide your written explanation and a signature before submitting.');
             return;
         }
-
-        const signatureDataUrl = signaturePadRef.current.getSignatureDataUrl();
-        if (!signatureDataUrl) return;
-
-        const nteIndex = mockNTEs.findIndex(n => n.id === nte!.id);
-        if (nteIndex === -1) return;
-
-        const updatedNte: NTE = {
-            ...nte!,
-            employeeResponse: responseText,
-            employeeResponseEvidenceUrl: responseEvidenceUrl,
-            employeeResponseSignatureUrl: signatureDataUrl,
-            status: NTEStatus.ResponseSubmitted,
-            responseDate: new Date(),
-        };
-
-        mockNTEs[nteIndex] = updatedNte;
-        setNte(updatedNte);
+        const signatureDataUrl = signaturePadRef.current!.getSignatureDataUrl();
+        if (!signatureDataUrl || !nte) return;
+        try {
+            const saved = await updateNTE({
+                ...nte,
+                employeeResponse: responseText,
+                employeeResponseEvidenceUrl: responseEvidenceUrl,
+                employeeResponseSignatureUrl: signatureDataUrl,
+                status: NTEStatus.ResponseSubmitted,
+                responseDate: new Date(),
+            });
+            setNte(saved);
+        } catch (err: any) {
+            alert(err?.message || 'Failed to submit response.');
+        }
     };
 
-    const handleSaveResolution = (
+    const handleSaveResolution = async (
         resolutionDetails: Partial<Resolution> & { decisionMakerSignatureUrl: string },
         approverIds: string[]
     ) => {
         if (!user || !incidentReport || !nte) return;
-
         const approverSteps: ApproverStep[] = approverIds.map(id => {
-            const approver = mockUsers.find(u => u.id === id)!;
-            return {
-                userId: id,
-                userName: approver.name,
-                status: ApproverStatus.Pending,
-            };
+            const approver = users.find(u => u.id === id);
+            return { userId: id, userName: approver?.name || id, status: ApproverStatus.Pending };
         });
-
-        const newResolution: Resolution = {
+        const newResolutionPayload: Partial<Resolution> = {
             ...resolutionDetails,
-            id: `RES-${Date.now()}`,
             incidentReportId: incidentReport.id,
             decisionDate: new Date(),
             closedByUserId: user.id,
             status: ResolutionStatus.PendingApproval,
-            approverSteps: approverSteps,
-            ...({ employeeId: nte.employeeId } as any)
-        } as Resolution;
-
-        mockResolutions.push(newResolution);
-        setResolution(newResolution);
-
-        // NOTE: We update the parent stage for convenience, but individual virtual cards derive 
-        // their stage from their specific resolution status.
-        const irIndex = mockIncidentReports.findIndex(ir => ir.id === incidentReport.id);
-        if (irIndex > -1) {
-            mockIncidentReports[irIndex].pipelineStage = 'bod-gm-approval';
-        }
-
-        setIncidentReport(prev => prev ? {...prev, pipelineStage: 'bod-gm-approval'} : null);
-
-        setResolutionModalOpen(false);
-        alert('Case has been sent for approval.');
-        navigate('/feedback/cases');
-    };
-    
-    const handleSaveHearing = (details: HearingDetails) => {
-        if (!nte || !user) return;
-        
-        const nteIndex = mockNTEs.findIndex(n => n.id === nte.id);
-        if (nteIndex === -1) return;
-
-        const updatedNte = {
-            ...nte,
-            hearingDetails: details,
-            status: NTEStatus.HearingScheduled
+            approverSteps,
+            employeeId: nte.employeeId,
         };
-        
-        mockNTEs[nteIndex] = updatedNte;
-        setNte(updatedNte);
-
-        // Create notification for employee
-        mockNotifications.unshift({
-            id: `notif-hearing-${Date.now()}`,
-            userId: nte.employeeId,
-            type: NotificationType.NTE_ISSUED, // Using NTE_ISSUED type as generic high priority
-            message: `An administrative hearing has been scheduled for Case ${nte.incidentReportId}.`,
-            link: `/feedback/nte/${nte.id}`,
-            isRead: false,
-            createdAt: new Date(),
-            relatedEntityId: nte.id,
-        });
-        
-        // Create notification for panel members
-        details.panelIds.forEach(panelistId => {
-             mockNotifications.unshift({
-                id: `notif-hearing-panel-${Date.now()}-${panelistId}`,
-                userId: panelistId,
-                type: NotificationType.NTE_ISSUED,
-                message: `You have been added to the hearing panel for Case ${nte.incidentReportId}.`,
-                link: `/feedback/nte/${nte.id}`,
-                isRead: false,
-                createdAt: new Date(),
-                relatedEntityId: nte.id,
-            });
-        });
-
-        setIsHearingModalOpen(false);
-        logActivity(user, 'CREATE', 'Hearing', nte.id, `Scheduled hearing for ${nte.employeeName} on ${details.date.toLocaleDateString()}`);
-        alert('Administrative hearing scheduled successfully.');
+        try {
+            const created = await createResolution(newResolutionPayload);
+            setResolution(created);
+            await saveIncidentReport({ id: incidentReport.id, pipelineStage: 'bod-gm-approval' }, user);
+            setIncidentReport(prev => prev ? { ...prev, pipelineStage: 'bod-gm-approval' } : null);
+            setResolutionModalOpen(false);
+            alert('Case has been sent for approval.');
+            navigate('/feedback/cases');
+        } catch (err: any) {
+            alert(err?.message || 'Failed to save resolution.');
+        }
     };
 
-    const handleAcknowledgeHearing = () => {
-        if (!nte || !user || !nte.hearingDetails) return;
+    const handleSaveHearing = async (details: HearingDetails) => {
+        if (!nte || !user) return;
+        try {
+            const saved = await updateNTE({ ...nte, hearingDetails: details, status: NTEStatus.HearingScheduled });
+            setNte(saved);
+            await createNotification({
+                userId: nte.employeeId,
+                type: NotificationType.NTE_ISSUED,
+                message: `An administrative hearing has been scheduled for Case ${nte.incidentReportId}.`,
+                link: `/feedback/nte/${nte.id}`,
+            });
+            await Promise.all(details.panelIds.map(panelistId => 
+                createNotification({
+                    userId: panelistId,
+                    type: NotificationType.NTE_ISSUED,
+                    message: `You have been added to the hearing panel for Case ${nte.incidentReportId}.`,
+                    link: `/feedback/nte/${nte.id}`,
+                })
+            ));
+            setIsHearingModalOpen(false);
+            logActivity(user, 'CREATE', 'Hearing', nte.id, `Scheduled hearing for ${nte.employeeName} on ${new Date(details.date).toLocaleDateString()}`);
+            alert('Administrative hearing scheduled successfully.');
+        } catch (err: any) {
+            alert(err?.message || 'Failed to schedule hearing.');
+        }
+    };
 
+    const handleAcknowledgeHearing = async () => {
+        if (!nte || !user || !nte.hearingDetails) return;
         const isEmployee = user.id === nte.employeeId;
         const isPanel = nte.hearingDetails.panelIds.includes(user.id);
-
         if (!isEmployee && !isPanel) return;
-
-        const nteIndex = mockNTEs.findIndex(n => n.id === nte.id);
-        if (nteIndex === -1) return;
-
-        const acknowledgment = {
-            userId: user.id,
-            userName: user.name,
-            role: isEmployee ? 'Employee' : 'Panel',
-            date: new Date()
-        } as const;
-
-        // Ensure acknowledgments array exists
         const currentAcknowledgments = nte.hearingDetails.acknowledgments || [];
-        
-        // Check if already acknowledged
-        if (currentAcknowledgments.some(ack => ack.userId === user.id)) {
-            return;
+        if (currentAcknowledgments.some(ack => ack.userId === user.id)) return;
+        const acknowledgment = { userId: user.id, userName: user.name, role: isEmployee ? 'Employee' : 'Panel', date: new Date() } as const;
+        const updatedDetails: HearingDetails = { ...nte.hearingDetails, acknowledgments: [...currentAcknowledgments, acknowledgment] };
+        try {
+            const saved = await updateNTE({ ...nte, hearingDetails: updatedDetails });
+            setNte(saved);
+            logActivity(user, 'APPROVE', 'Hearing', nte.id, 'Acknowledged hearing schedule.');
+        } catch (err: any) {
+            alert(err?.message || 'Failed to acknowledge hearing.');
         }
-
-        const updatedDetails: HearingDetails = {
-            ...nte.hearingDetails,
-            acknowledgments: [...currentAcknowledgments, acknowledgment]
-        };
-
-        const updatedNte = {
-            ...nte,
-            hearingDetails: updatedDetails
-        };
-
-        mockNTEs[nteIndex] = updatedNte;
-        setNte(updatedNte);
-        logActivity(user, 'APPROVE', 'Hearing', nte.id, `Acknowledged hearing schedule.`);
     };
 
-    if (!nte || !incidentReport || !recipient) {
+    if (isLoading) {
+        return <div className="flex justify-center items-center p-16"><p className="text-gray-500 dark:text-gray-400">Loading...</p></div>;
+    }
+
+    if (!nte || !incidentReport) {
         return <NotFound />;
     }
 
-    const references = nte.disciplineCodeIds.map(id => mockCodeOfDiscipline.entries.find(e => e.id === id)).filter(Boolean);
+    const references = nte.disciplineCodeIds.map(id => disciplineEntries.find(e => e.id === id)).filter(Boolean);
 
     const isAwaitingEmployeeResponse = user?.id === nte.employeeId && nte.status === NTEStatus.Issued;
     const hasEmployeeResponded = nte.status !== NTEStatus.Draft && nte.status !== NTEStatus.Issued && nte.status !== NTEStatus.PendingApproval && nte.status !== NTEStatus.Rejected;
@@ -393,7 +343,7 @@ const NTEDetail: React.FC = () => {
                 <dl className="mt-4 grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2 text-sm">
                     <div>
                         <dt className="font-medium text-gray-500 dark:text-gray-400">Recipient(s)</dt>
-                        <dd className="mt-1 text-gray-900 dark:text-white font-semibold">{recipient.name}</dd>
+                        <dd className="mt-1 text-gray-900 dark:text-white font-semibold">{recipient?.name || nte.employeeName}</dd>
                     </div>
                      <div>
                         <dt className="font-medium text-gray-500 dark:text-gray-400">Linked IR</dt>
@@ -435,7 +385,7 @@ const NTEDetail: React.FC = () => {
                          <div className="md:col-span-2">
                             <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Panelists</p>
                             <p className="text-gray-900 dark:text-white">
-                                {nte.hearingDetails.panelIds.map(id => mockUsers.find(u => u.id === id)?.name).join(', ')}
+                                {nte.hearingDetails.panelIds.map(id => users.find(u => u.id === id)?.name).join(', ')}
                             </p>
                          </div>
                          {nte.hearingDetails.notes && (
@@ -460,7 +410,7 @@ const NTEDetail: React.FC = () => {
                             </div>
                             {/* Panel Status */}
                             {nte.hearingDetails.panelIds.map(pid => {
-                                const panelistName = mockUsers.find(u => u.id === pid)?.name;
+                                const panelistName = users.find(u => u.id === pid)?.name;
                                 const hasAck = nte.hearingDetails!.acknowledgments?.some(a => a.userId === pid);
                                 return (
                                     <div key={pid} className="flex justify-between items-center bg-white dark:bg-slate-800 p-2 rounded border border-orange-100 dark:border-orange-900">

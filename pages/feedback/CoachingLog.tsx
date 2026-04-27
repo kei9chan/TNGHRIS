@@ -1,4 +1,4 @@
-import { mockNotifications } from '../../services/mockDataCompat';
+// Phase 2 Migration: mockNotifications removed — notifications inserted via Supabase
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -224,26 +224,18 @@ const CoachingLog: React.FC = () => {
             if (isNowScheduled && !wasScheduled) {
                 const createdAt = new Date();
                 const notif = {
-                    id: `coaching-invite-${mapped.id}-${mapped.employeeId}-${createdAt.getTime()}`,
-                    userId: mapped.employeeId,
-                    type: NotificationType.COACHING_INVITE,
                     title: 'Coaching Session Invitation',
                     message: `You have a coaching session scheduled with ${mapped.coachName}.`,
                     link: `/feedback/coaching?sessionId=${mapped.id}`,
-                    isRead: false,
-                    createdAt,
-                    relatedEntityId: mapped.id,
                 };
-                mockNotifications.unshift(notif);
                 try {
-                    await supabase.from('notifications').insert([
-                        {
-                            id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${mapped.employeeId}`,
-                            user_id: mapped.employeeId,
-                            type: NotificationType.COACHING_INVITE,
-                            title: notif.title,
-                            message: notif.message,
-                            link: notif.link,
+                    await supabase.from('notifications').insert([{
+                        id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${mapped.employeeId}`,
+                        user_id: mapped.employeeId,
+                        type: NotificationType.COACHING_INVITE,
+                        title: notif.title,
+                        message: notif.message,
+                        link: notif.link,
                             is_read: false,
                             created_at: createdAt.toISOString(),
                             related_entity_id: mapped.id,

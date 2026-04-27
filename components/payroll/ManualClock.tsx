@@ -1,10 +1,11 @@
-import { mockShiftTemplates, mockSites } from '../../services/mockDataCompat';
+// Phase 2 Migration: mock imports removed (shift data passed via todaysShift prop)
 import React, { useState } from 'react';
 import { TimeEvent, TimeEventType, ShiftAssignment, TimeEventSource, DeviceSecurityProfile, AnomalyTag, TimeEventExtra } from '../../types';
 import Input from '../ui/Input';
 import Button from '../ui/Button';
 import Textarea from '../ui/Textarea';
 import { getAppVersion } from '../../services/deviceSecurity';
+import { useSites, useShiftTemplates } from '../../hooks/useHRData';
 
 interface ManualClockProps {
     clockInStatus: 'in' | 'out';
@@ -20,6 +21,9 @@ const ManualClock: React.FC<ManualClockProps> = ({ clockInStatus, addTimeEvent, 
     const [reason, setReason] = useState('');
     const [error, setError] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    
+    const { sites } = useSites();
+    const { shiftTemplates } = useShiftTemplates();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -35,8 +39,8 @@ const ManualClock: React.FC<ManualClockProps> = ({ clockInStatus, addTimeEvent, 
         const anomaly_tags: AnomalyTag[] = [AnomalyTag.Manual];
 
         if (todaysShift && nextType === TimeEventType.ClockIn) {
-            const shiftTemplate = mockShiftTemplates.find(st => st.id === todaysShift.shiftTemplateId);
-            const site = mockSites.find(s => s.id === todaysShift.locationId);
+            const shiftTemplate = shiftTemplates.find(st => st.id === todaysShift.shiftTemplateId);
+            const site = sites.find(s => s.id === todaysShift.locationId);
             if(shiftTemplate) {
                 const gracePeriod = site?.gracePeriodMinutes ?? shiftTemplate.gracePeriodMinutes;
                 const [hours, minutes] = shiftTemplate.startTime.split(':').map(Number);
@@ -48,7 +52,7 @@ const ManualClock: React.FC<ManualClockProps> = ({ clockInStatus, addTimeEvent, 
             }
         }
         
-        const siteName = mockSites.find(s => s.id === todaysShift?.locationId)?.name || 'Manual Entry';
+        const siteName = sites.find(s => s.id === todaysShift?.locationId)?.name || 'Manual Entry';
         const extra: TimeEventExtra = {
             ...deviceSecurityProfile,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,

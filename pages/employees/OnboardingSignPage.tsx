@@ -1,4 +1,4 @@
-import { mockUsers, mockOnboardingChecklists } from '../../services/mockDataCompat';
+// Phase E: mockDataCompat removed from OnboardingSignPage
 import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
@@ -78,21 +78,36 @@ const OnboardingSignPage: React.FC = () => {
                     });
 
                 const startDate = row.start_date ? new Date(row.start_date) : new Date();
-                const templateTasks: OnboardingTask[] = (template?.tasks || []).map((taskTemplate: any) => {
+                const templateTasks: OnboardingTask[] = await Promise.all((template?.tasks || []).map(async (taskTemplate: any) => {
                     const templateTaskId = taskTemplate.id || taskTemplate.name;
                     let ownerUserId = '';
                     if (taskTemplate.ownerUserId) {
                         ownerUserId = taskTemplate.ownerUserId;
                     } else if (taskTemplate.ownerRole === Role.Manager) {
-                        const employee = mockUsers.find(e => e.id === row.employee_id);
-                        if (employee?.managerId) {
-                            ownerUserId = employee.managerId;
-                        }
+                        const { data: empRow } = await supabase
+                            .from('hris_users')
+                            .select('reports_to')
+                            .eq('id', row.employee_id)
+                            .maybeSingle();
+                        if (empRow?.reports_to) ownerUserId = empRow.reports_to;
                     } else {
-                        const owner = mockUsers.find(u => u.role === taskTemplate.ownerRole);
-                        if (owner) ownerUserId = owner.id;
+                        const { data: ownerRow } = await supabase
+                            .from('hris_users')
+                            .select('id')
+                            .eq('role', taskTemplate.ownerRole)
+                            .limit(1)
+                            .maybeSingle();
+                        if (ownerRow?.id) ownerUserId = ownerRow.id;
                     }
-                    const ownerUser = mockUsers.find(u => u.id === ownerUserId);
+                    let ownerName = 'System';
+                    if (ownerUserId && ownerUserId !== 'system-user') {
+                        const { data: ownerUserRow } = await supabase
+                            .from('hris_users')
+                            .select('full_name')
+                            .eq('id', ownerUserId)
+                            .maybeSingle();
+                        ownerName = ownerUserRow?.full_name || 'System';
+                    }
                     const dueDate = new Date(startDate);
                     dueDate.setDate(dueDate.getDate() + (taskTemplate.dueDays || 0));
 
@@ -103,7 +118,7 @@ const OnboardingSignPage: React.FC = () => {
                         name: taskTemplate.name,
                         description: taskTemplate.description,
                         ownerUserId,
-                        ownerName: ownerUser ? ownerUser.name : 'System',
+                        ownerName,
                         videoUrl: taskTemplate.videoUrl,
                         dueDate,
                         status: OnboardingTaskStatus.Pending,
@@ -114,7 +129,7 @@ const OnboardingSignPage: React.FC = () => {
                         assetId: taskTemplate.assetId,
                         assetDescription: taskTemplate.assetDescription,
                     } as OnboardingTask;
-                });
+                }));
 
                 const tasks: OnboardingTask[] =
                     Array.isArray((row as any).tasks) && (row as any).tasks.length > 0
@@ -190,17 +205,6 @@ const OnboardingSignPage: React.FC = () => {
                 if (error) throw error;
             } catch (err) {
                 console.warn('Failed to persist onboarding completion', err);
-            }
-
-            const checklistIndex = mockOnboardingChecklists.findIndex(c => c.id === checklist.id);
-            if (checklistIndex !== -1) {
-                mockOnboardingChecklists[checklistIndex] = {
-                    ...mockOnboardingChecklists[checklistIndex],
-                    status: 'Completed',
-                    signatureName: fullName,
-                    signatureDataUrl: signatureDataUrl || undefined,
-                    signedAt: new Date(),
-                };
             }
         };
 

@@ -1,8 +1,8 @@
-import { mockUsers } from '../../services/mockDataCompat';
 import React, { useState } from 'react';
 import { Role } from '../../types';
 import Input from '../ui/Input';
 import Button from '../ui/Button';
+import { supabase } from '../../services/supabaseClient';
 
 interface ManagerPinAuthProps {
     onAuthSuccess: () => void;
@@ -13,24 +13,33 @@ const ManagerPinAuth: React.FC<ManagerPinAuthProps> = ({ onAuthSuccess }) => {
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
 
-    const handleAuthorize = (e: React.FormEvent) => {
+    const handleAuthorize = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
         setError('');
 
-        setTimeout(() => {
+        try {
             const managerRoles = [Role.Manager, Role.BusinessUnitManager, Role.GeneralManager, Role.Admin, Role.HRManager, Role.HRStaff, Role.OperationsDirector];
-            const manager = mockUsers.find(u =>
-                managerRoles.includes(u.role) && u.securityPin === pin
-            );
+            const { data, error: queryError } = await supabase
+                .from('profiles')
+                .select('id')
+                .eq('security_pin', pin)
+                .in('role', managerRoles)
+                .limit(1)
+                .maybeSingle();
 
-            if (manager) {
+            if (queryError) throw queryError;
+
+            if (data) {
                 onAuthSuccess();
             } else {
                 setError('Invalid or incorrect manager PIN.');
             }
+        } catch {
+            setError('Authorization failed. Please try again.');
+        } finally {
             setIsLoading(false);
-        }, 500);
+        }
     };
 
     return (

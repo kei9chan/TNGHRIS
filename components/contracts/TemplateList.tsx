@@ -1,7 +1,7 @@
-import { mockBusinessUnits } from '../../services/mockDataCompat';
 import React from 'react';
 import { ContractTemplate, Role } from '../../types';
 import Button from '../ui/Button';
+import { useBusinessUnits } from '../../hooks/useHRData';
 
 interface TemplateListProps {
     templates: ContractTemplate[];
@@ -9,8 +9,9 @@ interface TemplateListProps {
 }
 
 const TemplateList: React.FC<TemplateListProps> = ({ templates, onEdit }) => {
+    const { businessUnits } = useBusinessUnits();
     
-    const getBuName = (id: string) => mockBusinessUnits.find(b => b.id === id)?.name || 'N/A';
+    const getBuName = (id: string) => businessUnits.find(b => b.id === id)?.name || 'N/A';
     
     return (
         <div className="overflow-x-auto">

@@ -1,4 +1,4 @@
-import { mockUsers, mockEnvelopes } from '../../services/mockDataCompat';
+// Phase E: mockDataCompat removed from EnvelopeDetail
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { createPortal } from 'react-dom';
@@ -125,11 +125,10 @@ const EnvelopeDetail: React.FC = () => {
     const processedContent = useMemo(() => {
         if (!envelope?.contentSnapshot) return { body: '', sections: [] };
 
-        const { contentSnapshot, employeeName, employeeId } = envelope;
-        const employee = mockUsers.find(u => u.id === employeeId);
-        const position = employeeProfile?.position || employee?.position || 'N/A';
-        const dateHired = employeeProfile?.dateHired || employee?.dateHired;
-        const monthlySalary = employeeProfile?.monthlySalary ?? employee?.monthlySalary;
+        const { contentSnapshot, employeeName } = envelope;
+        const position = employeeProfile?.position || 'N/A';
+        const dateHired = employeeProfile?.dateHired;
+        const monthlySalary = employeeProfile?.monthlySalary;
         
         const replacePlaceholders = (text: string) => {
             let processed = text.replace(/{{employee_name}}/g, employeeName);
@@ -147,7 +146,7 @@ const EnvelopeDetail: React.FC = () => {
                 body: replacePlaceholders(section.body)
             })) || []
         };
-    }, [envelope]);
+    }, [envelope, employeeProfile]);
 
 
     useEffect(() => {
@@ -180,8 +179,7 @@ const EnvelopeDetail: React.FC = () => {
                 setEnvelope(mapped);
             } catch (error) {
                 console.error('Failed to load envelope', error);
-                const fallback = mockEnvelopes.find(e => e.id === envelopeId) || null;
-                setEnvelope(fallback);
+                setEnvelope(null);
             }
         };
         loadEnvelope();
@@ -335,8 +333,7 @@ const EnvelopeDetail: React.FC = () => {
 
     const handleOpenEmailModal = () => {
         if (!envelope) return;
-        const employee = mockUsers.find(u => u.id === envelope.employeeId);
-        setEmailRecipient(employeeProfile?.email || employee?.email || user?.email || '');
+        setEmailRecipient(employeeProfile?.email || user?.email || '');
         setIsEmailModalOpen(true);
     };
 

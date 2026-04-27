@@ -1,4 +1,4 @@
-import { mockLeaveTypes } from '../../services/mockDataCompat';
+// Phase 2 Migration: mockLeaveTypes removed — name read from entry.leaveTypeName
 import React from 'react';
 import { LeaveLedgerEntry, LeaveLedgerEntryType } from '../../types';
 
@@ -21,7 +21,8 @@ const getTypeColor = (type: LeaveLedgerEntryType) => {
 
 const LeaveLedgerTable: React.FC<LeaveLedgerTableProps> = ({ ledgerEntries }) => {
     
-    const getLeaveTypeName = (id: string) => mockLeaveTypes.find(lt => lt.id === id)?.name || 'Unknown';
+    const getLeaveTypeName = (entry: LeaveLedgerEntry) =>
+        (entry as any).leaveTypeName || entry.leaveTypeId || 'Leave';
 
     const sortedEntries = [...ledgerEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
@@ -42,7 +43,7 @@ const LeaveLedgerTable: React.FC<LeaveLedgerTableProps> = ({ ledgerEntries }) =>
                     {sortedEntries.map(entry => (
                         <tr key={entry.id}>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{new Date(entry.date).toLocaleDateString()}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{getLeaveTypeName(entry.leaveTypeId)}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{getLeaveTypeName(entry)}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm">
                                 <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getTypeColor(entry.type)}`}>
                                     {entry.type.replace('_', ' ')}

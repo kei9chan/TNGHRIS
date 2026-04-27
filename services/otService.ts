@@ -95,3 +95,38 @@ export const approveRejectOtRequest = async (
   if (error) throw new Error(error.message || 'Failed to update OT request');
   return mapRow(data as OtRequestRow);
 };
+
+export const deleteOtRequest = async (requestId: string): Promise<void> => {
+  const { error } = await supabase.from('ot_requests').delete().eq('id', requestId);
+  if (error) throw new Error(error.message || 'Failed to delete OT request');
+};
+
+export const withdrawOtRequest = async (
+  requestToUpdate: OTRequest,
+  user: User
+): Promise<OTRequest> => {
+  const newHistoryEntry: OTRequestHistory = {
+    userId: user.id,
+    userName: user.name,
+    timestamp: new Date(),
+    action: 'Withdrawn',
+    details: 'Request withdrawn by employee.'
+  };
+
+  const payload: Partial<OtRequestRow> = {
+    status: OTStatus.Draft,
+    submitted_at: null as any,
+    history_log: [...(requestToUpdate.historyLog || []), newHistoryEntry],
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await supabase
+    .from('ot_requests')
+    .update(payload)
+    .eq('id', requestToUpdate.id)
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message || 'Failed to withdraw OT request');
+  return mapRow(data as OtRequestRow);
+};

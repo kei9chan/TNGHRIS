@@ -1,8 +1,8 @@
-import { mockUsers } from '../../services/mockDataCompat';
 import React, { useEffect, useMemo } from 'react';
 import { Envelope } from '../../types';
 // FIX: Import the 'Button' component to resolve the 'Cannot find name' error.
 import Button from '../ui/Button';
+import { useUsers } from '../../hooks/useHRData';
 
 interface PrintableContractProps {
     envelope: Envelope;
@@ -10,8 +10,9 @@ interface PrintableContractProps {
 }
 
 const PrintableContract: React.FC<PrintableContractProps> = ({ envelope, onClose }) => {
+    const { users } = useUsers();
     const { contentSnapshot, employeeName, employeeId } = envelope;
-    const employee = mockUsers.find(u => u.id === employeeId);
+    const employee = users.find(u => u.id === employeeId);
 
     const processedContent = useMemo(() => {
         if (!contentSnapshot) return { body: '', sections: [], footer: '', acknowledgmentBody: '' };

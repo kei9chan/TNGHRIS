@@ -1,4 +1,4 @@
-import { mockUsers, mockBusinessUnits, mockDepartments, mockEvaluations, mockEvaluationSubmissions, mockEvaluationQuestions } from '../../services/mockDataCompat';
+// Phase F: mockDataCompat removed from EvaluationResult — live Supabase data
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
@@ -24,22 +24,19 @@ interface BreakdownItemProps {
     };
     businessUnits: Array<{ id: string; name: string }>;
     departments: Array<{ id: string; name: string }>;
+    users: User[];
 }
 
-const BreakdownItem: React.FC<BreakdownItemProps> = ({ item, businessUnits, departments }) => {
+const BreakdownItem: React.FC<BreakdownItemProps> = ({ item, businessUnits, departments, users }) => {
     const [isOpen, setIsOpen] = useState(false);
 
     const renderConfigName = (config: EvaluatorConfig) => {
         if (config.type === EvaluatorType.Individual) {
-            const rater = mockUsers.find(u => u.id === config.userId);
+            const rater = users.find(u => u.id === config.userId);
             return rater ? `Individual: ${rater.name}` : 'Unknown Individual';
         } else {
-            const buName = businessUnits.find(b => b.id === config.groupFilter?.businessUnitId)?.name
-                || mockBusinessUnits.find(b => b.id === config.groupFilter?.businessUnitId)?.name
-                || 'All BUs';
-            const deptName = departments.find(d => d.id === config.groupFilter?.departmentId)?.name
-                || mockDepartments.find(d => d.id === config.groupFilter?.departmentId)?.name
-                || 'All Depts';
+            const buName = businessUnits.find(b => b.id === config.groupFilter?.businessUnitId)?.name || 'All BUs';
+            const deptName = departments.find(d => d.id === config.groupFilter?.departmentId)?.name || 'All Depts';
             const label = config.type === EvaluatorType.Group ? `Group Review` : 'Group';
             return `${label}: ${buName} - ${deptName}`;
         }
@@ -117,12 +114,9 @@ const EvaluationResult: React.FC = () => {
     const [submissions, setSubmissions] = useState<EvaluationSubmission[]>([]);
     const [questions, setQuestions] = useState<EvaluationQuestion[]>([]);
     const [targetUsers, setTargetUsers] = useState<User[]>([]);
-    const [businessUnits, setBusinessUnits] = useState<Array<{ id: string; name: string }>>(
-        mockBusinessUnits.map(b => ({ id: b.id, name: b.name }))
-    );
-    const [departments, setDepartments] = useState<Array<{ id: string; name: string }>>(
-        mockDepartments.map(d => ({ id: d.id, name: d.name }))
-    );
+    const [allUsers, setAllUsers] = useState<User[]>([]);
+    const [businessUnits, setBusinessUnits] = useState<Array<{ id: string; name: string }>>([]);
+    const [departments, setDepartments] = useState<Array<{ id: string; name: string }>>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [isSupabaseEvaluation, setIsSupabaseEvaluation] = useState(false);
@@ -314,29 +308,46 @@ const EvaluationResult: React.FC = () => {
                         } as User));
                     }
 
+                    // Fetch additional rater users (may not be in targetEmployeeIds)
+                    const raterIds = [...new Set(mappedSubmissions.map(s => s.raterId))].filter(id => id && !targetIds.includes(id));
+                    let raterUsers: User[] = [];
+                    if (raterIds.length > 0) {
+                        const { data: raterRows } = await supabase
+                            .from('hris_users')
+                            .select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position')
+                            .in('id', raterIds);
+                        raterUsers = (raterRows || []).map((u: any) => ({
+                            id: u.id,
+                            name: formatEmployeeName(u.full_name || 'Unknown'),
+                            email: u.email || '',
+                            role: u.role,
+                            department: u.department || '',
+                            businessUnit: u.business_unit || '',
+                            status: u.status || 'Active',
+                            employmentStatus: undefined,
+                            isPhotoEnrolled: false,
+                            dateHired: new Date(),
+                            position: u.position || '',
+                            managerId: undefined,
+                            activeDeviceId: undefined,
+                            isGoogleConnected: false,
+                        } as User));
+                    }
+
                     if (!active) return;
                     setEvaluation(mappedEvaluation);
                     setSubmissions(mappedSubmissions);
                     setQuestions(mappedQuestions.filter(q => !q.isArchived));
                     setTargetUsers(mappedEmployees);
+                    setAllUsers([...mappedEmployees, ...raterUsers]);
                     setBusinessUnits((buRes.data || []).map((b: any) => ({ id: b.id, name: b.name || 'Unknown BU' })));
                     setDepartments((deptRes.data || []).map((d: any) => ({ id: d.id, name: d.name || 'Unknown Dept' })));
                     return;
                 }
 
-                const mockEval = mockEvaluations.find(e => e.id === evaluationId) || null;
+                // No Supabase record found — evaluation does not exist
                 if (!active) return;
-                setIsSupabaseEvaluation(false);
-                setEvaluation(mockEval);
-                setSubmissions(mockEvaluationSubmissions.filter(s => s.evaluationId === evaluationId));
-                setQuestions(
-                    mockEval
-                        ? mockEvaluationQuestions.filter(q => mockEval.questionSetIds.includes(q.questionSetId))
-                        : []
-                );
-                setTargetUsers(mockEval ? mockUsers.filter(u => mockEval.targetEmployeeIds.includes(u.id)) : []);
-                setBusinessUnits(mockBusinessUnits.map(b => ({ id: b.id, name: b.name })));
-                setDepartments(mockDepartments.map(d => ({ id: d.id, name: d.name })));
+                setEvaluation(null);
             } catch (err) {
                 console.error('Failed to load evaluation results', err);
                 if (!active) return;
@@ -360,19 +371,12 @@ const EvaluationResult: React.FC = () => {
         const newValue = !isEmployeeVisible;
         setIsEmployeeVisible(newValue);
         if (!evaluation) return;
-        if (isSupabaseEvaluation) {
-            const { error } = await supabase
-                .from('evaluations')
-                .update({ is_employee_visible: newValue })
-                .eq('id', evaluation.id);
-            if (error) {
-                console.error('Failed to update evaluation visibility', error);
-            }
-        } else {
-            const index = mockEvaluations.findIndex(e => e.id === evaluationId);
-            if (index > -1) {
-                mockEvaluations[index].isEmployeeVisible = newValue;
-            }
+        const { error } = await supabase
+            .from('evaluations')
+            .update({ is_employee_visible: newValue })
+            .eq('id', evaluation.id);
+        if (error) {
+            console.error('Failed to update evaluation visibility', error);
         }
     };
 
@@ -383,21 +387,13 @@ const EvaluationResult: React.FC = () => {
         if (!currentAcknowledgedBy.includes(user.id)) {
             currentAcknowledgedBy.push(user.id);
         }
-        if (isSupabaseEvaluation) {
-            const { error } = await supabase
-                .from('evaluations')
-                .update({ acknowledged_by: currentAcknowledgedBy })
-                .eq('id', evaluation.id);
-            if (error) {
-                console.error('Failed to acknowledge evaluation', error);
-                return;
-            }
-        } else {
-            const index = mockEvaluations.findIndex(e => e.id === evaluation.id);
-            if (index > -1) {
-                const updatedEval = { ...mockEvaluations[index], acknowledgedBy: currentAcknowledgedBy };
-                mockEvaluations[index] = updatedEval;
-            }
+        const { error } = await supabase
+            .from('evaluations')
+            .update({ acknowledged_by: currentAcknowledgedBy })
+            .eq('id', evaluation.id);
+        if (error) {
+            console.error('Failed to acknowledge evaluation', error);
+            return;
         }
         setEvaluation(prev => prev ? { ...prev, acknowledgedBy: currentAcknowledgedBy } : prev);
         setHasAcknowledged(true);
@@ -425,7 +421,7 @@ const EvaluationResult: React.FC = () => {
 
             // Distribute submissions to their matching config
             submissionsForEmployee.forEach(sub => {
-                const rater = mockUsers.find(u => u.id === sub.raterId);
+                const rater = allUsers.find(u => u.id === sub.raterId);
                 if (!rater) return;
 
                 // Calculate raw average for this specific submission
@@ -451,8 +447,8 @@ const EvaluationResult: React.FC = () => {
                         if (!filter) return false;
 
                         // Resolve IDs to Names
-                        const buName = mockBusinessUnits.find(b => b.id === filter.businessUnitId)?.name;
-                        const deptName = mockDepartments.find(d => d.id === filter.departmentId)?.name;
+                        const buName = businessUnits.find(b => b.id === filter.businessUnitId)?.name;
+                        const deptName = departments.find(d => d.id === filter.departmentId)?.name;
 
                         if (filter.businessUnitId && rater.businessUnit !== buName) return false;
                         if (filter.departmentId && rater.department !== deptName) return false;
@@ -619,7 +615,7 @@ const EvaluationResult: React.FC = () => {
                      <h4 className="font-semibold mb-4 text-lg border-b pb-2 dark:border-gray-700">Performance Breakdown</h4>
                      <div className="space-y-4">
                          {myScores.breakdown.map(item => (
-                                     <BreakdownItem key={item.config.id} item={item} businessUnits={businessUnits} departments={departments} />
+                                     <BreakdownItem key={item.config.id} item={item} businessUnits={businessUnits} departments={departments} users={allUsers} />
                                  ))}
                              </div>
                          </div>

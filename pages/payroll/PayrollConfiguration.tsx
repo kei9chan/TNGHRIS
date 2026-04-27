@@ -1,20 +1,38 @@
-import { mockHolidayPolicies, mockSSSTable, mockPhilHealthConfig, mockTaxTable } from '../../services/mockDataCompat';
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Card from '../../components/ui/Card';
 import { SSSTableRow, PhilHealthConfig, TaxTableRow, HolidayPolicy } from '../../types';
 import Button from '../../components/ui/Button';
 import { logActivity } from '../../services/auditService';
 import { useAuth } from '../../hooks/useAuth';
+import { fetchSSSTable, fetchPhilHealthConfig, fetchTaxTable, fetchHolidayPolicies } from '../../services/payrollService';
 
 const PayrollConfiguration: React.FC = () => {
     const { user } = useAuth();
     const [activeTab, setActiveTab] = useState<'SSS' | 'PhilHealth' | 'Tax' | 'Holiday'>('SSS');
-    
-    const [sssTable, setSssTable] = useState<SSSTableRow[]>(mockSSSTable);
-    const [philHealth, setPhilHealth] = useState<PhilHealthConfig>(mockPhilHealthConfig);
-    const [taxTable, setTaxTable] = useState<TaxTableRow[]>(mockTaxTable);
-    const [holidayPolicies, setHolidayPolicies] = useState<HolidayPolicy[]>(mockHolidayPolicies);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    const [sssTable, setSssTable] = useState<SSSTableRow[]>([]);
+    const [philHealth, setPhilHealth] = useState<PhilHealthConfig>({ minSalary: 10000, maxSalary: 80000, rate: 0.04, employerShareRatio: 0.5 });
+    const [taxTable, setTaxTable] = useState<TaxTableRow[]>([]);
+    const [holidayPolicies, setHolidayPolicies] = useState<HolidayPolicy[]>([]);
+
+    useEffect(() => {
+        const load = async () => {
+            try {
+                setIsLoading(true);
+                const [sss, ph, tax, hol] = await Promise.all([
+                    fetchSSSTable(), fetchPhilHealthConfig(), fetchTaxTable(), fetchHolidayPolicies(),
+                ]);
+                setSssTable(sss); setPhilHealth(ph); setTaxTable(tax); setHolidayPolicies(hol);
+            } catch (err: any) {
+                setError(err.message || 'Failed to load configuration.');
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        load();
+    }, []);
 
     const tabClass = (tabName: string) => `px-4 py-2 text-sm font-medium rounded-md transition-colors ${activeTab === tabName ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`;
 
@@ -55,10 +73,13 @@ const PayrollConfiguration: React.FC = () => {
         alert('Configuration saved successfully.');
     };
 
+    if (isLoading) return <div className="text-center py-20 text-gray-500 dark:text-gray-400">Loading configuration...</div>;
+
     return (
         <div className="space-y-6">
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Payroll Configuration</h1>
             <p className="text-gray-600 dark:text-gray-400">Manage government contribution tables and holiday premium rates.</p>
+            {error && <div className="bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 px-4 py-3 rounded-md">{error}</div>}
 
             <div className="flex space-x-2 border-b border-gray-200 dark:border-gray-700 pb-2">
                 <button className={tabClass('SSS')} onClick={() => setActiveTab('SSS')}>SSS Table</button>

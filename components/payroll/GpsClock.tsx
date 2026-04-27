@@ -1,8 +1,8 @@
-import { mockShiftTemplates, mockSites } from '../../services/mockDataCompat';
 import React, { useState, useEffect } from 'react';
 import { TimeEvent, TimeEventType, ShiftAssignment, TimeEventSource, Site, DeviceSecurityProfile, AnomalyTag, TimeEventExtra } from '../../types';
 import Button from '../ui/Button';
 import { getAppVersion } from '../../services/deviceSecurity';
+import { useSites, useShiftTemplates } from '../../hooks/useHRData';
 
 interface GpsClockProps {
     clockInStatus: 'in' | 'out';
@@ -39,6 +39,9 @@ const GpsClock: React.FC<GpsClockProps> = ({ clockInStatus, addTimeEvent, todays
     const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
     const [useWifi, setUseWifi] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    
+    const { sites } = useSites();
+    const { shiftTemplates } = useShiftTemplates();
 
     const verifyLocation = (position: GeolocationPosition) => {
         setStatus('verifying');
@@ -47,7 +50,7 @@ const GpsClock: React.FC<GpsClockProps> = ({ clockInStatus, addTimeEvent, todays
 
         let nearestSite: ValidationResult | null = null;
 
-        for (const site of mockSites) {
+        for (const site of sites) {
             const distance = getHaversineDistance(latitude, longitude, site.latitude, site.longitude);
             if (!nearestSite || distance < nearestSite.distance) {
                 nearestSite = { site, distance };
@@ -119,8 +122,8 @@ const GpsClock: React.FC<GpsClockProps> = ({ clockInStatus, addTimeEvent, todays
         }
 
         if (todaysShift && nextType === TimeEventType.ClockIn) {
-            const shiftTemplate = mockShiftTemplates.find(st => st.id === todaysShift.shiftTemplateId);
-            const site = mockSites.find(s => s.id === todaysShift.locationId);
+            const shiftTemplate = shiftTemplates.find(st => st.id === todaysShift.shiftTemplateId);
+            const site = sites.find(s => s.id === todaysShift.locationId);
             if (shiftTemplate) {
                 const gracePeriod = site?.gracePeriodMinutes ?? shiftTemplate.gracePeriodMinutes;
                 const [hours, minutes] = shiftTemplate.startTime.split(':').map(Number);
@@ -141,7 +144,7 @@ const GpsClock: React.FC<GpsClockProps> = ({ clockInStatus, addTimeEvent, todays
             anomaly_tags,
             lat: userLocation?.lat,
             lng: userLocation?.lng,
-            wifi_ssid: useWifi ? mockSites.find(s => s.id === validationResult.site.id)?.allowedWifiSSIDs?.[0] : undefined,
+            wifi_ssid: useWifi ? sites.find(s => s.id === validationResult.site.id)?.allowedWifiSSIDs?.[0] : undefined,
         };
 
         try {

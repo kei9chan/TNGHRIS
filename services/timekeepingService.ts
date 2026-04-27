@@ -93,8 +93,9 @@ const mapAttendanceRecord = (r: AttendanceRecordRow): AttendanceRecord => ({
 
 const mapAttendanceException = (r: AttendanceExceptionRow): AttendanceExceptionRecord => ({
   id: r.id, employeeId: r.employee_id, employeeName: r.employee_name,
-  date: new Date(r.date), exceptionType: r.exception_type as any,
+  date: new Date(r.date), type: r.exception_type as any,
   details: r.details, status: r.status as any,
+  sourceEventId: '',
   resolutionNote: r.resolution_note || undefined,
   resolvedBy: r.resolved_by || undefined,
   resolvedAt: r.resolved_at ? new Date(r.resolved_at) : undefined,

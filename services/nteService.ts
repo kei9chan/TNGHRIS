@@ -85,3 +85,22 @@ export const updateNTE = async (nte: Partial<NTE>): Promise<NTE> => {
   if (error) throw new Error(error.message || 'Failed to update NTE');
   return mapRow(data as NTERow);
 };
+
+export const fetchNTEById = async (id: string): Promise<NTE | null> => {
+  const { data, error } = await supabase.from('ntes').select('*').eq('id', id).maybeSingle();
+  if (error) throw new Error(error.message || 'Failed to fetch NTE');
+  return data ? mapRow(data as NTERow) : null;
+};
+
+export const fetchNTEs = async (): Promise<NTE[]> => {
+  const { data, error } = await supabase.from('ntes').select('*');
+  if (error) throw new Error(error.message || 'Failed to fetch NTEs');
+  return (data as NTERow[]).map(mapRow);
+};
+
+export const fetchNTEsByIncidentReportId = async (incidentReportId: string): Promise<NTE[]> => {
+  const { data, error } = await supabase.from('ntes').select('*').eq('incident_report_id', incidentReportId);
+  if (error) throw new Error(error.message || 'Failed to fetch NTEs');
+  return (data as NTERow[]).map(mapRow);
+};
+

@@ -1,8 +1,8 @@
-import { mockOnboardingTemplates } from '../../services/mockDataCompat';
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { OnboardingChecklist, OnboardingTaskStatus } from '../../types';
 import Card from '../ui/Card';
 import Button from '../ui/Button';
+import { fetchOnboardingTemplates } from '../../services/onboardingService';
 
 interface OnboardingProgressCardProps {
   checklist?: OnboardingChecklist;
@@ -12,11 +12,17 @@ interface OnboardingProgressCardProps {
 const ClipboardCheckIcon = ({ className }: { className?: string }) => (<svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M10.125 2.25h-4.5c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125v-9M10.125 2.25h.375a9 9 0 0 1 9 9v.375M10.125 2.25A3.375 3.375 0 0 1 13.5 5.625v1.5c0 .621.504 1.125 1.125 1.125h1.5a3.375 3.375 0 0 1 3.375 3.375M9 15l2.25 2.25L15 12" /></svg>);
 
 const OnboardingProgressCard: React.FC<OnboardingProgressCardProps> = ({ checklist, onViewTasks }) => {
+  const [templates, setTemplates] = useState<{id: string, name: string}[]>([]);
+
+  useEffect(() => {
+    fetchOnboardingTemplates().then(ts => setTemplates(ts)).catch(console.error);
+  }, []);
+
   const { progress, overdueCount, templateName } = useMemo(() => {
     if (!checklist) {
         return { progress: 0, overdueCount: 0, templateName: '' };
     }
-    const template = mockOnboardingTemplates.find(t => t.id === checklist.templateId);
+    const template = templates.find(t => t.id === checklist.templateId);
     
     const totalPoints = checklist.tasks.reduce((sum, task) => sum + (task.points || 0), 0);
     const completedPoints = checklist.tasks
@@ -34,7 +40,7 @@ const OnboardingProgressCard: React.FC<OnboardingProgressCardProps> = ({ checkli
       overdueCount: overdue,
       templateName: template?.name || 'My Checklist'
     };
-  }, [checklist]);
+  }, [checklist, templates]);
 
   if (!checklist) {
       return (

@@ -1,7 +1,7 @@
-import { mockUsers } from '../../services/mockDataCompat';
 import React, { useEffect, useState, useMemo } from 'react';
 import { IncidentReport } from '../../types';
 import { supabase } from '../../services/supabaseClient';
+import { useUsers } from '../../hooks/useHRData';
 
 interface PrintableIncidentReportProps {
     report: IncidentReport;
@@ -9,6 +9,7 @@ interface PrintableIncidentReportProps {
 }
 
 const PrintableIncidentReport: React.FC<PrintableIncidentReportProps> = ({ report, onClose }) => {
+    const { users } = useUsers();
     const [attachmentUrl, setAttachmentUrl] = useState<string | null>(null);
     const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
     const [isReadyToPrint, setIsReadyToPrint] = useState(false);
@@ -84,7 +85,7 @@ const PrintableIncidentReport: React.FC<PrintableIncidentReportProps> = ({ repor
         };
     }, [onClose, isReadyToPrint]);
 
-    const reporter = mockUsers.find(u => u.id === report.reportedBy);
+    const reporter = users.find(u => u.id === report.reportedBy);
 
     return (
         <div className="print-overlay">

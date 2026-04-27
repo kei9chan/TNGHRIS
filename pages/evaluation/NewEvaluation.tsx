@@ -1,5 +1,3 @@
-import { mockUsers, mockNotifications } from '../../services/mockDataCompat';
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Card from '../../components/ui/Card';
@@ -286,37 +284,27 @@ const NewEvaluation: React.FC = () => {
     const evaluationId = createdEval?.id || newEvaluation.id;
     const createdAt = new Date();
     const employeeLookup = new Map<string, User>(employees.map(emp => [emp.id, emp]));
-    targetEmployeeIds.forEach(empId => {
+
+    // Build notification rows for all target employees
+    const notifRows = targetEmployeeIds.flatMap(empId => {
       const emp = employeeLookup.get(empId);
       const targets = new Set<string>();
       if (empId) targets.add(empId);
       if (emp?.authUserId) targets.add(emp.authUserId);
-      if (emp?.email) {
-        const mockMatch = mockUsers.find(
-          u => u.email?.toLowerCase() === emp.email.toLowerCase()
-        );
-        if (mockMatch?.id) targets.add(mockMatch.id);
-      }
-      if (emp?.name) {
-        const nameMatch = mockUsers.find(
-          u => u.name?.toLowerCase() === emp.name.toLowerCase()
-        );
-        if (nameMatch?.id) targets.add(nameMatch.id);
-      }
-      targets.forEach(targetId => {
-        mockNotifications.unshift({
-          id: `notif-eval-assign-${evaluationId}-${targetId}-${createdAt.getTime()}`,
-          userId: targetId,
-          type: NotificationType.EVALUATION_ASSIGNED,
-          title: 'Evaluation Assigned',
-          message: `${newEvaluation.name} is now scheduled for you.`,
-          link: '/evaluation',
-          isRead: false,
-          createdAt,
-          relatedEntityId: evaluationId,
-        });
-      });
+      return Array.from(targets).map(targetId => ({
+        user_id: targetId,
+        type: NotificationType.EVALUATION_ASSIGNED,
+        title: 'Evaluation Assigned',
+        message: `${newEvaluation.name} is now scheduled for you.`,
+        link: '/evaluation',
+        is_read: false,
+        created_at: createdAt.toISOString(),
+        related_entity_id: evaluationId,
+      }));
     });
+    if (notifRows.length > 0) {
+      await supabase.from('notifications').insert(notifRows);
+    }
 
     logActivity(user, 'CREATE', 'Evaluation', evaluationId, `Created new evaluation cycle: ${newEvaluation.name} targeting ${newEvaluation.targetEmployeeIds.length} employees.`);
     alert('Evaluation created successfully!');

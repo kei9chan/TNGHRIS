@@ -1,4 +1,4 @@
-import { mockUsers, mockBusinessUnits, mockNotifications } from '../../services/mockDataCompat';
+// Phase E: mockDataCompat removed from AssetManagement
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Asset, AssetAssignment, AssetStatus, Permission, User, NotificationType, EnrichedAsset } from '../../types';
@@ -7,6 +7,9 @@ import { usePermissions } from '../../hooks/usePermissions';
 import { logActivity } from '../../services/auditService';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
+import { fetchBusinessUnits } from '../../services/userService';
+import { createNotification } from '../../services/notificationService';
+import { BusinessUnit } from '../../types';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
@@ -97,6 +100,7 @@ const AssetManagement: React.FC = () => {
     const [assetsLoading, setAssetsLoading] = useState(true);
     const [assignments, setAssignments] = useState<AssetAssignment[]>([]);
     const [employees, setEmployees] = useState<User[]>([]);
+    const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
     
     // Modals
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -115,7 +119,7 @@ const AssetManagement: React.FC = () => {
     });
 
     // Load accessible BUs for the filter dropdown
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(businessUnits), [getAccessibleBusinessUnits, businessUnits]);
 
     // Load data from Supabase
     useEffect(() => {
@@ -165,9 +169,18 @@ const AssetManagement: React.FC = () => {
                 setEmployees([]);
             }
         };
+        const loadBusinessUnits = async () => {
+            try {
+                const units = await fetchBusinessUnits();
+                setBusinessUnits(units);
+            } catch (err) {
+                console.error('Failed to load business units', err);
+            }
+        };
         loadAssets();
         loadAssignments();
         loadEmployees();
+        loadBusinessUnits();
     }, []);
 
     const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -183,7 +196,7 @@ const AssetManagement: React.FC = () => {
         return assets.map(asset => {
             const activeAssignment = assignments.find(a => a.assetId === asset.id && !a.dateReturned);
             const assignedTo = activeAssignment ? userLookup[activeAssignment.employeeId] : undefined;
-            const businessUnitName = mockBusinessUnits.find(bu => bu.id === asset.businessUnitId)?.name || 'N/A';
+            const businessUnitName = businessUnits.find(bu => bu.id === asset.businessUnitId)?.name || 'N/A';
             return {
                 ...asset,
                 assignedTo,
@@ -304,38 +317,24 @@ const AssetManagement: React.FC = () => {
 
             const { data: assigneeRow } = await supabase
                 .from('hris_users')
-                .select('id, email, auth_user_id, full_name')
+                .select('id, auth_user_id')
                 .eq('id', employeeId)
                 .maybeSingle();
             const targets = new Set<string>();
             if (employeeId) targets.add(employeeId);
             if (assigneeRow?.auth_user_id) targets.add(assigneeRow.auth_user_id);
-            if (assigneeRow?.email) {
-                const mockMatch = mockUsers.find(
-                    u => u.email?.toLowerCase() === String(assigneeRow.email).toLowerCase()
-                );
-                if (mockMatch?.id) targets.add(mockMatch.id);
-            }
-            if (assigneeRow?.full_name) {
-                const nameMatch = mockUsers.find(
-                    u => u.name?.toLowerCase() === String(assigneeRow.full_name).toLowerCase()
-                );
-                if (nameMatch?.id) targets.add(nameMatch.id);
-            }
 
-            const createdAt = new Date();
-            targets.forEach(targetId => {
-                mockNotifications.unshift({
-                    id: `notif-asset-assign-${mappedAssign.id}-${targetId}-${createdAt.getTime()}`,
-                    userId: targetId,
-                    type: NotificationType.ASSET_ASSIGNED,
-                    message: `You have been assigned an asset: ${assetName}. Please review and accept.`,
-                    link: `/my-profile?acceptAssetAssignmentId=${mappedAssign.id}`,
-                    isRead: false,
-                    createdAt,
-                    relatedEntityId: mappedAssign.id,
-                });
-            });
+            await Promise.all(
+                Array.from(targets).map(targetId =>
+                    createNotification({
+                        userId: targetId,
+                        type: NotificationType.ASSET_ASSIGNED as any,
+                        title: 'Asset Assigned',
+                        message: `You have been assigned an asset: ${assetName}. Please review and accept.`,
+                        link: `/my-profile?acceptAssetAssignmentId=${mappedAssign.id}`,
+                    }).catch(console.error)
+                )
+            );
         };
 
         persist()
@@ -392,38 +391,24 @@ const AssetManagement: React.FC = () => {
 
                 const { data: assigneeRow } = await supabase
                     .from('hris_users')
-                    .select('id, email, auth_user_id, full_name')
+                    .select('id, auth_user_id')
                     .eq('id', employeeIdToAssign)
                     .maybeSingle();
                 const targets = new Set<string>();
                 if (employeeIdToAssign) targets.add(employeeIdToAssign);
                 if (assigneeRow?.auth_user_id) targets.add(assigneeRow.auth_user_id);
-                if (assigneeRow?.email) {
-                    const mockMatch = mockUsers.find(
-                        u => u.email?.toLowerCase() === String(assigneeRow.email).toLowerCase()
-                    );
-                    if (mockMatch?.id) targets.add(mockMatch.id);
-                }
-                if (assigneeRow?.full_name) {
-                    const nameMatch = mockUsers.find(
-                        u => u.name?.toLowerCase() === String(assigneeRow.full_name).toLowerCase()
-                    );
-                    if (nameMatch?.id) targets.add(nameMatch.id);
-                }
 
-                const createdAt = new Date();
-                targets.forEach(targetId => {
-                    mockNotifications.unshift({
-                        id: `notif-asset-assign-${mappedAssign.id}-${targetId}-${createdAt.getTime()}`,
-                        userId: targetId,
-                        type: NotificationType.ASSET_ASSIGNED,
-                        message: `You have been assigned a new asset: ${mappedAsset.name}. Please review and accept.`,
-                        link: `/my-profile?acceptAssetAssignmentId=${mappedAssign.id}`,
-                        isRead: false,
-                        createdAt,
-                        relatedEntityId: mappedAssign.id,
-                    });
-                });
+                await Promise.all(
+                    Array.from(targets).map(targetId =>
+                        createNotification({
+                            userId: targetId,
+                            type: NotificationType.ASSET_ASSIGNED as any,
+                            title: 'Asset Assigned',
+                            message: `You have been assigned a new asset: ${mappedAsset.name}. Please review and accept.`,
+                            link: `/my-profile?acceptAssetAssignmentId=${mappedAssign.id}`,
+                        }).catch(console.error)
+                    )
+                );
             }
 
             setAssets(prev => {

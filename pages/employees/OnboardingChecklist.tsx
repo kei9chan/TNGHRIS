@@ -1,11 +1,9 @@
-import { mockUsers, mockNotifications, mockOnboardingTemplates, mockOnboardingChecklists, mockResignations } from '../../services/mockDataCompat';
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-import { OnboardingChecklistTemplate, Permission, Role, OnboardingChecklist, OnboardingTask, OnboardingTaskStatus, Resignation, OnboardingTaskType, NotificationType } from '../../types';
+import { OnboardingChecklistTemplate, Permission, Role, OnboardingChecklist, OnboardingTask, OnboardingTaskStatus, Resignation, ResignationStatus, OnboardingTaskType, NotificationType } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
 import OnboardingTemplateModal from '../../components/employees/OnboardingTemplateModal';
 import { useAuth } from '../../hooks/useAuth';
@@ -53,13 +51,13 @@ const OnboardingChecklistPage: React.FC = () => {
     }
   }, []);
 
-  const [templates, setTemplates] = useState<OnboardingChecklistTemplate[]>(mockOnboardingTemplates);
+  const [templates, setTemplates] = useState<OnboardingChecklistTemplate[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [templateToEdit, setTemplateToEdit] = useState<OnboardingChecklistTemplate | null>(null);
   const [checklists, setChecklists] = useState<OnboardingChecklist[]>([]);
   const [employees, setEmployees] = useState<{ id: string; name: string; role: Role; managerId?: string }[]>([]);
-  const [resignations, setResignations] = useState<Resignation[]>(mockResignations);
+  const [resignations, setResignations] = useState<Resignation[]>([]);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [isResignationEmailModalOpen, setIsResignationEmailModalOpen] = useState(false);
 
@@ -70,10 +68,12 @@ const OnboardingChecklistPage: React.FC = () => {
           { data: templateRows, error: templateError },
           { data: employeeRows, error: employeeError },
           { data: checklistRows, error: checklistError },
+          { data: resignationRows, error: resignationError },
         ] = await Promise.all([
           supabase.from('onboarding_checklist_templates').select('id, name, target_role, template_type, tasks'),
           supabase.from('hris_users').select('id, full_name, role, status, business_unit'),
           supabase.from('onboarding_checklists').select('id, employee_id, template_id, status, created_at, start_date, tasks'),
+          supabase.from('resignations').select('*'),
         ]);
         if (templateError) throw templateError;
         if (employeeError) throw employeeError;
@@ -100,6 +100,26 @@ const OnboardingChecklistPage: React.FC = () => {
             managerId: undefined,
           }));
           setEmployees(mappedEmployees);
+
+          // Map resignations now that we have employees
+          const mappedResignations = resignationRows?.map((r: any) => {
+            const emp = mappedEmployees.find(e => e.id === r.employee_id);
+            return {
+              id: r.id,
+              employeeId: r.employee_id,
+              employeeName: emp ? emp.name : 'Unknown Employee',
+              submissionDate: r.submission_date ? new Date(r.submission_date) : new Date(),
+              lastWorkingDay: r.last_working_day ? new Date(r.last_working_day) : new Date(),
+              reason: r.reason,
+              status: r.status as ResignationStatus,
+              attachmentUrl: r.attachment_url,
+              offboardingChecklistId: r.offboarding_checklist_id,
+              rejectionReason: r.rejection_reason,
+            };
+          });
+          if (mappedResignations) {
+            setResignations(mappedResignations);
+          }
         }
 
         const normalizeStoredTasks = (rawTasks: any[]): OnboardingTask[] =>
@@ -185,14 +205,10 @@ const OnboardingChecklistPage: React.FC = () => {
                 ownerUserId = employee.managerId;
               }
             } else {
-              const owner =
-                employees.find(u => u.role === taskTemplate.ownerRole) ||
-                mockUsers.find(u => u.role === taskTemplate.ownerRole);
+              const owner = employees.find(u => u.role === taskTemplate.ownerRole);
               if (owner) ownerUserId = owner.id;
             }
-            const ownerUser =
-              employees.find(u => u.id === ownerUserId) ||
-              mockUsers.find(u => u.id === ownerUserId);
+            const ownerUser = employees.find(u => u.id === ownerUserId);
             const dueDate = new Date(startDate);
             dueDate.setDate(dueDate.getDate() + (taskTemplate.dueDays || 0));
 
@@ -282,9 +298,7 @@ const OnboardingChecklistPage: React.FC = () => {
     loadSupabaseData();
   }, []);
 
-  const forceResignationUpdate = () => {
-    setResignations([...mockResignations]);
-  }
+
 
   const filteredTemplates = useMemo(() => {
     return templates.filter(t => t.name.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -407,9 +421,9 @@ const OnboardingChecklistPage: React.FC = () => {
   const handleAssignOnboarding = async ({ employeeIds, templateId, startDate, notify }: { employeeIds: string[]; templateId: string; startDate: Date; notify: boolean }) => {
     if (!user) return;
 
-    let template = templates.find(t => t.id === templateId) || mockOnboardingTemplates.find(t => t.id === templateId);
+    let template = templates.find(t => t.id === templateId);
     if (!template) {
-      template = templates[0] || mockOnboardingTemplates[0];
+      template = templates[0];
       if (!template) {
         alert('Selected template not found.');
         return;
@@ -427,10 +441,10 @@ const OnboardingChecklistPage: React.FC = () => {
         } else if (taskTemplate.ownerRole === Role.Manager && (employees.find(e => e.id === employeeId) as any)?.managerId) {
           ownerUserId = (employees.find(e => e.id === employeeId) as any)?.managerId;
         } else {
-          const owner = employees.find(u => u.role === taskTemplate.ownerRole) || mockUsers.find(u => u.role === taskTemplate.ownerRole);
+          const owner = employees.find(u => u.role === taskTemplate.ownerRole);
           if (owner) ownerUserId = owner.id;
         }
-        const ownerUser = employees.find(u => u.id === ownerUserId) || mockUsers.find(u => u.id === ownerUserId);
+        const ownerUser = employees.find(u => u.id === ownerUserId);
         const ownerName = ownerUser ? ownerUser.name : 'System';
         const dueDate = new Date(startDate);
         dueDate.setDate(dueDate.getDate() + (taskTemplate.dueDays || 0));
@@ -457,9 +471,7 @@ const OnboardingChecklistPage: React.FC = () => {
     };
 
     employeeIds.forEach(employeeId => {
-      const employee =
-        employees.find(e => e.id === employeeId) ||
-        mockUsers.find(u => u.id === employeeId);
+      const employee = employees.find(e => e.id === employeeId);
       if (!employee) return;
 
       const checklistId = `ONBOARD-${employee.id}-${Date.now()}`;
@@ -553,38 +565,12 @@ const OnboardingChecklistPage: React.FC = () => {
             const displayName =
               row?.full_name ||
               employees.find(e => e.id === empId)?.name ||
-              mockUsers.find(u => u.id === empId)?.name ||
               'Employee';
             const targets = new Set<string>();
             if (empId) targets.add(empId);
             if (row?.auth_user_id) targets.add(row.auth_user_id);
-            if (row?.email) {
-              const mockMatch = mockUsers.find(
-                u => u.email?.toLowerCase() === String(row.email).toLowerCase()
-              );
-              if (mockMatch?.id) targets.add(mockMatch.id);
-            }
-            if (row?.full_name) {
-              const nameMatch = mockUsers.find(
-                u => u.name?.toLowerCase() === String(row.full_name).toLowerCase()
-              );
-              if (nameMatch?.id) targets.add(nameMatch.id);
-            }
 
             const templateLabel = template?.name || `${templateType} Checklist`;
-            targets.forEach(targetId => {
-              mockNotifications.unshift({
-                id: `notif-onboard-${insertedByEmployee.get(empId) || template.id}-${targetId}-${createdAt.getTime()}`,
-                userId: targetId,
-                type: notificationType,
-                title: `${templateLabel} Assigned`,
-                message: `${templateLabel} assigned to ${displayName}.`,
-                link: `/employees/onboarding/view/${insertedByEmployee.get(empId) || template.id}`,
-                isRead: false,
-                createdAt,
-                relatedEntityId: insertedByEmployee.get(empId) || template.id,
-              });
-            });
 
             if (empId) {
               notificationRows.push({
@@ -630,15 +616,9 @@ const OnboardingChecklistPage: React.FC = () => {
     }
   };
 
-  // Keep resignation mock in sync for now (offboarding module still mock-driven)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (mockResignations.length !== resignations.length) {
-        setResignations([...mockResignations]);
-      }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [resignations.length]);
+  const forceResignationUpdate = () => {
+    // Dummy function for now
+  };
 
   const handleUpdateTaskStatus = (taskId: string, status: OnboardingTaskStatus) => {
     const newChecklists = checklists.map(list => ({
@@ -646,8 +626,6 @@ const OnboardingChecklistPage: React.FC = () => {
         tasks: list.tasks.map(task => task.id === taskId ? { ...task, status, completedAt: new Date() } : task)
     }));
     setChecklists(newChecklists);
-    mockOnboardingChecklists.length = 0;
-    mockOnboardingChecklists.push(...newChecklists);
   };
 
   if (!user) return <div>Loading...</div>;
@@ -810,7 +788,7 @@ const OnboardingChecklistPage: React.FC = () => {
        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">My Lifecycle Checklists</h1>
        {myChecklists.length > 0 ? (
            myChecklists.map(checklist => {
-               const template = mockOnboardingTemplates.find(t => t.id === checklist.templateId);
+               const template = templates.find(t => t.id === checklist.templateId);
                const title = template?.name || 'Checklist';
                return (
                     <div key={checklist.id} className="mb-6">

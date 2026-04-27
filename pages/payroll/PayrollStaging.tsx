@@ -1,10 +1,11 @@
-import { mockUsers, mockBusinessUnits, mockAttendanceRecords, mockPayslips } from '../../services/mockDataCompat';
-
-import React, { useState, useMemo, useEffect } from 'react';
-import { PayrollStagingRecord, Role, PayslipRecord, Permission, RateType } from '../../types';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { PayrollStagingRecord, Role, PayslipRecord, Permission, RateType, User, BusinessUnit } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { logActivity } from '../../services/auditService';
+import { fetchUsers, fetchBusinessUnits } from '../../services/userService';
+import { fetchAttendanceRecords } from '../../services/timekeepingService';
+import { savePayslip } from '../../services/payrollService';
 import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
@@ -34,77 +35,108 @@ const PayrollStaging: React.FC = () => {
     const [editModes, setEditModes] = useState<Record<string, boolean>>({});
     const [editData, setEditData] = useState<Partial<PayrollStagingRecord>>({});
     const [payslipsGenerated, setPayslipsGenerated] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    // Live data state
+    const [allUsers, setAllUsers] = useState<User[]>([]);
+    const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
 
     const canManage = can('PayrollStaging', Permission.Manage);
     const canEdit = can('PayrollStaging', Permission.Edit);
-    
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
 
-    const generatePayrollData = () => {
-        const start = new Date(startDate);
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        
-        const accessibleBuNames = new Set(accessibleBus.map(b => b.name));
+    const accessibleBus = useMemo(
+        () => getAccessibleBusinessUnits(businessUnits),
+        [getAccessibleBusinessUnits, businessUnits]
+    );
 
-        const relevantUsers = mockUsers.filter(u => 
-            u.role === Role.Employee && 
-            accessibleBuNames.has(u.businessUnit)
-        );
+    // Load users and BUs on mount
+    useEffect(() => {
+        const loadMasterData = async () => {
+            try {
+                setIsLoading(true);
+                setError(null);
+                const [users, bus] = await Promise.all([fetchUsers(), fetchBusinessUnits()]);
+                setAllUsers(users);
+                setBusinessUnits(bus);
+            } catch (err: any) {
+                setError(err.message || 'Failed to load data.');
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        loadMasterData();
+    }, []);
 
-        const data: ExtendedPayrollStagingRecord[] = relevantUsers.map(employee => {
-            const attendance = mockAttendanceRecords.filter(r => 
-                r.employeeId === employee.id && 
-                new Date(r.date) >= start && 
-                new Date(r.date) <= end
+    const generatePayrollData = useCallback(async () => {
+        if (allUsers.length === 0) return;
+        try {
+            setError(null);
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            end.setHours(23, 59, 59, 999);
+
+            const accessibleBuNames = new Set(accessibleBus.map(b => b.name));
+            const relevantUsers = allUsers.filter(u =>
+                u.role === Role.Employee &&
+                accessibleBuNames.has(u.businessUnit)
             );
 
-            // PHASE 4A: Base Salary Engine (Regular Hours Only)
-            // 1. Calculate Regular Hours from Attendance
-            const regularHours = attendance.reduce((sum, r) => sum + r.totalWorkMinutes, 0) / 60;
+            const attendanceRecords = await fetchAttendanceRecords();
 
-            // 2. Derive Hourly Rate based on Employee Rate Type
-            let hourlyRate = 0;
-            if (employee.rateType === RateType.Daily) {
-                // Daily Rate / 8 hours
-                hourlyRate = (employee.rateAmount || 0) / 8;
-            } else {
-                // Monthly Rate / 176 hours (Standard 22 days * 8 hours)
-                // Note: You can adjust this divisor based on company policy (e.g., 261 days / 12 months / 8 hours)
-                hourlyRate = (employee.rateAmount || 0) / 176;
-            }
+            const data: ExtendedPayrollStagingRecord[] = relevantUsers.map(employee => {
+                const attendance = attendanceRecords.filter(r =>
+                    r.employeeId === employee.id &&
+                    new Date(r.date) >= start &&
+                    new Date(r.date) <= end
+                );
 
-            // 3. Compute Base Pay
-            // Formula: regular_hours * hourly_rate
-            const grossPay = regularHours * hourlyRate;
+                // PHASE 4A: Base Salary Engine (Regular Hours Only)
+                const regularHours = attendance.reduce((sum, r) => sum + ((r as any).totalWorkMinutes || ((r as any).hoursWorked || 0) * 60), 0) / 60;
 
-            // Disabled for Phase 4A (Base Salary Only)
-            const overtimeHours = 0; 
-            const allowances = 0;
-            const deductions = 0;
+                // Derive Hourly Rate based on Employee Rate Type
+                let hourlyRate = 0;
+                if (employee.rateType === RateType.Daily) {
+                    hourlyRate = (employee.rateAmount || 0) / 8;
+                } else {
+                    // Monthly Rate / 176 hours (Standard 22 days * 8 hours)
+                    hourlyRate = (employee.rateAmount || 0) / 176;
+                }
 
-            const netPay = grossPay - deductions;
+                const grossPay = regularHours * hourlyRate;
+                const overtimeHours = 0;
+                const allowances = 0;
+                const deductions = 0;
+                const netPay = grossPay - deductions;
 
-            return {
-                id: `${employee.id}-${startDate}`,
-                employeeId: employee.id,
-                employeeName: employee.name,
-                payPeriodStart: start,
-                payPeriodEnd: end,
-                regularHours,
-                overtimeHours,
-                allowances,
-                deductions,
-                grossPay,
-                netPay,
-                derivedHourlyRate: hourlyRate
-            };
-        });
-        setPayrollData(data);
-        setPayslipsGenerated(false); // Reset generation status when data changes
-    };
-    
-    useEffect(generatePayrollData, [startDate, endDate, accessibleBus]);
+                return {
+                    id: `${employee.id}-${startDate}`,
+                    employeeId: employee.id,
+                    employeeName: employee.name,
+                    payPeriodStart: start,
+                    payPeriodEnd: end,
+                    regularHours,
+                    overtimeHours,
+                    allowances,
+                    deductions,
+                    grossPay,
+                    netPay,
+                    derivedHourlyRate: hourlyRate
+                };
+            });
+            setPayrollData(data);
+            setPayslipsGenerated(false);
+        } catch (err: any) {
+            setError(err.message || 'Failed to generate payroll data.');
+        }
+    }, [startDate, endDate, accessibleBus, allUsers]);
+
+    useEffect(() => {
+        if (!isLoading && allUsers.length >= 0) {
+            generatePayrollData();
+        }
+    }, [generatePayrollData, isLoading]);
 
     const handleEdit = (record: PayrollStagingRecord) => {
         setEditModes(prev => ({ ...prev, [record.id]: true }));
@@ -121,9 +153,8 @@ const PayrollStaging: React.FC = () => {
             if (rec.id === recordId) {
                 const allowances = editData.allowances ?? rec.allowances;
                 const deductions = editData.deductions ?? rec.deductions;
-                // Re-calculate gross with edited allowances (though Phase 4A focuses on base)
                 const basePay = rec.regularHours * rec.derivedHourlyRate;
-                const grossPay = basePay + allowances; 
+                const grossPay = basePay + allowances;
                 const netPay = grossPay - deductions;
                 return { ...rec, allowances, deductions, grossPay, netPay };
             }
@@ -137,46 +168,51 @@ const PayrollStaging: React.FC = () => {
         setEditData(prev => ({ ...prev, [field]: numValue }));
     };
 
-    const handleGeneratePayslips = () => {
-        const newPayslips: PayslipRecord[] = payrollData.map(rec => ({
-            id: `PS-${rec.id}`,
-            employeeId: rec.employeeId,
-            employeeName: rec.employeeName,
-            payPeriodStart: rec.payPeriodStart,
-            payPeriodEnd: rec.payPeriodEnd,
-            totalEarnings: rec.grossPay,
-            totalDeductions: rec.deductions,
-            netPay: rec.netPay,
-            status: 'draft',
-            lastGenerated: new Date(),
-            earningsBreakdown: {
-                regularPay: rec.regularHours * rec.derivedHourlyRate,
-                otPay: 0, // Phase 4A: No OT
-                allowances: rec.allowances,
-            },
-            deductionsBreakdown: {
-                sss: 0,
-                pagibig: 0,
-                philhealth: 0,
-                tax: 0,
+    const handleGeneratePayslips = async () => {
+        setIsSaving(true);
+        setError(null);
+        try {
+            let generatedCount = 0;
+            for (const rec of payrollData) {
+                await savePayslip({
+                    employeeId: rec.employeeId,
+                    employeeName: rec.employeeName,
+                    periodStart: rec.payPeriodStart,
+                    periodEnd: rec.payPeriodEnd,
+                    basicPay: rec.regularHours * rec.derivedHourlyRate,
+                    overtimePay: 0,
+                    holidayPay: 0,
+                    nightDiff: 0,
+                    allowances: rec.allowances,
+                    deMinimis: 0,
+                    grossPay: rec.grossPay,
+                    sss: 0,
+                    philhealth: 0,
+                    pagibig: 0,
+                    tax: 0,
+                    otherDeductions: rec.deductions,
+                    totalDeductions: rec.deductions,
+                    netPay: rec.netPay,
+                    status: 'draft',
+                });
+                generatedCount++;
             }
-        }));
 
-        const existingIds = new Set(mockPayslips.map(p => p.id));
-        const uniqueNewPayslips = newPayslips.filter(p => !existingIds.has(p.id));
+            await logActivity(
+                user,
+                'GENERATE',
+                'Payslips',
+                `Batch-${startDate}-to-${endDate}`,
+                `Generated ${generatedCount} new payslips for the period.`
+            );
 
-        mockPayslips.push(...uniqueNewPayslips);
-        
-        logActivity(
-            user,
-            'GENERATE',
-            'Payslips',
-            `Batch-${startDate}-to-${endDate}`,
-            `Generated ${uniqueNewPayslips.length} new payslips for the period.`
-        );
-
-        alert(`${uniqueNewPayslips.length} new payslip record(s) generated.`);
-        setPayslipsGenerated(true);
+            alert(`${generatedCount} payslip record(s) generated.`);
+            setPayslipsGenerated(true);
+        } catch (err: any) {
+            setError(err.message || 'Failed to generate payslips.');
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     return (
@@ -190,11 +226,17 @@ const PayrollStaging: React.FC = () => {
                 </div>
             </div>
 
+            {error && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 px-4 py-3 rounded-md">
+                    {error}
+                </div>
+            )}
+
             <Card>
                  <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-5 gap-4 p-4 items-end">
                     <Input label="Pay Period Start" type="date" name="startDate" value={startDate} onChange={e => setStartDate(e.target.value)} />
                     <Input label="Pay Period End" type="date" name="endDate" value={endDate} onChange={e => setEndDate(e.target.value)} />
-                    <Button onClick={generatePayrollData} className="w-full">Recalculate</Button>
+                    <Button onClick={generatePayrollData} className="w-full" disabled={isLoading}>Recalculate</Button>
                      {canManage && (
                         <div className="flex items-center justify-center">
                             <label htmlFor="lock-toggle" className="flex items-center cursor-pointer">
@@ -210,8 +252,8 @@ const PayrollStaging: React.FC = () => {
                         </div>
                     )}
                     {isLocked && canManage && (
-                        <Button onClick={handleGeneratePayslips} disabled={payslipsGenerated} className="w-full">
-                            {payslipsGenerated ? 'Payslips Generated' : 'Generate Payslips'}
+                        <Button onClick={handleGeneratePayslips} disabled={payslipsGenerated || isSaving} className="w-full">
+                            {isSaving ? 'Saving...' : payslipsGenerated ? 'Payslips Generated' : 'Generate Payslips'}
                         </Button>
                     )}
                 </div>
@@ -220,6 +262,9 @@ const PayrollStaging: React.FC = () => {
              <Card>
                 <div className="overflow-x-auto relative">
                      {isLocked && <div className="absolute inset-0 bg-gray-400/30 dark:bg-gray-800/30 z-10 flex items-center justify-center"><LockClosedIcon/> <span className="font-semibold text-lg">Period Locked</span></div>}
+                    {isLoading ? (
+                        <div className="text-center py-10 text-gray-500 dark:text-gray-400">Loading payroll data...</div>
+                    ) : (
                     <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                         <thead className="bg-gray-50 dark:bg-gray-700">
                            <tr>
@@ -237,9 +282,9 @@ const PayrollStaging: React.FC = () => {
                            {payrollData.map(rec => (
                                <tr key={rec.id} className={editModes[rec.id] ? 'bg-indigo-50 dark:bg-indigo-900/10' : ''}>
                                    <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{rec.employeeName}</td>
-                                   <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">${rec.derivedHourlyRate.toFixed(2)}</td>
+                                   <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">₱{rec.derivedHourlyRate.toFixed(2)}</td>
                                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{rec.regularHours.toFixed(2)}</td>
-                                   <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">${(rec.regularHours * rec.derivedHourlyRate).toFixed(2)}</td>
+                                   <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">₱{(rec.regularHours * rec.derivedHourlyRate).toFixed(2)}</td>
                                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                         {editModes[rec.id] ? (
                                             <div className="flex gap-2">
@@ -254,8 +299,8 @@ const PayrollStaging: React.FC = () => {
                                             </span>
                                         )}
                                    </td>
-                                   <td className="px-4 py-4 whitespace-nowrap text-sm font-semibold text-gray-700 dark:text-gray-300">${rec.grossPay.toFixed(2)}</td>
-                                   <td className="px-4 py-4 whitespace-nowrap text-sm font-bold text-green-600 dark:text-green-400">${rec.netPay.toFixed(2)}</td>
+                                   <td className="px-4 py-4 whitespace-nowrap text-sm font-semibold text-gray-700 dark:text-gray-300">₱{rec.grossPay.toFixed(2)}</td>
+                                   <td className="px-4 py-4 whitespace-nowrap text-sm font-bold text-green-600 dark:text-green-400">₱{rec.netPay.toFixed(2)}</td>
                                    {canEdit && (
                                        <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
                                            {editModes[rec.id] ? (
@@ -270,15 +315,16 @@ const PayrollStaging: React.FC = () => {
                                    )}
                                </tr>
                            ))}
-                           {payrollData.length === 0 && (
+                           {payrollData.length === 0 && !isLoading && (
                                 <tr>
                                     <td colSpan={canEdit ? 8 : 7} className="text-center py-10 text-gray-500 dark:text-gray-400">
-                                        Generate data for the selected pay period.
+                                        No employee records found for the selected pay period.
                                     </td>
                                 </tr>
                            )}
                         </tbody>
                     </table>
+                    )}
                 </div>
             </Card>
         </div>

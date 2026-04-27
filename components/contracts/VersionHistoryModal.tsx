@@ -1,8 +1,8 @@
-import { mockUsers } from '../../services/mockDataCompat';
 import React from 'react';
 import { ContractTemplate } from '../../types';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
+import { useUsers } from '../../hooks/useHRData';
 
 interface VersionHistoryModalProps {
     isOpen: boolean;
@@ -12,8 +12,8 @@ interface VersionHistoryModalProps {
 }
 
 const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({ isOpen, onClose, template, onRestore }) => {
-    
-    const getUserName = (id: string) => mockUsers.find(u => u.id === id)?.name || 'N/A';
+    const { users } = useUsers();
+    const getUserName = (id: string) => users.find(u => u.id === id)?.name || 'N/A';
 
     return (
         <Modal

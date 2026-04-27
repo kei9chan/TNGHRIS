@@ -1,12 +1,12 @@
-import { mockUsers, mockBusinessUnits, mockAttendanceExceptions } from '../../../services/mockDataCompat';
-
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ExceptionType, Role, Permission } from '../../../types';
+import { ExceptionType, Role, Permission, User, BusinessUnit, AttendanceExceptionRecord } from '../../../types';
 import Card from '../../../components/ui/Card';
 import Input from '../../../components/ui/Input';
 import Button from '../../../components/ui/Button';
 import { usePermissions } from '../../../hooks/usePermissions';
+import { fetchUsers, fetchBusinessUnits } from '../../../services/userService';
+import { fetchAttendanceExceptions } from '../../../services/timekeepingService';
 
 const ArrowLeftIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>;
 
@@ -30,6 +30,12 @@ const ExceptionsReport: React.FC = () => {
     const today = new Date();
     const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
 
+    const [users, setUsers] = useState<User[]>([]);
+    const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
+    const [exceptions, setExceptions] = useState<AttendanceExceptionRecord[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
     const [filters, setFilters] = useState({
         startDate: firstDayOfMonth,
         endDate: today.toISOString().split('T')[0],
@@ -38,7 +44,28 @@ const ExceptionsReport: React.FC = () => {
         status: '',
     });
 
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+    useEffect(() => {
+        const load = async () => {
+            try {
+                setIsLoading(true);
+                const [u, bu, ex] = await Promise.all([
+                    fetchUsers(),
+                    fetchBusinessUnits(),
+                    fetchAttendanceExceptions(),
+                ]);
+                setUsers(u);
+                setBusinessUnits(bu);
+                setExceptions(ex);
+            } catch (err: any) {
+                setError(err.message || 'Failed to load data');
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        load();
+    }, []);
+
+    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(businessUnits), [getAccessibleBusinessUnits, businessUnits]);
 
     const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         setFilters(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -47,7 +74,7 @@ const ExceptionsReport: React.FC = () => {
     const filteredExceptions = useMemo(() => {
         const accessibleBuNames = new Set(accessibleBus.map(b => b.name));
 
-        return mockAttendanceExceptions.filter(ex => {
+        return exceptions.filter(ex => {
             // Date Filter
             const exDate = new Date(ex.date);
             if (filters.startDate && exDate < new Date(filters.startDate)) return false;
@@ -58,7 +85,7 @@ const ExceptionsReport: React.FC = () => {
             }
 
             // Access Scope Filter
-            const employee = mockUsers.find(u => u.id === ex.employeeId);
+            const employee = users.find(u => u.id === ex.employeeId);
             if (!employee || !accessibleBuNames.has(employee.businessUnit)) return false;
 
             // Specific Filters
@@ -67,7 +94,7 @@ const ExceptionsReport: React.FC = () => {
             if (filters.status && ex.status !== filters.status) return false;
             return true;
         }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [filters, accessibleBus]);
+    }, [filters, accessibleBus, exceptions, users]);
     
     const exportToCSV = () => {
         const headers = ['ID', 'Employee Name', 'Date', 'Type', 'Details', 'Status', 'Source Event ID'];
@@ -97,6 +124,13 @@ const ExceptionsReport: React.FC = () => {
         document.body.removeChild(a);
     };
 
+    if (isLoading) {
+        return <div className="flex items-center justify-center py-20"><div className="text-gray-500 dark:text-gray-400">Loading exceptions data...</div></div>;
+    }
+
+    if (error) {
+        return <div className="text-center py-12 text-red-500">{error}</div>;
+    }
 
     return (
         <div className="space-y-6">
@@ -123,7 +157,7 @@ const ExceptionsReport: React.FC = () => {
                         <label htmlFor="employeeId" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Employee</label>
                         <select name="employeeId" id="employeeId" value={filters.employeeId} onChange={handleFilterChange} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
                             <option value="">All</option>
-                            {mockUsers.filter(u => {
+                            {users.filter(u => {
                                 const accessibleBuNames = accessibleBus.map(b => b.name);
                                 return u.role === Role.Employee && accessibleBuNames.includes(u.businessUnit);
                             }).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}

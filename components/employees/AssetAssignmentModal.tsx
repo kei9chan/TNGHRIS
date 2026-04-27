@@ -1,4 +1,4 @@
-import { mockUsers } from '../../services/mockDataCompat';
+
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Asset, User, AssetStatus } from '../../types';
@@ -40,7 +40,7 @@ const AssetAssignmentModal: React.FC<AssetAssignmentModalProps> = ({ isOpen, onC
 
     // Filter active employees
     const activeUsers = useMemo(() => {
-        return (employees.length ? employees : mockUsers).filter(u => u.status === 'Active');
+        return employees.filter(u => u.status === 'Active');
     }, [employees]);
 
     const filteredUsers = useMemo(() => {
@@ -89,7 +89,7 @@ const AssetAssignmentModal: React.FC<AssetAssignmentModalProps> = ({ isOpen, onC
                     setEmployees(mapped);
                 } catch (err) {
                     console.error('Failed to load employees for asset assignment', err);
-                    setEmployees(mockUsers);
+                    // No mock fallback — employees will remain empty on error
                 }
             };
             loadEmployees();

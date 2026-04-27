@@ -1,4 +1,3 @@
-import { mockUsers, mockNotifications, mockAssets, mockOnboardingChecklists } from '../../services/mockDataCompat';
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { OnboardingChecklist, OnboardingChecklistTemplate, OnboardingTask, OnboardingTaskStatus, OnboardingTaskType, Role, NotificationType } from '../../types';
@@ -91,16 +90,7 @@ const OnboardingTaskPage: React.FC = () => {
             let ownerUserId = '';
             if (taskTemplate.ownerUserId) {
                 ownerUserId = taskTemplate.ownerUserId;
-            } else if (taskTemplate.ownerRole === Role.Manager) {
-                const employee = mockUsers.find(e => e.id === employeeId);
-                if (employee?.managerId) {
-                    ownerUserId = employee.managerId;
-                }
-            } else {
-                const owner = mockUsers.find(u => u.role === taskTemplate.ownerRole);
-                if (owner) ownerUserId = owner.id;
             }
-            const ownerUser = mockUsers.find(u => u.id === ownerUserId);
             const dueDate = new Date(startDate);
             dueDate.setDate(dueDate.getDate() + (taskTemplate.dueDays || 0));
 
@@ -111,7 +101,7 @@ const OnboardingTaskPage: React.FC = () => {
                 name: taskTemplate.name,
                 description: taskTemplate.description,
                 ownerUserId,
-                ownerName: ownerUser ? ownerUser.name : 'System',
+                ownerName: 'System',
                 videoUrl: taskTemplate.videoUrl,
                 dueDate,
                 status: OnboardingTaskStatus.Pending,
@@ -213,21 +203,6 @@ const OnboardingTaskPage: React.FC = () => {
                 const templateMap = new Map(mappedTemplates.map(t => [t.id, t]));
 
                 let resolvedChecklistRows = checklistRows || [];
-                if (checklistIdParam && resolvedChecklistRows.length === 0) {
-                    const fallbackChecklist = mockOnboardingChecklists.find(c => c.id === checklistIdParam);
-                    if (fallbackChecklist) {
-                        resolvedChecklistRows = [
-                            {
-                                id: fallbackChecklist.id,
-                                employee_id: fallbackChecklist.employeeId,
-                                template_id: fallbackChecklist.templateId,
-                                status: fallbackChecklist.status,
-                                created_at: fallbackChecklist.createdAt?.toISOString() || null,
-                                start_date: undefined,
-                            },
-                        ] as any;
-                    }
-                }
 
                 const mappedChecklists: OnboardingChecklist[] =
                     (resolvedChecklistRows || []).map((c: any) => {
@@ -266,7 +241,7 @@ const OnboardingTaskPage: React.FC = () => {
                 }
             } catch (err) {
                 console.error('Failed to load onboarding tasks', err);
-                setChecklists([...mockOnboardingChecklists]);
+                setChecklists([]);
             } finally {
                 if (active) setIsLoadingTask(false);
             }
@@ -358,7 +333,7 @@ const OnboardingTaskPage: React.FC = () => {
         user.role === Role.HRManager ||
         user.role === Role.HRStaff;
     const canInteract = (isOwner || isEmployee || isReviewer) && task.status !== OnboardingTaskStatus.Completed;
-    const asset = (task.taskType === OnboardingTaskType.AssignAsset || task.taskType === OnboardingTaskType.ReturnAsset) && task.assetId ? mockAssets.find(a => a.id === task.assetId) : null;
+    const asset: any = null; // Removed mockAssets fallback
 
 
     const handleComplete = async () => {
@@ -421,11 +396,6 @@ const OnboardingTaskPage: React.FC = () => {
         });
 
         setChecklists(updatedChecklistsWithStatus);
-        const mockIndex = mockOnboardingChecklists.findIndex(c => c.id === checklist.id);
-        if (mockIndex > -1) {
-            mockOnboardingChecklists[mockIndex] =
-                updatedChecklistsWithStatus.find(c => c.id === checklist.id) || mockOnboardingChecklists[mockIndex];
-        }
 
         const updatedChecklist = updatedChecklistsWithStatus.find(c => c.id === checklist.id) || checklist;
 
@@ -511,18 +481,6 @@ const OnboardingTaskPage: React.FC = () => {
             }> = [];
 
             (hrRows || []).forEach((hr: any) => {
-                mockNotifications.unshift({
-                    id: `notif-onboard-approval-${updatedChecklist.id}-${hr.id}-${createdAt.getTime()}`,
-                    userId: hr.id,
-                    type: notificationType,
-                    title: approvalTitle,
-                    message: approvalMessage,
-                    link: `/employees/onboarding/view/${updatedChecklist.id}?approve=1`,
-                    isRead: false,
-                    createdAt,
-                    relatedEntityId: updatedChecklist.id,
-                });
-
                 notificationRows.push({
                     id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${hr.id}`,
                     user_id: hr.id,

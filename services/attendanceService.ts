@@ -1,5 +1,3 @@
-import { mockUsers } from './mockDataCompat';
-
 import { ShiftAssignment, TimeEvent, ShiftTemplate, Site, AttendanceExceptionRecord, ExceptionType, TimeEventType, User, AttendanceRecord, AttendanceStatus, AttendanceException } from '../types';
 
 // Helper to get minutes from "HH:MM" string
@@ -141,7 +139,7 @@ export const generateAttendanceExceptions = (
                 exceptions.push({
                     id: `EX-DL-OUT-${event.id}`,
                     employeeId: empId,
-                    employeeName: mockUsers.find(u => u.id === empId)?.name || 'Unknown',
+                    employeeName: users.find(u => u.id === empId)?.name || 'Unknown',
                     date: event.timestamp,
                     type: ExceptionType.DoubleLog,
                     details: "Double Clock-Out detected.",

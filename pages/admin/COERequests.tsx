@@ -1,4 +1,4 @@
-import { mockUsers, mockNotifications, mockCOERequests, mockCOETemplates } from '../../services/mockDataCompat';
+// Phase A complete: mockDataCompat removed from COERequests
 
 
 
@@ -8,7 +8,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
 import { COERequest, COERequestStatus, COETemplate, NotificationType, Permission, Role, User } from '../../types';
-import { approveCoeRequest, fetchActiveCoeTemplates, fetchCoeRequestById, fetchCoeRequests, rejectCoeRequest } from '../../services/coeService';
+import { createCoeRequest, approveCoeRequest, fetchActiveCoeTemplates, fetchCoeRequestById, fetchCoeRequests, rejectCoeRequest } from '../../services/coeService';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { useAuth } from '../../hooks/useAuth';
@@ -125,11 +125,6 @@ const COERequests: React.FC = () => {
             return user;
         }
 
-        const local = mockUsers.find(u => u.id === employeeId);
-        if (local) {
-            return local;
-        }
-
         const { data, error } = await supabase
             .from('hris_users')
             .select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position, date_hired')
@@ -242,25 +237,23 @@ const COERequests: React.FC = () => {
 
     const getBuName = (id: string) => businessUnits.find(b => b.id === id)?.name || 'Unknown BU';
 
-    const handleSaveCOERequest = (request: Partial<COERequest>) => {
-        const newRequest: COERequest = {
-            id: `COE-${Date.now()}`,
-            ...request
-        } as COERequest;
-        mockCOERequests.unshift(newRequest);
-        if (user) {
-            logActivity(user, 'CREATE', 'COERequest', newRequest.id, `Requested COE for ${newRequest.purpose}`);
+    const handleSaveCOERequest = async (request: Partial<COERequest>) => {
+        if (!user) return;
+        try {
+            const newReq = await createCoeRequest(request, user);
+            setRequests(prev => [newReq, ...prev]);
+            logActivity(user, 'CREATE', 'COERequest', newReq.id, `Requested COE for ${newReq.purpose}`);
+            setIsRequestModalOpen(false);
+            alert("Certificate of Employment request submitted.");
+        } catch (err: any) {
+            alert(err.message || 'Failed to submit COE request.');
         }
-        setIsRequestModalOpen(false);
-        alert("Certificate of Employment request submitted.");
-        setRequests([...mockCOERequests]);
     };
 
     const handleApprove = async (request: COERequest) => {
         if (!user) return;
 
-        const template = coeTemplates.find(t => t.businessUnitId === request.businessUnitId && t.isActive)
-            || mockCOETemplates.find(t => t.businessUnitId === request.businessUnitId && t.isActive);
+        const template = coeTemplates.find(t => t.businessUnitId === request.businessUnitId && t.isActive);
         if (!template) {
             alert(`No active COE Template found for ${getBuName(request.businessUnitId)}. Please create one in Employee > COE > Templates.`);
             return;
@@ -272,23 +265,23 @@ const COERequests: React.FC = () => {
             setRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
 
             // Notify
-            mockNotifications.unshift({
-                id: `notif-coe-app-${Date.now()}`,
-                userId: request.employeeId,
+            await supabase.from('notifications').insert({
+                user_id: request.employeeId,
                 type: NotificationType.COE_UPDATE,
                 title: 'COE Request Approved',
                 message: `Your request for a Certificate of Employment has been approved.`,
                 link: `/employees/coe/requests?requestId=${request.id}`,
-                isRead: false,
-                createdAt: new Date(),
-                relatedEntityId: request.id
+                is_read: false,
+                related_entity_id: request.id
             });
 
             logActivity(user, 'APPROVE', 'COERequest', request.id, `Approved COE for ${request.employeeName}`);
             
             // Auto-open print view
-            const employee = mockUsers.find(u => u.id === request.employeeId) || user;
-            setPrintData({ template, request: updated, employee });
+            const employee = await resolveEmployee(request.employeeId);
+            if (employee) {
+                setPrintData({ template, request: updated, employee });
+            }
         } catch (error: any) {
             alert(error?.message || 'Failed to approve COE request.');
         }
@@ -306,16 +299,14 @@ const COERequests: React.FC = () => {
             const updated = await rejectCoeRequest(requestToReject.id, user.id, reason);
             setRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
             // Notify
-            mockNotifications.unshift({
-                id: `notif-coe-rej-${Date.now()}`,
-                userId: requestToReject.employeeId,
+            await supabase.from('notifications').insert({
+                user_id: requestToReject.employeeId,
                 type: NotificationType.COE_UPDATE,
                 title: 'COE Request Rejected',
                 message: `Your COE request was rejected: ${reason}`,
                 link: `/employees/coe/requests?requestId=${requestToReject.id}`,
-                isRead: false,
-                createdAt: new Date(),
-                relatedEntityId: requestToReject.id
+                is_read: false,
+                related_entity_id: requestToReject.id
             });
 
             logActivity(user, 'REJECT', 'COERequest', requestToReject.id, `Rejected COE. Reason: ${reason}`);

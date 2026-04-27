@@ -1,6 +1,6 @@
-import { mockUsers } from '../../services/mockDataCompat';
 import React from 'react';
 import { ChangeHistory } from '../../types';
+import { useUsers } from '../../hooks/useHRData';
 
 interface ChangeHistoryTableProps {
     history: ChangeHistory[];
@@ -16,9 +16,10 @@ const getStatusColor = (status: ChangeHistory['status']) => {
 };
 
 const ChangeHistoryTable: React.FC<ChangeHistoryTableProps> = ({ history }) => {
+    const { users } = useUsers();
 
     const getUserName = (userId: string) => {
-        return mockUsers.find(u => u.id === userId)?.name || 'Unknown User';
+        return users.find(u => u.id === userId)?.name || 'Unknown User';
     };
     
     return (

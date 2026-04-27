@@ -1,4 +1,3 @@
-import { mockPulseSurveys, mockSurveyResponses } from '../../services/mockDataCompat';
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
@@ -124,9 +123,8 @@ const TakePulseSurvey: React.FC = () => {
                     return;
                 }
 
-                const fallback = mockPulseSurveys.find(s => s.id === surveyId) || null;
                 if (active) {
-                    setSurvey(fallback);
+                    setSurvey(null);
                     setIsLoading(false);
                 }
             } catch (err) {
@@ -161,11 +159,9 @@ const TakePulseSurvey: React.FC = () => {
                     navigate('/dashboard');
                 }
             } catch (err) {
-                const fallback = mockSurveyResponses.find(r => r.surveyId === survey.id && r.respondentId === respondentId);
-                if (fallback) {
-                    alert('You have already submitted a response for this survey.');
-                    navigate('/dashboard');
-                }
+                if (!active) return;
+                // If Supabase query failed, allow the user to still submit (don't block on network error)
+                console.error('Could not verify prior submission:', err);
             }
         };
         checkResponse();
@@ -245,10 +241,8 @@ const TakePulseSurvey: React.FC = () => {
             })
             .catch((err) => {
                 console.error('Failed to submit pulse survey', err);
-                mockSurveyResponses.push(response);
                 setIsSubmitting(false);
-                alert('Thank you for your feedback!');
-                navigate('/dashboard');
+                alert('Submission failed. Please try again.');
             });
     };
 

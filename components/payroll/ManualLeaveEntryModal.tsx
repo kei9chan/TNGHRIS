@@ -1,4 +1,4 @@
-import { mockUsers, mockLeaveTypes } from '../../services/mockDataCompat';
+// Phase 2 Migration: mockUsers + mockLeaveTypes removed — fetched from Supabase
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { User, LeaveLedgerEntryType } from '../../types';
@@ -6,6 +6,8 @@ import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
+import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 interface ManualLeaveEntryModalProps {
     isOpen: boolean;
@@ -24,30 +26,46 @@ const SearchIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 
 
 const ManualLeaveEntryModal: React.FC<ManualLeaveEntryModalProps> = ({ isOpen, onClose, onSave }) => {
     const [employeeId, setEmployeeId] = useState('');
-    const [leaveTypeId, setLeaveTypeId] = useState(mockLeaveTypes[0]?.id || '');
+    const [leaveTypeId, setLeaveTypeId] = useState('');
     const [entryMode, setEntryMode] = useState<'usage' | 'accrual' | 'adjustment'>('usage');
     const [amount, setAmount] = useState('');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [notes, setNotes] = useState('');
+    const [allEmployees, setAllEmployees] = useState<User[]>([]);
+    const [leaveTypes, setLeaveTypes] = useState<{ id: string; name: string }[]>([]);
 
     // Search State
     const [searchTerm, setSearchTerm] = useState('');
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    const activeEmployees = useMemo(() => mockUsers.filter(u => u.status === 'Active').sort((a,b) => a.name.localeCompare(b.name)), []);
+    // Load employees + leave types from Supabase on mount
+    useEffect(() => {
+        const load = async () => {
+            const [{ data: users }, { data: lts }] = await Promise.all([
+                supabase.from('hris_users').select('id, full_name, department, status').eq('status', 'Active').order('full_name'),
+                supabase.from('leave_types').select('id, name').order('name'),
+            ]);
+            if (users) setAllEmployees(users.map((u: any) => ({ id: u.id, name: formatEmployeeName(u.full_name || 'Unknown'), department: u.department || '', status: u.status } as User)));
+            if (lts) {
+                setLeaveTypes(lts.map((lt: any) => ({ id: lt.id, name: lt.name })));
+                setLeaveTypeId(lts[0]?.id || '');
+            }
+        };
+        load();
+    }, []);
 
     const filteredEmployees = useMemo(() => {
-        if (!searchTerm) return activeEmployees;
-        return activeEmployees.filter(u => u.name.toLowerCase().includes(searchTerm.toLowerCase()));
-    }, [activeEmployees, searchTerm]);
+        if (!searchTerm) return allEmployees;
+        return allEmployees.filter(u => u.name.toLowerCase().includes(searchTerm.toLowerCase()));
+    }, [allEmployees, searchTerm]);
 
     // Reset form when opening
     useEffect(() => {
         if (isOpen) {
             setEmployeeId('');
             setSearchTerm('');
-            setLeaveTypeId(mockLeaveTypes[0]?.id || '');
+            setLeaveTypeId(leaveTypes[0]?.id || '');
             setEntryMode('usage');
             setAmount('');
             setDate(new Date().toISOString().split('T')[0]);
@@ -172,7 +190,7 @@ const ManualLeaveEntryModal: React.FC<ManualLeaveEntryModalProps> = ({ isOpen, o
                             onChange={(e) => setLeaveTypeId(e.target.value)}
                             className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                         >
-                            {mockLeaveTypes.map(lt => (
+                            {leaveTypes.map(lt => (
                                 <option key={lt.id} value={lt.id}>{lt.name}</option>
                             ))}
                         </select>

@@ -1,4 +1,6 @@
-import { mockUsers, mockBusinessUnits, mockNotifications, mockNTEs, mockResolutions, mockPipelineStages, mockCoachingSessions } from '../../services/mockDataCompat';
+import { useUsers, useBusinessUnits } from '../../hooks/useHRData';
+import { createNotification } from '../../services/notificationService';
+import { createCoachingSession } from '../../services/coachingService';
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
@@ -16,7 +18,8 @@ import PrintableIncidentReport from '../../components/feedback/PrintableIncident
 import CaseListTable from '../../components/feedback/CaseListTable';
 import { logActivity } from '../../services/auditService';
 import { fetchIncidentReports, saveIncidentReport, addIncidentReportMessage } from '../../services/incidentReportService';
-import { saveNTEs, updateNTE } from '../../services/nteService';
+import { saveNTEs, updateNTE, fetchNTEs } from '../../services/nteService';
+import { fetchResolutions, createResolution, updateResolution } from '../../services/resolutionService';
 
 const SearchIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>;
 const ChevronDownIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>;
@@ -80,13 +83,15 @@ const DisciplinaryCases: React.FC = () => {
   const { can, getIrAccess, getAccessibleBusinessUnits } = usePermissions();
   const navigate = useNavigate();
   const location = useLocation();
+  const { users } = useUsers();
+  const { businessUnits } = useBusinessUnits();
   const queryParams = new URLSearchParams(location.search);
   const specialFilter = queryParams.get('filter');
 
   const [allReports, setAllReports] = useState<IncidentReport[]>([]);
-  const [stages] = useState<PipelineStage[]>(mockPipelineStages);
-  const [ntes, setNTEs] = useState<NTE[]>(mockNTEs);
-  const [resolutions, setResolutions] = useState<Resolution[]>(mockResolutions);
+  const [stages] = useState<PipelineStage[]>([]);
+  const [ntes, setNTEs] = useState<NTE[]>([]);
+  const [resolutions, setResolutions] = useState<Resolution[]>([]);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -106,7 +111,7 @@ const DisciplinaryCases: React.FC = () => {
   const [selectedReport, setSelectedReport] = useState<IncidentReport | null>(null);
   const [reportToPrint, setReportToPrint] = useState<IncidentReport | null>(null);
 
-  const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+  const accessibleBus = useMemo(() => getAccessibleBusinessUnits(businessUnits), [getAccessibleBusinessUnits, businessUnits]);
   const irAccess = useMemo(() => getIrAccess(), [getIrAccess]);
 
   const filterByIrAccess = useMemo(() => {
@@ -141,6 +146,19 @@ const DisciplinaryCases: React.FC = () => {
     };
     loadReports();
   }, [filterByIrAccess]);
+
+  useEffect(() => {
+    const loadNTEsAndResolutions = async () => {
+      try {
+        const [nteData, resData] = await Promise.all([fetchNTEs(), fetchResolutions()]);
+        setNTEs(nteData);
+        setResolutions(resData);
+      } catch (err) {
+        console.error('Failed to load NTEs/Resolutions', err);
+      }
+    };
+    loadNTEsAndResolutions();
+  }, []);
 
   const handleOpenNewReportModal = () => {
     if (!irAccess.canCreate) {
@@ -183,8 +201,8 @@ const DisciplinaryCases: React.FC = () => {
 
   const potentialHandlers = useMemo(() => {
     const relevantRoles = [Role.HRManager, Role.HRStaff, Role.Admin, Role.Manager, Role.BusinessUnitManager];
-    return mockUsers.filter(u => relevantRoles.includes(u.role)).sort((a, b) => a.name.localeCompare(b.name));
-  }, []);
+    return users.filter(u => relevantRoles.includes(u.role)).sort((a, b) => a.name.localeCompare(b.name));
+  }, [users]);
 
   const statusOptions = ['New', 'Awaiting Response', 'HR Review', 'Rejected'];
 
@@ -272,10 +290,10 @@ const DisciplinaryCases: React.FC = () => {
       ? expandedReports.filter(report => {
         const reportBuName =
           report.businessUnitName ||
-          mockBusinessUnits.find(bu => bu.id === report.businessUnitId)?.name ||
+          businessUnits.find((bu: BusinessUnit) => bu.id === report.businessUnitId)?.name ||
           (() => {
             const employeeId = report.involvedEmployeeIds[0];
-            const employee = mockUsers.find(u => u.id === employeeId);
+            const employee = users.find(u => u.id === employeeId);
             return employee?.businessUnit;
           })();
         return reportBuName === buFilter;
@@ -436,18 +454,14 @@ const DisciplinaryCases: React.FC = () => {
     try {
       const saved = await saveIncidentReport(reportToSave, user);
       if (handlerChanged && saved.assignedToId) {
-        const createdAt = new Date();
-        mockNotifications.unshift({
-          id: `notif-ir-${saved.id}-${saved.assignedToId}-${createdAt.getTime()}`,
+        createNotification({
           userId: saved.assignedToId,
           type: NotificationType.CASE_ASSIGNED,
           title: 'New Case Assigned',
           message: `You have been assigned as case handler for Incident Report ${saved.id}.`,
           link: '/feedback/cases',
-          isRead: false,
-          createdAt,
           relatedEntityId: saved.id,
-        });
+        }).catch(err => console.error('Failed to create notification:', err));
       }
       setAllReports(prev => {
         const rest = prev.filter(r => r.id !== saved.id);
@@ -483,7 +497,7 @@ const DisciplinaryCases: React.FC = () => {
     handleCloseNteModal();
   };
 
-  const handleSaveResolution = (
+  const handleSaveResolution = async (
     resolutionDetails: Partial<Resolution> & { decisionMakerSignatureUrl: string },
     approverIds: string[]
   ) => {
@@ -492,124 +506,114 @@ const DisciplinaryCases: React.FC = () => {
     const employeeId = selectedReport.involvedEmployeeIds[0];
 
     const approverSteps: ApproverStep[] = approverIds.map(id => {
-      const approver = mockUsers.find(u => u.id === id)!;
-      return { userId: id, userName: approver.name, status: ApproverStatus.Pending };
+      const approver = users.find(u => u.id === id);
+      return { userId: id, userName: approver?.name || id, status: ApproverStatus.Pending };
     });
 
-    const commonResolutionData = {
+    const commonResolutionData: Partial<Resolution> = {
       ...resolutionDetails,
       incidentReportId: originalReportId,
       decisionDate: new Date(),
       closedByUserId: user.id,
       status: ResolutionStatus.PendingApproval,
       approverSteps,
-      employeeId: employeeId
+      employeeId,
     };
 
-    // Handle resubmission vs new
-    if (resolutionDetails.id) {
-      const resIndex = mockResolutions.findIndex(r => r.id === resolutionDetails.id);
-      if (resIndex > -1) {
-        mockResolutions[resIndex] = {
-          ...mockResolutions[resIndex],
-          ...commonResolutionData,
-        } as Resolution;
-        setResolutions([...mockResolutions]);
+    try {
+      if (resolutionDetails.id) {
+        const updated = await updateResolution(resolutionDetails.id, commonResolutionData);
+        setResolutions(prev => prev.map(r => r.id === updated.id ? updated : r));
+      } else {
+        const created = await createResolution(commonResolutionData);
+        setResolutions(prev => [...prev, created]);
       }
-    } else {
-      const newResolution: Resolution = {
-        ...commonResolutionData,
-        id: `RES-${Date.now()}`,
-      } as Resolution;
-      mockResolutions.push(newResolution);
-      setResolutions([...mockResolutions]);
+      setResolutionModalOpen(false);
+      alert('Case has been sent for approval.');
+      navigate('/feedback/cases');
+    } catch (err: any) {
+      alert(err?.message || 'Failed to save resolution.');
     }
-
-    setResolutionModalOpen(false);
-    alert('Case has been sent for approval.');
-    navigate('/feedback/cases');
   };
 
-  const handleApproveResolution = () => {
+  const handleApproveResolution = async () => {
     if (!user || !selectedResolution) return;
 
-    const updatedResolution = { ...selectedResolution };
-    const stepIndex = updatedResolution.approverSteps.findIndex(s => s.userId === user.id);
-    if (stepIndex > -1) {
-      updatedResolution.approverSteps[stepIndex] = {
-        ...updatedResolution.approverSteps[stepIndex],
-        status: ApproverStatus.Approved,
-        timestamp: new Date(),
-      };
-    }
+    const updatedSteps = selectedResolution.approverSteps.map((s: ApproverStep) =>
+      s.userId === user.id ? { ...s, status: ApproverStatus.Approved, timestamp: new Date() } : s
+    );
+    const allApproved = updatedSteps.every((s: ApproverStep) => s.status === ApproverStatus.Approved);
+    const newStatus = allApproved ? ResolutionStatus.PendingAcknowledgement : selectedResolution.status;
 
-    const allApproved = updatedResolution.approverSteps.every(s => s.status === ApproverStatus.Approved);
-    if (allApproved) {
-      updatedResolution.status = ResolutionStatus.PendingAcknowledgement;
+    try {
+      const updated = await updateResolution(selectedResolution.id, {
+        approverSteps: updatedSteps,
+        status: newStatus,
+      });
+      setResolutions(prev => prev.map(r => r.id === updated.id ? updated : r));
 
-      const ir = allReports.find(ir => ir.id === updatedResolution.incidentReportId);
-      const nte = mockNTEs.find(n => n.incidentReportId === ir?.id && n.employeeId === updatedResolution.employeeId);
-
-      if (nte) {
-        mockNotifications.unshift({
-          id: `notif-res-${updatedResolution.id}`,
-          userId: updatedResolution.employeeId,
-          type: NotificationType.RESOLUTION_ISSUED,
-          message: `A decision has been made on case ${ir?.id}. Please review and acknowledge.`,
-          link: `/feedback/nte/${nte.id}`,
-          isRead: false,
-          createdAt: new Date(),
-          relatedEntityId: updatedResolution.id
-        });
+      if (allApproved) {
+        const ir = allReports.find(ir => ir.id === updated.incidentReportId);
+        const nte = ntes.find(n => n.incidentReportId === ir?.id && n.employeeId === updated.employeeId);
+        if (nte) {
+          createNotification({
+            userId: updated.employeeId,
+            type: NotificationType.RESOLUTION_ISSUED,
+            title: 'Resolution Issued',
+            message: `A decision has been made on case ${ir?.id}. Please review and acknowledge.`,
+            link: `/feedback/nte/${nte.id}`,
+            relatedEntityId: updated.id,
+          }).catch(err => console.error('Failed to create notification:', err));
+        }
       }
+
+      logActivity(user, 'APPROVE', 'Resolution', updated.id, `Approved resolution for IR ${updated.incidentReportId}`);
+      handleCloseModals();
+    } catch (err: any) {
+      alert(err?.message || 'Failed to approve resolution.');
     }
-
-    setResolutions(prev => prev.map(r => r.id === updatedResolution.id ? (updatedResolution as Resolution) : r));
-    const mockResIndex = mockResolutions.findIndex(r => r.id === updatedResolution.id);
-    if (mockResIndex > -1) mockResolutions[mockResIndex] = updatedResolution as Resolution;
-
-    logActivity(user, 'APPROVE', 'Resolution', updatedResolution.id, `Approved resolution for IR ${updatedResolution.incidentReportId}`);
-    handleCloseModals();
   };
 
-  const handleRejectResolution = (reason: string) => {
+  const handleRejectResolution = async (reason: string) => {
     if (!user || !selectedResolution) return;
-    const resIndex = mockResolutions.findIndex(r => r.id === selectedResolution.id);
-    if (resIndex === -1) return;
 
-    const updatedResolution = { ...mockResolutions[resIndex] };
-    const stepIndex = updatedResolution.approverSteps.findIndex(s => s.userId === user.id);
-    if (stepIndex > -1) {
-      updatedResolution.approverSteps[stepIndex] = {
-        ...updatedResolution.approverSteps[stepIndex],
-        status: ApproverStatus.Rejected,
-        timestamp: new Date(),
-        rejectionReason: reason,
-      };
+    const updatedSteps = selectedResolution.approverSteps.map((s: ApproverStep) =>
+      s.userId === user.id
+        ? { ...s, status: ApproverStatus.Rejected, timestamp: new Date(), rejectionReason: reason }
+        : s
+    );
+
+    try {
+      const updated = await updateResolution(selectedResolution.id, {
+        approverSteps: updatedSteps,
+        status: ResolutionStatus.Rejected,
+      });
+      setResolutions(prev => prev.map(r => r.id === updated.id ? updated : r));
+      // Move parent IR back to HR review for single-employee cases
+      setAllReports(prev =>
+        prev.map(r => r.id === updated.incidentReportId ? { ...r, pipelineStage: 'hr-review-response' } : r)
+      );
+      logActivity(user, 'REJECT', 'Resolution', updated.id, `Rejected resolution for IR ${updated.incidentReportId}. Reason: ${reason}`);
+      handleCloseModals();
+    } catch (err: any) {
+      alert(err?.message || 'Failed to reject resolution.');
     }
-    updatedResolution.status = ResolutionStatus.Rejected;
-    mockResolutions[resIndex] = updatedResolution;
-    setResolutions(prev => prev.map(r => r.id === updatedResolution.id ? updatedResolution : r));
-
-    // Find the parent incident report and move its pipeline stage back to HR review.
-    // This is crucial for single-employee cases that don't use the derived stage logic.
-    setAllReports(prev => prev.map(r => r.id === updatedResolution.incidentReportId ? { ...r, pipelineStage: 'hr-review-response' } : r));
-
-    logActivity(user, 'REJECT', 'Resolution', updatedResolution.id, `Rejected resolution for IR ${updatedResolution.incidentReportId}. Reason: ${reason}`);
-    handleCloseModals();
   };
 
-  const handleAcknowledgeResolution = () => {
+  const handleAcknowledgeResolution = async () => {
     if (!user || !selectedReport) return;
     const originalReportId = selectedReport.id.split('_VIRTUAL_')[0];
     const nte = ntes.find(n => n.incidentReportId === originalReportId && n.employeeId === user.id);
-    if (nte) {
-      const nteIndex = mockNTEs.findIndex(n => n.id === nte.id);
-      if (nteIndex > -1) mockNTEs[nteIndex].status = NTEStatus.Closed;
-      setNTEs(prev => prev.map(n => n.id === nte!.id ? { ...n, status: NTEStatus.Closed } : n));
+    try {
+      if (nte) {
+        const updatedNte = await updateNTE({ ...nte, status: NTEStatus.Closed });
+        setNTEs(prev => prev.map(n => n.id === updatedNte.id ? updatedNte : n));
+      }
+      logActivity(user, 'APPROVE', 'Resolution', selectedResolution!.id, `Employee acknowledged Notice of Decision.`);
+      handleCloseModals();
+    } catch (err: any) {
+      alert(err?.message || 'Failed to acknowledge resolution.');
     }
-    logActivity(user, 'APPROVE', 'Resolution', selectedResolution!.id, `Employee acknowledged Notice of Decision.`);
-    handleCloseModals();
   };
 
   const handleSendMessage = async (reportId: string, text: string) => {
@@ -729,7 +733,7 @@ const DisciplinaryCases: React.FC = () => {
           };
 
           newSessions.push(newSession);
-          mockCoachingSessions.unshift(newSession);
+          createCoachingSession(newSession, user).catch(err => console.error('Failed to save coaching session:', err));
         });
 
         logActivity(user, 'UPDATE', 'IncidentReport', saved.id, `Converted IR to ${newSessions.length} Coaching Session(s).`);

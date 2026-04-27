@@ -1,4 +1,4 @@
-import { mockUsers, mockNotifications, mockResignations } from '../../services/mockDataCompat';
+import { supabase } from '../../services/supabaseClient';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
@@ -20,18 +20,49 @@ const SubmitResignation: React.FC = () => {
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     useEffect(() => {
-        if (user) {
-            const found = mockResignations.find(r => r.employeeId === user.id && r.status === ResignationStatus.ReturnedForEdits);
-            if (found) {
-                setExistingResignation(found);
-                setLastWorkingDay(new Date(found.lastWorkingDay).toISOString().split('T')[0]);
-                setReason(found.reason);
-                setAttachmentUrl(found.attachmentUrl || '');
+        let active = true;
+        const fetchResignation = async () => {
+            if (user) {
+                try {
+                    const { data, error } = await supabase
+                        .from('resignations')
+                        .select('*')
+                        .eq('employee_id', user.id)
+                        .eq('status', ResignationStatus.ReturnedForEdits)
+                        .order('created_at', { ascending: false })
+                        .limit(1);
+
+                    if (error) throw error;
+
+                    if (active && data && data.length > 0) {
+                        const found = data[0];
+                        const resObj: Resignation = {
+                            id: found.id,
+                            employeeId: found.employee_id,
+                            employeeName: found.employee_name,
+                            submissionDate: new Date(found.submission_date),
+                            lastWorkingDay: new Date(found.last_working_day),
+                            reason: found.reason,
+                            attachmentUrl: found.attachment_url,
+                            status: found.status,
+                            rejectionReason: found.rejection_reason
+                        };
+                        setExistingResignation(resObj);
+                        setLastWorkingDay(new Date(resObj.lastWorkingDay).toISOString().split('T')[0]);
+                        setReason(resObj.reason);
+                        setAttachmentUrl(resObj.attachmentUrl || '');
+                    }
+                } catch (error) {
+                    console.error("Error fetching resignation:", error);
+                }
             }
-        }
+        };
+        fetchResignation();
+
+        return () => { active = false; };
     }, [user]);
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!user) return;
         if (!lastWorkingDay || !reason) {
@@ -41,59 +72,73 @@ const SubmitResignation: React.FC = () => {
 
         setIsSubmitting(true);
 
-        if (existingResignation) {
-            // Update existing resignation
-            const resIndex = mockResignations.findIndex(r => r.id === existingResignation.id);
-            if (resIndex > -1) {
-                mockResignations[resIndex] = {
-                    ...mockResignations[resIndex],
-                    lastWorkingDay: new Date(lastWorkingDay),
-                    reason,
-                    attachmentUrl,
-                    status: ResignationStatus.PendingHRReview,
-                    submissionDate: new Date(),
-                    rejectionReason: undefined,
-                };
+        try {
+            if (existingResignation) {
+                // Update existing resignation
+                const { error } = await supabase
+                    .from('resignations')
+                    .update({
+                        last_working_day: new Date(lastWorkingDay).toISOString(),
+                        reason,
+                        attachment_url: attachmentUrl,
+                        status: ResignationStatus.PendingHRReview,
+                        submission_date: new Date().toISOString(),
+                        rejection_reason: null
+                    })
+                    .eq('id', existingResignation.id);
+
+                if (error) throw error;
+                logActivity(user, 'UPDATE', 'Resignation', existingResignation.id, `Resubmitted resignation.`);
+            } else {
+                // Create new resignation
+                const { data: newResignationData, error } = await supabase
+                    .from('resignations')
+                    .insert([{
+                        employee_id: user.id,
+                        employee_name: user.name,
+                        submission_date: new Date().toISOString(),
+                        last_working_day: new Date(lastWorkingDay).toISOString(),
+                        reason,
+                        attachment_url: attachmentUrl,
+                        status: ResignationStatus.PendingHRReview
+                    }])
+                    .select()
+                    .single();
+
+                if (error) throw error;
+                const newId = newResignationData.id;
+                logActivity(user, 'CREATE', 'Resignation', newId, `Submitted resignation.`);
+
+                // Simulate notification for HR
+                const { data: hrUsers } = await supabase
+                    .from('hris_users')
+                    .select('id')
+                    .in('role', ['HR Manager', 'Admin']);
+                
+                if (hrUsers) {
+                    const notifications = hrUsers.map(hr => ({
+                        id: `notif-${Date.now()}-${hr.id}`,
+                        user_id: hr.id,
+                        type: NotificationType.ResignationSubmitted,
+                        message: `${user.name} has submitted a resignation.`,
+                        link: '/employees/onboarding',
+                        is_read: false,
+                        related_entity_id: newId
+                    }));
+                    if (notifications.length > 0) {
+                        await supabase.from('notifications').insert(notifications);
+                    }
+                }
             }
-            logActivity(user, 'UPDATE', 'Resignation', existingResignation.id, `Resubmitted resignation.`);
-        } else {
-            // Create new resignation
-            const newResignation: Resignation = {
-                id: `RES-${Date.now()}`,
-                employeeId: user.id,
-                employeeName: user.name,
-                submissionDate: new Date(),
-                lastWorkingDay: new Date(lastWorkingDay),
-                reason,
-                attachmentUrl: attachmentUrl,
-                status: ResignationStatus.PendingHRReview,
-            };
-    
-            mockResignations.unshift(newResignation);
-            logActivity(user, 'CREATE', 'Resignation', newResignation.id, `Submitted resignation.`);
 
-            // Simulate notification for HR
-            const hrUsers = mockUsers.filter(u => u.role === 'HR Manager' || u.role === 'Admin');
-            hrUsers.forEach(hrUser => {
-                mockNotifications.push({
-                    id: `notif-${Date.now()}-${hrUser.id}`,
-                    userId: hrUser.id,
-                    type: NotificationType.ResignationSubmitted,
-                    message: `${user.name} has submitted a resignation.`,
-                    link: '/employees/onboarding', // Link to offboarding module
-                    isRead: false,
-                    createdAt: new Date(),
-                    relatedEntityId: newResignation.id,
-                });
-            });
-        }
-
-
-        setTimeout(() => {
-            setIsSubmitting(false);
             alert('Your resignation has been submitted for HR review.');
             navigate('/dashboard');
-        }, 1000);
+        } catch (error) {
+            console.error("Failed to submit resignation:", error);
+            alert("Failed to submit resignation. Please try again.");
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     return (

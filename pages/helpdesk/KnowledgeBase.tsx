@@ -1,4 +1,4 @@
-import { mockKbArticles } from '../../services/mockDataCompat';
+// Phase 2 Migration: mockKbArticles removed — articles fetched from Supabase
 import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { KnowledgeBaseArticle, KnowledgeBaseCategory, Permission } from '../../types';
@@ -225,7 +225,7 @@ const KnowledgeBase: React.FC = () => {
         </>
     );
     
-    const renderArticleList = (title: string, articlesToList: typeof mockKbArticles) => {
+    const renderArticleList = (title: string, articlesToList: KnowledgeBaseArticle[]) => {
         const currentCategory = categories.find(c => c.id === categoryId);
         return (
             <Card>

@@ -1,10 +1,9 @@
-import { mockIncidentReports, mockNTEs, mockResolutions, mockCOERequests, mockPANs, mockEnvelopes } from '../../services/mockDataCompat';
-
-import React, { useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PANStatus, NTEStatus, ResolutionStatus, PAN, NTE, Resolution, COERequest, COERequestStatus, Envelope, EnvelopeStatus } from '../../types';
 import Card from '../ui/Card';
 import Button from '../ui/Button';
+import { supabase } from '../../services/supabaseClient';
 
 // This is a synthetic type for displaying various documents in one table.
 interface EmployeeDocument {
@@ -12,7 +11,7 @@ interface EmployeeDocument {
     type: 'Personnel Action Notice' | 'Notice to Explain' | 'Notice of Decision' | 'Certificate of Employment' | 'Contract';
     dateIssued: Date;
     status: string;
-    originalObject: PAN | NTE | Resolution | COERequest | Envelope;
+    originalObject: any;
 }
 
 interface EmployeeDocumentsCardProps {
@@ -71,70 +70,106 @@ const getStatusChip = (type: EmployeeDocument['type'], status: string) => {
 
 const EmployeeDocumentsCard: React.FC<EmployeeDocumentsCardProps> = ({ employeeId, title, documentTypes }) => {
     const navigate = useNavigate();
+    const [documents, setDocuments] = useState<EmployeeDocument[]>([]);
+    const [loading, setLoading] = useState(true);
 
-    const documents = useMemo(() => {
-        const allDocs: EmployeeDocument[] = [];
+    useEffect(() => {
+        let active = true;
+        const fetchDocs = async () => {
+            setLoading(true);
+            const allDocs: EmployeeDocument[] = [];
+            
+            try {
+                if (documentTypes.includes('Personnel Action Notice')) {
+                    const { data } = await supabase.from('personnel_action_notices').select('*').eq('employee_id', employeeId);
+                    (data || []).forEach(pan => {
+                        allDocs.push({
+                            id: pan.id,
+                            type: 'Personnel Action Notice',
+                            dateIssued: pan.effective_date ? new Date(pan.effective_date) : new Date(pan.created_at),
+                            status: pan.status,
+                            originalObject: pan,
+                        });
+                    });
+                }
 
-        mockPANs.filter(p => p.employeeId === employeeId).forEach(pan => {
-            allDocs.push({
-                id: pan.id,
-                type: 'Personnel Action Notice',
-                dateIssued: pan.effectiveDate,
-                status: pan.status,
-                originalObject: pan,
-            });
-        });
+                if (documentTypes.includes('Notice to Explain')) {
+                    const { data } = await supabase.from('ntes').select('*').eq('employee_id', employeeId);
+                    (data || []).forEach(nte => {
+                        allDocs.push({
+                            id: nte.id,
+                            type: 'Notice to Explain',
+                            dateIssued: nte.issued_date ? new Date(nte.issued_date) : new Date(nte.created_at),
+                            status: nte.status,
+                            originalObject: nte,
+                        });
+                    });
+                }
 
-        mockNTEs.filter(n => n.employeeId === employeeId).forEach(nte => {
-            allDocs.push({
-                id: nte.id,
-                type: 'Notice to Explain',
-                dateIssued: nte.issuedDate,
-                status: nte.status,
-                originalObject: nte,
-            });
-        });
+                if (documentTypes.includes('Notice of Decision')) {
+                    // Assuming incident_reports has involved_employee_ids text[]
+                    const { data: incidents } = await supabase.from('incident_reports').select('id, involved_employee_ids').contains('involved_employee_ids', [employeeId]);
+                    if (incidents && incidents.length > 0) {
+                        const incidentIds = incidents.map(i => i.id);
+                        const { data: resolutions } = await supabase.from('resolutions').select('*').in('incident_report_id', incidentIds);
+                        (resolutions || []).forEach(res => {
+                            allDocs.push({
+                                id: res.id,
+                                type: 'Notice of Decision',
+                                dateIssued: res.decision_date ? new Date(res.decision_date) : new Date(res.created_at),
+                                status: res.status,
+                                originalObject: res,
+                            });
+                        });
+                    }
+                }
 
-        mockResolutions.forEach(res => {
-            const incident = mockIncidentReports.find(ir => ir.id === res.incidentReportId);
-            if (incident && incident.involvedEmployeeIds.includes(employeeId)) {
-                allDocs.push({
-                    id: res.id,
-                    type: 'Notice of Decision',
-                    dateIssued: res.decisionDate,
-                    status: res.status,
-                    originalObject: res,
-                });
+                if (documentTypes.includes('Certificate of Employment')) {
+                    const { data } = await supabase.from('coe_requests').select('*').eq('employee_id', employeeId).eq('status', COERequestStatus.Approved);
+                    (data || []).forEach(coe => {
+                        allDocs.push({
+                            id: coe.id,
+                            type: 'Certificate of Employment',
+                            dateIssued: coe.approved_at ? new Date(coe.approved_at) : new Date(coe.date_requested),
+                            status: coe.status,
+                            originalObject: coe,
+                        });
+                    });
+                }
+
+                if (documentTypes.includes('Contract')) {
+                    const { data } = await supabase.from('envelopes').select('*').eq('employee_id', employeeId);
+                    (data || []).forEach(env => {
+                        allDocs.push({
+                            id: env.id,
+                            type: 'Contract',
+                            dateIssued: env.created_at ? new Date(env.created_at) : new Date(),
+                            status: env.status,
+                            originalObject: env,
+                        });
+                    });
+                }
+            } catch (err) {
+                console.error('Failed to fetch employee documents', err);
             }
-        });
 
-        mockCOERequests.filter(r => r.employeeId === employeeId && r.status === COERequestStatus.Approved).forEach(coe => {
-             allDocs.push({
-                id: coe.id,
-                type: 'Certificate of Employment',
-                dateIssued: coe.approvedAt || coe.dateRequested,
-                status: coe.status,
-                originalObject: coe
-             });
-        });
+            if (active) {
+                allDocs.sort((a, b) => b.dateIssued.getTime() - a.dateIssued.getTime());
+                setDocuments(allDocs);
+                setLoading(false);
+            }
+        };
 
-        mockEnvelopes.filter(e => e.employeeId === employeeId).forEach(env => {
-            allDocs.push({
-                id: env.id,
-                type: 'Contract',
-                dateIssued: env.createdAt,
-                status: env.status,
-                originalObject: env,
-            });
-        });
+        if (employeeId && documentTypes.length > 0) {
+            fetchDocs();
+        } else {
+            setLoading(false);
+        }
 
-        return allDocs
-            .filter(doc => documentTypes.includes(doc.type))
-            .sort((a, b) => new Date(b.dateIssued).getTime() - new Date(a.dateIssued).getTime());
-
+        return () => { active = false; };
     }, [employeeId, documentTypes]);
     
-    const handleView = (doc: EmployeeDocument) => {
+    const handleView = async (doc: EmployeeDocument) => {
         switch(doc.type) {
             case 'Personnel Action Notice':
                 // For this MVP, PANs are viewed on the main list page.
@@ -144,21 +179,22 @@ const EmployeeDocumentsCard: React.FC<EmployeeDocumentsCardProps> = ({ employeeI
                 navigate(`/feedback/nte/${doc.id}`);
                 break;
             case 'Notice of Decision':
-                const resolution = doc.originalObject as Resolution;
-                const incident = mockIncidentReports.find(ir => ir.id === resolution.incidentReportId);
-                // Find the specific NTE for this employee within the incident to provide context for the decision.
-                const nte = mockNTEs.find(n => n.incidentReportId === incident?.id && n.employeeId === employeeId);
+                const incidentId = doc.originalObject.incident_report_id || doc.originalObject.incidentReportId;
+                const { data: nte } = await supabase.from('ntes').select('id').eq('incident_report_id', incidentId).eq('employee_id', employeeId).single();
                 if (nte) {
                     navigate(`/feedback/nte/${nte.id}`);
                 } else {
-                    // Fallback to cases if no specific NTE is found (e.g., case resolved without NTE)
+                    // Fallback to cases if no specific NTE is found
                     navigate('/feedback/cases');
                 }
                 break;
             case 'Certificate of Employment':
-                const coe = doc.originalObject as COERequest;
-                // In a real app, this would trigger a file download or open a PDF viewer
-                alert(`Downloading Certificate of Employment...\n\nFile: ${coe.generatedDocumentUrl || 'certificate.pdf'}`);
+                const url = doc.originalObject.generated_document_url || doc.originalObject.generatedDocumentUrl;
+                if (url) {
+                    window.open(url, '_blank');
+                } else {
+                    alert('Certificate document is not yet available.');
+                }
                 break;
             case 'Contract':
                 navigate(`/employees/contracts/${doc.id}`);
@@ -180,10 +216,16 @@ const EmployeeDocumentsCard: React.FC<EmployeeDocumentsCardProps> = ({ employeeI
                         </tr>
                     </thead>
                     <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                        {documents.map(doc => (
+                        {loading ? (
+                            <tr>
+                                <td colSpan={4} className="text-center py-6 text-gray-500 dark:text-gray-400">
+                                    Loading documents...
+                                </td>
+                            </tr>
+                        ) : documents.map(doc => (
                             <tr key={`${doc.type}-${doc.id}`}>
                                 <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
-                                    {doc.type === 'Contract' && 'originalObject' in doc ? (doc.originalObject as Envelope).title : doc.type}
+                                    {doc.type === 'Contract' ? (doc.originalObject.title || doc.type) : doc.type}
                                 </td>
                                 <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{new Date(doc.dateIssued).toLocaleDateString()}</td>
                                 <td className="px-4 py-4 whitespace-nowrap text-sm">{getStatusChip(doc.type, doc.status)}</td>
@@ -194,7 +236,7 @@ const EmployeeDocumentsCard: React.FC<EmployeeDocumentsCardProps> = ({ employeeI
                                 </td>
                             </tr>
                         ))}
-                        {documents.length === 0 && (
+                        {!loading && documents.length === 0 && (
                             <tr>
                                 <td colSpan={4} className="text-center py-6 text-gray-500 dark:text-gray-400">
                                     No documents of this type found for this employee.

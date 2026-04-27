@@ -1,4 +1,3 @@
-import { mockBusinessUnits, mockDepartments } from '../../services/mockDataCompat';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Memo } from '../../types';
 import Modal from '../ui/Modal';
@@ -7,6 +6,7 @@ import Button from '../ui/Button';
 import SearchableMultiSelect, { SearchableItem } from '../ui/SearchableMultiSelect';
 import RichTextEditor from '../ui/RichTextEditor';
 import { usePermissions } from '../../hooks/usePermissions';
+import { useBusinessUnits, useDepartments } from '../../hooks/useHRData';
 
 interface MemoModalProps {
   isOpen: boolean;
@@ -17,9 +17,11 @@ interface MemoModalProps {
 
 const MemoModal: React.FC<MemoModalProps> = ({ isOpen, onClose, memo, onSave }) => {
   const { getAccessibleBusinessUnits } = usePermissions();
+  const { businessUnits } = useBusinessUnits();
+  const { departments } = useDepartments();
   const [currentMemo, setCurrentMemo] = useState<Partial<Memo>>(memo || {});
 
-  const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+  const accessibleBus = useMemo(() => getAccessibleBusinessUnits(businessUnits), [getAccessibleBusinessUnits, businessUnits]);
 
   const buItems: SearchableItem[] = useMemo(() => [
       { id: 'All', label: 'All My Business Units' },
@@ -28,8 +30,8 @@ const MemoModal: React.FC<MemoModalProps> = ({ isOpen, onClose, memo, onSave }) 
 
   const deptItems: SearchableItem[] = useMemo(() => [
       { id: 'All', label: 'All Departments' },
-      ...mockDepartments.map(dept => ({ id: dept.name, label: dept.name }))
-  ], []);
+      ...departments.map(dept => ({ id: dept.name, label: dept.name }))
+  ], [departments]);
 
 
   useEffect(() => {

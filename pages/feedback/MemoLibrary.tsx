@@ -1,4 +1,4 @@
-import { mockBusinessUnits } from '../../services/mockDataCompat';
+// Phase 2 Migration: mockBusinessUnits removed — BUs fetched from Supabase
 import React, { useState, useMemo, useEffect } from 'react';
 import { Memo, MemoAcknowledgement, Permission } from '../../types';
 import Card from '../../components/ui/Card';
@@ -30,12 +30,19 @@ const MemoLibrary: React.FC = () => {
     const [yearFilter, setYearFilter] = useState('');
     const [monthFilter, setMonthFilter] = useState('');
     const [buFilter, setBuFilter] = useState('');
+    const [dbBus, setDbBus] = useState<{ id: string; name: string; code?: string }[]>([]);
 
 
     const { can, getAccessibleBusinessUnits } = usePermissions();
     const canManageMemos = can('Feedback', Permission.Edit);
 
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(dbBus), [getAccessibleBusinessUnits, dbBus]);
+
+    useEffect(() => {
+        supabase.from('business_units').select('id, name').order('name').then(({ data }) => {
+            if (data) setDbBus(data.map((d: any) => ({ id: d.id, name: d.name })));
+        });
+    }, []);
 
     const extractBodyFromRow = (row: any) => {
         const candidates = ['body', 'content', 'html', 'memo_body', 'memoBody', 'body_text', 'bodyHtml'];

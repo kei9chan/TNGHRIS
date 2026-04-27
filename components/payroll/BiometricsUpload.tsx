@@ -1,4 +1,4 @@
-import { mockUsers, mockSites } from '../../services/mockDataCompat';
+// Removed mock imports
 
 import React, { useState } from 'react';
 import { TimeEvent, TimeEventType, TimeEventSource, TimeEventExtra, AnomalyTag } from '../../types';
@@ -7,9 +7,12 @@ import Card from '../ui/Card';
 import Button from '../ui/Button';
 import FileUploader from '../ui/FileUploader';
 import { getAppVersion } from '../../services/deviceSecurity';
+import { useUsers, useSites } from '../../hooks/useHRData';
 
 const BiometricsUpload: React.FC = () => {
     const { addBatchTimeEvents } = useTimeClock();
+    const { users } = useUsers();
+    const { sites } = useSites();
     const [file, setFile] = useState<File | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const [resultMessage, setResultMessage] = useState('');
@@ -28,8 +31,8 @@ const BiometricsUpload: React.FC = () => {
             // For this prototype, we will generate random logs for a few employees for the past week.
             
             const newEvents: TimeEvent[] = [];
-            const targetEmployees = mockUsers.slice(0, 5); // Generate logs for first 5 users
-            const site = mockSites[0]; // Assume logs are from the main office
+            const targetEmployees = users.slice(0, 5); // Generate logs for first 5 users
+            const site = sites.length > 0 ? sites[0] : { id: 'OFFICE-MAIN', name: 'Main Office' }; // Assume logs are from the main office
             const today = new Date();
 
             targetEmployees.forEach(emp => {

@@ -1,12 +1,12 @@
-import { mockUsers, mockBusinessUnits, mockGovernmentReports } from '../../../services/mockDataCompat';
-
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import Card from '../../../components/ui/Card';
 import Button from '../../../components/ui/Button';
 import NotFound from '../../NotFound';
-import { User } from '../../../types';
+import { User, BusinessUnit, GovernmentReport } from '../../../types';
 import { usePermissions } from '../../../hooks/usePermissions';
+import { fetchUsers, fetchBusinessUnits } from '../../../services/userService';
+import { fetchGovernmentReports } from '../../../services/payrollService';
 
 const ArrowLeftIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>;
 const PrinterIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>;
@@ -24,10 +24,37 @@ const chunkArray = <T,>(array: T[], size: number): T[][] => {
 const GovernmentReportDetail: React.FC = () => {
     const { reportId } = useParams<{ reportId: string }>();
     const { getAccessibleBusinessUnits } = usePermissions();
-    const report = mockGovernmentReports.find(r => r.id === reportId);
-    
+
+    const [users, setUsers] = useState<User[]>([]);
+    const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
+    const [reports, setReports] = useState<GovernmentReport[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [selectedBuId, setSelectedBuId] = useState<string>('');
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+
+    useEffect(() => {
+        const load = async () => {
+            try {
+                setIsLoading(true);
+                const [u, bu, r] = await Promise.all([
+                    fetchUsers(),
+                    fetchBusinessUnits(),
+                    fetchGovernmentReports(),
+                ]);
+                setUsers(u);
+                setBusinessUnits(bu);
+                setReports(r);
+            } catch (err: any) {
+                setError(err.message || 'Failed to load data');
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        load();
+    }, []);
+
+    const report = reports.find(r => r.id === reportId);
+    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(businessUnits), [getAccessibleBusinessUnits, businessUnits]);
 
     const selectedBu = useMemo(() => {
         return accessibleBus.find(bu => bu.id === selectedBuId);
@@ -35,8 +62,16 @@ const GovernmentReportDetail: React.FC = () => {
 
     const buEmployees = useMemo<User[]>(() => {
         if (!selectedBu) return [];
-        return mockUsers.filter(u => u.businessUnit === selectedBu.name && u.status === 'Active');
-    }, [selectedBu]);
+        return users.filter(u => u.businessUnit === selectedBu.name && u.status === 'Active');
+    }, [selectedBu, users]);
+
+    if (isLoading) {
+        return <div className="flex items-center justify-center py-20"><div className="text-gray-500 dark:text-gray-400">Loading report data...</div></div>;
+    }
+
+    if (error) {
+        return <div className="text-center py-12 text-red-500">{error}</div>;
+    }
 
     if (!report) {
         return <NotFound />;

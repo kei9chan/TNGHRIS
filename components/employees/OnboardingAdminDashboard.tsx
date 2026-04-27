@@ -1,10 +1,11 @@
-import { mockUsers, mockOnboardingTemplates } from '../../services/mockDataCompat';
-import React, { useState, useMemo } from 'react';
+import { useUsers } from '../../hooks/useHRData';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { OnboardingChecklist, OnboardingTaskStatus, Role } from '../../types';
 import OnboardingStatusBadge from './OnboardingStatusBadge';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
+import { fetchOnboardingTemplates } from '../../services/onboardingService';
 
 interface OnboardingAdminDashboardProps {
   checklists: OnboardingChecklist[];
@@ -23,6 +24,16 @@ const OnboardingAdminDashboard: React.FC<OnboardingAdminDashboardProps> = ({ che
     const [roleFilter, setRoleFilter] = useState('');
     const [buFilter, setBuFilter] = useState('');
     const [monthFilter, setMonthFilter] = useState('');
+    const { users } = useUsers();
+    const [fetchedTemplates, setFetchedTemplates] = useState<{ id: string; name: string }[]>([]);
+
+    useEffect(() => {
+        if (!templates || templates.length === 0) {
+            fetchOnboardingTemplates().then(ts => setFetchedTemplates(ts)).catch(console.error);
+        }
+    }, [templates]);
+
+    const activeTemplates = templates?.length ? templates : fetchedTemplates;
 
     const calculateProgress = (checklist: OnboardingChecklist) => {
         const total = checklist.tasks.reduce((sum, task) => sum + (task.points || 0), 0);
@@ -38,8 +49,8 @@ const OnboardingAdminDashboard: React.FC<OnboardingAdminDashboardProps> = ({ che
 
     const enrichedChecklists = useMemo(() => {
         return checklists.map(checklist => {
-            const employee = employees.find(u => u.id === checklist.employeeId) || mockUsers.find(u => u.id === checklist.employeeId);
-            const template = templates.find(t => t.id === checklist.templateId) || mockOnboardingTemplates.find(t => t.id === checklist.templateId);
+            const employee = employees.find(u => u.id === checklist.employeeId) || users.find(u => u.id === checklist.employeeId);
+            const template = activeTemplates.find(t => t.id === checklist.templateId);
             const progress = calculateProgress(checklist);
             
             const overdueCount = checklist.tasks.filter(
@@ -124,7 +135,7 @@ const OnboardingAdminDashboard: React.FC<OnboardingAdminDashboardProps> = ({ che
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-400">Filter by Business Unit</label>
                 <select value={buFilter} onChange={e => setBuFilter(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white">
                     <option value="">All BUs</option>
-                    {[...new Set((employees.length ? employees : mockUsers).map(u => (u as any).businessUnit))].filter(Boolean).map(bu => <option key={bu} value={bu}>{bu}</option>)}
+                    {[...new Set((employees.length ? employees : users).map(u => (u as any).businessUnit))].filter(Boolean).map(bu => <option key={bu} value={bu}>{bu}</option>)}
                 </select>
             </div>
             <Input label="Filter by Hire Month" type="month" value={monthFilter} onChange={e => setMonthFilter(e.target.value)} />

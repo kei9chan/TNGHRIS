@@ -1,4 +1,4 @@
-import { mockUsers, mockNotifications, mockOnboardingTemplates, mockOnboardingChecklists } from '../../services/mockDataCompat';
+// Phase F: mockDataCompat removed from OnboardingViewPage — live Supabase data
 import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import AssignedOnboardingChecklist from '../../components/employees/AssignedOnboardingChecklist';
@@ -46,16 +46,13 @@ const OnboardingViewPage: React.FC = () => {
 
                 const row = checklistError ? null : checklistRows?.[0];
 
-                // Fallback to mock if not found or error
-                const fallbackChecklist = mockOnboardingChecklists.find(c => c.id === checklistId);
-
-                if (!row && !fallbackChecklist) {
+                if (!row) {
                     setNotFound(true);
                     return;
                 }
 
-                const employeeId = row?.employee_id || fallbackChecklist?.employeeId;
-                const templateId = row?.template_id || fallbackChecklist?.templateId;
+                const employeeId = row.employee_id;
+                const templateId = row.template_id;
 
                 const [{ data: employeeRows }, { data: templateRows }] = await Promise.all([
                     employeeId
@@ -66,8 +63,8 @@ const OnboardingViewPage: React.FC = () => {
                         : Promise.resolve({ data: null }),
                 ]);
 
-                const emp = employeeRows?.[0] || mockUsers.find(u => u.id === employeeId);
-                const tmpl = templateRows?.[0] || mockOnboardingTemplates.find(t => t.id === templateId);
+                const emp = employeeRows?.[0];
+                const tmpl = templateRows?.[0];
 
                 if (!emp || !tmpl) {
                     setNotFound(true);
@@ -115,7 +112,7 @@ const OnboardingViewPage: React.FC = () => {
                             const due = new Date(startDate);
                             due.setDate(due.getDate() + (t.dueDays || 0));
                             return {
-                                id: `${row?.id || fallbackChecklist?.id}-task-${idx}`,
+                                id: `${row?.id || checklistId}-task-${idx}`,
                                 templateTaskId: t.id || `tmpl-${idx}`,
                                 employeeId: employeeId || '',
                                 name: t.name || 'Task',
@@ -140,14 +137,14 @@ const OnboardingViewPage: React.FC = () => {
                         ? storedTasks
                         : templateTasks.length > 0
                             ? templateTasks
-                            : fallbackChecklist?.tasks || [];
+                            : [];
 
                 const resolvedChecklist: OnboardingChecklist = {
-                    id: row?.id || fallbackChecklist?.id || '',
+                    id: row.id,
                     employeeId: employeeId || '',
                     templateId: templateId || '',
-                    status: (row?.status as any) || fallbackChecklist?.status || 'InProgress',
-                    createdAt: row?.created_at ? new Date(row.created_at) : fallbackChecklist?.createdAt || new Date(),
+                    status: (row.status as any) || 'InProgress',
+                    createdAt: row.created_at ? new Date(row.created_at) : new Date(),
                     tasks,
                 };
 
@@ -231,17 +228,6 @@ const OnboardingViewPage: React.FC = () => {
                     }> = [];
 
                     (hrRows || []).forEach((hr: any) => {
-                        mockNotifications.unshift({
-                            id: `notif-onboard-approval-${resolvedChecklist.id}-${hr.id}-${createdAt.getTime()}`,
-                            userId: hr.id,
-                            type: notificationType,
-                            title: approvalTitle,
-                            message: approvalMessage,
-                            link: `/employees/onboarding/view/${resolvedChecklist.id}?approve=1`,
-                            isRead: false,
-                            createdAt,
-                            relatedEntityId: resolvedChecklist.id,
-                        });
                         notificationRows.push({
                             id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${hr.id}`,
                             user_id: hr.id,
@@ -274,17 +260,7 @@ const OnboardingViewPage: React.FC = () => {
                 });
             } catch (err) {
                 console.error('Failed to load checklist view', err);
-                // Attempt mock fallback before giving up
-                const fallbackChecklist = mockOnboardingChecklists.find(c => c.id === checklistId);
-                const fallbackEmployee = fallbackChecklist
-                    ? mockUsers.find(u => u.id === fallbackChecklist.employeeId)
-                    : null;
-                if (fallbackChecklist && fallbackEmployee) {
-                    setChecklist(fallbackChecklist);
-                    setEmployee(fallbackEmployee as unknown as User);
-                } else {
-                    setNotFound(true);
-                }
+                setNotFound(true);
             } finally {
                 setLoading(false);
             }

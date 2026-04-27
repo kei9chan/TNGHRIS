@@ -1,4 +1,4 @@
-import { mockUsers, mockNotifications, mockBenefitTypes, mockBenefitRequests } from '../../services/mockDataCompat';
+
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -124,7 +124,7 @@ const Benefits: React.FC = () => {
     // Data State
     const [benefitTypes, setBenefitTypes] = useState<BenefitType[]>([]);
     const [typesLoading, setTypesLoading] = useState(true);
-    const [allRequests, setAllRequests] = useState<BenefitRequest[]>(mockBenefitRequests);
+    const [allRequests, setAllRequests] = useState<BenefitRequest[]>([]);
     const [myRequests, setMyRequests] = useState<BenefitRequest[]>([]);
 
     // Configuration Modal State
@@ -154,7 +154,7 @@ const Benefits: React.FC = () => {
     const isBOD = user?.role === Role.BOD || user?.role === Role.GeneralManager;
 
     const bodApproverPool = useMemo(() => {
-        return mockUsers.filter(u => u.role === Role.BOD || u.role === Role.GeneralManager);
+        return [] as User[];
     }, []);
 
     // Load benefit types from DB
@@ -171,7 +171,7 @@ const Benefits: React.FC = () => {
                 }
             } catch (err) {
                 console.error('Failed to load benefit types', err);
-                setBenefitTypes(mockBenefitTypes);
+                setBenefitTypes([]);
             } finally {
                 setTypesLoading(false);
             }
@@ -193,7 +193,7 @@ const Benefits: React.FC = () => {
                 }
             } catch (err) {
                 console.error('Failed to load benefit requests', err);
-                setAllRequests(mockBenefitRequests);
+                setAllRequests([]);
             }
         };
         loadRequests();
@@ -292,7 +292,6 @@ const Benefits: React.FC = () => {
             if (error) throw error;
             const mapped = mapRequestRow(data as BenefitRequestRow);
             const approverRoles = [Role.Admin, Role.HRManager, Role.HRStaff];
-            const createdAt = new Date();
             let approverIds: string[] = [];
 
             try {
@@ -304,28 +303,25 @@ const Benefits: React.FC = () => {
                     .map((row: any) => row?.id)
                     .filter(Boolean);
             } catch (err) {
-                console.warn('Failed to load benefit approvers from DB, falling back to mock users.', err);
+                console.warn('Failed to load benefit approvers from DB.', err);
             }
 
-            if (approverIds.length === 0) {
-                approverIds = mockUsers
-                    .filter(u => approverRoles.includes(u.role))
-                    .map(u => u.id);
-            }
-
-            approverIds.forEach(approverId => {
-                mockNotifications.unshift({
-                    id: `notif-benefit-req-${mapped.id}-${approverId}-${createdAt.getTime()}`,
-                    userId: approverId,
+            if (approverIds.length > 0) {
+                const createdAt = new Date();
+                const notifRows = approverIds.map(approverId => ({
+                    user_id: approverId,
                     type: NotificationType.BENEFIT_REQUEST_SUBMITTED,
                     title: 'Benefit Approval Required',
                     message: `${mapped.employeeName} submitted a benefit request for ${mapped.benefitTypeName}.`,
                     link: '/employees/benefits?tab=approvals',
-                    isRead: false,
-                    createdAt,
-                    relatedEntityId: mapped.id
+                    is_read: false,
+                    created_at: createdAt.toISOString(),
+                    related_entity_id: mapped.id,
+                }));
+                supabase.from('notifications').insert(notifRows).then(({ error }) => {
+                    if (error) console.error('Failed to insert benefit-request notifications', error);
                 });
-            });
+            }
             setAllRequests(prev => [mapped, ...prev]);
             setMyRequests(prev => [mapped, ...prev]);
             logActivity(user, 'CREATE', 'BenefitRequest', mapped.id, `Requested ${mapped.benefitTypeName}`);
@@ -404,17 +400,16 @@ const Benefits: React.FC = () => {
                     const mapped = mapRequestRow(data as BenefitRequestRow);
                     setAllRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
                     setMyRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
-                    mockNotifications.unshift({
-                        id: `notif-benefit-app-${Date.now()}`,
-                        userId: request.employeeId,
+                    supabase.from('notifications').insert({
+                        user_id: request.employeeId,
                         type: NotificationType.AWARD_RECEIVED,
                         title: 'Benefit Approved',
                         message: `Your request for ${request.benefitTypeName} has been approved by HR.`,
                         link: '/employees/benefits',
-                        isRead: false,
-                        createdAt: new Date(),
-                        relatedEntityId: request.id
-                    });
+                        is_read: false,
+                        created_at: new Date().toISOString(),
+                        related_entity_id: request.id,
+                    }).then(({ error }) => { if (error) console.error('Notification insert failed', error); });
                     logActivity(user, 'APPROVE', 'BenefitRequest', request.id, `HR approved request for ${request.benefitTypeName}`);
                     alert(`Request approved successfully.`);
                 } catch (err) {
@@ -450,19 +445,17 @@ const Benefits: React.FC = () => {
                 const mapped = mapRequestRow(data as BenefitRequestRow);
                 setAllRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
                 setMyRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
-                selectedApprovers.forEach(approver => {
-                    mockNotifications.unshift({
-                        id: `notif-benefit-bod-${Date.now()}-${approver.id}`,
-                        userId: approver.id,
-                        type: NotificationType.AWARD_APPROVAL_REQUEST,
-                        title: 'Benefit Approval Required',
-                        message: `HR has endorsed a benefit request from ${requestToEndorse.employeeName} for your approval.`,
-                        link: '/employees/benefits?tab=approvals',
-                        isRead: false,
-                        createdAt: new Date(),
-                        relatedEntityId: requestToEndorse.id
-                    });
-                });
+                const notifRows = selectedApprovers.map(approver => ({
+                    user_id: approver.id,
+                    type: NotificationType.AWARD_APPROVAL_REQUEST,
+                    title: 'Benefit Approval Required',
+                    message: `HR has endorsed a benefit request from ${requestToEndorse.employeeName} for your approval.`,
+                    link: '/employees/benefits?tab=approvals',
+                    is_read: false,
+                    created_at: new Date().toISOString(),
+                    related_entity_id: requestToEndorse.id,
+                }));
+                supabase.from('notifications').insert(notifRows).then(({ error }) => { if (error) console.error('Endorsement notification failed', error); });
                 logActivity(user, 'APPROVE', 'BenefitRequest', requestToEndorse.id, `HR endorsed request for ${requestToEndorse.benefitTypeName} to Board.`);
                 alert(`Request endorsed to ${selectedApprovers.length} board member(s).`);
             } catch (err) {
@@ -496,32 +489,37 @@ const Benefits: React.FC = () => {
                 setAllRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
                 setMyRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
 
-                mockNotifications.unshift({
-                    id: `notif-benefit-bod-app-${Date.now()}`,
-                    userId: request.employeeId,
+                supabase.from('notifications').insert({
+                    user_id: request.employeeId,
                     type: NotificationType.AWARD_RECEIVED,
                     title: 'Benefit Approved',
                     message: `Your request for ${request.benefitTypeName} has been approved by the Board.`,
                     link: '/employees/benefits',
-                    isRead: false,
-                    createdAt: new Date(),
-                    relatedEntityId: request.id
-                });
+                    is_read: false,
+                    created_at: new Date().toISOString(),
+                    related_entity_id: request.id,
+                }).then(({ error }) => { if (error) console.error('BOD approval notification failed', error); });
 
-                const hrUsers = mockUsers.filter(u => [Role.Admin, Role.HRManager, Role.HRStaff].includes(u.role));
-                hrUsers.forEach(hrUser => {
-                    mockNotifications.unshift({
-                        id: `notif-benefit-fulfill-${Date.now()}-${hrUser.id}`,
-                        userId: hrUser.id,
-                        type: NotificationType.AWARD_APPROVAL_REQUEST,
-                        title: 'Benefit Ready for Fulfillment',
-                        message: `Board approved benefit for ${request.employeeName}. Please fulfill.`,
-                        link: '/employees/benefits?tab=fulfillment',
-                        isRead: false,
-                        createdAt: new Date(),
-                        relatedEntityId: request.id
+                // Notify HR fulfillment team
+                supabase.from('hris_users')
+                    .select('id')
+                    .in('role', [Role.Admin, Role.HRManager, Role.HRStaff])
+                    .then(({ data: hrRows }) => {
+                        if (!hrRows?.length) return;
+                        const hrNotifs = hrRows.map((hr: any) => ({
+                            user_id: hr.id,
+                            type: NotificationType.AWARD_APPROVAL_REQUEST,
+                            title: 'Benefit Ready for Fulfillment',
+                            message: `Board approved benefit for ${request.employeeName}. Please fulfill.`,
+                            link: '/employees/benefits?tab=fulfillment',
+                            is_read: false,
+                            created_at: new Date().toISOString(),
+                            related_entity_id: request.id,
+                        }));
+                        supabase.from('notifications').insert(hrNotifs).then(({ error }) => {
+                            if (error) console.error('HR fulfillment notification failed', error);
+                        });
                     });
-                });
 
                 logActivity(user, 'APPROVE', 'BenefitRequest', request.id, `Board approved request for ${request.benefitTypeName}`);
                 alert("Request approved by Board. HR has been notified for fulfillment.");
@@ -557,17 +555,16 @@ const Benefits: React.FC = () => {
                 setAllRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
                 setMyRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
 
-                mockNotifications.unshift({
-                    id: `notif-benefit-rej-${Date.now()}`,
-                    userId: requestToReject.employeeId,
+                supabase.from('notifications').insert({
+                    user_id: requestToReject.employeeId,
                     type: NotificationType.TICKET_UPDATE_REQUESTER,
                     title: 'Benefit Request Rejected',
                     message: `Your request for ${requestToReject.benefitTypeName} was rejected. Reason: ${reason}`,
                     link: '/employees/benefits',
-                    isRead: false,
-                    createdAt: new Date(),
-                    relatedEntityId: requestToReject.id
-                });
+                    is_read: false,
+                    created_at: new Date().toISOString(),
+                    related_entity_id: requestToReject.id,
+                }).then(({ error }) => { if (error) console.error('Rejection notification failed', error); });
 
                 logActivity(user, 'REJECT', 'BenefitRequest', requestToReject.id, `Rejected request. Reason: ${reason}`);
             } catch (err) {
@@ -608,17 +605,16 @@ const Benefits: React.FC = () => {
                 setAllRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
                 setMyRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
 
-                mockNotifications.unshift({
-                    id: `notif-benefit-full-${Date.now()}`,
-                    userId: requestToFulfill.employeeId,
+                supabase.from('notifications').insert({
+                    user_id: requestToFulfill.employeeId,
                     type: NotificationType.AWARD_RECEIVED,
                     title: 'Benefit Fulfilled',
                     message: `Your benefit ${requestToFulfill.benefitTypeName} has been fulfilled! Check details for voucher/code.`,
                     link: '/employees/benefits',
-                    isRead: false,
-                    createdAt: new Date(),
-                    relatedEntityId: requestToFulfill.id
-                });
+                    is_read: false,
+                    created_at: new Date().toISOString(),
+                    related_entity_id: requestToFulfill.id,
+                }).then(({ error }) => { if (error) console.error('Fulfillment notification failed', error); });
 
                 logActivity(user, 'UPDATE', 'BenefitRequest', requestToFulfill.id, `Fulfilled request. Code: ${voucherCode}`);
                 alert("Request marked as fulfilled.");

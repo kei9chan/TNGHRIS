@@ -1,4 +1,4 @@
-import { mockBusinessUnits } from '../../services/mockDataCompat';
+// Phase 2 Migration: mockBusinessUnits removed — loaded from Supabase
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Ticket, TicketCategory, TicketPriority, TicketStatus, User, ChatMessage } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
@@ -37,10 +37,17 @@ const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, ticket, onSa
   const [attachmentLink, setAttachmentLink] = useState('');
   const [attachmentPreviews, setAttachmentPreviews] = useState<{ path: string; url: string }[]>([]);
   const [assignees, setAssignees] = useState<User[]>([]);
+  const [businessUnits, setBusinessUnits] = useState<{ id: string; name: string }[]>([]);
 
   const [assigneeSearch, setAssigneeSearch] = useState('');
   const [isAssigneeDropdownOpen, setAssigneeDropdownOpen] = useState(false);
   const assigneeRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    supabase.from('business_units').select('id, name').order('name').then(({ data }) => {
+      if (data) setBusinessUnits(data.map(d => ({ id: d.id, name: d.name })));
+    });
+  }, []);
   const initializedKeyRef = useRef<string | null>(null);
   const prevOpenRef = useRef<boolean>(false);
   const isNewTicket = !ticket?.id;
@@ -111,7 +118,7 @@ const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, ticket, onSa
       status: TicketStatus.New,
       createdAt: new Date(),
       chatThread: [],
-      businessUnitId: mockBusinessUnits[0]?.id || ''
+      businessUnitId: ''
     };
     setCurrentTicket(initialTicket);
     setAttachmentLink('');
@@ -325,7 +332,7 @@ const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, ticket, onSa
               <label htmlFor="businessUnitId" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
               <select id="businessUnitId" name="businessUnitId" value={currentTicket.businessUnitId || ''} onChange={handleChange} disabled={!isNewTicket} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:bg-gray-200 dark:disabled:bg-gray-800">
                 <option value="" disabled>Select a BU</option>
-                {mockBusinessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
+                {businessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
               </select>
             </div>
           </div>

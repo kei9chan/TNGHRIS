@@ -1,5 +1,3 @@
-import { mockUsers, mockBusinessUnits, mockAttendanceRecords, mockShiftAssignments, mockSites } from '../../../services/mockDataCompat';
-
 import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import Card from '../../../components/ui/Card';
@@ -7,6 +5,7 @@ import Input from '../../../components/ui/Input';
 import Button from '../../../components/ui/Button';
 import { usePermissions } from '../../../hooks/usePermissions';
 import { Permission } from '../../../types';
+import { useUsers, useBusinessUnits, useAttendanceRecords, useShiftAssignments, useSites } from '../../../hooks/useHRData';
 
 interface SummaryRow {
     date: string;
@@ -18,7 +17,6 @@ interface SummaryRow {
 
 const ArrowLeftIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>;
 
-
 const DailyTimeSummary: React.FC = () => {
     const { can, getAccessibleBusinessUnits } = usePermissions();
     const today = new Date();
@@ -27,12 +25,21 @@ const DailyTimeSummary: React.FC = () => {
     const [startDate, setStartDate] = useState(lastWeek);
     const [endDate, setEndDate] = useState(today.toISOString().split('T')[0]);
     
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(mockBusinessUnits), [getAccessibleBusinessUnits]);
+    const { users, loading: usersLoading } = useUsers();
+    const { businessUnits, loading: busLoading } = useBusinessUnits();
+    const { attendanceRecords, loading: recordsLoading } = useAttendanceRecords();
+    const { shiftAssignments, loading: shiftsLoading } = useShiftAssignments();
+    const { sites, loading: sitesLoading } = useSites();
+
+    const isLoading = usersLoading || busLoading || recordsLoading || shiftsLoading || sitesLoading;
+
+    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(businessUnits), [getAccessibleBusinessUnits, businessUnits]);
 
     const summaryData = useMemo(() => {
+        if (!attendanceRecords || !users) return [];
         const accessibleBuNames = new Set(accessibleBus.map(b => b.name));
 
-        const filteredRecords = mockAttendanceRecords.filter(r => {
+        const filteredRecords = attendanceRecords.filter(r => {
             const recDate = new Date(r.date);
             const start = new Date(startDate);
             const end = new Date(endDate);
@@ -41,7 +48,7 @@ const DailyTimeSummary: React.FC = () => {
             if (!(recDate >= start && recDate <= end && r.totalWorkMinutes > 0)) return false;
 
             // Access Scope Check
-            const employee = mockUsers.find(u => u.id === r.employeeId);
+            const employee = users.find(u => u.id === r.employeeId);
             if (!employee || !accessibleBuNames.has(employee.businessUnit)) return false;
 
             return true;
@@ -50,9 +57,9 @@ const DailyTimeSummary: React.FC = () => {
         const summaryMap = new Map<string, SummaryRow>();
 
         filteredRecords.forEach(record => {
-            const user = mockUsers.find(u => u.id === record.employeeId);
-            const shift = mockShiftAssignments.find(s => s.employeeId === record.employeeId && new Date(s.date).toDateString() === new Date(record.date).toDateString());
-            const site = mockSites.find(s => s.id === shift?.locationId);
+            const user = users.find(u => u.id === record.employeeId);
+            const shift = (shiftAssignments || []).find(s => s.employeeId === record.employeeId && new Date(s.date).toDateString() === new Date(record.date).toDateString());
+            const site = (sites || []).find(s => s.id === shift?.locationId);
 
             const department = user?.department || 'Unknown';
             const siteName = site?.name || 'Unknown';
@@ -79,7 +86,7 @@ const DailyTimeSummary: React.FC = () => {
 
         return Array.from(summaryMap.values()).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime() || a.department.localeCompare(b.department));
 
-    }, [startDate, endDate, accessibleBus]);
+    }, [startDate, endDate, accessibleBus, attendanceRecords, users, shiftAssignments, sites]);
 
     const exportToCSV = () => {
         const headers = ['Date', 'Department', 'Site', 'Total Hours', 'Employee Count'];
@@ -106,6 +113,10 @@ const DailyTimeSummary: React.FC = () => {
         a.click();
         document.body.removeChild(a);
     };
+
+    if (isLoading) {
+        return <div className="p-4 text-gray-500">Loading daily time summary data...</div>;
+    }
 
     return (
         <div className="space-y-6">

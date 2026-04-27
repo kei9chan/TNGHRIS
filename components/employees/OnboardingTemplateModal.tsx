@@ -1,4 +1,5 @@
-import { mockUsers, mockAssets } from '../../services/mockDataCompat';
+import { fetchAssets } from '../../services/assetService';
+import { useUsers } from '../../hooks/useHRData';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { OnboardingChecklistTemplate, OnboardingTaskTemplate, Role, OnboardingTaskType, Asset, AssetStatus } from '../../types';
 import Modal from '../ui/Modal';
@@ -23,6 +24,7 @@ interface OnboardingTemplateModalProps {
 const allRoles = Object.values(Role);
 
 const OnboardingTemplateModal: React.FC<OnboardingTemplateModalProps> = ({ isOpen, onClose, onSave, template }) => {
+  const { users } = useUsers();
   const [data, setData] = useState<Partial<OnboardingChecklistTemplate>>({});
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
@@ -30,8 +32,14 @@ const OnboardingTemplateModal: React.FC<OnboardingTemplateModalProps> = ({ isOpe
   const [assetSearchTerms, setAssetSearchTerms] = useState<Record<string, string>>({});
   const [openAssetSearch, setOpenAssetSearch] = useState<string | null>(null);
 
-  const availableAssets = useMemo(() => mockAssets.filter(a => a.status === AssetStatus.Available), []);
-  const allAssets = useMemo(() => mockAssets, []);
+  const [assets, setAssets] = useState<Asset[]>([]);
+
+  useEffect(() => {
+    fetchAssets().then(setAssets).catch(console.error);
+  }, []);
+
+  const availableAssets = useMemo(() => assets.filter(a => a.status === AssetStatus.Available), [assets]);
+  const allAssets = useMemo(() => assets, [assets]);
 
   useEffect(() => {
     const defaultTasks = template?.tasks.map(t => ({...t, dueDateType: t.dueDateType || 'hire'})) || [];
@@ -40,7 +48,7 @@ const OnboardingTemplateModal: React.FC<OnboardingTemplateModalProps> = ({ isOpe
         const initialSearchTerms: Record<string, string> = {};
         template.tasks.forEach(task => {
             if (task.assetId) {
-                const asset = mockAssets.find(a => a.id === task.assetId);
+                const asset = allAssets.find(a => a.id === task.assetId);
                 if (asset) {
                     initialSearchTerms[task.id] = `${asset.assetTag} - ${asset.name}`;
                 }
@@ -55,7 +63,7 @@ const OnboardingTemplateModal: React.FC<OnboardingTemplateModalProps> = ({ isOpe
         setAssetSearchTerms({});
     }
     setOpenAssetSearch(null); // Reset open dropdown on modal open/close
-  }, [template, isOpen]);
+  }, [template, isOpen, allAssets]);
 
   const handleTemplateChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -420,7 +428,7 @@ const OnboardingTemplateModal: React.FC<OnboardingTemplateModalProps> = ({ isOpe
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Specific Owner</label>
                             <select value={task.ownerUserId || ''} onChange={(e) => handleTaskChange(index, 'ownerUserId', e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
                                 <option value="">-- Select a user --</option>
-                                {mockUsers.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}
+                                {users.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}
                             </select>
                         </div>
                     )}

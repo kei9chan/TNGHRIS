@@ -1,4 +1,4 @@
-import { mockUsers, mockBusinessUnits, mockAwards, mockEmployeeAwards } from '../../services/mockDataCompat';
+
 
 import React from 'react';
 import Card from '../../components/ui/Card';
@@ -55,8 +55,8 @@ const Awards: React.FC = () => {
 
   const [awards, setAwards] = React.useState<Award[]>([]);
   const [employeeAwards, setEmployeeAwards] = React.useState<EmployeeAward[]>([]);
-  const [users, setUsers] = React.useState<User[]>(mockUsers);
-  const [businessUnits, setBusinessUnits] = React.useState<BusinessUnit[]>(mockBusinessUnits);
+  const [users, setUsers] = React.useState<User[]>([]);
+  const [businessUnits, setBusinessUnits] = React.useState<BusinessUnit[]>([]);
   
   const [isAssignModalOpen, setIsAssignModalOpen] = React.useState(false);
   
@@ -86,7 +86,7 @@ const Awards: React.FC = () => {
         const tpl = await fetchAwardTemplates();
         setAwards(tpl);
       } catch {
-        setAwards(mockAwards);
+        setAwards([]);
       }
       try {
         const ea = await fetchEmployeeAwards();
@@ -108,7 +108,7 @@ const Awards: React.FC = () => {
         }));
         setEmployeeAwards(mapped);
       } catch {
-        setEmployeeAwards(mockEmployeeAwards);
+        setEmployeeAwards([]);
       }
       // load users & business units
       try {
@@ -132,10 +132,10 @@ const Awards: React.FC = () => {
             position: u.position || '',
           })));
         } else {
-          setUsers(mockUsers);
+          setUsers([]);
         }
       } catch {
-        setUsers(mockUsers);
+        setUsers([]);
       }
 
       try {
@@ -148,10 +148,10 @@ const Awards: React.FC = () => {
             color: b.color || '#4F46E5',
           })));
         } else {
-          setBusinessUnits(mockBusinessUnits);
+          setBusinessUnits([]);
         }
       } catch {
-        setBusinessUnits(mockBusinessUnits);
+        setBusinessUnits([]);
       }
     };
     load();
@@ -478,7 +478,7 @@ const Awards: React.FC = () => {
                 <label htmlFor="buFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
                 <select id="buFilter" value={buFilter} onChange={e => setBuFilter(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 dark:border-gray-600 dark:bg-gray-700 rounded-md">
                     <option value="">All Business Units</option>
-                    {mockBusinessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
+                    {businessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
                 </select>
             </div>
             <div>

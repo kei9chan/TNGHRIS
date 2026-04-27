@@ -1,4 +1,4 @@
-import { mockUsers, mockNotifications, mockContractTemplates } from '../../services/mockDataCompat';
+// Phase E: mockDataCompat removed from Contracts
 import React, { useState, useMemo } from 'react';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -64,7 +64,7 @@ const Contracts: React.FC = () => {
   const [selectedTemplate, setSelectedTemplate] = useState<Partial<ContractTemplate> | null>(null);
   
   const [envelopes, setEnvelopes] = useState<Envelope[]>([]);
-  const [employees, setEmployees] = useState(mockUsers);
+  const [employees, setEmployees] = useState<any[]>([]);
   const [isEnvelopeDrawerOpen, setIsEnvelopeDrawerOpen] = useState(false);
   const [selectedEnvelope, setSelectedEnvelope] = useState<Envelope | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -91,11 +91,11 @@ const Contracts: React.FC = () => {
           }));
           setEmployees(mapped);
         } else {
-          setEmployees(mockUsers);
+          setEmployees([]);
         }
       } catch (err) {
         console.error('Failed to load employees for envelopes', err);
-        setEmployees(mockUsers);
+        setEmployees([]);
       }
     };
     loadEmployees();
@@ -113,7 +113,7 @@ const Contracts: React.FC = () => {
         setTemplates((data as ContractTemplateRow[]).map(mapTemplateRow));
       } catch (err) {
         console.error('Failed to load contract templates', err);
-        setTemplates(mockContractTemplates);
+        setTemplates([]);
       }
     };
     loadTemplates();
@@ -331,7 +331,7 @@ const Contracts: React.FC = () => {
       if (!user || !envelopeToSave.routingSteps || !envelopeToSave.templateId || !envelopeToSave.employeeId) return;
 
       const template = templates.find(t => t.id === envelopeToSave.templateId);
-      const employee = employees.find(u => u.id === envelopeToSave.employeeId) || mockUsers.find(u => u.id === envelopeToSave.employeeId);
+      const employee = employees.find(u => u.id === envelopeToSave.employeeId);
 
       if (!employee || !template) return;
 
@@ -413,20 +413,23 @@ const Contracts: React.FC = () => {
           const idToRow = new Map(
             (recipientRows.data || []).map((row: any) => [row.id, row])
           );
+          const notificationRows: any[] = [];
           const pushNotificationFor = (
             targetId: string,
             type: NotificationType,
-            message: string
+            message: string,
+            linkOverride?: string
           ) => {
-            mockNotifications.unshift({
-              id: `notif-contract-${type}-${newEnvelope.id}-${targetId}-${createdAt.getTime()}`,
-              userId: targetId,
+            notificationRows.push({
+              id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${targetId}`,
+              user_id: targetId,
               type,
+              title: 'Contract Update',
               message,
-              link,
-              isRead: false,
-              createdAt,
-              relatedEntityId: newEnvelope.id,
+              link: linkOverride || link,
+              is_read: false,
+              created_at: createdAt.toISOString(),
+              related_entity_id: newEnvelope.id,
             });
           };
 
@@ -435,12 +438,6 @@ const Contracts: React.FC = () => {
             targets.add(userId);
             const row = idToRow.get(userId);
             if (row?.auth_user_id) targets.add(row.auth_user_id);
-            if (row?.email) {
-              const mockMatch = mockUsers.find(
-                u => u.email?.toLowerCase() === String(row.email).toLowerCase()
-              );
-              if (mockMatch?.id) targets.add(mockMatch.id);
-            }
             return targets;
           };
 
@@ -448,7 +445,8 @@ const Contracts: React.FC = () => {
             pushNotificationFor(
               targetId,
               NotificationType.CONTRACT_SIGNATURE_REQUEST,
-              `Contract "${newEnvelope.title}" is ready for your signature.`
+              `Contract "${newEnvelope.title}" is ready for your signature.`,
+              `${baseLink}?action=sign`
             );
           });
 
@@ -458,18 +456,15 @@ const Contracts: React.FC = () => {
               pushNotificationFor(
                 targetId,
                 NotificationType.CONTRACT_APPROVAL_REQUEST,
-                `Approval required for "${newEnvelope.title}" for ${newEnvelope.employeeName}.`
+                `Approval required for "${newEnvelope.title}" for ${newEnvelope.employeeName}.`,
+                `${baseLink}?action=approve`
               );
             });
           });
 
-          // Override links so signature and approval land on distinct actions.
-          mockNotifications
-            .filter(n => n.relatedEntityId === newEnvelope.id && n.type === NotificationType.CONTRACT_SIGNATURE_REQUEST)
-            .forEach(n => { n.link = `${baseLink}?action=sign`; });
-          mockNotifications
-            .filter(n => n.relatedEntityId === newEnvelope.id && n.type === NotificationType.CONTRACT_APPROVAL_REQUEST)
-            .forEach(n => { n.link = `${baseLink}?action=approve`; });
+          if (notificationRows.length > 0) {
+             supabase.from('notifications').insert(notificationRows).then();
+          }
         }
 
         setEnvelopes(prev => {

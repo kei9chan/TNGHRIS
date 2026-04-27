@@ -1,5 +1,4 @@
-import { mockCOETemplates } from '../../services/mockDataCompat';
-
+// Phase A complete: mockDataCompat removed from COETemplates
 import React, { useState, useMemo, useEffect } from 'react';
 import { BusinessUnit, COETemplate, Permission } from '../../types';
 import Card from '../../components/ui/Card';
@@ -44,7 +43,7 @@ const COETemplates: React.FC = () => {
                 if (active) setTemplates(mapped);
             } catch (err) {
                 console.error('Failed to load COE templates', err);
-                if (active) setTemplates([...mockCOETemplates]);
+                if (active) setTemplates([]);
             }
         };
         loadTemplates();

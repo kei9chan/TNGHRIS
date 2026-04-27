@@ -1,25 +1,53 @@
-import { mockIncidentReports, mockResolutions, mockCoachingSessions } from '../../services/mockDataCompat';
-import React, { useMemo } from 'react';
+// Phase E: mockDataCompat removed from DisciplineAnalytics — live Supabase data
+import React, { useEffect, useMemo, useState } from 'react';
 import AnalyticsCard from '../../components/analytics/AnalyticsCard';
 import SimpleBarChart from '../../components/analytics/SimpleBarChart';
 import SimplePieChart from '../../components/analytics/SimplePieChart';
 import SimpleLineChart from '../../components/analytics/SimpleLineChart';
 import CoachingImpactChart from '../../components/analytics/CoachingImpactChart';
-import { ResolutionType, CoachingTrigger } from '../../types';
+import { IncidentReport, Resolution, CoachingSession, ResolutionType, CoachingTrigger } from '../../types';
 import EditableDescription from '../../components/ui/EditableDescription';
 import Card from '../../components/ui/Card';
+import { fetchIncidentReports } from '../../services/incidentReportService';
+import { fetchResolutions } from '../../services/resolutionService';
+import { fetchCoachingSessions } from '../../services/coachingService';
 
 const DisciplineAnalytics: React.FC = () => {
+    const [incidentReports, setIncidentReports] = useState<IncidentReport[]>([]);
+    const [resolutions, setResolutions] = useState<Resolution[]>([]);
+    const [coachingSessions, setCoachingSessions] = useState<CoachingSession[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        const load = async () => {
+            setIsLoading(true);
+            try {
+                const [irs, resols, coaching] = await Promise.all([
+                    fetchIncidentReports(),
+                    fetchResolutions(),
+                    fetchCoachingSessions(),
+                ]);
+                setIncidentReports(irs);
+                setResolutions(resols);
+                setCoachingSessions(coaching);
+            } catch (err) {
+                console.error('DisciplineAnalytics: failed to load data', err);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        load();
+    }, []);
 
     const commonViolations = useMemo(() => {
         const counts: Record<string, number> = {};
-        mockIncidentReports.forEach(report => {
+        incidentReports.forEach(report => {
             counts[report.category] = (counts[report.category] || 0) + 1;
         });
         return Object.entries(counts)
             .map(([label, value]) => ({ label, value }))
             .sort((a, b) => b.value - a.value);
-    }, []);
+    }, [incidentReports]);
 
     const casesPerMonth = useMemo(() => {
         const counts: Record<string, number> = {};
@@ -31,19 +59,19 @@ const DisciplineAnalytics: React.FC = () => {
             counts[monthKey] = 0;
         }
 
-        mockIncidentReports.forEach(report => {
+        incidentReports.forEach(report => {
             const monthKey = new Date(report.dateTime).toLocaleString('default', { month: 'short', year: '2-digit' });
-            if (counts.hasOwnProperty(monthKey)) {
+            if (Object.prototype.hasOwnProperty.call(counts, monthKey)) {
                 counts[monthKey]++;
             }
         });
 
         return Object.entries(counts).map(([label, value]) => ({ label, value }));
-    }, []);
+    }, [incidentReports]);
 
     const resolutionOutcomes = useMemo(() => {
         const counts: Record<string, number> = {};
-        mockResolutions.forEach(res => {
+        resolutions.forEach(res => {
             counts[res.resolutionType] = (counts[res.resolutionType] || 0) + 1;
         });
         const colors: Record<ResolutionType, string> = {
@@ -54,37 +82,35 @@ const DisciplineAnalytics: React.FC = () => {
             [ResolutionType.Termination]: 'bg-red-700',
         };
         return Object.entries(counts).map(([label, value]) => ({ label, value, color: colors[label as ResolutionType] || 'bg-blue-500' }));
-    }, []);
+    }, [resolutions]);
 
     // --- Coaching Impact Analysis ---
     const coachingStats = useMemo(() => {
         const coachingCounts: Record<string, number> = {};
-        mockCoachingSessions.forEach(session => {
-            const category = session.trigger; // Assuming Trigger roughly maps to Category
+        coachingSessions.forEach(session => {
+            const category = session.trigger;
             coachingCounts[category] = (coachingCounts[category] || 0) + 1;
         });
 
         const incidentCounts: Record<string, number> = {};
-        mockIncidentReports.forEach(report => {
-            // Normalize category names if needed, for now assume direct match or close enough
+        incidentReports.forEach(report => {
             incidentCounts[report.category] = (incidentCounts[report.category] || 0) + 1;
         });
-        
+
         return { coachingCounts, incidentCounts };
-    }, []);
-    
+    }, [coachingSessions, incidentReports]);
+
     const paperTrailCandidates = useMemo(() => {
         const employeeHistory: Record<string, { name: string, coaching: Record<string, number>, incidents: Record<string, number> }> = {};
 
-        mockCoachingSessions.forEach(s => {
+        coachingSessions.forEach(s => {
             if (!employeeHistory[s.employeeId]) employeeHistory[s.employeeId] = { name: s.employeeName, coaching: {}, incidents: {} };
             employeeHistory[s.employeeId].coaching[s.trigger] = (employeeHistory[s.employeeId].coaching[s.trigger] || 0) + 1;
         });
 
-        mockIncidentReports.forEach(ir => {
+        incidentReports.forEach(ir => {
             ir.involvedEmployeeIds.forEach(empId => {
                 if (!employeeHistory[empId]) {
-                    // Find name from somewhere if not in coaching, or use placeholder
                     employeeHistory[empId] = { name: ir.involvedEmployeeNames[ir.involvedEmployeeIds.indexOf(empId)], coaching: {}, incidents: {} };
                 }
                 employeeHistory[empId].incidents[ir.category] = (employeeHistory[empId].incidents[ir.category] || 0) + 1;
@@ -107,17 +133,23 @@ const DisciplineAnalytics: React.FC = () => {
         });
 
         return candidates;
-    }, []);
+    }, [coachingSessions, incidentReports]);
 
     const coachingSuccessRate = useMemo(() => {
-         // Simplistic metric: Total Coaching Sessions that did NOT have a subsequent IR in same category for same user within 30 days.
-         // For this MVP visualization, let's just use (Total Coaching) / (Total Coaching + Total IRs) as "Intervention Ratio"
-         const totalCoaching = mockCoachingSessions.length;
-         const totalIRs = mockIncidentReports.length;
+         const totalCoaching = coachingSessions.length;
+         const totalIRs = incidentReports.length;
          const ratio = totalCoaching > 0 ? (totalCoaching / (totalCoaching + totalIRs)) * 100 : 0;
          return ratio.toFixed(0);
-    }, []);
+    }, [coachingSessions, incidentReports]);
 
+
+    if (isLoading) {
+        return (
+            <div className="flex items-center justify-center h-64">
+                <p className="text-gray-500 dark:text-gray-400">Loading analytics…</p>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6">

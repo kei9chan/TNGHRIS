@@ -1,4 +1,4 @@
-import { mockUsers, mockNotifications } from '../../services/mockDataCompat';
+// Phase E: mockDataCompat removed from PersonnelActionNotice
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Card from '../../components/ui/Card';
@@ -17,6 +17,7 @@ import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { mergePanParticulars } from '../../services/panUtils';
 import { logActivity } from '../../services/auditService';
+import { createNotification } from '../../services/notificationService';
 import {
   PAN,
   PANStatus,
@@ -220,33 +221,27 @@ const PersonnelActionNotice: React.FC = () => {
         (stepUserRows || []).map((row: any) => [row.id, row])
       );
 
-      (panToSend.routingSteps || []).forEach(step => {
-        const targets = new Set<string>();
-        if (step.userId) targets.add(step.userId);
+      await Promise.all(
+        (panToSend.routingSteps || []).map(async step => {
+          const targets = new Set<string>();
+          if (step.userId) targets.add(step.userId);
 
-        const row = stepUserMap.get(step.userId);
-        if (row?.auth_user_id) targets.add(row.auth_user_id);
-        if (row?.email) {
-          const mockMatch = mockUsers.find(
-            u => u.email?.toLowerCase() === String(row.email).toLowerCase()
+          const row = stepUserMap.get(step.userId);
+          if (row?.auth_user_id) targets.add(row.auth_user_id);
+
+          await Promise.all(
+            Array.from(targets).map(targetId =>
+              createNotification({
+                userId: targetId,
+                type: NotificationType.PAN_APPROVAL_REQUEST as any,
+                title: 'PAN Approval Required',
+                message: `A PAN requires your review for ${panToSend.employeeName || 'an employee'}.`,
+                link: '/employees/pan',
+              }).catch(console.error)
+            )
           );
-          if (mockMatch?.id) targets.add(mockMatch.id);
-        }
-
-        targets.forEach(targetId => {
-          mockNotifications.unshift({
-            id: `notif-pan-approve-${saved.id}-${targetId}-${createdAt.getTime()}`,
-            userId: targetId,
-            type: NotificationType.PAN_APPROVAL_REQUEST,
-            title: 'PAN Approval Required',
-            message: `A PAN requires your review for ${panToSend.employeeName || 'an employee'}.`,
-            link: '/employees/pan',
-            isRead: false,
-            createdAt,
-            relatedEntityId: saved.id,
-          });
-        });
-      });
+        })
+      );
       logActivity(user!, 'SUBMIT', 'PAN', saved.id, `Sent PAN for acknowledgement for ${panToSend.employeeName || ''}.`);
     }
   };
@@ -303,26 +298,18 @@ const PersonnelActionNotice: React.FC = () => {
           .eq('id', employeeId)
           .maybeSingle();
         if (empRow?.auth_user_id) targets.add(empRow.auth_user_id);
-        if (empRow?.email) {
-          const mockMatch = mockUsers.find(
-            u => u.email?.toLowerCase() === String(empRow.email).toLowerCase()
-          );
-          if (mockMatch?.id) targets.add(mockMatch.id);
-        }
 
-        targets.forEach(targetId => {
-          mockNotifications.unshift({
-            id: `notif-pan-ack-${panId}-${targetId}-${createdAt.getTime()}`,
-            userId: targetId,
-            type: NotificationType.PAN_UPDATE,
-            title: 'PAN for Acknowledgement',
-            message: `A PAN is ready for your acknowledgement (${employeeName}).`,
-            link: '/employees/pan',
-            isRead: false,
-            createdAt,
-            relatedEntityId: panId,
-          });
-        });
+        await Promise.all(
+          Array.from(targets).map(targetId =>
+            createNotification({
+              userId: targetId,
+              type: NotificationType.PAN_UPDATE as any,
+              title: 'PAN for Acknowledgement',
+              message: `A PAN is ready for your acknowledgement (${employeeName}).`,
+              link: '/employees/pan',
+            }).catch(console.error)
+          )
+        );
       }
     }
     setIsModalOpen(false);

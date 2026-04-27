@@ -1,14 +1,15 @@
-import { mockApplications, mockCandidates } from '../../services/mockDataCompat';
 import React from 'react';
-import { Interview } from '../../types';
+import { Interview, Application, Candidate } from '../../types';
 
 interface WeekViewProps {
     currentDate: Date;
     interviews: Interview[];
+    applications: Application[];
+    candidates: Candidate[];
     onInterviewClick: (interview: Interview) => void;
 }
 
-const WeekView: React.FC<WeekViewProps> = ({ currentDate, interviews, onInterviewClick }) => {
+const WeekView: React.FC<WeekViewProps> = ({ currentDate, interviews, applications, candidates, onInterviewClick }) => {
     const weekDates = Array.from({ length: 7 }, (_, i) => {
         const date = new Date(currentDate);
         date.setDate(date.getDate() - date.getDay() + i);
@@ -28,8 +29,8 @@ const WeekView: React.FC<WeekViewProps> = ({ currentDate, interviews, onIntervie
                         </div>
                         <div className="space-y-2 min-h-[40vh]">
                             {interviewsForDay.map(interview => {
-                                const application = mockApplications.find(a => a.id === interview.applicationId);
-                                const candidate = mockCandidates.find(c => c.id === application?.candidateId);
+                                const application = applications.find(a => a.id === interview.applicationId);
+                                const candidate = candidates.find(c => c.id === application?.candidateId);
                                 return (
                                     <div key={interview.id} onClick={() => onInterviewClick(interview)} className="p-2 bg-blue-50 dark:bg-blue-900/30 border-l-4 border-blue-500 rounded-md cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/50">
                                         <p className="text-sm font-semibold text-blue-800 dark:text-blue-200 truncate">{candidate ? `${candidate.firstName} ${candidate.lastName}` : 'Unknown'}</p>

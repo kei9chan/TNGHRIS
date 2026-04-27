@@ -1,4 +1,4 @@
-import { mockUsers } from '../../services/mockDataCompat';
+import { useUsers } from '../../hooks/useHRData';
 
 import React, { useState, useMemo } from 'react';
 import { OTRequest, OTStatus } from '../../types';
@@ -17,6 +17,7 @@ const DocumentArrowDownIcon = () => (
 );
 
 const OTLedger: React.FC<OTLedgerProps> = ({ requests }) => {
+    const { users } = useUsers();
     const today = new Date();
     const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
     const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
@@ -37,7 +38,7 @@ const OTLedger: React.FC<OTLedgerProps> = ({ requests }) => {
             
             let deptMatch = true;
             if (deptFilter) {
-                const employee = mockUsers.find(u => u.id === req.employeeId);
+                const employee = users.find(u => u.id === req.employeeId);
                 deptMatch = employee?.department === deptFilter;
             }
 
@@ -93,7 +94,7 @@ const OTLedger: React.FC<OTLedgerProps> = ({ requests }) => {
         document.body.removeChild(a);
     };
 
-    const departments = [...new Set(mockUsers.map(u => u.department))].sort();
+    const departments = [...new Set(users.map(u => u.department))].sort();
 
     return (
         <div className="space-y-6">

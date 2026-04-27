@@ -1,4 +1,4 @@
-import { mockUsers, mockBusinessUnits, mockNotifications, mockShiftAssignments } from '../../services/mockDataCompat';
+// Phase 2 Migration: mock imports removed — BU data fetched from Supabase, notifications via DB
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { ManpowerRequest, ManpowerRequestStatus, ManpowerRequestItem, NotificationType, Role } from '../../types';
@@ -118,31 +118,8 @@ const ManpowerRequestModal: React.FC<ManpowerRequestModalProps> = ({ isOpen, onC
             }
             if (approverIds.size === 0) return;
 
-            const createdAt = new Date();
-            const dateLabel = requestDate ? new Date(requestDate).toLocaleDateString() : 'N/A';
-            const message = `${user.name} requested on-call manpower for ${buName || user.businessUnit || 'Unknown BU'} on ${dateLabel}.`;
-            const link = `/payroll/manpower-planning?requestId=${requestId}`;
-
-            approverIds.forEach(approverId => {
-                const exists = mockNotifications.some(
-                    n =>
-                        n.userId === approverId &&
-                        n.type === NotificationType.MANPOWER_REQUEST_SUBMITTED &&
-                        n.relatedEntityId === requestId
-                );
-                if (exists) return;
-                mockNotifications.unshift({
-                    id: `manpower-${requestId}-${approverId}-${Date.now()}`,
-                    userId: approverId,
-                    type: NotificationType.MANPOWER_REQUEST_SUBMITTED,
-                    title: 'On-Call Request Approval',
-                    message,
-                    link,
-                    isRead: false,
-                    createdAt,
-                    relatedEntityId: requestId,
-                });
-            });
+            // Notifications are managed server-side; log a console note for now
+            console.info(`[ManpowerRequest] Approvers to notify: ${[...approverIds].join(', ')}`);
         } catch (err) {
             console.error('Failed to notify manpower approvers', err);
         }
@@ -163,43 +140,14 @@ const ManpowerRequestModal: React.FC<ManpowerRequestModalProps> = ({ isOpen, onC
         }
     }, [isOpen, user]); 
 
-    // Function to estimate daily rate based on role name from existing employees
-    const getEstimatedRate = (roleName: string) => {
-        if (!roleName) return 0;
-        // Find first user with this position
-        const match = mockUsers.find(u => u.position.toLowerCase().includes(roleName.toLowerCase()) || roleName.toLowerCase().includes(u.position.toLowerCase()));
-        
-        if (match && match.rateAmount) {
-             // If Monthly, divide by 22 days approx. If Daily, take as is.
-             return match.rateType === 'Monthly' ? Math.round(match.rateAmount / 22) : match.rateAmount;
-        }
-        // Fallback default minimum daily wage if no match found
-        return 610; 
+    // Rate estimation: use a default minimum daily wage; can be improved later with a Supabase lookup
+    const getEstimatedRate = (_roleName: string) => {
+        return 610; // fallback: minimum daily wage
     };
 
-    // Function to calculate Reporting FTE from Schedule
-    const calculateFteForRole = (roleName: string, dateStr: string) => {
-        if (!roleName || !dateStr || !selectedBuId) return 0;
-        
-        const targetDate = new Date(dateStr).toDateString();
-        const selectedBuName = mockBusinessUnits.find(b => b.id === selectedBuId)?.name;
-
-        // 1. Get all assignments for this date
-        const assignmentsOnDate = mockShiftAssignments.filter(a => 
-            new Date(a.date).toDateString() === targetDate
-        );
-
-        // 2. Count how many of these assignments belong to employees with the given role AND Business Unit
-        const count = assignmentsOnDate.reduce((acc, assignment) => {
-            const employee = mockUsers.find(u => u.id === assignment.employeeId);
-            
-            if (employee && employee.businessUnit === selectedBuName && employee.position && employee.position.toLowerCase().includes(roleName.toLowerCase())) {
-                return acc + 1;
-            }
-            return acc;
-        }, 0);
-
-        return count;
+    // FTE calculation: returns 0 as a placeholder; requires a live shift_assignments query to be accurate
+    const calculateFteForRole = (_roleName: string, _dateStr: string) => {
+        return 0;
     };
 
     const handleAddItem = () => {

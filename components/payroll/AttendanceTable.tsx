@@ -1,4 +1,4 @@
-import { mockLeaveTypes } from '../../services/mockDataCompat';
+// Phase 2 Migration: mockLeaveTypes removed — name read from leaveForDay.leaveTypeName
 import React, { useState, useMemo } from 'react';
 import { AttendanceRecord, AttendanceException, OTRequest, LeaveRequest, User } from '../../types';
 import Input from '../ui/Input';
@@ -113,7 +113,7 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ records, approvedOver
               );
               
               const isOnLeave = record.exceptions.includes(AttendanceException.OnLeave) || !!leaveForDay;
-              const leaveType = leaveForDay ? mockLeaveTypes.find(lt => lt.id === leaveForDay.leaveTypeId) : null;
+              const leaveTypeName = leaveForDay ? ((leaveForDay as any).leaveTypeName || leaveForDay.leaveTypeId || 'Leave') : undefined;
 
               return (
               <tr key={record.id} className={isOnLeave ? 'bg-gray-50 dark:bg-gray-800/50' : ''}>
@@ -134,7 +134,7 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ records, approvedOver
                 <td className="px-6 py-4 whitespace-nowrap text-sm">
                   <div className="flex flex-wrap gap-1">
                     {isOnLeave ? (
-                        <ExceptionChip exception={AttendanceException.OnLeave} leaveTypeName={leaveType?.name}/>
+                        <ExceptionChip exception={AttendanceException.OnLeave} leaveTypeName={leaveTypeName}/>
                     ) : (
                         record.exceptions.map(ex => <ExceptionChip key={ex} exception={ex} />)
                     )}

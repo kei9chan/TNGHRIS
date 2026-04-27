@@ -1,7 +1,8 @@
-import { mockAnnouncements } from '../../services/mockDataCompat';
-import React, { useMemo } from 'react';
+// Phase A complete: mockDataCompat removed from AlertBanner
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
+import { supabase } from '../../services/supabaseClient';
 
 const MegaphoneIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -11,20 +12,28 @@ const MegaphoneIcon = () => (
 
 const AlertBanner: React.FC = () => {
     const { user } = useAuth();
+    const [latestUnacknowledgedAlert, setLatestUnacknowledgedAlert] = useState<{ id: string; title: string } | null>(null);
 
-    const latestUnacknowledgedAlert = useMemo(() => {
-        if (!user) return null;
-        
-        const relevantAlerts = mockAnnouncements.filter(a =>
-            a.type === 'Policy' &&
-            (a.targetGroup === 'All' || a.targetGroup === user.department) &&
-            !a.acknowledgementIds.includes(user.id)
-        );
-
-        if (relevantAlerts.length === 0) return null;
-
-        // Return the most recent one
-        return relevantAlerts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+    useEffect(() => {
+        if (!user) return;
+        const fetchAlert = async () => {
+            try {
+                const { data } = await supabase
+                    .from('announcements')
+                    .select('id, title, type, target_group, acknowledgement_ids, created_at')
+                    .eq('type', 'Policy')
+                    .order('created_at', { ascending: false });
+                if (!data) return;
+                const relevant = data.filter((a: any) => {
+                    const ids: string[] = a.acknowledgement_ids || [];
+                    return (a.target_group === 'All' || a.target_group === user.department) && !ids.includes(user.id);
+                });
+                setLatestUnacknowledgedAlert(relevant.length > 0 ? relevant[0] : null);
+            } catch {
+                // Silently ignore — banner is non-critical
+            }
+        };
+        fetchAlert();
     }, [user]);
 
     if (!latestUnacknowledgedAlert) {

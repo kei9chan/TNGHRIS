@@ -1,7 +1,6 @@
-import { mockJobRequisitions, mockApplications, mockCandidates, mockOffers } from '../../services/mockDataCompat';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Offer, OfferStatus, ApplicationStage, JobRequisition } from '../../types';
-// FIX: Added import for mockOffers to use in component logic.
+import { supabase } from '../../services/supabaseClient';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
@@ -34,18 +33,42 @@ const OfferCreationModal: React.FC<OfferCreationModalProps> = ({ isOpen, onClose
     const [specialClauses, setSpecialClauses] = useState('');
     const [error, setError] = useState('');
 
-    const applicantsInOfferStage = useMemo(() => {
-        return mockApplications
-            .filter(app => app.stage === ApplicationStage.Offer && !mockOffers.some(o => o.applicationId === app.id && o.status !== OfferStatus.Declined))
-            .map(app => {
-                const candidate = mockCandidates.find(c => c.id === app.candidateId);
-                const job = mockJobRequisitions.find(j => j.id === app.requisitionId);
-                return {
-                    appId: app.id,
-                    label: `${candidate?.firstName} ${candidate?.lastName} - ${job?.title}`
-                }
-            });
-    }, []);
+    const [applicantsInOfferStage, setApplicantsInOfferStage] = useState<{ appId: string; label: string; requisition?: any }[]>([]);
+
+    useEffect(() => {
+        const fetchApplicants = async () => {
+            const { data } = await supabase
+                .from('applications')
+                .select(`
+                    id,
+                    stage,
+                    candidates ( id, first_name, last_name ),
+                    job_requisitions ( id, title, employment_type, budgeted_salary_min )
+                `)
+                .eq('stage', 'Offer');
+                
+            if (data) {
+                // Fetch offers to filter out those with active offers
+                const { data: offersData } = await supabase.from('offers').select('application_id, status');
+                const activeOffers = (offersData || []).filter((o: any) => o.status !== 'Declined');
+                const activeAppIds = new Set(activeOffers.map((o: any) => o.application_id));
+
+                const available = data.filter((app: any) => !activeAppIds.has(app.id)).map((app: any) => {
+                    const c = Array.isArray(app.candidates) ? app.candidates[0] : app.candidates;
+                    const r = Array.isArray(app.job_requisitions) ? app.job_requisitions[0] : app.job_requisitions;
+                    const candidateName = c ? `${c.first_name} ${c.last_name}` : 'Unknown Candidate';
+                    const title = r ? r.title : 'Unknown Job';
+                    return {
+                        appId: app.id,
+                        label: `${candidateName} - ${title}`,
+                        requisition: r
+                    };
+                });
+                setApplicantsInOfferStage(available);
+            }
+        };
+        if (isOpen) fetchApplicants();
+    }, [isOpen]);
     
     const totalCompensation = useMemo(() => {
         const totalAllowances = allowances.reduce((sum, allowance) => sum + allowance.amount, 0);
@@ -69,14 +92,13 @@ const OfferCreationModal: React.FC<OfferCreationModalProps> = ({ isOpen, onClose
 
     useEffect(() => {
         if (applicationId) {
-            const application = mockApplications.find(a => a.id === applicationId);
-            const requisition = mockJobRequisitions.find(r => r.id === application?.requisitionId);
-            if (requisition) {
-                setEmploymentType(requisition.employmentType);
-                setBasePay(requisition.budgetedSalaryMin);
+            const selected = applicantsInOfferStage.find(a => a.appId === applicationId);
+            if (selected && selected.requisition) {
+                setEmploymentType(selected.requisition.employment_type || 'Full-Time');
+                setBasePay(selected.requisition.budgeted_salary_min || 0);
             }
         }
-    }, [applicationId]);
+    }, [applicationId, applicantsInOfferStage]);
     
     const handleAddAllowance = () => {
         setAllowances([...allowances, {id: Date.now(), type: '', amount: 0}]);

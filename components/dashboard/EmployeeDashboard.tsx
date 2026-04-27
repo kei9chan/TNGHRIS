@@ -1,4 +1,4 @@
-import { mockUsers, mockNotifications, mockAnnouncements, mockIncidentReports, mockNTEs, mockResolutions, mockMemos, mockCoachingSessions, mockEvaluations, mockEvaluationSubmissions, mockEvaluationTimelines, mockAwards, mockEmployeeAwards, mockPulseSurveys, mockSurveyResponses, mockTickets, mockAttendanceExceptions, mockCOERequests, mockPANs, mockBenefitRequests, mockAssetAssignments, mockAssetRequests, mockEmployeeDrafts, mockEnvelopes, mockOnboardingTemplates, mockOnboardingChecklists, mockResignations } from '../../services/mockDataCompat';
+
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -252,31 +252,23 @@ const EmployeeDashboard: React.FC = () => {
 
     const [toastInfo, setToastInfo] = useState<{ show: boolean, title: string, message: string, icon?: React.ReactNode }>({ show: false, title: '', message: '' });
     const [supabaseNotifications, setSupabaseNotifications] = useState<Notification[]>([]);
-    const [requests, setRequests] = useState<AssetRequest[]>(mockAssetRequests);
-    // New state for asset polling
-    const [assignments, setAssignments] = useState(mockAssetAssignments);
-    const [useSupabaseAssignments, setUseSupabaseAssignments] = useState(false);
+    const [requests, setRequests] = useState<AssetRequest[]>([]);
+    const [assignments, setAssignments] = useState<any[]>([]);
     const [employeeProfileId, setEmployeeProfileId] = useState<string | null>(null);
-    // NEW: State for checklists to ensure reactivity
-    const [checklists, setChecklists] = useState<OnboardingChecklist[]>(mockOnboardingChecklists);
-    // NEW: State for templates
-    const [templates, setTemplates] = useState<OnboardingChecklistTemplate[]>(mockOnboardingTemplates);
-    const [useSupabaseOnboarding, setUseSupabaseOnboarding] = useState(false);
-    // NEW: State for Benefit Requests
-    const [benefitRequests, setBenefitRequests] = useState(mockBenefitRequests);
-    // NEW: State for Pulse Surveys
-    const [pulseSurveys, setPulseSurveys] = useState(mockPulseSurveys);
-    const [surveyResponses, setSurveyResponses] = useState(mockSurveyResponses);
-    // NEW: State for Coaching
-    const [coachingSessions, setCoachingSessions] = useState(mockCoachingSessions);
-    const [envelopes, setEnvelopes] = useState<Envelope[]>(mockEnvelopes);
-    const [pans, setPans] = useState<PAN[]>(mockPANs);
+    const [checklists, setChecklists] = useState<OnboardingChecklist[]>([]);
+    const [templates, setTemplates] = useState<OnboardingChecklistTemplate[]>([]);
+    const [benefitRequests, setBenefitRequests] = useState<any[]>([]);
+    const [pulseSurveys, setPulseSurveys] = useState<any[]>([]);
+    const [surveyResponses, setSurveyResponses] = useState<any[]>([]);
+    const [coachingSessions, setCoachingSessions] = useState<any[]>([]);
+    const [envelopes, setEnvelopes] = useState<Envelope[]>([]);
+    const [pans, setPans] = useState<PAN[]>([]);
     const [reporteeIds, setReporteeIds] = useState<string[]>([]);
     const [pendingOtApprovals, setPendingOtApprovals] = useState<OTRequest[]>([]);
-    const [ntes, setNTEs] = useState<NTE[]>(mockNTEs);
-    const [evaluationSubmissions, setEvaluationSubmissions] = useState(mockEvaluationSubmissions);
-    const [evaluations, setEvaluations] = useState<Evaluation[]>(mockEvaluations);
-    const [evaluationTimelines, setEvaluationTimelines] = useState(mockEvaluationTimelines);
+    const [ntes, setNTEs] = useState<NTE[]>([]);
+    const [evaluationSubmissions, setEvaluationSubmissions] = useState<any[]>([]);
+    const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
+    const [evaluationTimelines, setEvaluationTimelines] = useState<any[]>([]);
     const [useSupabaseEvaluations, setUseSupabaseEvaluations] = useState(false);
     const [useSupabaseEvaluationSubmissions, setUseSupabaseEvaluationSubmissions] = useState(false);
     const [coeDecisions, setCoeDecisions] = useState<Array<{ id: string; status: COERequest['status']; date: Date }>>([]);
@@ -298,43 +290,30 @@ const EmployeeDashboard: React.FC = () => {
         }
     }, [location.state, navigate]);
 
+    // Award confetti: check Supabase for unacknowledged awards
     useEffect(() => {
-        if (!user) return;
-
-        const unacknowledgedAwards = mockEmployeeAwards.filter(award =>
-            award.employeeId === user.id &&
-            award.status === ResolutionStatus.Approved &&
-            !award.isAcknowledgedByEmployee
-        );
-
-        if (unacknowledgedAwards.length > 0) {
+        if (!user?.id) return;
+        let active = true;
+        const checkAwards = async () => {
+            const { data } = await supabase
+                .from('employee_awards')
+                .select('id, award_id, employee_id, is_acknowledged_by_employee, awards(title)')
+                .eq('employee_id', user.id)
+                .eq('status', ResolutionStatus.Approved)
+                .eq('is_acknowledged_by_employee', false);
+            if (!active || !data || data.length === 0) return;
             setShowConfetti(true);
-            const confettiTimer = setTimeout(() => setShowConfetti(false), 6000);
-
-            unacknowledgedAwards.forEach(newAward => {
-                const awardDetails = mockAwards.find(a => a.id === newAward.awardId);
-                mockNotifications.unshift({
-                    id: `notif-award-${Date.now()}`,
-                    userId: user.id,
-                    type: NotificationType.AWARD_RECEIVED,
-                    message: `You've been awarded the '${awardDetails?.title}'!`,
-                    link: '/my-profile#achievements',
-                    isRead: false,
-                    createdAt: new Date(),
-                    relatedEntityId: newAward.id,
-                });
-            });
-
-            unacknowledgedAwards.forEach(awardToAck => {
-                const awardIndex = mockEmployeeAwards.findIndex(ea => ea.id === awardToAck.id);
-                if (awardIndex > -1) {
-                    mockEmployeeAwards[awardIndex].isAcknowledgedByEmployee = true;
-                }
-            });
-
-            return () => clearTimeout(confettiTimer);
-        }
-    }, [user]);
+            const timer = setTimeout(() => setShowConfetti(false), 6000);
+            // Mark as acknowledged
+            await supabase
+                .from('employee_awards')
+                .update({ is_acknowledged_by_employee: true })
+                .in('id', data.map((r: any) => r.id));
+            return () => clearTimeout(timer);
+        };
+        checkAwards();
+        return () => { active = false; };
+    }, [user?.id]);
 
     useEffect(() => {
         if (!user) return;
@@ -392,7 +371,6 @@ const EmployeeDashboard: React.FC = () => {
                         signedDocumentUrl: row.signed_document_url || undefined,
                     })) || [];
                 setAssignments(mapped);
-                setUseSupabaseAssignments(true);
             } catch (err) {
                 console.error('Failed to load asset assignments for employee dashboard', err);
             }
@@ -482,16 +460,8 @@ const EmployeeDashboard: React.FC = () => {
                         let ownerUserId = '';
                         if (taskTemplate.ownerUserId) {
                             ownerUserId = taskTemplate.ownerUserId;
-                        } else if (taskTemplate.ownerRole === Role.Manager) {
-                            const employee = mockUsers.find(e => e.id === employeeId);
-                            if (employee?.managerId) {
-                                ownerUserId = employee.managerId;
-                            }
-                        } else {
-                            const owner = mockUsers.find(u => u.role === taskTemplate.ownerRole);
-                            if (owner) ownerUserId = owner.id;
                         }
-                        const ownerUser = mockUsers.find(u => u.id === ownerUserId);
+                        const ownerUser: { name?: string } | undefined = undefined;
                         const dueDate = new Date(startDate);
                         dueDate.setDate(dueDate.getDate() + (taskTemplate.dueDays || 0));
 
@@ -527,7 +497,6 @@ const EmployeeDashboard: React.FC = () => {
                         signedAt: undefined,
                     })) || [];
                 setChecklists(mappedChecklists);
-                setUseSupabaseOnboarding(true);
             } catch (err) {
                 console.error('Failed to load onboarding data for employee dashboard', err);
             }
@@ -649,29 +618,32 @@ const EmployeeDashboard: React.FC = () => {
         };
     }, [employeeProfileId]);
 
+    // Load remaining live data from Supabase (asset requests, benefits, surveys, coaching, envelopes, ntes)
     useEffect(() => {
-        const interval = setInterval(() => {
-            // Simply sync with global mock data every second for robustness in this prototype
-            setRequests([...mockAssetRequests]);
-            if (!useSupabaseAssignments) {
-                setAssignments([...mockAssetAssignments]);
-            }
-            if (!useSupabaseOnboarding) {
-                setChecklists([...mockOnboardingChecklists]);
-                setTemplates([...mockOnboardingTemplates]);
-            }
-            setBenefitRequests([...mockBenefitRequests]);
-            setPulseSurveys([...mockPulseSurveys]);
-            setSurveyResponses([...mockSurveyResponses]);
-            setCoachingSessions([...mockCoachingSessions]);
-            setEnvelopes([...mockEnvelopes]);
-            setNTEs([...mockNTEs]);
-            if (!useSupabaseEvaluationSubmissions) {
-                setEvaluationSubmissions([...mockEvaluationSubmissions]);
-            }
-        }, 1000);
-        return () => clearInterval(interval);
-    }, [useSupabaseAssignments, useSupabaseEvaluationSubmissions]);
+        if (!employeeProfileId) return;
+        let active = true;
+        const load = async () => {
+            const [reqRes, benefitRes, surveyRes, responseRes, coachRes, envRes, nteRes] = await Promise.all([
+                supabase.from('asset_requests').select('*').eq('employee_id', employeeProfileId).order('requested_at', { ascending: false }),
+                supabase.from('benefit_requests').select('*').eq('employee_id', employeeProfileId),
+                supabase.from('pulse_surveys').select('*').eq('status', 'Active'),
+                supabase.from('survey_responses').select('*').eq('respondent_id', employeeProfileId),
+                supabase.from('coaching_sessions').select('*').or(`employee_id.eq.${employeeProfileId},coach_id.eq.${employeeProfileId}`).order('date', { ascending: false }),
+                supabase.from('envelopes').select('*').order('created_at', { ascending: false }),
+                supabase.from('ntes').select('*').eq('employee_id', employeeProfileId),
+            ]);
+            if (!active) return;
+            if (!reqRes.error && reqRes.data) setRequests(reqRes.data.map((r: any) => ({ ...r, requestedAt: r.requested_at ? new Date(r.requested_at) : new Date(), employeeId: r.employee_id, requestType: r.request_type, assetDescription: r.asset_description || '', status: r.status })));
+            if (!benefitRes.error && benefitRes.data) setBenefitRequests(benefitRes.data.map((r: any) => ({ ...r, employeeId: r.employee_id, benefitTypeName: r.benefit_type_name || r.benefit_type || '', submissionDate: r.submission_date ? new Date(r.submission_date) : new Date(), fulfilledAt: r.fulfilled_at ? new Date(r.fulfilled_at) : undefined })));
+            if (!surveyRes.error && surveyRes.data) setPulseSurveys(surveyRes.data.map((r: any) => ({ ...r, endDate: r.end_date ? new Date(r.end_date) : undefined })));
+            if (!responseRes.error && responseRes.data) setSurveyResponses(responseRes.data.map((r: any) => ({ ...r, surveyId: r.survey_id, respondentId: r.respondent_id })));
+            if (!coachRes.error && coachRes.data) setCoachingSessions(coachRes.data.map((r: any) => ({ ...r, employeeId: r.employee_id, coachName: r.coach_name || '', date: r.date ? new Date(r.date) : new Date() })));
+            if (!envRes.error && envRes.data) setEnvelopes(envRes.data.map((r: any) => ({ ...r, createdAt: r.created_at ? new Date(r.created_at) : new Date(), routingSteps: r.routing_steps || [], employeeName: r.employee_name || '' })));
+            if (!nteRes.error && nteRes.data) setNTEs(nteRes.data.map((r: any) => ({ ...r, employeeId: r.employee_id, issuedDate: r.issued_date ? new Date(r.issued_date) : new Date(), deadline: r.deadline ? new Date(r.deadline) : new Date(), incidentReportId: r.incident_report_id, hearingDetails: r.hearing_details || undefined })));
+        };
+        load();
+        return () => { active = false; };
+    }, [employeeProfileId]);
 
     useEffect(() => {
         if (!user?.id) return;
@@ -926,7 +898,7 @@ const EmployeeDashboard: React.FC = () => {
                 .order('updated_at', { ascending: false });
             if (!isMounted) return;
             if (error || !data) {
-                setPans(mockPANs.filter(p => p.employeeId === user.id));
+                setPans([]);
                 return;
             }
             setPans(data.map(mapPanRow));
@@ -1079,7 +1051,7 @@ const EmployeeDashboard: React.FC = () => {
         }
         try {
             const saved = await createCoeRequest(request, user);
-            mockCOERequests.unshift(saved);
+            // COE request persisted via createCoeRequest (Supabase)
             logActivity(user, 'CREATE', 'COERequest', saved.id, `Requested COE for ${saved.purpose}`);
             alert("Certificate of Employment request submitted.");
         } catch (error: any) {
@@ -1468,19 +1440,8 @@ const EmployeeDashboard: React.FC = () => {
             });
         }
 
-        const pendingProfileDraft = mockEmployeeDrafts.find(d => d.employeeId === user.id && d.status === EmployeeDraftStatus.Submitted);
-        if (pendingProfileDraft) {
-            items.push({
-                id: 'draft-1',
-                icon: <UserCircleIcon {...iconProps} />,
-                title: 'Profile Update Submitted',
-                subtitle: 'Your changes are pending HR approval.',
-                date: new Date(pendingProfileDraft.createdAt).toLocaleDateString(),
-                link: '/my-profile',
-                colorClass: "bg-gray-500",
-                priority: 3
-            });
-        }
+        // Profile drafts sourced from supabaseNotifications (PROFILE_CHANGE_APPROVED/PENDING type)
+        // No local mock needed — notifications feed already handles this
 
         // UPDATED: Pending Signatures/Approvals logic
         const pendingEnvelopes = envelopes.filter(e =>
@@ -1504,33 +1465,9 @@ const EmployeeDashboard: React.FC = () => {
             });
         });
 
-        const unreadAnnouncements = mockAnnouncements.filter(a => (a.targetGroup === 'All' || a.targetGroup === user.department) && a.type === AnnouncementType.Policy && !a.acknowledgementIds.includes(user.id));
-        unreadAnnouncements.forEach(an => {
-            items.push({
-                id: `an-${an.id}`,
-                icon: <MegaphoneIcon {...iconProps} />,
-                title: 'New Policy to Acknowledge',
-                subtitle: an.title,
-                date: new Date(an.createdAt).toLocaleDateString(),
-                link: '/helpdesk/announcements',
-                colorClass: 'bg-blue-500',
-                priority: 1
-            });
-        });
+        // Announcements are surfaced via supabaseNotifications above
 
-        const pendingExceptions = mockAttendanceExceptions.filter(ex => ex.employeeId === user.id && ex.status === 'Pending');
-        if (pendingExceptions.length > 0) {
-            items.push({
-                id: 'ex-group',
-                icon: <ShieldExclamationIcon {...iconProps} />,
-                title: 'Attendance Exceptions',
-                subtitle: `You have ${pendingExceptions.length} pending exception(s) to review.`,
-                date: new Date(pendingExceptions[0].date).toLocaleDateString(),
-                link: '/payroll/exceptions',
-                colorClass: 'bg-yellow-500',
-                priority: 2
-            });
-        }
+        // Attendance exceptions surfaced via notifications from Supabase
 
         const pendingPANs = pans.filter(p => p.employeeId === user.id && p.status === PANStatus.PendingEmployee);
         pendingPANs.forEach(pan => {
@@ -1566,7 +1503,7 @@ const EmployeeDashboard: React.FC = () => {
         // --- EVALUATION LOGIC UPDATE ---
         const evaluatorUser = { ...user, id: employeeProfileId || user.id };
         const mySubmissions = evaluationSubmissions.filter(sub => sub.raterId === (employeeProfileId || user.id));
-        const evaluationsToPerform = (useSupabaseEvaluations ? evaluations : mockEvaluations).filter(e => e.status === 'InProgress');
+        const evaluationsToPerform = evaluations.filter(e => e.status === 'InProgress');
 
         evaluationsToPerform.forEach(evaluation => {
             // Find who the user needs to evaluate for this evaluation cycle using robust helper
@@ -1585,7 +1522,7 @@ const EmployeeDashboard: React.FC = () => {
             // Check if evaluation has specific due date, otherwise fallback to timeline or default
             const deadline = evaluation.dueDate
                 ? evaluation.dueDate
-                : ((useSupabaseEvaluations ? evaluationTimelines : mockEvaluationTimelines).find((t: any) => t.id === evaluation.timelineId)?.endDate || new Date(evaluation.createdAt.getTime() + 14 * 24 * 60 * 60 * 1000));
+                : (evaluationTimelines.find((t: any) => t.id === evaluation.timelineId)?.endDate || new Date(evaluation.createdAt.getTime() + 14 * 24 * 60 * 60 * 1000));
 
             const deadlineStr = new Date(deadline).toLocaleDateString();
             const isOverdue = new Date() > new Date(deadline);
@@ -1605,19 +1542,7 @@ const EmployeeDashboard: React.FC = () => {
             }
         });
 
-        const myResignation = mockResignations.find(r => r.employeeId === user.id && r.status === ResignationStatus.ReturnedForEdits);
-        if (myResignation) {
-            items.push({
-                id: `resig-${myResignation.id}`,
-                icon: <UserMinusIcon {...iconProps} />,
-                title: "Resignation Returned",
-                subtitle: "Your submission was returned by HR. Please revise.",
-                date: new Date(myResignation.submissionDate).toLocaleDateString(),
-                link: '/submit-resignation',
-                colorClass: 'bg-orange-500',
-                priority: 0
-            });
-        }
+        // Resignations returned-for-edits surfaced via supabaseNotifications
 
         assignedTickets.forEach(ticket => {
             const sortDate = ticket.assignedAt || ticket.createdAt;
@@ -1635,54 +1560,21 @@ const EmployeeDashboard: React.FC = () => {
             });
         });
 
-        const myTickets = mockTickets.filter(t => t.requesterId === user.id && t.status === TicketStatus.PendingResolution);
-        myTickets.forEach(ticket => {
-            items.push({
-                id: `ticket-res-${ticket.id}`,
-                icon: <QuestionMarkCircleIcon {...iconProps} />,
-                title: "Ticket Resolution Pending",
-                subtitle: `Please confirm the resolution for ticket #${ticket.id}`,
-                date: new Date(ticket.resolvedAt || ticket.createdAt).toLocaleDateString(),
-                sortDate: ticket.resolvedAt || ticket.createdAt,
-                link: `/helpdesk/tickets?ticketId=${ticket.id}`,
-                colorClass: 'bg-cyan-500',
-                priority: 1
-            });
-        });
+        // Requester pending-resolution tickets handled via assignedTickets (Supabase)
 
-        // Pending Acknowledgement for Resolutions - Manual check in addition to notifications
-        const pendingResolutions = mockResolutions.filter(r =>
-            r.employeeId === user.id &&
-            r.status === ResolutionStatus.PendingAcknowledgement
+        // Pending Acknowledgement for Resolutions — from live NTEs state
+        const pendingResolutionNTEs = ntes.filter(n =>
+            n.employeeId === user.id &&
+            n.status === NTEStatus.Issued
         );
-
-        pendingResolutions.forEach(res => {
-            const ir = mockIncidentReports.find(i => i.id === res.incidentReportId);
-            // Find the NTE for linking
-            const nte = mockNTEs.find(n => n.incidentReportId === ir?.id && n.employeeId === user.id);
-
-            if (nte) {
-                items.push({
-                    id: `res-ack-${res.id}`,
-                    icon: <GavelIcon {...iconProps} />,
-                    title: "Decision for Your Review",
-                    subtitle: `A decision has been made on case ${ir?.id || 'Unknown'}. Please review and acknowledge.`,
-                    date: new Date(res.decisionDate).toLocaleDateString(),
-                    link: `/feedback/nte/${nte.id}`,
-                    colorClass: 'bg-orange-500',
-                    priority: 0
-                });
-            }
-        });
-
-        // Pending Hearing Acknowledgement
-        const pendingHearings = mockNTEs.filter(nte =>
-            nte.employeeId === user.id &&
-            nte.hearingDetails &&
-            !nte.hearingDetails.acknowledgments?.some(ack => ack.userId === user.id)
+        // Hearing acknowledgements — from live NTEs state
+        const pendingHearings = ntes.filter(n =>
+            n.employeeId === user.id &&
+            n.hearingDetails &&
+            !n.hearingDetails.acknowledgments?.some((ack: any) => ack.userId === user.id)
         );
-
         pendingHearings.forEach(nte => {
+            if (items.some((i: any) => i.id === `nte-response-${nte.id}`)) return;
             items.push({
                 id: `hearing-ack-${nte.id}`,
                 icon: <GavelIcon {...iconProps} />,
@@ -1696,7 +1588,7 @@ const EmployeeDashboard: React.FC = () => {
         });
 
 
-        const notificationSource = supabaseNotifications.length > 0 ? supabaseNotifications : mockNotifications;
+        const notificationSource = supabaseNotifications;
         const myNotifications = notificationSource
             .filter(n => n.userId && notificationUserIds.has(n.userId) && !n.isRead)
             .map(item => {

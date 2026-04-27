@@ -1,18 +1,38 @@
-import { mockTickets } from '../../services/mockDataCompat';
-import React, { useMemo } from 'react';
+// Phase A complete: mockDataCompat removed from UnassignedTicketsWidget
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Ticket, TicketStatus } from '../../types';
 import Card from '../ui/Card';
+import { fetchTickets } from '../../services/ticketService';
 
 const UnassignedTicketsWidget: React.FC = () => {
-    const unassignedTickets = useMemo(() => {
-        return mockTickets.filter(ticket => ticket.status === TicketStatus.New)
-            .sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const [tickets, setTickets] = useState<Ticket[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        let cancelled = false;
+        fetchTickets()
+            .then(data => {
+                if (!cancelled) setTickets(data);
+            })
+            .catch(() => {
+                if (!cancelled) setTickets([]);
+            })
+            .finally(() => {
+                if (!cancelled) setIsLoading(false);
+            });
+        return () => { cancelled = true; };
     }, []);
 
+    const unassignedTickets = tickets
+        .filter(ticket => ticket.status === TicketStatus.New)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
     return (
-        <Card title={`Unassigned Tickets (${unassignedTickets.length})`}>
-            {unassignedTickets.length === 0 ? (
+        <Card title={`Unassigned Tickets (${isLoading ? '…' : unassignedTickets.length})`}>
+            {isLoading ? (
+                <p className="text-gray-500 dark:text-gray-400 text-center py-4">Loading…</p>
+            ) : unassignedTickets.length === 0 ? (
                 <p className="text-gray-500 dark:text-gray-400 text-center py-4">Ticket queue is clear!</p>
             ) : (
                 <>

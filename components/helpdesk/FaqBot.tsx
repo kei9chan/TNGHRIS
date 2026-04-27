@@ -1,8 +1,10 @@
-import { mockMemos, mockCodeOfDiscipline, mockKbArticles } from '../../services/mockDataCompat';
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Button from '../ui/Button';
+import { fetchKBArticles } from '../../services/helpdeskService';
+import { fetchMemos } from '../../services/memoService';
+import { fetchCodeOfDiscipline } from '../../services/disciplineService';
+import { KnowledgeBaseArticle, Memo, CodeOfDiscipline } from '../../types';
 
 // Icons
 const QuestionMarkCircleIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
@@ -22,6 +24,28 @@ const FaqBot: React.FC = () => {
         { id: 1, text: "Hi! I'm your friendly FAQ Bot. Ask me a question about company policies, memos, or procedures.", sender: 'bot' }
     ]);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    const [kbArticles, setKbArticles] = useState<KnowledgeBaseArticle[]>([]);
+    const [memos, setMemos] = useState<Memo[]>([]);
+    const [codeOfDiscipline, setCodeOfDiscipline] = useState<CodeOfDiscipline | null>(null);
+
+    useEffect(() => {
+        const loadData = async () => {
+            try {
+                const [kbData, memoData, codData] = await Promise.all([
+                    fetchKBArticles(),
+                    fetchMemos(),
+                    fetchCodeOfDiscipline()
+                ]);
+                setKbArticles(kbData);
+                setMemos(memoData);
+                setCodeOfDiscipline(codData);
+            } catch (err) {
+                console.error("Error loading FAQ bot data", err);
+            }
+        };
+        loadData();
+    }, []);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -44,7 +68,7 @@ const FaqBot: React.FC = () => {
             const searchTerms = inputValue.toLowerCase().split(' ').filter(word => word.length > 2);
             
             // 1. Search Knowledge Base
-            const kbResults = mockKbArticles.filter(article => {
+            const kbResults = kbArticles.filter(article => {
                 const content = `${article.title} ${article.content} ${article.tags.join(' ')}`.toLowerCase();
                 return searchTerms.every(term => content.includes(term));
             }).map(item => ({
@@ -55,7 +79,7 @@ const FaqBot: React.FC = () => {
             }));
 
             // 2. Search Memos
-            const memoResults = mockMemos.filter(memo => {
+            const memoResults = memos.filter(memo => {
                 const content = `${memo.title} ${memo.body} ${memo.tags.join(' ')}`.toLowerCase();
                 return searchTerms.every(term => content.includes(term));
             }).map(item => ({
@@ -66,7 +90,7 @@ const FaqBot: React.FC = () => {
             }));
 
             // 3. Search Code of Discipline
-            const codResults = mockCodeOfDiscipline.entries.filter(entry => {
+            const codResults = (codeOfDiscipline?.entries || []).filter(entry => {
                  const content = `${entry.code} ${entry.category} ${entry.description}`.toLowerCase();
                  return searchTerms.every(term => content.includes(term));
             }).map(item => ({

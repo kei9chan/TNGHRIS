@@ -1,5 +1,4 @@
-import { mockJobPosts, mockCandidates } from '../../services/mockDataCompat';
-
+import { supabase } from '../../services/supabaseClient';
 import React, { useState, useEffect } from 'react';
 import { Candidate, Application } from '../../types';
 import Modal from '../ui/Modal';
@@ -23,8 +22,41 @@ const RejectionEmailModal: React.FC<RejectionEmailModalProps> = ({ isOpen, onClo
     const [subject, setSubject] = useState('');
     const [message, setMessage] = useState('');
     const [isSending, setIsSending] = useState(false);
-    const resolvedCandidate = candidate || mockCandidates.find(c => c.id === application?.candidateId);
-    const resolvedJobTitle = jobTitle || mockJobPosts.find(p => p.id === application?.jobPostId)?.title;
+    
+    const [fetchedCandidate, setFetchedCandidate] = useState<Candidate | null>(null);
+    const [fetchedJobTitle, setFetchedJobTitle] = useState<string | null>(null);
+
+    const resolvedCandidate = candidate || fetchedCandidate;
+    const resolvedJobTitle = jobTitle || fetchedJobTitle;
+
+    useEffect(() => {
+        const loadDetails = async () => {
+            if (!isOpen || !application) return;
+            
+            if (!candidate && application.candidateId) {
+                const { data } = await supabase.from('candidates').select('*').eq('id', application.candidateId).single();
+                if (data) {
+                    setFetchedCandidate({
+                        id: data.id,
+                        firstName: data.first_name,
+                        lastName: data.last_name,
+                        email: data.email,
+                        phone: data.phone,
+                        source: data.source,
+                        portfolioUrl: data.portfolio_url,
+                        consentAt: new Date(data.consent_at),
+                        tags: data.tags || []
+                    });
+                }
+            }
+            
+            if (!jobTitle && application.jobPostId) {
+                const { data } = await supabase.from('job_posts').select('title').eq('id', application.jobPostId).single();
+                if (data) setFetchedJobTitle(data.title);
+            }
+        };
+        loadDetails();
+    }, [isOpen, application, candidate, jobTitle]);
 
     useEffect(() => {
         if (isOpen && resolvedCandidate && resolvedJobTitle) {

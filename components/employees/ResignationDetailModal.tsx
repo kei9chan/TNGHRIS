@@ -1,5 +1,5 @@
-import { mockUsers, mockNotifications, mockAssets, mockAssetAssignments, mockResignations } from '../../services/mockDataCompat';
-import React, { useState, useMemo } from 'react';
+import { supabase } from '../../services/supabaseClient';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Resignation, ResignationStatus, Role, OnboardingChecklist, OnboardingTask, OnboardingTaskStatus, NotificationType, Asset, AssetAssignment, AssetStatus } from '../../types';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
@@ -32,107 +32,219 @@ const ResignationDetailModal: React.FC<ResignationDetailModalProps> = ({ isOpen,
     const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
     const [assetToReturn, setAssetToReturn] = useState<{ asset: Asset, assignment: AssetAssignment } | null>(null);
 
+    const [assets, setAssets] = useState<Asset[]>([]);
+    const [assignments, setAssignments] = useState<AssetAssignment[]>([]);
+    const [isLoadingAssets, setIsLoadingAssets] = useState(false);
+
+    useEffect(() => {
+        let active = true;
+        const loadAssets = async () => {
+            if (!resignation || !isOpen) return;
+            setIsLoadingAssets(true);
+            try {
+                const { data: assignmentRows, error: assignmentError } = await supabase
+                    .from('asset_assignments')
+                    .select('id, asset_id, employee_id, condition_on_assign, is_acknowledged, date_assigned, date_returned, acknowledged_at, signed_document_url, condition_on_return')
+                    .eq('employee_id', resignation.employeeId)
+                    .order('date_assigned', { ascending: false });
+                if (assignmentError) throw assignmentError;
+
+                const mappedAssignments: AssetAssignment[] =
+                    (assignmentRows || []).map((row: any) => ({
+                        id: row.id,
+                        assetId: row.asset_id,
+                        employeeId: row.employee_id,
+                        conditionOnAssign: row.condition_on_assign || '',
+                        conditionOnReturn: row.condition_on_return || undefined,
+                        isAcknowledged: !!row.is_acknowledged,
+                        dateAssigned: row.date_assigned ? new Date(row.date_assigned) : new Date(),
+                        dateReturned: row.date_returned ? new Date(row.date_returned) : undefined,
+                        acknowledgedAt: row.acknowledged_at ? new Date(row.acknowledged_at) : undefined,
+                        signedDocumentUrl: row.signed_document_url || undefined,
+                    })) || [];
+
+                const assetIds = Array.from(new Set(mappedAssignments.map(a => a.assetId)));
+                let mappedAssets: Asset[] = [];
+                if (assetIds.length > 0) {
+                    const { data: assetRows, error: assetError } = await supabase
+                        .from('assets')
+                        .select('id, asset_tag, name, type, business_unit_id, serial_number, purchase_date, value, status, notes')
+                        .in('id', assetIds);
+                    if (assetError) throw assetError;
+                    mappedAssets =
+                        (assetRows || []).map((row: any) => ({
+                            id: row.id,
+                            assetTag: row.asset_tag,
+                            name: row.name,
+                            type: row.type,
+                            businessUnitId: row.business_unit_id,
+                            serialNumber: row.serial_number || undefined,
+                            purchaseDate: row.purchase_date ? new Date(row.purchase_date) : undefined,
+                            value: row.value ?? undefined,
+                            status: row.status,
+                            notes: row.notes || undefined,
+                        })) || [];
+                }
+
+                if (!active) return;
+                setAssignments(mappedAssignments);
+                setAssets(mappedAssets);
+            } catch (err) {
+                console.error('Failed to load employee assets', err);
+            } finally {
+                if (active) setIsLoadingAssets(false);
+            }
+        };
+
+        loadAssets();
+        return () => {
+            active = false;
+        };
+    }, [resignation, isOpen, onUpdate]);
+
     const assignedAssets = useMemo(() => {
-        if (!resignation) return [];
-        
-        const assignments = mockAssetAssignments.filter(a => a.employeeId === resignation.employeeId);
-        
-        return assignments.map(assignment => {
-            const asset = mockAssets.find(asset => asset.id === assignment.assetId);
+        const activeAssignments = assignments.filter(a => a.employeeId === resignation.employeeId);
+        return activeAssignments.map(assignment => {
+            const asset = assets.find(a => a.id === assignment.assetId);
+            if (!asset) return null;
             return { assignment, asset };
-        }).filter(item => item.asset) as { assignment: AssetAssignment, asset: Asset }[];
-    // We use onUpdate as a dependency to force this memo to re-calculate when mock data changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [resignation, onUpdate]);
+        }).filter((item): item is { assignment: AssetAssignment, asset: Asset } => item !== null);
+    }, [assignments, assets, resignation]);
 
     const allAssetsReturned = useMemo(() => {
+        if (assignedAssets.length === 0) return true;
         const activeAssignments = assignedAssets.filter(item => !item.assignment.dateReturned);
         return activeAssignments.length === 0;
     }, [assignedAssets]);
 
 
-    const handleAcknowledgeClick = () => {
-        const resIndex = mockResignations.findIndex(r => r.id === resignation.id);
-        if (resIndex > -1) {
-            mockResignations[resIndex].status = ResignationStatus.ForClearance;
+    const handleAcknowledgeClick = async () => {
+        try {
+            const { error } = await supabase
+                .from('resignations')
+                .update({ status: ResignationStatus.ForClearance })
+                .eq('id', resignation.id);
+            if (error) throw error;
+
+            if(user) {
+                logActivity(user, 'APPROVE', 'Resignation', resignation.id, `Acknowledged resignation and began offboarding.`);
+            }
+            alert("Resignation acknowledged. Offboarding process has begun.");
+            onUpdate();
+            onClose();
+        } catch (err) {
+            console.error("Failed to acknowledge resignation:", err);
+            alert("Failed to update status. Please try again.");
         }
-        if(user) {
-            logActivity(user, 'APPROVE', 'Resignation', resignation.id, `Acknowledged resignation and began offboarding.`);
-        }
-        alert("Resignation acknowledged. Offboarding process has begun.");
-        onUpdate();
-        onClose();
     };
 
-    const handleConfirmReject = (reason: string) => {
-        const resIndex = mockResignations.findIndex(r => r.id === resignation.id);
-        if (resIndex > -1) {
-            mockResignations[resIndex].status = ResignationStatus.ReturnedForEdits;
-            mockResignations[resIndex].rejectionReason = reason;
-        }
+    const handleConfirmReject = async (reason: string) => {
+        try {
+            const { error } = await supabase
+                .from('resignations')
+                .update({ 
+                    status: ResignationStatus.ReturnedForEdits,
+                    rejection_reason: reason 
+                })
+                .eq('id', resignation.id);
+            if (error) throw error;
 
-        mockNotifications.push({
-            id: `notif-${Date.now()}-${resignation.employeeId}`,
-            userId: resignation.employeeId,
-            type: NotificationType.ResignationReturned,
-            message: `Your resignation was returned by HR. Reason: ${reason}`,
-            link: '/submit-resignation',
-            isRead: false,
-            createdAt: new Date(),
-            relatedEntityId: resignation.id,
-        });
+            // Note: Notifications implementation skipped if not available, but we try inserting
+            try {
+                await supabase.from('notifications').insert({
+                    user_id: resignation.employeeId,
+                    type: NotificationType.ResignationReturned,
+                    message: `Your resignation was returned by HR. Reason: ${reason}`,
+                    link: '/submit-resignation',
+                    is_read: false,
+                    related_entity_id: resignation.id
+                });
+            } catch (notifErr) {
+                console.warn('Failed to insert notification:', notifErr);
+            }
 
-        if(user) {
-            logActivity(user, 'REJECT', 'Resignation', resignation.id, `Rejected resignation. Reason: ${reason}`);
+            if(user) {
+                logActivity(user, 'REJECT', 'Resignation', resignation.id, `Rejected resignation. Reason: ${reason}`);
+            }
+            
+            alert("Resignation has been returned to the employee with your notes.");
+            onUpdate();
+            setIsRejectModalOpen(false);
+            onClose();
+        } catch (err) {
+            console.error("Failed to reject resignation:", err);
+            alert("Failed to update status. Please try again.");
         }
-        
-        alert("Resignation has been returned to the employee with your notes.");
-        onUpdate();
-        setIsRejectModalOpen(false);
-        onClose();
     };
     
-    const handleCompleteOffboarding = () => {
+    const handleCompleteOffboarding = async () => {
         if (!user) return;
-        const resIndex = mockResignations.findIndex(r => r.id === resignation.id);
-        if (resIndex > -1) {
-            mockResignations[resIndex].status = ResignationStatus.Completed;
-        }
 
-        const userIndex = mockUsers.findIndex(u => u.id === resignation.employeeId);
-        if (userIndex > -1) {
-            mockUsers[userIndex].status = 'Inactive';
-            mockUsers[userIndex].endDate = resignation.lastWorkingDay;
-        }
+        try {
+            const { error: updateResError } = await supabase
+                .from('resignations')
+                .update({ status: ResignationStatus.Completed })
+                .eq('id', resignation.id);
+            
+            if (updateResError) throw updateResError;
 
-        logActivity(user, 'UPDATE', 'Resignation', resignation.id, `Completed offboarding clearance for ${resignation.employeeName}.`);
-        alert('Offboarding complete. Employee has been marked as inactive.');
-        onUpdate();
-        onClose();
+            const { error } = await supabase
+                .from('hris_users')
+                .update({ 
+                    status: 'Inactive', 
+                    end_date: resignation.lastWorkingDay 
+                })
+                .eq('id', resignation.employeeId);
+                
+            if (error) {
+                console.error("Error updating user status in DB:", error);
+                alert("Failed to update user status in the database.");
+            }
+
+            logActivity(user, 'UPDATE', 'Resignation', resignation.id, `Completed offboarding clearance for ${resignation.employeeName}.`);
+            alert('Offboarding complete. Employee has been marked as inactive.');
+            onUpdate();
+            onClose();
+        } catch (err) {
+            console.error("Failed to execute DB update:", err);
+            alert("Failed to complete offboarding.");
+        }
     };
 
-    const handleConfirmReturn = (assignmentId: string, returnCondition: string, newStatus: AssetStatus) => {
-        const assignmentIndex = mockAssetAssignments.findIndex(a => a.id === assignmentId);
-        if (assignmentIndex === -1) return;
+    const handleConfirmReturn = async (assignmentId: string, returnCondition: string, newStatus: AssetStatus) => {
+        const item = assignedAssets.find(a => a.assignment.id === assignmentId);
+        if (!item) return;
 
-        const updatedAssignment = {
-            ...mockAssetAssignments[assignmentIndex],
-            dateReturned: new Date(),
-            conditionOnReturn: returnCondition,
-        };
-        mockAssetAssignments[assignmentIndex] = updatedAssignment;
+        try {
+            const { error: assignmentError } = await supabase
+                .from('asset_assignments')
+                .update({
+                    date_returned: new Date().toISOString(),
+                    condition_on_return: returnCondition
+                })
+                .eq('id', assignmentId);
+            
+            if (assignmentError) throw assignmentError;
 
-        const assetId = updatedAssignment.assetId;
-        const assetIndex = mockAssets.findIndex(a => a.id === assetId);
-        if (assetIndex > -1) {
-            mockAssets[assetIndex].status = newStatus;
+            const { error: assetError } = await supabase
+                .from('assets')
+                .update({
+                    status: newStatus
+                })
+                .eq('id', item.asset.id);
+            
+            if (assetError) throw assetError;
+
+            if(user) {
+                logActivity(user, 'UPDATE', 'AssetAssignment', assignmentId, `Marked asset as returned for employee ID ${resignation.employeeId}.`);
+            }
+            onUpdate();
+            setIsReturnModalOpen(false);
+            setAssetToReturn(null);
+        } catch (err) {
+            console.error("Failed to mark asset as returned:", err);
+            alert("Failed to mark asset as returned.");
         }
-        if(user) {
-            logActivity(user, 'UPDATE', 'AssetAssignment', assignmentId, `Marked asset as returned for employee ID ${resignation.employeeId}.`);
-        }
-        onUpdate();
-        setIsReturnModalOpen(false);
-        setAssetToReturn(null);
     };
 
     const footer = (
@@ -185,7 +297,9 @@ const ResignationDetailModal: React.FC<ResignationDetailModalProps> = ({ isOpen,
                 {resignation.status === ResignationStatus.ForClearance && (
                     <div className="pt-4 mt-4 border-t dark:border-gray-600">
                         <h3 className="text-lg font-medium text-gray-900 dark:text-white">Assigned Assets for Clearance</h3>
-                        {assignedAssets.length > 0 ? (
+                        {isLoadingAssets ? (
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">Loading assets...</p>
+                        ) : assignedAssets.length > 0 ? (
                             <ul className="mt-2 space-y-3">
                                 {assignedAssets.map(({ asset, assignment }) => (
                                     <li key={asset.id} className="p-3 bg-gray-100 dark:bg-gray-700/50 rounded-md flex justify-between items-center">
@@ -238,4 +352,4 @@ const ResignationDetailModal: React.FC<ResignationDetailModalProps> = ({ isOpen,
     );
 };
 
-export default ResignationDetailModal;
+export default ResignationDetailModal;

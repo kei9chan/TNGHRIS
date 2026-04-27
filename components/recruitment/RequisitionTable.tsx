@@ -1,4 +1,4 @@
-import { mockBusinessUnits, mockDepartments, mockApplications } from '../../services/mockDataCompat';
+// Phase D complete: mockDataCompat removed from RequisitionTable
 import React from 'react';
 import { JobRequisition, JobRequisitionStatus, ApplicationStage } from '../../types';
 import Button from '../ui/Button';
@@ -8,6 +8,7 @@ interface RequisitionTableProps {
     onEdit: (requisition: JobRequisition) => void;
     businessUnits?: { id: string; name: string }[];
     departments?: { id: string; name: string; businessUnitId: string }[];
+    applications?: { requisitionId: string; stage: string }[];
 }
 
 const getStatusColor = (status: JobRequisitionStatus) => {
@@ -21,12 +22,9 @@ const getStatusColor = (status: JobRequisitionStatus) => {
     }
 };
 
-const RequisitionTable: React.FC<RequisitionTableProps> = ({ requisitions, onEdit, businessUnits, departments }) => {
-    const deptSource = departments && departments.length ? departments : mockDepartments;
-    const buSource = businessUnits && businessUnits.length ? businessUnits : mockBusinessUnits;
-
-    const getDepartmentName = (id: string) => deptSource.find(d => d.id === id)?.name || 'N/A';
-    const getBuName = (id: string) => buSource.find(bu => bu.id === id)?.name || 'N/A';
+const RequisitionTable: React.FC<RequisitionTableProps> = ({ requisitions, onEdit, businessUnits = [], departments = [], applications = [] }) => {
+    const getDepartmentName = (id: string) => departments.find(d => d.id === id)?.name || 'N/A';
+    const getBuName = (id: string) => businessUnits.find(bu => bu.id === id)?.name || 'N/A';
 
     return (
         <div className="overflow-x-auto">
@@ -45,7 +43,7 @@ const RequisitionTable: React.FC<RequisitionTableProps> = ({ requisitions, onEdi
                 </thead>
                 <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                     {requisitions.map(req => {
-                        const hiredCount = mockApplications.filter(app => app.requisitionId === req.id && app.stage === ApplicationStage.Hired).length;
+                        const hiredCount = applications.filter(app => app.requisitionId === req.id && app.stage === ApplicationStage.Hired).length;
                         return (
                             <tr key={req.id}>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500 dark:text-gray-400">{req.reqCode}</td>

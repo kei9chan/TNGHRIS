@@ -1,12 +1,12 @@
-import { mockOnboardingChecklists } from '../../services/mockDataCompat';
-
-import React from 'react';
+// Phase A complete: mockDataCompat removed from EmployeeSubNav
+import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { usePermissions } from '../../hooks/usePermissions';
 import { NAV_LINKS } from '../../constants';
 import type { NavLink as NavLinkType } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { Role } from '../../types';
+import { supabase } from '../../services/supabaseClient';
 
 
 // SVG Icon Components
@@ -35,6 +35,24 @@ const EmployeeSubNav: React.FC = () => {
     const { user } = useAuth();
     const { can } = usePermissions();
     const location = useLocation();
+    const [hasChecklist, setHasChecklist] = useState(false);
+
+    useEffect(() => {
+        if (!user || user.role !== Role.Employee) return;
+        const checkChecklist = async () => {
+            const { count, error } = await supabase
+                .from('onboarding_checklists')
+                .select('id', { count: 'exact', head: true })
+                .eq('employee_id', user.id);
+            if (error) {
+                setHasChecklist(false);
+            } else {
+                setHasChecklist((count ?? 0) > 0);
+            }
+        };
+        checkChecklist();
+    }, [user]);
+
     const employeeLink = NAV_LINKS.find(link => link.name === 'Employees');
 
     if (!employeeLink) {
@@ -46,10 +64,10 @@ const EmployeeSubNav: React.FC = () => {
             const hasPermission = child.requiredPermission && can(child.requiredPermission.resource, child.requiredPermission.permission);
             if (!hasPermission) return false;
 
-            // Special logic for Lifecycle for standard employees: 
+            // Special logic for Lifecycle for standard employees:
             // Only show if they have an assigned checklist.
             if (child.name === 'Employee Lifecycle' && user?.role === Role.Employee) {
-                return mockOnboardingChecklists.some(c => c.employeeId === user.id);
+                return hasChecklist;
             }
 
             return true;

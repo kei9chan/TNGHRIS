@@ -1,23 +1,37 @@
-import { mockUsers, mockPulseSurveys, mockSurveyResponses } from '../../services/mockDataCompat';
-
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import PulseHeatmap from '../../components/evaluation/PulseHeatmap';
 import { useAuth } from '../../hooks/useAuth';
+import { supabase } from '../../services/supabaseClient';
 
 const ArrowLeftIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>;
 
 const PulseSurveyResults: React.FC = () => {
     const { surveyId } = useParams<{ surveyId: string }>();
     const [activeTab, setActiveTab] = useState<'overview' | 'heatmap' | 'feedback'>('overview');
+    const [survey, setSurvey] = useState<any | null>(null);
+    const [responses, setResponses] = useState<any[]>([]);
+    const [userDeptMap, setUserDeptMap] = useState<Record<string, string>>({});
+    const [isLoading, setIsLoading] = useState(true);
 
-    const survey = useMemo(() => {
-        return mockPulseSurveys.find(s => s.id === surveyId);
-    }, [surveyId]);
-
-    const responses = useMemo(() => {
-        return mockSurveyResponses.filter(r => r.surveyId === surveyId);
+    useEffect(() => {
+        if (!surveyId) return;
+        const load = async () => {
+            setIsLoading(true);
+            const [{ data: sv }, { data: resp }, { data: users }] = await Promise.all([
+                supabase.from('pulse_surveys').select('*').eq('id', surveyId).single(),
+                supabase.from('pulse_survey_responses').select('*').eq('survey_id', surveyId),
+                supabase.from('hris_users').select('id, department'),
+            ]);
+            setSurvey(sv || null);
+            setResponses(resp || []);
+            const deptMap: Record<string, string> = {};
+            (users || []).forEach((u: any) => { deptMap[u.id] = u.department || 'Unknown'; });
+            setUserDeptMap(deptMap);
+            setIsLoading(false);
+        };
+        load();
     }, [surveyId]);
 
     // Helper to process data
@@ -34,8 +48,7 @@ const PulseSurveyResults: React.FC = () => {
         });
 
         responses.forEach(response => {
-            const employee = mockUsers.find(u => u.id === response.respondentId);
-            const dept = employee?.department || 'Unknown';
+            const dept = userDeptMap[response.respondent_id || response.respondentId] || 'Unknown';
 
             if (!deptMap[dept]) {
                 deptMap[dept] = {};
@@ -91,9 +104,10 @@ const PulseSurveyResults: React.FC = () => {
             responseCount: responses.length,
             textComments: comments
         };
-    }, [survey, responses]);
+    }, [survey, responses, userDeptMap]);
 
-    if (!survey) return <div>Survey not found</div>;
+    if (isLoading) return <div className="p-8 text-center text-gray-500 dark:text-gray-400">Loading survey results…</div>;
+    if (!survey) return <div className="p-8 text-center text-gray-500 dark:text-gray-400">Survey not found.</div>;
 
     const getTabClass = (tabName: string) => `px-4 py-2 font-medium text-sm rounded-md transition-colors ${activeTab === tabName ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`;
 

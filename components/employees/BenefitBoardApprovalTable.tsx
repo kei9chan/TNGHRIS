@@ -1,9 +1,8 @@
-import { mockUsers } from '../../services/mockDataCompat';
-
 import React from 'react';
 import { BenefitRequest, BenefitRequestStatus } from '../../types';
 import Button from '../ui/Button';
 import { useSettings } from '../../context/SettingsContext';
+import { useUsers } from '../../hooks/useHRData';
 
 interface BenefitBoardApprovalTableProps {
     requests: BenefitRequest[];
@@ -16,10 +15,11 @@ const XIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" 
 
 const BenefitBoardApprovalTable: React.FC<BenefitBoardApprovalTableProps> = ({ requests, onApprove, onReject }) => {
     const { settings } = useSettings();
+    const { users } = useUsers();
 
     const getUserName = (userId?: string) => {
         if (!userId) return 'Unknown';
-        return mockUsers.find(u => u.id === userId)?.name || 'Unknown';
+        return users.find(u => u.id === userId)?.name || 'Unknown';
     };
     
     const getStatusBadge = (status: BenefitRequestStatus) => {

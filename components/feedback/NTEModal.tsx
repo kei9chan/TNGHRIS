@@ -1,6 +1,9 @@
-import { mockUsers, mockBusinessUnits, mockMemos, mockCodeOfDiscipline, mockFeedbackTemplates } from '../../services/mockDataCompat';
+import { fetchBusinessUnits } from '../../services/userService';
+import { fetchMemos } from '../../services/memoService';
+import { fetchCodeOfDiscipline } from '../../services/disciplineService';
+import { fetchFeedbackTemplates } from '../../services/feedbackService';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { IncidentReport, NTE, NTEStatus, User, FeedbackTemplate, Role, ApproverStep, ApproverStatus } from '../../types';
+import { IncidentReport, NTE, NTEStatus, User, FeedbackTemplate, Role, ApproverStep, ApproverStatus, BusinessUnit, Memo, CodeOfDiscipline } from '../../types';
 import Modal from '../ui/Modal';
 import Textarea from '../ui/Textarea';
 import Button from '../ui/Button';
@@ -39,9 +42,15 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
   const [disciplineCodeIds, setDisciplineCodeIds] = useState<string[]>([]);
   const [allegations, setAllegations] = useState('');
   const [evidenceUrl, setEvidenceUrl] = useState('');
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(mockFeedbackTemplates[0]?.id || '');
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [selectedApprovers, setSelectedApprovers] = useState<User[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
+
+  // Fetched data states
+  const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
+  const [memos, setMemos] = useState<Memo[]>([]);
+  const [disciplineEntries, setDisciplineEntries] = useState<CodeOfDiscipline[]>([]);
+  const [feedbackTemplates, setFeedbackTemplates] = useState<FeedbackTemplate[]>([]);
 
   // State for adding new recipients
   const [searchTerm, setSearchTerm] = useState('');
@@ -52,12 +61,12 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
   const [currentNTE, setCurrentNTE] = useState<Partial<NTE>>(nte || {});
 
   const selectedTemplate = useMemo(() => {
-    return mockFeedbackTemplates.find(t => t.id === selectedTemplateId);
-  }, [selectedTemplateId]);
+    return feedbackTemplates.find(t => t.id === selectedTemplateId);
+  }, [selectedTemplateId, feedbackTemplates]);
 
   // Show all users to allow search; validation still enforces at least one BOD
   const approverPool = useMemo(() => {
-    return allUsers.length ? allUsers : mockUsers;
+    return allUsers;
   }, [allUsers]);
   const approverDisplay = useMemo(() => {
     return approverPool.map(u => ({
@@ -69,6 +78,36 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
   // Load users from Supabase for recipients/approvers
   useEffect(() => {
     if (!isOpen) return;
+
+    const fetchData = async () => {
+      try {
+        const [
+          buData,
+          memoData,
+          disciplineData,
+          templateData
+        ] = await Promise.all([
+          fetchBusinessUnits(),
+          fetchMemos(),
+          fetchCodeOfDiscipline(),
+          fetchFeedbackTemplates()
+        ]);
+        
+        setBusinessUnits(buData);
+        setMemos(memoData);
+        setDisciplineEntries(disciplineData.entries || []);
+        setFeedbackTemplates(templateData);
+
+        if (templateData.length > 0 && !selectedTemplateId) {
+          setSelectedTemplateId(templateData[0].id);
+        }
+      } catch (err) {
+        console.warn('Failed to load NTE reference data', err);
+      }
+    };
+
+    fetchData();
+
     const fetchUsers = async () => {
       try {
         const { data, error } = await supabase
@@ -106,7 +145,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
 
   useEffect(() => {
     if (isOpen) {
-      const pool = allUsers.length ? allUsers : mockUsers;
+      const pool = allUsers;
       if (isNewNTE) {
         const involved = pool.filter(u => incidentReport.involvedEmployeeIds.includes(u.id));
         setRecipientList(involved);
@@ -119,7 +158,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
         setMemoIds([]);
         setDisciplineCodeIds([]);
         setEvidenceUrl('');
-        setSelectedTemplateId(mockFeedbackTemplates[0]?.id || '');
+        setSelectedTemplateId(feedbackTemplates[0]?.id || '');
         setSelectedApprovers([]);
       } else {
         setCurrentNTE(nte);
@@ -131,13 +170,13 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
         }
       }
     }
-  }, [nte, incidentReport, isOpen, isNewNTE, allUsers]);
+  }, [nte, incidentReport, isOpen, isNewNTE, allUsers, feedbackTemplates]);
 
-  const memoItems: SearchableItem[] = useMemo(() => mockMemos.map(memo => ({ id: memo.id, label: memo.title })), []);
-  const disciplineItems: SearchableItem[] = useMemo(() => mockCodeOfDiscipline.entries.map(entry => ({ id: entry.id, label: entry.description, subLabel: entry.category, tag: entry.code })), []);
+  const memoItems: SearchableItem[] = useMemo(() => memos.map(memo => ({ id: memo.id, label: memo.title })), [memos]);
+  const disciplineItems: SearchableItem[] = useMemo(() => disciplineEntries.map(entry => ({ id: entry.id, label: entry.description, subLabel: entry.category, tag: entry.code })), [disciplineEntries]);
 
-  const citedMemos = useMemo(() => mockMemos.filter(m => memoIds.includes(m.id)), [memoIds]);
-  const citedDiscipline = useMemo(() => mockCodeOfDiscipline.entries.filter(e => disciplineCodeIds.includes(e.id)), [disciplineCodeIds]);
+  const citedMemos = useMemo(() => memos.filter(m => memoIds.includes(m.id)), [memoIds, memos]);
+  const citedDiscipline = useMemo(() => disciplineEntries.filter(e => disciplineCodeIds.includes(e.id)), [disciplineCodeIds, disciplineEntries]);
 
   const handleSelectEmployee = (employeeId: string) => {
     setSelectedEmployeeIds(prev =>
@@ -185,11 +224,11 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
 
     // Determine Business Unit Code for NTE Number
     // Priority: IncidentReport BU -> Employee BU -> GEN
-    const irBu = mockBusinessUnits.find(b => b.id === incidentReport.businessUnitId);
+    const irBu = businessUnits.find(b => b.id === incidentReport.businessUnitId);
 
     const newNTEs: Partial<NTE>[] = selectedEmployeeIds.map((employeeId, index) => {
       const employee = recipientList.find(u => u.id === employeeId)!;
-      const employeeBu = mockBusinessUnits.find(b => b.name === employee.businessUnit);
+      const employeeBu = businessUnits.find(b => b.name === employee.businessUnit);
       const buCode = irBu?.code || employeeBu?.code || 'GEN';
 
       return {
@@ -242,7 +281,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
     if (!searchTerm) return [];
     const lowerSearch = searchTerm.toLowerCase();
     const recipientIds = new Set(recipientList.map(u => u.id));
-    const pool = allUsers.length ? allUsers : mockUsers;
+    const pool = allUsers;
     return pool.filter(u =>
       !recipientIds.has(u.id) &&
       u.name.toLowerCase().includes(lowerSearch)
@@ -352,7 +391,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
             <div>
               <label className="block text-sm font-medium">Template</label>
               <select value={selectedTemplateId} onChange={e => setSelectedTemplateId(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white">
-                {mockFeedbackTemplates.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
+                {feedbackTemplates.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
               </select>
             </div>
             <Input label="Response Deadline" id="deadline" type="datetime-local" value={deadline} onChange={e => setDeadline(e.target.value)} />
