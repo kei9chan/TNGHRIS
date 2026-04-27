@@ -20,6 +20,7 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
 import NotFound from './pages/NotFound';
+import Notifications from './pages/Notifications';
 
 // New Employee Pages
 import EmployeeList from './pages/employees/EmployeeList';
@@ -161,6 +162,7 @@ const AppRoutes: React.FC = () => {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="my-profile" element={<ProtectedRoute><EmployeeProfile/></ProtectedRoute>} />
+        <Route path="notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
         <Route path="users/:userId" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
         <Route path="submit-resignation" element={<ProtectedRoute><SubmitResignation /></ProtectedRoute>} />
         

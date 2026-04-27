@@ -7,6 +7,7 @@ import { NAV_LINKS } from '../../constants';
 import type { NavLink } from '../../types';
 import { useSettings } from '../../context/SettingsContext';
 import GoogleIcon from '../icons/GoogleIcon';
+import NotificationBell from './NotificationBell';
 
 const UserIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -98,6 +99,7 @@ const Header: React.FC = () => {
                         </div>
                     </div>
                     <div className="flex items-center pl-4">
+                        <NotificationBell />
                         <div className="relative" ref={profileMenuRef}>
                             <div>
                                 <button onClick={() => setProfileMenuOpen(!isProfileMenuOpen)} className="max-w-xs bg-slate-800 rounded-full flex items-center text-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-white" id="user-menu" aria-haspopup="true">
