@@ -16,6 +16,8 @@ import { useAuth } from './hooks/useAuth';
 import Layout from './components/layout/Layout';
 import Login from './pages/Login';
 import SignUp from './pages/SignUp';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
 import NotFound from './pages/NotFound';
 
@@ -140,6 +142,8 @@ const AppRoutes: React.FC = () => {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<SignUp />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/apply" element={<Apply />} />
       <Route path="/apply/:jobPostId" element={<Apply />} />
         <Route path="/thank-you" element={<ThankYou />} />
