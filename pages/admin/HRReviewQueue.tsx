@@ -11,6 +11,7 @@ import { usePermissions } from '../../hooks/usePermissions';
 import EditableDescription from '../../components/ui/EditableDescription';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
+import { createNotification } from '../../services/notificationService';
 
 interface SubmissionGroup {
     employeeName: string;
@@ -111,7 +112,7 @@ const HRReviewQueue: React.FC = () => {
             try {
                 const { data, error } = await supabase
                     .from('hris_users')
-                    .select('id, full_name, email, role, status, position');
+                    .select('id, full_name, email, role, status, position, department, business_unit, birth_date');
                 if (error) throw error;
                 if (data) {
                     setPendingUsers(
@@ -122,8 +123,9 @@ const HRReviewQueue: React.FC = () => {
                             role: u.role as Role,
                             status: u.status as any,
                             position: u.position || '',
-                            department: '',
-                            businessUnit: '',
+                            department: u.department || '',
+                            businessUnit: u.business_unit || '',
+                            birthDate: u.birth_date || '',
                         })) as User[]
                     );
                 }
@@ -194,8 +196,14 @@ const HRReviewQueue: React.FC = () => {
                         case 'department':
                             updates.department = row.new_value;
                             break;
+                        case 'departmentId':
+                            updates.department_id = row.new_value;
+                            break;
                         case 'businessUnit':
                             updates.business_unit = row.new_value;
+                            break;
+                        case 'businessUnitId':
+                            updates.business_unit_id = row.new_value;
                             break;
                         case 'birthDate':
                             updates.birth_date = formatDateOnly(row.new_value);
@@ -230,26 +238,28 @@ const HRReviewQueue: React.FC = () => {
             const details = status === ChangeHistoryStatus.Approved ? `Approved profile changes.` : `Rejected profile changes. Reason: ${reason}`;
             logActivity(user, action, 'EmployeeProfileChange', submissionId, details);
 
-            if (status === ChangeHistoryStatus.Approved && changeRows && changeRows.length > 0) {
-                const employeeId = changeRows[0].employee_id;
-                const createdAt = new Date();
-                try {
-                    await supabase.from('notifications').insert([
-                        {
-                            id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${employeeId}`,
-                            user_id: employeeId,
-                            type: NotificationType.PROFILE_CHANGE_APPROVED,
-                            title: 'Profile Update Approved',
-                            message: 'Your profile update request was approved.',
-                            link: '/my-profile',
-                            is_read: false,
-                            created_at: createdAt.toISOString(),
-                            related_entity_id: submissionId,
-                        },
-                    ]);
-                } catch (err) {
-                    console.warn('Failed to persist profile approval notification', err);
-                }
+            const targetEmployeeId = changeRows && changeRows.length > 0 ? changeRows[0].employee_id : null;
+
+            if (status === ChangeHistoryStatus.Approved && targetEmployeeId) {
+                createNotification({
+                    userId: targetEmployeeId,
+                    type: NotificationType.PROFILE_CHANGE_APPROVED,
+                    title: 'Profile Update Approved',
+                    message: 'Your profile update request was approved.',
+                    link: '/my-profile',
+                    relatedEntityId: submissionId,
+                }).catch(e => console.warn('Failed to persist profile approval notification', e));
+            }
+
+            if (status === ChangeHistoryStatus.Rejected && targetEmployeeId) {
+                createNotification({
+                    userId: targetEmployeeId,
+                    type: NotificationType.PROFILE_CHANGE_REJECTED,
+                    title: 'Profile Update Rejected',
+                    message: `Your profile update request was rejected${reason ? `: ${reason}` : '.'}`,
+                    link: '/my-profile',
+                    relatedEntityId: submissionId,
+                }).catch(e => console.warn('Failed to persist profile rejection notification', e));
             }
 
             setPendingChanges(prev => prev.filter(c => c.submissionId !== submissionId));
@@ -276,6 +286,31 @@ const HRReviewQueue: React.FC = () => {
             const action = status === UserDocumentStatus.Approved ? 'APPROVE' : 'REJECT';
             const details = status === UserDocumentStatus.Approved ? `Approved document.` : `Rejected document. Reason: ${reason}`;
             logActivity(user, action, 'UserDocument', documentId, details);
+
+            // Find the document's owner to notify
+            const docRecord = pendingDocuments.find(d => d.id === documentId);
+            if (docRecord?.employeeId) {
+                if (status === UserDocumentStatus.Approved) {
+                    createNotification({
+                        userId: docRecord.employeeId,
+                        type: NotificationType.DOCUMENT_APPROVED,
+                        title: 'Document Approved',
+                        message: `Your submitted document "${docRecord.documentType}" has been approved.`,
+                        link: '/my-profile',
+                        relatedEntityId: documentId,
+                    }).catch(e => console.warn('Failed to send document approval notification', e));
+                } else {
+                    createNotification({
+                        userId: docRecord.employeeId,
+                        type: NotificationType.DOCUMENT_REJECTED,
+                        title: 'Document Rejected',
+                        message: `Your submitted document "${docRecord.documentType}" was rejected${reason ? `: ${reason}` : '.'}`,
+                        link: '/my-profile',
+                        relatedEntityId: documentId,
+                    }).catch(e => console.warn('Failed to send document rejection notification', e));
+                }
+            }
+
             setPendingDocuments(prev => prev.filter(d => d.id !== documentId));
         } catch (e) {
             console.error('Failed to update document status', e);
@@ -283,7 +318,7 @@ const HRReviewQueue: React.FC = () => {
         }
     };
 
-     const handleUserApproval = async (userId: string) => {
+    const handleUserApproval = async (userId: string) => {
         if (!user) return;
         try {
             const { error } = await supabase.from('hris_users').update({ status: 'Active' }).eq('id', userId);
@@ -292,6 +327,14 @@ const HRReviewQueue: React.FC = () => {
             setPendingUsers(prev =>
                 prev.map(u => (u.id === userId ? { ...u, status: 'Active' } : u))
             );
+            // Notify the newly-activated user that their account is ready
+            createNotification({
+                userId,
+                type: NotificationType.GENERAL,
+                title: 'Account Activated',
+                message: 'Your registration has been approved. Welcome to the system!',
+                link: '/dashboard',
+            }).catch(e => console.warn('Failed to send account activation notification', e));
         } catch (e) {
             console.error('Failed to approve user', e);
             alert('Failed to approve user.');
@@ -354,8 +397,12 @@ const HRReviewQueue: React.FC = () => {
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div><span className="font-semibold">Name:</span> {pendingUser.name}</div>
                                     <div><span className="font-semibold">Email:</span> {pendingUser.email}</div>
-                                    <div><span className="font-semibold">Position:</span> {pendingUser.position}</div>
-                                    <div className="md:col-span-3"><span className="font-semibold">Status:</span> {pendingUser.status}</div>
+                                    <div><span className="font-semibold">Role:</span> {pendingUser.role}</div>
+                                    <div><span className="font-semibold">Business Unit:</span> {(pendingUser as any).businessUnit || <span className="text-amber-500 italic">Not provided</span>}</div>
+                                    <div><span className="font-semibold">Department:</span> {pendingUser.department || <span className="text-amber-500 italic">Not provided</span>}</div>
+                                    <div><span className="font-semibold">Birth Date:</span> {(pendingUser as any).birthDate || <span className="text-amber-500 italic">Not provided</span>}</div>
+                                    <div><span className="font-semibold">Position:</span> {pendingUser.position || <span className="text-gray-400 italic">—</span>}</div>
+                                    <div><span className="font-semibold">Status:</span> {pendingUser.status}</div>
                                 </div>
                                 {can('Employees', Permission.Edit) && pendingUser.status !== 'Active' && (
                                     <div className="flex justify-end space-x-2 mt-4 pt-4 border-t dark:border-gray-600">

@@ -56,6 +56,7 @@ import { createCoeRequest, fetchCoeRequestById, fetchCoeRequests } from '../../s
 import { usePermissions } from '../../hooks/usePermissions';
 import { supabase } from '../../services/supabaseClient';
 import { mergePanParticulars } from '../../services/panUtils';
+import ApprovalWidget from './ApprovalWidget';
 
 
 // --- ICONS ---
@@ -1752,6 +1753,8 @@ const EmployeeDashboard: React.FC = () => {
             />
             <QuickLinks />
             <AnniversaryBanner />
+
+            <ApprovalWidget />
 
             <Card title="My Action Items">
                 <div className="space-y-4">

@@ -2,7 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { LeaveRequest, LeaveRequestStatus, Role, Permission } from '../../types';
+import { NotificationType } from '../../types';
 import { supabase } from '../../services/supabaseClient';
+import { createNotification } from '../../services/notificationService';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import LeaveBalanceCard from '../../components/payroll/LeaveBalanceCard';
@@ -257,6 +259,22 @@ const Leave: React.FC = () => {
       await supabase.from('leave_requests').insert(payload);
     }
 
+    // Notify the approver (manager) when a leave request is submitted as Pending
+    if (status === LeaveRequestStatus.Pending && user.managerId) {
+      try {
+        const leaveTypeName = leaveTypes.find(lt => lt.id === requestToSave.leaveTypeId)?.name || 'Leave';
+        await createNotification({
+          userId: user.managerId,
+          title: '📋 Leave Request Pending Approval',
+          message: `${user.name} submitted a ${leaveTypeName} request (${requestToSave.durationDays || 1} day${(requestToSave.durationDays || 1) !== 1 ? 's' : ''}) for your approval.`,
+          type: NotificationType.LEAVE_REQUEST,
+          link: '/payroll/leave',
+        });
+      } catch (e) {
+        console.error('Failed to send leave submission notification', e);
+      }
+    }
+
     setIsModalOpen(false);
     setAttachmentFile(null);
     loadLeaveRequests();
@@ -272,7 +290,7 @@ const Leave: React.FC = () => {
       details: notes ? `Manager notes: ${notes}` : undefined,
     };
     const newStatus = approved ? LeaveRequestStatus.Approved : LeaveRequestStatus.Rejected;
-    await supabase
+    const { error } = await supabase
       .from('leave_requests')
       .update({
         status: newStatus,
@@ -280,6 +298,19 @@ const Leave: React.FC = () => {
         history_log: [...(request.historyLog || []), historyEntry],
       })
       .eq('id', request.id);
+
+    if (!error && request.employeeId) {
+      // Notify the requester
+      createNotification({
+        userId: request.employeeId,
+        title: approved ? '✅ Leave Request Approved' : '❌ Leave Request Rejected',
+        message: approved
+          ? `Your leave request (${request.durationDays} day${request.durationDays !== 1 ? 's' : ''}) has been approved by ${user.name}.`
+          : `Your leave request has been rejected by ${user.name}${notes ? `: "${notes}"` : '.'}`,
+        type: NotificationType.LEAVE_DECISION,
+        link: '/payroll/leave',
+      }).catch(console.error);
+    }
 
     setToastInfo({ show: true, title: 'Success', message: `Request ${approved ? 'approved' : 'rejected'}.` });
     setIsModalOpen(false);

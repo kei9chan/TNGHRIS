@@ -14,6 +14,7 @@ import { useSettings } from '../../context/SettingsContext';
 import Input from '../../components/ui/Input';
 import { logActivity } from '../../services/auditService';
 import { fetchTickets, saveTicket, fetchTicketById } from '../../services/ticketService';
+import { createNotification } from '../../services/notificationService';
 import { supabase } from '../../services/supabaseClient';
 
 const PlusIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>;
@@ -210,6 +211,30 @@ const Tickets: React.FC = () => {
             });
             logActivity(user, ticketToSave.id ? 'UPDATE' : 'CREATE', 'Ticket', saved.id, `${ticketToSave.id ? 'Updated' : 'Created'} ticket ${saved.id}`);
 
+            // Notify support staff when a brand-new ticket is created
+            if (!ticketToSave.id) {
+                try {
+                    const { data: supportStaff } = await supabase
+                        .from('hris_users')
+                        .select('id, role')
+                        .in('role', [Role.Admin, Role.HRManager, Role.HRStaff, Role.IT]);
+                    (supportStaff || []).forEach((row: any) => {
+                        if (row?.id && row.id !== user.id) {
+                            createNotification({
+                                userId: row.id,
+                                type: NotificationType.TICKET_NEW,
+                                title: '🎫 New Support Ticket',
+                                message: `${user.name} submitted a new ${saved.category || 'General'} ticket (${saved.priority || 'Medium'} priority).`,
+                                link: `/helpdesk/tickets?ticketId=${saved.id}`,
+                                relatedEntityId: saved.id,
+                            }).catch(e => console.warn('Failed to send new ticket notification', e));
+                        }
+                    });
+                } catch (e) {
+                    console.error('Failed to notify support staff of new ticket', e);
+                }
+            }
+
             if (newlyAssigned && saved.assignedToId) {
                 const { data: assigneeRow } = await supabase
                     .from('hris_users')
@@ -236,19 +261,26 @@ const Tickets: React.FC = () => {
                     });
                 }
 
-                const createdAt = new Date();
                 targets.forEach(targetId => {
                     const isAssignee = targetId === saved.assignedToId;
                     const isRequester = targetId === saved.requesterId;
                     if (!isAssignee && !isRequester && assigneeRole !== Role.Manager) {
                         return;
                     }
-                    const type = isAssignee ? NotificationType.TICKET_ASSIGNED_TO_YOU : NotificationType.TICKET_UPDATE_REQUESTER;
+                    const type = isAssignee
+                        ? NotificationType.TICKET_ASSIGNED_TO_YOU
+                        : NotificationType.TICKET_UPDATE_REQUESTER;
                     const message = isAssignee
                         ? `Ticket ${saved.id} has been assigned to you.`
-                        : `Ticket ${saved.id} assigned to ${assigneeName}.`;
-                    // TODO: Implement Supabase notifications
-                    // mockNotifications.unshift({ ... })
+                        : `Ticket ${saved.id} has been assigned to ${assigneeName}.`;
+                    createNotification({
+                        userId: targetId,
+                        type,
+                        title: isAssignee ? 'Ticket Assigned to You' : 'Ticket Assigned',
+                        message,
+                        link: `/helpdesk/tickets?ticketId=${saved.id}`,
+                        relatedEntityId: saved.id,
+                    }).catch(e => console.warn('Failed to send ticket assignment notification', e));
                 });
             }
 
@@ -326,6 +358,18 @@ const Tickets: React.FC = () => {
             });
             logActivity(user, 'UPDATE', 'Ticket', ticketId, `Marked ticket as Resolved`);
             setSelectedTicket(saved);
+
+            // Notify the requester their ticket has been marked resolved (pending their approval)
+            if (current.requesterId && current.requesterId !== user.id) {
+                createNotification({
+                    userId: current.requesterId,
+                    type: NotificationType.TICKET_UPDATE_REQUESTER,
+                    title: 'Ticket Marked as Resolved',
+                    message: `Your ticket "${current.description?.slice(0, 60)}" has been marked resolved. Please confirm or reopen it.`,
+                    link: `/helpdesk/tickets?ticketId=${ticketId}`,
+                    relatedEntityId: ticketId,
+                }).catch(e => console.warn('Failed to send ticket resolved notification', e));
+            }
         } catch (error: any) {
             alert(error?.message || 'Failed to update ticket.');
         }
@@ -364,6 +408,18 @@ const Tickets: React.FC = () => {
             });
             logActivity(user, 'APPROVE', 'Ticket', ticketId, `Approved resolution for ticket.`);
             setIsModalOpen(false);
+
+            // Notify the assignee their resolution was accepted
+            if (current.assignedToId && current.assignedToId !== user.id) {
+                createNotification({
+                    userId: current.assignedToId,
+                    type: NotificationType.TICKET_RESOLVED,
+                    title: 'Resolution Approved',
+                    message: `The requester confirmed resolution of ticket ${ticketId}. Ticket is now closed.`,
+                    link: `/helpdesk/tickets?ticketId=${ticketId}`,
+                    relatedEntityId: ticketId,
+                }).catch(e => console.warn('Failed to send resolution approval notification', e));
+            }
         } catch (error: any) {
             alert(error?.message || 'Failed to update ticket.');
         }
@@ -401,6 +457,18 @@ const Tickets: React.FC = () => {
             });
             logActivity(user, 'REJECT', 'Ticket', ticketId, `Rejected resolution for ticket.`);
             setSelectedTicket(saved);
+
+            // Notify the assignee their resolution was rejected and ticket is reopened
+            if (current.assignedToId && current.assignedToId !== user.id) {
+                createNotification({
+                    userId: current.assignedToId,
+                    type: NotificationType.TICKET_UPDATE_REQUESTER,
+                    title: 'Resolution Not Accepted',
+                    message: `The requester did not accept the resolution for ticket ${ticketId}. It has been reopened.`,
+                    link: `/helpdesk/tickets?ticketId=${ticketId}`,
+                    relatedEntityId: ticketId,
+                }).catch(e => console.warn('Failed to send resolution rejection notification', e));
+            }
         } catch (error: any) {
             alert(error?.message || 'Failed to update ticket.');
         }

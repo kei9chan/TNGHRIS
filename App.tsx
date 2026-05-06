@@ -14,107 +14,108 @@ import { AuthProvider } from './context/AuthContext';
 import { SettingsProvider } from './context/SettingsContext';
 import { useAuth } from './hooks/useAuth';
 import Layout from './components/layout/Layout';
-import Login from './pages/Login';
-import SignUp from './pages/SignUp';
-import ForgotPassword from './pages/ForgotPassword';
-import ResetPassword from './pages/ResetPassword';
-import Dashboard from './pages/Dashboard';
-import NotFound from './pages/NotFound';
-import Notifications from './pages/Notifications';
+const Login = React.lazy(() => import('./pages/Login'));
+const SignUp = React.lazy(() => import('./pages/SignUp'));
+const RegistrationSuccess = React.lazy(() => import('./pages/RegistrationSuccess'));
+const ForgotPassword = React.lazy(() => import('./pages/ForgotPassword'));
+const ResetPassword = React.lazy(() => import('./pages/ResetPassword'));
+const Dashboard = React.lazy(() => import('./pages/Dashboard'));
+const NotFound = React.lazy(() => import('./pages/NotFound'));
+const Notifications = React.lazy(() => import('./pages/Notifications'));
 
 // New Employee Pages
-import EmployeeList from './pages/employees/EmployeeList';
-import EmployeeProfile from './pages/employees/EmployeeProfile';
-import PersonnelActionNotice from './pages/employees/PersonnelActionNotice';
-import OnboardingChecklist from './pages/employees/OnboardingChecklist';
-import OnboardingPreviewPage from './pages/employees/OnboardingPreviewPage';
-import OnboardingTaskPage from './pages/employees/OnboardingTaskPage';
-import OnboardingSignPage from './pages/employees/OnboardingSignPage';
-import OnboardingViewPage from './pages/employees/OnboardingViewPage';
-import Contracts from './pages/employees/Contracts';
-import Benefits from './pages/employees/Benefits';
+const EmployeeList = React.lazy(() => import('./pages/employees/EmployeeList'));
+const EmployeeProfile = React.lazy(() => import('./pages/employees/EmployeeProfile'));
+const PersonnelActionNotice = React.lazy(() => import('./pages/employees/PersonnelActionNotice'));
+const OnboardingChecklist = React.lazy(() => import('./pages/employees/OnboardingChecklist'));
+const OnboardingPreviewPage = React.lazy(() => import('./pages/employees/OnboardingPreviewPage'));
+const OnboardingTaskPage = React.lazy(() => import('./pages/employees/OnboardingTaskPage'));
+const OnboardingSignPage = React.lazy(() => import('./pages/employees/OnboardingSignPage'));
+const OnboardingViewPage = React.lazy(() => import('./pages/employees/OnboardingViewPage'));
+const Contracts = React.lazy(() => import('./pages/employees/Contracts'));
+const Benefits = React.lazy(() => import('./pages/employees/Benefits'));
 import { F_CLOCK_ADMIN_AUDIT_UI } from './constants';
-import DisciplinaryCases from './pages/feedback/DisciplinaryCases';
-import NTEDetail from './pages/feedback/NTEDetail';
-import CoachingLog from './pages/feedback/CoachingLog';
-import MemoLibrary from './pages/feedback/MemoLibrary';
-import CodeOfDiscipline from './pages/feedback/CodeOfDiscipline';
-import Pipeline from './pages/feedback/Pipeline';
-import Timekeeping from './pages/payroll/Timekeeping';
-import ClockInOut from './pages/payroll/ClockInOut';
-import ClockLog from './pages/payroll/ClockLog';
-import OvertimeRequests from './pages/payroll/OvertimeRequests';
+const DisciplinaryCases = React.lazy(() => import('./pages/feedback/DisciplinaryCases'));
+const NTEDetail = React.lazy(() => import('./pages/feedback/NTEDetail'));
+const CoachingLog = React.lazy(() => import('./pages/feedback/CoachingLog'));
+const MemoLibrary = React.lazy(() => import('./pages/feedback/MemoLibrary'));
+const CodeOfDiscipline = React.lazy(() => import('./pages/feedback/CodeOfDiscipline'));
+const Pipeline = React.lazy(() => import('./pages/feedback/Pipeline'));
+const Timekeeping = React.lazy(() => import('./pages/payroll/Timekeeping'));
+const ClockInOut = React.lazy(() => import('./pages/payroll/ClockInOut'));
+const ClockLog = React.lazy(() => import('./pages/payroll/ClockLog'));
+const OvertimeRequests = React.lazy(() => import('./pages/payroll/OvertimeRequests'));
 import WFHRequests from './pages/payroll/WFHRequests'; // NEW
-import Leave from './pages/payroll/Leave';
-import Loans from './pages/payroll/Loans';
-import PayrollPrep from './pages/payroll/PayrollPrep';
-import AttendanceExceptions from './pages/payroll/AttendanceExceptions';
-import PayrollReports from './pages/payroll/PayrollReports';
-import DailyTimeSummary from './pages/payroll/reports/DailyTimeSummary';
-import ExceptionsReport from './pages/payroll/reports/ExceptionsReport';
-import PayrollStaging from './pages/payroll/PayrollStaging';
-import Payslips from './pages/payroll/Payslips';
-import GovernmentReports from './pages/payroll/GovernmentReports';
-import GovernmentReportDetail from './pages/payroll/reports/GovernmentReportDetail';
-import GovernmentReportTemplates from './pages/payroll/GovernmentReportTemplates';
-import FinalPayCalculator from './pages/payroll/FinalPayCalculator';
-import PayrollConfiguration from './pages/payroll/PayrollConfiguration';
-import Evaluations from './pages/evaluation/Evaluations';
-import NewEvaluation from './pages/evaluation/NewEvaluation';
-import QuestionBank from './pages/evaluation/QuestionBank';
-import QuestionSetDetail from './pages/evaluation/QuestionSetDetail';
-import PerformEvaluation from './pages/evaluation/PerformEvaluation';
-import EvaluationResult from './pages/evaluation/EvaluationResult';
-import Timelines from './pages/evaluation/Timelines';
-import Awards from './pages/evaluation/Awards';
-import EvaluationReports from './pages/evaluation/EvaluationReports';
-import PulseSurveys from './pages/evaluation/PulseSurveys';
-import PulseSurveyBuilder from './pages/evaluation/PulseSurveyBuilder';
-import PulseSurveyResults from './pages/evaluation/PulseSurveyResults';
-import TakePulseSurvey from './pages/evaluation/TakePulseSurvey';
-import Settings from './pages/admin/Settings';
-import AuditLog from './pages/admin/AuditLog';
-import RolesPermissions from './pages/admin/RolesPermissions';
-import UserManagement from './pages/admin/UserManagement';
-import HRReviewQueue from './pages/admin/HRReviewQueue';
-import LeavePolicies from './pages/admin/LeavePolicies';
-import SiteManagement from './pages/admin/SiteManagement';
-import Tickets from './pages/helpdesk/Tickets';
-import Announcements from './pages/helpdesk/Announcements';
-import Calendar from './pages/helpdesk/Calendar';
-import OrgChart from './pages/helpdesk/OrgChart';
-import EnvelopeDetail from './pages/employees/EnvelopeDetail';
-import SubmitResignation from './pages/employees/SubmitResignation';
-import KnowledgeBase from './pages/helpdesk/KnowledgeBase';
-import AssetManagement from './pages/employees/AssetManagement';
-import AssetRequests from './pages/employees/AssetRequests';
-import DailyTimeReview from './pages/payroll/DailyTimeReview';
-import Holidays from './pages/admin/Holidays';
-import WorkforcePlanning from './pages/admin/WorkforcePlanning';
-import ManpowerPlanning from './pages/payroll/ManpowerPlanning';
+const Leave = React.lazy(() => import('./pages/payroll/Leave'));
+const Loans = React.lazy(() => import('./pages/payroll/Loans'));
+const PayrollPrep = React.lazy(() => import('./pages/payroll/PayrollPrep'));
+const AttendanceExceptions = React.lazy(() => import('./pages/payroll/AttendanceExceptions'));
+const PayrollReports = React.lazy(() => import('./pages/payroll/PayrollReports'));
+const DailyTimeSummary = React.lazy(() => import('./pages/payroll/reports/DailyTimeSummary'));
+const ExceptionsReport = React.lazy(() => import('./pages/payroll/reports/ExceptionsReport'));
+const PayrollStaging = React.lazy(() => import('./pages/payroll/PayrollStaging'));
+const Payslips = React.lazy(() => import('./pages/payroll/Payslips'));
+const GovernmentReports = React.lazy(() => import('./pages/payroll/GovernmentReports'));
+const GovernmentReportDetail = React.lazy(() => import('./pages/payroll/reports/GovernmentReportDetail'));
+const GovernmentReportTemplates = React.lazy(() => import('./pages/payroll/GovernmentReportTemplates'));
+const FinalPayCalculator = React.lazy(() => import('./pages/payroll/FinalPayCalculator'));
+const PayrollConfiguration = React.lazy(() => import('./pages/payroll/PayrollConfiguration'));
+const Evaluations = React.lazy(() => import('./pages/evaluation/Evaluations'));
+const NewEvaluation = React.lazy(() => import('./pages/evaluation/NewEvaluation'));
+const QuestionBank = React.lazy(() => import('./pages/evaluation/QuestionBank'));
+const QuestionSetDetail = React.lazy(() => import('./pages/evaluation/QuestionSetDetail'));
+const PerformEvaluation = React.lazy(() => import('./pages/evaluation/PerformEvaluation'));
+const EvaluationResult = React.lazy(() => import('./pages/evaluation/EvaluationResult'));
+const Timelines = React.lazy(() => import('./pages/evaluation/Timelines'));
+const Awards = React.lazy(() => import('./pages/evaluation/Awards'));
+const EvaluationReports = React.lazy(() => import('./pages/evaluation/EvaluationReports'));
+const PulseSurveys = React.lazy(() => import('./pages/evaluation/PulseSurveys'));
+const PulseSurveyBuilder = React.lazy(() => import('./pages/evaluation/PulseSurveyBuilder'));
+const PulseSurveyResults = React.lazy(() => import('./pages/evaluation/PulseSurveyResults'));
+const TakePulseSurvey = React.lazy(() => import('./pages/evaluation/TakePulseSurvey'));
+const Settings = React.lazy(() => import('./pages/admin/Settings'));
+const AuditLog = React.lazy(() => import('./pages/admin/AuditLog'));
+const RolesPermissions = React.lazy(() => import('./pages/admin/RolesPermissions'));
+const UserManagement = React.lazy(() => import('./pages/admin/UserManagement'));
+const HRReviewQueue = React.lazy(() => import('./pages/admin/HRReviewQueue'));
+const LeavePolicies = React.lazy(() => import('./pages/admin/LeavePolicies'));
+const SiteManagement = React.lazy(() => import('./pages/admin/SiteManagement'));
+const Tickets = React.lazy(() => import('./pages/helpdesk/Tickets'));
+const Announcements = React.lazy(() => import('./pages/helpdesk/Announcements'));
+const Calendar = React.lazy(() => import('./pages/helpdesk/Calendar'));
+const OrgChart = React.lazy(() => import('./pages/helpdesk/OrgChart'));
+const EnvelopeDetail = React.lazy(() => import('./pages/employees/EnvelopeDetail'));
+const SubmitResignation = React.lazy(() => import('./pages/employees/SubmitResignation'));
+const KnowledgeBase = React.lazy(() => import('./pages/helpdesk/KnowledgeBase'));
+const AssetManagement = React.lazy(() => import('./pages/employees/AssetManagement'));
+const AssetRequests = React.lazy(() => import('./pages/employees/AssetRequests'));
+const DailyTimeReview = React.lazy(() => import('./pages/payroll/DailyTimeReview'));
+const Holidays = React.lazy(() => import('./pages/admin/Holidays'));
+const WorkforcePlanning = React.lazy(() => import('./pages/admin/WorkforcePlanning'));
+const ManpowerPlanning = React.lazy(() => import('./pages/payroll/ManpowerPlanning'));
 import COETemplates from './pages/admin/COETemplates'; // NEW
 import COERequests from './pages/admin/COERequests'; // NEW
 
 // Recruitment Pages
-import Requisitions from './pages/recruitment/Requisitions';
-import JobPosts from './pages/recruitment/JobPosts';
-import JobPostTemplates from './pages/recruitment/JobPostTemplates';
-import Applicants from './pages/recruitment/Applicants';
-import Candidates from './pages/recruitment/Candidates';
-import Interviews from './pages/recruitment/Interviews';
-import Offers from './pages/recruitment/Offers';
-import FeedbackTemplates from './pages/feedback/FeedbackTemplates';
-import Apply from './pages/Apply';
-import ThankYou from './pages/ThankYou';
-import Departments from './pages/admin/Departments';
-import ApplicationPages from './pages/recruitment/ApplicationPages';
-import CareerPagePreview from './components/recruitment/CareerPagePreview';
-import UserProfile from './pages/users/UserProfile';
+const Requisitions = React.lazy(() => import('./pages/recruitment/Requisitions'));
+const JobPosts = React.lazy(() => import('./pages/recruitment/JobPosts'));
+const JobPostTemplates = React.lazy(() => import('./pages/recruitment/JobPostTemplates'));
+const Applicants = React.lazy(() => import('./pages/recruitment/Applicants'));
+const Candidates = React.lazy(() => import('./pages/recruitment/Candidates'));
+const Interviews = React.lazy(() => import('./pages/recruitment/Interviews'));
+const Offers = React.lazy(() => import('./pages/recruitment/Offers'));
+const FeedbackTemplates = React.lazy(() => import('./pages/feedback/FeedbackTemplates'));
+const Apply = React.lazy(() => import('./pages/Apply'));
+const ThankYou = React.lazy(() => import('./pages/ThankYou'));
+const Departments = React.lazy(() => import('./pages/admin/Departments'));
+const ApplicationPages = React.lazy(() => import('./pages/recruitment/ApplicationPages'));
+const CareerPagePreview = React.lazy(() => import('./components/recruitment/CareerPagePreview'));
+const UserProfile = React.lazy(() => import('./pages/users/UserProfile'));
 
 // Analytics Pages
-import RecruitmentAnalytics from './pages/analytics/RecruitmentAnalytics';
-import EmployeeAnalytics from './pages/analytics/EmployeeAnalytics';
-import DisciplineAnalytics from './pages/analytics/DisciplineAnalytics';
+const RecruitmentAnalytics = React.lazy(() => import('./pages/analytics/RecruitmentAnalytics'));
+const EmployeeAnalytics = React.lazy(() => import('./pages/analytics/EmployeeAnalytics'));
+const DisciplineAnalytics = React.lazy(() => import('./pages/analytics/DisciplineAnalytics'));
 
 // Workflows
 import { autoCelebrateBirthdays } from './services/workflows';
@@ -140,9 +141,11 @@ const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }
 
 const AppRoutes: React.FC = () => {
   return (
-    <Routes>
+    <React.Suspense fallback={<div className="flex items-center justify-center h-screen"><div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-blue-500"></div></div>}>
+      <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<SignUp />} />
+      <Route path="/registration-success" element={<RegistrationSuccess />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/apply" element={<Apply />} />
@@ -297,6 +300,7 @@ const AppRoutes: React.FC = () => {
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>
+    </React.Suspense>
   );
 };
 

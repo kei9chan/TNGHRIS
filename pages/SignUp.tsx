@@ -392,11 +392,9 @@ const SignUp: React.FC = () => {
       // Optional: ensure user is logged out so they return to login flow
       await supabase.auth.signOut().catch(() => { });
 
-      // 3) Only after both writes succeed, redirect to login
-      navigate('/login', {
-        state: {
-          message: 'Sign-up successful! Please check your email and wait for HR approval.',
-        },
+      // 3) Only after both writes succeed, redirect to the confirmation page
+      navigate('/registration-success', {
+        state: { fromSignUp: true },
         replace: true,
       });
     } catch (err) {

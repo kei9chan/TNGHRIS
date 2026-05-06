@@ -11,12 +11,11 @@ import ActionItemCard from './ActionItemCard';
 import QuickAnalyticsPreview from './QuickAnalyticsPreview';
 import UpcomingEventsWidget from './UpcomingEventsWidget';
 import QuickLinks from './QuickLinks';
+import ApprovalWidget from './ApprovalWidget';
 import Button from '../ui/Button';
 import ManpowerRequestModal from '../payroll/ManpowerRequestModal';
 import ManpowerReviewModal from '../payroll/ManpowerReviewModal';
-import LeaveRequestModal from '../payroll/LeaveRequestModal';
-import WFHReviewModal from '../payroll/WFHReviewModal';
-import OTRequestModal from '../payroll/OTRequestModal';
+
 import RequestCOEModal from '../employees/RequestCOEModal';
 import PrintableCOE from '../admin/PrintableCOE';
 import MemoViewModal from '../feedback/MemoViewModal';
@@ -26,7 +25,7 @@ import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { mergePanParticulars } from '../../services/panUtils';
 import COEQueue from './COEQueue';
-import { approveRejectOtRequest } from '../../services/otService';
+
 
 const InboxIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" /></svg>;
 const ClipboardListIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>;
@@ -188,12 +187,7 @@ const ManagerDashboard: React.FC = () => {
     const [isManpowerModalOpen, setIsManpowerModalOpen] = useState(false);
     const [isManpowerReviewModalOpen, setIsManpowerReviewModalOpen] = useState(false);
     const [selectedManpowerRequest, setSelectedManpowerRequest] = useState<ManpowerRequest | null>(null);
-    const [isLeaveReviewModalOpen, setIsLeaveReviewModalOpen] = useState(false);
-    const [selectedLeaveRequest, setSelectedLeaveRequest] = useState<LeaveRequest | null>(null);
-    const [isWFHReviewModalOpen, setIsWFHReviewModalOpen] = useState(false);
-    const [selectedWFHRequest, setSelectedWFHRequest] = useState<WFHRequest | null>(null);
-    const [isOTReviewModalOpen, setIsOTReviewModalOpen] = useState(false);
-    const [selectedOTRequest, setSelectedOTRequest] = useState<OTRequest | null>(null);
+    // Leave/WFH/OT review modals are now handled by the global ApprovalWidget
 
     const [isRequestCOEModalOpen, setIsRequestCOEModalOpen] = useState(false);
     const coeAccess = getCoeAccess();
@@ -912,100 +906,9 @@ const ManagerDashboard: React.FC = () => {
         setIsManpowerReviewModalOpen(true);
     };
 
-    const openLeaveReviewModal = (req: LeaveRequest) => {
-        setSelectedLeaveRequest(req);
-        setIsLeaveReviewModalOpen(true);
-    };
+    // Leave/WFH/OT review modal openers and handlers are now in the global ApprovalWidget
 
-    const openWFHReviewModal = (req: WFHRequest) => {
-        setSelectedWFHRequest(req);
-        setIsWFHReviewModalOpen(true);
-    };
 
-    const openOTReviewModal = (req: OTRequest) => {
-        setSelectedOTRequest(req);
-        setIsOTReviewModalOpen(true);
-    };
-
-    const handleLeaveApproval = async (request: LeaveRequest, approved: boolean, notes: string) => {
-        if (!user) return;
-        const historyEntry = {
-            userId: user.id,
-            userName: user.name,
-            timestamp: new Date().toISOString(),
-            action: approved ? 'Approved' : 'Rejected',
-            details: notes ? `Manager notes: ${notes}` : undefined,
-        };
-        const newStatus = approved ? LeaveRequestStatus.Approved : LeaveRequestStatus.Rejected;
-
-        const { error } = await supabase
-            .from('leave_requests')
-            .update({
-                status: newStatus,
-                approver_id: user.id,
-                history_log: [...(request.historyLog || []), historyEntry],
-            })
-            .eq('id', request.id);
-
-        if (error) {
-            alert(error.message || 'Failed to update leave request.');
-            return;
-        }
-
-        setPendingLeaveApprovals(prev => prev.filter(r => r.id !== request.id));
-        setIsLeaveReviewModalOpen(false);
-        setSelectedLeaveRequest(null);
-    };
-
-    const handleApproveWFH = async (requestId: string) => {
-        if (!user) return;
-        const { error } = await supabase
-            .from('wfh_requests')
-            .update({ status: WFHRequestStatus.Approved, approved_by: user.id, approved_at: new Date().toISOString() })
-            .eq('id', requestId);
-
-        if (error) {
-            alert(error.message || 'Failed to approve WFH request.');
-            return;
-        }
-
-        setPendingWfhApprovals(prev => prev.filter(r => r.id !== requestId));
-        setIsWFHReviewModalOpen(false);
-        setSelectedWFHRequest(null);
-    };
-
-    const handleRejectWFH = async (requestId: string, reason: string) => {
-        if (!user) return;
-        const { error } = await supabase
-            .from('wfh_requests')
-            .update({ status: WFHRequestStatus.Rejected, rejection_reason: reason })
-            .eq('id', requestId);
-
-        if (error) {
-            alert(error.message || 'Failed to reject WFH request.');
-            return;
-        }
-
-        setPendingWfhApprovals(prev => prev.filter(r => r.id !== requestId));
-        setIsWFHReviewModalOpen(false);
-        setSelectedWFHRequest(null);
-    };
-
-    const handleApproveRejectOT = async (
-        request: Partial<OTRequest>,
-        newStatus: OTStatus.Approved | OTStatus.Rejected,
-        details: { approvedHours?: number; managerNote?: string }
-    ) => {
-        if (!request.id) return;
-        try {
-            await approveRejectOtRequest(request.id, newStatus, details);
-            setPendingOtApprovals(prev => prev.filter(r => r.id !== request.id));
-            setIsOTReviewModalOpen(false);
-            setSelectedOTRequest(null);
-        } catch (error: any) {
-            alert(error?.message || 'Failed to update OT request.');
-        }
-    };
 
     const handleViewMemo = (memo: Memo) => {
         setSelectedMemo(memo);
@@ -1566,113 +1469,12 @@ const ManagerDashboard: React.FC = () => {
         });
     }, [user, notificationUserIds, employeeProfileId, memos, memoUpdateKey, requests, assignments, assignedTickets, checklists, templates, pans, pendingOtApprovals, exceptions, requisitions, resolutions, ntes, awards, manpowerRequests, isApprover, isBusinessUnitManager, subordinateIds, envelopes, benefitRequests, coachingSessions, evaluationSubmissions, evaluations, evaluationTimelines, isUserEligibleEvaluator, visibleEmployeeIds, panApproverId]);
 
-    const teamApprovalItems = useMemo(() => {
-        const items: Array<{
-            id: string;
-            icon: React.ReactNode;
-            title: string;
-            subtitle: string;
-            date: string;
-            colorClass: string;
-            onClick?: () => void;
-            [key: string]: any;
-        }> = [];
-
-        pendingLeaveApprovals.forEach(req => {
-            items.push({
-                id: `leave-${req.id}`,
-                icon: <SunIcon {...approvalIconProps} />,
-                title: 'Leave Request Approval',
-                subtitle: `${req.employeeName} • ${new Date(req.startDate).toLocaleDateString()} - ${new Date(req.endDate).toLocaleDateString()}`,
-                date: new Date(req.startDate).toLocaleDateString(),
-                colorClass: 'bg-yellow-500',
-                onClick: () => openLeaveReviewModal(req),
-            });
-        });
-
-        pendingWfhApprovals.forEach(req => {
-            items.push({
-                id: `wfh-${req.id}`,
-                icon: <CalendarDaysIcon {...approvalIconProps} />,
-                title: 'WFH Request Approval',
-                subtitle: `${req.employeeName} • ${new Date(req.date).toLocaleDateString()}`,
-                date: new Date(req.date).toLocaleDateString(),
-                colorClass: 'bg-blue-500',
-                onClick: () => openWFHReviewModal(req),
-            });
-        });
-
-        pendingOtApprovals.forEach(req => {
-            items.push({
-                id: `ot-${req.id}`,
-                icon: <ClipboardListIcon />,
-                title: 'Overtime Request Approval',
-                subtitle: `${req.employeeName} • ${new Date(req.date).toLocaleDateString()}`,
-                date: new Date(req.date).toLocaleDateString(),
-                colorClass: 'bg-indigo-500',
-                onClick: () => openOTReviewModal(req),
-            });
-        });
-
-        pendingManpowerApprovals.forEach(req => {
-            items.push({
-                id: `oncall-${req.id}`,
-                icon: <UserGroupIcon />,
-                title: 'On-Call Request Approval',
-                subtitle: `${req.requesterName} • ${new Date(req.date).toLocaleDateString()}`,
-                date: new Date(req.date).toLocaleDateString(),
-                colorClass: 'bg-teal-500',
-                onClick: () => openReviewModal(req),
-            });
-        });
-
-        const parseDateValue = (value: any): Date | null => {
-            if (!value) return null;
-            if (value instanceof Date) {
-                return Number.isNaN(value.getTime()) ? null : value;
-            }
-            if (typeof value === 'number') {
-                const parsed = new Date(value);
-                return Number.isNaN(parsed.getTime()) ? null : parsed;
-            }
-            if (typeof value === 'string') {
-                const trimmed = value.trim();
-                if (!trimmed || trimmed.toLowerCase() === 'invalid date') return null;
-                const prefixMatch = trimmed.match(/^(Due|Deadline|Effective|Assigned|Date|On)\s*:\s*(.+)$/i);
-                const raw = prefixMatch ? prefixMatch[2] : trimmed;
-                const parsed = new Date(raw);
-                return Number.isNaN(parsed.getTime()) ? null : parsed;
-            }
-            return null;
-        };
-
-        const normalizedItems = items.map(item => {
-            const sortDate = parseDateValue(
-                item.sortDate ??
-                item.updatedAt ??
-                item.lastModifiedAt ??
-                item.modifiedAt ??
-                item.updated_at ??
-                item.last_modified_at ??
-                item.createdAt ??
-                item.insertedAt ??
-                item.created_at ??
-                item.inserted_at ??
-                item.date
-            );
-            return { ...item, date: sortDate ? sortDate.toLocaleString() : '—', sortDate };
-        });
-
-        return normalizedItems.sort((a, b) => {
-            const aTime = a.sortDate ? a.sortDate.getTime() : 0;
-            const bTime = b.sortDate ? b.sortDate.getTime() : 0;
-            return bTime - aTime;
-        });
-    }, [pendingLeaveApprovals, pendingWfhApprovals, pendingOtApprovals, pendingManpowerApprovals]);
+    // Team approval items are now handled by the global ApprovalWidget component
 
     return (
         <div className="space-y-6">
             <QuickLinks />
+            <ApprovalWidget />
             <UpcomingEventsWidget />
 
             <Card title="COE Requests">
@@ -1683,35 +1485,6 @@ const ManagerDashboard: React.FC = () => {
                     canAct={coeAccess.canApprove}
                     canActOn={coeAccess.canActOn}
                 />
-            </Card>
-
-            <Card title="Team Requests">
-                {teamApprovalItems.length > 0 ? (
-                    <div className="space-y-4">
-                        {teamApprovalItems.map(item => (
-                            <div key={item.id} onClick={item.onClick} className="cursor-pointer">
-                                <div className="bg-white dark:bg-slate-800 shadow-md rounded-lg overflow-hidden transition-all hover:shadow-lg hover:ring-2 hover:ring-indigo-500">
-                                    <div className="flex items-center p-4">
-                                        <div className={`flex-shrink-0 p-3 rounded-full ${item.colorClass}`}>
-                                            {item.icon}
-                                        </div>
-                                        <div className="flex-grow ml-4 min-w-0">
-                                            <h3 className="font-semibold text-gray-800 dark:text-gray-200 truncate">{item.title}</h3>
-                                            <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{item.subtitle}</p>
-                                        </div>
-                                        <div className="flex-shrink-0 ml-4 flex flex-col items-end">
-                                            <span className="text-xs text-gray-500 dark:text-gray-400">{item.date}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                ) : (
-                    <div className="text-center py-6 text-sm text-gray-500 dark:text-gray-400">
-                        No pending requests from your direct reports.
-                    </div>
-                )}
             </Card>
 
             {actionItems.length > 0 ? (
@@ -1780,43 +1553,7 @@ const ManagerDashboard: React.FC = () => {
                 canApprove={true}
             />
 
-            <LeaveRequestModal
-                isOpen={isLeaveReviewModalOpen}
-                onClose={() => {
-                    setIsLeaveReviewModalOpen(false);
-                    setSelectedLeaveRequest(null);
-                }}
-                request={selectedLeaveRequest}
-                leaveTypes={leaveTypes}
-                onSave={() => { }}
-                onApprove={handleLeaveApproval}
-            />
-
-            <WFHReviewModal
-                isOpen={isWFHReviewModalOpen}
-                onClose={() => {
-                    setIsWFHReviewModalOpen(false);
-                    setSelectedWFHRequest(null);
-                }}
-                request={selectedWFHRequest}
-                onApprove={handleApproveWFH}
-                onReject={handleRejectWFH}
-            />
-
-            <OTRequestModal
-                isOpen={isOTReviewModalOpen}
-                onClose={() => {
-                    setIsOTReviewModalOpen(false);
-                    setSelectedOTRequest(null);
-                }}
-                onSave={() => { }}
-                onApproveOrReject={handleApproveRejectOT}
-                requestToEdit={selectedOTRequest}
-                canApproveOverride={!!selectedOTRequest && reporteeIds.includes(selectedOTRequest.employeeId)}
-                attendanceRecords={[]}
-                shiftAssignments={[]}
-                shiftTemplates={[]}
-            />
+            {/* Leave/WFH/OT review modals are now handled by the global ApprovalWidget */}
 
             <ManpowerRequestModal
                 isOpen={isManpowerModalOpen}

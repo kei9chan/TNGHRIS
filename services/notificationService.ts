@@ -12,6 +12,7 @@ type NotificationRow = {
   type: string;
   is_read: boolean;
   link?: string | null;
+  related_entity_id?: string | null;
   created_at: string;
 };
 
@@ -26,6 +27,7 @@ const mapNotification = (row: NotificationRow): Notification => ({
   type: row.type as Notification['type'],
   isRead: row.is_read,
   link: row.link || undefined,
+  relatedEntityId: row.related_entity_id || undefined,
   createdAt: new Date(row.created_at),
 });
 
@@ -60,7 +62,7 @@ export const markAllNotificationsRead = async (userId: string): Promise<void> =>
 };
 
 export const createNotification = async (notif: Partial<Notification>): Promise<Notification> => {
-  const payload = {
+  const payload: Record<string, unknown> = {
     user_id: notif.userId,
     title: notif.title || '',
     message: notif.message || '',
@@ -68,6 +70,11 @@ export const createNotification = async (notif: Partial<Notification>): Promise<
     is_read: false,
     link: notif.link || null,
   };
+
+  // Persist related entity id when provided (used for deep-linking from notification center)
+  if (notif.relatedEntityId) {
+    payload.related_entity_id = notif.relatedEntityId;
+  }
 
   const { data, error } = await supabase.from('notifications').insert(payload).select().single();
   if (error) throw new Error(error.message || 'Failed to create notification');

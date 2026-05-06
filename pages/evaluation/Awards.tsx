@@ -1,5 +1,4 @@
 
-
 import React from 'react';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -20,6 +19,7 @@ import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import CertificateRenderer from '../../components/evaluation/CertificateRenderer';
 import html2canvas from 'html2canvas';
+import { createNotification } from '../../services/notificationService';
 
 const FALLBACK_DESIGN = {
   backgroundColor: '#ffffff',
@@ -193,12 +193,25 @@ const Awards: React.FC = () => {
       setEmployeeAwards(prev => [mapped, ...prev]);
       setIsAssignModalOpen(false);
       const employee = users.find(u => u.id === employeeId);
+      const awardTemplate = awards.find(a => a.id === awardId);
       logActivity(user, 'CREATE', 'EmployeeAward', mapped.id, `Nominated ${employee?.name || employeeId} for award.`);
       setToastInfo({
         show: true,
         title: 'Award Submitted',
         message: 'Award nomination submitted.',
       });
+
+      // Notify each selected approver about the pending nomination
+      for (const approver of approvers) {
+        createNotification({
+          userId: approver.id,
+          type: NotificationType.AWARD_APPROVAL_REQUEST,
+          title: 'Award Approval Needed',
+          message: `${user.name || 'An HR staff'} nominated ${employee?.name || 'an employee'} for "${awardTemplate?.title || 'an award'}". Please review.`,
+          link: '/evaluation/awards',
+          relatedEntityId: mapped.id,
+        }).catch(e => console.warn('Failed to send award approval notification to approver', e));
+      }
     } catch (err: any) {
       alert(err?.message || 'Failed to submit award.');
     }
@@ -315,6 +328,26 @@ const Awards: React.FC = () => {
                 message: `${award.employeeName || 'Employee'} has officially received the ${award.awardTitle || 'Award'}! 🌟`,
             });
             setTimeout(() => setShowConfetti(false), 4000);
+
+            // Notify the award recipient
+            createNotification({
+                userId: award.employeeId,
+                type: NotificationType.AWARD_ISSUED,
+                title: 'Award Approved! 🏆',
+                message: `Congratulations! Your nomination for "${award.awardTitle}" has been approved.`,
+                link: '/evaluation/awards',
+            }).catch(e => console.warn('Failed to send award approval notification to recipient', e));
+
+            // Also notify the nominator if different
+            if (award.createdByUserId && award.createdByUserId !== award.employeeId) {
+                createNotification({
+                    userId: award.createdByUserId,
+                    type: NotificationType.AWARD_ISSUED,
+                    title: 'Nomination Approved',
+                    message: `Your nomination of ${award.employeeName || 'the employee'} for "${award.awardTitle}" has been approved.`,
+                    link: '/evaluation/awards',
+                }).catch(e => console.warn('Failed to send award approval notification to nominator', e));
+            }
         } catch (err: any) {
             alert(err?.message || 'Failed to approve award.');
         }
@@ -343,6 +376,26 @@ const Awards: React.FC = () => {
                 title: 'Award Rejected',
                 message: `${awardToReject.employeeName || 'Employee'} nomination was rejected.`,
             });
+
+            // Notify the award recipient of the rejection
+            createNotification({
+                userId: awardToReject.employeeId,
+                type: NotificationType.AWARD_ISSUED,
+                title: 'Award Nomination Rejected',
+                message: `Your nomination for "${awardToReject.awardTitle}" was not approved${reason ? `: ${reason}` : '.'}`,
+                link: '/evaluation/awards',
+            }).catch(e => console.warn('Failed to send award rejection notification to recipient', e));
+
+            // Also notify the nominator if different
+            if (awardToReject.createdByUserId && awardToReject.createdByUserId !== awardToReject.employeeId) {
+                createNotification({
+                    userId: awardToReject.createdByUserId,
+                    type: NotificationType.AWARD_ISSUED,
+                    title: 'Nomination Rejected',
+                    message: `Your nomination of ${awardToReject.employeeName || 'the employee'} for "${awardToReject.awardTitle}" was rejected${reason ? `: ${reason}` : '.'}`,
+                    link: '/evaluation/awards',
+                }).catch(e => console.warn('Failed to send award rejection notification to nominator', e));
+            }
         } catch (err: any) {
             alert(err?.message || 'Failed to reject award.');
         }

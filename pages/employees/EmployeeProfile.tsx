@@ -367,7 +367,9 @@ const EmployeeProfile: React.FC = () => {
             pushIfChanged('email', userToView.email, updatedProfileData.email ?? userToView.email);
             pushIfChanged('position', userToView.position, updatedProfileData.position ?? userToView.position);
             pushIfChanged('department', userToView.department, updatedProfileData.department ?? userToView.department);
+            pushIfChanged('departmentId', userToView.departmentId, updatedProfileData.departmentId ?? userToView.departmentId);
             pushIfChanged('businessUnit', userToView.businessUnit, updatedProfileData.businessUnit ?? userToView.businessUnit);
+            pushIfChanged('businessUnitId', userToView.businessUnitId, updatedProfileData.businessUnitId ?? userToView.businessUnitId);
             pushIfChanged('birthDate', formatDateOnly(userToView.birthDate ?? null), formatDateOnly(updatedProfileData.birthDate ?? userToView.birthDate ?? null));
 
             if (changes.length === 0) {

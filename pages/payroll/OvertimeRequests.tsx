@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { OTRequest, OTStatus, Role, OTRequestHistory, Permission } from '../../types';
+import { NotificationType } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useUsers, useBusinessUnits, useShiftTemplates, useAttendanceRecords, useShiftAssignments } from '../../hooks/useHRData';
@@ -14,6 +15,7 @@ import OTLedger from '../../components/payroll/OTLedger';
 import EditableDescription from '../../components/ui/EditableDescription';
 import { logActivity } from '../../services/auditService';
 import { fetchOtRequests, saveOtRequest, approveRejectOtRequest, deleteOtRequest, withdrawOtRequest } from '../../services/otService';
+import { createNotification } from '../../services/notificationService';
 import { supabase } from '../../services/supabaseClient';
 
 type Tab = 'my_ot' | 'team_approvals' | 'calendar' | 'ledger';
@@ -292,6 +294,17 @@ const OvertimeRequests: React.FC = () => {
             setIsModalOpen(false);
             if (status === OTStatus.Submitted) {
                 setShowSuccessToast(true);
+
+                // Notify the manager that an OT request needs their approval
+                if (user.managerId) {
+                    createNotification({
+                        userId: user.managerId,
+                        title: '📋 OT Request Pending Approval',
+                        message: `${user.name} submitted an overtime request for your approval.`,
+                        type: NotificationType.OT_SUBMITTED,
+                        link: '/payroll/overtime-requests',
+                    }).catch(e => console.error('Failed to send OT submission notification', e));
+                }
             }
         } catch (error: any) {
             alert(error?.message || 'Failed to save OT request.');
@@ -330,6 +343,21 @@ const OvertimeRequests: React.FC = () => {
             setRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
             const actionType = newStatus === OTStatus.Approved ? 'APPROVE' : 'REJECT';
             logActivity(user, actionType, 'OTRequest', requestToUpdate.id!, `${action} OT request for ${requestToUpdate.employeeName}`);
+
+            // Notify the requester
+            if (requestToUpdate.employeeId) {
+                const isApproved = newStatus === OTStatus.Approved;
+                createNotification({
+                    userId: requestToUpdate.employeeId,
+                    title: isApproved ? '✅ OT Request Approved' : '❌ OT Request Rejected',
+                    message: isApproved
+                        ? `Your OT request${details.approvedHours ? ` (${details.approvedHours.toFixed(2)} hrs)` : ''} has been approved by ${user.name}.`
+                        : `Your OT request has been rejected by ${user.name}${details.managerNote ? `: "${details.managerNote}"` : '.'}`,
+                    type: isApproved ? NotificationType.OT_APPROVED : NotificationType.OT_REJECTED,
+                    link: '/payroll/overtime-requests',
+                }).catch(console.error);
+            }
+
             setIsModalOpen(false);
         } catch (error: any) {
             alert(error?.message || 'Failed to update OT request.');

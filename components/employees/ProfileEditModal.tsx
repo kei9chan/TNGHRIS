@@ -23,6 +23,8 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
   const [formData, setFormData] = useState<Partial<User>>({});
   const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
   const [reportsToOptions, setReportsToOptions] = useState<Array<{ id: string; label: string }>>([]);
+  const [businessUnits, setBusinessUnits] = useState<{ id: string; name: string }[]>([]);
+  const [allDepartments, setAllDepartments] = useState<{ id: string; name: string; businessUnitId: string }[]>([]);
   const [computedLeaves, setComputedLeaves] = useState<{
     usedVacation: number;
     usedSick: number;
@@ -97,7 +99,21 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
         }
       };
 
+      const fetchBuAndDepts = async () => {
+        try {
+          const [{ data: buData }, { data: deptData }] = await Promise.all([
+            supabase.from('business_units').select('id, name').order('name'),
+            supabase.from('departments').select('id, name, business_unit_id').order('name'),
+          ]);
+          setBusinessUnits((buData || []).map((b: any) => ({ id: b.id, name: b.name })));
+          setAllDepartments((deptData || []).map((d: any) => ({ id: d.id, name: d.name, businessUnitId: d.business_unit_id })));
+        } catch {
+          // non-fatal — dropdowns will be empty
+        }
+      };
+
       fetchReports();
+      fetchBuAndDepts();
 
       // Load leave requests for this employee to prefill Leave tab
       const fetchLeaves = async () => {
@@ -194,6 +210,12 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
     }));
   }, [computedLeaves, formData.leaveQuotaVacation, formData.leaveQuotaSick]);
 
+  // Departments filtered by the currently selected business unit
+  const filteredDepartments = useMemo(() => {
+    if (!formData.businessUnitId) return allDepartments;
+    return allDepartments.filter(d => d.businessUnitId === formData.businessUnitId);
+  }, [formData.businessUnitId, allDepartments]);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     if (name === 'birthDate') {
@@ -203,6 +225,23 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
       const date = new Date(value);
       const userTimezoneOffset = date.getTimezoneOffset() * 60000;
       setFormData(prev => ({ ...prev, [name]: new Date(date.getTime() + userTimezoneOffset) }));
+    } else if (name === 'businessUnitId') {
+      // Changing BU clears department to prevent mismatched data
+      const selectedBu = businessUnits.find(b => b.id === value);
+      setFormData(prev => ({
+        ...prev,
+        businessUnitId: value || undefined,
+        businessUnit: selectedBu?.name || '',
+        departmentId: undefined,
+        department: '',
+      }));
+    } else if (name === 'departmentId') {
+      const selectedDept = allDepartments.find(d => d.id === value);
+      setFormData(prev => ({
+        ...prev,
+        departmentId: value || undefined,
+        department: selectedDept?.name || '',
+      }));
     } else {
       const isNumberField = e.target.type === 'number';
       setFormData(prev => ({ ...prev, [name]: isNumberField ? parseFloat(value) || 0 : value }));
@@ -322,7 +361,49 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
             <Input label="Full Name" name="name" value={formData.name || ''} onChange={handleChange} />
             <Input label="Email Address" name="email" type="email" value={formData.email || ''} onChange={handleChange} />
             <Input label="Birth Date" name="birthDate" type="date" value={formData.birthDate ? (typeof formData.birthDate === 'string' ? formData.birthDate : new Date(formData.birthDate).toISOString().split('T')[0]) : ''} onChange={handleChange} />
-            <Input label="Department" name="department" value={formData.department || ''} onChange={handleChange} disabled={!isAdminEdit} />
+            {isAdminEdit ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
+                  <select
+                    name="businessUnitId"
+                    value={formData.businessUnitId || ''}
+                    onChange={handleChange}
+                    className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                  >
+                    <option value="">Select Business Unit</option>
+                    {businessUnits.map(bu => (
+                      <option key={bu.id} value={bu.id}>{bu.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Department</label>
+                  <select
+                    name="departmentId"
+                    value={formData.departmentId || ''}
+                    onChange={handleChange}
+                    disabled={!formData.businessUnitId}
+                    className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <option value="">Select Department</option>
+                    {filteredDepartments.map(dept => (
+                      <option key={dept.id} value={dept.id}>{dept.name}</option>
+                    ))}
+                  </select>
+                  {!formData.businessUnitId && (
+                    <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">Select a Business Unit first</p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Department</label>
+                <p className="mt-1 py-2 px-3 bg-gray-100 dark:bg-slate-700 rounded-md text-sm text-gray-700 dark:text-gray-300">
+                  {formData.department || <span className="italic text-gray-400">Not set</span>}
+                </p>
+              </div>
+            )}
             <Input label="Position" name="position" value={formData.position || ''} onChange={handleChange} disabled={!isAdminEdit} />
             {isAdminEdit && (
               <div>

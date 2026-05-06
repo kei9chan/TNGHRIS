@@ -16,6 +16,7 @@ import AssetRejectionModal from '../../components/employees/AssetRejectionModal'
 import AssetReturnRequestModal from '../../components/employees/AssetReturnRequestModal';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
+import { createNotification } from '../../services/notificationService';
 
 type AssetRequestRow = {
     id: string;
@@ -274,6 +275,15 @@ const AssetRequests: React.FC = () => {
             const mapped = mapRequestRow(data as AssetRequestRow);
             updateRequestState(mapped);
             logActivity(user, 'REJECT', 'AssetRequest', selectedRequest.id, `Rejected request. Reason: ${reason}`);
+
+            // Notify requester
+            createNotification({
+                userId: selectedRequest.employeeId,
+                type: NotificationType.ASSET_UPDATE,
+                title: 'Asset Request Rejected',
+                message: `Your asset request for "${selectedRequest.assetDescription}" was rejected: ${reason}`,
+                link: '/employees/asset-requests',
+            }).catch(e => console.warn('Failed to send asset rejection notification', e));
         } catch (err) {
             console.error('Failed to reject request', err);
             alert('Failed to reject request. Please try again.');
@@ -356,6 +366,15 @@ const AssetRequests: React.FC = () => {
             updateRequestState(mapped);
 
             logActivity(user, 'APPROVE', 'AssetRequest', selectedRequest.id, `Approved asset return. New status: ${newStatus}. Condition: ${returnCondition}`);
+
+            // Notify the employee whose return was confirmed
+            createNotification({
+                userId: selectedRequest.employeeId,
+                type: NotificationType.ASSET_UPDATE,
+                title: 'Asset Return Confirmed',
+                message: `Your return of "${selectedRequest.assetDescription}" has been confirmed.`,
+                link: '/employees/asset-requests',
+            }).catch(e => console.warn('Failed to send asset return notification', e));
         } catch (err) {
             console.error('Failed to complete return', err);
             alert('Failed to complete return. Please try again.');
@@ -395,6 +414,40 @@ const AssetRequests: React.FC = () => {
             const mapped = mapRequestRow(data as AssetRequestRow);
             setRequests(prev => [mapped, ...prev]);
             logActivity(user, 'CREATE', 'AssetRequest', mapped.id, `Created return request for asset ID ${mapped.assetId} from employee ID ${mapped.employeeId}`);
+
+            // Notify asset managers/admins of the new pending request
+            try {
+                const { data: adminRows } = await supabase
+                    .from('hris_users')
+                    .select('id, role')
+                    .in('role', ['Admin', 'HR Manager', 'HR Staff']);
+                (adminRows || []).forEach((row: any) => {
+                    if (row?.id && row.id !== user.id) {
+                        createNotification({
+                            userId: row.id,
+                            type: NotificationType.ASSET_REQUEST_SUBMITTED,
+                            title: '📦 New Asset Return Request',
+                            message: `${user.name} submitted an asset return request for "${mapped.assetDescription}".`,
+                            link: '/employees/asset-requests',
+                            relatedEntityId: mapped.id,
+                        }).catch(e => console.warn('Failed to notify admin of asset return request', e));
+                    }
+                });
+            } catch (e) {
+                console.error('Failed to fetch admins for asset return notification', e);
+            }
+
+            // Notify the employee that a return has been initiated for their asset
+            if (mapped.employeeId !== user.id) {
+                createNotification({
+                    userId: mapped.employeeId,
+                    type: NotificationType.ASSET_UPDATE,
+                    title: 'Asset Return Requested',
+                    message: `A return has been initiated for asset "${mapped.assetDescription}". Please prepare for submission.`,
+                    link: '/employees/asset-requests',
+                }).catch(e => console.warn('Failed to send return request notification', e));
+            }
+
             alert('Return request submitted.');
         } catch (err) {
             console.error('Failed to create return request', err);

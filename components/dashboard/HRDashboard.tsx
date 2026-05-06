@@ -9,13 +9,15 @@ import { usePermissions } from '../../hooks/usePermissions'; // Import added
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { mergePanParticulars } from '../../services/panUtils';
-import { JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, Role, NotificationType, ResignationStatus, Notification, TicketStatus, UserDocumentStatus, OnboardingTaskStatus, ChangeHistoryStatus, PANStatus, PANActionTaken, PANStepStatus, PAN, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, COERequestStatus, COETemplate, BenefitRequestStatus, IRStatus, IncidentReport, User, Evaluation, EvaluatorType, Memo, MemoAcknowledgement, OTRequest, OTStatus, BenefitRequest, EvaluationSubmission, JobRequisition, Resignation } from '../../types';
+import { JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, Role, NotificationType, ResignationStatus, Notification, TicketStatus, UserDocumentStatus, OnboardingTaskStatus, ChangeHistoryStatus, PANStatus, PANActionTaken, PANStepStatus, PAN, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, COERequestStatus, COETemplate, BenefitRequestStatus, IRStatus, IncidentReport, User, Evaluation, EvaluatorType, Memo, MemoAcknowledgement, OTRequest, OTStatus, BenefitRequest, EvaluationSubmission, JobRequisition, Resignation, LeaveRequest, LeaveRequestStatus, WFHRequest, WFHRequestStatus } from '../../types';
 import ActionItemCard from './ActionItemCard';
 import QuickAnalyticsPreview from './QuickAnalyticsPreview';
 import UpcomingEventsWidget from './UpcomingEventsWidget';
 import UnassignedTicketsWidget from './UnassignedTicketsWidget';
 import QuickLinks from './QuickLinks';
+import ApprovalWidget from './ApprovalWidget';
 import ManpowerRequestModal from '../payroll/ManpowerRequestModal';
+
 import RequestCOEModal from '../employees/RequestCOEModal';
 import COEQueue from './COEQueue';
 import PrintableCOE from '../admin/PrintableCOE';
@@ -175,6 +177,11 @@ const HRDashboard: React.FC = () => {
     const [isLoadingCoe, setIsLoadingCoe] = useState(false);
     const [reporteeIds, setReporteeIds] = useState<string[]>([]);
     const [pendingOtApprovals, setPendingOtApprovals] = useState<OTRequest[]>([]);
+    const [pendingLeaveApprovals, setPendingLeaveApprovals] = useState<LeaveRequest[]>([]);
+    const [pendingWfhApprovals, setPendingWfhApprovals] = useState<WFHRequest[]>([]);
+    const [pendingManpowerApprovals, setPendingManpowerApprovals] = useState<ManpowerRequest[]>([]);
+    const [leaveTypes, setLeaveTypes] = useState<{ id: string; name: string }[]>([]);
+    // Team approval modal state is now handled by the global ApprovalWidget
 
     useEffect(() => {
         if (location.state?.openManpowerModal) {
@@ -285,6 +292,134 @@ const HRDashboard: React.FC = () => {
             clearInterval(interval);
         };
     }, [user?.id, reporteeIds]);
+
+    // Fetch leave types for the LeaveRequestModal
+    useEffect(() => {
+        const loadLeaveTypes = async () => {
+            const { data, error } = await supabase
+                .from('leave_types')
+                .select('id, name')
+                .order('name');
+            if (!error && data) {
+                setLeaveTypes(data.map((row: any) => ({ id: row.id, name: row.name })));
+            }
+        };
+        loadLeaveTypes();
+    }, []);
+
+    // Fetch ALL pending Leave, WFH, and Manpower approvals (HR sees all employees)
+    useEffect(() => {
+        if (!isHR) {
+            setPendingLeaveApprovals([]);
+            setPendingWfhApprovals([]);
+            setPendingManpowerApprovals([]);
+            return;
+        }
+        let active = true;
+        const loadTeamApprovals = async () => {
+            const normalizeLeaveStatus = (status: string | null | undefined): LeaveRequestStatus => {
+                const key = (status || '').toString().trim().toLowerCase();
+                switch (key) {
+                    case 'approved': return LeaveRequestStatus.Approved;
+                    case 'rejected': return LeaveRequestStatus.Rejected;
+                    case 'cancelled': case 'canceled': return LeaveRequestStatus.Cancelled;
+                    case 'draft': return LeaveRequestStatus.Draft;
+                    default: return LeaveRequestStatus.Pending;
+                }
+            };
+
+            const [leaveRes, wfhRes, manpowerRes] = await Promise.all([
+                supabase
+                    .from('leave_requests')
+                    .select('id, employee_id, employee_name, leave_type_id, start_date, end_date, start_time, end_time, duration_days, reason, status, history_log, attachment_url, approver_id, business_unit_id, department_id')
+                    .eq('status', 'pending')
+                    .order('start_date', { ascending: false }),
+                supabase
+                    .from('wfh_requests')
+                    .select('id, employee_id, employee_name, date, reason, status, report_link, approved_by, approved_at, rejection_reason, created_at')
+                    .eq('status', WFHRequestStatus.Pending)
+                    .order('created_at', { ascending: false }),
+                supabase
+                    .from('manpower_requests')
+                    .select('id, business_unit_id, business_unit_name, department_id, requester_id, requester_name, date_needed, forecasted_pax, general_note, items, grand_total, status, created_at, approved_by, approved_at, rejection_reason')
+                    .eq('status', ManpowerRequestStatus.Pending)
+                    .order('created_at', { ascending: false }),
+            ]);
+
+            if (!active) return;
+
+            if (!leaveRes.error && leaveRes.data) {
+                const mapped = leaveRes.data.map((row: any) => ({
+                    id: row.id,
+                    employeeId: row.employee_id,
+                    employeeName: row.employee_name,
+                    leaveTypeId: row.leave_type_id,
+                    startDate: new Date(row.start_date),
+                    endDate: new Date(row.end_date),
+                    startTime: row.start_time || undefined,
+                    endTime: row.end_time || undefined,
+                    durationDays: Number(row.duration_days),
+                    reason: row.reason,
+                    status: normalizeLeaveStatus(row.status),
+                    historyLog: row.history_log || [],
+                    attachmentUrl: row.attachment_url || undefined,
+                    approverId: row.approver_id || undefined,
+                    businessUnitId: row.business_unit_id || undefined,
+                    departmentId: row.department_id || undefined,
+                }));
+                setPendingLeaveApprovals(mapped.filter(r => r.status === LeaveRequestStatus.Pending));
+            } else {
+                setPendingLeaveApprovals([]);
+            }
+
+            if (!wfhRes.error && wfhRes.data) {
+                const mapped = wfhRes.data.map((row: any) => ({
+                    id: row.id,
+                    employeeId: row.employee_id,
+                    employeeName: row.employee_name,
+                    date: row.date ? new Date(row.date) : new Date(),
+                    reason: row.reason,
+                    status: row.status as WFHRequestStatus,
+                    reportLink: row.report_link || undefined,
+                    approvedBy: row.approved_by || undefined,
+                    approvedAt: row.approved_at ? new Date(row.approved_at) : undefined,
+                    rejectionReason: row.rejection_reason || undefined,
+                    createdAt: row.created_at ? new Date(row.created_at) : new Date(),
+                }));
+                setPendingWfhApprovals(mapped.filter(r => r.status === WFHRequestStatus.Pending));
+            } else {
+                setPendingWfhApprovals([]);
+            }
+
+            if (!manpowerRes.error && manpowerRes.data) {
+                setPendingManpowerApprovals(
+                    manpowerRes.data.map((row: any) => ({
+                        id: row.id,
+                        businessUnitId: row.business_unit_id || '',
+                        departmentId: row.department_id || undefined,
+                        businessUnitName: row.business_unit_name || 'Unknown BU',
+                        requestedBy: row.requester_id,
+                        requesterName: row.requester_name,
+                        date: row.date_needed ? new Date(row.date_needed) : new Date(),
+                        forecastedPax: row.forecasted_pax || 0,
+                        generalNote: row.general_note || '',
+                        items: Array.isArray(row.items) ? row.items : (row.items ? JSON.parse(row.items) : []),
+                        grandTotal: row.grand_total || 0,
+                        status: row.status as ManpowerRequestStatus,
+                        createdAt: row.created_at ? new Date(row.created_at) : new Date(),
+                        approvedBy: row.approved_by || undefined,
+                        approvedAt: row.approved_at ? new Date(row.approved_at) : undefined,
+                        rejectionReason: row.rejection_reason || undefined,
+                    }))
+                );
+            } else {
+                setPendingManpowerApprovals([]);
+            }
+        };
+
+        loadTeamApprovals();
+        return () => { active = false; };
+    }, [isHR]);
 
     useEffect(() => {
         const loadPans = async () => {
@@ -657,6 +792,8 @@ const HRDashboard: React.FC = () => {
         setCoeToReject(null);
     };
 
+    // Team approval handlers are now in the global ApprovalWidget
+
     const handleViewMemo = (memo: Memo) => {
         setSelectedMemo(memo);
         setIsMemoViewOpen(true);
@@ -768,6 +905,7 @@ const HRDashboard: React.FC = () => {
                     title: `${taskLabel}: ${template?.name || 'Checklist'}`,
                     subtitle: `Pending Task: "${nextTask.name}"`,
                     date: new Date(nextTask.dueDate).toLocaleDateString(),
+                    sortDate: nextTask.dueDate,
                     link: `/employees/onboarding/task/${nextTask.id}`,
                     colorClass: templateType === 'Offboarding' ? 'bg-orange-500' : 'bg-cyan-500',
                     priority: 1
@@ -809,6 +947,7 @@ const HRDashboard: React.FC = () => {
                 title: "Memo Acknowledgement Required",
                 subtitle: memo.title,
                 date: new Date(memo.effectiveDate).toLocaleDateString(),
+                sortDate: memo.effectiveDate || memo.updatedAt || memo.createdAt,
                 link: '#',
                 colorClass: 'bg-indigo-500',
                 priority: 0,
@@ -825,6 +964,7 @@ const HRDashboard: React.FC = () => {
                 title: 'Pending Asset Acceptance',
                 subtitle: `You have been assigned an asset that requires your acknowledgment.`,
                 date: new Date(assignment.dateAssigned).toLocaleDateString(),
+                sortDate: assignment.dateAssigned || assignment.updatedAt || assignment.createdAt,
                 link: `/my-profile?acceptAssetAssignmentId=${assignment.id}`, 
                 colorClass: 'bg-indigo-500',
                 priority: 0 // High priority
@@ -901,6 +1041,7 @@ const HRDashboard: React.FC = () => {
                 title: title,
                 subtitle: subtitle,
                 date: new Date(ir.dateTime).toLocaleDateString(),
+                sortDate: ir.dateTime || ir.updatedAt || ir.createdAt,
                 link: '/feedback/cases', // Ideally link to specific case details
                 colorClass: colorClass,
                 priority: 0
@@ -922,6 +1063,7 @@ const HRDashboard: React.FC = () => {
                     title: "New Case - Needs Assignment",
                     subtitle: `${ir.category}: ${ir.involvedEmployeeNames.join(', ')}`,
                     date: new Date(ir.dateTime).toLocaleDateString(),
+                    sortDate: ir.dateTime || ir.updatedAt || ir.createdAt,
                     link: '/feedback/cases', 
                     colorClass: "bg-red-500",
                     priority: 0
@@ -1067,19 +1209,6 @@ const HRDashboard: React.FC = () => {
         allItems.push(...notificationItems);
         
         if (isHR) {
-            pendingOtApprovals.forEach(req => {
-                const sortDate = req.submittedAt || req.date;
-                allItems.push({
-                    id: `ot-approve-${req.id}`,
-                    icon: <ClipboardCheckIcon {...iconProps} />,
-                    title: "Overtime Request",
-                    subtitle: `${req.employeeName} • ${new Date(req.date).toLocaleDateString()}`,
-                    date: new Date(sortDate).toLocaleDateString(),
-                    sortDate,
-                    link: '/payroll/overtime-requests',
-                    colorClass: 'bg-amber-500'
-                });
-            });
 
             pendingBenefitRequests.forEach(req => {
                 allItems.push({
@@ -1088,6 +1217,7 @@ const HRDashboard: React.FC = () => {
                     title: "Benefit Review",
                     subtitle: `${req.employeeName} - ${req.benefitTypeName}`,
                     date: new Date(req.submissionDate).toLocaleDateString(),
+                    sortDate: req.submissionDate || req.updatedAt || req.createdAt,
                     link: '/employees/benefits?tab=approvals',
                     colorClass: 'bg-pink-500'
                 });
@@ -1100,6 +1230,7 @@ const HRDashboard: React.FC = () => {
                     title: "Requisition for HR Approval",
                     subtitle: `${req.title} for ${req.headcount} position(s)`,
                     date: new Date(req.createdAt).toLocaleDateString(),
+                    sortDate: req.updatedAt || req.createdAt,
                     link: '/recruitment/requisitions',
                     colorClass: 'bg-purple-500'
                 });
@@ -1112,6 +1243,7 @@ const HRDashboard: React.FC = () => {
                     title: "Resignation for Review",
                     subtitle: `From ${res.employeeName}, last day ${new Date(res.lastWorkingDay).toLocaleDateString()}`,
                     date: new Date(res.submissionDate).toLocaleDateString(),
+                    sortDate: res.submissionDate,
                     link: '/employees/onboarding',
                     colorClass: 'bg-orange-500'
                 });
@@ -1127,6 +1259,7 @@ const HRDashboard: React.FC = () => {
                     title: "Document for Review",
                     subtitle: `${docTitle} from ${employee?.name || 'Unknown'}`,
                     date: new Date(doc.submittedAt).toLocaleDateString(),
+                    sortDate: doc.submittedAt || doc.updatedAt || doc.createdAt,
                     link: '/employees/list?tab=review',
                     colorClass: 'bg-cyan-500'
                 });
@@ -1142,6 +1275,7 @@ const HRDashboard: React.FC = () => {
                     title: "Profile Change Request",
                     subtitle: `Review changes submitted by ${employeeName}`,
                     date: new Date(change?.timestamp || Date.now()).toLocaleDateString(),
+                    sortDate: change?.timestamp || Date.now(),
                     link: '/employees/list?tab=review',
                     colorClass: 'bg-blue-500'
                  });
@@ -1154,6 +1288,7 @@ const HRDashboard: React.FC = () => {
                     title: "New User Registration",
                     subtitle: `Approve account for ${userReg.name}`,
                     date: new Date(userReg.dateHired).toLocaleDateString(),
+                    sortDate: userReg.dateHired,
                     link: '/employees/list?tab=review',
                     colorClass: 'bg-green-500'
                  });
@@ -1206,6 +1341,7 @@ const HRDashboard: React.FC = () => {
                 title: statusLabel,
                 subtitle: `${ticket.category} • ${ticket.priority}${ticket.requesterName ? ` • ${ticket.requesterName}` : ''}`,
                 date: new Date(sortDate || new Date()).toLocaleDateString(),
+                sortDate,
                 link: `/helpdesk/tickets?ticketId=${ticket.id}`,
                 colorClass: 'bg-cyan-500'
             });
@@ -1220,6 +1356,7 @@ const HRDashboard: React.FC = () => {
                 title: `Ticket Assigned: ${ticket.id}`,
                 subtitle: `From ${ticket.requesterName}: ${ticket.description}`,
                 date: new Date(ticket.createdAt).toLocaleDateString(),
+                sortDate: ticket.updatedAt || ticket.createdAt,
                 link: '/helpdesk/tickets',
                 colorClass: 'bg-cyan-500'
             });
@@ -1271,12 +1408,12 @@ const HRDashboard: React.FC = () => {
             return String(a.id).localeCompare(String(b.id));
         });
 
-    }, [user, isHR, memos, memoUpdateKey, pendingHrRequisitions, pendingResignations, pendingProfileChanges, pendingUserRegistrations, assignments, assignedTickets, checklists, templates, pendingBenefitRequests, pendingOtApprovals, incidentReports, evaluationSubmissions, evaluations, useSupabaseEvaluations, isUserEligibleEvaluator, pans, panApproverId, employeeProfileId]);
-
+    }, [user, isHR, memos, memoUpdateKey, pendingHrRequisitions, pendingResignations, pendingProfileChanges, pendingUserRegistrations, assignments, assignedTickets, checklists, templates, pendingBenefitRequests, incidentReports, evaluationSubmissions, evaluations, useSupabaseEvaluations, isUserEligibleEvaluator, pans, panApproverId, employeeProfileId]);
 
     return (
         <div className="space-y-6">
             <QuickLinks />
+            <ApprovalWidget />
 
             <UpcomingEventsWidget />
 
@@ -1355,6 +1492,8 @@ const HRDashboard: React.FC = () => {
                 title="Reject COE Request"
                 prompt="Please provide a reason for rejecting this request."
             />
+
+            {/* Leave/WFH/OT/Manpower review modals are now handled by the global ApprovalWidget */}
         </div>
     );
 };

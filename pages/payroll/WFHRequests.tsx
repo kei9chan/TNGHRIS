@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { WFHRequest, WFHRequestStatus, Role, Permission } from '../../types';
+import { NotificationType } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { supabase } from '../../services/supabaseClient';
@@ -10,6 +11,7 @@ import Button from '../../components/ui/Button';
 import WFHRequestModal from '../../components/payroll/WFHRequestModal';
 import WFHReviewModal from '../../components/payroll/WFHReviewModal';
 import { logActivity } from '../../services/auditService';
+import { createNotification } from '../../services/notificationService';
 import EditableDescription from '../../components/ui/EditableDescription';
 
 const LinkIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>;
@@ -211,6 +213,17 @@ const WFHRequests: React.FC = () => {
           const { data: inserted, error } = await supabase.from('wfh_requests').insert(payload).select().single();
           if (!error && inserted) {
             logActivity(user, 'CREATE', 'WFHRequest', inserted.id, `Requested WFH for ${new Date(inserted.date).toLocaleDateString()}`);
+
+            // Notify the manager that a WFH request needs their approval
+            if (user.managerId) {
+              createNotification({
+                userId: user.managerId,
+                title: '📋 WFH Request Pending Approval',
+                message: `${user.name} submitted a Work From Home request for ${new Date(inserted.date).toLocaleDateString()} for your approval.`,
+                type: NotificationType.WFH_SUBMITTED,
+                link: '/payroll/wfh-requests',
+              }).catch(e => console.error('Failed to send WFH submission notification', e));
+            }
           }
       }
       setIsModalOpen(false);
@@ -219,6 +232,7 @@ const WFHRequests: React.FC = () => {
 
   const handleApprove = async (requestId: string) => {
       if (!user) return;
+      const req = requests.find(r => r.id === requestId);
       const { error } = await supabase
         .from('wfh_requests')
         .update({ status: WFHRequestStatus.Approved, approved_by: user.id, approved_at: new Date().toISOString() })
@@ -228,6 +242,18 @@ const WFHRequests: React.FC = () => {
         return;
       }
       logActivity(user, 'APPROVE', 'WFHRequest', requestId, 'Approved WFH request.');
+
+      // Notify the requester
+      if (req?.employeeId) {
+        createNotification({
+          userId: req.employeeId,
+          title: '✅ WFH Request Approved',
+          message: `Your WFH request for ${new Date(req.date).toLocaleDateString()} has been approved by ${user.name}.`,
+          type: NotificationType.WFH_APPROVED,
+          link: '/payroll/wfh-requests',
+        }).catch(console.error);
+      }
+
       setIsReviewModalOpen(false);
       setSelectedReviewRequest(null);
       loadRequests();
@@ -235,6 +261,7 @@ const WFHRequests: React.FC = () => {
 
   const handleReject = async (requestId: string, reason: string) => {
       if (!user) return;
+      const req = requests.find(r => r.id === requestId);
       const { error } = await supabase
         .from('wfh_requests')
         .update({ status: WFHRequestStatus.Rejected, rejection_reason: reason })
@@ -244,6 +271,18 @@ const WFHRequests: React.FC = () => {
         return;
       }
       logActivity(user, 'REJECT', 'WFHRequest', requestId, `Rejected WFH request. Reason: ${reason}`);
+
+      // Notify the requester
+      if (req?.employeeId) {
+        createNotification({
+          userId: req.employeeId,
+          title: '❌ WFH Request Rejected',
+          message: `Your WFH request for ${new Date(req.date).toLocaleDateString()} has been rejected by ${user.name}${reason ? `: "${reason}"` : '.'}`,
+          type: NotificationType.WFH_REJECTED,
+          link: '/payroll/wfh-requests',
+        }).catch(console.error);
+      }
+
       setIsReviewModalOpen(false);
       setSelectedReviewRequest(null);
       loadRequests();
