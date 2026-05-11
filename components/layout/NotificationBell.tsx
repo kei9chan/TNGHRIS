@@ -25,8 +25,9 @@ const typeConfig: Record<string, { icon: string; bg: string; dot: string }> = {
     OT_APPROVED:  { icon: '✅', bg: 'bg-green-50 dark:bg-green-900/20',  dot: 'bg-green-500' },
     OT_REJECTED:  { icon: '❌', bg: 'bg-red-50 dark:bg-red-900/20',    dot: 'bg-red-500'   },
     // WFH
-    WFH_APPROVED: { icon: '✅', bg: 'bg-green-50 dark:bg-green-900/20',  dot: 'bg-green-500' },
-    WFH_REJECTED: { icon: '❌', bg: 'bg-red-50 dark:bg-red-900/20',    dot: 'bg-red-500'   },
+    WFH_APPROVED:  { icon: '✅', bg: 'bg-green-50 dark:bg-green-900/20',  dot: 'bg-green-500' },
+    WFH_REJECTED:  { icon: '❌', bg: 'bg-red-50 dark:bg-red-900/20',    dot: 'bg-red-500'   },
+    WFH_SUBMITTED: { icon: '🏠', bg: 'bg-blue-50 dark:bg-blue-900/20',   dot: 'bg-blue-500'  },
     // Leave
     LEAVE_DECISION:     { icon: '📋', bg: 'bg-blue-50 dark:bg-blue-900/20',   dot: 'bg-blue-500'  },
     LEAVE_REQUEST:      { icon: '📋', bg: 'bg-blue-50 dark:bg-blue-900/20',   dot: 'bg-blue-500'  },

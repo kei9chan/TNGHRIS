@@ -74,9 +74,9 @@ export default function ApprovalWidget() {
     useEffect(() => {
         if (!user) return;
         supabase
-            .from('employees')
+            .from('hris_users')
             .select('id')
-            .eq('manager_id', user.id)
+            .eq('reports_to', user.id)
             .then(({ data }) => {
                 if (data) setReporteeIds(data.map(d => d.id).filter(Boolean));
             });
@@ -122,16 +122,21 @@ export default function ApprovalWidget() {
                     ))}
 
                     {/* ── WFH ───────────────────────────────────────────── */}
-                    {pendingWfhApprovals.map(req => (
-                        <React.Fragment key={`wfh-${req.id}`}>
-                            <ApprovalRow
-                                type="WFH"
-                                name={req.employeeName ?? '—'}
-                                subtitle={fmtDate(req.date)}
-                                onReview={() => setWfhModal(req)}
-                            />
-                        </React.Fragment>
-                    ))}
+                    {pendingWfhApprovals.map(req => {
+                        const from = fmtDate(req.date);
+                        const until = req.endDate ? fmtDate(req.endDate) : null;
+                        const dateLabel = until && until !== from ? `${from} → ${until}` : from;
+                        return (
+                            <React.Fragment key={`wfh-${req.id}`}>
+                                <ApprovalRow
+                                    type="WFH"
+                                    name={req.employeeName ?? '—'}
+                                    subtitle={dateLabel}
+                                    onReview={() => setWfhModal(req)}
+                                />
+                            </React.Fragment>
+                        );
+                    })}
 
                     {/* ── Overtime ──────────────────────────────────────── */}
                     {pendingOtApprovals.map(req => (

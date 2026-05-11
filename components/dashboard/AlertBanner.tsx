@@ -20,12 +20,12 @@ const AlertBanner: React.FC = () => {
             try {
                 const { data } = await supabase
                     .from('announcements')
-                    .select('id, title, type, target_group, acknowledgement_ids, created_at')
+                    .select('id, title, type, target_group, acknowledgement_user_ids, created_at')
                     .eq('type', 'Policy')
                     .order('created_at', { ascending: false });
                 if (!data) return;
                 const relevant = data.filter((a: any) => {
-                    const ids: string[] = a.acknowledgement_ids || [];
+                    const ids: string[] = a.acknowledgement_user_ids || [];
                     return (a.target_group === 'All' || a.target_group === user.department) && !ids.includes(user.id);
                 });
                 setLatestUnacknowledgedAlert(relevant.length > 0 ? relevant[0] : null);

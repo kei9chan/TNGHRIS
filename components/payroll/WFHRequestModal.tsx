@@ -9,58 +9,79 @@ import Button from '../ui/Button';
 interface WFHRequestModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (data: Partial<WFHRequest>) => void;
+    onSave: (data: Partial<WFHRequest>, isDraft: boolean) => void;
     request: WFHRequest | null;
 }
 
 const WFHRequestModal: React.FC<WFHRequestModalProps> = ({ isOpen, onClose, onSave, request }) => {
-    const [date, setDate] = useState('');
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
     const [reason, setReason] = useState('');
     const [reportLink, setReportLink] = useState('');
     
     const isNew = !request;
-    const isPending = request?.status === WFHRequestStatus.Pending;
-    const isApproved = request?.status === WFHRequestStatus.Approved;
+    const isPendingSubmission = request?.status === WFHRequestStatus.PendingSubmission;
+    const isPendingApproval = request?.status === WFHRequestStatus.PendingDeptHead || request?.status === WFHRequestStatus.PendingBOD;
+    const isForTimekeeping = request?.status === WFHRequestStatus.ForTimekeeping;
     const isRejected = request?.status === WFHRequestStatus.Rejected;
+    // Report is locked once a link has already been saved
+    const hasSubmittedReport = isForTimekeeping && !!request?.reportLink;
 
-    // Fields are editable if it's a new request or pending.
-    // Report link is editable if approved.
-    const canEditDetails = isNew || isPending;
-    const canEditReport = isApproved;
+    // Fields are editable if it's a new request or pending submission.
+    // Report link is only editable if approved-for-timekeeping AND no report submitted yet.
+    const canEditDetails = isNew || isPendingSubmission;
+    const canEditReport = isForTimekeeping && !hasSubmittedReport;
 
     useEffect(() => {
         if (isOpen) {
             if (request) {
-                setDate(new Date(request.date).toISOString().split('T')[0]);
+                const sd = new Date(request.date).toISOString().split('T')[0];
+                setStartDate(sd);
+                setEndDate(request.endDate ? new Date(request.endDate).toISOString().split('T')[0] : sd);
                 setReason(request.reason);
                 setReportLink(request.reportLink || '');
             } else {
                 // Default to tomorrow
                 const tomorrow = new Date();
                 tomorrow.setDate(tomorrow.getDate() + 1);
-                setDate(tomorrow.toISOString().split('T')[0]);
+                const tStr = tomorrow.toISOString().split('T')[0];
+                setStartDate(tStr);
+                setEndDate(tStr);
                 setReason('');
                 setReportLink('');
             }
         }
     }, [isOpen, request]);
 
-    const handleSave = () => {
-        if (!date || !reason) {
-            alert("Date and Reason are required.");
+    // Auto-correct end date if it's before start date
+    useEffect(() => {
+        if (startDate && endDate && endDate < startDate) {
+            setEndDate(startDate);
+        }
+    }, [startDate]);
+
+    const handleSave = (isDraft: boolean) => {
+        if (!startDate || !endDate || !reason) {
+            alert("Date range and Reason are required.");
+            return;
+        }
+        if (endDate < startDate) {
+            alert("'Until' date cannot be before the 'From' date.");
             return;
         }
         onSave({
             id: request?.id,
-            date: new Date(date),
+            date: new Date(startDate),
+            endDate: new Date(endDate),
             reason,
             reportLink
-        });
+        }, isDraft);
     };
 
     const getTitle = () => {
         if (isNew) return 'Request Work From Home';
-        if (isApproved) return 'Update WFH Report';
+        if (isForTimekeeping && hasSubmittedReport) return 'WFH Report Submitted';
+        if (isForTimekeeping) return 'Submit WFH Accomplishment Report';
         if (isRejected) return 'Rejected Request';
         return 'Edit WFH Request';
     };
@@ -73,9 +94,20 @@ const WFHRequestModal: React.FC<WFHRequestModalProps> = ({ isOpen, onClose, onSa
             footer={
                 <div className="flex justify-end w-full space-x-2">
                     <Button variant="secondary" onClick={onClose}>Cancel</Button>
-                    {!isRejected && (
-                         <Button onClick={handleSave}>
-                             {isNew ? 'Submit Request' : 'Save Changes'}
+                    {(!isRejected && !isPendingApproval && !isForTimekeeping) && (
+                         <Button variant="secondary" onClick={() => handleSave(true)}>
+                             Save Draft
+                         </Button>
+                    )}
+                    {(!isRejected && !isForTimekeeping && (!request || isPendingSubmission)) && (
+                         <Button onClick={() => handleSave(false)}>
+                             Submit Request
+                         </Button>
+                    )}
+                    {/* Only show Save when ForTimekeeping AND report not yet submitted */}
+                    {(!isRejected && isForTimekeeping && !hasSubmittedReport) && (
+                         <Button onClick={() => handleSave(false)}>
+                             Submit Report
                          </Button>
                     )}
                 </div>
@@ -89,21 +121,39 @@ const WFHRequestModal: React.FC<WFHRequestModalProps> = ({ isOpen, onClose, onSa
                     </div>
                 )}
 
-                {isApproved && (
+                {isForTimekeeping && !hasSubmittedReport && (
                     <div className="p-4 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-md">
-                         <p className="text-green-800 dark:text-green-200 font-medium">Request Approved</p>
+                         <p className="text-green-800 dark:text-green-200 font-medium">Request Approved ✅</p>
                          <p className="text-sm text-green-600 dark:text-green-300 mt-1">Please submit your accomplishment report link below once your shift is done.</p>
                     </div>
                 )}
 
-                <Input 
-                    label="Date" 
-                    type="date" 
-                    value={date} 
-                    onChange={e => setDate(e.target.value)} 
-                    required 
-                    disabled={!canEditDetails}
-                />
+                {isForTimekeeping && hasSubmittedReport && (
+                    <div className="p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-md">
+                         <p className="text-blue-800 dark:text-blue-200 font-medium">Report Already Submitted 🔒</p>
+                         <p className="text-sm text-blue-600 dark:text-blue-300 mt-1">Your accomplishment report has been submitted and can no longer be edited.</p>
+                    </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-4">
+                    <Input 
+                        label="From" 
+                        type="date" 
+                        value={startDate} 
+                        onChange={e => setStartDate(e.target.value)} 
+                        required 
+                        disabled={!canEditDetails}
+                    />
+                    <Input 
+                        label="Until" 
+                        type="date" 
+                        value={endDate} 
+                        onChange={e => setEndDate(e.target.value)} 
+                        required 
+                        disabled={!canEditDetails}
+                        min={startDate}
+                    />
+                </div>
                 
                 <Textarea 
                     label="Reason / Plan" 
@@ -115,7 +165,7 @@ const WFHRequestModal: React.FC<WFHRequestModalProps> = ({ isOpen, onClose, onSa
                     placeholder="e.g., Bad weather, tasks can be done remotely..."
                 />
 
-                {(isApproved || isNew) && (
+                {(isForTimekeeping || isNew) && (
                     <Input 
                         label="Accomplishment Report Link (Optional)" 
                         type="url"

@@ -26,7 +26,7 @@ const LifecycleTracker: React.FC<{ requisition: JobRequisition }> = ({ requisiti
     useEffect(() => {
         const loadApps = async () => {
             if (!requisition.id) return;
-            const { data } = await supabase.from('applications').select('stage').eq('requisition_id', requisition.id);
+            const { data } = await supabase.from('job_applications').select('stage').eq('requisition_id', requisition.id);
             if (data) setApplications(data);
         };
         loadApps();

@@ -27,7 +27,9 @@ const HRReviewQueue: React.FC = () => {
     const [pendingUsers, setPendingUsers] = useState<User[]>([]);
     const [pendingDocuments, setPendingDocuments] = useState<UserDocument[]>([]);
     const [employeeLookup, setEmployeeLookup] = useState<Map<string, string>>(new Map());
-    
+    const [activeUsers, setActiveUsers] = useState<Array<{ id: string; name: string; role: Role }>>([]);
+    const [reportingToMap, setReportingToMap] = useState<Record<string, string>>({});
+
     const [filterName, setFilterName] = useState('');
     const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
     const [itemToReject, setItemToReject] = useState<{ type: 'profile' | 'document', id: string } | null>(null);
@@ -135,6 +137,37 @@ const HRReviewQueue: React.FC = () => {
             }
         };
         loadPendingUsers();
+    }, []);
+
+    // Role-based hierarchy for "Reports To" selection
+    const getReportsToOptions = (pendingRole: Role) => {
+        const seniorRoles: Role[] = [Role.OperationsDirector, Role.GeneralManager, Role.BOD];
+        const managerAndAbove: Role[] = [Role.Manager, Role.BusinessUnitManager, ...seniorRoles];
+        const isManagerLevel = pendingRole === Role.Manager || pendingRole === Role.BusinessUnitManager;
+        return activeUsers.filter(u => (isManagerLevel ? seniorRoles : managerAndAbove).includes(u.role));
+    };
+
+    useEffect(() => {
+        const loadActiveUsers = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('hris_users')
+                    .select('id, full_name, role')
+                    .eq('status', 'Active')
+                    .order('full_name');
+                if (error || !data) return;
+                setActiveUsers(
+                    data.map((row: any) => ({
+                        id: row.id,
+                        name: formatEmployeeName(row.full_name || 'Unknown'),
+                        role: row.role as Role,
+                    }))
+                );
+            } catch (e) {
+                console.error('Failed to load active users for Reports To', e);
+            }
+        };
+        loadActiveUsers();
     }, []);
 
     useEffect(() => {
@@ -318,10 +351,13 @@ const HRReviewQueue: React.FC = () => {
         }
     };
 
-    const handleUserApproval = async (userId: string) => {
+    const handleUserApproval = async (userId: string, reportsToId: string) => {
         if (!user) return;
         try {
-            const { error } = await supabase.from('hris_users').update({ status: 'Active' }).eq('id', userId);
+            const { error } = await supabase
+                .from('hris_users')
+                .update({ status: 'Active', reports_to: reportsToId })
+                .eq('id', userId);
             if (error) throw error;
             logActivity(user, 'APPROVE', 'UserRegistration', userId, `Approved new user registration.`);
             setPendingUsers(prev =>
@@ -392,31 +428,67 @@ const HRReviewQueue: React.FC = () => {
             {filteredPendingUsers.length > 0 && (
                 <Card title="New User Registrations">
                     <div className="space-y-4">
-                        {filteredPendingUsers.map(pendingUser => (
-                            <div key={pendingUser.id} className="p-4 border dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800/50">
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    <div><span className="font-semibold">Name:</span> {pendingUser.name}</div>
-                                    <div><span className="font-semibold">Email:</span> {pendingUser.email}</div>
-                                    <div><span className="font-semibold">Role:</span> {pendingUser.role}</div>
-                                    <div><span className="font-semibold">Business Unit:</span> {(pendingUser as any).businessUnit || <span className="text-amber-500 italic">Not provided</span>}</div>
-                                    <div><span className="font-semibold">Department:</span> {pendingUser.department || <span className="text-amber-500 italic">Not provided</span>}</div>
-                                    <div><span className="font-semibold">Birth Date:</span> {(pendingUser as any).birthDate || <span className="text-amber-500 italic">Not provided</span>}</div>
-                                    <div><span className="font-semibold">Position:</span> {pendingUser.position || <span className="text-gray-400 italic">—</span>}</div>
-                                    <div><span className="font-semibold">Status:</span> {pendingUser.status}</div>
+                        {filteredPendingUsers.map(pendingUser => {
+                            const reportsToOptions = getReportsToOptions(pendingUser.role);
+                            const selectedReportsTo = reportingToMap[pendingUser.id] || '';
+                            const isManagerLevel = pendingUser.role === Role.Manager || pendingUser.role === Role.BusinessUnitManager;
+                            const hintText = isManagerLevel
+                                ? 'Managers must report to: Operations Director, General Manager, or Board of Director.'
+                                : 'Employees must report to: Manager, Business Unit Manager, Operations Director, General Manager, or Board of Director.';
+                            return (
+                                <div key={pendingUser.id} className="p-4 border dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800/50">
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div><span className="font-semibold">Name:</span> {pendingUser.name}</div>
+                                        <div><span className="font-semibold">Email:</span> {pendingUser.email}</div>
+                                        <div><span className="font-semibold">Role:</span> {pendingUser.role}</div>
+                                        <div><span className="font-semibold">Business Unit:</span> {(pendingUser as any).businessUnit || <span className="text-amber-500 italic">Not provided</span>}</div>
+                                        <div><span className="font-semibold">Department:</span> {pendingUser.department || <span className="text-amber-500 italic">Not provided</span>}</div>
+                                        <div><span className="font-semibold">Birth Date:</span> {(pendingUser as any).birthDate || <span className="text-amber-500 italic">Not provided</span>}</div>
+                                        <div><span className="font-semibold">Position:</span> {pendingUser.position || <span className="text-gray-400 italic">—</span>}</div>
+                                        <div><span className="font-semibold">Status:</span> {pendingUser.status}</div>
+                                    </div>
+                                    {can('Employees', Permission.Edit) && pendingUser.status !== 'Active' && (
+                                        <>
+                                            <div className="mt-4 pt-4 border-t dark:border-gray-600">
+                                                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                                                    Reports To <span className="text-red-500">*</span>
+                                                </label>
+                                                <select
+                                                    value={selectedReportsTo}
+                                                    onChange={e => setReportingToMap(prev => ({ ...prev, [pendingUser.id]: e.target.value }))}
+                                                    className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                                                >
+                                                    <option value="">— Select a manager —</option>
+                                                    {reportsToOptions.map(opt => (
+                                                        <option key={opt.id} value={opt.id}>
+                                                            {opt.name} ({opt.role})
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">{hintText}</p>
+                                                {!selectedReportsTo && (
+                                                    <p className="mt-1 text-xs text-red-500">Required — select a manager before approving.</p>
+                                                )}
+                                            </div>
+                                            <div className="flex justify-end space-x-2 mt-4">
+                                                <Button variant="danger" onClick={() => handleUserRejection(pendingUser.id)}>Reject</Button>
+                                                <Button
+                                                    onClick={() => handleUserApproval(pendingUser.id, selectedReportsTo)}
+                                                    disabled={!selectedReportsTo}
+                                                >
+                                                    Approve
+                                                </Button>
+                                            </div>
+                                        </>
+                                    )}
+                                    {can('Employees', Permission.Edit) && pendingUser.status === 'Active' && (
+                                        <div className="flex justify-end mt-4 pt-4 border-t dark:border-gray-600">
+                                            <Button variant="success" disabled>Active</Button>
+                                        </div>
+                                    )}
                                 </div>
-                                {can('Employees', Permission.Edit) && pendingUser.status !== 'Active' && (
-                                    <div className="flex justify-end space-x-2 mt-4 pt-4 border-t dark:border-gray-600">
-                                        <Button variant="danger" onClick={() => handleUserRejection(pendingUser.id)}>Reject</Button>
-                                        <Button onClick={() => handleUserApproval(pendingUser.id)}>Approve</Button>
-                                    </div>
-                                )}
-                                {can('Employees', Permission.Edit) && pendingUser.status === 'Active' && (
-                                    <div className="flex justify-end mt-4 pt-4 border-t dark:border-gray-600">
-                                        <Button variant="success" disabled>Active</Button>
-                                    </div>
-                                )}
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </Card>
             )}

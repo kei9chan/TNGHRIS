@@ -42,7 +42,7 @@ const PublicJobApplicationForm: React.FC<PublicJobApplicationFormProps> = ({ job
                 const finalResumeUrl = resumeFile ? `file_upload/${resumeFile.name}` : resumeLink;
                 const candidateId = `CAND-${Date.now()}`;
 
-                const { error: candError } = await supabase.from('candidates').insert({
+                const { error: candError } = await supabase.from('job_candidates').insert({
                     id: candidateId,
                     first_name: firstName || '',
                     last_name: lastName || '',
@@ -68,7 +68,7 @@ const PublicJobApplicationForm: React.FC<PublicJobApplicationFormProps> = ({ job
                     updated_at: new Date().toISOString(),
                 };
 
-                const { error: appError } = await supabase.from('applications').insert(newApplication);
+                const { error: appError } = await supabase.from('job_applications').insert(newApplication);
 
                 if (appError) throw appError;
 

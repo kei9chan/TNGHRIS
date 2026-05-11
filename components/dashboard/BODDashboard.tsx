@@ -15,6 +15,8 @@ import ManpowerReviewModal from '../payroll/ManpowerReviewModal';
 import WFHReviewModal from '../payroll/WFHReviewModal';
 import RequestCOEModal from '../employees/RequestCOEModal';
 import { logActivity } from '../../services/auditService';
+import { bodApproveWfhRequest, rejectWfhRequest } from '../../services/wfhService';
+import { createNotification } from '../../services/notificationService';
 import { createCoeRequest, fetchCoeRequests, approveCoeRequest, rejectCoeRequest, fetchActiveCoeTemplates } from '../../services/coeService';
 import COEQueue from './COEQueue';
 import PrintableCOE from '../admin/PrintableCOE';
@@ -454,7 +456,7 @@ const BODDashboard: React.FC = () => {
                 supabase.from('job_requisitions').select('*').order('created_at', { ascending: false }),
                 supabase.from('employee_awards').select('*').order('date_awarded', { ascending: false }),
                 supabase.from('manpower_requests').select('*').order('created_at', { ascending: false }),
-                supabase.from('wfh_requests').select('*').order('created_at', { ascending: false }),
+                supabase.from('wfh_requests').select('*').eq('status', WFHRequestStatus.PendingBOD).order('created_at', { ascending: false }),
                 supabase.from('benefit_requests').select('*'),
                 supabase.from('envelopes').select('*').order('created_at', { ascending: false }),
                 supabase.from('onboarding_checklists').select('*'),
@@ -502,21 +504,56 @@ const BODDashboard: React.FC = () => {
 
     // WFH Handlers
     const handleApproveWFH = async (requestId: string) => {
-        const { error } = await supabase.from('wfh_requests').update({ status: WFHRequestStatus.Approved, approved_by: user?.id, approved_at: new Date().toISOString() }).eq('id', requestId);
-        if (error) { alert('Failed to approve WFH request.'); return; }
-        setWfhRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: WFHRequestStatus.Approved } : r));
-        setIsWFHReviewModalOpen(false);
-        if (user) logActivity(user, 'APPROVE', 'WFHRequest', requestId, 'Approved WFH request.');
-        alert('WFH Request Approved.');
+        if (!user) return;
+        const request = wfhRequests.find(r => r.id === requestId);
+        try {
+            // BOD approval advances status to ForTimekeeping (ready for HR/Timekeeping)
+            await bodApproveWfhRequest(requestId, user.id);
+            setWfhRequests(prev => prev.filter(r => r.id !== requestId));
+            setIsWFHReviewModalOpen(false);
+            logActivity(user, 'APPROVE', 'WFHRequest', requestId, 'BOD approved WFH request. Moved to For Timekeeping.');
+
+            // Notify the requester of final approval
+            if (request?.employeeId) {
+                createNotification({
+                    userId: request.employeeId,
+                    title: '✅ WFH Request Approved',
+                    message: `Your WFH request for ${new Date(request.date).toLocaleDateString()} has been fully approved by BOD.`,
+                    type: NotificationType.WFH_APPROVED,
+                    link: '/payroll/wfh-requests',
+                }).catch(e => console.error('Failed to send BOD WFH approved notification', e));
+            }
+
+            alert('WFH Request Approved. Forwarded to Timekeeping.');
+        } catch (err: any) {
+            alert(err.message || 'Failed to approve WFH request.');
+        }
     };
 
     const handleRejectWFH = async (requestId: string, reason: string) => {
-        const { error } = await supabase.from('wfh_requests').update({ status: WFHRequestStatus.Rejected, rejection_reason: reason }).eq('id', requestId);
-        if (error) { alert('Failed to reject WFH request.'); return; }
-        setWfhRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: WFHRequestStatus.Rejected } : r));
-        setIsWFHReviewModalOpen(false);
-        if (user) logActivity(user, 'REJECT', 'WFHRequest', requestId, `Rejected WFH request. Reason: ${reason}`);
-        alert('WFH Request Rejected.');
+        if (!user) return;
+        const request = wfhRequests.find(r => r.id === requestId);
+        try {
+            await rejectWfhRequest(requestId, user.id, reason);
+            setWfhRequests(prev => prev.filter(r => r.id !== requestId));
+            setIsWFHReviewModalOpen(false);
+            logActivity(user, 'REJECT', 'WFHRequest', requestId, `BOD rejected WFH request. Reason: ${reason}`);
+
+            // Notify the requester of rejection
+            if (request?.employeeId) {
+                createNotification({
+                    userId: request.employeeId,
+                    title: '❌ WFH Request Rejected',
+                    message: `Your WFH request for ${new Date(request.date).toLocaleDateString()} has been rejected by ${user.name}${reason ? `: "${reason}"` : '.'}`,
+                    type: NotificationType.WFH_REJECTED,
+                    link: '/payroll/wfh-requests',
+                }).catch(e => console.error('Failed to send BOD WFH rejection notification', e));
+            }
+
+            alert('WFH Request Rejected.');
+        } catch (err: any) {
+            alert(err.message || 'Failed to reject WFH request.');
+        }
     };
 
     const openWFHReviewModal = (req: WFHRequest) => {
@@ -804,7 +841,7 @@ const BODDashboard: React.FC = () => {
         });
 
         // WFH Requests
-        const pendingWFH = wfhRequests.filter(r => r.status === WFHRequestStatus.Pending);
+        const pendingWFH = wfhRequests.filter(r => r.status === WFHRequestStatus.PendingBOD);
         pendingWFH.forEach(req => {
              allItems.push({
                 id: `wfh-${req.id}`,

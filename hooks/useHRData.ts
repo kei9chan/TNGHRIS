@@ -13,14 +13,14 @@ export function useUsers() {
       const { data, error } = await supabase
         .from('hris_users')
         .select('*')
-        .order('name');
+        .order('full_name');
       
       if (error) throw error;
       
       // Map the DB structure to the expected User interface if needed
       const mappedUsers = (data || []).map((u: any) => ({
         id: u.id,
-        name: u.name,
+        name: u.full_name || `${u.first_name || ''} ${u.last_name || ''}`.trim(),
         email: u.email,
         role: u.role,
         department: u.department || '',

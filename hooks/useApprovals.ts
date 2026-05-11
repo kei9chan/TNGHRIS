@@ -1,13 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { approveRejectOtRequest } from '../services/otService';
+import { createNotification } from '../services/notificationService';
 import {
     LeaveRequest, LeaveRequestStatus,
     WFHRequest, WFHRequestStatus,
     OTRequest, OTStatus,
     ManpowerRequest, ManpowerRequestStatus,
-    User
+    NotificationType,
+    User, Role
 } from '../types';
+import { deptHeadApproveWfhRequest, bodApproveWfhRequest, rejectWfhRequest } from '../services/wfhService';
 
 interface UseApprovalsOptions {
     user: User | null;
@@ -58,22 +61,54 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
         // For OT, it's typically direct reportees only, even for HR (based on existing logic).
         // For others, if HR, fetch all pending. If Manager, fetch for reportees.
         // Let's match the existing logic:
-        
-        let leaveQuery = supabase.from('leave_requests').select('id, employee_id, employee_name, leave_type_id, start_date, end_date, start_time, end_time, duration_days, reason, status, history_log, attachment_url, approver_id, business_unit_id, department_id');
-        let wfhQuery = supabase.from('wfh_requests').select('id, employee_id, employee_name, date, reason, status, report_link, approved_by, approved_at, rejection_reason, created_at');
-        let otQuery = supabase.from('ot_requests').select('id, employee_id, employee_name, date, start_time, end_time, reason, status, submitted_at, approved_hours, manager_note, history_log, attachment_url').eq('status', OTStatus.Submitted);
-        let manpowerQuery = supabase.from('manpower_requests').select('id, business_unit_id, business_unit_name, department_id, requester_id, requester_name, date_needed, forecasted_pax, general_note, items, grand_total, status, created_at, approved_by, approved_at, rejection_reason').eq('status', ManpowerRequestStatus.Pending);
+
+        // Skip flags: when true we short-circuit and return [] instead of calling Supabase.
+        // This avoids the `id=eq.invalid-id-to-return-none` hack that caused 400 errors
+        // because Supabase validates UUID format on the id column.
+        let skipOt = false;
+        let skipManpower = false;
+
+        let leaveQuery = supabase
+            .from('leave_requests')
+            .select('id, employee_id, employee_name, leave_type_id, start_date, end_date, start_time, end_time, duration_days, reason, status, history_log, attachment_url, approver_id, business_unit_id, department_id');
+        let wfhQuery = supabase
+            .from('wfh_requests')
+            .select('id, employee_id, employee_name, date, end_date, reason, status, report_link, approved_by, approved_at, rejection_reason, created_at');
+        let otQuery = supabase
+            .from('ot_requests')
+            .select('id, employee_id, employee_name, date, start_time, end_time, reason, status, submitted_at, approved_hours, manager_note, history_log, attachment_url')
+            .eq('status', OTStatus.Submitted);
+        let manpowerQuery = supabase
+            .from('manpower_requests')
+            .select('id, business_unit_id, business_unit_name, department_id, requester_id, requester_name, date_needed, forecasted_pax, general_note, items, grand_total, status, created_at, approved_by, approved_at, rejection_reason')
+            .eq('status', ManpowerRequestStatus.Pending);
+
+        // BOD users have org-wide authority — they approve all PendingBOD WFH requests
+        // regardless of direct-report relationships (managers skip Dept Head and go straight to BOD).
+        const isBOD = user?.role === Role.BOD;
 
         if (isHR) {
             leaveQuery = leaveQuery.eq('status', 'pending').order('start_date', { ascending: false });
-            wfhQuery = wfhQuery.eq('status', WFHRequestStatus.Pending).order('created_at', { ascending: false });
+            wfhQuery = wfhQuery.eq('status', WFHRequestStatus.ForTimekeeping).order('created_at', { ascending: false });
             manpowerQuery = manpowerQuery.eq('status', ManpowerRequestStatus.Pending).order('created_at', { ascending: false });
             // For OT, the original HRDashboard only fetched reporteeIds OT.
             if (reporteeIds.length > 0) {
                 otQuery = otQuery.in('employee_id', reporteeIds).order('submitted_at', { ascending: false });
             } else {
-                // Return empty if no reportees
-                otQuery = otQuery.eq('id', 'invalid-id-to-return-none');
+                skipOt = true; // No reportees — skip OT query entirely
+            }
+        } else if (isBOD) {
+            // BOD sees all pending leaves and WFH requests org-wide for final approval.
+            // They also see OT/manpower scoped to their reportees only (standard).
+            leaveQuery = leaveQuery.eq('status', 'pending').order('start_date', { ascending: false });
+            // BOD approves ALL PendingBOD WFH requests — no employee_id filter.
+            wfhQuery = wfhQuery.eq('status', WFHRequestStatus.PendingBOD).order('created_at', { ascending: false });
+            if (reporteeIds.length > 0) {
+                otQuery = otQuery.in('employee_id', reporteeIds).order('submitted_at', { ascending: false });
+                manpowerQuery = manpowerQuery.in('requester_id', reporteeIds);
+            } else {
+                skipOt = true;       // No reportees — skip OT query
+                skipManpower = true; // No reportees — skip manpower query
             }
         } else {
             if (reporteeIds.length === 0) {
@@ -84,13 +119,18 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
                 return;
             }
             leaveQuery = leaveQuery.in('employee_id', reporteeIds);
-            wfhQuery = wfhQuery.in('employee_id', reporteeIds);
+            // Dept Head approvers see PendingDeptHead requests from their direct reports.
+            wfhQuery = wfhQuery.eq('status', WFHRequestStatus.PendingDeptHead).in('employee_id', reporteeIds);
             otQuery = otQuery.in('employee_id', reporteeIds);
             manpowerQuery = manpowerQuery.in('requester_id', reporteeIds);
         }
 
+        const emptyResult = { data: [] as unknown[], error: null };
         const [leaveRes, wfhRes, otRes, manpowerRes] = await Promise.all([
-            leaveQuery, wfhQuery, otQuery, manpowerQuery
+            leaveQuery,
+            wfhQuery,
+            skipOt       ? Promise.resolve(emptyResult) : otQuery,
+            skipManpower ? Promise.resolve(emptyResult) : manpowerQuery,
         ]);
 
         if (!leaveRes.error && leaveRes.data) {
@@ -123,6 +163,7 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
                 employeeId: row.employee_id,
                 employeeName: row.employee_name,
                 date: row.date ? new Date(row.date) : new Date(),
+                endDate: row.end_date ? new Date(row.end_date) : undefined,
                 reason: row.reason,
                 status: row.status as WFHRequestStatus,
                 reportLink: row.report_link || undefined,
@@ -131,7 +172,7 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
                 rejectionReason: row.rejection_reason || undefined,
                 createdAt: row.created_at ? new Date(row.created_at) : new Date(),
             }));
-            setPendingWfhApprovals(mapped.filter(r => r.status === WFHRequestStatus.Pending));
+            setPendingWfhApprovals(mapped);
         } else {
             setPendingWfhApprovals([]);
         }
@@ -231,28 +272,93 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
 
     const handleApproveWFH = async (requestId: string) => {
         if (!user) return;
-        const { error } = await supabase
-            .from('wfh_requests')
-            .update({ status: WFHRequestStatus.Approved, approved_by: user.id, approved_at: new Date().toISOString() })
-            .eq('id', requestId);
-        if (error) { 
-            alert(error.message || 'Failed to approve WFH request.'); 
-            throw error; 
+        const request = pendingWfhApprovals.find(r => r.id === requestId);
+        if (!request) return;
+        
+        try {
+            if (request.status === WFHRequestStatus.PendingDeptHead) {
+                await deptHeadApproveWfhRequest(requestId, user.id);
+
+                // Notify the requester that their request moved forward
+                if (request.employeeId) {
+                    createNotification({
+                        userId: request.employeeId,
+                        title: '🔄 WFH Request Forwarded',
+                        message: `Your WFH request for ${new Date(request.date).toLocaleDateString()} has been approved by your department head and is now pending BOD approval.`,
+                        type: NotificationType.WFH_SUBMITTED,
+                        link: '/payroll/wfh-requests',
+                    }).catch(e => console.error('Failed to send dept head WFH forwarded notification', e));
+                }
+
+                // Notify all BOD users
+                supabase
+                    .from('hris_users')
+                    .select('id')
+                    .eq('role', Role.BOD)
+                    .then(({ data: bodUsers }) => {
+                        if (bodUsers) {
+                            bodUsers.forEach(bod => {
+                                createNotification({
+                                    userId: bod.id,
+                                    title: '📋 WFH Request Pending BOD Approval',
+                                    message: `${request.employeeName}'s WFH request for ${new Date(request.date).toLocaleDateString()} has been approved by the department head and requires your final approval.`,
+                                    type: NotificationType.WFH_SUBMITTED,
+                                    link: '/payroll/wfh-requests',
+                                }).catch(e => console.error('Failed to send BOD WFH notification', e));
+                            });
+                        }
+                    });
+
+            } else if (request.status === WFHRequestStatus.PendingBOD) {
+                await bodApproveWfhRequest(requestId, user.id);
+
+                // Notify the requester of final approval
+                if (request.employeeId) {
+                    createNotification({
+                        userId: request.employeeId,
+                        title: '✅ WFH Request Approved',
+                        message: `Your WFH request for ${new Date(request.date).toLocaleDateString()} has been fully approved by BOD.`,
+                        type: NotificationType.WFH_APPROVED,
+                        link: '/payroll/wfh-requests',
+                    }).catch(e => console.error('Failed to send BOD WFH approved notification', e));
+                }
+            } else {
+                // Fallback for any other state if needed
+                const { error } = await supabase
+                    .from('wfh_requests')
+                    .update({ status: WFHRequestStatus.ForTimekeeping, approved_by: user.id, approved_at: new Date().toISOString() })
+                    .eq('id', requestId);
+                if (error) throw error;
+            }
+            setPendingWfhApprovals(prev => prev.filter(r => r.id !== requestId));
+        } catch (error: any) {
+            alert(error.message || 'Failed to approve WFH request.');
+            throw error;
         }
-        setPendingWfhApprovals(prev => prev.filter(r => r.id !== requestId));
     };
 
     const handleRejectWFH = async (requestId: string, reason: string) => {
         if (!user) return;
-        const { error } = await supabase
-            .from('wfh_requests')
-            .update({ status: WFHRequestStatus.Rejected, rejection_reason: reason })
-            .eq('id', requestId);
-        if (error) { 
-            alert(error.message || 'Failed to reject WFH request.'); 
-            throw error; 
+        const request = pendingWfhApprovals.find(r => r.id === requestId);
+        try {
+            await rejectWfhRequest(requestId, user.id, reason);
+
+            // Notify the requester of rejection
+            if (request?.employeeId) {
+                createNotification({
+                    userId: request.employeeId,
+                    title: '❌ WFH Request Rejected',
+                    message: `Your WFH request for ${new Date(request.date).toLocaleDateString()} has been rejected by ${user.name}${reason ? `: "${reason}"` : '.'}`,
+                    type: NotificationType.WFH_REJECTED,
+                    link: '/payroll/wfh-requests',
+                }).catch(e => console.error('Failed to send WFH rejection notification', e));
+            }
+
+            setPendingWfhApprovals(prev => prev.filter(r => r.id !== requestId));
+        } catch (error: any) {
+            alert(error.message || 'Failed to reject WFH request.');
+            throw error;
         }
-        setPendingWfhApprovals(prev => prev.filter(r => r.id !== requestId));
     };
 
     const handleApproveRejectOT = async (

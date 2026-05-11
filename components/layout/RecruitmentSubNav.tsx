@@ -74,7 +74,7 @@ const RecruitmentSubNav: React.FC = () => {
         <div className="bg-white dark:bg-gray-800 shadow-sm">
             {/* Level 2 SubNav */}
             <div className="border-b border-gray-200 dark:border-gray-700">
-                <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mb-px">
+                <nav className="max-w-screen-2xl mx-auto px-4 sm:px-6 xl:px-10 -mb-px">
                     <div className="flex space-x-2 sm:space-x-4 md:space-x-8 overflow-x-auto">
                         {subLinks.map(link => {
                             const Icon = iconMap[link.name];
@@ -100,7 +100,7 @@ const RecruitmentSubNav: React.FC = () => {
             {/* Level 3 Sub-SubNav for Job Posts */}
             {isJobPostsSectionActive && jobPostsLink && jobPostsLink.children && (
                  <div className="bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700">
-                    <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <nav className="max-w-screen-2xl mx-auto px-4 sm:px-6 xl:px-10">
                         <div className="flex space-x-8 overflow-x-auto">
                             {jobPostsLink.children.map(childLink => {
                                 const Icon = iconMap[childLink.name];

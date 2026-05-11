@@ -81,7 +81,7 @@ const EmployeeDocumentsCard: React.FC<EmployeeDocumentsCardProps> = ({ employeeI
             
             try {
                 if (documentTypes.includes('Personnel Action Notice')) {
-                    const { data } = await supabase.from('personnel_action_notices').select('*').eq('employee_id', employeeId);
+                    const { data } = await supabase.from('pans').select('*').eq('employee_id', employeeId);
                     (data || []).forEach(pan => {
                         allDocs.push({
                             id: pan.id,
@@ -94,7 +94,7 @@ const EmployeeDocumentsCard: React.FC<EmployeeDocumentsCardProps> = ({ employeeI
                 }
 
                 if (documentTypes.includes('Notice to Explain')) {
-                    const { data } = await supabase.from('ntes').select('*').eq('employee_id', employeeId);
+                    const { data } = await supabase.from('ntes').select('*').contains('recipients', [employeeId]);
                     (data || []).forEach(nte => {
                         allDocs.push({
                             id: nte.id,
@@ -180,7 +180,7 @@ const EmployeeDocumentsCard: React.FC<EmployeeDocumentsCardProps> = ({ employeeI
                 break;
             case 'Notice of Decision':
                 const incidentId = doc.originalObject.incident_report_id || doc.originalObject.incidentReportId;
-                const { data: nte } = await supabase.from('ntes').select('id').eq('incident_report_id', incidentId).eq('employee_id', employeeId).single();
+                const { data: nte } = await supabase.from('ntes').select('id').eq('incident_report_id', incidentId).contains('recipients', [employeeId]).limit(1).maybeSingle();
                 if (nte) {
                     navigate(`/feedback/nte/${nte.id}`);
                 } else {

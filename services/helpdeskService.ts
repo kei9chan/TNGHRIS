@@ -162,7 +162,7 @@ export const saveTicket = async (ticket: Partial<Ticket> & Record<string, any>):
 
 // Announcements
 export const fetchAnnouncements = async (): Promise<Announcement[]> => {
-  const { data, error } = await supabase.from('announcements').select('*').order('published_at', { ascending: false });
+  const { data, error } = await supabase.from('announcements').select('*').order('created_at', { ascending: false });
   if (error) throw new Error(error.message);
   return (data as AnnouncementRow[]).map(mapAnnouncement);
 };

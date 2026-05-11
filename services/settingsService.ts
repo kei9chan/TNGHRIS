@@ -49,7 +49,7 @@ export const fetchAuditLogs = async (limit = 200): Promise<AuditLog[]> => {
   const { data, error } = await supabase
     .from('audit_logs')
     .select('*')
-    .order('timestamp', { ascending: false })
+    .order('created_at', { ascending: false })
     .limit(limit);
   if (error) throw new Error(error.message);
   return (data || []).map((r: any) => ({
@@ -60,7 +60,7 @@ export const fetchAuditLogs = async (limit = 200): Promise<AuditLog[]> => {
     entity: r.resource || r.entity || '',
     entityId: r.resource_id || r.entity_id || '',
     details: r.details,
-    timestamp: new Date(r.timestamp),
+    timestamp: new Date(r.created_at),
   }));
 };
 

@@ -67,7 +67,7 @@ export const savePulseSurvey = async (survey: Partial<PulseSurvey>): Promise<Pul
 };
 
 export const fetchSurveyResponses = async (surveyId?: string): Promise<SurveyResponse[]> => {
-  let query = supabase.from('survey_responses').select('*').order('submitted_at', { ascending: false });
+  let query = supabase.from('pulse_survey_responses').select('*').order('submitted_at', { ascending: false });
   if (surveyId) query = query.eq('survey_id', surveyId);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
@@ -83,8 +83,8 @@ export const saveSurveyResponse = async (response: Partial<SurveyResponse>): Pro
     comments: response.comments || null,
   };
   const { data, error } = response.id
-    ? await supabase.from('survey_responses').update(payload).eq('id', response.id).select().single()
-    : await supabase.from('survey_responses').insert(payload).select().single();
+    ? await supabase.from('pulse_survey_responses').update(payload).eq('id', response.id).select().single()
+    : await supabase.from('pulse_survey_responses').insert(payload).select().single();
   if (error) throw new Error(error.message);
   return mapSurveyResponse(data as SurveyResponseRow);
 };

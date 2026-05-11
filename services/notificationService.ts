@@ -76,7 +76,19 @@ export const createNotification = async (notif: Partial<Notification>): Promise<
     payload.related_entity_id = notif.relatedEntityId;
   }
 
-  const { data, error } = await supabase.from('notifications').insert(payload).select().single();
+  const { error } = await supabase.from('notifications').insert(payload);
   if (error) throw new Error(error.message || 'Failed to create notification');
-  return mapNotification(data as NotificationRow);
+  // Return a synthetic notification object — we can't .select() back because
+  // the SELECT RLS policy restricts reading to the notification's owner.
+  return {
+    id: crypto.randomUUID?.() || '',
+    userId: String(payload.user_id),
+    title: String(payload.title),
+    message: String(payload.message),
+    type: (payload.type || 'info') as Notification['type'],
+    isRead: false,
+    link: payload.link ? String(payload.link) : undefined,
+    relatedEntityId: payload.related_entity_id ? String(payload.related_entity_id) : undefined,
+    createdAt: new Date(),
+  };
 };

@@ -298,9 +298,9 @@ const EmployeeDashboard: React.FC = () => {
         const checkAwards = async () => {
             const { data } = await supabase
                 .from('employee_awards')
-                .select('id, award_id, employee_id, is_acknowledged_by_employee, awards(title)')
+                .select('id, award_template_id, employee_id, is_acknowledged_by_employee, award_templates(title)')
                 .eq('employee_id', user.id)
-                .eq('status', ResolutionStatus.Approved)
+                .eq('status', 'Approved')
                 .eq('is_acknowledged_by_employee', false);
             if (!active || !data || data.length === 0) return;
             setShowConfetti(true);
@@ -628,10 +628,10 @@ const EmployeeDashboard: React.FC = () => {
                 supabase.from('asset_requests').select('*').eq('employee_id', employeeProfileId).order('requested_at', { ascending: false }),
                 supabase.from('benefit_requests').select('*').eq('employee_id', employeeProfileId),
                 supabase.from('pulse_surveys').select('*').eq('status', 'Active'),
-                supabase.from('survey_responses').select('*').eq('respondent_id', employeeProfileId),
+                supabase.from('pulse_survey_responses').select('*').eq('respondent_id', employeeProfileId),
                 supabase.from('coaching_sessions').select('*').or(`employee_id.eq.${employeeProfileId},coach_id.eq.${employeeProfileId}`).order('date', { ascending: false }),
                 supabase.from('envelopes').select('*').order('created_at', { ascending: false }),
-                supabase.from('ntes').select('*').eq('employee_id', employeeProfileId),
+                supabase.from('ntes').select('*').contains('recipients', [employeeProfileId]),
             ]);
             if (!active) return;
             if (!reqRes.error && reqRes.data) setRequests(reqRes.data.map((r: any) => ({ ...r, requestedAt: r.requested_at ? new Date(r.requested_at) : new Date(), employeeId: r.employee_id, requestType: r.request_type, assetDescription: r.asset_description || '', status: r.status })));
@@ -662,7 +662,7 @@ const EmployeeDashboard: React.FC = () => {
                     .from('wfh_requests')
                     .select('*')
                     .eq('employee_id', user.id)
-                    .in('status', [WFHRequestStatus.Approved, WFHRequestStatus.Rejected])
+                    .in('status', [WFHRequestStatus.Approved, WFHRequestStatus.ForTimekeeping, WFHRequestStatus.Rejected])
                     .order('date', { ascending: false }),
                 supabase
                     .from('ot_requests')
@@ -722,7 +722,7 @@ const EmployeeDashboard: React.FC = () => {
             setApprovedWfhRequests(
                 !wfhRes.error && wfhRes.data
                     ? wfhRes.data
-                        .filter((row: any) => row.status === WFHRequestStatus.Approved)
+                        .filter((row: any) => row.status === WFHRequestStatus.Approved || row.status === WFHRequestStatus.ForTimekeeping)
                         .map((row: any) => ({
                             id: row.id,
                             date: new Date(row.date),

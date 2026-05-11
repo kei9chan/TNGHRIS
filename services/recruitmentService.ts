@@ -184,13 +184,13 @@ export const saveJobPost = async (post: Partial<JobPost>): Promise<JobPost> => {
 };
 
 export const fetchCandidates = async (): Promise<Candidate[]> => {
-  const { data, error } = await supabase.from('candidates').select('*').order('last_name', { ascending: true });
+  const { data, error } = await supabase.from('job_candidates').select('*').order('last_name', { ascending: true });
   if (error) throw new Error(error.message);
   return (data as CandidateRow[]).map(mapCandidate);
 };
 
 export const fetchApplications = async (): Promise<Application[]> => {
-  const { data, error } = await supabase.from('applications').select('*').order('created_at', { ascending: false });
+  const { data, error } = await supabase.from('job_applications').select('*').order('created_at', { ascending: false });
   if (error) throw new Error(error.message);
   return (data as ApplicationRow[]).map(mapApplication);
 };
@@ -203,26 +203,26 @@ export const saveApplication = async (app: Partial<Application>): Promise<Applic
     referrer: app.referrer || null,
   };
   const { data, error } = app.id
-    ? await supabase.from('applications').update(payload).eq('id', app.id).select().single()
-    : await supabase.from('applications').insert(payload).select().single();
+    ? await supabase.from('job_applications').update(payload).eq('id', app.id).select().single()
+    : await supabase.from('job_applications').insert(payload).select().single();
   if (error) throw new Error(error.message);
   return mapApplication(data as ApplicationRow);
 };
 
 export const fetchInterviews = async (): Promise<Interview[]> => {
-  const { data, error } = await supabase.from('interviews').select('*').order('scheduled_start', { ascending: false });
+  const { data, error } = await supabase.from('job_interviews').select('*').order('scheduled_start', { ascending: false });
   if (error) throw new Error(error.message);
   return (data as InterviewRow[]).map(mapInterview);
 };
 
 export const fetchInterviewFeedbacks = async (): Promise<InterviewFeedback[]> => {
-  const { data, error } = await supabase.from('interview_feedbacks').select('*').order('submitted_at', { ascending: false });
+  const { data, error } = await supabase.from('job_interview_feedback').select('*').order('submitted_at', { ascending: false });
   if (error) throw new Error(error.message);
   return (data as InterviewFeedbackRow[]).map(mapInterviewFeedback);
 };
 
 export const fetchOffers = async (): Promise<Offer[]> => {
-  const { data, error } = await supabase.from('offers').select('*').order('start_date', { ascending: false });
+  const { data, error } = await supabase.from('job_offers').select('*').order('start_date', { ascending: false });
   if (error) throw new Error(error.message);
   return (data as OfferRow[]).map(mapOffer);
 };
@@ -247,8 +247,8 @@ export const saveOffer = async (offer: Partial<Offer>): Promise<Offer> => {
     special_clauses: offer.specialClauses || null,
   };
   const { data, error } = offer.id
-    ? await supabase.from('offers').update(payload).eq('id', offer.id).select().single()
-    : await supabase.from('offers').insert(payload).select().single();
+    ? await supabase.from('job_offers').update(payload).eq('id', offer.id).select().single()
+    : await supabase.from('job_offers').insert(payload).select().single();
   if (error) throw new Error(error.message);
   return mapOffer(data as OfferRow);
 };

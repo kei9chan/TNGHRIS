@@ -666,7 +666,7 @@ const ManagerDashboard: React.FC = () => {
                     rejectionReason: row.rejection_reason || undefined,
                     createdAt: row.created_at ? new Date(row.created_at) : new Date(),
                 }));
-                setPendingWfhApprovals(mapped.filter(r => r.status === WFHRequestStatus.Pending));
+                setPendingWfhApprovals(mapped.filter(r => r.status === WFHRequestStatus.PendingDeptHead));
             } else {
                 setPendingWfhApprovals([]);
             }

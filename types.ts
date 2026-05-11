@@ -89,9 +89,12 @@ export interface Settings {
 // =================================================================================
 
 export enum WFHRequestStatus {
-  Pending = 'Pending',
-  Approved = 'Approved',
-  Rejected = 'Rejected',
+  PendingSubmission = 'WFH_PENDING_SUBMISSION',
+  PendingDeptHead = 'WFH_PENDING_DEPT_HEAD_APPROVAL',
+  PendingBOD = 'WFH_PENDING_BOD_APPROVAL',
+  ForTimekeeping = 'WFH_FOR_TIMEKEEPING',
+  Approved = 'WFH_APPROVED',
+  Rejected = 'WFH_REJECTED',
 }
 
 export interface WFHRequest {
@@ -99,6 +102,7 @@ export interface WFHRequest {
   employeeId: string;
   employeeName: string;
   date: Date;
+  endDate?: Date;
   reason: string;
   status: WFHRequestStatus;
   reportLink?: string; // Optional URL for output/accomplishment report

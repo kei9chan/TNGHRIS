@@ -155,39 +155,24 @@ const SignUp: React.FC = () => {
   const validateStep2 = (): string | null => {
     const errors: Record<string, string> = {};
 
-    const validateOptionalId = (value: string | undefined, key: string, label: string) => {
-      if (!value) return;
-      const clean = value.trim();
-      if (clean && !/^[0-9- ]+$/.test(clean)) {
-        errors[key] = `${label} must contain numbers only.`;
-      }
-    };
-
-    validateOptionalId(formData.sssNo, 'sssNo', 'SSS Number');
-    validateOptionalId(formData.pagibigNo, 'pagibigNo', 'Pag-IBIG');
-    validateOptionalId(formData.philhealthNo, 'philhealthNo', 'PhilHealth');
-    validateOptionalId(formData.tin, 'tin', 'TIN');
-
-    if (formData.emergencyContact?.phone) {
-      const phoneClean = formData.emergencyContact.phone.trim();
-      if (!/^[0-9+ ()-]+$/.test(phoneClean) || phoneClean.replace(/\D/g, '').length < 7) {
-        errors.emergencyPhone = 'Enter a valid phone number.';
-      }
+    // Emergency Contact is REQUIRED
+    if (!formData.emergencyContact?.name?.trim()) {
+      errors.emergencyContactName = 'Contact name is required.';
     }
-
-    if (formData.bankingDetails?.accountNumber) {
-      const accountClean = formData.bankingDetails.accountNumber.trim();
-      if (!/^[0-9- ]+$/.test(accountClean) || accountClean.replace(/\D/g, '').length < 6) {
-        errors.accountNumber = 'Enter a valid account number.';
-      }
+    if (!formData.emergencyContact?.relationship?.trim()) {
+      errors.emergencyContactRelationship = 'Relationship is required.';
+    }
+    if (!formData.emergencyContact?.phone?.trim()) {
+      errors.emergencyPhone = 'Phone number is required.';
     }
 
     setFieldErrors(prev => ({ ...prev, ...errors }));
     if (Object.keys(errors).length > 0) {
-      return 'Please correct the highlighted fields.';
+      return 'Please fill in all Emergency Contact fields.';
     }
     return null;
   };
+
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -328,56 +313,54 @@ const SignUp: React.FC = () => {
         } else {
           setError(signUpError?.message || 'Could not create account. Please try again.');
         }
-        return; // stay on step 2
+        return;
+      }
+
+      // When email confirmation is on and the email already exists, Supabase
+      // returns a "fake" user with an empty identities array to prevent enumeration.
+      if (!signUpData.user.identities || signUpData.user.identities.length === 0) {
+        setError('An account with this email already exists. Please log in instead.');
+        return;
       }
 
       const authUserId = signUpData.user.id;
 
-      // 2) Insert into hris_users, linked to auth.users
-      const { error: insertError, status: insertStatus, statusText } = await supabase.from('hris_users').insert({
-        auth_user_id: authUserId,
-
-        email,
-        first_name: firstName.trim(),
-        last_name: lastName.trim(),
-        full_name: fullName,
-
-        role: formData.role || Role.Employee,
-        status: formData.status || 'Inactive',
-        is_photo_enrolled: formData.isPhotoEnrolled ?? false,
-
-        business_unit: formData.businessUnit || null,
-        business_unit_id: businessUnitId,
-        department: formData.department || null,
-        department_id: departmentId,
-        position: formData.position || null,
-        birth_date: birthDate || null,
-        date_hired: new Date().toISOString().slice(0, 10), // YYYY-MM-DD
-
-        sss_no: formData.sssNo || null,
-        pagibig_no: formData.pagibigNo || null,
-        philhealth_no: formData.philhealthNo || null,
-        tin: formData.tin || null,
-
-        emergency_contact_name: formData.emergencyContact?.name || null,
-        emergency_contact_relationship: formData.emergencyContact?.relationship || null,
-        emergency_contact_phone: formData.emergencyContact?.phone || null,
-
-        bank_name: formData.bankingDetails?.bankName || null,
-        bank_account_number: formData.bankingDetails?.accountNumber || null,
-        bank_account_type: formData.bankingDetails?.accountType || 'Savings',
+      // 2) Insert profile via SECURITY DEFINER RPC — bypasses RLS safely.
+      // Direct .insert() fails with 42501 because the user has no session yet
+      // (email confirmation pending), so Supabase still treats them as anon.
+      const { error: insertError } = await supabase.rpc('register_user_profile', {
+        p_auth_user_id:   authUserId,
+        p_email:          email,
+        p_first_name:     firstName.trim(),
+        p_last_name:      lastName.trim(),
+        p_full_name:      fullName,
+        p_role:           formData.role || Role.Employee,
+        p_status:         formData.status || 'Inactive',
+        p_is_photo_enrolled: formData.isPhotoEnrolled ?? false,
+        p_business_unit:    formData.businessUnit || null,
+        p_business_unit_id: businessUnitId,
+        p_department:       formData.department || null,
+        p_department_id:    departmentId,
+        p_position:         formData.position || null,
+        p_birth_date:       birthDate || null,
+        p_date_hired:       new Date().toISOString().slice(0, 10),
+        p_sss_no:           formData.sssNo || null,
+        p_pagibig_no:       formData.pagibigNo || null,
+        p_philhealth_no:    formData.philhealthNo || null,
+        p_tin:              formData.tin || null,
+        p_emergency_contact_name:         formData.emergencyContact?.name || null,
+        p_emergency_contact_relationship: formData.emergencyContact?.relationship || null,
+        p_emergency_contact_phone:        formData.emergencyContact?.phone || null,
+        p_bank_name:          formData.bankingDetails?.bankName || null,
+        p_bank_account_number: formData.bankingDetails?.accountNumber || null,
+        p_bank_account_type:   formData.bankingDetails?.accountType || 'Savings',
       });
 
       if (insertError) {
         console.error(insertError);
-        const code = (insertError as any)?.code;
-        const status = (insertError as any)?.status ?? insertStatus ?? statusText;
         const message = `${(insertError as any)?.message || ''} ${(insertError as any)?.details || ''}`.toLowerCase();
         const isConflict =
-          code === '23505' ||
-          code === 23505 ||
-          status === 409 ||
-          status === '409' ||
+          (insertError as any)?.code === '23505' ||
           message.includes('duplicate') ||
           message.includes('already exists');
 
@@ -386,7 +369,7 @@ const SignUp: React.FC = () => {
         } else {
           setError('Profile could not be saved. Please try again.');
         }
-        return; // don't redirect; user stays on step 2
+        return;
       }
 
       // Optional: ensure user is logged out so they return to login flow
@@ -442,8 +425,12 @@ const SignUp: React.FC = () => {
         }
         .glass-input {
           background: #F3F4F6;
+          color: #111827;
           transition: all 0.3s ease;
           border: 1px solid transparent;
+        }
+        .glass-input::placeholder {
+          color: #9CA3AF;
         }
         .glass-input:focus {
           background: #FFFFFF;
@@ -823,46 +810,59 @@ const SignUp: React.FC = () => {
                 </div>
 
                 <div>
-                  <h3 className="text-sm font-bold text-gray-900 border-b border-gray-100 pb-2 mb-4 uppercase tracking-wider">
+                  <h3 className="text-sm font-bold text-gray-900 border-b border-gray-100 pb-2 mb-4 uppercase tracking-wider flex items-center gap-2">
                     Emergency Contact
+                    <span className="text-xs font-semibold text-rose-500 normal-case tracking-normal">Required</span>
                   </h3>
                   <div className="space-y-3">
-                    <input
-                      className="glass-input w-full px-3 py-2.5 rounded-xl text-sm"
-                      name="name"
-                      value={formData.emergencyContact?.name || ''}
-                      onChange={e => handleNestedChange('emergencyContact', e)}
-                      placeholder="Contact Name"
-                      aria-invalid={!!fieldErrors.emergencyContactName}
-                    />
-                    {fieldErrors.emergencyContactName && <p className="mt-1 text-xs text-red-600">{fieldErrors.emergencyContactName}</p>}
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 mb-1">Contact Name <span className="text-rose-500">*</span></label>
+                      <input
+                        className="glass-input w-full px-3 py-2.5 rounded-xl text-sm"
+                        name="name"
+                        value={formData.emergencyContact?.name || ''}
+                        onChange={e => handleNestedChange('emergencyContact', e)}
+                        placeholder="e.g. Juan dela Cruz"
+                        required
+                        aria-invalid={!!fieldErrors.emergencyContactName}
+                      />
+                      {fieldErrors.emergencyContactName && <p className="mt-1 text-xs text-red-600">{fieldErrors.emergencyContactName}</p>}
+                    </div>
                     <div className="grid grid-cols-2 gap-4">
-                      <input
-                        className="glass-input w-full px-3 py-2.5 rounded-xl text-sm"
-                        name="relationship"
-                        value={formData.emergencyContact?.relationship || ''}
-                        onChange={e => handleNestedChange('emergencyContact', e)}
-                        placeholder="Relationship"
-                        aria-invalid={!!fieldErrors.emergencyContactRelationship}
-                      />
-                      {fieldErrors.emergencyContactRelationship && <p className="mt-1 text-xs text-red-600">{fieldErrors.emergencyContactRelationship}</p>}
-                      <input
-                        className="glass-input w-full px-3 py-2.5 rounded-xl text-sm"
-                        name="phone"
-                        type="tel"
-                        value={formData.emergencyContact?.phone || ''}
-                        onChange={e => handleNestedChange('emergencyContact', e)}
-                        placeholder="Phone Number"
-                        aria-invalid={!!fieldErrors.emergencyPhone}
-                      />
-                      {fieldErrors.emergencyPhone && <p className="mt-1 text-xs text-red-600">{fieldErrors.emergencyPhone}</p>}
+                      <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-1">Relationship <span className="text-rose-500">*</span></label>
+                        <input
+                          className="glass-input w-full px-3 py-2.5 rounded-xl text-sm"
+                          name="relationship"
+                          value={formData.emergencyContact?.relationship || ''}
+                          onChange={e => handleNestedChange('emergencyContact', e)}
+                          placeholder="e.g. Spouse, Parent"
+                          required
+                          aria-invalid={!!fieldErrors.emergencyContactRelationship}
+                        />
+                        {fieldErrors.emergencyContactRelationship && <p className="mt-1 text-xs text-red-600">{fieldErrors.emergencyContactRelationship}</p>}
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-1">Phone Number <span className="text-rose-500">*</span></label>
+                        <input
+                          className="glass-input w-full px-3 py-2.5 rounded-xl text-sm"
+                          name="phone"
+                          type="tel"
+                          value={formData.emergencyContact?.phone || ''}
+                          onChange={e => handleNestedChange('emergencyContact', e)}
+                          placeholder="e.g. +639xxxxxxxxx"
+                          required
+                          aria-invalid={!!fieldErrors.emergencyPhone}
+                        />
+                        {fieldErrors.emergencyPhone && <p className="mt-1 text-xs text-red-600">{fieldErrors.emergencyPhone}</p>}
+                      </div>
                     </div>
                   </div>
                 </div>
 
                 <div>
                   <h3 className="text-sm font-bold text-gray-900 border-b border-gray-100 pb-2 mb-4 uppercase tracking-wider">
-                    Payroll Banking
+                    Payroll Banking <span className="text-gray-400 font-normal text-xs normal-case tracking-normal">(Optional)</span>
                   </h3>
                   <div className="space-y-3">
                     <input

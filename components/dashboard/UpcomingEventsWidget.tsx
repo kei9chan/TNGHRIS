@@ -54,11 +54,11 @@ const UpcomingEventsWidget: React.FC = () => {
         endOfWeek.setHours(23, 59, 59, 999);
 
         supabase
-            .from('calendar_events')
+            .from('helpdesk_calendar_events')
             .select('*')
-            .gte('start_date', startOfWeek.toISOString())
-            .lte('start_date', endOfWeek.toISOString())
-            .order('start_date', { ascending: true })
+            .gte('start', startOfWeek.toISOString())
+            .lte('start', endOfWeek.toISOString())
+            .order('start', { ascending: true })
             .then(({ data, error }) => {
                 if (cancelled) return;
                 if (!error && data) {

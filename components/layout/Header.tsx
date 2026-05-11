@@ -81,7 +81,7 @@ const Header: React.FC = () => {
 
     return (
         <header className="bg-slate-900 shadow-lg sticky top-0 z-20">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 xl:px-10">
                 <div className="flex items-center justify-between h-16">
                     <div className="flex items-center flex-1 min-w-0">
                         <Link to="/dashboard" className="flex-shrink-0 text-white font-bold text-xl mr-4 flex items-center space-x-2">

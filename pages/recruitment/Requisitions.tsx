@@ -61,7 +61,7 @@ const Requisitions: React.FC = () => {
                 const { data: deptData } = await supabase.from('departments').select('id, name, business_unit_id');
                 if (deptData) setDepartments(deptData.map((d: any) => ({ id: d.id, name: d.name, businessUnitId: d.business_unit_id })));
 
-                const { data: appData } = await supabase.from('applications').select('requisition_id, stage');
+                const { data: appData } = await supabase.from('job_applications').select('requisition_id, stage');
                 if (appData) setApplications(appData.map((a: any) => ({ requisitionId: a.requisition_id, stage: a.stage })));
             } catch (err) {
                 console.warn('Failed to load metadata for requisitions', err);

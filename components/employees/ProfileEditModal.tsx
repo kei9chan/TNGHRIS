@@ -81,14 +81,22 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
           const { data, error } = await supabase
             .from('hris_users')
             .select('id, full_name, role')
+            .eq('status', 'Active')
             .order('full_name');
 
           if (error || !data) {
             setReportsToOptions([]);
             return;
           }
+
+          // Apply the same hierarchy rules used in HR Review Queue
+          const isManagerLevel = user.role === 'Manager' || user.role === 'Business Unit Manager';
+          const allowedRoles = isManagerLevel
+            ? ['Operations Director', 'GeneralManager', 'Board of Director']
+            : ['Manager', 'Business Unit Manager', 'Operations Director', 'GeneralManager', 'Board of Director'];
+
           const options = data
-            .filter((row: any) => row.id !== user.id)
+            .filter((row: any) => row.id !== user.id && allowedRoles.includes(row.role))
             .map((row: any) => ({
               id: row.id,
               label: `${formatEmployeeName(row.full_name || 'Unknown')} (${row.role || 'Employee'})`,
@@ -419,6 +427,11 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
                     <option key={option.id} value={option.id}>{option.label}</option>
                   ))}
                 </select>
+                <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                  {(user.role === 'Manager' || user.role === 'Business Unit Manager')
+                    ? 'Managers may report to: Operations Director, General Manager, or Board of Director.'
+                    : 'Employees may report to: Manager, Business Unit Manager, Operations Director, General Manager, or Board of Director.'}
+                </p>
               </div>
             )}
             {isAdminEdit && (

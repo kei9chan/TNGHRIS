@@ -38,23 +38,23 @@ const OfferCreationModal: React.FC<OfferCreationModalProps> = ({ isOpen, onClose
     useEffect(() => {
         const fetchApplicants = async () => {
             const { data } = await supabase
-                .from('applications')
+                .from('job_applications')
                 .select(`
                     id,
                     stage,
-                    candidates ( id, first_name, last_name ),
+                    job_candidates ( id, first_name, last_name ),
                     job_requisitions ( id, title, employment_type, budgeted_salary_min )
                 `)
                 .eq('stage', 'Offer');
                 
             if (data) {
                 // Fetch offers to filter out those with active offers
-                const { data: offersData } = await supabase.from('offers').select('application_id, status');
+                const { data: offersData } = await supabase.from('job_offers').select('application_id, status');
                 const activeOffers = (offersData || []).filter((o: any) => o.status !== 'Declined');
                 const activeAppIds = new Set(activeOffers.map((o: any) => o.application_id));
 
                 const available = data.filter((app: any) => !activeAppIds.has(app.id)).map((app: any) => {
-                    const c = Array.isArray(app.candidates) ? app.candidates[0] : app.candidates;
+                    const c = Array.isArray(app.job_candidates) ? app.job_candidates[0] : app.job_candidates;
                     const r = Array.isArray(app.job_requisitions) ? app.job_requisitions[0] : app.job_requisitions;
                     const candidateName = c ? `${c.first_name} ${c.last_name}` : 'Unknown Candidate';
                     const title = r ? r.title : 'Unknown Job';

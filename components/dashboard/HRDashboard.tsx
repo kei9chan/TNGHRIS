@@ -337,7 +337,7 @@ const HRDashboard: React.FC = () => {
                 supabase
                     .from('wfh_requests')
                     .select('id, employee_id, employee_name, date, reason, status, report_link, approved_by, approved_at, rejection_reason, created_at')
-                    .eq('status', WFHRequestStatus.Pending)
+                    .in('status', [WFHRequestStatus.PendingDeptHead, WFHRequestStatus.PendingBOD])
                     .order('created_at', { ascending: false }),
                 supabase
                     .from('manpower_requests')
@@ -386,7 +386,7 @@ const HRDashboard: React.FC = () => {
                     rejectionReason: row.rejection_reason || undefined,
                     createdAt: row.created_at ? new Date(row.created_at) : new Date(),
                 }));
-                setPendingWfhApprovals(mapped.filter(r => r.status === WFHRequestStatus.Pending));
+                setPendingWfhApprovals(mapped.filter(r => r.status === WFHRequestStatus.PendingDeptHead || r.status === WFHRequestStatus.PendingBOD));
             } else {
                 setPendingWfhApprovals([]);
             }
