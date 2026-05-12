@@ -85,7 +85,7 @@ const EmployeeList: React.FC = () => {
   }, [accessControl.scope, accessibleBus, businessUnits]);
 
   useEffect(() => {
-    if (currentUser?.role !== Role.HRManager && currentUser?.role !== Role.HRStaff) return;
+    if (currentUser?.role !== Role.Admin && currentUser?.role !== Role.HRManager && currentUser?.role !== Role.HRStaff) return;
 
     const fetchCounts = async () => {
       try {
@@ -303,7 +303,7 @@ const EmployeeList: React.FC = () => {
                 <button onClick={() => handleTabChange('list')} className={tabClass('list')}>
                     Employee List
                 </button>
-                {(currentUser?.role === Role.HRManager || currentUser?.role === Role.HRStaff) && (
+                {(currentUser?.role === Role.Admin || currentUser?.role === Role.HRManager || currentUser?.role === Role.HRStaff) && (
                   <button onClick={() => handleTabChange('review')} className={tabClass('review')}>
                       HR Review Queue
                       {pendingReviewCount > 0 && (

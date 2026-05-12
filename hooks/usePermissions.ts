@@ -978,14 +978,20 @@ export const usePermissions = () => {
     const hasDirectReports = (): boolean => {
         const user = getCurrentUser();
         if (!user) return false;
-        // For Manager role, assume they have direct reports
-        return [Role.Manager, Role.BusinessUnitManager, Role.HRManager, Role.GeneralManager, Role.OperationsDirector].includes(user.role);
+        // Admin has access to all direct-report widgets; other managerial roles as scoped.
+        return [Role.Admin, Role.Manager, Role.BusinessUnitManager, Role.HRManager, Role.GeneralManager, Role.OperationsDirector].includes(user.role);
     };
 
     const filterByScope = <T extends { employeeId: string }>(data: T[]): T[] => {
         const user = getCurrentUser();
         if (!user) return [];
         const visibleIds = getVisibleEmployeeIds();
+        
+        // Empty array means global access
+        if (visibleIds.length === 0) {
+            return data;
+        }
+
         return data.filter(item => visibleIds.includes(item.employeeId));
     };
 
@@ -993,6 +999,11 @@ export const usePermissions = () => {
         const user = getCurrentUser();
         if (!user) return [];
         const visibleIds = getVisibleEmployeeIds();
+
+        // Empty array means global access
+        if (visibleIds.length === 0) {
+            return data;
+        }
 
         return data.filter(item =>
             item.involvedEmployeeIds.some(id => visibleIds.includes(id))
@@ -1508,6 +1519,15 @@ export const usePermissions = () => {
         }
     };
 
+    /**
+     * Returns true if the current authenticated user has the Admin (Superuser) role.
+     * Use this for UI guards that need a direct role check rather than a resource/permission check.
+     * The Admin role bypasses all RBAC restrictions — both in this hook and in Supabase RLS.
+     */
+    const isSuperAdmin = (): boolean => {
+        const user = getCurrentUser();
+        return user?.role === Role.Admin;
+    };
 
-    return { can, getVisibleEmployeeIds, filterByScope, filterIncidentReportsByScope, filterTicketsByScope, hasDirectReports, getAccessibleBusinessUnits, isUserEligibleEvaluator, getCoeAccess, getOtAccess, getTicketAccess, getIrAccess, getJobRequisitionAccess, getAnnouncementAccess, getAwardsAccess, getPanAccess, getLifecycleAccess };
+    return { can, isSuperAdmin, getVisibleEmployeeIds, filterByScope, filterIncidentReportsByScope, filterTicketsByScope, hasDirectReports, getAccessibleBusinessUnits, isUserEligibleEvaluator, getCoeAccess, getOtAccess, getTicketAccess, getIrAccess, getJobRequisitionAccess, getAnnouncementAccess, getAwardsAccess, getPanAccess, getLifecycleAccess };
 };

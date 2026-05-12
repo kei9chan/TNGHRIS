@@ -27,6 +27,12 @@ const EditIcon: React.FC = () => (
     </svg>
 );
 
+const ShieldCheckIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={className}>
+        <path fillRule="evenodd" d="M12.516 2.17a.75.75 0 0 0-1.032 0 11.209 11.209 0 0 1-7.877 3.08.75.75 0 0 0-.722.515A12.74 12.74 0 0 0 2.25 9.75c0 5.942 4.064 10.933 9.563 12.348a.749.749 0 0 0 .374 0c5.499-1.415 9.563-6.406 9.563-12.348 0-1.39-.223-2.73-.635-3.985a.75.75 0 0 0-.722-.516l-.143.001c-2.996 0-5.717-1.17-7.734-3.08Zm3.094 8.016a.75.75 0 1 0-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 0 0-1.06 1.06l2.25 2.25a.75.75 0 0 0 1.14-.094l3.75-5.25Z" clipRule="evenodd" />
+    </svg>
+);
+
 
 const UserManagement: React.FC = () => {
     const { user: currentUser } = useAuth();
@@ -130,6 +136,16 @@ const UserManagement: React.FC = () => {
         const targetUser = users.find(u => u.id === userId);
         if (!targetUser) return;
 
+        // Guard: warn before demoting an Admin user
+        const isTargetCurrentlyAdmin = targetUser.role === Role.Admin;
+        const isNewRoleDowngrade = newRole !== Role.Admin;
+        if (isTargetCurrentlyAdmin && isNewRoleDowngrade) {
+            const confirmed = window.confirm(
+                `⚠️ Superuser Demotion Warning\n\nYou are about to remove the Admin (Superuser) role from "${targetUser.name}".\n\nThis will revoke their unrestricted access to all system functions and database records. This action cannot be undone automatically.\n\nAre you sure you want to continue?`
+            );
+            if (!confirmed) return;
+        }
+
         // Persist to Supabase
         supabase.from('hris_users').update({ role: newRole, data_access_scope: newScope }).eq('id', userId).then(({ error: err }) => {
             if (err) {
@@ -210,7 +226,18 @@ const UserManagement: React.FC = () => {
                                 <tr key={user.id} className={userIdx % 2 === 0 ? 'bg-white dark:bg-slate-800' : 'bg-gray-50 dark:bg-slate-800/50'}>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{user.name}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{user.email}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{user.role}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                        <div className="flex items-center gap-1.5">
+                                            {user.role === Role.Admin && (
+                                                <span title="Superuser — unrestricted access">
+                                                    <ShieldCheckIcon className="h-4 w-4 text-indigo-500 flex-shrink-0" />
+                                                </span>
+                                            )}
+                                            <span className={user.role === Role.Admin ? 'font-semibold text-indigo-600 dark:text-indigo-400' : ''}>
+                                                {user.role}
+                                            </span>
+                                        </div>
+                                    </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                         {getScopeLabel(user)}
                                     </td>

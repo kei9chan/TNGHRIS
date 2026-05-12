@@ -22,3 +22,22 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Environment variables (never commit secrets)
+.env
+.env.local
+.env.*.local
+
+# Debug / scratch output files
+ts_errors.txt
+ts_errors_2.txt
+ts_errors_utf8.txt
+tsc_errors.txt
+tsc_errors_cmd.txt
+tsc_errors_utf8.txt
+schema.json
+schema_output.txt
+schema_output_utf8.txt
+mockFiles.txt
+mockDataCompatFiles.txt
+fetchSchema.js
