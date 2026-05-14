@@ -21,6 +21,7 @@ import PrintableCOE from '../admin/PrintableCOE';
 import MemoViewModal from '../feedback/MemoViewModal';
 import { logActivity } from '../../services/auditService';
 import { approveCoeRequest, createCoeRequest, fetchCoeRequests, rejectCoeRequest, fetchActiveCoeTemplates } from '../../services/coeService';
+import { createNotification } from '../../services/notificationService';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { mergePanParticulars } from '../../services/panUtils';
@@ -828,6 +829,17 @@ const ManagerDashboard: React.FC = () => {
             const updated = await approveCoeRequest(request.id, user.id, generatedUrl);
             setCoeRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
             logActivity(user, 'APPROVE', 'COERequest', request.id, `Approved COE request for ${request.employeeName}`);
+
+            // Notify the requester their COE was approved
+            createNotification({
+                userId: request.employeeId,
+                title: '✅ COE Request Approved',
+                message: `Your Certificate of Employment request has been approved by ${user.name}. You may now download your COE.`,
+                type: NotificationType.COE_UPDATE,
+                link: '/my-profile?tab=documents',
+                relatedEntityId: request.id,
+            }).catch((e: any) => console.error('Failed to send Manager COE approval notification', e));
+
             setCoeToPrint({ template, request: updated, employee });
         } catch (error: any) {
             alert(error?.message || 'Failed to approve COE request.');
@@ -846,6 +858,16 @@ const ManagerDashboard: React.FC = () => {
             const updated = await rejectCoeRequest(request.id, user.id, reason.trim());
             setCoeRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
             logActivity(user, 'REJECT', 'COERequest', request.id, `Rejected COE request. Reason: ${reason}`);
+
+            // Notify the requester their COE was rejected
+            createNotification({
+                userId: request.employeeId,
+                title: '❌ COE Request Rejected',
+                message: `Your Certificate of Employment request was not approved by ${user.name}${reason ? `: "${reason}"` : '.'}`,
+                type: NotificationType.COE_UPDATE,
+                link: '/my-profile?tab=documents',
+                relatedEntityId: request.id,
+            }).catch((e: any) => console.error('Failed to send Manager COE rejection notification', e));
         } catch (error: any) {
             alert(error?.message || 'Failed to reject COE request.');
         }

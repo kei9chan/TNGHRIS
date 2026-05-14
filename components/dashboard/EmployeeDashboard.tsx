@@ -53,6 +53,7 @@ import QuickLinks from './QuickLinks';
 import RequestCOEModal from '../employees/RequestCOEModal';
 import { logActivity } from '../../services/auditService';
 import { createCoeRequest, fetchCoeRequestById, fetchCoeRequests } from '../../services/coeService';
+import { createNotification } from '../../services/notificationService';
 import { usePermissions } from '../../hooks/usePermissions';
 import { supabase } from '../../services/supabaseClient';
 import { mergePanParticulars } from '../../services/panUtils';
@@ -1054,6 +1055,27 @@ const EmployeeDashboard: React.FC = () => {
             const saved = await createCoeRequest(request, user);
             // COE request persisted via createCoeRequest (Supabase)
             logActivity(user, 'CREATE', 'COERequest', saved.id, `Requested COE for ${saved.purpose}`);
+
+            // Notify all HR Managers about the new COE request
+            supabase
+                .from('hris_users')
+                .select('id')
+                .eq('role', Role.HRManager)
+                .then(({ data: hrManagers }) => {
+                    if (hrManagers) {
+                        hrManagers.forEach((hr: { id: string }) => {
+                            createNotification({
+                                userId: hr.id,
+                                title: '📄 COE Request Pending Approval',
+                                message: `${user.name} submitted a Certificate of Employment request (${saved.purpose.replace(/_/g, ' ')}) for your review.`,
+                                type: NotificationType.COE_UPDATE,
+                                link: '/admin/coe-requests',
+                                relatedEntityId: saved.id,
+                            }).catch((e: any) => console.error('Failed to send COE notification to HR Manager', e));
+                        });
+                    }
+                });
+
             alert("Certificate of Employment request submitted.");
         } catch (error: any) {
             alert(error?.message || 'Failed to submit COE request.');

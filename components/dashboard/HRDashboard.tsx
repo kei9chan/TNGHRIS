@@ -24,6 +24,7 @@ import PrintableCOE from '../admin/PrintableCOE';
 import RejectReasonModal from '../feedback/RejectReasonModal';
 import { logActivity } from '../../services/auditService';
 import { approveCoeRequest, createCoeRequest, rejectCoeRequest, fetchCoeRequests, fetchActiveCoeTemplates } from '../../services/coeService';
+import { createNotification } from '../../services/notificationService';
 import MemoViewModal from '../feedback/MemoViewModal';
 
 
@@ -757,8 +758,17 @@ const HRDashboard: React.FC = () => {
             setCoeRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
 
             logActivity(user, 'APPROVE', 'COERequest', request.id, `Approved COE request for ${request.employeeName}`);
-            // Notification delivered server-side; no local mock push needed
-            
+
+            // Notify the requester their COE was approved
+            createNotification({
+                userId: request.employeeId,
+                title: '✅ COE Request Approved',
+                message: `Your Certificate of Employment request has been approved by ${user.name}. You may now download your COE.`,
+                type: NotificationType.COE_UPDATE,
+                link: '/my-profile?tab=documents',
+                relatedEntityId: request.id,
+            }).catch((e: any) => console.error('Failed to send COE approval notification', e));
+
             // Trigger Print View immediately
             setCoeToPrint({ template, request: updated, employee });
         } catch (error: any) {
@@ -783,7 +793,16 @@ const HRDashboard: React.FC = () => {
             setCoeRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
 
             logActivity(user, 'REJECT', 'COERequest', coeToReject.id, `Rejected COE request. Reason: ${reason}`);
-            // Notification delivered server-side; no local mock push needed
+
+            // Notify the requester their COE was rejected
+            createNotification({
+                userId: coeToReject.employeeId,
+                title: '❌ COE Request Rejected',
+                message: `Your Certificate of Employment request was not approved by ${user.name}${reason ? `: "${reason}"` : '.'}`,
+                type: NotificationType.COE_UPDATE,
+                link: '/my-profile?tab=documents',
+                relatedEntityId: coeToReject.id,
+            }).catch((e: any) => console.error('Failed to send COE rejection notification', e));
         } catch (error: any) {
             alert(error?.message || 'Failed to reject COE request.');
         }
