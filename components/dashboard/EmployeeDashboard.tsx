@@ -1260,7 +1260,7 @@ const EmployeeDashboard: React.FC = () => {
                 id: `coe-${approved ? 'approved' : 'rejected'}-${req.id}`,
                 icon: <DocumentTextIcon {...iconProps} />,
                 title: `COE ${approved ? 'Approved' : 'Rejected'}`,
-                subtitle: `${req.purpose.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} • ${new Date(req.date).toLocaleDateString()}`,
+                subtitle: `${(req.purpose ?? 'COE_REQUEST').replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())} • ${new Date(req.date).toLocaleDateString()}`,
                 date: new Date(req.date).toLocaleDateString(),
                 sortDate,
                 link: `/employees/coe/requests?requestId=${req.id}`,
