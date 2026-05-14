@@ -36,10 +36,10 @@ const Settings: React.FC = () => {
         const loadUsers = async () => {
             const { data, error } = await supabase
                 .from('hris_users')
-                .select('id, name, role')
-                .order('name');
+                .select('id, full_name, role')
+                .order('full_name');
             if (!error && data) {
-                setAllUsers(data.map((u: any) => ({ id: u.id, name: u.name, role: u.role })));
+                setAllUsers(data.map((u: any) => ({ id: u.id, name: u.full_name || 'Unnamed', role: u.role })));
             }
         };
         loadUsers();
