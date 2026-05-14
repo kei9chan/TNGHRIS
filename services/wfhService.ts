@@ -65,16 +65,17 @@ export const fetchWfhRequestsByEmployee = async (employeeId: string): Promise<WF
 };
 
 export const createWfhRequest = async (request: Partial<WFHRequest>, user: User, isDraft: boolean = false): Promise<WFHRequest> => {
-  // Determine if user is a manager
+  // Determine if user is a manager (triggers GM → BOD approval chain)
   const managerRoles = [
-    Role.Manager, Role.BusinessUnitManager, Role.GeneralManager, 
-    Role.OperationsDirector, Role.HRManager, Role.BOD
+    Role.Manager, Role.BusinessUnitManager,
+    Role.OperationsDirector, Role.HRManager,
   ];
   const isManager = managerRoles.includes(user.role);
 
   let initialStatus = WFHRequestStatus.PendingSubmission;
   if (!isDraft) {
-    initialStatus = isManager ? WFHRequestStatus.PendingBOD : WFHRequestStatus.PendingDeptHead;
+    // Managers go through GM → BOD flow; regular employees go to Dept Head
+    initialStatus = isManager ? WFHRequestStatus.PendingGM : WFHRequestStatus.PendingDeptHead;
   }
 
   const payload = {
@@ -115,11 +116,12 @@ export const updateWfhRequestDetails = async (id: string, request: Partial<WFHRe
 
 export const submitWfhRequest = async (id: string, user: User): Promise<WFHRequest> => {
   const managerRoles = [
-    Role.Manager, Role.BusinessUnitManager, Role.GeneralManager, 
-    Role.OperationsDirector, Role.HRManager, Role.BOD
+    Role.Manager, Role.BusinessUnitManager,
+    Role.OperationsDirector, Role.HRManager,
   ];
   const isManager = managerRoles.includes(user.role);
-  const newStatus = isManager ? WFHRequestStatus.PendingBOD : WFHRequestStatus.PendingDeptHead;
+  // Managers go through GM → BOD flow; regular employees go to Dept Head
+  const newStatus = isManager ? WFHRequestStatus.PendingGM : WFHRequestStatus.PendingDeptHead;
 
   const { data, error } = await supabase
     .from('wfh_requests')
@@ -146,6 +148,24 @@ export const deptHeadApproveWfhRequest = async (id: string, approverId: string):
     .single();
 
   if (error) throw new Error(error.message || 'Failed to approve WFH request (Dept Head)');
+  return mapWfhRequest(data as WfhRequestRow);
+};
+
+/** GM approves a manager's WFH request, advancing it to PendingBOD */
+export const gmApproveWfhRequest = async (id: string, approverId: string): Promise<WFHRequest> => {
+  const { data, error } = await supabase
+    .from('wfh_requests')
+    .update({
+      status: WFHRequestStatus.PendingBOD,
+      approved_by: approverId,
+      approved_at: new Date().toISOString(),
+      rejection_reason: null,
+    })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message || 'Failed to approve WFH request (GM)');
   return mapWfhRequest(data as WfhRequestRow);
 };
 

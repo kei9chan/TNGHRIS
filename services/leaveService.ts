@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { LeaveRequest, LeaveRequestStatus, LeaveType, LeavePolicy, AccrualTier, User } from '../types';
+import { LeaveRequest, LeaveRequestStatus, LeaveType, LeavePolicy, AccrualTier, User, Role, MANAGER_ROLES } from '../types';
 
 // ---------------------------------------------------------------------------
 // Row Types
@@ -123,6 +123,10 @@ export const fetchLeaveRequestById = async (id: string): Promise<LeaveRequest | 
 };
 
 export const createLeaveRequest = async (request: Partial<LeaveRequest>, user: User): Promise<LeaveRequest> => {
+  // Managers route to PendingGM instead of Pending
+  const isManager = MANAGER_ROLES.includes(user.role);
+  const initialStatus = isManager ? LeaveRequestStatus.PendingGM : LeaveRequestStatus.Pending;
+
   const payload = {
     employee_id: user.id,
     employee_name: user.name,
@@ -133,7 +137,7 @@ export const createLeaveRequest = async (request: Partial<LeaveRequest>, user: U
     end_time: request.endTime || null,
     duration_days: request.durationDays || 1,
     reason: request.reason || '',
-    status: LeaveRequestStatus.Pending,
+    status: initialStatus,
     approver_chain: request.approverChain || [],
     history_log: [{
       userId: user.id,
@@ -220,4 +224,40 @@ export const saveLeavePolicyUpsert = async (policy: Partial<LeavePolicy>): Promi
     if (error) throw new Error(error.message || 'Failed to create leave policy');
     return mapLeavePolicy(data as LeavePolicyRow);
   }
+};
+
+// ---------------------------------------------------------------------------
+// GM / BOD Approval for Managerial Leave Requests
+// ---------------------------------------------------------------------------
+
+/** GM approves a manager's leave request, advancing it to PendingBOD */
+export const gmApproveLeaveRequest = async (id: string, approverId: string): Promise<LeaveRequest> => {
+  const { data, error } = await supabase
+    .from('leave_requests')
+    .update({
+      status: LeaveRequestStatus.PendingBOD,
+      approver_id: approverId,
+    })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message || 'Failed to approve leave request (GM)');
+  return mapLeaveRequest(data as LeaveRequestRow);
+};
+
+/** BOD gives final approval to a manager's leave request */
+export const bodApproveLeaveRequest = async (id: string, approverId: string): Promise<LeaveRequest> => {
+  const { data, error } = await supabase
+    .from('leave_requests')
+    .update({
+      status: LeaveRequestStatus.Approved,
+      approver_id: approverId,
+    })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message || 'Failed to approve leave request (BOD)');
+  return mapLeaveRequest(data as LeaveRequestRow);
 };

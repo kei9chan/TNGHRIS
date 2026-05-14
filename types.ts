@@ -91,6 +91,7 @@ export interface Settings {
 export enum WFHRequestStatus {
   PendingSubmission = 'WFH_PENDING_SUBMISSION',
   PendingDeptHead = 'WFH_PENDING_DEPT_HEAD_APPROVAL',
+  PendingGM = 'WFH_PENDING_GM_APPROVAL',
   PendingBOD = 'WFH_PENDING_BOD_APPROVAL',
   ForTimekeeping = 'WFH_FOR_TIMEKEEPING',
   Approved = 'WFH_APPROVED',
@@ -1030,6 +1031,8 @@ export interface TimeEvent {
 export enum OTStatus {
   Draft = 'Draft',
   Submitted = 'Submitted',
+  PendingGM = 'PendingGM',
+  PendingBOD = 'PendingBOD',
   Approved = 'Approved',
   Rejected = 'Rejected',
 }
@@ -1220,6 +1223,8 @@ export interface LeaveBalance {
 export enum LeaveRequestStatus {
   Draft = 'Draft',
   Pending = 'Pending',
+  PendingGM = 'PendingGM',
+  PendingBOD = 'PendingBOD',
   Approved = 'Approved',
   Rejected = 'Rejected',
   Cancelled = 'Cancelled',
@@ -2120,6 +2125,11 @@ export enum NotificationType {
   GENERAL = 'GENERAL',
   OT_SUBMITTED = 'OT_SUBMITTED',
   WFH_SUBMITTED = 'WFH_SUBMITTED',
+  WFH_PENDING_GM = 'WFH_PENDING_GM',
+  OT_PENDING_GM = 'OT_PENDING_GM',
+  OT_PENDING_BOD = 'OT_PENDING_BOD',
+  LEAVE_PENDING_GM = 'LEAVE_PENDING_GM',
+  LEAVE_PENDING_BOD = 'LEAVE_PENDING_BOD',
   TICKET_NEW = 'TICKET_NEW',
   ASSET_REQUEST_SUBMITTED = 'ASSET_REQUEST_SUBMITTED',
   JOB_REQUISITION_SUBMITTED = 'JOB_REQUISITION_SUBMITTED',
@@ -2231,3 +2241,30 @@ export interface UserDocument {
   reviewedAt?: Date;
   rejectionReason?: string;
 }
+
+// =================================================================================
+// APPROVER CONFIGURATION TYPES
+// =================================================================================
+
+export interface GMApproverConfig {
+  user_id: string | null;
+  user_name: string | null;
+}
+
+export interface BODApproverConfig {
+  user_ids: string[];
+  user_names: string[];
+}
+
+export interface ApproverConfigs {
+  gmApprover: GMApproverConfig;
+  bodApprovers: BODApproverConfig;
+}
+
+/** Roles that trigger hierarchical (GM → BOD) approval flow */
+export const MANAGER_ROLES: Role[] = [
+  Role.Manager,
+  Role.BusinessUnitManager,
+  Role.HRManager,
+  Role.OperationsDirector,
+];
