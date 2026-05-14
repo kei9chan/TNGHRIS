@@ -273,7 +273,7 @@ const EmployeeDashboard: React.FC = () => {
     const [evaluationTimelines, setEvaluationTimelines] = useState<any[]>([]);
     const [useSupabaseEvaluations, setUseSupabaseEvaluations] = useState(false);
     const [useSupabaseEvaluationSubmissions, setUseSupabaseEvaluationSubmissions] = useState(false);
-    const [coeDecisions, setCoeDecisions] = useState<Array<{ id: string; status: COERequest['status']; date: Date }>>([]);
+    const [coeDecisions, setCoeDecisions] = useState<Array<{ id: string; status: COERequest['status']; date: Date; purpose?: COERequest['purpose'] }>>([]);
     const [assignedTickets, setAssignedTickets] = useState<Array<{ id: string; status: TicketStatus; category: string; priority: string; assignedAt?: Date; createdAt?: Date; requesterName?: string }>>([]);
     const [approvedLeaveRequests, setApprovedLeaveRequests] = useState<Array<{ id: string; startDate: Date; endDate: Date; decisionDate?: Date }>>([]);
     const [approvedWfhRequests, setApprovedWfhRequests] = useState<Array<{ id: string; date: Date; decisionDate?: Date }>>([]);
@@ -927,6 +927,7 @@ const EmployeeDashboard: React.FC = () => {
                         id: r.id,
                         status: r.status,
                         date: r.approvedAt || r.dateRequested,
+                        purpose: r.purpose,
                     }));
                 setCoeDecisions(myDecisions);
             } catch {
