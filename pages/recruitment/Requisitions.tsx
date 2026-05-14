@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { JobRequisition, JobRequisitionStatus, Permission, Role, JobRequisitionRole, JobRequisitionStepStatus } from '../../types';
+import { JobRequisition, JobRequisitionStatus, NotificationType, Permission, Role, JobRequisitionRole, JobRequisitionStepStatus } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import Card from '../../components/ui/Card';
@@ -70,6 +70,53 @@ const Requisitions: React.FC = () => {
         loadMeta();
     }, []);
 
+    // Notify all HR Managers/Staff/Admin of a new job requisition
+    const notifyHRofNewRequisition = async (req: JobRequisition) => {
+        try {
+            const { data: hrUsers } = await supabase
+                .from('hris_users')
+                .select('id, auth_user_id')
+                .in('role', [Role.Admin, Role.HRManager, Role.HRStaff]);
+            if (!hrUsers || hrUsers.length === 0) return;
+
+            const notifications = hrUsers.map((u: any) => ({
+                user_id: u.auth_user_id || u.id,
+                type: NotificationType.JOB_REQUISITION_SUBMITTED,
+                title: 'New Job Requisition',
+                message: `A new job requisition "${req.title}" (${req.reqCode}) has been submitted and needs review.`,
+                link: '/recruitment/requisitions',
+                is_read: false,
+                created_at: new Date().toISOString(),
+                related_entity_id: req.id,
+            }));
+
+            await supabase.from('notifications').insert(notifications)
+                .then(({ error }) => { if (error) console.warn('[Requisitions] Failed to notify HR', error); });
+        } catch (err) {
+            console.warn('[Requisitions] notifyHRofNewRequisition error', err);
+        }
+    };
+
+    const notifyRequesterOfDecision = async (req: JobRequisition, approved: boolean, reason?: string) => {
+        if (!req.createdByUserId) return;
+        try {
+            await supabase.from('notifications').insert({
+                user_id: req.createdByUserId,
+                type: approved ? NotificationType.JOB_REQUISITION_APPROVED : NotificationType.JOB_REQUISITION_REJECTED,
+                title: approved ? 'Requisition Approved' : 'Requisition Rejected',
+                message: approved
+                    ? `Your job requisition "${req.title}" (${req.reqCode}) has been approved.`
+                    : `Your job requisition "${req.title}" (${req.reqCode}) has been rejected${reason ? `: ${reason}` : '.'}`,
+                link: '/recruitment/requisitions',
+                is_read: false,
+                created_at: new Date().toISOString(),
+                related_entity_id: req.id,
+            }).then(({ error }) => { if (error) console.warn('[Requisitions] Failed to notify requester', error); });
+        } catch (err) {
+            console.warn('[Requisitions] notifyRequesterOfDecision error', err);
+        }
+    };
+
     const handleOpenModal = React.useCallback((req: JobRequisition | null) => {
         setSelectedRequisition(req);
         setIsModalOpen(true);
@@ -128,12 +175,16 @@ const Requisitions: React.FC = () => {
 
     const handleSaveRequisition = async (reqToSave: JobRequisition) => {
         try {
+            const isNew = !reqToSave.id;
             const saved = await saveJobRequisition(reqToSave);
             setRequisitions(prev => {
                 const rest = prev.filter(r => r.id !== saved.id);
                 return [saved, ...rest];
             });
-            logActivity(user, reqToSave.id ? 'UPDATE' : 'CREATE', 'JobRequisition', saved.id, `${reqToSave.id ? 'Updated' : 'Created'} requisition ${saved.reqCode || saved.id}`);
+            logActivity(user, isNew ? 'CREATE' : 'UPDATE', 'JobRequisition', saved.id, `${isNew ? 'Created' : 'Updated'} requisition ${saved.reqCode || saved.id}`);
+            if (isNew) {
+                notifyHRofNewRequisition(saved).catch(() => {});
+            }
             handleCloseModal();
         } catch (err: any) {
             alert(err?.message || 'Failed to save requisition.');
@@ -173,6 +224,10 @@ const Requisitions: React.FC = () => {
                 const rest = prev.filter(r => r.id !== saved.id);
                 return [saved, ...rest];
             });
+            // Notify requester if fully approved
+            if (saved.status === JobRequisitionStatus.Approved && saved.createdByUserId) {
+                notifyRequesterOfDecision(saved, true).catch(() => {});
+            }
             handleCloseModal();
         } catch (err: any) {
             alert(err?.message || 'Failed to approve requisition.');
@@ -207,6 +262,7 @@ const Requisitions: React.FC = () => {
                 const rest = prev.filter(r => r.id !== saved.id);
                 return [saved, ...rest];
             });
+            notifyRequesterOfDecision(saved, false, reason).catch(() => {});
             setIsRejectModalOpen(false);
             handleCloseModal();
         } catch (err: any) {

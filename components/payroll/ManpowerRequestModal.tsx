@@ -118,8 +118,20 @@ const ManpowerRequestModal: React.FC<ManpowerRequestModalProps> = ({ isOpen, onC
             }
             if (approverIds.size === 0) return;
 
-            // Notifications are managed server-side; log a console note for now
-            console.info(`[ManpowerRequest] Approvers to notify: ${[...approverIds].join(', ')}`);
+            const notifications = [...approverIds].map(uid => ({
+                user_id: uid,
+                type: NotificationType.MANPOWER_REQUEST_SUBMITTED,
+                title: 'New On-Call Request',
+                message: `A new on-call manpower request for ${buName} on ${new Date(requestDate).toLocaleDateString()} has been submitted by ${user!.name}.`,
+                link: `/payroll/manpower-planning?requestId=${requestId}`,
+                is_read: false,
+                created_at: new Date().toISOString(),
+                related_entity_id: requestId,
+            }));
+
+            const { error: notifError } = await supabase.from('notifications').insert(notifications);
+            if (notifError) console.warn('[ManpowerRequest] Failed to insert approver notifications', notifError);
+
         } catch (err) {
             console.error('Failed to notify manpower approvers', err);
         }
