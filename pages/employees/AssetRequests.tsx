@@ -282,7 +282,7 @@ const AssetRequests: React.FC = () => {
                 type: NotificationType.ASSET_UPDATE,
                 title: 'Asset Request Rejected',
                 message: `Your asset request for "${selectedRequest.assetDescription}" was rejected: ${reason}`,
-                link: '/employees/asset-requests',
+                link: '/employees/asset-management/asset-requests',
             }).catch(e => console.warn('Failed to send asset rejection notification', e));
         } catch (err) {
             console.error('Failed to reject request', err);
@@ -373,7 +373,7 @@ const AssetRequests: React.FC = () => {
                 type: NotificationType.ASSET_UPDATE,
                 title: 'Asset Return Confirmed',
                 message: `Your return of "${selectedRequest.assetDescription}" has been confirmed.`,
-                link: '/employees/asset-requests',
+                link: '/employees/asset-management/asset-requests',
             }).catch(e => console.warn('Failed to send asset return notification', e));
         } catch (err) {
             console.error('Failed to complete return', err);
@@ -428,7 +428,7 @@ const AssetRequests: React.FC = () => {
                             type: NotificationType.ASSET_REQUEST_SUBMITTED,
                             title: '📦 New Asset Return Request',
                             message: `${user.name} submitted an asset return request for "${mapped.assetDescription}".`,
-                            link: '/employees/asset-requests',
+                            link: '/employees/asset-management/asset-requests',
                             relatedEntityId: mapped.id,
                         }).catch(e => console.warn('Failed to notify admin of asset return request', e));
                     }
@@ -444,7 +444,7 @@ const AssetRequests: React.FC = () => {
                     type: NotificationType.ASSET_UPDATE,
                     title: 'Asset Return Requested',
                     message: `A return has been initiated for asset "${mapped.assetDescription}". Please prepare for submission.`,
-                    link: '/employees/asset-requests',
+                    link: '/employees/asset-management/asset-requests',
                 }).catch(e => console.warn('Failed to send return request notification', e));
             }
 

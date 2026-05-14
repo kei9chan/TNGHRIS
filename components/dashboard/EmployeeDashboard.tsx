@@ -1069,7 +1069,7 @@ const EmployeeDashboard: React.FC = () => {
                                 title: '📄 COE Request Pending Approval',
                                 message: `${user.name} submitted a Certificate of Employment request (${saved.purpose.replace(/_/g, ' ')}) for your review.`,
                                 type: NotificationType.COE_UPDATE,
-                                link: '/admin/coe-requests',
+                                link: '/employees/coe/requests',
                                 relatedEntityId: saved.id,
                             }).catch((e: any) => console.error('Failed to send COE notification to HR Manager', e));
                         });
