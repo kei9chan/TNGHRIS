@@ -143,6 +143,9 @@ export interface CoachingSession {
   trigger: CoachingTrigger;
   context: string; // The issue or reason
   date: Date;
+  time?: string; // Format HH:mm
+  medium?: 'Phone Call' | 'Face to Face' | 'Virtual';
+  meetingLink?: string; // Only required if Virtual
   status: CoachingStatus;
 
   // Phase 2 fields

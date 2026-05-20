@@ -312,13 +312,52 @@ const CoachingModal: React.FC<CoachingModalProps> = ({ isOpen, onClose, session,
                                 ))}
                             </select>
                         </div>
-                        <Input 
-                            label="Scheduled Date" 
-                            type="date" 
-                            value={formatDateForInput(current.date)} 
-                            onChange={(e) => handleDateChange('date', e.target.value)}
-                            disabled={!isDraft && !isExecutionPhase}
-                        />
+                        <div className="grid grid-cols-2 gap-2">
+                            <Input 
+                                label="Scheduled Date" 
+                                type="date" 
+                                value={formatDateForInput(current.date)} 
+                                onChange={(e) => handleDateChange('date', e.target.value)}
+                                disabled={!isDraft && !isExecutionPhase}
+                            />
+                            <Input 
+                                label="Time" 
+                                type="time" 
+                                name="time"
+                                value={current.time || ''} 
+                                onChange={handleChange}
+                                disabled={!isDraft && !isExecutionPhase}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                         <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Medium</label>
+                            <select 
+                                name="medium" 
+                                value={current.medium || ''} 
+                                onChange={handleChange}
+                                disabled={!isDraft && !isExecutionPhase}
+                                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:bg-gray-100 dark:disabled:bg-gray-800"
+                            >
+                                <option value="" disabled>Select Medium...</option>
+                                <option value="Phone Call">Phone Call</option>
+                                <option value="Face to Face">Face to Face</option>
+                                <option value="Virtual">Virtual</option>
+                            </select>
+                        </div>
+                        {current.medium === 'Virtual' && (
+                            <Input 
+                                label="Meeting Link" 
+                                type="url" 
+                                name="meetingLink"
+                                value={current.meetingLink || ''} 
+                                onChange={handleChange}
+                                disabled={!isDraft && !isExecutionPhase}
+                                placeholder="https://..."
+                            />
+                        )}
                     </div>
 
                     <Textarea 

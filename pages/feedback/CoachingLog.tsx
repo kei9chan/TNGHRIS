@@ -45,6 +45,9 @@ const CoachingLog: React.FC = () => {
         employeeSignatureUrl: row.employee_signature_url || undefined,
         coachSignatureUrl: row.coach_signature_url || undefined,
         acknowledgedAt: row.acknowledged_at ? new Date(row.acknowledged_at) : undefined,
+        time: row.time || undefined,
+        medium: row.medium as any || undefined,
+        meetingLink: row.meeting_link || undefined,
     }), []);
 
     // Load employees and sessions on mount
@@ -184,6 +187,9 @@ const CoachingLog: React.FC = () => {
                 employee_signature_url: sessionData.employeeSignatureUrl || null,
                 coach_signature_url: sessionData.coachSignatureUrl || null,
                 acknowledged_at: sessionData.acknowledgedAt ? new Date(sessionData.acknowledgedAt).toISOString() : null,
+                time: sessionData.time || null,
+                medium: sessionData.medium || null,
+                meeting_link: sessionData.meetingLink || null,
             };
 
             if (!sessionData.employeeId || !sessionData.coachId) {

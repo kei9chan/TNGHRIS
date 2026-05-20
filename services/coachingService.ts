@@ -20,6 +20,9 @@ type CoachingSessionRow = {
   employee_signature_url?: string | null;
   coach_signature_url?: string | null;
   acknowledged_at?: string | null;
+  time?: string | null;
+  medium?: string | null;
+  meeting_link?: string | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -34,6 +37,9 @@ const mapCoachingSession = (row: CoachingSessionRow): CoachingSession => ({
   trigger: row.trigger as CoachingTrigger,
   context: row.context,
   date: new Date(row.date),
+  time: row.time || undefined,
+  medium: row.medium as any || undefined,
+  meetingLink: row.meeting_link || undefined,
   status: row.status as CoachingStatus,
   rootCause: row.root_cause || undefined,
   actionPlan: row.action_plan || undefined,
@@ -68,6 +74,9 @@ export const createCoachingSession = async (session: Partial<CoachingSession>, c
     trigger: session.trigger || CoachingTrigger.Performance,
     context: session.context || '',
     date: session.date ? new Date(session.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+    time: session.time || null,
+    medium: session.medium || null,
+    meeting_link: session.meetingLink || null,
     status: CoachingStatus.Draft,
     root_cause: session.rootCause || null,
     action_plan: session.actionPlan || null,
@@ -88,6 +97,9 @@ export const updateCoachingSession = async (id: string, updates: Partial<Coachin
   if (updates.employeeSignatureUrl !== undefined) payload.employee_signature_url = updates.employeeSignatureUrl;
   if (updates.coachSignatureUrl !== undefined) payload.coach_signature_url = updates.coachSignatureUrl;
   if (updates.acknowledgedAt !== undefined) payload.acknowledged_at = new Date(updates.acknowledgedAt).toISOString();
+  if (updates.time !== undefined) payload.time = updates.time;
+  if (updates.medium !== undefined) payload.medium = updates.medium;
+  if (updates.meetingLink !== undefined) payload.meeting_link = updates.meetingLink;
 
   const { data, error } = await supabase.from('coaching_sessions').update(payload).eq('id', id).select().single();
   if (error) throw new Error(error.message || 'Failed to update coaching session');
