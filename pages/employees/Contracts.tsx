@@ -523,7 +523,7 @@ const Contracts: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Contracts & Signing</h1>
+      <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Employee Correspondence</h1>
       <EditableDescription descriptionKey="contractsDesc" />
 
       {canManage && (

@@ -60,7 +60,7 @@ export const NAV_LINKS: NavLink[] = [
                     { name: 'Templates', path: '/employees/coe/templates', requiredPermission: { resource: 'COE', permission: Permission.Manage } }
                 ]
             },
-            { name: 'Contracts & Signing', path: '/employees/contracts', requiredPermission: { resource: 'Employees', permission: Permission.View } },
+            { name: 'Employee Correspondence', path: '/employees/contracts', requiredPermission: { resource: 'Employees', permission: Permission.View } },
             { name: 'Benefits', path: '/employees/benefits', requiredPermission: { resource: 'Benefits', permission: Permission.View } },
             { 
                 name: 'Asset Management', 

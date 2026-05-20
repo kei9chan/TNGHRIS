@@ -23,7 +23,7 @@ const iconMap: { [key: string]: React.FC<{className?: string}> } = {
     'Employee List': UsersIcon,
     'Personnel Action Notice': DocumentTextIcon,
     'Employee Lifecycle': ClipboardCheckIcon,
-    'Contracts & Signing': PencilSquareIcon,
+    'Employee Correspondence': PencilSquareIcon,
     'Benefits': GiftIcon,
     'Asset Management': TagIcon,
     'Analytics': ChartBarIcon,

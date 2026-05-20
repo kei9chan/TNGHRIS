@@ -737,8 +737,8 @@ export const usePermissions = () => {
             return perms.includes(permission);
         }
 
-        // Contracts & Signing custom matrix (only if rbac enabled)
-        if (resource === 'Contracts & Signing' as Resource) {
+        // Employee Correspondence custom matrix (only if rbac enabled)
+        if (resource === 'Employee Correspondence' as Resource) {
             const perms = contractsPermissions[user.role];
             if (!perms || perms.length === 0) {
                 return false;
