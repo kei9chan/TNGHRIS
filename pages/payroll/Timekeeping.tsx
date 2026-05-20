@@ -861,7 +861,7 @@ const Timekeeping: React.FC = () => {
         }
 
         // Special check for restricted managers: only copy for their dept
-        const targetEmployees = isSpecialDeptManager && user 
+        const targetEmployees = isDepartmentManager && !can('Timekeeping', Permission.Edit) && user 
             ? employeesInBU.filter(e => e.department === user.department)
             : employeesInBU;
 
@@ -1074,7 +1074,7 @@ const Timekeeping: React.FC = () => {
         const newAssignments: ShiftAssignment[] = [];
 
         // Restrict autofill candidates for specific managers
-        const candidates = isSpecialDeptManager && user 
+        const candidates = isDepartmentManager && !can('Timekeeping', Permission.Edit) && user 
             ? employeesInBU.filter(e => e.department === user.department)
             : employeesInBU;
 
@@ -1486,7 +1486,7 @@ const Timekeeping: React.FC = () => {
                 onCopyWeek={handleCopyWeek}
                 onChangeShift={() => handleChangeShift(detailModalState.assignment!)}
                 assignmentDetail={enrichedAssignmentDetail}
-                isEditable={isScheduleEditable && (!isSpecialDeptManager || (isSpecialDeptManager && enrichedAssignmentDetail?.employee?.department === user?.department))}
+                isEditable={isScheduleEditable && (can('Timekeeping', Permission.Edit) || !isDepartmentManager || enrichedAssignmentDetail?.employee?.department === user?.department)}
             />
             
             <ShiftTemplateModal
