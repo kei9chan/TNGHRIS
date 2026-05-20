@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { Evaluation, Role, EvaluatorType, User, Permission, EvaluatorConfig } from '../../types';
@@ -12,6 +12,7 @@ import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 const Evaluations: React.FC = () => {
     const { user } = useAuth();
+    const navigate = useNavigate();
     const { getVisibleEmployeeIds, getAccessibleBusinessUnits, isUserEligibleEvaluator, can } = usePermissions();
     const canView = can('Evaluation', Permission.View);
     const canManage = can('Evaluation', Permission.Manage);
@@ -391,7 +392,14 @@ const Evaluations: React.FC = () => {
                         
                         const cardContent = (
                             <Card key={evaluation.id}>
-                                <div className="flex flex-col md:flex-row justify-between md:items-center">
+                                <div 
+                                    className={`flex flex-col md:flex-row justify-between md:items-center ${evaluation.status === 'InProgress' ? 'cursor-pointer' : ''}`}
+                                    onClick={() => {
+                                        if (evaluation.status === 'InProgress') {
+                                            navigate(`/evaluation/perform/${evaluation.id}`);
+                                        }
+                                    }}
+                                >
                                     <div>
                                         <div className="flex items-center gap-2">
                                             <h2 className="text-xl font-bold text-gray-900 dark:text-white">{evaluation.name}</h2>
@@ -399,7 +407,10 @@ const Evaluations: React.FC = () => {
                                         </div>
                                         <p className="text-sm text-gray-500 dark:text-gray-400">Status: {evaluation.status} | Created: {new Date(evaluation.createdAt).toLocaleDateString()}</p>
                                     </div>
-                                    <div className="mt-4 md:mt-0 md:ml-6 flex items-center space-x-2">
+                                    <div 
+                                        className="mt-4 md:mt-0 md:ml-6 flex items-center space-x-2"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
                                         <span className="text-sm font-semibold text-gray-700 dark:text-gray-300 mr-2">{completed} / {total} Completed</span>
                                         {isAdminView && evaluation.status === 'InProgress' && (
                                             <Button size="sm" variant="secondary" onClick={(e) => { e.preventDefault(); handleViewCompliance(evaluation); }}>
@@ -422,17 +433,7 @@ const Evaluations: React.FC = () => {
                             </Card>
                         );
 
-                        if (evaluation.status === 'InProgress') {
-                            return (
-                                <div key={evaluation.id}>
-                                   {/* Wrap in div to avoid link wrapping the button handlers */}
-                                   <Link to={`/evaluation/perform/${evaluation.id}`} className="block hover:shadow-lg transition-shadow rounded-lg mb-4">
-                                       {cardContent}
-                                   </Link>
-                                </div>
-                            )
-                        }
-                        return <div key={evaluation.id} className="mb-4">{cardContent}</div>;
+                        return <div key={evaluation.id} className={`mb-4 ${evaluation.status === 'InProgress' ? 'hover:shadow-lg transition-shadow rounded-lg' : ''}`}>{cardContent}</div>;
                     })}
                 </div>
             ) : (
