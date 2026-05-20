@@ -30,10 +30,10 @@ const LeaveBalancesCard: React.FC<LeaveBalancesCardProps> = ({ user }) => {
 
     // Helper to map dynamic Leave Type ID to the hardcoded User structure
     // In a fully dynamic backend, User.balances would be a Record<string, number>
-    const getBalanceForType = (typeId: string): number | undefined => {
-        if (!balances) return undefined;
-        if (typeId === 'lt1') return balances.vacation;
-        if (typeId === 'lt2') return balances.sick;
+    const getBalanceForType = (type: LeaveType): number | undefined => {
+        const name = type.name.toLowerCase();
+        if (name.includes('vacation') || type.id === 'lt1') return user.leaveQuotaVacation;
+        if (name.includes('sick') || type.id === 'lt2') return user.leaveQuotaSick;
         return 0;
     };
 
@@ -44,11 +44,11 @@ const LeaveBalancesCard: React.FC<LeaveBalancesCardProps> = ({ user }) => {
                     <DetailItem 
                         key={type.id} 
                         label={type.name} 
-                        value={<strong>{formatDays(getBalanceForType(type.id))}</strong>} 
+                        value={<strong>{formatDays(getBalanceForType(type))}</strong>} 
                     />
                 ))}
-                <DetailItem label="Leave Accrual Rate" value={leaveInfo?.accrualRate ? `${leaveInfo.accrualRate} days/month` : 'N/A'} />
-                <DetailItem label="Last Leave Credit Date" value={leaveInfo?.lastCreditDate ? new Date(leaveInfo.lastCreditDate).toLocaleDateString() : 'N/A'} />
+                <DetailItem label="Leave Accrual Rate" value={user.leaveInfo?.accrualRate ? `${user.leaveInfo.accrualRate} days/month` : 'N/A'} />
+                <DetailItem label="Last Leave Credit Date" value={user.leaveLastCreditDate ? new Date(user.leaveLastCreditDate).toLocaleDateString() : 'N/A'} />
             </dl>
         </Card>
     );
