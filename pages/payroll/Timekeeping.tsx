@@ -243,11 +243,10 @@ const Timekeeping: React.FC = () => {
     }, [user, businessUnits]);
     const userBuId = useMemo(() => userBu?.id, [userBu]);
 
-    // Special Department Manager Logic
-    const isSpecialDeptManager = useMemo(() => {
+    // Department Manager Logic
+    const isDepartmentManager = useMemo(() => {
         if (!user) return false;
-        const specialDepartments = ['Marketing', 'Finance', 'Finance and Accounting', 'Human Resources'];
-        return user.role === Role.Manager && user.department && specialDepartments.includes(user.department);
+        return user.role === Role.Manager && !!user.department;
     }, [user]);
 
     const isScheduleEditable = useMemo(() => {
@@ -255,10 +254,10 @@ const Timekeeping: React.FC = () => {
         if (can('Timekeeping', Permission.Edit)) return true;
         // Fallback for BUM who might not have generic 'Edit' perm on global Timekeeping but owns their BU
         if (canEditOwnBU && selectedBuId === userBuId) return true;
-        // Allow special department managers to edit
-        if (isSpecialDeptManager) return true;
+        // Allow department managers to edit
+        if (isDepartmentManager) return true;
         return false;
-    }, [user, userBuId, canEditOwnBU, selectedBuId, can, isSpecialDeptManager]);
+    }, [user, userBuId, canEditOwnBU, selectedBuId, can, isDepartmentManager]);
     // --- End Permission Logic ---
 
     // Business Hours state
@@ -590,8 +589,8 @@ const Timekeeping: React.FC = () => {
     const handleOpenDrawer = (employee: User, date: Date) => {
         if (!isScheduleEditable) return;
         
-        // Special Check: If user is a specific department manager, they can only edit their own department
-        if (isSpecialDeptManager && user && employee.department !== user.department) {
+        // Special Check: If user is a department manager (and lacks global edit rights), they can only edit their own department
+        if (isDepartmentManager && !can('Timekeeping', Permission.Edit) && user && employee.department !== user.department) {
             setToastInfo({ show: true, message: `You can only manage schedules for the ${user.department} department.` });
             return;
         }
@@ -664,7 +663,7 @@ const Timekeeping: React.FC = () => {
     const handleOpenDetailModal = (assignment: ShiftAssignment) => {
          // Check permissions before allowing detail view actions if restricted
          const employee = employees.find(u => u.id === assignment.employeeId);
-         if (isSpecialDeptManager && user && employee && employee.department !== user.department) {
+         if (isDepartmentManager && !can('Timekeeping', Permission.Edit) && user && employee && employee.department !== user.department) {
              // They can view but not edit/delete. The modal handles isEditable prop.
              // We need to pass down a specific isEditable flag for this specific assignment?
              // For simplicity, the modal uses the page-wide `isEditable` flag. 
