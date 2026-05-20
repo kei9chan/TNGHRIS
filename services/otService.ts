@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { OTRequest, OTStatus, OTRequestHistory, User, Role, MANAGER_ROLES } from '../types';
+import { OTRequest, OTStatus, OTRequestHistory, User, Role } from '../types';
 
 type OtRequestRow = {
   id: string;
@@ -49,12 +49,6 @@ export const saveOtRequest = async (
   status: OTStatus,
   user: User
 ): Promise<OTRequest> => {
-  // If submitting and user is a manager, route to GM instead of Submitted
-  let effectiveStatus = status;
-  if (status === OTStatus.Submitted && MANAGER_ROLES.includes(user.role)) {
-    effectiveStatus = OTStatus.PendingGM;
-  }
-
   const payload: Partial<OtRequestRow> = {
     employee_id: request.employeeId || user.id,
     employee_name: request.employeeName || user.name,
@@ -62,8 +56,8 @@ export const saveOtRequest = async (
     start_time: request.startTime || '',
     end_time: request.endTime || '',
     reason: request.reason || '',
-    status: effectiveStatus,
-    submitted_at: (effectiveStatus === OTStatus.Submitted || effectiveStatus === OTStatus.PendingGM) ? new Date().toISOString() : request.submittedAt?.toISOString(),
+    status: status,
+    submitted_at: status === OTStatus.Submitted ? new Date().toISOString() : request.submittedAt?.toISOString(),
     approved_hours: request.approvedHours ?? null,
     manager_note: request.managerNote || null,
     history_log: request.historyLog || [],
@@ -137,8 +131,8 @@ export const withdrawOtRequest = async (
   return mapRow(data as OtRequestRow);
 };
 
-/** GM approves a manager's OT request, advancing it to PendingBOD */
-export const gmApproveOtRequest = async (
+/** Reporting Manager approves a rank-and-file employee's OT request, advancing it to PendingBOD */
+export const managerApproveOtRequest = async (
   requestId: string,
   details: { approvedHours?: number; managerNote?: string }
 ): Promise<OTRequest> => {
@@ -156,9 +150,11 @@ export const gmApproveOtRequest = async (
     .select()
     .single();
 
-  if (error) throw new Error(error.message || 'Failed to approve OT request (GM)');
+  if (error) throw new Error(error.message || 'Failed to approve OT request (Reporting Manager)');
   return mapRow(data as OtRequestRow);
 };
+
+
 
 /** BOD gives final approval to a manager's OT request */
 export const bodApproveOtRequest = async (

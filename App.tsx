@@ -225,6 +225,8 @@ const AppRoutes: React.FC = () => {
             <Route path="clock-in-out" element={<ProtectedRoute><ClockInOut /></ProtectedRoute>} />
             <Route path="clock-log" element={<ProtectedRoute><ClockLog /></ProtectedRoute>} />
             <Route path="overtime-requests" element={<ProtectedRoute><OvertimeRequests /></ProtectedRoute>} />
+            {/* Redirect legacy notification links that used the old path */}
+            <Route path="overtime" element={<Navigate to="/payroll/overtime-requests" replace />} />
             <Route path="wfh-requests" element={<ProtectedRoute><WFHRequests /></ProtectedRoute>} /> {/* NEW */}
             <Route path="leave" element={<ProtectedRoute><Leave /></ProtectedRoute>} />
             <Route path="loans" element={<ProtectedRoute><Loans /></ProtectedRoute>} />

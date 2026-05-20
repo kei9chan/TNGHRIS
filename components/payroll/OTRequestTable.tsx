@@ -15,8 +15,17 @@ interface OTRequestTableProps {
 const statusColors: { [key in OTStatus]: string } = {
     [OTStatus.Draft]: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200',
     [OTStatus.Submitted]: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+    [OTStatus.PendingBOD]: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
     [OTStatus.Approved]: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
     [OTStatus.Rejected]: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
+};
+
+const statusLabels: { [key in OTStatus]: string } = {
+    [OTStatus.Draft]: 'Draft',
+    [OTStatus.Submitted]: 'Pending Manager Approval',
+    [OTStatus.PendingBOD]: 'Pending BOD Approval',
+    [OTStatus.Approved]: 'Approved',
+    [OTStatus.Rejected]: 'Rejected',
 };
 
 const OTRequestTable: React.FC<OTRequestTableProps> = ({ requests, onEdit, onDelete, onWithdraw, canReviewRequest }) => {
@@ -52,13 +61,13 @@ const OTRequestTable: React.FC<OTRequestTableProps> = ({ requests, onEdit, onDel
                                 <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate" title={req.reason}>{req.reason}</td>
                                 <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate" title={req.managerNote}>{req.managerNote || 'N/A'}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusColors[req.status]}`}>
-                                        {req.status}
+                                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusColors[req.status] ?? 'bg-gray-100 text-gray-800'}`}>
+                                        {statusLabels[req.status] ?? req.status}
                                     </span>
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                      <div className="flex space-x-2 justify-end">
-                                        {!isOwner && req.status === OTStatus.Submitted && (canReviewRequest ? canReviewRequest(req) : can('OT', Permission.Approve)) && (
+                                        {!isOwner && (req.status === OTStatus.Submitted || req.status === OTStatus.PendingBOD) && (canReviewRequest ? canReviewRequest(req) : can('OT', Permission.Approve)) && (
                                             <Button variant="secondary" size="sm" onClick={() => onEdit(req)}>Review</Button>
                                         )}
                                         {isOwner && req.status === OTStatus.Draft && (

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { approveRejectOtRequest, gmApproveOtRequest, bodApproveOtRequest } from '../services/otService';
+import { approveRejectOtRequest, bodApproveOtRequest, managerApproveOtRequest } from '../services/otService';
 import { createNotification } from '../services/notificationService';
 import { fetchApproverConfigs } from '../services/approverConfigService';
 import { gmApproveLeaveRequest, bodApproveLeaveRequest } from '../services/leaveService';
@@ -66,14 +66,17 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
         // Determine if this user is a configured GM or BOD approver
         // ---------------------------------------------------------------
         let isGM = user.role === Role.GeneralManager;
-        const isBOD = user.role === Role.BOD;
+        let isBOD = user.role === Role.BOD;
+        let configuredBodUserIds: string[] = [];
 
-        // Also check the dynamic approver config table
+        // Also check the dynamic approver config table so that users
+        // designated as BOD approvers in System Settings (regardless of role)
+        // are treated correctly.
         try {
             const configs = await fetchApproverConfigs();
             if (configs.gmApprover.user_id === user.id) isGM = true;
-            // BOD list from config — check if user is in it
-            // (Note: role-based BOD already handled above)
+            configuredBodUserIds = configs.bodApprovers.user_ids || [];
+            if (configuredBodUserIds.includes(user.id)) isBOD = true;
         } catch { /* fallback to role-only check */ }
 
         let skipOt = false;
@@ -475,51 +478,90 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
     ) => {
         if (!request.id) return;
         try {
-            const isPendingGM = request.status === OTStatus.PendingGM;
+            const isSubmitted = request.status === OTStatus.Submitted;
             const isPendingBOD = request.status === OTStatus.PendingBOD;
 
-            if (isPendingGM && newStatus === OTStatus.Approved) {
-                // GM approves → advance to PendingBOD
-                await gmApproveOtRequest(request.id, details);
+            if (isSubmitted && newStatus === OTStatus.Approved) {
+                // Step 2: Reporting Manager approves → advance to PendingBOD for BOD final approval
+                await managerApproveOtRequest(request.id, details);
 
-                // Notify BOD users
-                supabase.from('hris_users').select('id').eq('role', Role.BOD)
-                    .then(({ data: bodUsers }) => {
-                        bodUsers?.forEach(bod => {
-                            createNotification({
-                                userId: bod.id,
-                                title: '📋 OT Request Pending BOD Approval',
-                                message: `${request.employeeName}'s OT request has been approved by GM and requires your final approval.`,
-                                type: NotificationType.OT_PENDING_BOD,
-                                link: '/payroll/overtime',
-                            }).catch(e => console.error('Failed to send BOD OT notification', e));
-                        });
+                // Notify configured BOD approvers of pending final approval.
+                // We combine role-based BOD users AND users configured in approver_configs
+                // so that admins/other roles set as BOD approvers also receive the notification.
+                try {
+                    const configs = await fetchApproverConfigs();
+                    const configuredIds: string[] = configs.bodApprovers.user_ids || [];
+
+                    // Also fetch role-based BOD users to avoid missing anyone
+                    const { data: roleBodUsers } = await supabase
+                        .from('hris_users')
+                        .select('id')
+                        .eq('role', Role.BOD);
+                    const roleIds: string[] = (roleBodUsers || []).map((u: any) => u.id);
+
+                    // Deduplicate
+                    const allBodIds = Array.from(new Set([...configuredIds, ...roleIds]));
+
+                    allBodIds.forEach(bodId => {
+                        createNotification({
+                            userId: bodId,
+                            title: '📋 OT Request Pending BOD Approval',
+                            message: `${request.employeeName}'s OT request has been approved by their Reporting Manager and requires your final approval.`,
+                            type: NotificationType.OT_PENDING_BOD,
+                            link: '/payroll/overtime-requests',
+                        }).catch(e => console.error('Failed to send BOD OT notification', e));
                     });
+                } catch (e) {
+                    console.error('Failed to fetch BOD approvers for OT notification', e);
+                }
 
+                // Notify the employee their request is now pending BOD
                 if (request.employeeId) {
                     createNotification({
                         userId: request.employeeId,
                         title: '🔄 OT Request Forwarded to BOD',
-                        message: `Your OT request has been approved by the GM and is now pending BOD approval.`,
+                        message: `Your OT request has been approved by your Reporting Manager and is now pending BOD final approval.`,
                         type: NotificationType.OT_PENDING_BOD,
-                        link: '/payroll/overtime',
-                    }).catch(e => console.error('Failed to send OT GM forwarded notification', e));
+                        link: '/payroll/overtime-requests',
+                    }).catch(e => console.error('Failed to send OT manager-forwarded notification', e));
                 }
             } else if (isPendingBOD && newStatus === OTStatus.Approved) {
-                // BOD gives final approval
+                // Step 3: BOD gives final approval
                 await bodApproveOtRequest(request.id, details);
 
                 if (request.employeeId) {
                     createNotification({
                         userId: request.employeeId,
-                        title: '✅ OT Request Approved',
-                        message: `Your OT request has been fully approved by BOD.`,
+                        title: '✅ OT Request Fully Approved',
+                        message: `Your OT request has been fully approved by the BOD.`,
                         type: NotificationType.OT_APPROVED,
-                        link: '/payroll/overtime',
+                        link: '/payroll/overtime-requests',
                     }).catch(e => console.error('Failed to send BOD OT approved notification', e));
                 }
+
+                // Notify HR/Timekeeping about the final approval
+                try {
+                    const { data: hrUsersData } = await supabase
+                        .from('hris_users')
+                        .select('id')
+                        .in('role', [Role.HRManager, Role.HRStaff, Role.Admin]);
+                    
+                    if (hrUsersData) {
+                        hrUsersData.forEach(hr => {
+                            createNotification({
+                                userId: hr.id,
+                                title: '✅ OT Request Approved (BOD)',
+                                message: `${request.employeeName}'s OT request has been fully approved by the BOD and is ready for timekeeping.`,
+                                type: NotificationType.OT_APPROVED,
+                                link: '/payroll/overtime-requests',
+                            }).catch(e => console.error('Failed to send HR OT approved notification', e));
+                        });
+                    }
+                } catch (e) {
+                    console.error('Failed to notify HR of OT approval', e);
+                }
             } else {
-                // Standard flow or rejection at any stage
+                // Rejection at any stage — finalize with Rejected status
                 await approveRejectOtRequest(request.id, newStatus, details);
             }
 
@@ -573,3 +615,4 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
         refreshApprovals: fetchApprovals
     };
 }
+

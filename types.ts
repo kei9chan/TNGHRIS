@@ -1031,7 +1031,6 @@ export interface TimeEvent {
 export enum OTStatus {
   Draft = 'Draft',
   Submitted = 'Submitted',
-  PendingGM = 'PendingGM',
   PendingBOD = 'PendingBOD',
   Approved = 'Approved',
   Rejected = 'Rejected',

@@ -285,7 +285,10 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
     const plannedHours = useMemo(() => calculatePlannedHours(request.startTime || '', request.endTime || ''), [request.startTime, request.endTime]);
     
     const isFinalized = request.status === OTStatus.Approved || request.status === OTStatus.Rejected;
-    const isManagerReviewing = user?.role !== Role.Employee && requestToEdit?.employeeId !== user?.id && requestToEdit?.status === OTStatus.Submitted;
+    const isManagerReviewing = user?.role !== Role.Employee && requestToEdit?.employeeId !== user?.id && (
+        requestToEdit?.status === OTStatus.Submitted ||
+        requestToEdit?.status === OTStatus.PendingBOD
+    );
     const canApprove = can('OT', Permission.Approve) || !!canApproveOverride;
 
     // Auto-set approved hours for manager convenience
@@ -431,7 +434,9 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
 
                 {(isManagerReviewing || isFinalized) && (
                      <div className="space-y-4 pt-4 mt-4 border-t border-gray-200 dark:border-gray-700">
-                        <h4 className="text-lg font-medium text-gray-900 dark:text-white">Manager's Review</h4>
+                        <h4 className="text-lg font-medium text-gray-900 dark:text-white">
+                            {request.status === OTStatus.PendingBOD ? 'BOD Final Review' : "Reporting Manager's Review"}
+                        </h4>
                          <Input
                             label="Approved Hours"
                             id="approvedHours"
