@@ -362,13 +362,13 @@ const CoachingLog: React.FC = () => {
                         related_entity_id: mapped.id,
                     }]);
 
-                    // Remove the coaching event from the calendar
+                    // Mark the coaching event as completed on the calendar
                     const eventTitle = `Coaching: ${mapped.employeeName} & ${mapped.coachName}`;
-                    const { error: delErr } = await supabase
+                    const { error: updErr } = await supabase
                         .from('helpdesk_calendar_events')
-                        .delete()
+                        .update({ title: `✅ ${eventTitle}`, color: 'green', updated_at: createdAt.toISOString() })
                         .eq('title', eventTitle);
-                    if (delErr) console.error('Failed to remove calendar event:', delErr);
+                    if (updErr) console.error('Failed to update calendar event:', updErr);
                 } catch (err) {
                     console.warn('Failed to persist coaching acknowledgment notification', err);
                 }

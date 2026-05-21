@@ -68,9 +68,11 @@ const UpcomingEventsWidget: React.FC = () => {
 
     const upcomingEvents = useMemo(() => {
         if (!user) return [];
+        // Exclude completed events (marked with ✅) from the dashboard
+        const activeEvents = events.filter(e => !e.title.startsWith('✅'));
         const privilegedRoles = [Role.Admin, Role.BOD, Role.GeneralManager, Role.HRManager, Role.HRStaff];
-        if (privilegedRoles.includes(user.role)) return events;
-        return events.filter(e => !e.id.startsWith('bday-') && !e.id.startsWith('anniv-'));
+        if (privilegedRoles.includes(user.role)) return activeEvents;
+        return activeEvents.filter(e => !e.id.startsWith('bday-') && !e.id.startsWith('anniv-'));
     }, [user, events]);
 
     const eventColors: { [key in CalendarEvent['color']]: string } = {
