@@ -333,6 +333,31 @@ const OnboardingViewPage: React.FC = () => {
                 })
                 .eq('id', checklistId);
             if (error) throw error;
+            
+            // Notify the employee (the requester)
+            try {
+                const isOffboarding = checklist.tasks.some(t => t.name.toLowerCase().includes('offboard'));
+                const prefix = isOffboarding ? 'Offboarding' : 'Onboarding';
+                const title = status === 'Approved' ? `✅ ${prefix} Approved` : `❌ ${prefix} Rejected`;
+                const message = status === 'Approved' 
+                    ? `Your ${prefix.toLowerCase()} tasks have been approved by ${user?.name || 'Reviewer'}.`
+                    : `Your ${prefix.toLowerCase()} tasks have been rejected. Please review.`;
+                
+                await supabase.from('notifications').insert({
+                    id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${employee.id}`,
+                    user_id: employee.id,
+                    type: NotificationType.GENERAL,
+                    title,
+                    message,
+                    link: `/employees/onboarding`,
+                    is_read: false,
+                    created_at: new Date().toISOString(),
+                    related_entity_id: checklistId,
+                });
+            } catch (notifyErr) {
+                console.warn('Failed to notify employee of checklist approval', notifyErr);
+            }
+
             setChecklist(prev => (prev ? { ...prev, status, tasks: updatedTasks } : prev));
             setIsApprovalModalOpen(false);
             setRejectionReason('');
