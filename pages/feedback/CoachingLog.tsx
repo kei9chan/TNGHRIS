@@ -254,7 +254,6 @@ const CoachingLog: React.FC = () => {
             const wasAccepted = prior?.status === CoachingStatus.Accepted;
             if (isNowAccepted && !wasAccepted) {
                 const createdAt = new Date();
-                const recipientId = user?.id === mapped.coachId ? mapped.employeeId : mapped.coachId;
                 const senderName = user?.id === mapped.coachId ? mapped.coachName : mapped.employeeName;
 
                 const notif = {
@@ -264,16 +263,24 @@ const CoachingLog: React.FC = () => {
                 };
                 
                 try {
-                    await supabase.from('notifications').insert([{
-                        user_id: recipientId,
-                        type: NotificationType.COACHING_INVITE,
-                        title: notif.title,
-                        message: notif.message,
-                        link: notif.link,
-                        is_read: false,
-                        created_at: createdAt.toISOString(),
-                        related_entity_id: mapped.id,
-                    }]);
+                    // Notify both the coach and the employee
+                    const notifRecipients = [mapped.coachId, mapped.employeeId].filter(
+                        id => id && id !== user?.id
+                    );
+                    if (notifRecipients.length > 0) {
+                        await supabase.from('notifications').insert(
+                            notifRecipients.map(uid => ({
+                                user_id: uid,
+                                type: NotificationType.COACHING_INVITE,
+                                title: notif.title,
+                                message: notif.message,
+                                link: notif.link,
+                                is_read: false,
+                                created_at: createdAt.toISOString(),
+                                related_entity_id: mapped.id,
+                            }))
+                        );
+                    }
                     
                     if (mapped.date) {
                         const eventStart = new Date(mapped.date);
@@ -288,14 +295,15 @@ const CoachingLog: React.FC = () => {
                             endStr = eventEnd.toISOString();
                         }
                         
-                        await supabase.from('helpdesk_calendar_events').insert([{
+                        const { error: calErr } = await supabase.from('helpdesk_calendar_events').insert([{
                             title: `Coaching: ${mapped.employeeName} & ${mapped.coachName}`,
                             start: startStr,
                             end: endStr,
-                            color: '#4F46E5', // Indigo
+                            color: 'purple',
                             created_at: createdAt.toISOString(),
                             updated_at: createdAt.toISOString(),
                         }]);
+                        if (calErr) console.error('Calendar event insert failed:', calErr);
                     }
                 } catch (err) {
                     console.warn('Failed to persist coaching acceptance notification or calendar event', err);
