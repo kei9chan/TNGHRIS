@@ -337,6 +337,42 @@ const CoachingLog: React.FC = () => {
                     console.warn('Failed to persist coaching completion notification', err);
                 }
             }
+
+            const isNowAcknowledged = mapped.status === CoachingStatus.Acknowledged;
+            const wasAcknowledged = prior?.status === CoachingStatus.Acknowledged;
+            if (isNowAcknowledged && !wasAcknowledged) {
+                const createdAt = new Date();
+
+                const notif = {
+                    title: 'Coaching Session Acknowledged',
+                    message: `${mapped.employeeName} has acknowledged and signed the coaching session.`,
+                    link: `/feedback/coaching?sessionId=${mapped.id}`,
+                };
+
+                try {
+                    // Notify the coach (requester)
+                    await supabase.from('notifications').insert([{
+                        user_id: mapped.coachId,
+                        type: NotificationType.COACHING_INVITE,
+                        title: notif.title,
+                        message: notif.message,
+                        link: notif.link,
+                        is_read: false,
+                        created_at: createdAt.toISOString(),
+                        related_entity_id: mapped.id,
+                    }]);
+
+                    // Remove the coaching event from the calendar
+                    const eventTitle = `Coaching: ${mapped.employeeName} & ${mapped.coachName}`;
+                    const { error: delErr } = await supabase
+                        .from('helpdesk_calendar_events')
+                        .delete()
+                        .eq('title', eventTitle);
+                    if (delErr) console.error('Failed to remove calendar event:', delErr);
+                } catch (err) {
+                    console.warn('Failed to persist coaching acknowledgment notification', err);
+                }
+            }
         } catch (err) {
             console.error('Failed to save coaching session', err);
             alert('Failed to save coaching session. Please try again.');
