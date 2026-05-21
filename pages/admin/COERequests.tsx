@@ -242,6 +242,32 @@ const COERequests: React.FC = () => {
         try {
             const newReq = await createCoeRequest(request, user);
             setRequests(prev => [newReq, ...prev]);
+            
+            // Notify HR about new COE request
+            try {
+                const { data: hrRows } = await supabase
+                    .from('hris_users')
+                    .select('id')
+                    .in('role', [Role.HRManager, Role.HRStaff]);
+                
+                if (hrRows && hrRows.length > 0) {
+                    const notificationRows = hrRows.map((hr: any) => ({
+                        id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${hr.id}`,
+                        user_id: hr.id,
+                        type: NotificationType.COE_UPDATE,
+                        title: 'New COE Request',
+                        message: `${user.name} has requested a Certificate of Employment.`,
+                        link: `/employees/coe/requests?requestId=${newReq.id}`,
+                        is_read: false,
+                        created_at: new Date().toISOString(),
+                        related_entity_id: newReq.id
+                    }));
+                    await supabase.from('notifications').insert(notificationRows);
+                }
+            } catch (notifyErr) {
+                console.warn('Failed to notify HR about new COE request', notifyErr);
+            }
+
             logActivity(user, 'CREATE', 'COERequest', newReq.id, `Requested COE for ${newReq.purpose}`);
             setIsRequestModalOpen(false);
             alert("Certificate of Employment request submitted.");
