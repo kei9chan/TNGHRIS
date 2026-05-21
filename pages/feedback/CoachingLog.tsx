@@ -236,17 +236,15 @@ const CoachingLog: React.FC = () => {
                 };
                 try {
                     await supabase.from('notifications').insert([{
-                        id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${mapped.employeeId}`,
                         user_id: mapped.employeeId,
                         type: NotificationType.COACHING_INVITE,
                         title: notif.title,
                         message: notif.message,
                         link: notif.link,
-                            is_read: false,
-                            created_at: createdAt.toISOString(),
-                            related_entity_id: mapped.id,
-                        },
-                    ]);
+                        is_read: false,
+                        created_at: createdAt.toISOString(),
+                        related_entity_id: mapped.id,
+                    }]);
                 } catch (err) {
                     console.warn('Failed to persist coaching invite notification', err);
                 }
@@ -267,7 +265,6 @@ const CoachingLog: React.FC = () => {
                 
                 try {
                     await supabase.from('notifications').insert([{
-                        id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${recipientId}`,
                         user_id: recipientId,
                         type: NotificationType.COACHING_INVITE,
                         title: notif.title,
@@ -292,7 +289,6 @@ const CoachingLog: React.FC = () => {
                         }
                         
                         await supabase.from('helpdesk_calendar_events').insert([{
-                            id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `event-${Date.now()}`,
                             title: `Coaching: ${mapped.employeeName} & ${mapped.coachName}`,
                             start: startStr,
                             end: endStr,
@@ -320,7 +316,6 @@ const CoachingLog: React.FC = () => {
                 
                 try {
                     await supabase.from('notifications').insert([{
-                        id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${recipientId}`,
                         user_id: recipientId,
                         type: NotificationType.COACHING_INVITE,
                         title: notif.title,
