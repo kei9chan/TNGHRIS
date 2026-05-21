@@ -46,7 +46,7 @@ const EmploymentDetailsCard: React.FC<EmploymentDetailsCardProps> = ({ user }) =
     return (
         <Card title="Employment Details">
             <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-6">
-                <DetailItem label="Employee ID" value={user.id} />
+                <DetailItem label="Employee ID" value={user.employeeId ? <span className="font-semibold text-indigo-600 dark:text-indigo-400">{user.employeeId}</span> : <span className="text-gray-400 italic">Not Assigned</span>} />
                 <DetailItem label="Business Unit" value={user.businessUnit} />
                 <DetailItem label="Department" value={user.department} />
                 <DetailItem label="Role" value={user.role} />

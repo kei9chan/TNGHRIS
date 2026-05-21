@@ -7,6 +7,7 @@ import { User, BusinessUnit, Department, Role, RateType, TaxStatus, AccessScope,
 type HrisUserRow = {
   id: string;
   auth_user_id: string;
+  employee_id?: string | null;
   email: string;
   first_name: string;
   last_name: string;
@@ -64,6 +65,7 @@ type DepartmentRow = {
 // ---------------------------------------------------------------------------
 const mapUser = (row: HrisUserRow): User => ({
   id: row.id,
+  employeeId: row.employee_id || undefined,
   authUserId: row.auth_user_id,
   name: row.full_name,
   email: row.email,

@@ -29,6 +29,7 @@ const HRReviewQueue: React.FC = () => {
     const [employeeLookup, setEmployeeLookup] = useState<Map<string, string>>(new Map());
     const [activeUsers, setActiveUsers] = useState<Array<{ id: string; name: string; role: Role }>>([]);
     const [reportingToMap, setReportingToMap] = useState<Record<string, string>>({});
+    const [employeeIdMap, setEmployeeIdMap] = useState<Record<string, string>>({});
 
     const [filterName, setFilterName] = useState('');
     const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
@@ -351,12 +352,12 @@ const HRReviewQueue: React.FC = () => {
         }
     };
 
-    const handleUserApproval = async (userId: string, reportsToId: string) => {
+    const handleUserApproval = async (userId: string, reportsToId: string, employeeId: string) => {
         if (!user) return;
         try {
             const { error } = await supabase
                 .from('hris_users')
-                .update({ status: 'Active', reports_to: reportsToId })
+                .update({ status: 'Active', reports_to: reportsToId, employee_id: employeeId })
                 .eq('id', userId);
             if (error) throw error;
             logActivity(user, 'APPROVE', 'UserRegistration', userId, `Approved new user registration.`);
@@ -469,12 +470,24 @@ const HRReviewQueue: React.FC = () => {
                                                 {!selectedReportsTo && (
                                                     <p className="mt-1 text-xs text-red-500">Required — select a manager before approving.</p>
                                                 )}
+                                                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mt-4 mb-1">
+                                                    Employee ID <span className="text-red-500">*</span>
+                                                </label>
+                                                <Input
+                                                    id={`employee-id-${pendingUser.id}`}
+                                                    value={employeeIdMap[pendingUser.id] || ''}
+                                                    onChange={e => setEmployeeIdMap(prev => ({ ...prev, [pendingUser.id]: e.target.value }))}
+                                                    placeholder="e.g. EMP-00123"
+                                                />
+                                                {!employeeIdMap[pendingUser.id] && (
+                                                    <p className="mt-1 text-xs text-red-500">Required — provide an Employee ID before approving.</p>
+                                                )}
                                             </div>
                                             <div className="flex justify-end space-x-2 mt-4">
                                                 <Button variant="danger" onClick={() => handleUserRejection(pendingUser.id)}>Reject</Button>
                                                 <Button
-                                                    onClick={() => handleUserApproval(pendingUser.id, selectedReportsTo)}
-                                                    disabled={!selectedReportsTo}
+                                                    onClick={() => handleUserApproval(pendingUser.id, selectedReportsTo, employeeIdMap[pendingUser.id])}
+                                                    disabled={!selectedReportsTo || !employeeIdMap[pendingUser.id]}
                                                 >
                                                     Approve
                                                 </Button>

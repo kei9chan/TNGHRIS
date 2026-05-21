@@ -445,6 +445,7 @@ export type EmploymentStatus = 'Regular' | 'Probationary' | 'Contractual';
 
 export interface User {
   id: string;
+  employeeId?: string;
   authUserId?: string;
   name: string;
   email: string;

@@ -64,6 +64,7 @@ const EmployeeProfile: React.FC = () => {
 
         return {
             id: row.id,
+            employeeId: row.employee_id || undefined,
             authUserId: row.auth_user_id || row.auth_userid || undefined,
             name: formatEmployeeName(
               row.full_name || row.name || `${row.first_name || ''} ${row.last_name || ''}`.trim() || 'Unknown'
