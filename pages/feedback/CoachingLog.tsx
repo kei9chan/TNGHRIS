@@ -305,6 +305,35 @@ const CoachingLog: React.FC = () => {
                     console.warn('Failed to persist coaching acceptance notification or calendar event', err);
                 }
             }
+            
+            const isNowCompleted = mapped.status === CoachingStatus.Completed;
+            const wasCompleted = prior?.status === CoachingStatus.Completed;
+            if (isNowCompleted && !wasCompleted) {
+                const createdAt = new Date();
+                const recipientId = mapped.employeeId; // Employee needs to acknowledge
+
+                const notif = {
+                    title: 'Coaching Session Completed',
+                    message: `${mapped.coachName} has completed the coaching session. Please review and acknowledge it.`,
+                    link: `/feedback/coaching?sessionId=${mapped.id}`,
+                };
+                
+                try {
+                    await supabase.from('notifications').insert([{
+                        id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${recipientId}`,
+                        user_id: recipientId,
+                        type: NotificationType.COACHING_INVITE,
+                        title: notif.title,
+                        message: notif.message,
+                        link: notif.link,
+                        is_read: false,
+                        created_at: createdAt.toISOString(),
+                        related_entity_id: mapped.id,
+                    }]);
+                } catch (err) {
+                    console.warn('Failed to persist coaching completion notification', err);
+                }
+            }
         } catch (err) {
             console.error('Failed to save coaching session', err);
             alert('Failed to save coaching session. Please try again.');
