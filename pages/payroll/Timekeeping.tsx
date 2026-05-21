@@ -243,10 +243,10 @@ const Timekeeping: React.FC = () => {
     }, [user, businessUnits]);
     const userBuId = useMemo(() => userBu?.id, [userBu]);
 
-    // Department Manager Logic
-    const isDepartmentManager = useMemo(() => {
+    // Team Manager Logic
+    const isTeamManager = useMemo(() => {
         if (!user) return false;
-        return user.role === Role.Manager && !!user.department;
+        return user.role === Role.Manager;
     }, [user]);
 
     const isScheduleEditable = useMemo(() => {
@@ -254,10 +254,10 @@ const Timekeeping: React.FC = () => {
         if (can('Timekeeping', Permission.Edit)) return true;
         // Fallback for BUM who might not have generic 'Edit' perm on global Timekeeping but owns their BU
         if (canEditOwnBU && selectedBuId === userBuId) return true;
-        // Allow department managers to edit
-        if (isDepartmentManager) return true;
+        // Allow team managers to edit
+        if (isTeamManager) return true;
         return false;
-    }, [user, userBuId, canEditOwnBU, selectedBuId, can, isDepartmentManager]);
+    }, [user, userBuId, canEditOwnBU, selectedBuId, can, isTeamManager]);
     // --- End Permission Logic ---
 
     // Business Hours state
@@ -589,9 +589,9 @@ const Timekeeping: React.FC = () => {
     const handleOpenDrawer = (employee: User, date: Date) => {
         if (!isScheduleEditable) return;
         
-        // Special Check: If user is a department manager (and lacks global edit rights), they can only edit their own department
-        if (isDepartmentManager && !can('Timekeeping', Permission.Edit) && user && employee.department !== user.department) {
-            setToastInfo({ show: true, message: `You can only manage schedules for the ${user.department} department.` });
+        // Special Check: If user is a manager (and lacks global edit rights), they can only edit their own team
+        if (isTeamManager && !can('Timekeeping', Permission.Edit) && user && employee.department !== user.department && employee.reportsTo !== user.id) {
+            setToastInfo({ show: true, message: `You can only manage schedules for your direct team or department.` });
             return;
         }
 
@@ -860,9 +860,9 @@ const Timekeeping: React.FC = () => {
             return;
         }
 
-        // Special check for restricted managers: only copy for their dept
-        const targetEmployees = isDepartmentManager && !can('Timekeeping', Permission.Edit) && user 
-            ? employeesInBU.filter(e => e.department === user.department)
+        // Special check for restricted managers: only copy for their team
+        const targetEmployees = isTeamManager && !can('Timekeeping', Permission.Edit) && user 
+            ? employeesInBU.filter(e => e.department === user.department || e.reportsTo === user.id)
             : employeesInBU;
 
         const displayedEmployeeIds = targetEmployees.map(e => e.id);
@@ -1074,8 +1074,8 @@ const Timekeeping: React.FC = () => {
         const newAssignments: ShiftAssignment[] = [];
 
         // Restrict autofill candidates for specific managers
-        const candidates = isDepartmentManager && !can('Timekeeping', Permission.Edit) && user 
-            ? employeesInBU.filter(e => e.department === user.department)
+        const candidates = isTeamManager && !can('Timekeeping', Permission.Edit) && user 
+            ? employeesInBU.filter(e => e.department === user.department || e.reportsTo === user.id)
             : employeesInBU;
 
         gaps.forEach(gap => {
@@ -1486,7 +1486,7 @@ const Timekeeping: React.FC = () => {
                 onCopyWeek={handleCopyWeek}
                 onChangeShift={() => handleChangeShift(detailModalState.assignment!)}
                 assignmentDetail={enrichedAssignmentDetail}
-                isEditable={isScheduleEditable && (can('Timekeeping', Permission.Edit) || !isDepartmentManager || enrichedAssignmentDetail?.employee?.department === user?.department)}
+                isEditable={isScheduleEditable && (can('Timekeeping', Permission.Edit) || !isTeamManager || enrichedAssignmentDetail?.employee?.department === user?.department || enrichedAssignmentDetail?.employee?.reportsTo === user?.id)}
             />
             
             <ShiftTemplateModal
