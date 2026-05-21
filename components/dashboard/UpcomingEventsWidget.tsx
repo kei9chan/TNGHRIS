@@ -9,16 +9,12 @@ import { supabase } from '../../services/supabaseClient';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-const getStartOfWeek = (date: Date) => {
-    const d = new Date(date);
-    d.setDate(d.getDate() - d.getDay());
-    return d;
+const getStartOfMonth = (date: Date) => {
+    return new Date(date.getFullYear(), date.getMonth(), 1);
 };
 
-const getEndOfWeek = (date: Date) => {
-    const start = getStartOfWeek(date);
-    start.setDate(start.getDate() + 6);
-    return start;
+const getEndOfMonth = (date: Date) => {
+    return new Date(date.getFullYear(), date.getMonth() + 1, 0);
 };
 
 // Map a DB row to the CalendarEvent shape used by the rest of the app.
@@ -48,16 +44,16 @@ const UpcomingEventsWidget: React.FC = () => {
         let cancelled = false;
 
         const today = new Date();
-        const startOfWeek = getStartOfWeek(today);
-        startOfWeek.setHours(0, 0, 0, 0);
-        const endOfWeek = getEndOfWeek(today);
-        endOfWeek.setHours(23, 59, 59, 999);
+        const startOfMonth = getStartOfMonth(today);
+        startOfMonth.setHours(0, 0, 0, 0);
+        const endOfMonth = getEndOfMonth(today);
+        endOfMonth.setHours(23, 59, 59, 999);
 
         supabase
             .from('helpdesk_calendar_events')
             .select('*')
-            .gte('start', startOfWeek.toISOString())
-            .lte('start', endOfWeek.toISOString())
+            .gte('start', startOfMonth.toISOString())
+            .lte('start', endOfMonth.toISOString())
             .order('start', { ascending: true })
             .then(({ data, error }) => {
                 if (cancelled) return;
@@ -86,7 +82,7 @@ const UpcomingEventsWidget: React.FC = () => {
     };
 
     return (
-        <Card title="This Week's Events">
+        <Card title="This Month's Events">
             {isLoading ? (
                 <p className="text-gray-500 dark:text-gray-400 text-center py-4">Loading…</p>
             ) : upcomingEvents.length > 0 ? (
@@ -108,7 +104,7 @@ const UpcomingEventsWidget: React.FC = () => {
                     ))}
                 </ul>
             ) : (
-                <p className="text-gray-500 dark:text-gray-400 text-center py-4">No events scheduled for this week.</p>
+                <p className="text-gray-500 dark:text-gray-400 text-center py-4">No events scheduled for this month.</p>
             )}
             <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 text-right">
                 <Link to="/helpdesk/calendar" className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
