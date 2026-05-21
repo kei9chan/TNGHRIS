@@ -115,7 +115,8 @@ const HRReviewQueue: React.FC = () => {
             try {
                 const { data, error } = await supabase
                     .from('hris_users')
-                    .select('id, full_name, email, role, status, position, department, business_unit, birth_date');
+                    .select('id, full_name, email, role, status, position, department, business_unit, birth_date')
+                    .eq('status', 'Inactive');
                 if (error) throw error;
                 if (data) {
                     setPendingUsers(

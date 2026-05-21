@@ -222,6 +222,7 @@ const EmployeeList: React.FC = () => {
       const hireDateValue = updatedProfileData.dateHired ?? userToEdit.dateHired ?? null;
 
       const payload: any = {
+        employee_id: updatedProfileData.employeeId,
         full_name: updatedProfileData.name,
         email: updatedProfileData.email,
         department: updatedProfileData.department,
@@ -365,6 +366,7 @@ const EmployeeList: React.FC = () => {
                 onSaveDraft={() => {}} // No-op for admin edit
                 draft={null}
                 isAdminEdit={true}
+                canEditEmployeeId={currentUser?.role === Role.HRManager || currentUser?.role === Role.HRStaff}
             />
         )}
     </div>

@@ -14,11 +14,12 @@ interface ProfileEditModalProps {
   onSaveDraft: (draftData: Partial<User>) => void;
   draft: EmployeeDraft | null;
   isAdminEdit?: boolean;
+  canEditEmployeeId?: boolean;
 }
 
 type Tab = 'personal' | 'gov' | 'emergency' | 'banking' | 'compensation' | 'leave';
 
-const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, user, onSave, onSaveDraft, draft, isAdminEdit = false }) => {
+const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, user, onSave, onSaveDraft, draft, isAdminEdit = false, canEditEmployeeId = false }) => {
   const [activeTab, setActiveTab] = useState<Tab>('personal');
   const [formData, setFormData] = useState<Partial<User>>({});
   const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
@@ -44,6 +45,7 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
   useEffect(() => {
     if (isOpen) {
       const initialData = draft ? draft.draftData : {
+        employeeId: user.employeeId || '',
         name: user.name,
         email: user.email,
         birthDate: user.birthDate,
@@ -366,6 +368,9 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
       <div className="space-y-4">
         {activeTab === 'personal' && (
           <div className="space-y-4">
+            {canEditEmployeeId && (
+              <Input label="Employee ID" name="employeeId" value={formData.employeeId || ''} onChange={handleChange} placeholder="e.g. TNG-0001" />
+            )}
             <Input label="Full Name" name="name" value={formData.name || ''} onChange={handleChange} />
             <Input label="Email Address" name="email" type="email" value={formData.email || ''} onChange={handleChange} />
             <Input label="Birth Date" name="birthDate" type="date" value={formData.birthDate ? (typeof formData.birthDate === 'string' ? formData.birthDate : new Date(formData.birthDate).toISOString().split('T')[0]) : ''} onChange={handleChange} />

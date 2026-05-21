@@ -299,6 +299,7 @@ const EmployeeProfile: React.FC = () => {
         };
 
         const payload: Record<string, any> = {
+            employee_id: data.employeeId,
             full_name: data.name,
             email: data.email,
             role: data.role,
@@ -527,6 +528,7 @@ const EmployeeProfile: React.FC = () => {
                     onSaveDraft={handleSaveDraft}
                     draft={userDraft}
                     isAdminEdit={canAdminEdit && !isMyProfile}
+                    canEditEmployeeId={currentUser?.role === 'HR Manager' || currentUser?.role === 'HR Staff'}
                 />
             )}
 
