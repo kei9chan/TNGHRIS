@@ -312,12 +312,28 @@ const OnboardingViewPage: React.FC = () => {
         if (!checklistId || !checklist) return;
         setIsUpdatingStatus(true);
         try {
+            // Update individual tasks that were pending approval
+            const updatedTasks = checklist.tasks.map(task => {
+                if (task.status === OnboardingTaskStatus.PendingApproval) {
+                    return {
+                        ...task,
+                        status: status === 'Approved' ? OnboardingTaskStatus.Completed : OnboardingTaskStatus.Rejected,
+                        approvedBy: user?.id,
+                        approvedAt: new Date().toISOString(),
+                    };
+                }
+                return task;
+            });
+
             const { error } = await supabase
                 .from('onboarding_checklists')
-                .update({ status })
+                .update({ 
+                    status,
+                    tasks: updatedTasks 
+                })
                 .eq('id', checklistId);
             if (error) throw error;
-            setChecklist(prev => (prev ? { ...prev, status } : prev));
+            setChecklist(prev => (prev ? { ...prev, status, tasks: updatedTasks } : prev));
             setIsApprovalModalOpen(false);
             setRejectionReason('');
         } catch (err) {

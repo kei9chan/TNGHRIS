@@ -351,11 +351,38 @@ const OnboardingTaskPage: React.FC = () => {
             newStatus = OnboardingTaskStatus.PendingApproval;
         }
 
-        if (task.taskType === OnboardingTaskType.Upload && file) {
-            finalSubmissionValue = file.name;
-        }
-
         setIsUpdating(true);
+
+        if (task.taskType === OnboardingTaskType.Upload && file) {
+            try {
+                const fileExt = file.name.split('.').pop();
+                const fileName = `${task.id}-${Date.now()}.${fileExt}`;
+                const path = `onboarding/${fileName}`;
+                
+                let uploadResponse = await supabase.storage.from('recruitment-uploads').upload(path, file, { upsert: false });
+                
+                if (uploadResponse.error) {
+                    console.warn('Failed to upload to recruitment-uploads, trying generic attachments...', uploadResponse.error);
+                    uploadResponse = await supabase.storage.from('attachments').upload(path, file, { upsert: false });
+                }
+
+                if (uploadResponse.error) {
+                    setErrorMessage('Failed to upload file. Please try again or contact support.');
+                    setIsUpdating(false);
+                    return;
+                }
+
+                // If successful, get the public URL (assuming it's in the bucket that succeeded)
+                // We'll just generate the URL string manually since getPublicUrl returns the public path.
+                const { data } = supabase.storage.from(uploadResponse.data?.path ? 'recruitment-uploads' : 'attachments').getPublicUrl(uploadResponse.data?.path || path);
+                finalSubmissionValue = data.publicUrl;
+            } catch (err) {
+                console.error('File upload error', err);
+                setErrorMessage('An unexpected error occurred during file upload.');
+                setIsUpdating(false);
+                return;
+            }
+        }
 
         const indexMatch = task.id.match(/-task-(\d+)$/);
         const taskIndexFromId = indexMatch ? Number(indexMatch[1]) : null;
