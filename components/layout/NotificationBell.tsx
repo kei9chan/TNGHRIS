@@ -44,6 +44,7 @@ const typeConfig: Record<string, { icon: string; bg: string; dot: string }> = {
     CONTRACT_SIGNATURE_REQUEST: { icon: '✍️', bg: 'bg-purple-50 dark:bg-purple-900/20', dot: 'bg-purple-500' },
     CONTRACT_APPROVAL_REQUEST:  { icon: '✍️', bg: 'bg-purple-50 dark:bg-purple-900/20', dot: 'bg-purple-500' },
     EVALUATION_ASSIGNED:        { icon: '📊', bg: 'bg-teal-50 dark:bg-teal-900/20',   dot: 'bg-teal-500'   },
+    COE_UPDATE:                 { icon: '📄', bg: 'bg-blue-50 dark:bg-blue-900/20',   dot: 'bg-blue-500'   },
     // Default fallback
     default: { icon: '🔔', bg: 'bg-gray-50 dark:bg-gray-800', dot: 'bg-blue-600' },
 };

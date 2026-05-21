@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { COERequest, COERequestStatus, COEPurpose, COETemplate, User } from '../types';
+import { COERequest, COERequestStatus, COEPurpose, COETemplate, User, Role, NotificationType } from '../types';
 
 type CoeRequestRow = {
   id: string;
@@ -77,6 +77,32 @@ export const createCoeRequest = async (request: Partial<COERequest>, user: User)
   if (error) {
     throw new Error(error.message || 'Failed to submit COE request');
   }
+  
+  // Notify HR about new COE request
+  try {
+      const { data: hrRows } = await supabase
+          .from('hris_users')
+          .select('id')
+          .in('role', [Role.HRManager, Role.HRStaff]);
+      
+      if (hrRows && hrRows.length > 0) {
+          const notificationRows = hrRows.map((hr: any) => ({
+              id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${hr.id}`,
+              user_id: hr.id,
+              type: NotificationType.COE_UPDATE,
+              title: 'New COE Request',
+              message: `${user.name} has requested a Certificate of Employment.`,
+              link: `/employees/coe/requests?requestId=${data.id}`,
+              is_read: false,
+              created_at: new Date().toISOString(),
+              related_entity_id: data.id
+          }));
+          await supabase.from('notifications').insert(notificationRows);
+      }
+  } catch (notifyErr) {
+      console.warn('Failed to notify HR about new COE request', notifyErr);
+  }
+
   return mapCoeRequest(data as CoeRequestRow);
 };
 
@@ -93,6 +119,26 @@ export const approveCoeRequest = async (requestId: string, approverId: string, g
   if (error) {
     throw new Error(error.message || 'Failed to approve COE request');
   }
+  
+  // Notify employee
+  try {
+      if (data.employee_id) {
+          await supabase.from('notifications').insert({
+              id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${data.employee_id}`,
+              user_id: data.employee_id,
+              type: NotificationType.COE_UPDATE,
+              title: 'COE Request Approved',
+              message: `Your Certificate of Employment request has been approved.`,
+              link: `/employees/coe/requests?requestId=${data.id}`,
+              is_read: false,
+              created_at: new Date().toISOString(),
+              related_entity_id: data.id
+          });
+      }
+  } catch (notifyErr) {
+      console.warn('Failed to notify employee about approved COE request', notifyErr);
+  }
+
   return mapCoeRequest(data as CoeRequestRow);
 };
 
@@ -109,6 +155,26 @@ export const rejectCoeRequest = async (requestId: string, approverId: string, re
   if (error) {
     throw new Error(error.message || 'Failed to reject COE request');
   }
+  
+  // Notify employee
+  try {
+      if (data.employee_id) {
+          await supabase.from('notifications').insert({
+              id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${data.employee_id}`,
+              user_id: data.employee_id,
+              type: NotificationType.COE_UPDATE,
+              title: 'COE Request Rejected',
+              message: `Your Certificate of Employment request has been rejected. Reason: ${reason}`,
+              link: `/employees/coe/requests?requestId=${data.id}`,
+              is_read: false,
+              created_at: new Date().toISOString(),
+              related_entity_id: data.id
+          });
+      }
+  } catch (notifyErr) {
+      console.warn('Failed to notify employee about rejected COE request', notifyErr);
+  }
+
   return mapCoeRequest(data as CoeRequestRow);
 };
 
