@@ -251,6 +251,60 @@ const CoachingLog: React.FC = () => {
                     console.warn('Failed to persist coaching invite notification', err);
                 }
             }
+
+            const isNowAccepted = mapped.status === CoachingStatus.Accepted;
+            const wasAccepted = prior?.status === CoachingStatus.Accepted;
+            if (isNowAccepted && !wasAccepted) {
+                const createdAt = new Date();
+                const recipientId = user?.id === mapped.coachId ? mapped.employeeId : mapped.coachId;
+                const senderName = user?.id === mapped.coachId ? mapped.coachName : mapped.employeeName;
+
+                const notif = {
+                    title: 'Coaching Session Accepted',
+                    message: `${senderName} has accepted the coaching session.`,
+                    link: `/feedback/coaching?sessionId=${mapped.id}`,
+                };
+                
+                try {
+                    await supabase.from('notifications').insert([{
+                        id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${recipientId}`,
+                        user_id: recipientId,
+                        type: NotificationType.COACHING_INVITE,
+                        title: notif.title,
+                        message: notif.message,
+                        link: notif.link,
+                        is_read: false,
+                        created_at: createdAt.toISOString(),
+                        related_entity_id: mapped.id,
+                    }]);
+                    
+                    if (mapped.date) {
+                        const eventStart = new Date(mapped.date);
+                        let startStr = eventStart.toISOString();
+                        let endStr = new Date(eventStart.getTime() + 60 * 60 * 1000).toISOString();
+                        
+                        if (mapped.time) {
+                            const [hours, minutes] = mapped.time.split(':').map(Number);
+                            eventStart.setHours(hours, minutes, 0, 0);
+                            startStr = eventStart.toISOString();
+                            const eventEnd = new Date(eventStart.getTime() + 60 * 60 * 1000);
+                            endStr = eventEnd.toISOString();
+                        }
+                        
+                        await supabase.from('helpdesk_calendar_events').insert([{
+                            id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `event-${Date.now()}`,
+                            title: `Coaching: ${mapped.employeeName} & ${mapped.coachName}`,
+                            start: startStr,
+                            end: endStr,
+                            color: '#4F46E5', // Indigo
+                            created_at: createdAt.toISOString(),
+                            updated_at: createdAt.toISOString(),
+                        }]);
+                    }
+                } catch (err) {
+                    console.warn('Failed to persist coaching acceptance notification or calendar event', err);
+                }
+            }
         } catch (err) {
             console.error('Failed to save coaching session', err);
             alert('Failed to save coaching session. Please try again.');
