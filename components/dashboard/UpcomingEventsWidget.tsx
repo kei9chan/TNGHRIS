@@ -93,7 +93,7 @@ const UpcomingEventsWidget: React.FC = () => {
                                 <div className="flex justify-between items-center">
                                     <p className="font-semibold text-gray-800 dark:text-gray-200">{event.title}</p>
                                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                                        {new Date(event.start).toLocaleDateString('en-US', { weekday: 'short' })}
+                                        {new Date(event.start).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                                     </p>
                                 </div>
                                 <p className="text-xs text-gray-500 dark:text-gray-400">
