@@ -326,22 +326,16 @@ const OnboardingTaskPage: React.FC = () => {
         );
     }
     
-    const isOwner = task.ownerUserId === user.id || (user.authUserId && task.ownerUserId === user.authUserId);
-    const isEmployee =
-        task.employeeId === user.id ||
-        (user.authUserId ? task.employeeId === user.authUserId : false);
-    const isReviewer =
-        user.role === Role.Admin ||
-        user.role === Role.HRManager ||
-        user.role === Role.HRStaff;
-    const canInteract = (isOwner || isEmployee || isReviewer) && task.status !== OnboardingTaskStatus.Completed;
+    const canInteract = (isOwner || isEmployee || isReviewer) && 
+        task.status !== OnboardingTaskStatus.Completed && 
+        task.status !== OnboardingTaskStatus.PendingApproval;
     const asset: any = null; // Removed mockAssets fallback
 
 
     const handleComplete = async () => {
         setErrorMessage('');
         if (!task || !checklist || !user) return;
-        if (task.taskType === OnboardingTaskType.Upload && !file) {
+        if (task.taskType === OnboardingTaskType.Upload && !file && !task.submissionValue) {
             setErrorMessage('Please upload a file before marking this task as complete.');
             return;
         }
@@ -639,7 +633,7 @@ const OnboardingTaskPage: React.FC = () => {
                     return <FileUploader onFileUpload={() => {}} existingFileUrl={task.submissionValue} readOnly />;
                 }
                 // Employee/owner: show upload form (with existing file if already uploaded)
-                return <FileUploader onFileUpload={setFile} existingFileUrl={task.submissionValue || undefined} />;
+                return <FileUploader onFileUpload={setFile} existingFileUrl={task.submissionValue || undefined} readOnly={!canInteract} />;
             }
             case OnboardingTaskType.AssignAsset:
             case OnboardingTaskType.ReturnAsset:
