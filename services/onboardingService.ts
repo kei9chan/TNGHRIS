@@ -78,7 +78,7 @@ const mapResignation = (row: ResignationRow): Resignation => ({
 // ---------------------------------------------------------------------------
 
 export const fetchOnboardingTemplates = async (): Promise<OnboardingChecklistTemplate[]> => {
-  const { data, error } = await supabase.from('onboarding_templates').select('*').order('name', { ascending: true });
+  const { data, error } = await supabase.from('onboarding_checklist_templates').select('*').order('name', { ascending: true });
   if (error) throw new Error(error.message || 'Failed to fetch onboarding templates');
   return (data as OnboardingTemplateRow[]).map(mapOnboardingTemplate);
 };
@@ -92,8 +92,8 @@ export const saveOnboardingTemplate = async (template: Partial<OnboardingCheckli
   };
 
   const { data, error } = template.id
-    ? await supabase.from('onboarding_templates').update(payload).eq('id', template.id).select().single()
-    : await supabase.from('onboarding_templates').insert(payload).select().single();
+    ? await supabase.from('onboarding_checklist_templates').update(payload).eq('id', template.id).select().single()
+    : await supabase.from('onboarding_checklist_templates').insert(payload).select().single();
 
   if (error) throw new Error(error.message || 'Failed to save onboarding template');
   return mapOnboardingTemplate(data as OnboardingTemplateRow);

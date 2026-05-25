@@ -460,7 +460,7 @@ const BODDashboard: React.FC = () => {
                 supabase.from('benefit_requests').select('*'),
                 supabase.from('envelopes').select('*').order('created_at', { ascending: false }),
                 supabase.from('onboarding_checklists').select('*'),
-                supabase.from('onboarding_templates').select('*'),
+                supabase.from('onboarding_checklist_templates').select('*'),
                 supabase.from('notifications').select('*').order('created_at', { ascending: false }).limit(200),
             ]);
             if (!active) return;
