@@ -335,6 +335,7 @@ const OnboardingTaskPage: React.FC = () => {
     const isOwner = user?.id === task?.ownerUserId;
     const isEmployee = user?.id === checklist?.employeeId;
     const isReviewer = user?.role === Role.Admin || user?.role === Role.HRManager || user?.role === Role.HRStaff;
+    const canReviewTask = isReviewer || isOwner;
 
     const canInteract = (isEmployee || (isOwner && isReviewer)) && 
         task.status !== OnboardingTaskStatus.Completed && 
@@ -756,7 +757,7 @@ const OnboardingTaskPage: React.FC = () => {
                 const isTaskOwner = isEmployee;
                 const hasSubmission = !!task.submissionValue;
                 // Reviewer: only show the submitted file (read-only)
-                if (!isTaskOwner && isReviewer) {
+                if (!isTaskOwner && canReviewTask) {
                     if (!hasSubmission) {
                         return <p className="text-gray-500 dark:text-gray-400 italic">No file has been uploaded by the employee yet.</p>;
                     }
@@ -841,14 +842,14 @@ const OnboardingTaskPage: React.FC = () => {
                     </Button>
                 </div>
                 <div className="flex space-x-2">
-                    {canInteract && !isReviewer && (
+                    {canInteract && !canReviewTask && (
                         <Button size="lg" onClick={handleComplete} isLoading={isUpdating}>
                             {task.status === OnboardingTaskStatus.Rejected 
                                 ? 'Refile Task' 
                                 : (task.requiresApproval ? 'Submit for Approval' : 'Mark as Complete')}
                         </Button>
                     )}
-                    {isReviewer && task.status === OnboardingTaskStatus.PendingApproval && (
+                    {canReviewTask && task.status === OnboardingTaskStatus.PendingApproval && (
                         <>
                             <Button variant="danger" size="lg" onClick={() => setIsRejectModalOpen(true)} disabled={isUpdating}>
                                 Reject
