@@ -452,6 +452,12 @@ const OnboardingTaskPage: React.FC = () => {
             setIsRejectModalOpen(false);
             setRejectionReasonInput('');
             
+            if (nextTask) {
+                navigate(`/employees/onboarding/task/${nextTask.id}?checklistId=${updatedChecklist.id}&employeeId=${updatedChecklist.employeeId}`);
+            } else {
+                navigate(`/employees/onboarding/view/${updatedChecklist.id}`);
+            }
+            
         } catch (err) {
             console.error(`Failed to ${action} task`, err);
             setErrorMessage(`Failed to perform action. Please try again.`);
