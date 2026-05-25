@@ -39,7 +39,7 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
 
     useEffect(() => {
         const loadData = async () => {
-            let loadedPeople = people.length ? people : employees;
+            let loadedPeople = [...(people.length ? people : employees)].sort((a, b) => a.name.localeCompare(b.name));
             let loadedTemplates = templates.length ? templates : awardTemplates;
             let loadedBus = bus.length ? bus : businessUnits;
 
@@ -62,12 +62,12 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
                         isPhotoEnrolled: false,
                         dateHired: new Date(),
                         position: u.position || '',
-                    }));
+                    })).sort((a, b) => a.name.localeCompare(b.name));
                     setPeople(loadedPeople);
                 }
             } catch {
-                loadedPeople = employees;
-                setPeople(employees);
+                loadedPeople = [...employees].sort((a, b) => a.name.localeCompare(b.name));
+                setPeople(loadedPeople);
             }
 
             try {
@@ -238,9 +238,12 @@ ${notes ? `<p><strong>Citation:</strong> ${notes}</p>` : ''}
                     onChange={e => setEmployeeId(e.target.value)}
                     className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 >
-                    {(people.length ? people : employees).filter(u => u.status === 'Active').map(user => (
-                        <option key={user.id} value={user.id}>{user.name}</option>
-                    ))}
+                    {(people.length ? people : employees)
+                        .filter(u => u.status === 'Active')
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                        .map(user => (
+                            <option key={user.id} value={user.id}>{user.name}</option>
+                        ))}
                 </select>
             </div>
             <div>
