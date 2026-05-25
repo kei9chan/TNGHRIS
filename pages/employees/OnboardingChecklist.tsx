@@ -280,14 +280,15 @@ const OnboardingChecklistPage: React.FC = () => {
             .filter((row: any) => !Array.isArray(row.tasks) || row.tasks.length === 0)
             .map((row: any) => ({
               id: row.id,
-              employee_id: row.employee_id,
               tasks: serializeTasksForDb(
                 buildChecklistTasks(templateMap.get(row.template_id), row.employee_id, row.start_date, row.id)
               ),
             }))
             .filter((row: any) => row.tasks.length > 0);
           if (tasksToPersist.length > 0) {
-            await supabase.from('onboarding_checklists').upsert(tasksToPersist, { onConflict: 'id' });
+            await Promise.all(tasksToPersist.map((row: any) =>
+              supabase.from('onboarding_checklists').update({ tasks: row.tasks }).eq('id', row.id)
+            ));
           }
         }
       } catch (err) {
@@ -525,12 +526,13 @@ const OnboardingChecklistPage: React.FC = () => {
 
         const tasksPayload = (inserted || []).map((row: any) => ({
           id: row.id,
-          employee_id: row.employee_id,
           tasks: buildAssignedTasks(row.employee_id, row.id),
         }));
         if (tasksPayload.length > 0) {
           try {
-            await supabase.from('onboarding_checklists').upsert(tasksPayload, { onConflict: 'id' });
+            await Promise.all(tasksPayload.map((row: any) =>
+              supabase.from('onboarding_checklists').update({ tasks: row.tasks }).eq('id', row.id)
+            ));
           } catch (err) {
             console.warn('Failed to persist checklist tasks', err);
           }

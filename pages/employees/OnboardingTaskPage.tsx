@@ -226,7 +226,6 @@ const OnboardingTaskPage: React.FC = () => {
                     .filter((row: any) => !Array.isArray(row.tasks) || row.tasks.length === 0)
                     .map((row: any) => ({
                         id: row.id,
-                        employee_id: row.employee_id,
                         tasks: serializeTasksForDb(
                             buildChecklistTasks(
                                 templateMap.get(row.template_id),
@@ -238,7 +237,9 @@ const OnboardingTaskPage: React.FC = () => {
                     }))
                     .filter((row: any) => row.tasks.length > 0);
                 if (tasksToPersist.length > 0) {
-                    await supabase.from('onboarding_checklists').upsert(tasksToPersist, { onConflict: 'id' });
+                    await Promise.all(tasksToPersist.map((row: any) =>
+                        supabase.from('onboarding_checklists').update({ tasks: row.tasks }).eq('id', row.id)
+                    ));
                 }
             } catch (err) {
                 console.error('Failed to load onboarding tasks', err);
