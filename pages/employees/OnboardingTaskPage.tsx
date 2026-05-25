@@ -57,7 +57,7 @@ const OnboardingTaskPage: React.FC = () => {
                 status = OnboardingTaskStatus.PendingApproval;
             }
             if (completedAt && status === OnboardingTaskStatus.Pending) {
-                status = task.requiresApproval ? OnboardingTaskStatus.PendingApproval : OnboardingTaskStatus.Completed;
+                status = OnboardingTaskStatus.PendingApproval;
             }
             return {
                 ...task,
@@ -358,7 +358,7 @@ const OnboardingTaskPage: React.FC = () => {
                 newStatus = OnboardingTaskStatus.Rejected;
                 rejectReason = rejectionReasonInput;
             } else if (action === 'Refiled') {
-                newStatus = task.requiresApproval ? OnboardingTaskStatus.PendingApproval : OnboardingTaskStatus.Pending;
+                newStatus = OnboardingTaskStatus.PendingApproval;
                 rejectReason = undefined;
             }
 
@@ -370,7 +370,7 @@ const OnboardingTaskPage: React.FC = () => {
                         rejectionReason: rejectReason,
                         approvedBy: action === 'Approved' ? user.id : t.approvedBy,
                         approvedAt: action === 'Approved' ? new Date().toISOString() : t.approvedAt,
-                        submittedAt: action === 'Refiled' && task.requiresApproval ? new Date().toISOString() : t.submittedAt,
+                        submittedAt: action === 'Refiled' ? new Date().toISOString() : t.submittedAt,
                     };
                 }
                 return t;
@@ -468,12 +468,8 @@ const OnboardingTaskPage: React.FC = () => {
             return;
         }
 
-        let newStatus = OnboardingTaskStatus.Completed;
+        let newStatus = OnboardingTaskStatus.PendingApproval;
         let finalSubmissionValue = submissionValue;
-
-        if (task.requiresApproval) {
-            newStatus = OnboardingTaskStatus.PendingApproval;
-        }
 
         setIsUpdating(true);
 
@@ -525,7 +521,7 @@ const OnboardingTaskPage: React.FC = () => {
                     status: newStatus,
                     submissionValue: finalSubmissionValue,
                     completedAt: new Date(),
-                    submittedAt: task.requiresApproval ? new Date() : undefined,
+                    submittedAt: new Date(),
                     isAcknowledged: task.taskType === OnboardingTaskType.Read || task.taskType === OnboardingTaskType.Video,
                     rejectionReason: undefined,
                 };
@@ -578,7 +574,7 @@ const OnboardingTaskPage: React.FC = () => {
                                   status: newStatus,
                                   submissionValue: finalSubmissionValue,
                                   completedAt: new Date(),
-                                  submittedAt: task.requiresApproval ? new Date() : undefined,
+                                  submittedAt: new Date(),
                                   isAcknowledged: task.taskType === OnboardingTaskType.Read || task.taskType === OnboardingTaskType.Video,
                                   rejectionReason: undefined,
                               };
@@ -676,7 +672,7 @@ const OnboardingTaskPage: React.FC = () => {
                                   status: newStatus,
                                   submissionValue: finalSubmissionValue,
                                   completedAt: new Date(),
-                                  submittedAt: task.requiresApproval ? new Date() : undefined,
+                                  submittedAt: new Date(),
                                   isAcknowledged: task.taskType === OnboardingTaskType.Read || task.taskType === OnboardingTaskType.Video,
                                   rejectionReason: undefined,
                               }
@@ -846,10 +842,10 @@ const OnboardingTaskPage: React.FC = () => {
                         <Button size="lg" onClick={handleComplete} isLoading={isUpdating}>
                             {task.status === OnboardingTaskStatus.Rejected 
                                 ? 'Refile Task' 
-                                : (task.requiresApproval ? 'Submit for Approval' : 'Mark as Complete')}
+                                : 'Submit for Approval'}
                         </Button>
                     )}
-                    {canReviewTask && task.status === OnboardingTaskStatus.PendingApproval && (
+                    {canReviewTask && (task.status === OnboardingTaskStatus.PendingApproval || task.status === OnboardingTaskStatus.Completed) && (
                         <>
                             <Button variant="danger" size="lg" onClick={() => setIsRejectModalOpen(true)} disabled={isUpdating}>
                                 Reject
