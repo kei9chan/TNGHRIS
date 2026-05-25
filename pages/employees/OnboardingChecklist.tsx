@@ -280,6 +280,7 @@ const OnboardingChecklistPage: React.FC = () => {
             .filter((row: any) => !Array.isArray(row.tasks) || row.tasks.length === 0)
             .map((row: any) => ({
               id: row.id,
+              employee_id: row.employee_id,
               tasks: serializeTasksForDb(
                 buildChecklistTasks(templateMap.get(row.template_id), row.employee_id, row.start_date, row.id)
               ),
@@ -524,6 +525,7 @@ const OnboardingChecklistPage: React.FC = () => {
 
         const tasksPayload = (inserted || []).map((row: any) => ({
           id: row.id,
+          employee_id: row.employee_id,
           tasks: buildAssignedTasks(row.employee_id, row.id),
         }));
         if (tasksPayload.length > 0) {
