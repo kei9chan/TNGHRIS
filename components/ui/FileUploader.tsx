@@ -9,6 +9,7 @@ interface FileUploaderProps {
   maxSize?: number; // in bytes
   inputId?: string;
   existingFileUrl?: string; // URL of previously uploaded file
+  readOnly?: boolean; // If true, hide upload UI and only show existing file
 }
 
 const UploadIcon = () => (
@@ -22,13 +23,14 @@ const isImageFile = (file?: File | null, url?: string): boolean => {
         return file.type.startsWith('image/');
     }
     if (url) {
-        const lower = url.toLowerCase();
-        return lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.gif') || lower.endsWith('.webp') || lower.endsWith('.svg');
+        // Strip query params before checking extension
+        const pathOnly = url.split('?')[0].toLowerCase();
+        return pathOnly.endsWith('.jpg') || pathOnly.endsWith('.jpeg') || pathOnly.endsWith('.png') || pathOnly.endsWith('.gif') || pathOnly.endsWith('.webp') || pathOnly.endsWith('.svg');
     }
     return false;
 };
 
-const FileUploader: React.FC<FileUploaderProps> = ({ onFileUpload, maxSize, inputId, existingFileUrl }) => {
+const FileUploader: React.FC<FileUploaderProps> = ({ onFileUpload, maxSize, inputId, existingFileUrl, readOnly }) => {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [error, setError] = useState<string>('');
@@ -117,10 +119,40 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onFileUpload, maxSize, inpu
   // Show the existing uploaded file (for reviewers or returning users)
   const showExistingFile = !file && existingFileUrl;
 
+  // Read-only mode: only show existing file, no upload UI
+  if (readOnly) {
+    return (
+      <div>
+        {existingFileUrl ? (
+          <div className="p-4 bg-gray-100 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
+            <p className="font-semibold text-gray-800 dark:text-gray-200 mb-3">Submitted File:</p>
+            {isImageFile(null, existingFileUrl) ? (
+              <div className="rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800">
+                <a href={existingFileUrl} target="_blank" rel="noopener noreferrer">
+                  <img src={existingFileUrl} alt="Submitted file" className="max-h-96 w-auto mx-auto object-contain p-2 hover:opacity-90 transition-opacity" />
+                </a>
+              </div>
+            ) : (
+              <a href={existingFileUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-300 dark:border-gray-600 hover:border-indigo-400 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-indigo-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span className="text-sm text-indigo-600 dark:text-indigo-400 underline">View submitted file</span>
+              </a>
+            )}
+            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Click the image to view full size in a new tab.</p>
+          </div>
+        ) : (
+          <p className="text-gray-500 dark:text-gray-400 italic">No file has been submitted yet.</p>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div>
         {/* Dropzone - hide if file is selected */}
-        {!file && (
+        {!file && !existingFileUrl && (
           <div 
               onDrop={handleDrop}
               onDragOver={handleDragOver}

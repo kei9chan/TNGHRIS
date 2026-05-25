@@ -85,7 +85,7 @@ const AssignedOnboardingChecklist: React.FC<AssignedOnboardingChecklistProps> = 
                                         <div className="mt-2">
                                             {(() => {
                                                 const url = (task as any).submissionValue;
-                                                const lower = url.toLowerCase();
+                                                const lower = url.split('?')[0].toLowerCase();
                                                 const isImage = lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.gif') || lower.endsWith('.webp');
                                                 if (isImage) {
                                                     return (

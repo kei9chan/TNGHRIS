@@ -628,8 +628,19 @@ const OnboardingTaskPage: React.FC = () => {
                 );
             case OnboardingTaskType.SubmitLink:
                 return <Input label="Submission Link" value={submissionValue} onChange={e => setSubmissionValue(e.target.value)} placeholder="https://..." disabled={!canInteract} />;
-            case OnboardingTaskType.Upload:
+            case OnboardingTaskType.Upload: {
+                const isTaskOwner = isOwner || isEmployee;
+                const hasSubmission = !!task.submissionValue;
+                // Reviewer: only show the submitted file (read-only)
+                if (!isTaskOwner && isReviewer) {
+                    if (!hasSubmission) {
+                        return <p className="text-gray-500 dark:text-gray-400 italic">No file has been uploaded by the employee yet.</p>;
+                    }
+                    return <FileUploader onFileUpload={() => {}} existingFileUrl={task.submissionValue} readOnly />;
+                }
+                // Employee/owner: show upload form (with existing file if already uploaded)
                 return <FileUploader onFileUpload={setFile} existingFileUrl={task.submissionValue || undefined} />;
+            }
             case OnboardingTaskType.AssignAsset:
             case OnboardingTaskType.ReturnAsset:
                  return (
