@@ -6,6 +6,8 @@ import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import FileUploader from '../../components/ui/FileUploader';
+import Modal from '../../components/ui/Modal';
+import Textarea from '../../components/ui/Textarea';
 import { logActivity } from '../../services/auditService';
 import { supabase } from '../../services/supabaseClient';
 
@@ -24,6 +26,10 @@ const OnboardingTaskPage: React.FC = () => {
     const [isLoadingTask, setIsLoadingTask] = useState(true);
     const [errorMessage, setErrorMessage] = useState('');
     const [isUpdating, setIsUpdating] = useState(false);
+    
+    // Review Actions State
+    const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
+    const [rejectionReasonInput, setRejectionReasonInput] = useState('');
 
     const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
     const checklistIdParam = searchParams.get('checklistId');
@@ -326,11 +332,132 @@ const OnboardingTaskPage: React.FC = () => {
         );
     }
     
-    const canInteract = (isOwner || isEmployee || isReviewer) && 
+    const isOwner = user?.id === task?.ownerUserId;
+    const isEmployee = user?.id === checklist?.employeeId;
+    const isReviewer = user?.role === Role.Admin || user?.role === Role.HRManager || user?.role === Role.HRStaff;
+
+    const canInteract = (isEmployee || (isOwner && isReviewer)) && 
         task.status !== OnboardingTaskStatus.Completed && 
         task.status !== OnboardingTaskStatus.PendingApproval;
     const asset: any = null; // Removed mockAssets fallback
 
+
+    const handleTaskAction = async (action: 'Approved' | 'Rejected' | 'Refiled') => {
+        setErrorMessage('');
+        if (!task || !checklist || !user) return;
+        
+        setIsUpdating(true);
+        try {
+            let newStatus = task.status;
+            let rejectReason = task.rejectionReason;
+            
+            if (action === 'Approved') {
+                newStatus = OnboardingTaskStatus.Completed;
+            } else if (action === 'Rejected') {
+                newStatus = OnboardingTaskStatus.Rejected;
+                rejectReason = rejectionReasonInput;
+            } else if (action === 'Refiled') {
+                newStatus = task.requiresApproval ? OnboardingTaskStatus.PendingApproval : OnboardingTaskStatus.Pending;
+                rejectReason = undefined;
+            }
+
+            const updatedTasks = checklist.tasks.map(t => {
+                if (t.id === task.id) {
+                    return {
+                        ...t,
+                        status: newStatus,
+                        rejectionReason: rejectReason,
+                        approvedBy: action === 'Approved' ? user.id : t.approvedBy,
+                        approvedAt: action === 'Approved' ? new Date().toISOString() : t.approvedAt,
+                        submittedAt: action === 'Refiled' && task.requiresApproval ? new Date().toISOString() : t.submittedAt,
+                    };
+                }
+                return t;
+            });
+
+            // Check if all tasks are completed
+            const allCompleted = updatedTasks.every(t => t.status === OnboardingTaskStatus.Completed);
+            const anyRejected = updatedTasks.some(t => t.status === OnboardingTaskStatus.Rejected);
+
+            let newChecklistStatus = checklist.status;
+            if (allCompleted) {
+                newChecklistStatus = 'Approved'; // Or Completed
+            } else if (anyRejected) {
+                newChecklistStatus = 'InProgress';
+            }
+
+            const updates: Record<string, any> = {
+                tasks: updatedTasks.map(t => ({
+                    ...t,
+                    dueDate: t.dueDate ? new Date(t.dueDate).toISOString() : null,
+                    completedAt: t.completedAt ? new Date(t.completedAt).toISOString() : null,
+                    submittedAt: t.submittedAt ? new Date(t.submittedAt).toISOString() : null,
+                })),
+                status: newChecklistStatus,
+            };
+
+            const { error } = await supabase
+                .from('onboarding_checklists')
+                .update(updates)
+                .eq('id', checklist.id);
+                
+            if (error) throw error;
+
+            // Notify
+            try {
+                if (action === 'Rejected' || action === 'Approved') {
+                    const title = action === 'Approved' ? `✅ Task Approved` : `❌ Task Rejected`;
+                    const message = action === 'Approved'
+                        ? `Your task "${task.name}" has been approved by ${user.name}.`
+                        : `Your task "${task.name}" has been rejected. Reason: ${rejectReason}`;
+                        
+                    await supabase.from('notifications').insert({
+                        id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${checklist.employeeId}`,
+                        user_id: checklist.employeeId,
+                        type: NotificationType.GENERAL,
+                        title,
+                        message,
+                        link: `/employees/onboarding/task/${task.id}?checklistId=${checklist.id}&employeeId=${checklist.employeeId}`,
+                        is_read: false,
+                        created_at: new Date().toISOString(),
+                        related_entity_id: checklist.id,
+                    });
+                } else if (action === 'Refiled') {
+                    // Notify HR/Reviewers
+                    const { data: hrRows } = await supabase.from('hris_users').select('id').in('role', [Role.HRManager, Role.HRStaff, Role.Admin]);
+                    const notifications = (hrRows || []).map(hr => ({
+                        id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${hr.id}`,
+                        user_id: hr.id,
+                        type: NotificationType.GENERAL,
+                        title: `🔄 Task Refiled`,
+                        message: `The task "${task.name}" has been refiled and is waiting for your review.`,
+                        link: `/employees/onboarding/task/${task.id}?checklistId=${checklist.id}&employeeId=${checklist.employeeId}`,
+                        is_read: false,
+                        created_at: new Date().toISOString(),
+                        related_entity_id: checklist.id,
+                    }));
+                    if (notifications.length > 0) {
+                        await supabase.from('notifications').insert(notifications);
+                    }
+                }
+            } catch (notifyErr) {
+                console.warn('Failed to notify regarding task action', notifyErr);
+            }
+
+            logActivity(user, 'UPDATE', 'OnboardingTask', task.id, `${action} task '${task.name}'.`);
+            
+            const updatedChecklist = { ...checklist, status: newChecklistStatus, tasks: updatedTasks };
+            setChecklists(prev => prev.map(c => c.id === updatedChecklist.id ? updatedChecklist : c));
+            setIsRejectModalOpen(false);
+            setRejectionReasonInput('');
+            
+        } catch (err) {
+            console.error(`Failed to ${action} task`, err);
+            setErrorMessage(`Failed to perform action. Please try again.`);
+        } finally {
+            setIsUpdating(false);
+        }
+    };
 
     const handleComplete = async () => {
         setErrorMessage('');
@@ -399,6 +526,7 @@ const OnboardingTaskPage: React.FC = () => {
                     completedAt: new Date(),
                     submittedAt: task.requiresApproval ? new Date() : undefined,
                     isAcknowledged: task.taskType === OnboardingTaskType.Read || task.taskType === OnboardingTaskType.Video,
+                    rejectionReason: undefined,
                 };
             });
             return { ...list, tasks: updatedTasks };
@@ -451,6 +579,7 @@ const OnboardingTaskPage: React.FC = () => {
                                   completedAt: new Date(),
                                   submittedAt: task.requiresApproval ? new Date() : undefined,
                                   isAcknowledged: task.taskType === OnboardingTaskType.Read || task.taskType === OnboardingTaskType.Video,
+                                  rejectionReason: undefined,
                               };
                           })
                         : updatedChecklist.tasks;
@@ -538,7 +667,7 @@ const OnboardingTaskPage: React.FC = () => {
             if (!refreshError && refreshedRow?.tasks) {
                 const refreshedTasks = parseStoredTasks(refreshedRow.tasks);
                 const refreshedTask = refreshedTasks.find(t => t.id === task.id);
-                if (refreshedTask && refreshedTask.status === OnboardingTaskStatus.Pending) {
+                if (refreshedTask && (refreshedTask.status === OnboardingTaskStatus.Pending || refreshedTask.status === OnboardingTaskStatus.Rejected)) {
                     const forcedTasks = refreshedTasks.map(t =>
                         t.id === task.id
                             ? {
@@ -548,6 +677,7 @@ const OnboardingTaskPage: React.FC = () => {
                                   completedAt: new Date(),
                                   submittedAt: task.requiresApproval ? new Date() : undefined,
                                   isAcknowledged: task.taskType === OnboardingTaskType.Read || task.taskType === OnboardingTaskType.Video,
+                                  rejectionReason: undefined,
                               }
                             : t
                     );
@@ -623,7 +753,7 @@ const OnboardingTaskPage: React.FC = () => {
             case OnboardingTaskType.SubmitLink:
                 return <Input label="Submission Link" value={submissionValue} onChange={e => setSubmissionValue(e.target.value)} placeholder="https://..." disabled={!canInteract} />;
             case OnboardingTaskType.Upload: {
-                const isTaskOwner = isOwner || isEmployee;
+                const isTaskOwner = isEmployee;
                 const hasSubmission = !!task.submissionValue;
                 // Reviewer: only show the submitted file (read-only)
                 if (!isTaskOwner && isReviewer) {
@@ -632,7 +762,7 @@ const OnboardingTaskPage: React.FC = () => {
                     }
                     return <FileUploader onFileUpload={() => {}} existingFileUrl={task.submissionValue} readOnly />;
                 }
-                // Employee/owner: show upload form (with existing file if already uploaded)
+                // Employee: show upload form (with existing file if already uploaded)
                 return <FileUploader onFileUpload={setFile} existingFileUrl={task.submissionValue || undefined} readOnly={!canInteract} />;
             }
             case OnboardingTaskType.AssignAsset:
@@ -684,6 +814,15 @@ const OnboardingTaskPage: React.FC = () => {
                 </div>
             </Card>
 
+            {task.status === OnboardingTaskStatus.Rejected && task.rejectionReason && (
+                <Card>
+                    <div className="p-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg">
+                        <strong className="block mb-1">Rejection Reason:</strong> 
+                        {task.rejectionReason}
+                    </div>
+                </Card>
+            )}
+
             <Card title="Task Action">
                 {renderTaskAction()}
             </Card>
@@ -701,12 +840,59 @@ const OnboardingTaskPage: React.FC = () => {
                         Next Task
                     </Button>
                 </div>
-                {canInteract && (
-                    <Button size="lg" onClick={handleComplete} isLoading={isUpdating}>
-                        {task.requiresApproval ? 'Submit for Approval' : 'Mark as Complete'}
-                    </Button>
-                )}
+                <div className="flex space-x-2">
+                    {canInteract && !isReviewer && (
+                        <Button size="lg" onClick={handleComplete} isLoading={isUpdating}>
+                            {task.status === OnboardingTaskStatus.Rejected 
+                                ? 'Refile Task' 
+                                : (task.requiresApproval ? 'Submit for Approval' : 'Mark as Complete')}
+                        </Button>
+                    )}
+                    {isReviewer && task.status === OnboardingTaskStatus.PendingApproval && (
+                        <>
+                            <Button variant="danger" size="lg" onClick={() => setIsRejectModalOpen(true)} disabled={isUpdating}>
+                                Reject
+                            </Button>
+                            <Button variant="primary" size="lg" onClick={() => handleTaskAction('Approved')} isLoading={isUpdating}>
+                                Approve
+                            </Button>
+                        </>
+                    )}
+                </div>
             </div>
+
+            <Modal
+                isOpen={isRejectModalOpen}
+                onClose={() => setIsRejectModalOpen(false)}
+                title="Reject Task"
+            >
+                <div className="space-y-4">
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                        Please provide a reason for rejecting this task. The employee will see this reason and can refile the task.
+                    </p>
+                    <Textarea
+                        label="Rejection Reason"
+                        value={rejectionReasonInput}
+                        onChange={(e) => setRejectionReasonInput(e.target.value)}
+                        placeholder="e.g., The uploaded file is blurry. Please re-upload a clear copy."
+                        rows={4}
+                        required
+                    />
+                    <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <Button variant="secondary" onClick={() => setIsRejectModalOpen(false)}>
+                            Cancel
+                        </Button>
+                        <Button 
+                            variant="danger" 
+                            onClick={() => handleTaskAction('Rejected')} 
+                            isLoading={isUpdating}
+                            disabled={!rejectionReasonInput.trim()}
+                        >
+                            Reject Task
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
         </div>
     );
 };

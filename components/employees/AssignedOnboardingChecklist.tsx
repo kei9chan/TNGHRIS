@@ -11,17 +11,13 @@ interface AssignedOnboardingChecklistProps {
     currentUser: User;
     onUpdateTaskStatus: (taskId: string, status: OnboardingTaskStatus) => void;
     isReviewer?: boolean;
-    onApproveTask?: (taskId: string) => void;
-    onRejectTask?: (taskId: string) => void;
 }
 
 const AssignedOnboardingChecklist: React.FC<AssignedOnboardingChecklistProps> = ({ 
     checklist, 
     currentUser, 
     onUpdateTaskStatus, 
-    isReviewer = false, 
-    onApproveTask, 
-    onRejectTask 
+    isReviewer = false
 }) => {
     const [isViewDocModalOpen, setViewDocModalOpen] = useState(false);
 
@@ -116,19 +112,9 @@ const AssignedOnboardingChecklist: React.FC<AssignedOnboardingChecklistProps> = 
                                 </div>
                                 <div className="flex items-center space-x-2 flex-shrink-0 ml-4">
                                     <OnboardingStatusBadge status={displayStatus} />
-                                    {isReviewer && displayStatus === OnboardingTaskStatus.PendingApproval && (
-                                        <>
-                                            <Button size="sm" variant="success" onClick={() => onApproveTask?.(task.id)}>
-                                                Approve
-                                            </Button>
-                                            <Button size="sm" variant="danger" onClick={() => onRejectTask?.(task.id)}>
-                                                Reject
-                                            </Button>
-                                        </>
-                                    )}
                                     <Link to={`/employees/onboarding/task/${task.id}?checklistId=${checklist.id}&employeeId=${checklist.employeeId}`}>
                                         <Button size="sm" variant="secondary">
-                                            {isDone ? 'View' : 'Start'}
+                                            {isDone ? 'View' : 'Review'}
                                         </Button>
                                     </Link>
                                 </div>

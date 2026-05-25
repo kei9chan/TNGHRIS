@@ -25,8 +25,6 @@ const OnboardingViewPage: React.FC = () => {
     const [employee, setEmployee] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
     const [notFound, setNotFound] = useState(false);
-    const [isApprovalModalOpen, setIsApprovalModalOpen] = useState(false);
-    const [rejectionReason, setRejectionReason] = useState('');
     const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
     const isReviewer =
@@ -269,16 +267,6 @@ const OnboardingViewPage: React.FC = () => {
     }, [checklistId, user]);
 
     useEffect(() => {
-        const params = new URLSearchParams(location.search);
-        const wantsApprove = params.get('approve') === '1';
-        if (wantsApprove && isReviewer && checklist?.status === 'Pending Approval') {
-            setIsApprovalModalOpen(true);
-            return;
-        }
-        setIsApprovalModalOpen(false);
-    }, [location.search, isReviewer, checklist?.status]);
-
-    useEffect(() => {
         if (user && employee) {
             const visibleIds = getVisibleEmployeeIds();
             if (!visibleIds.includes(employee.id)) {
@@ -405,8 +393,6 @@ const OnboardingViewPage: React.FC = () => {
                 currentUser={employee}
                 onUpdateTaskStatus={handleDummyUpdate}
                 isReviewer={isReviewer}
-                onApproveTask={id => handleTaskStatusUpdate(id, 'Approved')}
-                onRejectTask={id => handleTaskStatusUpdate(id, 'Rejected')}
             />
         </div>
     );

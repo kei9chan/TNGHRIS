@@ -241,7 +241,7 @@ ${notes ? `<p><strong>Citation:</strong> ${notes}</p>` : ''}
                         const selectedBu = bus.find(b => b.id === newBuId);
                         const buEmps = (people.length ? people : employees).filter(u => {
                             return u.status === 'Active' && (u.businessUnitId === newBuId || (selectedBu && u.businessUnit === selectedBu.name));
-                        }).sort((a, b) => a.name.localeCompare(b.name));
+                        }).sort((a, b) => formatEmployeeName(a.name).toLowerCase().localeCompare(formatEmployeeName(b.name).toLowerCase()));
                         if (buEmps.length > 0) {
                             setEmployeeId(buEmps[0].id);
                         } else {
@@ -271,9 +271,9 @@ ${notes ? `<p><strong>Citation:</strong> ${notes}</p>` : ''}
                                 if (!businessUnitId) return true;
                                 return u.businessUnitId === businessUnitId || (selectedBu && u.businessUnit === selectedBu.name);
                             })
-                            .sort((a, b) => a.name.localeCompare(b.name))
+                            .sort((a, b) => formatEmployeeName(a.name).toLowerCase().localeCompare(formatEmployeeName(b.name).toLowerCase()))
                             .map(user => (
-                                <option key={user.id} value={user.id}>{user.name}</option>
+                                <option key={user.id} value={user.id}>{formatEmployeeName(user.name)}</option>
                             ));
                     })()}
                 </select>
