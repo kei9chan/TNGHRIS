@@ -376,18 +376,8 @@ const OnboardingTaskPage: React.FC = () => {
                     return;
                 }
 
-                // Use signed URL since the buckets are private
-                const { data: signedData, error: signedError } = await supabase.storage
-                    .from(successBucket)
-                    .createSignedUrl(path, 60 * 60 * 24 * 365); // 1 year expiry
-
-                if (signedError || !signedData?.signedUrl) {
-                    // Fallback to public URL if signing fails
-                    const { data } = supabase.storage.from(successBucket).getPublicUrl(path);
-                    finalSubmissionValue = data.publicUrl;
-                } else {
-                    finalSubmissionValue = signedData.signedUrl;
-                }
+                const { data } = supabase.storage.from(successBucket).getPublicUrl(path);
+                finalSubmissionValue = data.publicUrl;
             } catch (err) {
                 console.error('File upload error', err);
                 setErrorMessage('An unexpected error occurred during file upload.');
