@@ -361,10 +361,12 @@ const OnboardingTaskPage: React.FC = () => {
                 const fileName = `${task.id}-${Date.now()}.${fileExt}`;
                 const path = `onboarding/${fileName}`;
                 
+                let successBucket = 'recruitment-uploads';
                 let uploadResponse = await supabase.storage.from('recruitment-uploads').upload(path, file, { upsert: false });
                 
                 if (uploadResponse.error) {
                     console.warn('Failed to upload to recruitment-uploads, trying generic attachments...', uploadResponse.error);
+                    successBucket = 'attachments';
                     uploadResponse = await supabase.storage.from('attachments').upload(path, file, { upsert: false });
                 }
 
@@ -374,10 +376,18 @@ const OnboardingTaskPage: React.FC = () => {
                     return;
                 }
 
-                // If successful, get the public URL (assuming it's in the bucket that succeeded)
-                // We'll just generate the URL string manually since getPublicUrl returns the public path.
-                const { data } = supabase.storage.from(uploadResponse.data?.path ? 'recruitment-uploads' : 'attachments').getPublicUrl(uploadResponse.data?.path || path);
-                finalSubmissionValue = data.publicUrl;
+                // Use signed URL since the buckets are private
+                const { data: signedData, error: signedError } = await supabase.storage
+                    .from(successBucket)
+                    .createSignedUrl(path, 60 * 60 * 24 * 365); // 1 year expiry
+
+                if (signedError || !signedData?.signedUrl) {
+                    // Fallback to public URL if signing fails
+                    const { data } = supabase.storage.from(successBucket).getPublicUrl(path);
+                    finalSubmissionValue = data.publicUrl;
+                } else {
+                    finalSubmissionValue = signedData.signedUrl;
+                }
             } catch (err) {
                 console.error('File upload error', err);
                 setErrorMessage('An unexpected error occurred during file upload.');
