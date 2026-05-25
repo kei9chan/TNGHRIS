@@ -629,7 +629,7 @@ const OnboardingTaskPage: React.FC = () => {
             case OnboardingTaskType.SubmitLink:
                 return <Input label="Submission Link" value={submissionValue} onChange={e => setSubmissionValue(e.target.value)} placeholder="https://..." disabled={!canInteract} />;
             case OnboardingTaskType.Upload:
-                return <FileUploader onFileUpload={setFile} />;
+                return <FileUploader onFileUpload={setFile} existingFileUrl={task.submissionValue || undefined} />;
             case OnboardingTaskType.AssignAsset:
             case OnboardingTaskType.ReturnAsset:
                  return (

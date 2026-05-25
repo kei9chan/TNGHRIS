@@ -78,11 +78,33 @@ const AssignedOnboardingChecklist: React.FC<AssignedOnboardingChecklistProps> = 
 
                         return (
                             <li key={task.id} className="py-3 flex justify-between items-center">
-                                <div>
+                                <div className="flex-1 min-w-0">
                                     <p className={`font-medium ${isDone ? 'line-through text-gray-500' : 'text-gray-900 dark:text-white'}`}>{task.name}</p>
                                     <p className="text-sm text-gray-500 dark:text-gray-400">{task.points} points - Due: {new Date(task.dueDate).toLocaleDateString()}</p>
+                                    {isDone && (task as any).submissionValue && (
+                                        <div className="mt-2">
+                                            {(() => {
+                                                const url = (task as any).submissionValue;
+                                                const lower = url.toLowerCase();
+                                                const isImage = lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.gif') || lower.endsWith('.webp');
+                                                if (isImage) {
+                                                    return (
+                                                        <a href={url} target="_blank" rel="noopener noreferrer" className="inline-block">
+                                                            <img src={url} alt="Uploaded file" className="max-h-20 rounded border border-gray-300 dark:border-gray-600 hover:opacity-80 transition-opacity" />
+                                                        </a>
+                                                    );
+                                                }
+                                                return (
+                                                    <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-sm text-indigo-600 dark:text-indigo-400 hover:underline">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                                                        View uploaded file
+                                                    </a>
+                                                );
+                                            })()}
+                                        </div>
+                                    )}
                                 </div>
-                                <div className="flex items-center space-x-4">
+                                <div className="flex items-center space-x-4 flex-shrink-0 ml-4">
                                     <OnboardingStatusBadge status={displayStatus} />
                                     <Link to={`/employees/onboarding/task/${task.id}?checklistId=${checklist.id}&employeeId=${checklist.employeeId}`}>
                                         <Button size="sm" variant="secondary">
