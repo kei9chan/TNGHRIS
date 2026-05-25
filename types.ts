@@ -1904,6 +1904,7 @@ export enum OnboardingTaskStatus {
   Completed = 'Completed',
   Overdue = 'Overdue',
   PendingApproval = 'Pending Approval',
+  Rejected = 'Rejected',
 }
 
 export interface OnboardingTask {

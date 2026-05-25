@@ -10,9 +10,19 @@ interface AssignedOnboardingChecklistProps {
     checklist: OnboardingChecklist | undefined;
     currentUser: User;
     onUpdateTaskStatus: (taskId: string, status: OnboardingTaskStatus) => void;
+    isReviewer?: boolean;
+    onApproveTask?: (taskId: string) => void;
+    onRejectTask?: (taskId: string) => void;
 }
 
-const AssignedOnboardingChecklist: React.FC<AssignedOnboardingChecklistProps> = ({ checklist, onUpdateTaskStatus }) => {
+const AssignedOnboardingChecklist: React.FC<AssignedOnboardingChecklistProps> = ({ 
+    checklist, 
+    currentUser, 
+    onUpdateTaskStatus, 
+    isReviewer = false, 
+    onApproveTask, 
+    onRejectTask 
+}) => {
     const [isViewDocModalOpen, setViewDocModalOpen] = useState(false);
 
     const { progress, completedPoints, totalPoints, allTasksCompleted } = useMemo(() => {
@@ -81,7 +91,7 @@ const AssignedOnboardingChecklist: React.FC<AssignedOnboardingChecklistProps> = 
                                 <div className="flex-1 min-w-0">
                                     <p className={`font-medium ${isDone ? 'line-through text-gray-500' : 'text-gray-900 dark:text-white'}`}>{task.name}</p>
                                     <p className="text-sm text-gray-500 dark:text-gray-400">{task.points} points - Due: {new Date(task.dueDate).toLocaleDateString()}</p>
-                                    {isDone && (task as any).submissionValue && (
+                                    {(task as any).submissionValue && (
                                         <div className="mt-2">
                                             {(() => {
                                                 const url = (task as any).submissionValue;
@@ -104,8 +114,18 @@ const AssignedOnboardingChecklist: React.FC<AssignedOnboardingChecklistProps> = 
                                         </div>
                                     )}
                                 </div>
-                                <div className="flex items-center space-x-4 flex-shrink-0 ml-4">
+                                <div className="flex items-center space-x-2 flex-shrink-0 ml-4">
                                     <OnboardingStatusBadge status={displayStatus} />
+                                    {isReviewer && displayStatus === OnboardingTaskStatus.PendingApproval && (
+                                        <>
+                                            <Button size="sm" variant="success" onClick={() => onApproveTask?.(task.id)}>
+                                                Approve
+                                            </Button>
+                                            <Button size="sm" variant="danger" onClick={() => onRejectTask?.(task.id)}>
+                                                Reject
+                                            </Button>
+                                        </>
+                                    )}
                                     <Link to={`/employees/onboarding/task/${task.id}?checklistId=${checklist.id}&employeeId=${checklist.employeeId}`}>
                                         <Button size="sm" variant="secondary">
                                             {isDone ? 'View' : 'Start'}

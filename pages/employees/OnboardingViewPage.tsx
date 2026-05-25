@@ -308,16 +308,16 @@ const OnboardingViewPage: React.FC = () => {
 
     const handleDummyUpdate = () => { };
 
-    const handleChecklistStatusUpdate = async (status: 'Approved' | 'Rejected') => {
+    const handleTaskStatusUpdate = async (taskId: string, action: 'Approved' | 'Rejected') => {
         if (!checklistId || !checklist) return;
         setIsUpdatingStatus(true);
         try {
-            // Update individual tasks that were pending approval
+            // Update the specific task's status
             const updatedTasks = checklist.tasks.map(task => {
-                if (task.status === OnboardingTaskStatus.PendingApproval) {
+                if (task.id === taskId) {
                     return {
                         ...task,
-                        status: status === 'Approved' ? OnboardingTaskStatus.Completed : OnboardingTaskStatus.Rejected,
+                        status: action === 'Approved' ? OnboardingTaskStatus.Completed : OnboardingTaskStatus.Rejected,
                         approvedBy: user?.id,
                         approvedAt: new Date().toISOString(),
                     };
@@ -325,23 +325,45 @@ const OnboardingViewPage: React.FC = () => {
                 return task;
             });
 
+            // Check if all tasks are completed
+            const allCompleted = updatedTasks.every(
+                t => t.status === OnboardingTaskStatus.Completed
+            );
+            
+            // Check if any task is rejected
+            const anyRejected = updatedTasks.some(
+                t => t.status === OnboardingTaskStatus.Rejected
+            );
+
+            // Determine the new overall checklist status
+            let newChecklistStatus = checklist.status;
+            if (allCompleted) {
+                newChecklistStatus = 'Approved';
+            } else if (anyRejected) {
+                newChecklistStatus = 'InProgress';
+            }
+
             const { error } = await supabase
                 .from('onboarding_checklists')
                 .update({ 
-                    status,
-                    tasks: updatedTasks 
+                    status: newChecklistStatus,
+                    tasks: updatedTasks.map(task => ({
+                        ...task,
+                        dueDate: task.dueDate ? new Date(task.dueDate).toISOString() : null,
+                        completedAt: task.completedAt ? new Date(task.completedAt).toISOString() : null,
+                        submittedAt: task.submittedAt ? new Date(task.submittedAt).toISOString() : null,
+                    }))
                 })
                 .eq('id', checklistId);
             if (error) throw error;
-            
-            // Notify the employee (the requester)
+
+            // Notify the employee
             try {
-                const isOffboarding = checklist.tasks.some(t => t.name.toLowerCase().includes('offboard'));
-                const prefix = isOffboarding ? 'Offboarding' : 'Onboarding';
-                const title = status === 'Approved' ? `✅ ${prefix} Approved` : `❌ ${prefix} Rejected`;
-                const message = status === 'Approved' 
-                    ? `Your ${prefix.toLowerCase()} tasks have been approved by ${user?.name || 'Reviewer'}.`
-                    : `Your ${prefix.toLowerCase()} tasks have been rejected. Please review.`;
+                const targetTask = checklist.tasks.find(t => t.id === taskId);
+                const title = action === 'Approved' ? `✅ Task Approved` : `❌ Task Rejected`;
+                const message = action === 'Approved' 
+                    ? `Your task "${targetTask?.name || 'Task'}" has been approved by ${user?.name || 'Reviewer'}.`
+                    : `Your task "${targetTask?.name || 'Task'}" has been rejected. Please review and redo.`;
                 
                 await supabase.from('notifications').insert({
                     id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${employee.id}`,
@@ -355,15 +377,13 @@ const OnboardingViewPage: React.FC = () => {
                     related_entity_id: checklistId,
                 });
             } catch (notifyErr) {
-                console.warn('Failed to notify employee of checklist approval', notifyErr);
+                console.warn('Failed to notify employee of task status update', notifyErr);
             }
 
-            setChecklist(prev => (prev ? { ...prev, status, tasks: updatedTasks } : prev));
-            setIsApprovalModalOpen(false);
-            setRejectionReason('');
+            setChecklist(prev => (prev ? { ...prev, status: newChecklistStatus, tasks: updatedTasks } : prev));
         } catch (err) {
-            console.error('Failed to update checklist status', err);
-            alert('Failed to update checklist status. Please try again.');
+            console.error('Failed to update task status', err);
+            alert('Failed to update task status. Please try again.');
         } finally {
             setIsUpdatingStatus(false);
         }
@@ -378,52 +398,16 @@ const OnboardingViewPage: React.FC = () => {
                 </Link>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Onboarding Progress for {employee.name}</h1>
-                    {isReviewer && checklist.status === 'Pending Approval' && (
-                        <Button onClick={() => setIsApprovalModalOpen(true)}>
-                            Review Checklist
-                        </Button>
-                    )}
                 </div>
             </div>
             <AssignedOnboardingChecklist
                 checklist={checklist}
                 currentUser={employee}
                 onUpdateTaskStatus={handleDummyUpdate}
+                isReviewer={isReviewer}
+                onApproveTask={id => handleTaskStatusUpdate(id, 'Approved')}
+                onRejectTask={id => handleTaskStatusUpdate(id, 'Rejected')}
             />
-            {isReviewer && (
-                <Modal
-                    isOpen={isApprovalModalOpen}
-                    onClose={() => setIsApprovalModalOpen(false)}
-                    title="Review Checklist"
-                >
-                    <div className="space-y-4">
-                        <p className="text-sm text-gray-600 dark:text-gray-300">
-                            Approve this checklist if all tasks are verified. Reject if changes are required.
-                        </p>
-                        <Textarea
-                            label="Rejection Reason (optional)"
-                            value={rejectionReason}
-                            onChange={(e) => setRejectionReason(e.target.value)}
-                            placeholder="Add a reason for rejection..."
-                        />
-                        <div className="flex justify-end gap-2">
-                            <Button
-                                variant="secondary"
-                                onClick={() => handleChecklistStatusUpdate('Rejected')}
-                                isLoading={isUpdatingStatus}
-                            >
-                                Reject
-                            </Button>
-                            <Button
-                                onClick={() => handleChecklistStatusUpdate('Approved')}
-                                isLoading={isUpdatingStatus}
-                            >
-                                Approve
-                            </Button>
-                        </div>
-                    </div>
-                </Modal>
-            )}
         </div>
     );
 };
