@@ -122,9 +122,9 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
         if (employeeId) {
             const employee = people.find(u => u.id === employeeId) || employees.find(u => u.id === employeeId);
             const bu = bus.find(b => b.id === employee?.businessUnitId) || bus.find(b => b.name === employee?.businessUnit);
-            if (bu) setBusinessUnitId(bu.id);
+            if (bu && bu.id !== businessUnitId) setBusinessUnitId(bu.id);
         }
-    }, [employeeId, people, employees, bus]);
+    }, [employeeId, people, employees, bus, businessUnitId]);
 
     const selectedEmployee = useMemo(
         () => (people.find(u => u.id === employeeId) || employees.find(u => u.id === employeeId)),
@@ -231,6 +231,31 @@ ${notes ? `<p><strong>Citation:</strong> ${notes}</p>` : ''}
     const renderDetailsStep = () => (
         <div className="space-y-4">
             <div>
+                <label htmlFor="businessUnitId" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
+                <select
+                    id="businessUnitId"
+                    value={businessUnitId}
+                    onChange={e => {
+                        const newBuId = e.target.value;
+                        setBusinessUnitId(newBuId);
+                        const selectedBu = bus.find(b => b.id === newBuId);
+                        const buEmps = (people.length ? people : employees).filter(u => {
+                            return u.status === 'Active' && (u.businessUnitId === newBuId || (selectedBu && u.businessUnit === selectedBu.name));
+                        }).sort((a, b) => a.name.localeCompare(b.name));
+                        if (buEmps.length > 0) {
+                            setEmployeeId(buEmps[0].id);
+                        } else {
+                            setEmployeeId('');
+                        }
+                    }}
+                    className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                >
+                    {(bus.length ? bus : businessUnits).map(bu => (
+                        <option key={bu.id} value={bu.id}>{bu.name}</option>
+                    ))}
+                </select>
+            </div>
+            <div>
                 <label htmlFor="employeeId" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Employee</label>
                 <select
                     id="employeeId"
@@ -238,25 +263,19 @@ ${notes ? `<p><strong>Citation:</strong> ${notes}</p>` : ''}
                     onChange={e => setEmployeeId(e.target.value)}
                     className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 >
-                    {(people.length ? people : employees)
-                        .filter(u => u.status === 'Active')
-                        .sort((a, b) => a.name.localeCompare(b.name))
-                        .map(user => (
-                            <option key={user.id} value={user.id}>{user.name}</option>
-                        ))}
-                </select>
-            </div>
-            <div>
-                <label htmlFor="businessUnitId" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
-                <select
-                    id="businessUnitId"
-                    value={businessUnitId}
-                    onChange={e => setBusinessUnitId(e.target.value)}
-                    className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                >
-                    {(bus.length ? bus : businessUnits).map(bu => (
-                        <option key={bu.id} value={bu.id}>{bu.name}</option>
-                    ))}
+                    {(() => {
+                        const selectedBu = bus.find(b => b.id === businessUnitId);
+                        return (people.length ? people : employees)
+                            .filter(u => {
+                                if (u.status !== 'Active') return false;
+                                if (!businessUnitId) return true;
+                                return u.businessUnitId === businessUnitId || (selectedBu && u.businessUnit === selectedBu.name);
+                            })
+                            .sort((a, b) => a.name.localeCompare(b.name))
+                            .map(user => (
+                                <option key={user.id} value={user.id}>{user.name}</option>
+                            ));
+                    })()}
                 </select>
             </div>
             <div>

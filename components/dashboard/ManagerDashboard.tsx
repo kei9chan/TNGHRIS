@@ -377,6 +377,44 @@ const ManagerDashboard: React.FC = () => {
     }, []);
 
     useEffect(() => {
+        const loadAwards = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('employee_awards')
+                    .select('*, hris_users:employee_id(full_name)')
+                    .order('created_at', { ascending: false });
+                if (error) throw error;
+                if (data) {
+                    const mapped = data.map((r: any) => ({
+                        id: r.id,
+                        employeeId: r.employee_id,
+                        employeeName: r.hris_users?.full_name || '',
+                        awardId: r.award_template_id || r.award_id,
+                        dateAwarded: r.decided_at ? new Date(r.decided_at) : r.submitted_at ? new Date(r.submitted_at) : new Date(r.created_at),
+                        notes: r.notes || '',
+                        createdByUserId: r.created_by_user_id || '',
+                        level: r.level || 'Bronze',
+                        businessUnitId: r.business_unit_id || undefined,
+                        status: r.status === 'PendingApproval' || r.status === 'Pending' || r.status === 'Pending Approval'
+                            ? ResolutionStatus.PendingApproval
+                            : (r.status as ResolutionStatus) || ResolutionStatus.Draft,
+                        approverSteps: r.approver_steps || [],
+                        rejectionReason: r.rejection_reason || undefined,
+                        isAcknowledgedByEmployee: !!r.is_acknowledged_by_employee,
+                        certificateSnapshotUrl: r.certificate_snapshot_url || undefined,
+                        approverId: r.approver_id || undefined,
+                        approverName: r.approver_name || undefined,
+                    }));
+                    setAwards(mapped);
+                }
+            } catch (err) {
+                console.error('Failed to load awards for manager dashboard', err);
+            }
+        };
+        loadAwards();
+    }, []);
+
+    useEffect(() => {
         const profileId = employeeProfileId || user?.id;
         if (!profileId) {
             setAssignedTickets([]);
@@ -1403,6 +1441,28 @@ const ManagerDashboard: React.FC = () => {
                     link: '/employees/benefits?tab=approvals',
                     colorClass: 'bg-orange-500',
                     priority: 0
+                });
+            });
+        }
+
+        // 13.5. Award Approvals (BOD/GM/OperationsDirector only)
+        const isAwardApprover = user && (user.role === Role.BOD || user.role === Role.GeneralManager || user.role === Role.OperationsDirector);
+        if (isAwardApprover) {
+            const awardsForApproval = awards.filter(award => 
+                award.status === ResolutionStatus.PendingApproval &&
+                (award.approverId === user.id || award.approverSteps?.some(step => step.userId === user.id && step.status === ApproverStatus.Pending))
+            );
+
+            awardsForApproval.forEach(award => {
+                items.push({
+                    id: `award-approve-${award.id}`,
+                    icon: <TrophyIcon className="h-6 w-6 text-white" />,
+                    title: "Award for Approval",
+                    subtitle: `Nomination for ${(award as any).employeeName || award.employeeId}`,
+                    date: new Date(award.dateAwarded).toLocaleDateString(),
+                    link: '/evaluation/awards',
+                    colorClass: 'bg-yellow-500',
+                    priority: 1
                 });
             });
         }
