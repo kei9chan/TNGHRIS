@@ -76,11 +76,7 @@ const AssignedOnboardingChecklist: React.FC<AssignedOnboardingChecklistProps> = 
                         const isDone =
                             task.status === OnboardingTaskStatus.Completed ||
                             task.status === OnboardingTaskStatus.PendingApproval;
-                        const displayStatus =
-                            checklist.status === 'Pending Approval' &&
-                            task.status === OnboardingTaskStatus.Completed
-                                ? OnboardingTaskStatus.PendingApproval
-                                : task.status;
+                        const displayStatus = task.status;
 
                         return (
                             <li key={task.id} className="py-3 flex justify-between items-center">
