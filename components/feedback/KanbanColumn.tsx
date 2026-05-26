@@ -19,9 +19,9 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({ stage, reports, onUpdateSta
         e.preventDefault();
         const reportId = e.dataTransfer.getData('text/plain');
         if (reportId && reportId !== draggedItemId) { // Ensure it's a new item or from another list
-             onUpdateStage(reportId, stage.id);
+             onUpdateStage(reportId, stage.code || stage.id);
         } else if (draggedItemId) { // Handle drop within the same list or from another
-             onUpdateStage(draggedItemId, stage.id);
+             onUpdateStage(draggedItemId, stage.code || stage.id);
         }
         setIsDragOver(false);
     };

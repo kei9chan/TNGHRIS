@@ -29,7 +29,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ reports, stages, onUpdateStag
                 <div key={stage.id} className="w-80 flex-shrink-0">
                     <KanbanColumn
                         stage={stage}
-                        reports={reports.filter(r => r.pipelineStage === stage.id)}
+                        reports={reports.filter(r => r.pipelineStage === (stage.code || stage.id))}
                         onUpdateStage={onUpdateStage}
                         onCardClick={onCardClick}
                         onDragStart={handleDragStart}
