@@ -29,8 +29,9 @@ type IncidentReportRow = {
 };
 
 type FeedbackTemplateRow = {
-  id: string; name: string; type: string; subject_template: string;
-  body_template: string; created_at: string; updated_at: string;
+  id: string; title: string; body: string; from: string; subject: string; cc: string;
+  logo_url?: string; signatory_name: string; signatory_title: string;
+  signatory_signature_url?: string; signatorysignatureurl?: string; signatory_signature?: string; signature_url?: string;
 };
 
 type PipelineStageRow = {
@@ -79,9 +80,9 @@ const mapIncidentReport = (r: IncidentReportRow): IncidentReport => ({
 } as any);
 
 const mapFeedbackTemplate = (r: FeedbackTemplateRow): FeedbackTemplate => ({
-  id: r.id, name: r.name, type: r.type as any,
-  subjectTemplate: r.subject_template, bodyTemplate: r.body_template,
-  createdAt: new Date(r.created_at), updatedAt: new Date(r.updated_at),
+  id: r.id, title: r.title, body: r.body, from: r.from, subject: r.subject, cc: r.cc,
+  signatoryName: r.signatory_name, signatoryTitle: r.signatory_title,
+  signatorySignatureUrl: r.signatory_signature_url || r.signatorysignatureurl || r.signatory_signature || r.signature_url,
 } as any);
 
 const mapPipelineStage = (r: PipelineStageRow): PipelineStage => ({
@@ -158,7 +159,7 @@ export const fetchIncidentReports = async (): Promise<IncidentReport[]> => {
 
 // Feedback Templates
 export const fetchFeedbackTemplates = async (): Promise<FeedbackTemplate[]> => {
-  const { data, error } = await supabase.from('feedback_templates').select('*').order('name', { ascending: true });
+  const { data, error } = await supabase.from('feedback_templates').select('*').order('title', { ascending: true });
   if (error) throw new Error(error.message);
   return (data as FeedbackTemplateRow[]).map(mapFeedbackTemplate);
 };
