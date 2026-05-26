@@ -175,8 +175,19 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
   const memoItems: SearchableItem[] = useMemo(() => memos.map(memo => ({ id: memo.id, label: memo.title })), [memos]);
   const disciplineItems: SearchableItem[] = useMemo(() => disciplineEntries.map(entry => ({ id: entry.id, label: entry.description, subLabel: entry.category, tag: entry.code })), [disciplineEntries]);
 
-  const citedMemos = useMemo(() => memos.filter(m => memoIds.includes(m.id)), [memoIds, memos]);
-  const citedDiscipline = useMemo(() => disciplineEntries.filter(e => disciplineCodeIds.includes(e.id)), [disciplineCodeIds, disciplineEntries]);
+  const citedMemos = useMemo(() => {
+    return memoIds.filter(id => id.trim() !== '').map(id => {
+      const found = memos.find(m => m.id === id);
+      return found || { id, title: 'Manual Memo Reference', body: id } as unknown as Memo;
+    });
+  }, [memoIds, memos]);
+
+  const citedDiscipline = useMemo(() => {
+    return disciplineCodeIds.filter(id => id.trim() !== '').map(id => {
+      const found = disciplineEntries.find(e => e.id === id);
+      return found || { id, code: 'Manual', category: 'Manual Entry', description: id } as unknown as CodeOfDiscipline;
+    });
+  }, [disciplineCodeIds, disciplineEntries]);
 
   const handleSelectEmployee = (employeeId: string) => {
     setSelectedEmployeeIds(prev =>
@@ -403,22 +414,42 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
               value={evidenceUrl}
               onChange={e => setEvidenceUrl(e.target.value)}
             />
-            <SearchableMultiSelect
-              label="Cite Memos"
-              placeholder="Search for policy titles..."
-              items={memoItems}
-              selectedItemIds={memoIds}
-              onSelectionChange={setMemoIds}
-              variant="primary"
-            />
-            <SearchableMultiSelect
-              label="Cite Code of Discipline"
-              placeholder="Search by code or description..."
-              items={disciplineItems}
-              selectedItemIds={disciplineCodeIds}
-              onSelectionChange={setDisciplineCodeIds}
-              variant="danger"
-            />
+            {memos.length > 0 ? (
+              <SearchableMultiSelect
+                label="Cite Memos"
+                placeholder="Search for policy titles..."
+                items={memoItems}
+                selectedItemIds={memoIds}
+                onSelectionChange={setMemoIds}
+                variant="primary"
+              />
+            ) : (
+              <Textarea
+                label="Cite Memos"
+                placeholder="Enter memo references manually..."
+                value={memoIds.join('\n')}
+                onChange={e => setMemoIds([e.target.value])}
+                rows={3}
+              />
+            )}
+            {disciplineEntries.length > 0 ? (
+              <SearchableMultiSelect
+                label="Cite Code of Discipline"
+                placeholder="Search by code or description..."
+                items={disciplineItems}
+                selectedItemIds={disciplineCodeIds}
+                onSelectionChange={setDisciplineCodeIds}
+                variant="danger"
+              />
+            ) : (
+              <Textarea
+                label="Cite Code of Discipline"
+                placeholder="Enter code of discipline manually..."
+                value={disciplineCodeIds.join('\n')}
+                onChange={e => setDisciplineCodeIds([e.target.value])}
+                rows={3}
+              />
+            )}
           </div>
 
           {/* Preview */}

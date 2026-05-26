@@ -26,6 +26,7 @@ import {
 const WFH_STATUS_LABELS: Record<WFHRequestStatus, string> = {
     [WFHRequestStatus.PendingSubmission]: 'Pending Submission',
     [WFHRequestStatus.PendingDeptHead]: 'Pending Dept Head Approval',
+    [WFHRequestStatus.PendingGM]: 'Pending GM Approval',
     [WFHRequestStatus.PendingBOD]: 'Pending BOD Approval',
     [WFHRequestStatus.ForTimekeeping]: 'For Timekeeping',
     [WFHRequestStatus.Approved]: 'Approved',
@@ -40,6 +41,7 @@ const getStatusColor = (status: WFHRequestStatus) => {
         case WFHRequestStatus.ForTimekeeping: return 'bg-teal-100 text-teal-800 dark:bg-teal-900/50 dark:text-teal-300';
         case WFHRequestStatus.PendingSubmission:
         case WFHRequestStatus.PendingDeptHead:
+        case WFHRequestStatus.PendingGM:
         case WFHRequestStatus.PendingBOD: return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300';
         case WFHRequestStatus.Rejected: return 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300';
         default: return 'bg-gray-100 text-gray-800';

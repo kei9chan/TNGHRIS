@@ -663,7 +663,7 @@ const Timekeeping: React.FC = () => {
     const handleOpenDetailModal = (assignment: ShiftAssignment) => {
          // Check permissions before allowing detail view actions if restricted
          const employee = employees.find(u => u.id === assignment.employeeId);
-         if (isDepartmentManager && !can('Timekeeping', Permission.Edit) && user && employee && employee.department !== user.department) {
+         if (isTeamManager && !can('Timekeeping', Permission.Edit) && user && employee && employee.department !== user.department) {
              // They can view but not edit/delete. The modal handles isEditable prop.
              // We need to pass down a specific isEditable flag for this specific assignment?
              // For simplicity, the modal uses the page-wide `isEditable` flag. 
