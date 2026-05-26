@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { IncidentReport, IRStatus, ChatMessage, User } from '../types';
+import { IncidentReport, IRStatus, ChatMessage, User, PipelineStage } from '../types';
 
 const isUuid = (value?: string | null) =>
   !!value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -198,4 +198,19 @@ export const addIncidentReportMessage = async (
     chatThread: [...(report.chatThread || []), message],
   };
   return saveIncidentReport(updated, user);
+};
+
+export const fetchPipelineStages = async (): Promise<PipelineStage[]> => {
+  const { data, error } = await supabase
+    .from('pipeline_stages')
+    .select('*')
+    .order('sort_order', { ascending: true });
+  if (error) throw new Error(error.message || 'Failed to load pipeline stages');
+  return (data || []).map((row: any) => ({
+    id: row.id,
+    name: row.name,
+    isLocked: !!row.is_locked,
+    sort_order: row.sort_order,
+    code: row.code,
+  }));
 };

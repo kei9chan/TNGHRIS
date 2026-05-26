@@ -17,7 +17,7 @@ import Card from '../../components/ui/Card';
 import PrintableIncidentReport from '../../components/feedback/PrintableIncidentReport';
 import CaseListTable from '../../components/feedback/CaseListTable';
 import { logActivity } from '../../services/auditService';
-import { fetchIncidentReports, saveIncidentReport, addIncidentReportMessage } from '../../services/incidentReportService';
+import { fetchIncidentReports, saveIncidentReport, addIncidentReportMessage, fetchPipelineStages } from '../../services/incidentReportService';
 import { saveNTEs, updateNTE, fetchNTEs } from '../../services/nteService';
 import { fetchResolutions, createResolution, updateResolution } from '../../services/resolutionService';
 
@@ -89,7 +89,7 @@ const DisciplinaryCases: React.FC = () => {
   const specialFilter = queryParams.get('filter');
 
   const [allReports, setAllReports] = useState<IncidentReport[]>([]);
-  const [stages] = useState<PipelineStage[]>([]);
+  const [stages, setStages] = useState<PipelineStage[]>([]);
   const [ntes, setNTEs] = useState<NTE[]>([]);
   const [resolutions, setResolutions] = useState<Resolution[]>([]);
 
@@ -135,16 +135,20 @@ const DisciplinaryCases: React.FC = () => {
   }, [irAccess, user]);
 
   useEffect(() => {
-    const loadReports = async () => {
+    const loadReportsAndStages = async () => {
       try {
-        const data = await fetchIncidentReports();
+        const [data, stagesData] = await Promise.all([
+          fetchIncidentReports(),
+          fetchPipelineStages()
+        ]);
         setAllReports(filterByIrAccess(data));
+        setStages(stagesData);
       } catch (err) {
-        console.error('Failed to load incident reports', err);
+        console.error('Failed to load incident reports or stages', err);
         setAllReports([]);
       }
     };
-    loadReports();
+    loadReportsAndStages();
   }, [filterByIrAccess]);
 
   useEffect(() => {
