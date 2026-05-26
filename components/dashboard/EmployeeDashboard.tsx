@@ -1603,7 +1603,7 @@ const EmployeeDashboard: React.FC = () => {
                 id: `hearing-ack-${nte.id}`,
                 icon: <GavelIcon {...iconProps} />,
                 title: "Hearing Scheduled",
-                subtitle: `An administrative hearing has been scheduled for Case ${nte.incidentReportId}.`,
+                subtitle: `An administrative hearing has been scheduled.`,
                 date: new Date(nte.hearingDetails!.date).toLocaleDateString(),
                 link: `/feedback/nte/${nte.id}`,
                 colorClass: 'bg-red-500',

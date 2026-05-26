@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { IncidentReport } from '../../types';
+import { formatIRDisplayId } from '../../utils/formatCaseId';
 import { supabase } from '../../services/supabaseClient';
 import { useUsers } from '../../hooks/useHRData';
 
@@ -115,7 +116,7 @@ const PrintableIncidentReport: React.FC<PrintableIncidentReportProps> = ({ repor
             <div className="print-content font-sans text-black p-8 text-sm">
                 <div className="text-center mb-8 border-b pb-4">
                     <h1 className="text-2xl font-bold">CONFIDENTIAL INCIDENT REPORT</h1>
-                    <p>Report ID: {report.id}</p>
+                    <p>Report ID: {formatIRDisplayId(report.caseNumber) || report.id}</p>
                 </div>
                 
                 <h2 className="font-bold text-base mb-2">I. INCIDENT DETAILS</h2>

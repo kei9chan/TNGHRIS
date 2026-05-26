@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { IncidentReport, IRStatus, ResolutionStatus } from '../../types';
+import { formatIRDisplayId, formatNTEDisplayId } from '../../utils/formatCaseId';
 import Card from '../ui/Card';
 
 interface CaseListTableProps {
@@ -68,7 +69,10 @@ const CaseListTable: React.FC<CaseListTableProps> = ({ reports, onRowClick, ntes
                         {reports.map(report => {
                             const tag = getTag(report, resolutions);
                             const nte = report.nteIds.length > 0 ? (ntes || []).find(n => n.id === report.nteIds[0]) : null;
-                            const displayId = (report.pipelineStage === 'nte-sent' || report.pipelineStage === 'hr-review-response') && nte ? nte.id : report.id.split('_VIRTUAL_')[0];
+                            const isNteStage = report.pipelineStage === 'nte-sent' || report.pipelineStage === 'hr-review-response';
+                            const displayId = isNteStage && nte
+                              ? (formatNTEDisplayId((nte as any).nteNumber) || nte.id)
+                              : (formatIRDisplayId(report.caseNumber) || report.id.split('_VIRTUAL_')[0]);
 
                             return (
                                 <tr key={report.id} onClick={() => onRowClick(report)} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer">

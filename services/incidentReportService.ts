@@ -28,6 +28,7 @@ type IncidentReportRow = {
   business_unit_name?: string | null;
   created_at?: string;
   updated_at?: string;
+  case_number?: number;
 };
 
 const mapRow = (row: IncidentReportRow): IncidentReport => ({
@@ -55,6 +56,7 @@ const mapRow = (row: IncidentReportRow): IncidentReport => ({
   assignedToName: row.assigned_to_name || undefined,
   businessUnitId: row.business_unit_id || undefined,
   businessUnitName: row.business_unit_name || undefined,
+  caseNumber: row.case_number || undefined,
 });
 
 export const fetchIncidentReportById = async (id: string): Promise<IncidentReport | null> => {

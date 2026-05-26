@@ -22,6 +22,7 @@ import { logActivity } from '../../services/auditService';
 import { fetchNTEById, updateNTE } from '../../services/nteService';
 import { fetchIncidentReportById, addIncidentReportMessage, saveIncidentReport } from '../../services/incidentReportService';
 import { fetchResolutionsByIncidentReportId, createResolution, updateResolution } from '../../services/resolutionService';
+import { formatIRDisplayId, formatNTEDisplayId } from '../../utils/formatCaseId';
 
 const PaperclipIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>;
 const PaperAirplaneIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>;
@@ -131,7 +132,7 @@ const NTEDetail: React.FC = () => {
                 await createNotification({
                     userId: saved.employeeId,
                     type: NotificationType.NTE_ISSUED,
-                    message: `You have been issued a Notice to Explain (NTE) regarding case ${saved.incidentReportId}.`,
+                    message: `You have been issued a Notice to Explain (NTE) regarding case ${formatIRDisplayId(incidentReport?.caseNumber) || saved.incidentReportId}.`,
                     link: `/feedback/nte/${saved.id}`,
                 });
             }
@@ -158,7 +159,7 @@ const NTEDetail: React.FC = () => {
             await createNotification({
                 userId: saved.issuedByUserId,
                 type: NotificationType.RESOLUTION_ISSUED,
-                message: `NTE ${saved.id} for ${saved.employeeName} was rejected by ${user.name}.`,
+                message: `NTE ${formatNTEDisplayId(saved.nteNumber) || saved.id} for ${saved.employeeName} was rejected by ${user.name}.`,
                 link: `/feedback/nte/${saved.id}`,
             });
             setIsRejectModalOpen(false);
@@ -267,14 +268,14 @@ const NTEDetail: React.FC = () => {
             await createNotification({
                 userId: nte.employeeId,
                 type: NotificationType.NTE_ISSUED,
-                message: `An administrative hearing has been scheduled for Case ${nte.incidentReportId}.`,
+                message: `An administrative hearing has been scheduled for Case ${formatIRDisplayId(incidentReport?.caseNumber) || nte.incidentReportId}.`,
                 link: `/feedback/nte/${nte.id}`,
             });
             await Promise.all(details.panelIds.map(panelistId => 
                 createNotification({
                     userId: panelistId,
                     type: NotificationType.NTE_ISSUED,
-                    message: `You have been added to the hearing panel for Case ${nte.incidentReportId}.`,
+                    message: `You have been added to the hearing panel for Case ${formatIRDisplayId(incidentReport?.caseNumber) || nte.incidentReportId}.`,
                     link: `/feedback/nte/${nte.id}`,
                 })
             ));
@@ -333,7 +334,7 @@ const NTEDetail: React.FC = () => {
                     Back to Disciplinary Cases
                 </Link>
                 <div className="flex justify-between items-start">
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">NTE: {nte.id}</h1>
+                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">NTE: {formatNTEDisplayId(nte.nteNumber) || nte.id}</h1>
                     <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${nte.status === NTEStatus.Issued ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800'}`}>
                         {nte.status}
                     </span>
@@ -347,7 +348,7 @@ const NTEDetail: React.FC = () => {
                     </div>
                      <div>
                         <dt className="font-medium text-gray-500 dark:text-gray-400">Linked IR</dt>
-                        <dd className="mt-1 text-gray-900 dark:text-white font-mono">{nte.incidentReportId}</dd>
+                        <dd className="mt-1 text-gray-900 dark:text-white font-mono">{formatIRDisplayId(incidentReport?.caseNumber) || nte.incidentReportId}</dd>
                     </div>
                     <div className="sm:col-span-2">
                         <dt className="font-medium text-gray-500 dark:text-gray-400">Response Deadline</dt>

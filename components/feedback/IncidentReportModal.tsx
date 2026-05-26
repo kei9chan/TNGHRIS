@@ -3,6 +3,7 @@ import { fetchCodeOfDiscipline } from '../../services/disciplineService';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { IncidentReport, IRStatus, User, Role, BusinessUnit, CodeOfDiscipline } from '../../types';
+import { formatIRDisplayId } from '../../utils/formatCaseId';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
@@ -572,7 +573,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={report ? `Incident Report: ${report.id}` : 'File New Incident Report'}
+      title={report ? `Incident Report: ${formatIRDisplayId(report.caseNumber) || report.id}` : 'File New Incident Report'}
       footer={renderFooter()}
     >
       {renderModalContent()}

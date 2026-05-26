@@ -20,6 +20,7 @@ import { logActivity } from '../../services/auditService';
 import { fetchIncidentReports, saveIncidentReport, addIncidentReportMessage, fetchPipelineStages } from '../../services/incidentReportService';
 import { saveNTEs, updateNTE, fetchNTEs } from '../../services/nteService';
 import { fetchResolutions, createResolution, updateResolution } from '../../services/resolutionService';
+import { formatIRDisplayId } from '../../utils/formatCaseId';
 
 const SearchIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>;
 const ChevronDownIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>;
@@ -462,7 +463,7 @@ const DisciplinaryCases: React.FC = () => {
           userId: saved.assignedToId,
           type: NotificationType.CASE_ASSIGNED,
           title: 'New Case Assigned',
-          message: `You have been assigned as case handler for Incident Report ${saved.id}.`,
+          message: `You have been assigned as case handler for Incident Report ${formatIRDisplayId(saved.caseNumber) || saved.id}.`,
           link: '/feedback/cases',
           relatedEntityId: saved.id,
         }).catch(err => console.error('Failed to create notification:', err));
@@ -564,7 +565,7 @@ const DisciplinaryCases: React.FC = () => {
             userId: updated.employeeId,
             type: NotificationType.RESOLUTION_ISSUED,
             title: 'Resolution Issued',
-            message: `A decision has been made on case ${ir?.id}. Please review and acknowledge.`,
+            message: `A decision has been made on case ${formatIRDisplayId(ir?.caseNumber) || ir?.id}. Please review and acknowledge.`,
             link: `/feedback/nte/${nte.id}`,
             relatedEntityId: updated.id,
           }).catch(err => console.error('Failed to create notification:', err));
@@ -731,7 +732,7 @@ const DisciplinaryCases: React.FC = () => {
             coachId: user.id,
             coachName: user.name,
             trigger: trigger,
-            context: `[From IR-${saved.id}]: ${saved.description}`,
+            context: `[From ${formatIRDisplayId(saved.caseNumber) || 'IR-' + saved.id}]: ${saved.description}`,
             date: new Date(),
             status: CoachingStatus.Draft
           };

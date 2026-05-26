@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { IncidentReport, IRStatus, NTEStatus, ResolutionStatus } from '../../types';
+import { formatIRDisplayId, formatNTEDisplayId } from '../../utils/formatCaseId';
 
 interface KanbanCardProps {
     report: IncidentReport;
@@ -63,7 +64,10 @@ const KanbanCard: React.FC<KanbanCardProps> = ({ report, onCardClick, onDragStar
     };
 
     const tag = getTag();
-    const displayId = (report.pipelineStage === 'nte-sent' || report.pipelineStage === 'hr-review-response') && nte ? nte.id : report.id;
+    const isNteStage = report.pipelineStage === 'nte-sent' || report.pipelineStage === 'hr-review-response';
+    const displayId = isNteStage && nte
+      ? (formatNTEDisplayId((nte as any).nteNumber) || nte.id)
+      : (formatIRDisplayId(report.caseNumber) || report.id);
     
     const getHearingDateStyle = (date: Date) => {
         const now = new Date();

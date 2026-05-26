@@ -923,7 +923,7 @@ const BODDashboard: React.FC = () => {
                 id: `nte-approve-${nte.id}`,
                 icon: <DocumentTextIcon {...iconProps} />,
                 title: "NTE for Approval",
-                subtitle: `For ${nte.employeeName} regarding Case ${nte.incidentReportId}`,
+                subtitle: `For ${nte.employeeName}`,
                 date: new Date(nte.issuedDate).toLocaleDateString(),
                 link: `/feedback/nte/${nte.id}`,
                 colorClass: 'bg-orange-500',

@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { NTE } from '../../types';
+import { formatNTEDisplayId } from '../../utils/formatCaseId';
 import { useUsers } from '../../hooks/useHRData';
 
 interface PrintableNTEResponseProps {
@@ -56,7 +57,7 @@ const PrintableNTEResponse: React.FC<PrintableNTEResponseProps> = ({ nte, onClos
             <div className="print-content font-sans text-black p-8 text-sm">
                 <div className="text-center mb-8 border-b pb-4">
                     <h1 className="text-2xl font-bold">WRITTEN EXPLANATION</h1>
-                    <p>In Response to Notice to Explain: {nte.id}</p>
+                    <p>In Response to Notice to Explain: {formatNTEDisplayId(nte.nteNumber) || nte.id}</p>
                 </div>
                 
                 <table className="w-full text-sm mb-6 border-collapse">

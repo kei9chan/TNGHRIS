@@ -1,5 +1,7 @@
 import { fetchBusinessUnits } from '../../services/userService';
 import { fetchMemos } from '../../services/memoService';
+import { logActivity } from '../../services/auditService';
+import { formatNTEDisplayId } from '../../utils/formatCaseId';
 import { fetchCodeOfDiscipline } from '../../services/disciplineService';
 import { fetchFeedbackTemplates } from '../../services/feedbackService';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
@@ -499,7 +501,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={`NTE: ${nte.id}`}
+      title={`NTE: ${formatNTEDisplayId(nte.nteNumber) || nte.id}`}
       size="2xl"
       footer={
         <div className="flex justify-end w-full space-x-2">

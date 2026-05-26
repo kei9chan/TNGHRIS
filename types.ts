@@ -717,6 +717,7 @@ export interface IncidentReport {
   assignedToName?: string;
   businessUnitId?: string;
   businessUnitName?: string;
+  caseNumber?: number;
 }
 
 export enum NTEStatus {
@@ -768,6 +769,7 @@ export interface NTE {
   approverSteps?: ApproverStep[];
   decisionMakerSignatureUrl?: string;
   hearingDetails?: HearingDetails;
+  nteNumber?: number;
 }
 
 export enum ResolutionStatus {

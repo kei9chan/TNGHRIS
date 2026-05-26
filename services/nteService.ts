@@ -19,6 +19,7 @@ type NTERow = {
   approval_log?: any[] | null;
   created_at?: string;
   updated_at?: string;
+  nte_number?: number;
 };
 
 const mapRow = (row: NTERow): NTE => {
@@ -40,6 +41,7 @@ const mapRow = (row: NTERow): NTE => {
     evidenceUrl: row.evidence_link || undefined,
     issuedByUserId: row.issued_by_user_id || '',
     approverSteps: (row.approval_log as ApproverStep[]) || [],
+    nteNumber: row.nte_number || undefined,
   };
 };
 
