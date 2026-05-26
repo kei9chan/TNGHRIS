@@ -11,6 +11,7 @@ import SearchableMultiSelect, { SearchableItem } from '../ui/SearchableMultiSele
 import Input from '../ui/Input';
 import NTEPreview from './NTEPreview';
 import { useAuth } from '../../hooks/useAuth';
+import { useSettings } from '../../context/SettingsContext';
 import EmployeeMultiSelect from './EmployeeMultiSelect';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
@@ -32,6 +33,7 @@ const XCircleIcon: React.FC = () => (
 
 const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nte, onSave }) => {
   const { user } = useAuth();
+  const { approverConfigs } = useSettings();
   const isNewNTE = !nte;
 
   // State for new NTE
@@ -215,8 +217,8 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
     if (!deadline) {
       errors.push('Set a response deadline.');
     }
-    if (selectedApprovers.length === 0 || !selectedApprovers.some(a => a.role === Role.BOD)) {
-      errors.push('Select at least one approver, including at least one Board of Director.');
+    if (selectedApprovers.length === 0 || !selectedApprovers.some(a => approverConfigs?.bodApprovers?.user_ids?.includes(a.id))) {
+      errors.push('Select at least one approver, including at least one Board of Director from the settings.');
     }
 
 
