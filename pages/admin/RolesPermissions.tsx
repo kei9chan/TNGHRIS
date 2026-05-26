@@ -271,8 +271,6 @@ const RolesPermissions: React.FC = () => {
                 newMatrix[role] = {};
             }
             (newMatrix[role] as Partial<Record<Resource, Permission[]>>)[resource] = updatedPermissions;
-            // Persist immediately
-            persistMatrix(newMatrix);
             return newMatrix;
         });
     };
