@@ -1,0 +1,2 @@
+CREATE POLICY "ntes_approver_select" ON public.ntes FOR SELECT USING (current_hris_id() = ANY(approver_ids));
+CREATE POLICY "ntes_approver_update" ON public.ntes FOR UPDATE USING (current_hris_id() = ANY(approver_ids));
