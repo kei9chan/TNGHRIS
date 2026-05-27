@@ -1,9 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { IncidentReport, IRStatus } from '../../types';
+import { IncidentReport, IRStatus, NTE, NTEStatus, ApproverStatus } from '../../types';
 import Card from '../ui/Card';
 import { fetchIncidentReports } from '../../services/incidentReportService';
+import { fetchNTEs } from '../../services/nteService';
 import { useAuth } from '../../hooks/useAuth';
+
+type DisplayItem = {
+    id: string;
+    type: 'ir' | 'nte-approval';
+    caseIdStr: string;
+    category: string;
+    involvedNames: string;
+    stageLabel: string;
+    dateTime: Date;
+    link: string;
+    colorClass: string;
+};
 
 interface AssignedCasesWidgetProps {
     userId?: string;
@@ -12,35 +25,76 @@ interface AssignedCasesWidgetProps {
 const AssignedCasesWidget: React.FC<AssignedCasesWidgetProps> = ({ userId }) => {
     const { user } = useAuth();
     const effectiveUserId = userId || user?.id;
-    const [cases, setCases] = useState<IncidentReport[]>([]);
+    const [items, setItems] = useState<DisplayItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        if (!user) return;
+        if (!user || !effectiveUserId) return;
         let cancelled = false;
         
-        fetchIncidentReports()
-            .then(data => {
-                if (!cancelled) {
-                    const myCases = data.filter(ir => 
-                        ir.assignedToId === effectiveUserId && 
-                        ir.status !== IRStatus.Closed && 
-                        ir.status !== IRStatus.NoAction
-                    );
-                    setCases(myCases);
-                }
-            })
-            .catch(() => {
-                if (!cancelled) setCases([]);
-            })
-            .finally(() => {
-                if (!cancelled) setIsLoading(false);
-            });
+        Promise.all([
+            fetchIncidentReports(),
+            fetchNTEs()
+        ])
+        .then(([irData, nteData]) => {
+            if (!cancelled) {
+                const displayItems: DisplayItem[] = [];
+
+                const myCases = irData.filter(ir => 
+                    ir.assignedToId === effectiveUserId && 
+                    ir.status !== IRStatus.Closed && 
+                    ir.status !== IRStatus.NoAction
+                );
+
+                myCases.forEach(ir => {
+                    const caseIdStr = (ir as any).nteNumber ? `TNGNTE-${String((ir as any).nteNumber).padStart(5, '0')}` : ir.caseNumber ? `TNGIR-${String(ir.caseNumber).padStart(5, '0')}` : 'Case';
+                    displayItems.push({
+                        id: `ir-${ir.id}`,
+                        type: 'ir',
+                        caseIdStr,
+                        category: ir.category,
+                        involvedNames: ir.involvedEmployeeNames.join(', '),
+                        stageLabel: getStageLabel(ir.pipelineStage),
+                        dateTime: new Date(ir.dateTime),
+                        link: '/feedback/cases',
+                        colorClass: 'border-red-500'
+                    });
+                });
+
+                const myPendingNTEs = nteData.filter(nte => 
+                    nte.status === NTEStatus.PendingApproval &&
+                    nte.approverSteps?.some(step => step.userId === effectiveUserId && step.status === ApproverStatus.Pending)
+                );
+
+                myPendingNTEs.forEach(nte => {
+                    const caseIdStr = nte.nteNumber ? `TNGNTE-${String(nte.nteNumber).padStart(5, '0')}` : 'NTE';
+                    displayItems.push({
+                        id: `nte-${nte.id}`,
+                        type: 'nte-approval',
+                        caseIdStr,
+                        category: 'NTE Approval Required',
+                        involvedNames: nte.employeeName,
+                        stageLabel: 'Pending Your Approval',
+                        dateTime: new Date(nte.issuedDate),
+                        link: `/feedback/nte/${nte.id}`,
+                        colorClass: 'border-orange-500'
+                    });
+                });
+
+                setItems(displayItems);
+            }
+        })
+        .catch(() => {
+            if (!cancelled) setItems([]);
+        })
+        .finally(() => {
+            if (!cancelled) setIsLoading(false);
+        });
             
         return () => { cancelled = true; };
-    }, [effectiveUserId]);
+    }, [effectiveUserId, user]);
 
-    const sortedCases = cases.sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime());
+    const sortedItems = items.sort((a, b) => b.dateTime.getTime() - a.dateTime.getTime());
 
     const getStageLabel = (stage: string) => {
         switch (stage) {
@@ -53,31 +107,30 @@ const AssignedCasesWidget: React.FC<AssignedCasesWidgetProps> = ({ userId }) => 
     };
 
     return (
-        <Card title={`Assigned Disciplinary Cases (${isLoading ? '…' : sortedCases.length})`}>
+        <Card title={`Assigned Disciplinary Cases (${isLoading ? '…' : sortedItems.length})`}>
             {isLoading ? (
                 <p className="text-gray-500 dark:text-gray-400 text-center py-4">Loading…</p>
-            ) : sortedCases.length === 0 ? (
+            ) : sortedItems.length === 0 ? (
                 <p className="text-gray-500 dark:text-gray-400 text-center py-4">No cases assigned to you.</p>
             ) : (
                 <>
                     <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
-                        {sortedCases.map(ir => {
-                            const caseIdStr = ir.nteNumber ? `TNGNTE-${String(ir.nteNumber).padStart(5, '0')}` : ir.caseNumber ? `TNGIR-${String(ir.caseNumber).padStart(5, '0')}` : 'Case';
+                        {sortedItems.map(item => {
                             return (
-                                <Link to="/feedback/cases" key={ir.id} className="block hover:bg-gray-50 dark:hover:bg-gray-700/50 p-3 rounded-md border-l-4 border-red-500">
+                                <Link to={item.link} key={item.id} className={`block hover:bg-gray-50 dark:hover:bg-gray-700/50 p-3 rounded-md border-l-4 ${item.colorClass}`}>
                                     <div className="flex justify-between items-start">
                                         <div>
                                             <p className="font-semibold text-gray-800 dark:text-gray-200">
-                                                {caseIdStr} • {ir.category}
+                                                {item.caseIdStr} • {item.category}
                                             </p>
-                                            <p className="text-sm text-gray-500 dark:text-gray-400 truncate">Involved: {ir.involvedEmployeeNames.join(', ')}</p>
+                                            <p className="text-sm text-gray-500 dark:text-gray-400 truncate">Involved: {item.involvedNames}</p>
                                         </div>
                                     </div>
                                     <div className="mt-2 flex justify-between items-center text-xs">
-                                        <span className="px-2 py-0.5 font-semibold rounded-full bg-red-100 text-red-800">
-                                            {getStageLabel(ir.pipelineStage)}
+                                        <span className={`px-2 py-0.5 font-semibold rounded-full ${item.type === 'nte-approval' ? 'bg-orange-100 text-orange-800' : 'bg-red-100 text-red-800'}`}>
+                                            {item.stageLabel}
                                         </span>
-                                        <span className="text-gray-400">{new Date(ir.dateTime).toLocaleDateString()}</span>
+                                        <span className="text-gray-400">{item.dateTime.toLocaleDateString()}</span>
                                     </div>
                                 </Link>
                             )
