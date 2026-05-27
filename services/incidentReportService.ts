@@ -182,6 +182,17 @@ export const saveIncidentReport = async (
     payload.business_unit_name = buName || null;
   }
 
+  // Check for previous assignment to know if we need to notify
+  let previousAssignedToId: string | null = null;
+  if (isUpdate && report.assignedToId !== undefined) {
+    const { data: existing } = await supabase
+      .from('incident_reports')
+      .select('assigned_to_id')
+      .eq('id', report.id)
+      .single();
+    previousAssignedToId = existing?.assigned_to_id || null;
+  }
+
   const query = report.id
     ? supabase.from('incident_reports').update(payload).eq('id', report.id).select().single()
     : supabase.from('incident_reports').insert(payload).select().single();
@@ -213,6 +224,21 @@ export const saveIncidentReport = async (
       }
     } catch (err) {
       console.error('Failed to notify HR about new IR:', err);
+    }
+  }
+
+  // If assignment changed or was newly set, notify the handler
+  if (report.assignedToId && report.assignedToId !== previousAssignedToId) {
+    try {
+      await createNotification({
+        userId: report.assignedToId,
+        title: 'Case Assigned to You',
+        message: `You have been assigned as the case handler for Incident Report ${mappedRow.caseNumber ? `TNGIR-${String(mappedRow.caseNumber).padStart(5, '0')}` : 'Draft'}.`,
+        type: 'info',
+        link: '/feedback',
+      });
+    } catch (err) {
+      console.error('Failed to notify assignee:', err);
     }
   }
 
