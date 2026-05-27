@@ -8,6 +8,7 @@ import Button from '../ui/Button';
 import Card from '../ui/Card';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
+import { useSettings } from '../../context/SettingsContext';
 import SignaturePad, { SignaturePadRef } from '../ui/SignaturePad';
 import EmployeeMultiSelect from './EmployeeMultiSelect';
 import Input from '../ui/Input';
@@ -32,6 +33,7 @@ interface ResolutionModalProps {
 const ResolutionModal: React.FC<ResolutionModalProps> = ({ isOpen, onClose, incidentReport, resolution, onSave, isApproverView = false, onApprove, onReject, isEmployeeAcknowledgeView = false, onAcknowledge }) => {
   const { user } = useAuth();
   const { can } = usePermissions();
+  const { approverConfigs } = useSettings();
   const { users } = useUsers();
   
   // Main Resolution State
@@ -63,8 +65,9 @@ const ResolutionModal: React.FC<ResolutionModalProps> = ({ isOpen, onClose, inci
                  (isRejectedByApprover && !canEditResolution);
 
   const approverPool = useMemo(() => {
-    return users.filter(u => u.role === Role.BOD || u.role === Role.GeneralManager);
-  }, [users]);
+    if (!approverConfigs?.bodApprovers?.user_ids) return [];
+    return users.filter(u => approverConfigs.bodApprovers.user_ids.includes(u.id));
+  }, [users, approverConfigs]);
 
   const rejectionReasons = useMemo(() => {
     if (!isRejectedByApprover || !resolution?.approverSteps) return [];
@@ -199,8 +202,8 @@ const ResolutionModal: React.FC<ResolutionModalProps> = ({ isOpen, onClose, inci
         setApproverError('At least one approver must be selected.');
         return;
     }
-    if (!selectedApprovers.some(approver => approver.role === Role.BOD)) {
-        setApproverError('At least one selected approver must be a Board of Director.');
+    if (!selectedApprovers.some(approver => approverConfigs?.bodApprovers?.user_ids?.includes(approver.id))) {
+        setApproverError('At least one selected approver must be from the configured BOD approvers.');
         return;
     }
 
@@ -450,7 +453,7 @@ const ResolutionModal: React.FC<ResolutionModalProps> = ({ isOpen, onClose, inci
           <div className="space-y-4 pt-4 border-t dark:border-gray-600">
               <div className={isLocked ? 'pointer-events-none opacity-60' : ''}>
                 <EmployeeMultiSelect
-                    label={isApproverView ? "Approval Routing" : "Request Approval From (at least one BOD required)"}
+                    label={isApproverView ? "Approval Routing" : "Request Approval From"}
                     allUsers={approverPool}
                     selectedUsers={selectedApprovers}
                     onSelectionChange={setSelectedApprovers}

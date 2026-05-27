@@ -112,11 +112,20 @@ export const saveNTE = async (nte: Partial<NTE> & Record<string, any>): Promise<
     response_date: nte.responseDate ? new Date(nte.responseDate).toISOString() : null,
     business_unit_id: nte.businessUnitId || null,
   };
-  const { data, error } = nte.id
-    ? await supabase.from('ntes').update(payload).eq('id', nte.id).select().single()
-    : await supabase.from('ntes').insert(payload).select().single();
-  if (error) throw new Error(error.message);
-  return mapNTE(data as NTERow);
+  let result: NTERow;
+  if (nte.id) {
+    const { error } = await supabase.from('ntes').update(payload).eq('id', nte.id);
+    if (error) throw new Error(error.message);
+    const { data: fetched, error: fetchErr } = await supabase.from('ntes').select('*').eq('id', nte.id).maybeSingle();
+    if (fetchErr) throw new Error(fetchErr.message);
+    if (!fetched) throw new Error('NTE not found after update');
+    result = fetched as NTERow;
+  } else {
+    const { data, error } = await supabase.from('ntes').insert(payload).select().single();
+    if (error) throw new Error(error.message);
+    result = data as NTERow;
+  }
+  return mapNTE(result);
 };
 
 // Resolutions
@@ -143,11 +152,20 @@ export const saveResolution = async (res: Partial<Resolution> & Record<string, a
     signature_name: res.signatureName || null,
     signed_at: res.signedAt ? new Date(res.signedAt).toISOString() : null,
   };
-  const { data, error } = res.id
-    ? await supabase.from('resolutions').update(payload).eq('id', res.id).select().single()
-    : await supabase.from('resolutions').insert(payload).select().single();
-  if (error) throw new Error(error.message);
-  return mapResolution(data as ResolutionRow);
+  let result: ResolutionRow;
+  if (res.id) {
+    const { error } = await supabase.from('resolutions').update(payload).eq('id', res.id);
+    if (error) throw new Error(error.message);
+    const { data: fetched, error: fetchErr } = await supabase.from('resolutions').select('*').eq('id', res.id).maybeSingle();
+    if (fetchErr) throw new Error(fetchErr.message);
+    if (!fetched) throw new Error('Resolution not found after update');
+    result = fetched as ResolutionRow;
+  } else {
+    const { data, error } = await supabase.from('resolutions').insert(payload).select().single();
+    if (error) throw new Error(error.message);
+    result = data as ResolutionRow;
+  }
+  return mapResolution(result);
 };
 
 // Incident Reports

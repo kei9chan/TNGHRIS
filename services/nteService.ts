@@ -103,9 +103,20 @@ export const updateNTE = async (nte: Partial<NTE>): Promise<NTE> => {
     approver_ids: nte.approverSteps?.map(a => a.userId),
     approver_names: nte.approverSteps?.map(a => a.userName),
   };
-  const { data, error } = await supabase.from('ntes').update(payload).eq('id', nte.id).select().single();
+  // Use separate update + fetch to avoid 406 when RLS SELECT policy
+  // doesn't cover the approver after the row is modified
+  const { error } = await supabase.from('ntes').update(payload).eq('id', nte.id);
   if (error) throw new Error(error.message || 'Failed to update NTE');
-  return mapRow(data as NTERow);
+  
+  // Fetch the updated row separately
+  const { data: updated, error: fetchError } = await supabase
+    .from('ntes')
+    .select('*')
+    .eq('id', nte.id)
+    .maybeSingle();
+  if (fetchError) throw new Error(fetchError.message || 'Failed to fetch updated NTE');
+  if (!updated) throw new Error('NTE not found after update');
+  return mapRow(updated as NTERow);
 };
 
 export const fetchNTEById = async (id: string): Promise<NTE | null> => {
