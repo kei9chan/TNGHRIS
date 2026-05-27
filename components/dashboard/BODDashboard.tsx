@@ -466,7 +466,7 @@ const BODDashboard: React.FC = () => {
             if (!active) return;
             const mapDate = (v: any) => v ? new Date(v) : new Date();
             if (!resRes.error && resRes.data) setResolutions(resRes.data.map((r: any) => ({ ...r, employeeId: r.employee_id, incidentReportId: r.incident_report_id, decisionDate: mapDate(r.decision_date), approverSteps: r.approver_steps || [] })));
-            if (!nteRes.error && nteRes.data) setNTEs(nteRes.data.map((r: any) => ({ ...r, employeeId: r.employee_id, incidentReportId: r.incident_report_id, issuedDate: mapDate(r.issued_date), deadline: mapDate(r.deadline), approverSteps: r.approver_steps || [], hearingDetails: r.hearing_details })));
+            if (!nteRes.error && nteRes.data) setNTEs(nteRes.data.map((r: any) => ({ ...r, employeeId: r.employee_id, incidentReportId: r.incident_report_id, issuedDate: mapDate(r.issued_date), deadline: mapDate(r.deadline), approverSteps: r.approval_log || [], hearingDetails: r.hearing_details })));
             if (!reqRes.error && reqRes.data) setRequisitions(reqRes.data.map((r: any) => ({ ...r, createdAt: mapDate(r.created_at), routingSteps: r.routing_steps || [] })));
             if (!awardRes.error && awardRes.data) setAwards(awardRes.data.map((r: any) => ({ ...r, employeeId: r.employee_id, awardId: r.award_id, dateAwarded: mapDate(r.date_awarded), approverSteps: r.approver_steps || [] })));
             if (!manRes.error && manRes.data) setManpowerRequests(manRes.data.map((r: any) => ({ ...r, requestedBy: r.requested_by, businessUnitName: r.business_unit_name, date: mapDate(r.date), createdAt: mapDate(r.created_at), approvedAt: r.approved_at ? mapDate(r.approved_at) : undefined })));

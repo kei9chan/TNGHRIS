@@ -70,8 +70,9 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
 
   // Show all users to allow search; validation still enforces at least one BOD
   const approverPool = useMemo(() => {
-    return allUsers;
-  }, [allUsers]);
+    if (!approverConfigs?.bodApprovers?.user_ids) return [];
+    return allUsers.filter(u => approverConfigs.bodApprovers.user_ids.includes(u.id));
+  }, [allUsers, approverConfigs]);
   const approverDisplay = useMemo(() => {
     return approverPool.map(u => ({
       ...u,

@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient';
-import { NTE, NTEStatus, ApproverStep, User } from '../types';
+import { NTE, NTEStatus, ApproverStep, User, NotificationType } from '../types';
+import { createNotification } from './notificationService';
 
 // Maps a DB row to our NTE type (single-recipient view)
 type NTERow = {
@@ -69,7 +70,26 @@ export const saveNTEs = async (ntes: Partial<NTE>[], user: User): Promise<NTE[]>
     .select('*');
 
   if (error) throw new Error(error.message || 'Failed to save NTE');
-  return (data as NTERow[]).map(mapRow);
+  
+  const savedNTEs = (data as NTERow[]).map(mapRow);
+
+  // Send notifications to approvers
+  for (const nte of savedNTEs) {
+    if (nte.approverSteps) {
+      for (const step of nte.approverSteps) {
+        await createNotification({
+          userId: step.userId,
+          title: 'NTE Approval Required',
+          message: `You have been requested to approve an NTE for ${nte.employeeName}.`,
+          type: NotificationType.NTE_ISSUED,
+          isRead: false,
+          link: `/feedback/cases`,
+        }).catch(err => console.warn('Failed to send notification:', err));
+      }
+    }
+  }
+
+  return savedNTEs;
 };
 
 export const updateNTE = async (nte: Partial<NTE>): Promise<NTE> => {
