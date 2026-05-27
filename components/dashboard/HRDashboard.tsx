@@ -1117,6 +1117,12 @@ const HRDashboard: React.FC = () => {
                         title: "Case Assigned",
                         colorClass: 'bg-rose-500'
                     };
+                case NotificationType.NTE_RESPONSE_SUBMITTED:
+                    return {
+                        icon: <ShieldExclamationIcon className="h-5 w-5" />,
+                        title: "NTE Response",
+                        colorClass: 'bg-red-500'
+                    };
                 case NotificationType.BENEFIT_REQUEST_SUBMITTED:
                     return {
                         icon: <GiftIcon {...iconProps} />,

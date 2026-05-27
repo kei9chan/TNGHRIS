@@ -225,9 +225,9 @@ const NTEDetail: React.FC = () => {
             });
             setNte(saved);
             
-            if (incidentReport?.caseHandlerId) {
+            if (incidentReport?.assignedToId) {
                 await createNotification({
-                    userId: incidentReport.caseHandlerId,
+                    userId: incidentReport.assignedToId,
                     type: NotificationType.NTE_RESPONSE_SUBMITTED,
                     message: `${user?.name || 'An employee'} has submitted their response to NTE for Case ${formatIRDisplayId(incidentReport.caseNumber) || nte.incidentReportId}.`,
                     link: `/feedback/nte/${nte.id}`,
