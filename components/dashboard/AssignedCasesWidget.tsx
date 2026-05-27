@@ -5,8 +5,13 @@ import Card from '../ui/Card';
 import { fetchIncidentReports } from '../../services/incidentReportService';
 import { useAuth } from '../../hooks/useAuth';
 
-const AssignedCasesWidget: React.FC = () => {
+interface AssignedCasesWidgetProps {
+    userId?: string;
+}
+
+const AssignedCasesWidget: React.FC<AssignedCasesWidgetProps> = ({ userId }) => {
     const { user } = useAuth();
+    const effectiveUserId = userId || user?.id;
     const [cases, setCases] = useState<IncidentReport[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -18,10 +23,9 @@ const AssignedCasesWidget: React.FC = () => {
             .then(data => {
                 if (!cancelled) {
                     const myCases = data.filter(ir => 
-                        ir.assignedToId === user.id && 
+                        ir.assignedToId === effectiveUserId && 
                         ir.status !== IRStatus.Closed && 
-                        ir.status !== IRStatus.NoAction && 
-                        ir.status !== IRStatus.Converted
+                        ir.status !== IRStatus.NoAction
                     );
                     setCases(myCases);
                 }
@@ -34,7 +38,7 @@ const AssignedCasesWidget: React.FC = () => {
             });
             
         return () => { cancelled = true; };
-    }, [user]);
+    }, [effectiveUserId]);
 
     const sortedCases = cases.sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime());
 
