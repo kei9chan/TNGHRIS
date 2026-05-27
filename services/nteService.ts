@@ -21,6 +21,10 @@ type NTERow = {
   created_at?: string;
   updated_at?: string;
   nte_number?: number;
+  employee_response?: string | null;
+  employee_response_evidence_url?: string | null;
+  employee_response_signature_url?: string | null;
+  response_date?: string | null;
 };
 
 const mapRow = (row: NTERow): NTE => {
@@ -36,7 +40,10 @@ const mapRow = (row: NTERow): NTE => {
     deadline: row.response_deadline ? new Date(row.response_deadline) : new Date(),
     details: row.details || '',
     body: '',
-    employeeResponse: '',
+    employeeResponse: row.employee_response || '',
+    employeeResponseEvidenceUrl: row.employee_response_evidence_url || undefined,
+    employeeResponseSignatureUrl: row.employee_response_signature_url || undefined,
+    responseDate: row.response_date ? new Date(row.response_date) : undefined,
     memoIds: [],
     disciplineCodeIds: [],
     evidenceUrl: row.evidence_link || undefined,
@@ -102,6 +109,10 @@ export const updateNTE = async (nte: Partial<NTE>): Promise<NTE> => {
     approval_log: nte.approverSteps || [],
     approver_ids: nte.approverSteps?.map(a => a.userId),
     approver_names: nte.approverSteps?.map(a => a.userName),
+    employee_response: nte.employeeResponse || undefined,
+    employee_response_evidence_url: nte.employeeResponseEvidenceUrl || undefined,
+    employee_response_signature_url: nte.employeeResponseSignatureUrl || undefined,
+    response_date: nte.responseDate ? nte.responseDate.toISOString() : undefined,
   };
   // Use separate update + fetch to avoid 406 when RLS SELECT policy
   // doesn't cover the approver after the row is modified
