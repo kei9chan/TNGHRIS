@@ -14,6 +14,7 @@ import ActionItemCard from './ActionItemCard';
 import QuickAnalyticsPreview from './QuickAnalyticsPreview';
 import UpcomingEventsWidget from './UpcomingEventsWidget';
 import UnassignedTicketsWidget from './UnassignedTicketsWidget';
+import AssignedCasesWidget from './AssignedCasesWidget';
 import QuickLinks from './QuickLinks';
 import ApprovalWidget from './ApprovalWidget';
 import ManpowerRequestModal from '../payroll/ManpowerRequestModal';
@@ -1471,6 +1472,7 @@ const HRDashboard: React.FC = () => {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {isHR && <UnassignedTicketsWidget />}
+                {isHR && <AssignedCasesWidget />}
                 {isHR && <QuickAnalyticsPreview />}
             </div>
 

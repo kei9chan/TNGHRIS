@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { IncidentReport, IRStatus, ChatMessage, User, PipelineStage, Role } from '../types';
+import { IncidentReport, IRStatus, ChatMessage, User, PipelineStage, Role, NotificationType } from '../types';
 import { createNotification } from './notificationService';
 
 const isUuid = (value?: string | null) =>
@@ -216,7 +216,7 @@ export const saveIncidentReport = async (
             userId: hr.id,
             title: 'New Incident Report Filed',
             message: `A new Incident Report (${mappedRow.caseNumber ? `TNGIR-${String(mappedRow.caseNumber).padStart(5, '0')}` : 'Draft'}) has been submitted by ${user.name || 'an employee'}.`,
-            type: 'warning',
+            type: NotificationType.CASE_ASSIGNED,
             link: '/feedback',
           })
         );
@@ -234,7 +234,7 @@ export const saveIncidentReport = async (
         userId: report.assignedToId,
         title: 'Case Assigned to You',
         message: `You have been assigned as the case handler for Incident Report ${mappedRow.caseNumber ? `TNGIR-${String(mappedRow.caseNumber).padStart(5, '0')}` : 'Draft'}.`,
-        type: 'info',
+        type: NotificationType.CASE_ASSIGNED,
         link: '/feedback',
       });
     } catch (err) {
