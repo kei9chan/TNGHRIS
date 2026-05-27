@@ -233,6 +233,10 @@ const NTEDetail: React.FC = () => {
                     link: `/feedback/nte/${nte.id}`,
                 });
             }
+            if (incidentReport && user) {
+                await saveIncidentReport({ id: incidentReport.id, pipelineStage: 'hr-review-response' }, user);
+                setIncidentReport(prev => prev ? { ...prev, pipelineStage: 'hr-review-response' } : null);
+            }
         } catch (err: any) {
             alert(err?.message || 'Failed to submit response.');
         }
