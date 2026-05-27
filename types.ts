@@ -30,7 +30,7 @@ export enum Role {
 }
 
 export type Resource =
-  | 'Dashboard' | 'Employees' | 'PAN' | 'Files' | 'Feedback' | 'Evaluation' | 'Timekeeping' | 'Clock' | 'OT'
+  | 'Dashboard' | 'Employees' | 'PAN' | 'Files' | 'Feedback' | 'Evaluation' | 'Timekeeping' | 'Clock' | 'OT' | 'MyCases'
   | 'Leave' | 'LeavePolicies' | 'Exceptions' | 'PayrollPrep' | 'PayrollStaging' | 'Payslips' | 'GovernmentReports'
   | 'ReportTemplates' | 'Reports' | 'FinalPay' | 'ClockLog' | 'Settings' | 'AuditLog' | 'Helpdesk'
   | 'Announcements' | 'Recruitment' | 'Requisitions' | 'JobPosts' | 'Applicants' | 'Candidates'

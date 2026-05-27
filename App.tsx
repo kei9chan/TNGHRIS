@@ -41,6 +41,8 @@ const CoachingLog = React.lazy(() => import('./pages/feedback/CoachingLog'));
 const MemoLibrary = React.lazy(() => import('./pages/feedback/MemoLibrary'));
 const CodeOfDiscipline = React.lazy(() => import('./pages/feedback/CodeOfDiscipline'));
 const Pipeline = React.lazy(() => import('./pages/feedback/Pipeline'));
+const MyIncidentReports = React.lazy(() => import('./pages/feedback/MyIncidentReports'));
+const MyNTEs = React.lazy(() => import('./pages/feedback/MyNTEs'));
 const Timekeeping = React.lazy(() => import('./pages/payroll/Timekeeping'));
 const ClockInOut = React.lazy(() => import('./pages/payroll/ClockInOut'));
 const ClockLog = React.lazy(() => import('./pages/payroll/ClockLog'));
@@ -213,6 +215,8 @@ const AppRoutes: React.FC = () => {
              <Route path="discipline" element={<ProtectedRoute><CodeOfDiscipline /></ProtectedRoute>} />
              <Route path="templates" element={<ProtectedRoute><FeedbackTemplates /></ProtectedRoute>} />
              <Route path="pipeline" element={<ProtectedRoute><Pipeline /></ProtectedRoute>} />
+             <Route path="my-irs" element={<ProtectedRoute><MyIncidentReports /></ProtectedRoute>} />
+             <Route path="my-ntes" element={<ProtectedRoute><MyNTEs /></ProtectedRoute>} />
         </Route>
 
         {/* Payroll Section */}

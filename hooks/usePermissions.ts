@@ -10,20 +10,20 @@ const defaultPermissions: PermissionsMatrix = {
         'Recruitment': [Permission.Manage], 'Evaluation': [Permission.Manage], 'Payroll': [Permission.Manage],
         'Feedback': [Permission.Manage], 'Helpdesk': [Permission.Manage], 'Analytics': [Permission.View],
         'Manpower': [Permission.Manage], 'COE': [Permission.Manage], 'Benefits': [Permission.Manage],
-        'PulseSurvey': [Permission.Manage], 'Coaching': [Permission.Manage], 'WFH': [Permission.Manage],
+        'PulseSurvey': [Permission.Manage], 'Coaching': [Permission.Manage], 'WFH': [Permission.Manage], 'MyCases': [Permission.View],
     },
     [Role.Employee]: {
         'Dashboard': [Permission.View], 'Employees': [Permission.View], 'PAN': [Permission.View],
         'COE': [Permission.Create, Permission.View], 'Benefits': [Permission.Create, Permission.View],
         'PulseSurvey': [Permission.View], 'Coaching': [Permission.View],
-        'WFH': [Permission.Create, Permission.View, Permission.Edit],
+        'WFH': [Permission.Create, Permission.View, Permission.Edit], 'MyCases': [Permission.View],
     },
     [Role.Manager]: {
         'Dashboard': [Permission.View], 'Employees': [Permission.View], 'Evaluation': [Permission.View],
         'Payroll': [Permission.View], 'Manpower': [Permission.View], 'OT': [Permission.Approve],
         'Leave': [Permission.Approve], 'Feedback': [Permission.View], 'Helpdesk': [Permission.View],
         'COE': [Permission.Create, Permission.View], 'Benefits': [Permission.View],
-        'PulseSurvey': [Permission.View], 'Coaching': [Permission.Create, Permission.View], 'WFH': [Permission.View],
+        'PulseSurvey': [Permission.View], 'Coaching': [Permission.Create, Permission.View], 'WFH': [Permission.View], 'MyCases': [Permission.View],
     },
     [Role.HRManager]: {
         'Dashboard': [Permission.View], 'Employees': [Permission.Manage], 'PAN': [Permission.Manage],
@@ -31,7 +31,7 @@ const defaultPermissions: PermissionsMatrix = {
         'Settings': [Permission.Manage], 'Recruitment': [Permission.Manage], 'Evaluation': [Permission.Manage],
         'Payroll': [Permission.Manage], 'Feedback': [Permission.Manage], 'Helpdesk': [Permission.Manage],
         'Analytics': [Permission.View], 'Manpower': [Permission.Manage], 'COE': [Permission.Manage],
-        'Benefits': [Permission.Manage], 'PulseSurvey': [Permission.Manage], 'Coaching': [Permission.Manage], 'WFH': [Permission.View],
+        'Benefits': [Permission.Manage], 'PulseSurvey': [Permission.Manage], 'Coaching': [Permission.Manage], 'WFH': [Permission.View], 'MyCases': [Permission.View],
     },
     [Role.HRStaff]: {
         'Dashboard': [Permission.View], 'Employees': [Permission.Create, Permission.View, Permission.Edit],
@@ -43,7 +43,7 @@ const defaultPermissions: PermissionsMatrix = {
         'Feedback': [Permission.Create, Permission.View, Permission.Edit], 'Helpdesk': [Permission.Manage],
         'Manpower': [Permission.Create, Permission.View], 'COE': [Permission.Manage], 'Benefits': [Permission.Manage],
         'PulseSurvey': [Permission.Manage], 'Coaching': [Permission.Create, Permission.View, Permission.Edit],
-        'WFH': [Permission.View], 'Recruitment': [Permission.Manage],
+        'WFH': [Permission.View], 'Recruitment': [Permission.Manage], 'MyCases': [Permission.View],
     },
     [Role.BusinessUnitManager]: {
         'Dashboard': [Permission.View], 'Employees': [Permission.View], 'Evaluation': [Permission.View],
@@ -52,33 +52,33 @@ const defaultPermissions: PermissionsMatrix = {
         'OT': [Permission.View, Permission.Approve], 'Leave': [Permission.View, Permission.Approve],
         'WFH': [Permission.Create, Permission.View, Permission.Approve], 'Feedback': [Permission.View],
         'Helpdesk': [Permission.View], 'COE': [Permission.Create, Permission.View], 'Benefits': [Permission.View],
-        'PulseSurvey': [Permission.View], 'Coaching': [Permission.Create, Permission.View],
+        'PulseSurvey': [Permission.View], 'Coaching': [Permission.Create, Permission.View], 'MyCases': [Permission.View],
     },
     [Role.OperationsDirector]: {
         'Dashboard': [Permission.View], 'Employees': [Permission.View], 'Evaluation': [Permission.View],
         'Payroll': [Permission.View], 'Feedback': [Permission.View], 'Manpower': [Permission.Approve],
         'COE': [Permission.Create, Permission.View], 'Benefits': [Permission.View],
-        'PulseSurvey': [Permission.View], 'Coaching': [Permission.Create, Permission.View], 'WFH': [Permission.View],
+        'PulseSurvey': [Permission.View], 'Coaching': [Permission.Create, Permission.View], 'WFH': [Permission.View], 'MyCases': [Permission.View],
     },
     [Role.BOD]: {
         'Dashboard': [Permission.View], 'Employees': [Permission.View], 'Payroll': [Permission.View],
         'Manpower': [Permission.Approve], 'COE': [Permission.Create, Permission.View],
         'Benefits': [Permission.Approve, Permission.View], 'PulseSurvey': [Permission.View],
-        'Coaching': [Permission.View], 'WFH': [Permission.Approve, Permission.View],
+        'Coaching': [Permission.View], 'WFH': [Permission.Approve, Permission.View], 'MyCases': [Permission.View],
     },
     [Role.GeneralManager]: {
         'Dashboard': [Permission.View], 'Employees': [Permission.View], 'Payroll': [Permission.View],
         'Manpower': [Permission.Approve], 'COE': [Permission.Create, Permission.View], 'Benefits': [Permission.View],
-        'PulseSurvey': [Permission.View], 'Coaching': [Permission.View], 'WFH': [Permission.View],
+        'PulseSurvey': [Permission.View], 'Coaching': [Permission.View], 'WFH': [Permission.View], 'MyCases': [Permission.View],
     },
     [Role.FinanceStaff]: {
-        'Dashboard': [Permission.View], 'Employees': [Permission.View], 'Payroll': [Permission.Manage], 'Benefits': [Permission.View],
+        'Dashboard': [Permission.View], 'Employees': [Permission.View], 'Payroll': [Permission.Manage], 'Benefits': [Permission.View], 'MyCases': [Permission.View],
     },
     [Role.Auditor]: {
-        'Dashboard': [Permission.View], 'AuditLog': [Permission.View], 'Benefits': [Permission.View],
+        'Dashboard': [Permission.View], 'AuditLog': [Permission.View], 'Benefits': [Permission.View], 'MyCases': [Permission.View],
     },
     [Role.Recruiter]: {
-        'Dashboard': [Permission.View], 'Benefits': [Permission.View],
+        'Dashboard': [Permission.View], 'Benefits': [Permission.View], 'MyCases': [Permission.View],
     },
 };
 
@@ -934,6 +934,10 @@ export const usePermissions = () => {
             if (perms.includes(Permission.Manage)) return true;
             if (permission === Permission.View && perms.length > 0) return true;
             return perms.includes(permission);
+        }
+
+        if (resource === 'MyCases') {
+            return true;
         }
 
         const rolePermissions = defaultPermissions[user.role];
