@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient';
-import { IncidentReport, IRStatus, ChatMessage, User, PipelineStage } from '../types';
+import { IncidentReport, IRStatus, ChatMessage, User, PipelineStage, Role } from '../types';
+import { createNotification } from './notificationService';
 
 const isUuid = (value?: string | null) =>
   !!value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -187,7 +188,35 @@ export const saveIncidentReport = async (
 
   const { data, error } = await query;
   if (error) throw new Error(error.message || 'Failed to save incident report');
-  return mapRow(data as IncidentReportRow);
+  
+  const mappedRow = mapRow(data as IncidentReportRow);
+
+  // If this is a new incident report, notify HR Manager and HR Staff
+  if (!report.id) {
+    try {
+      const { data: hrUsers } = await supabase
+        .from('hris_users')
+        .select('id')
+        .in('role', [Role.HRManager, Role.HRStaff]);
+
+      if (hrUsers && hrUsers.length > 0) {
+        const notifications = hrUsers.map((hr) =>
+          createNotification({
+            userId: hr.id,
+            title: 'New Incident Report Filed',
+            message: `A new Incident Report (${mappedRow.caseNumber ? `TNGIR-${String(mappedRow.caseNumber).padStart(5, '0')}` : 'Draft'}) has been submitted by ${user.name || 'an employee'}.`,
+            type: 'warning',
+            link: '/feedback',
+          })
+        );
+        await Promise.all(notifications);
+      }
+    } catch (err) {
+      console.error('Failed to notify HR about new IR:', err);
+    }
+  }
+
+  return mappedRow;
 };
 
 export const addIncidentReportMessage = async (
