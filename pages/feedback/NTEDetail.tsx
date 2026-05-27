@@ -224,6 +224,15 @@ const NTEDetail: React.FC = () => {
                 responseDate: new Date(),
             });
             setNte(saved);
+            
+            if (incidentReport?.caseHandlerId) {
+                await createNotification({
+                    userId: incidentReport.caseHandlerId,
+                    type: NotificationType.NTE_RESPONSE_SUBMITTED,
+                    message: `${user?.name || 'An employee'} has submitted their response to NTE for Case ${formatIRDisplayId(incidentReport.caseNumber) || nte.incidentReportId}.`,
+                    link: `/feedback/nte/${nte.id}`,
+                });
+            }
         } catch (err: any) {
             alert(err?.message || 'Failed to submit response.');
         }
