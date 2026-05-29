@@ -46,6 +46,7 @@ import {
 } from '../../types';
 import ActionItemCard from './ActionItemCard';
 import RecentMemosWidget from './RecentMemosWidget';
+import UpcomingEventsWidget from './UpcomingEventsWidget';
 import MemoViewModal from '../feedback/MemoViewModal';
 import Confetti from '../ui/Confetti';
 import Toast from '../ui/Toast';
@@ -1797,6 +1798,8 @@ const EmployeeDashboard: React.FC = () => {
             </Card>
 
             <RecentMemosWidget onViewMemo={handleViewMemo} />
+            
+            <UpcomingEventsWidget />
 
             <MemoViewModal
                 isOpen={isMemoViewOpen}
