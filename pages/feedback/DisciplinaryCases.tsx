@@ -57,7 +57,7 @@ const getDerivedPipelineStage = (nte: NTE, allResolutions: Resolution[], report:
         return 'resolution';
       case ResolutionStatus.Approved: // Legacy status
       case ResolutionStatus.Acknowledged:
-        return 'closed';
+        return 'resolution';
       case ResolutionStatus.Rejected:
         return 'hr-review-response'; // Send it back to HR for correction
       default:
