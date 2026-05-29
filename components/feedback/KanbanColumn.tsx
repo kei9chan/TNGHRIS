@@ -35,6 +35,9 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({ stage, reports, onUpdateSta
         setIsDragOver(false);
     };
     
+    const [isExpanded, setIsExpanded] = useState(false);
+    const visibleReports = isExpanded ? reports : reports.slice(0, 5);
+    
     return (
         <div className="flex flex-col">
             <div className="mb-4 px-2 flex justify-between items-center">
@@ -47,7 +50,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({ stage, reports, onUpdateSta
                 onDragLeave={handleDragLeave}
                 className={`space-y-4 min-h-[400px] transition-colors rounded-lg ${isDragOver ? 'bg-gray-200 dark:bg-gray-700/50' : ''}`}
             >
-                {reports.map(report => (
+                {visibleReports.map(report => (
                     <KanbanCard
                         key={report.id}
                         report={report}
@@ -57,6 +60,15 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({ stage, reports, onUpdateSta
                         isDragging={draggedItemId === report.id}
                     />
                 ))}
+                
+                {reports.length > 5 && (
+                    <button
+                        onClick={() => setIsExpanded(!isExpanded)}
+                        className="w-full py-2 mt-2 text-sm font-medium text-gray-600 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 dark:text-gray-300 dark:hover:text-white dark:bg-gray-800 dark:hover:bg-gray-700 rounded-md transition-colors border border-transparent"
+                    >
+                        {isExpanded ? 'See less' : `See more (${reports.length - 5})`}
+                    </button>
+                )}
             </div>
         </div>
     );
