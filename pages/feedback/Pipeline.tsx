@@ -190,13 +190,13 @@ const Pipeline: React.FC = () => {
                              <div 
                                 key={stage.id} 
                                 className="flex items-center space-x-2 p-2 bg-gray-50 dark:bg-gray-800 rounded-md"
-                                draggable={!stage.isLocked}
+                                draggable={true}
                                 onDragStart={() => dragItem.current = index}
                                 onDragEnter={() => dragOverItem.current = index}
                                 onDragEnd={handleDragSort}
                                 onDragOver={(e) => e.preventDefault()}
                             >
-                                <span className={stage.isLocked ? 'cursor-not-allowed' : 'cursor-grab'}><GrabHandleIcon /></span>
+                                <span className="cursor-grab hover:text-gray-700 dark:hover:text-gray-300 transition-colors"><GrabHandleIcon /></span>
                                 <Input 
                                     label="" 
                                     id={`stage-${stage.id}`} 
