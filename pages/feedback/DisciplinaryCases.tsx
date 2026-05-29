@@ -405,19 +405,29 @@ const DisciplinaryCases: React.FC = () => {
 
     if (report.pipelineStage === 'hr-review-response' && resolutionForReport?.status === ResolutionStatus.Rejected) {
       setResolutionModalOpen(true);
-    } else if (report.pipelineStage === 'ir-review' || report.pipelineStage === 'hr-review-response' || report.pipelineStage === 'nte-for-approval') {
+    } else if (report.pipelineStage === 'ir-review' || report.pipelineStage === 'hr-review-response') {
       const nteForThisEmployee = ntes.find(n => n.incidentReportId === originalReportId && n.employeeId === report.involvedEmployeeIds[0]);
       if (nteForThisEmployee) {
         navigate(`/feedback/nte/${nteForThisEmployee.id}`);
       } else {
         setReportModalOpen(true);
       }
-    } else if (report.pipelineStage === 'nte-sent') {
-      const nteId = report.nteIds[0];
-      if (nteId) {
-        navigate(`/feedback/nte/${nteId}`);
+    } else if (report.pipelineStage === 'nte-for-approval' || report.pipelineStage === 'nte-sent') {
+      // Always navigate to NTE detail so approvers see the Approve/Reject interface
+      // Try nteIds first, then fall back to employee-based lookup
+      const nteId = report.nteIds?.[0];
+      const nteForThisEmployee = ntes.find(n =>
+        n.incidentReportId === originalReportId &&
+        n.employeeId === report.involvedEmployeeIds[0]
+      );
+      const resolvedNteId = nteId || nteForThisEmployee?.id;
+      if (resolvedNteId) {
+        navigate(`/feedback/nte/${resolvedNteId}`);
       } else {
-        setNTEModalOpen(true);
+        // No NTE found yet — open the issue form only for nte-for-approval
+        if (report.pipelineStage === 'nte-for-approval') {
+          setNTEModalOpen(true);
+        }
       }
     } else if (report.pipelineStage === 'resolution' || report.pipelineStage === 'bod-gm-approval') {
       setResolutionModalOpen(true);
