@@ -69,8 +69,9 @@ const getDerivedPipelineStage = (nte: NTE, allResolutions: Resolution[], report:
   switch (nte.status) {
     case NTEStatus.ResponseSubmitted:
     case NTEStatus.Waiver:
-    case NTEStatus.HearingScheduled:
       return 'hr-review-response';
+    case NTEStatus.HearingScheduled:
+      return 'scheduled-hearing';
     case NTEStatus.Closed:
       // If NTE is closed, it implies it has moved to resolution phase
       return 'resolution';
@@ -147,7 +148,19 @@ const DisciplinaryCases: React.FC = () => {
           fetchPipelineStages()
         ]);
         setAllReports(filterByIrAccess(data));
-        setStages(stagesData);
+        
+        // Inject Scheduled Hearing stage if missing
+        const updatedStages = [...stagesData];
+        if (!updatedStages.some(s => s.code === 'scheduled-hearing')) {
+          const hrReviewIndex = updatedStages.findIndex(s => s.code === 'hr-review-response');
+          const newStage = { id: 'scheduled-hearing', name: 'Scheduled Hearing', isLocked: true, sort_order: 2.5, code: 'scheduled-hearing' };
+          if (hrReviewIndex !== -1) {
+             updatedStages.splice(hrReviewIndex + 1, 0, newStage);
+          } else {
+             updatedStages.push(newStage);
+          }
+        }
+        setStages(updatedStages);
       } catch (err) {
         console.error('Failed to load incident reports or stages', err);
         setAllReports([]);

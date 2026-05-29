@@ -27,8 +27,8 @@ const KanbanCard: React.FC<KanbanCardProps> = ({ report, onCardClick, onDragStar
             return { text: 'Rejected', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200' };
         }
 
-        if (nte?.status === NTEStatus.HearingScheduled) {
-             return { text: 'Hearing Set', color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-200' };
+        if (report.pipelineStage === 'scheduled-hearing' || nte?.status === NTEStatus.HearingScheduled) {
+             return { text: 'Scheduled Hearing', color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-200' };
         }
 
         // Stage-specific overrides requested by user
