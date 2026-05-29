@@ -694,6 +694,19 @@ const DisciplinaryCases: React.FC = () => {
         const updatedNte = await updateNTE({ ...nte, status: NTEStatus.Closed });
         setNTEs(prev => prev.map(n => n.id === updatedNte.id ? updatedNte : n));
       }
+
+      // Check if all involved employees have acknowledged/approved resolutions
+      const allRes = [...resolutions.filter(r => r.id !== updatedRes.id), updatedRes];
+      const resForIR = allRes.filter(r => r.incidentReportId === originalReportId);
+      const allAcknowledged = resForIR.every(r => r.status === ResolutionStatus.Acknowledged || r.status === ResolutionStatus.Approved);
+      
+      const baseIr = allReports.find(r => r.id === originalReportId);
+      if (baseIr && resForIR.length === baseIr.involvedEmployeeIds.length && allAcknowledged) {
+         const irUpdate: Partial<IncidentReport> = { id: originalReportId, status: IRStatus.Closed, pipelineStage: 'closed' };
+         await saveIncidentReport(irUpdate, user);
+         setAllReports(prev => prev.map(r => r.id === originalReportId ? { ...r, ...irUpdate } : r));
+      }
+
       logActivity(user, 'APPROVE', 'Resolution', selectedResolution.id, `Employee acknowledged Notice of Decision.`);
       handleCloseModals();
       alert('You have acknowledged the decision. This case is now closed.');
