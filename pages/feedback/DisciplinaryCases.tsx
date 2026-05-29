@@ -542,6 +542,20 @@ const DisciplinaryCases: React.FC = () => {
       } else {
         const created = await createResolution(commonResolutionData);
         setResolutions(prev => [...prev, created]);
+
+        // Notify each approver that their action is required
+        const irDisplayId = formatIRDisplayId(selectedReport?.caseNumber) || originalReportId;
+        const involvedName = selectedReport?.involvedEmployeeNames?.[0] || employeeId;
+        approverIds.forEach(approverId => {
+          createNotification({
+            userId: approverId,
+            type: NotificationType.GENERAL,
+            title: 'Resolution Approval Required',
+            message: `You have been requested to approve a resolution for case ${irDisplayId} involving ${involvedName}.`,
+            link: `/feedback/cases`,
+            relatedEntityId: created.id,
+          }).catch(err => console.error('Failed to send resolution approval notification:', err));
+        });
       }
       setResolutionModalOpen(false);
       alert('Case has been sent for approval.');
