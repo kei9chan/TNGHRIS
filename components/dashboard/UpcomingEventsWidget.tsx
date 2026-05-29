@@ -15,9 +15,9 @@ const getStartOfToday = () => {
     return d;
 };
 
-const getEndOf30Days = () => {
+const getEndOfYear = () => {
     const d = new Date();
-    d.setDate(d.getDate() + 30);
+    d.setFullYear(d.getFullYear() + 1);
     d.setHours(23, 59, 59, 999);
     return d;
 };
@@ -49,7 +49,7 @@ const UpcomingEventsWidget: React.FC = () => {
         let cancelled = false;
 
         const startOfPeriod = getStartOfToday();
-        const endOfPeriod = getEndOf30Days();
+        const endOfPeriod = getEndOfYear();
 
         supabase
             .from('helpdesk_calendar_events')
@@ -86,7 +86,7 @@ const UpcomingEventsWidget: React.FC = () => {
     };
 
     return (
-        <Card title="Upcoming Events (Next 30 Days)">
+        <Card title="Upcoming Events">
             {isLoading ? (
                 <p className="text-gray-500 dark:text-gray-400 text-center py-4">Loading…</p>
             ) : upcomingEvents.length > 0 ? (
@@ -108,7 +108,7 @@ const UpcomingEventsWidget: React.FC = () => {
                     ))}
                 </ul>
             ) : (
-                <p className="text-gray-500 dark:text-gray-400 text-center py-4">No events scheduled for the next 30 days.</p>
+                <p className="text-gray-500 dark:text-gray-400 text-center py-4">No upcoming events scheduled.</p>
             )}
             <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 text-right">
                 <Link to="/helpdesk/calendar" className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
