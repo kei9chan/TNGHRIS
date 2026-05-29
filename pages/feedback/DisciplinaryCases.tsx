@@ -4,7 +4,7 @@ import { createCoachingSession } from '../../services/coachingService';
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link, useSearchParams } from 'react-router-dom';
 import { IncidentReport, ChatMessage, NTE, Resolution, IRStatus, Permission, NTEStatus, PipelineStage, Role, BusinessUnit, ResolutionType, ResolutionStatus, ApproverStep, ApproverStatus, Notification, NotificationType, CoachingSession, CoachingStatus, CoachingTrigger } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -182,6 +182,37 @@ const DisciplinaryCases: React.FC = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state]);
+
+  // Handle opening specific cases via URL parameters (e.g. from notifications)
+  useEffect(() => {
+    const action = searchParams.get('action');
+    const caseId = searchParams.get('caseId');
+    const employeeId = searchParams.get('employeeId');
+
+    if (caseId && allReports.length > 0) {
+      const originalReport = allReports.find(r => r.id === caseId);
+      if (originalReport) {
+        // If employeeId is provided, simulate a virtual report so it opens for that specific employee
+        const reportToOpen = employeeId 
+          ? { 
+              ...originalReport, 
+              id: `${originalReport.id}_VIRTUAL_${employeeId}`,
+              involvedEmployeeIds: [employeeId] 
+            }
+          : originalReport;
+          
+        // Delay slightly to ensure state is settled before opening
+        setTimeout(() => {
+          handleCardClick(reportToOpen as IncidentReport);
+          // Remove the query params so it doesn't reopen if the user closes it and refetches
+          searchParams.delete('action');
+          searchParams.delete('caseId');
+          searchParams.delete('employeeId');
+          setSearchParams(searchParams, { replace: true });
+        }, 100);
+      }
+    }
+  }, [searchParams, allReports, setSearchParams]);
 
   const yearOptions = useMemo(() => {
     const years = new Set(allReports.map(r => new Date(r.dateTime).getFullYear()));
@@ -552,7 +583,7 @@ const DisciplinaryCases: React.FC = () => {
             type: NotificationType.GENERAL,
             title: 'Resolution Approval Required',
             message: `You have been requested to approve a resolution for case ${irDisplayId} involving ${involvedName}.`,
-            link: `/feedback/cases`,
+            link: `/feedback/cases?action=approve_resolution&caseId=${created.incidentReportId}&employeeId=${created.employeeId}`,
             relatedEntityId: created.id,
           }).catch(err => console.error('Failed to send resolution approval notification:', err));
         });

@@ -90,7 +90,7 @@ export const saveNTEs = async (ntes: Partial<NTE>[], user: User): Promise<NTE[]>
           message: `You have been requested to approve an NTE for ${nte.employeeName}.`,
           type: NotificationType.NTE_ISSUED,
           isRead: false,
-          link: `/feedback/cases`,
+          link: `/feedback/nte/${nte.id}`,
         }).catch(err => console.warn('Failed to send notification:', err));
       }
     }

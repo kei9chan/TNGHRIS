@@ -275,7 +275,7 @@ const NTEDetail: React.FC = () => {
                     type: NotificationType.GENERAL,
                     title: 'Resolution Approval Required',
                     message: `You have been requested to approve a resolution for case ${irDisplayId} involving ${involvedName}.`,
-                    link: `/feedback/cases`,
+                    link: `/feedback/cases?action=approve_resolution&caseId=${created.incidentReportId}&employeeId=${created.employeeId}`,
                     relatedEntityId: created.id,
                 }).catch(err => console.error('Failed to send resolution approval notification:', err));
             });
