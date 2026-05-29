@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { NTE, IncidentReport } from '../../types';
 import { fetchNTEs } from '../../services/nteService';
@@ -9,6 +10,7 @@ import Card from '../../components/ui/Card';
 
 export default function MyNTEs() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [ntes, setNtes] = useState<NTE[]>([]);
   const [reports, setReports] = useState<IncidentReport[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,10 +47,7 @@ export default function MyNTEs() {
   };
 
   const handleRowClick = (nte: NTE) => {
-    const report = reports.find(r => r.id === nte.incidentReportId) || null;
-    setSelectedReport(report);
-    setSelectedNte(nte);
-    setIsModalOpen(true);
+    navigate(`/feedback/nte/${nte.id}`);
   };
 
   if (loading) {
@@ -111,7 +110,7 @@ export default function MyNTEs() {
                       className="hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
                     >
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
-                        {formatNTEDisplayId(nte.id, nte.nteNumber)}
+                        {formatNTEDisplayId(nte.nteNumber) || nte.id}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                         {new Date(nte.issuedDate).toLocaleDateString()}
