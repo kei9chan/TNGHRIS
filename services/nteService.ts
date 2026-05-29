@@ -1,6 +1,7 @@
 import { supabase } from './supabaseClient';
 import { NTE, NTEStatus, ApproverStep, User, NotificationType } from '../types';
 import { createNotification } from './notificationService';
+import { formatNTEDisplayId } from '../utils/formatCaseId';
 
 // Maps a DB row to our NTE type (single-recipient view)
 type NTERow = {
@@ -87,7 +88,7 @@ export const saveNTEs = async (ntes: Partial<NTE>[], user: User): Promise<NTE[]>
         await createNotification({
           userId: step.userId,
           title: 'NTE Approval Required',
-          message: `You have been requested to approve an NTE for ${nte.employeeName}.`,
+          message: `You have been requested to approve ${formatNTEDisplayId(nte.nteNumber) || 'an NTE'} for ${nte.employeeName}.`,
           type: NotificationType.NTE_ISSUED,
           isRead: false,
           link: `/feedback/nte/${nte.id}`,
