@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { IncidentReport, IRStatus, NTE, NTEStatus, ApproverStatus } from '../../types';
+import { IncidentReport, IRStatus, NTE, NTEStatus, ApproverStatus, ResolutionStatus } from '../../types';
 import Card from '../ui/Card';
 import { fetchIncidentReports } from '../../services/incidentReportService';
 import { fetchNTEs } from '../../services/nteService';
+import { fetchResolutions } from '../../services/resolutionService';
 import { useAuth } from '../../hooks/useAuth';
 
 type DisplayItem = {
     id: string;
-    type: 'ir' | 'nte-approval';
+    type: 'ir' | 'nte-approval' | 'res-approval';
     caseIdStr: string;
     category: string;
     involvedNames: string;
@@ -34,9 +35,10 @@ const AssignedCasesWidget: React.FC<AssignedCasesWidgetProps> = ({ userId }) => 
         
         Promise.all([
             fetchIncidentReports(),
-            fetchNTEs()
+            fetchNTEs(),
+            fetchResolutions()
         ])
-        .then(([irData, nteData]) => {
+        .then(([irData, nteData, resData]) => {
             if (!cancelled) {
                 const displayItems: DisplayItem[] = [];
 
@@ -78,6 +80,27 @@ const AssignedCasesWidget: React.FC<AssignedCasesWidgetProps> = ({ userId }) => 
                         dateTime: new Date(nte.issuedDate),
                         link: `/feedback/nte/${nte.id}`,
                         colorClass: 'border-orange-500'
+                    });
+                });
+
+                const myPendingResolutions = resData.filter(res => 
+                    res.status === ResolutionStatus.PendingApproval &&
+                    res.approverSteps?.some(step => step.userId === effectiveUserId && step.status === ApproverStatus.Pending)
+                );
+
+                myPendingResolutions.forEach(res => {
+                    const ir = irData.find(i => i.id === res.incidentReportId);
+                    const caseIdStr = ir?.caseNumber ? `TNGIR-${String(ir.caseNumber).padStart(5, '0')}` : 'Case';
+                    displayItems.push({
+                        id: `res-${res.id}`,
+                        type: 'res-approval',
+                        caseIdStr,
+                        category: 'Resolution Approval Required',
+                        involvedNames: res.employeeName,
+                        stageLabel: 'Pending Your Approval',
+                        dateTime: new Date(res.dateIssued),
+                        link: `/feedback/cases?action=approve_resolution&caseId=${res.incidentReportId}&employeeId=${res.employeeId}`,
+                        colorClass: 'border-yellow-500'
                     });
                 });
 
@@ -127,7 +150,7 @@ const AssignedCasesWidget: React.FC<AssignedCasesWidgetProps> = ({ userId }) => 
                                         </div>
                                     </div>
                                     <div className="mt-2 flex justify-between items-center text-xs">
-                                        <span className={`px-2 py-0.5 font-semibold rounded-full ${item.type === 'nte-approval' ? 'bg-orange-100 text-orange-800' : 'bg-red-100 text-red-800'}`}>
+                                        <span className={`px-2 py-0.5 font-semibold rounded-full ${item.type === 'nte-approval' ? 'bg-orange-100 text-orange-800' : item.type === 'res-approval' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
                                             {item.stageLabel}
                                         </span>
                                         <span className="text-gray-400">{item.dateTime.toLocaleDateString()}</span>
