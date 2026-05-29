@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import { NTE, IncidentReport } from '../../types';
+import { NTE, IncidentReport, Resolution, ResolutionStatus } from '../../types';
 import { fetchNTEs } from '../../services/nteService';
 import { fetchIncidentReports } from '../../services/incidentReportService';
+import { fetchResolutions } from '../../services/resolutionService';
 import { formatNTEDisplayId } from '../../utils/formatCaseId';
 import NTEModal from '../../components/feedback/NTEModal';
 import Card from '../../components/ui/Card';
@@ -13,6 +14,7 @@ export default function MyNTEs() {
   const navigate = useNavigate();
   const [ntes, setNtes] = useState<NTE[]>([]);
   const [reports, setReports] = useState<IncidentReport[]>([]);
+  const [resolutions, setResolutions] = useState<Resolution[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,15 +31,17 @@ export default function MyNTEs() {
     setLoading(true);
     setError(null);
     try {
-      const [allNtes, allReports] = await Promise.all([
+      const [allNtes, allReports, allResolutions] = await Promise.all([
         fetchNTEs(),
         fetchIncidentReports(),
+        fetchResolutions(),
       ]);
 
       const myNtes = allNtes.filter((n) => n.employeeId === user.id);
 
       setNtes(myNtes);
       setReports(allReports);
+      setResolutions(allResolutions);
     } catch (err: any) {
       console.error('Error loading my ntes:', err);
       setError(err.message || 'Failed to load NTEs');
@@ -93,6 +97,9 @@ export default function MyNTEs() {
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Status
                   </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Resolution Made
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-800">
@@ -122,6 +129,21 @@ export default function MyNTEs() {
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200">
                           {nte.status}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                        {(() => {
+                          const resolution = resolutions.find(
+                            (r) => r.incidentReportId === nte.incidentReportId && r.employeeId === nte.employeeId
+                          );
+                          if (
+                            resolution &&
+                            (resolution.status === ResolutionStatus.PendingAcknowledgement ||
+                              resolution.status === ResolutionStatus.Acknowledged)
+                          ) {
+                            return resolution.resolutionType;
+                          }
+                          return 'Pending Decision';
+                        })()}
                       </td>
                     </tr>
                   ))
