@@ -189,14 +189,18 @@ const Pipeline: React.FC = () => {
                         return (
                              <div 
                                 key={stage.id} 
-                                className="flex items-center space-x-2 p-2 bg-gray-50 dark:bg-gray-800 rounded-md"
+                                className="flex items-center space-x-2 p-2 bg-gray-50 dark:bg-gray-800 rounded-md border border-transparent hover:border-gray-300 dark:hover:border-gray-600 transition-colors"
                                 draggable={true}
-                                onDragStart={() => dragItem.current = index}
+                                onDragStart={(e) => {
+                                    dragItem.current = index;
+                                    e.dataTransfer.effectAllowed = 'move';
+                                    e.dataTransfer.setData('text/plain', index.toString());
+                                }}
                                 onDragEnter={() => dragOverItem.current = index}
                                 onDragEnd={handleDragSort}
-                                onDragOver={(e) => e.preventDefault()}
+                                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
                             >
-                                <span className="cursor-grab hover:text-gray-700 dark:hover:text-gray-300 transition-colors"><GrabHandleIcon /></span>
+                                <div className="cursor-grab hover:text-gray-700 dark:hover:text-gray-300 transition-colors"><GrabHandleIcon /></div>
                                 <Input 
                                     label="" 
                                     id={`stage-${stage.id}`} 

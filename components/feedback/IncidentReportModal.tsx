@@ -341,6 +341,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
           </h2>
 
           <dl className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-3">
+            <DetailItem label="Case ID">{formatIRDisplayId(report.caseNumber) || report.id}</DetailItem>
             <DetailItem label="Status">
               {statusTag && (
                 <span className={`px-2 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full ${statusTag.color}`}>

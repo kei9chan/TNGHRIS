@@ -39,7 +39,11 @@ const DashboardStatCard: React.FC<{ title: string; value: string | number; color
   </div>
 );
 
-const getDerivedPipelineStage = (nte: NTE, allResolutions: Resolution[]): string => {
+const getDerivedPipelineStage = (nte: NTE, allResolutions: Resolution[], report: IncidentReport): string => {
+  if (report.status === IRStatus.Closed || report.status === IRStatus.NoAction) {
+    return 'closed';
+  }
+
   // Check for a specific resolution for this employee within the parent incident.
   const resolutionForEmployee = allResolutions.find(r =>
     r.incidentReportId === nte.incidentReportId && r.employeeId === nte.employeeId
@@ -205,10 +209,12 @@ const DisciplinaryCases: React.FC = () => {
         setTimeout(() => {
           handleCardClick(reportToOpen as IncidentReport);
           // Remove the query params so it doesn't reopen if the user closes it and refetches
-          searchParams.delete('action');
-          searchParams.delete('caseId');
-          searchParams.delete('employeeId');
-          setSearchParams(searchParams, { replace: true });
+          setSearchParams(prev => {
+            prev.delete('action');
+            prev.delete('caseId');
+            prev.delete('employeeId');
+            return prev;
+          }, { replace: true });
         }, 100);
       }
     }
@@ -283,7 +289,7 @@ const DisciplinaryCases: React.FC = () => {
           report.nteIds.forEach(nteId => {
             const nte = ntes.find(n => n.id === nteId);
             if (nte) {
-              const stageForThisNte = getDerivedPipelineStage(nte, resolutions);
+              const stageForThisNte = getDerivedPipelineStage(nte, resolutions, report);
               expandedReports.push({
                 ...report,
                 id: `${report.id}_VIRTUAL_${nteId}`,
@@ -298,7 +304,7 @@ const DisciplinaryCases: React.FC = () => {
           // Single-person case: Don't split, just derive the stage from its NTE.
           const nte = ntes.find(n => n.id === report.nteIds[0]);
           if (nte) {
-            const stageForThisNte = getDerivedPipelineStage(nte, resolutions);
+            const stageForThisNte = getDerivedPipelineStage(nte, resolutions, report);
             const resolvedNames = report.involvedEmployeeNames.length
               ? report.involvedEmployeeNames
               : [nte.employeeName];
@@ -613,8 +619,10 @@ const DisciplinaryCases: React.FC = () => {
       setResolutions(prev => prev.map(r => r.id === updated.id ? updated : r));
 
       if (allApproved) {
-        const ir = allReports.find(ir => ir.id === updated.incidentReportId);
-        const nte = ntes.find(n => n.incidentReportId === ir?.id && n.employeeId === updated.employeeId);
+        const originalReportId = updated.incidentReportId;
+        const ir = allReports.find(ir => ir.id === originalReportId || ir.id.startsWith(originalReportId + '_VIRTUAL_'));
+        const realIrId = ir ? ir.id.split('_VIRTUAL_')[0] : originalReportId;
+        const nte = ntes.find(n => n.incidentReportId === realIrId && n.employeeId === updated.employeeId);
         if (nte) {
           createNotification({
             userId: updated.employeeId,
@@ -660,17 +668,25 @@ const DisciplinaryCases: React.FC = () => {
     }
   };
 
-  const handleAcknowledgeResolution = async () => {
-    if (!user || !selectedReport) return;
+  const handleAcknowledgeResolution = async (signatureDataUrl: string, _fullName: string) => {
+    if (!user || !selectedReport || !selectedResolution) return;
     const originalReportId = selectedReport.id.split('_VIRTUAL_')[0];
     const nte = ntes.find(n => n.incidentReportId === originalReportId && n.employeeId === user.id);
     try {
+      const updatedRes = await updateResolution(selectedResolution.id, {
+        status: ResolutionStatus.Acknowledged,
+        employeeAcknowledgedAt: new Date(),
+        employeeAcknowledgementSignatureUrl: signatureDataUrl,
+      });
+      setResolutions(prev => prev.map(r => r.id === updatedRes.id ? updatedRes : r));
+
       if (nte) {
         const updatedNte = await updateNTE({ ...nte, status: NTEStatus.Closed });
         setNTEs(prev => prev.map(n => n.id === updatedNte.id ? updatedNte : n));
       }
-      logActivity(user, 'APPROVE', 'Resolution', selectedResolution!.id, `Employee acknowledged Notice of Decision.`);
+      logActivity(user, 'APPROVE', 'Resolution', selectedResolution.id, `Employee acknowledged Notice of Decision.`);
       handleCloseModals();
+      alert('You have acknowledged the decision. This case is now closed.');
     } catch (err: any) {
       alert(err?.message || 'Failed to acknowledge resolution.');
     }
