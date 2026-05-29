@@ -23,6 +23,7 @@ import { fetchNTEById, updateNTE } from '../../services/nteService';
 import { fetchIncidentReportById, addIncidentReportMessage, saveIncidentReport } from '../../services/incidentReportService';
 import { fetchResolutionsByIncidentReportId, createResolution, updateResolution } from '../../services/resolutionService';
 import { formatIRDisplayId, formatNTEDisplayId } from '../../utils/formatCaseId';
+import { supabase } from '../../services/supabaseClient';
 
 const PaperclipIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>;
 const PaperAirplaneIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>;
@@ -293,17 +294,31 @@ const NTEDetail: React.FC = () => {
         try {
             const saved = await updateNTE({ ...nte, hearingDetails: details, status: NTEStatus.HearingScheduled });
             setNte(saved);
+            
+            const caseIdDisplay = formatIRDisplayId(incidentReport?.caseNumber) || nte.incidentReportId;
+            
+            // Add to calendar
+            const endDate = new Date(details.date);
+            endDate.setHours(endDate.getHours() + 1); // Default to 1 hour duration
+            
+            await supabase.from('helpdesk_calendar_events').insert({
+                title: `Admin Hearing: ${nte.employeeName} (${caseIdDisplay})`,
+                start: new Date(details.date).toISOString(),
+                end: endDate.toISOString(),
+                color: 'red',
+            });
+
             await createNotification({
                 userId: nte.employeeId,
                 type: NotificationType.NTE_ISSUED,
-                message: `An administrative hearing has been scheduled for Case ${formatIRDisplayId(incidentReport?.caseNumber) || nte.incidentReportId}.`,
+                message: `An administrative hearing has been scheduled for Case ${caseIdDisplay}.`,
                 link: `/feedback/nte/${nte.id}`,
             });
             await Promise.all(details.panelIds.map(panelistId => 
                 createNotification({
                     userId: panelistId,
                     type: NotificationType.NTE_ISSUED,
-                    message: `You have been added to the hearing panel for Case ${formatIRDisplayId(incidentReport?.caseNumber) || nte.incidentReportId}.`,
+                    message: `You have been added to the hearing panel for Case ${caseIdDisplay}.`,
                     link: `/feedback/nte/${nte.id}`,
                 })
             ));

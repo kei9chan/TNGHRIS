@@ -236,3 +236,20 @@ export const fetchCalendarEvents = async (): Promise<CalendarEvent[]> => {
   if (error) throw new Error(error.message);
   return (data as CalendarEventRow[]).map(mapCalendarEvent);
 };
+
+export const saveCalendarEvent = async (event: Partial<CalendarEvent> & Record<string, any>): Promise<CalendarEvent> => {
+  const payload = {
+    title: event.title,
+    description: event.description || null,
+    start_date: event.startDate ? new Date(event.startDate).toISOString() : new Date().toISOString(),
+    end_date: event.endDate ? new Date(event.endDate).toISOString() : null,
+    event_type: event.eventType,
+    business_unit_id: event.businessUnitId || null,
+    created_by_user_id: event.createdByUserId,
+  };
+  const { data, error } = event.id
+    ? await supabase.from('calendar_events').update(payload).eq('id', event.id).select().single()
+    : await supabase.from('calendar_events').insert(payload).select().single();
+  if (error) throw new Error(error.message);
+  return mapCalendarEvent(data as CalendarEventRow);
+};
