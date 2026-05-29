@@ -533,10 +533,20 @@ const DisciplinaryCases: React.FC = () => {
         setNTEs(prev => [...saved, ...prev]);
         const incidentReportId = saved[0]?.incidentReportId;
         if (incidentReportId) {
-          // Move IR to NTE sent once NTE is issued
-          const irUpdate: Partial<IncidentReport> = { id: incidentReportId, pipelineStage: 'nte-sent', status: IRStatus.Converted };
+          // Move IR to NTE sent once NTE is issued and associate the NTE IDs
+          const existingIr = allReports.find(r => r.id === incidentReportId);
+          const currentNteIds = existingIr?.nteIds || [];
+          const newNteIds = saved.map(n => n.id);
+          const mergedNteIds = Array.from(new Set([...currentNteIds, ...newNteIds]));
+
+          const irUpdate: Partial<IncidentReport> = { 
+            id: incidentReportId, 
+            pipelineStage: 'nte-sent', 
+            status: IRStatus.Converted,
+            nteIds: mergedNteIds,
+          };
           await saveIncidentReport(irUpdate, user);
-          setAllReports(prev => prev.map(r => r.id === incidentReportId ? { ...r, pipelineStage: 'nte-sent', status: IRStatus.Converted } : r));
+          setAllReports(prev => prev.map(r => r.id === incidentReportId ? { ...r, ...irUpdate } : r));
         }
         alert(`${saved.length} NTE(s) submitted for approval.`);
       } else {
