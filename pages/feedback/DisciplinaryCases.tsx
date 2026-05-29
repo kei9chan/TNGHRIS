@@ -361,7 +361,7 @@ const DisciplinaryCases: React.FC = () => {
   const selectedNTE = useMemo(() => {
     if (!selectedReport) return undefined;
 
-    const openNteForIr = ntes.find(n => n.incidentReportId === selectedReport.id && [NTEStatus.Issued, NTEStatus.ResponseSubmitted].includes(n.status));
+    const openNteForIr = ntes.find(n => n.incidentReportId === selectedReport.id && [NTEStatus.PendingApproval, NTEStatus.Issued, NTEStatus.ResponseSubmitted].includes(n.status));
     if (openNteForIr) return openNteForIr;
 
     if (selectedReport.nteIds.length === 0) return undefined;
