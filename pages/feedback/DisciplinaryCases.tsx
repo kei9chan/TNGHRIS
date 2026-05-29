@@ -86,8 +86,8 @@ const DisciplinaryCases: React.FC = () => {
   const location = useLocation();
   const { users } = useUsers();
   const { businessUnits } = useBusinessUnits();
-  const queryParams = new URLSearchParams(location.search);
-  const specialFilter = queryParams.get('filter');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const specialFilter = searchParams.get('filter');
 
   const [allReports, setAllReports] = useState<IncidentReport[]>([]);
   const [stages, setStages] = useState<PipelineStage[]>([]);
