@@ -6,7 +6,6 @@ import { fetchIncidentReports } from '../../services/incidentReportService';
 import { formatNTEDisplayId } from '../../utils/formatCaseId';
 import NTEModal from '../../components/feedback/NTEModal';
 import Card from '../../components/ui/Card';
-import PageHeader from '../../components/ui/PageHeader';
 
 export default function MyNTEs() {
   const { user } = useAuth();
@@ -76,7 +75,7 @@ export default function MyNTEs() {
 
   return (
     <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-      <PageHeader title="My Notice to Explains (NTE)" />
+      <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Notice to Explains (NTE)</h1>
       <div className="mt-6">
         <Card>
           <div className="overflow-x-auto">

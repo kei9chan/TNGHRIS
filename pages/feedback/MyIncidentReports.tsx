@@ -7,7 +7,6 @@ import { fetchResolutions } from '../../services/resolutionService';
 import CaseListTable from '../../components/feedback/CaseListTable';
 import IncidentReportModal from '../../components/feedback/IncidentReportModal';
 import Card from '../../components/ui/Card';
-import PageHeader from '../../components/ui/PageHeader';
 
 export default function MyIncidentReports() {
   const { user } = useAuth();
@@ -79,7 +78,7 @@ export default function MyIncidentReports() {
 
   return (
     <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-      <PageHeader title="My Incident Reports" />
+      <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Incident Reports</h1>
       <div className="mt-6">
         <Card>
           <div className="px-4 py-5 sm:p-6">
