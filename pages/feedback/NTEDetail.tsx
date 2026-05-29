@@ -265,6 +265,21 @@ const NTEDetail: React.FC = () => {
             setResolution(created);
             await saveIncidentReport({ id: incidentReport.id, pipelineStage: 'bod-gm-approval' }, user);
             setIncidentReport(prev => prev ? { ...prev, pipelineStage: 'bod-gm-approval' } : null);
+            
+            // Notify each approver that their action is required
+            const irDisplayId = formatIRDisplayId(incidentReport?.caseNumber) || incidentReport.id;
+            const involvedName = nte.employeeName;
+            approverIds.forEach(approverId => {
+                createNotification({
+                    userId: approverId,
+                    type: NotificationType.GENERAL,
+                    title: 'Resolution Approval Required',
+                    message: `You have been requested to approve a resolution for case ${irDisplayId} involving ${involvedName}.`,
+                    link: `/feedback/cases`,
+                    relatedEntityId: created.id,
+                }).catch(err => console.error('Failed to send resolution approval notification:', err));
+            });
+
             setResolutionModalOpen(false);
             alert('Case has been sent for approval.');
             navigate('/feedback/cases');

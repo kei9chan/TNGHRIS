@@ -13,6 +13,7 @@ import SignaturePad, { SignaturePadRef } from '../ui/SignaturePad';
 import EmployeeMultiSelect from './EmployeeMultiSelect';
 import Input from '../ui/Input';
 import RejectReasonModal from './RejectReasonModal';
+import { formatIRDisplayId } from '../../utils/formatCaseId';
 
 interface ResolutionModalProps {
   isOpen: boolean;
@@ -297,7 +298,7 @@ const ResolutionModal: React.FC<ResolutionModalProps> = ({ isOpen, onClose, inci
       <Modal
         isOpen={isOpen}
         onClose={onClose}
-        title={isApproverView ? `Approve Resolution for IR-${incidentReport.id}` : `Case Resolution for IR-${incidentReport.id}`}
+        title={isApproverView ? `Approve Resolution for ${formatIRDisplayId(incidentReport.caseNumber) || incidentReport.id}` : `Case Resolution for ${formatIRDisplayId(incidentReport.caseNumber) || incidentReport.id}`}
         footer={renderFooter()}
         size="2xl"
       >
