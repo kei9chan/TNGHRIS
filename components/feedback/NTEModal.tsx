@@ -232,7 +232,35 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
       return;
     }
 
-    const bodyContent = "Rendered content of the NTE would be saved here.";
+    const processBodyContent = (body: string, employeeName: string, nteNum: string) => {
+      let processed = body;
+      const deadlineDate = new Date(deadline);
+      const now = new Date();
+      const diffTime = Math.abs(deadlineDate.getTime() - now.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      const numToWord = (num: number) => {
+        if (num === 3) return "three (3)";
+        if (num === 5) return "five (5)";
+        if (num === 7) return "seven (7)";
+        return `${num}`;
+      };
+
+      const replacements: Record<string, string> = {
+        '{{allegations}}': allegations || '[Allegations]',
+        '{{employee_name}}': employeeName,
+        '{{employee}}': employeeName,
+        '{{nte_number}}': nteNum,
+        '{{response_deadline_days}}': numToWord(diffDays),
+        '{{response_deadline}}': deadlineDate.toLocaleString(),
+        '{{evidence_url}}': evidenceUrl || '',
+      };
+
+      Object.entries(replacements).forEach(([key, value]) => {
+        processed = processed.replace(new RegExp(key, 'gi'), value);
+      });
+      return processed;
+    };
 
     const approverSteps: ApproverStep[] = selectedApprovers.map(approver => ({
       userId: approver.id,
@@ -249,6 +277,9 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
       const employeeBu = businessUnits.find(b => b.name === employee.businessUnit);
       const buCode = irBu?.code || employeeBu?.code || 'GEN';
 
+        const nteDisplayNum = manualNteNumber ? formatNTEDisplayId(manualNteNumber) || `NTE-${new Date().getFullYear()}-XXX-XXX` : `NTE-${new Date().getFullYear()}-XXX-XXX`;
+        const generatedBody = selectedTemplate ? processBodyContent(selectedTemplate.body, employee.name, nteDisplayNum) : "Template missing";
+
       return {
         incidentReportId: incidentReport.id,
         employeeId: employee.id,
@@ -257,7 +288,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
         issuedDate: new Date(),
         deadline: new Date(deadline),
         details: allegations,
-        body: bodyContent,
+        body: generatedBody,
         employeeResponse: '',
         memoIds,
         disciplineCodeIds,

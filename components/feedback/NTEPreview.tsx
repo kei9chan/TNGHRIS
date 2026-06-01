@@ -109,7 +109,7 @@ const NTEPreview: React.FC<NTEPreviewProps> = ({ template, employeeName, nteNumb
             <div className="space-y-4 whitespace-pre-wrap">
                 {processBody(template.body).split('{{offenses_list}}').map((part, index) => (
                     <React.Fragment key={index}>
-                        <p>{part}</p>
+                        <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: part }} />
                         {index === 0 && renderOffenses()}
                     </React.Fragment>
                 ))}
