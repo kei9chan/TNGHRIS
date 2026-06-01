@@ -23,6 +23,7 @@ import { fetchNTEById, updateNTE } from '../../services/nteService';
 import { fetchIncidentReportById, addIncidentReportMessage, saveIncidentReport } from '../../services/incidentReportService';
 import { fetchResolutionsByIncidentReportId, createResolution, updateResolution } from '../../services/resolutionService';
 import { formatIRDisplayId, formatNTEDisplayId } from '../../utils/formatCaseId';
+import { formatExternalUrl } from '../../utils/urlUtils';
 import { supabase } from '../../services/supabaseClient';
 
 const PaperclipIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>;
@@ -543,9 +544,9 @@ const NTEDetail: React.FC = () => {
                         </div>
                     )}
                     {nte.evidenceUrl && (
-                        <div>
-                            <h3 className="font-semibold text-gray-800 dark:text-gray-200">Supporting Documents</h3>
-                            <a href={nte.evidenceUrl} target="_blank" rel="noopener noreferrer" className="mt-1 text-indigo-600 dark:text-indigo-400 hover:underline break-all">{nte.evidenceUrl}</a>
+                        <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                            <h3 className="font-semibold text-gray-800 dark:text-gray-200">Supporting Evidence</h3>
+                            <a href={formatExternalUrl(nte.evidenceUrl)} target="_blank" rel="noopener noreferrer" className="mt-1 text-indigo-600 dark:text-indigo-400 hover:underline break-all">{nte.evidenceUrl}</a>
                         </div>
                     )}
                 </div>
@@ -612,9 +613,9 @@ const NTEDetail: React.FC = () => {
                             <p className="mt-1 text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{nte.employeeResponse}</p>
                         </div>
                         {nte.employeeResponseEvidenceUrl && (
-                            <div>
+                            <div className="mt-4">
                                 <h3 className="font-semibold text-gray-800 dark:text-gray-200">Supporting Evidence</h3>
-                                <a href={nte.employeeResponseEvidenceUrl} target="_blank" rel="noopener noreferrer" className="mt-1 text-indigo-600 dark:text-indigo-400 hover:underline break-all">{nte.employeeResponseEvidenceUrl}</a>
+                                <a href={formatExternalUrl(nte.employeeResponseEvidenceUrl)} target="_blank" rel="noopener noreferrer" className="mt-1 text-indigo-600 dark:text-indigo-400 hover:underline break-all">{nte.employeeResponseEvidenceUrl}</a>
                             </div>
                         )}
                          {nte.employeeResponseSignatureUrl && (

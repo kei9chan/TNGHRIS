@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { NTE } from '../../types';
 import { formatNTEDisplayId } from '../../utils/formatCaseId';
 import { useUsers } from '../../hooks/useHRData';
+import { formatExternalUrl } from '../../utils/urlUtils';
 
 interface PrintableNTEResponseProps {
     nte: NTE;
@@ -73,9 +74,9 @@ const PrintableNTEResponse: React.FC<PrintableNTEResponseProps> = ({ nte, onClos
                     {nte.employeeResponse}
                 </div>
 
-                <h2 className="font-bold text-base mb-2">II. SUPPORTING EVIDENCE</h2>
-                 <div className="border p-2 mb-8 min-h-[30px] break-all">
-                    {nte.employeeResponseEvidenceUrl ? <a href={nte.employeeResponseEvidenceUrl} className="text-blue-600 underline">{nte.employeeResponseEvidenceUrl}</a> : 'None provided.'}
+                <div className="mb-6">
+                    <h3 className="font-bold text-gray-800 mb-2 border-b border-gray-300 pb-1">Additional Evidence Provided:</h3>
+                    {nte.employeeResponseEvidenceUrl ? <a href={formatExternalUrl(nte.employeeResponseEvidenceUrl)} className="text-blue-600 underline">{nte.employeeResponseEvidenceUrl}</a> : 'None provided.'}
                 </div>
                 
                 <div className="mt-16">

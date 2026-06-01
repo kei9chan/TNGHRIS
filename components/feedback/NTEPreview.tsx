@@ -1,5 +1,6 @@
 import React from 'react';
 import { FeedbackTemplate, DisciplineEntry, Memo } from '../../types';
+import { formatExternalUrl } from '../../utils/urlUtils';
 
 interface NTEPreviewProps {
     template: FeedbackTemplate;
@@ -128,9 +129,9 @@ const NTEPreview: React.FC<NTEPreviewProps> = ({ template, employeeName, nteNumb
             </div>
             
             {evidenceUrl && (
-                <div className="mt-4">
-                    <p className="font-bold">Additional Evidences or Supporting Documents:</p>
-                    <a href={evidenceUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline break-all">{evidenceUrl}</a>
+                <div className="mt-8 border-t border-gray-200 dark:border-gray-700 pt-6 text-sm">
+                    <strong>Supporting Documents / Evidence:</strong><br />
+                    <a href={formatExternalUrl(evidenceUrl)} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline break-all">{evidenceUrl}</a>
                 </div>
             )}
 
