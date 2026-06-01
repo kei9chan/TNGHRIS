@@ -85,8 +85,8 @@ export const NAV_LINKS: NavLink[] = [
             { name: 'Code of Discipline', path: '/feedback/discipline', requiredPermission: { resource: 'CodeOfDiscipline', permission: Permission.View } },
             { name: 'Templates', path: '/feedback/templates', requiredPermission: { resource: 'FeedbackTemplates', permission: Permission.View } },
             { name: 'Pipeline', path: '/feedback/pipeline', requiredPermission: { resource: 'Pipeline', permission: Permission.View } },
-            { name: 'My Incident Reports', path: '/feedback/my-irs', requiredPermission: { resource: 'MyCases', permission: Permission.View } },
-            { name: 'My NTEs', path: '/feedback/my-ntes', requiredPermission: { resource: 'MyCases', permission: Permission.View } },
+            { name: 'Incident Reports Filed', path: '/feedback/my-irs', requiredPermission: { resource: 'MyCases', permission: Permission.View } },
+            { name: 'Administrative Notices', path: '/feedback/my-ntes', requiredPermission: { resource: 'MyCases', permission: Permission.View } },
         ]
     },
     {

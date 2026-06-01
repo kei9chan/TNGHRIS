@@ -23,8 +23,8 @@ const iconMap: { [key: string]: React.FC<{className?: string}> } = {
     'Templates': DocumentTextIcon,
     'Pipeline': AdjustmentsHorizontalIcon,
     'Coaching Log': SparklesIcon,
-    'My Incident Reports': DocumentMagnifyingGlassIcon,
-    'My NTEs': ClipboardDocumentIcon,
+    'Incident Reports Filed': DocumentMagnifyingGlassIcon,
+    'Administrative Notices': ClipboardDocumentIcon,
 };
 
 

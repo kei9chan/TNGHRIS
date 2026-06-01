@@ -78,7 +78,7 @@ export default function MyIncidentReports() {
 
   return (
     <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-      <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Incident Reports</h1>
+      <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Incident Reports Filed</h1>
       <div className="mt-6">
         <Card>
           <div className="px-4 py-5 sm:p-6">

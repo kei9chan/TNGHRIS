@@ -78,7 +78,7 @@ export default function MyNTEs() {
 
   return (
     <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-      <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Notice to Explains (NTE)</h1>
+      <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Administrative Notices</h1>
       <div className="mt-6">
         <Card>
           <div className="overflow-x-auto">

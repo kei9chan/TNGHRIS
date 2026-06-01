@@ -864,7 +864,7 @@ const DisciplinaryCases: React.FC = () => {
     return (
       <div className="space-y-6">
         <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">My Incident Reports</h1>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Incident Reports Filed</h1>
           <Button onClick={handleOpenNewReportModal}>+ File New IR</Button>
         </div>
         <p className="text-gray-600 dark:text-gray-400">
