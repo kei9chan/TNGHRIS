@@ -49,6 +49,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [selectedApprovers, setSelectedApprovers] = useState<User[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [manualNteNumber, setManualNteNumber] = useState('');
 
   // Fetched data states
   const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
@@ -165,6 +166,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
         setEvidenceUrl('');
         setSelectedTemplateId(feedbackTemplates[0]?.id || '');
         setSelectedApprovers([]);
+        setManualNteNumber('');
       } else {
         setCurrentNTE(nte);
         if (nte?.approverSteps) {
@@ -262,6 +264,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
         evidenceUrl,
         issuedByUserId: user.id,
         approverSteps,
+        nteNumber: manualNteNumber ? parseInt(manualNteNumber, 10) : undefined,
       };
     });
 
@@ -410,6 +413,14 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
                 {feedbackTemplates.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
               </select>
             </div>
+            <Input 
+              label="NTE Serial Number (Optional)" 
+              id="nteNumber" 
+              type="number"
+              placeholder="e.g. 123 (Leave blank for auto-generate)" 
+              value={manualNteNumber} 
+              onChange={e => setManualNteNumber(e.target.value)} 
+            />
             <Input label="Response Deadline" id="deadline" type="datetime-local" value={deadline} onChange={e => setDeadline(e.target.value)} />
             <Textarea label="NTE Details / Allegations" value={allegations} onChange={e => setAllegations(e.target.value)} rows={5} />
             <Input
@@ -464,7 +475,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
               <NTEPreview
                 template={selectedTemplate}
                 employeeName={previewEmployee.name}
-                nteNumber={`NTE-${new Date().getFullYear()}-XXX-XXX`}
+                nteNumber={manualNteNumber ? formatNTEDisplayId(parseInt(manualNteNumber, 10)) || `NTE-${new Date().getFullYear()}-XXX-XXX` : `NTE-${new Date().getFullYear()}-XXX-XXX`}
                 allegations={allegations}
                 deadline={new Date(deadline || Date.now())}
                 citedMemos={citedMemos}
