@@ -622,52 +622,54 @@ const NTEDetail: React.FC = () => {
                  </Card>
             )}
 
-            <div className="bg-white dark:bg-slate-800 shadow-md rounded-lg flex flex-col">
-                <div className="flex-grow p-4 space-y-4 overflow-y-auto">
-                    <div className="text-center my-2">
-                        <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 rounded-full px-3 py-1">
-                            This is the beginning of your conversation
-                        </span>
-                    </div>
-                    <div className="flex items-start space-x-3">
-                        <div className="flex-shrink-0 h-8 w-8 rounded-full bg-indigo-500 text-white flex items-center justify-center font-bold text-xs">{nteIssuer?.name.substring(0, 2) || 'HR'}</div>
-                        <div>
-                            <div className="p-3 bg-gray-100 dark:bg-slate-700 rounded-lg rounded-tl-none">
-                                <p className="text-sm text-gray-800 dark:text-gray-200">This Notice to Explain has been issued. Please provide your response by the deadline. You can use this chat for any questions.</p>
-                            </div>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{nteIssuer ? `${nteIssuer.name} (${nteIssuer.role})` : 'System Message'}</p>
+            {user && user.id !== nte.employeeId && user.id !== incidentReport.reportedBy && (
+                <div className="bg-white dark:bg-slate-800 shadow-md rounded-lg flex flex-col">
+                    <div className="flex-grow p-4 space-y-4 overflow-y-auto">
+                        <div className="text-center my-2">
+                            <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 rounded-full px-3 py-1">
+                                This is the beginning of your conversation
+                            </span>
                         </div>
-                    </div>
-                    {incidentReport.chatThread.map(msg => (
-                        <div key={msg.id} className={`flex items-start space-x-3 ${msg.userId === user?.id ? 'flex-row-reverse space-x-reverse' : ''}`}>
-                            <div className="flex-shrink-0 h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center font-bold text-xs">{msg.userName.substring(0, 2)}</div>
+                        <div className="flex items-start space-x-3">
+                            <div className="flex-shrink-0 h-8 w-8 rounded-full bg-indigo-500 text-white flex items-center justify-center font-bold text-xs">{nteIssuer?.name.substring(0, 2) || 'HR'}</div>
                             <div>
-                                <div className={`p-3 rounded-lg ${msg.userId === user?.id ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-gray-100 dark:bg-slate-700 rounded-bl-none'}`}>
-                                    <p className="text-sm">{msg.text}</p>
+                                <div className="p-3 bg-gray-100 dark:bg-slate-700 rounded-lg rounded-tl-none">
+                                    <p className="text-sm text-gray-800 dark:text-gray-200">Internal Case Discussion. Involved employees and reporters cannot view this thread.</p>
                                 </div>
-                                <p className={`text-xs text-gray-500 dark:text-gray-400 mt-1 ${msg.userId === user?.id ? 'text-right' : ''}`}>{msg.userName} at {new Date(msg.timestamp).toLocaleTimeString()}</p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{nteIssuer ? `${nteIssuer.name} (${nteIssuer.role})` : 'System Message'}</p>
                             </div>
                         </div>
-                    ))}
-                     <div ref={messagesEndRef} />
-                </div>
-                <div className="p-4 border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/50">
-                    <div className="relative">
-                         <textarea
-                            value={newMessage}
-                            onChange={e => setNewMessage(e.target.value)}
-                            onKeyDown={e => {if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); }}}
-                            placeholder="Type your message..."
-                            className="w-full p-2 pr-20 border rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                            rows={2}
-                        />
-                        <div className="absolute bottom-2 right-2 flex space-x-1">
-                            <Button size="sm" variant="secondary" className="!p-2"><PaperclipIcon /></Button>
-                            <Button size="sm" className="!p-2" onClick={handleSendMessage}><PaperAirplaneIcon /></Button>
+                        {incidentReport.chatThread.map(msg => (
+                            <div key={msg.id} className={`flex items-start space-x-3 ${msg.userId === user?.id ? 'flex-row-reverse space-x-reverse' : ''}`}>
+                                <div className="flex-shrink-0 h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center font-bold text-xs">{msg.userName.substring(0, 2)}</div>
+                                <div>
+                                    <div className={`p-3 rounded-lg ${msg.userId === user?.id ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-gray-100 dark:bg-slate-700 rounded-bl-none'}`}>
+                                        <p className="text-sm">{msg.text}</p>
+                                    </div>
+                                    <p className={`text-xs text-gray-500 dark:text-gray-400 mt-1 ${msg.userId === user?.id ? 'text-right' : ''}`}>{msg.userName} at {new Date(msg.timestamp).toLocaleTimeString()}</p>
+                                </div>
+                            </div>
+                        ))}
+                         <div ref={messagesEndRef} />
+                    </div>
+                    <div className="p-4 border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/50">
+                        <div className="relative">
+                             <textarea
+                                value={newMessage}
+                                onChange={e => setNewMessage(e.target.value)}
+                                onKeyDown={e => {if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); }}}
+                                placeholder="Type your message for internal discussion..."
+                                className="w-full p-2 pr-20 border rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                                rows={2}
+                            />
+                            <div className="absolute bottom-2 right-2 flex space-x-1">
+                                <Button size="sm" variant="secondary" className="!p-2"><PaperclipIcon /></Button>
+                                <Button size="sm" className="!p-2" onClick={handleSendMessage}><PaperAirplaneIcon /></Button>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
+            )}
              {isResolutionModalOpen && (
                 <ResolutionModal
                     isOpen={isResolutionModalOpen}
