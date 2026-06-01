@@ -71,7 +71,7 @@ export const saveNTEs = async (ntes: Partial<NTE>[], user: User): Promise<NTE[]>
     approver_ids: n.approverSteps?.map(a => a.userId) || [],
     approver_names: n.approverSteps?.map(a => a.userName) || [],
     approval_log: n.approverSteps || [],
-    nte_number: n.nteNumber || undefined,
+    ...(n.nteNumber ? { nte_number: n.nteNumber } : {}),
     body: n.body || null,
   }));
 
