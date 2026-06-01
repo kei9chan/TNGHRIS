@@ -15,24 +15,36 @@ interface NTEPreviewProps {
 const NTEPreview: React.FC<NTEPreviewProps> = ({ template, employeeName, nteNumber, allegations, deadline, citedMemos, citedDiscipline, evidenceUrl }) => {
 
     const renderOffenses = () => {
-        if (citedMemos.length === 0 && citedDiscipline.length === 0) {
-            return <p className="italic text-gray-400">[No offenses cited]</p>;
-        }
+        const hasExplicitAllegations = template.body.includes('{{allegations}}');
+        
         return (
-            <div className="pl-4 space-y-4">
-                {citedMemos.map(memo => (
-                     <div key={memo.id} className="mb-2 p-2 border border-dashed border-gray-400 rounded-md bg-gray-50 text-gray-800">
-                        <p className="font-bold underline">{memo.title}</p>
-                        {/* The whitespace-pre-wrap on the parent can interfere with prose styles. Resetting here. */}
-                        <div className="prose prose-sm max-w-none mt-2 whitespace-normal" dangerouslySetInnerHTML={{ __html: memo.body }} />
+            <div className="space-y-6">
+                {!hasExplicitAllegations && allegations && (
+                    <div className="pl-4">
+                        <p className="font-bold underline mb-2">Detailed Allegations:</p>
+                        <p className="whitespace-pre-wrap">{allegations}</p>
                     </div>
-                ))}
-                {citedDiscipline.map(entry => (
-                    <div key={entry.id} className="mb-2">
-                        <p className="font-bold underline">{entry.category.toUpperCase()} - {entry.code}</p>
-                        <p>{entry.description}</p>
+                )}
+
+                {(citedMemos.length > 0 || citedDiscipline.length > 0) ? (
+                    <div className="pl-4 space-y-4">
+                        <p className="font-bold underline mb-2">Cited Offenses:</p>
+                        {citedMemos.map(memo => (
+                             <div key={memo.id} className="mb-2 p-2 border border-dashed border-gray-400 rounded-md bg-gray-50 text-gray-800">
+                                <p className="font-bold underline">{memo.title}</p>
+                                <div className="prose prose-sm max-w-none mt-2 whitespace-normal" dangerouslySetInnerHTML={{ __html: memo.body }} />
+                            </div>
+                        ))}
+                        {citedDiscipline.map(entry => (
+                            <div key={entry.id} className="mb-2">
+                                <p className="font-bold underline">{entry.category.toUpperCase()} - {entry.code}</p>
+                                <p>{entry.description}</p>
+                            </div>
+                        ))}
                     </div>
-                ))}
+                ) : (
+                    <p className="italic text-gray-400 pl-4">[No offenses cited]</p>
+                )}
             </div>
         )
     }
