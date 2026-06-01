@@ -22,6 +22,7 @@ type NTERow = {
   created_at?: string;
   updated_at?: string;
   nte_number?: number | string;
+  body?: string | null;
   employee_response?: string | null;
   employee_response_evidence_url?: string | null;
   employee_response_signature_url?: string | null;
@@ -40,7 +41,7 @@ const mapRow = (row: NTERow): NTE => {
     issuedDate: row.created_at ? new Date(row.created_at) : new Date(),
     deadline: row.response_deadline ? new Date(row.response_deadline) : new Date(),
     details: row.details || '',
-    body: '',
+    body: row.body || '',
     employeeResponse: row.employee_response || '',
     employeeResponseEvidenceUrl: row.employee_response_evidence_url || undefined,
     employeeResponseSignatureUrl: row.employee_response_signature_url || undefined,
@@ -71,6 +72,7 @@ export const saveNTEs = async (ntes: Partial<NTE>[], user: User): Promise<NTE[]>
     approver_names: n.approverSteps?.map(a => a.userName) || [],
     approval_log: n.approverSteps || [],
     nte_number: n.nteNumber || undefined,
+    body: n.body || null,
   }));
 
   const { data, error } = await supabase
