@@ -9,7 +9,11 @@ export const formatIRDisplayId = (caseNumber?: number | null): string | null => 
   return `TNGIR-${String(caseNumber).padStart(5, '0')}`;
 };
 
-export const formatNTEDisplayId = (nteNumber?: number | null): string | null => {
+export const formatNTEDisplayId = (nteNumber?: number | string | null): string | null => {
   if (nteNumber == null) return null;
-  return `TNGNTE-${String(nteNumber).padStart(5, '0')}`;
+  const str = String(nteNumber);
+  if (/^\d+$/.test(str)) {
+    return `TNGNTE-${str.padStart(5, '0')}`;
+  }
+  return str;
 };

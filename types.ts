@@ -769,7 +769,7 @@ export interface NTE {
   approverSteps?: ApproverStep[];
   decisionMakerSignatureUrl?: string;
   hearingDetails?: HearingDetails;
-  nteNumber?: number;
+  nteNumber?: number | string;
 }
 
 export enum ResolutionStatus {

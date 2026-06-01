@@ -264,7 +264,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
         evidenceUrl,
         issuedByUserId: user.id,
         approverSteps,
-        nteNumber: manualNteNumber ? parseInt(manualNteNumber, 10) : undefined,
+        nteNumber: manualNteNumber || undefined,
       };
     });
 
@@ -416,8 +416,8 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
             <Input 
               label="NTE Serial Number (Optional)" 
               id="nteNumber" 
-              type="number"
-              placeholder="e.g. 123 (Leave blank for auto-generate)" 
+              type="text"
+              placeholder="e.g. 123 or ABC-123 (Leave blank for auto-generate)" 
               value={manualNteNumber} 
               onChange={e => setManualNteNumber(e.target.value)} 
             />
@@ -475,7 +475,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
               <NTEPreview
                 template={selectedTemplate}
                 employeeName={previewEmployee.name}
-                nteNumber={manualNteNumber ? formatNTEDisplayId(parseInt(manualNteNumber, 10)) || `NTE-${new Date().getFullYear()}-XXX-XXX` : `NTE-${new Date().getFullYear()}-XXX-XXX`}
+                nteNumber={manualNteNumber ? formatNTEDisplayId(manualNteNumber) || `NTE-${new Date().getFullYear()}-XXX-XXX` : `NTE-${new Date().getFullYear()}-XXX-XXX`}
                 allegations={allegations}
                 deadline={new Date(deadline || Date.now())}
                 citedMemos={citedMemos}

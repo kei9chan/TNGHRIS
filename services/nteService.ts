@@ -21,7 +21,7 @@ type NTERow = {
   approval_log?: any[] | null;
   created_at?: string;
   updated_at?: string;
-  nte_number?: number;
+  nte_number?: number | string;
   employee_response?: string | null;
   employee_response_evidence_url?: string | null;
   employee_response_signature_url?: string | null;
