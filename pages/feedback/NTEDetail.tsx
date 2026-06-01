@@ -551,6 +551,39 @@ const NTEDetail: React.FC = () => {
                 </div>
             </Card>
 
+            <Card>
+                <div className="flex justify-between items-center mb-4 border-b pb-2">
+                    <h2 className="text-xl font-bold">Notice to Explain Document</h2>
+                    <Button variant="secondary" size="sm" onClick={() => {
+                        const printWindow = window.open('', '_blank');
+                        if (printWindow) {
+                            printWindow.document.write(`
+                                <html>
+                                    <head>
+                                        <title>Print NTE Document</title>
+                                        <script src="https://cdn.tailwindcss.com"></script>
+                                        <style>
+                                            @media print {
+                                                @page { size: A4; margin: 20mm; }
+                                            }
+                                        </style>
+                                    </head>
+                                    <body onload="setTimeout(() => { window.print(); window.close(); }, 500);">
+                                        ${nte.body}
+                                    </body>
+                                </html>
+                            `);
+                            printWindow.document.close();
+                        }
+                    }}>
+                        Download / Print Document
+                    </Button>
+                </div>
+                <div className="bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg p-2 max-h-[800px] overflow-auto">
+                    <div className="bg-white transform scale-90 sm:scale-100 origin-top p-4" dangerouslySetInnerHTML={{ __html: nte.body }} />
+                </div>
+            </Card>
+
             {isAwaitingEmployeeResponse && (
                 <Card title="Respond to this Notice">
                     <div className="space-y-4">
