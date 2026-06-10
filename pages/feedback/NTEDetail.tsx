@@ -523,10 +523,12 @@ const NTEDetail: React.FC = () => {
             <Card>
                 <h2 className="text-xl font-bold mb-4">Issue Summary</h2>
                 <div className="space-y-4">
-                    <div>
-                        <h3 className="font-semibold text-gray-800 dark:text-gray-200">Detailed Context</h3>
-                        <p className="mt-1 text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{incidentReport.description}</p>
-                    </div>
+                    {user?.id !== nte.employeeId && (
+                        <div>
+                            <h3 className="font-semibold text-gray-800 dark:text-gray-200">Detailed Context</h3>
+                            <p className="mt-1 text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{incidentReport.description}</p>
+                        </div>
+                    )}
                     <div>
                         <h3 className="font-semibold text-gray-800 dark:text-gray-200">Allegations</h3>
                          <p className="mt-1 text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{nte.details}</p>
