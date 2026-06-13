@@ -34,36 +34,34 @@ const TemplateEditorModal: React.FC<TemplateEditorModalProps> = ({ isOpen, onClo
         setCurrent(prev => ({ ...prev, [e.target.name]: e.target.value }));
     };
 
-    const uploadLogoToBucket = async (file: File) => {
+    const uploadToBucket = async (file: File, folder: string): Promise<string> => {
         const bucket = 'feedback-templates-assets';
         const ext = file.name.split('.').pop() || 'bin';
-        const path = `logos/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-        const { error: uploadError } = await supabase.storage.from(bucket).upload(path, file, {
-            cacheControl: '3600',
-            upsert: false,
-        });
-        if (uploadError) throw uploadError;
-        const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-        return data.publicUrl;
-    };
-
-    const uploadSignatureToBucket = async (file: File) => {
-        const bucket = 'feedback-templates-assets';
-        const ext = file.name.split('.').pop() || 'bin';
-        const path = `signatures/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-        const { error: uploadError } = await supabase.storage.from(bucket).upload(path, file, {
-            cacheControl: '3600',
-            upsert: false,
-        });
-        if (uploadError) throw uploadError;
-        const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-        return data.publicUrl;
+        const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+        try {
+            const { error: uploadError } = await supabase.storage.from(bucket).upload(path, file, {
+                cacheControl: '3600',
+                upsert: false,
+            });
+            if (uploadError) throw uploadError;
+            const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+            return data.publicUrl;
+        } catch (err: any) {
+            // If bucket doesn't exist or upload fails, fall back to data URL
+            console.warn(`Storage upload failed (${err?.message || 'unknown'}), using local data URL`);
+            return new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = () => reject(new Error('Failed to read file'));
+                reader.readAsDataURL(file);
+            });
+        }
     };
 
     const handleFile = async (file: File) => {
         try {
             setUploadingLogo(true);
-            const url = await uploadLogoToBucket(file);
+            const url = await uploadToBucket(file, 'logos');
             setCurrent(prev => ({...prev, logoUrl: url}));
         } catch (err) {
             console.error('Logo upload failed', err);
@@ -76,7 +74,7 @@ const TemplateEditorModal: React.FC<TemplateEditorModalProps> = ({ isOpen, onClo
     const handleSignatureFile = async (file: File) => {
         try {
             setUploadingSignature(true);
-            const url = await uploadSignatureToBucket(file);
+            const url = await uploadToBucket(file, 'signatures');
             setCurrent(prev => ({...prev, signatorySignatureUrl: url}));
         } catch (err) {
             console.error('Signature upload failed', err);
@@ -102,7 +100,9 @@ const TemplateEditorModal: React.FC<TemplateEditorModalProps> = ({ isOpen, onClo
             size="4xl"
             footer={
                 <div className="flex justify-end w-full">
-                    <Button onClick={handleSave}>{template ? "Save Changes" : "Create Template"}</Button>
+                    <Button onClick={handleSave} disabled={uploadingLogo || uploadingSignature}>
+                        {uploadingLogo || uploadingSignature ? "Uploading..." : (template ? "Save Changes" : "Create Template")}
+                    </Button>
                 </div>
             }
         >
@@ -118,7 +118,22 @@ const TemplateEditorModal: React.FC<TemplateEditorModalProps> = ({ isOpen, onClo
                         <div>
                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Company Logo</label>
                             <FileUploader onFileUpload={handleFile} disabled={uploadingLogo} inputId="logo-upload" />
-                            {current.logoUrl && <img src={current.logoUrl} alt="Logo Preview" className="mt-2 h-16"/>}
+                            {current.logoUrl && (
+                                <div className="mt-2">
+                                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Logo Preview:</p>
+                                    <img 
+                                        src={current.logoUrl} 
+                                        alt="Logo Preview" 
+                                        className="h-16 border rounded-md p-1 bg-gray-50 dark:bg-gray-900" 
+                                        onError={(e) => { 
+                                            e.currentTarget.style.display = 'none';
+                                            const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                                            if (fallback) fallback.style.display = 'block';
+                                        }}
+                                    />
+                                    <p className="mt-1 text-xs text-amber-600 dark:text-amber-400 hidden">⚠ Logo image could not be loaded. It may display correctly after saving.</p>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -150,7 +165,17 @@ const TemplateEditorModal: React.FC<TemplateEditorModalProps> = ({ isOpen, onClo
                         {current.signatorySignatureUrl && (
                             <div className="mt-4">
                                 <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Signature Preview:</p>
-                                <img src={current.signatorySignatureUrl} alt="Signature Preview" className="mt-2 h-20 border rounded-md p-2 bg-gray-50 dark:bg-gray-900" />
+                                <img 
+                                    src={current.signatorySignatureUrl} 
+                                    alt="Signature Preview" 
+                                    className="mt-2 h-20 border rounded-md p-2 bg-gray-50 dark:bg-gray-900" 
+                                    onError={(e) => { 
+                                        e.currentTarget.style.display = 'none';
+                                        const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                                        if (fallback) fallback.style.display = 'block';
+                                    }}
+                                />
+                                <p className="mt-2 text-xs text-amber-600 dark:text-amber-400 hidden">⚠ Signature image could not be loaded. It may display correctly after saving.</p>
                             </div>
                         )}
                         {!current.signatorySignatureUrl && !uploadingSignature && (

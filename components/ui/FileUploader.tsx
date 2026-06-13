@@ -10,6 +10,7 @@ interface FileUploaderProps {
   inputId?: string;
   existingFileUrl?: string; // URL of previously uploaded file
   readOnly?: boolean; // If true, hide upload UI and only show existing file
+  disabled?: boolean; // If true, disable file input and show uploading state
 }
 
 const UploadIcon = () => (
@@ -30,7 +31,7 @@ const isImageFile = (file?: File | null, url?: string): boolean => {
     return false;
 };
 
-const FileUploader: React.FC<FileUploaderProps> = ({ onFileUpload, maxSize, inputId, existingFileUrl, readOnly }) => {
+const FileUploader: React.FC<FileUploaderProps> = ({ onFileUpload, maxSize, inputId, existingFileUrl, readOnly, disabled }) => {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [error, setError] = useState<string>('');
@@ -154,19 +155,25 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onFileUpload, maxSize, inpu
         {/* Dropzone - hide if file is selected */}
         {!file && !existingFileUrl && (
           <div 
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onDragEnter={handleDragEnter}
-              onDragLeave={handleDragLeave}
-              className={`flex items-center justify-center w-full relative ${isDragging ? 'border-blue-500' : 'border-gray-300 dark:border-gray-600'}`}
+              onDrop={disabled ? undefined : handleDrop}
+              onDragOver={disabled ? undefined : handleDragOver}
+              onDragEnter={disabled ? undefined : handleDragEnter}
+              onDragLeave={disabled ? undefined : handleDragLeave}
+              className={`flex items-center justify-center w-full relative ${disabled ? 'opacity-50 pointer-events-none' : ''} ${isDragging ? 'border-blue-500' : 'border-gray-300 dark:border-gray-600'}`}
           >
               <label htmlFor={controlId} className="flex flex-col items-center justify-center w-full h-64 border-2 border-dashed rounded-lg cursor-pointer bg-gray-50 dark:hover:bg-bray-800 dark:bg-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:hover:border-gray-500 dark:hover:bg-gray-600 transition-colors">
                   <div className="flex flex-col items-center justify-center pt-5 pb-6">
                       <UploadIcon />
-                      <p className="mb-2 text-sm text-gray-500 dark:text-gray-400"><span className="font-semibold">Click to upload</span> or drag and drop</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">PDF, JPG, PNG, DOCX, XLSX (MAX. {sizeLimitInMB}MB)</p>
+                      {disabled ? (
+                        <p className="mb-2 text-sm text-gray-500 dark:text-gray-400"><span className="font-semibold">Uploading...</span></p>
+                      ) : (
+                        <>
+                          <p className="mb-2 text-sm text-gray-500 dark:text-gray-400"><span className="font-semibold">Click to upload</span> or drag and drop</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">PDF, JPG, PNG, DOCX, XLSX (MAX. {sizeLimitInMB}MB)</p>
+                        </>
+                      )}
                   </div>
-                  <input id={controlId} type="file" className="hidden" onChange={handleFileChange} />
+                  <input id={controlId} type="file" className="hidden" onChange={handleFileChange} disabled={disabled} />
               </label>
           </div>
         )}

@@ -81,6 +81,7 @@ const mapIncidentReport = (r: IncidentReportRow): IncidentReport => ({
 
 const mapFeedbackTemplate = (r: FeedbackTemplateRow): FeedbackTemplate => ({
   id: r.id, title: r.title, body: r.body, from: r.from, subject: r.subject, cc: r.cc,
+  logoUrl: r.logo_url,
   signatoryName: r.signatory_name, signatoryTitle: r.signatory_title,
   signatorySignatureUrl: r.signatory_signature_url || r.signatorysignatureurl || r.signatory_signature || r.signature_url,
 } as any);

@@ -96,9 +96,9 @@ const FeedbackTemplates: React.FC = () => {
                 return [mapped, ...prev];
             });
             setIsModalOpen(false);
-        } catch (err) {
+        } catch (err: any) {
             console.error('Failed to save feedback template', err);
-            alert('Failed to save feedback template. Please try again.');
+            alert(`Failed to save template: ${err.message || 'Unknown error'}`);
         }
     };
     

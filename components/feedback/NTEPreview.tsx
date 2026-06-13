@@ -11,9 +11,11 @@ interface NTEPreviewProps {
     citedMemos: Memo[];
     citedDiscipline: DisciplineEntry[];
     evidenceUrl?: string;
+    employeePosition?: string;
+    employeeDepartment?: string;
 }
 
-const NTEPreview: React.FC<NTEPreviewProps> = ({ template, employeeName, nteNumber, allegations, deadline, citedMemos, citedDiscipline, evidenceUrl }) => {
+const NTEPreview: React.FC<NTEPreviewProps> = ({ template, employeeName, employeePosition, employeeDepartment, nteNumber, allegations, deadline, citedMemos, citedDiscipline, evidenceUrl }) => {
 
     const renderOffenses = () => {
         const hasExplicitAllegations = template.body.includes('{{allegations}}');
@@ -86,35 +88,53 @@ const NTEPreview: React.FC<NTEPreviewProps> = ({ template, employeeName, nteNumb
         <div className="p-8 bg-white text-black font-serif text-sm leading-relaxed shadow-lg aspect-[8.5/11]">
             {template.logoUrl && (
                 <div className="text-center mb-6">
-                    <img src={template.logoUrl} alt="Company Logo" className="h-20 mx-auto" />
+                    <img src={template.logoUrl} alt="Company Logo" className="h-20 mx-auto" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                 </div>
             )}
             
-            <table className="w-full mb-6 font-mono text-xs">
+            <table className="w-full mb-6 text-[15px]">
                 <tbody>
                     <tr>
-                        <td className="font-bold w-1/6">TO</td>
-                        <td className="w-1/12">:</td>
-                        <td className="w-1/3">{employeeName || '[Employee Name]'}</td>
-                        <td className="font-bold w-1/6">DATE</td>
-                        <td className="w-1/12">:</td>
-                        <td className="w-1/3">{new Date().toLocaleDateString()}</td>
+                        <td className="uppercase w-1/4 align-top">TO</td>
+                        <td className="w-4 align-top">:</td>
+                        <td className="font-bold align-top">{employeeName || '[Employee Name]'}</td>
                     </tr>
                     <tr>
-                        <td className="font-bold">FROM</td>
-                        <td>:</td>
-                        <td>{template.from}</td>
-                        <td className="font-bold">NTE NO.</td>
-                        <td>:</td>
-                        <td>{nteNumber}</td>
+                        <td className="uppercase align-top">POSITION</td>
+                        <td className="align-top">:</td>
+                        <td className="font-bold align-top">{employeePosition || '[Employee Position]'}</td>
                     </tr>
                     <tr>
-                        <td className="font-bold">SUBJECT</td>
-                        <td>:</td>
-                        <td>{template.subject}</td>
-                        <td className="font-bold">CC</td>
-                        <td>:</td>
-                        <td>{template.cc}</td>
+                        <td className="uppercase align-top pb-6">DEPARTMENT</td>
+                        <td className="align-top pb-6">:</td>
+                        <td className="font-bold align-top pb-6">{employeeDepartment || '[Employee Department]'}</td>
+                    </tr>
+                    
+                    <tr>
+                        <td className="uppercase align-top">FROM</td>
+                        <td className="align-top">:</td>
+                        <td className="font-bold align-top">{template.from}</td>
+                    </tr>
+                    <tr>
+                        <td className="uppercase align-top">DATE ISSUED</td>
+                        <td className="align-top">:</td>
+                        <td className="font-bold align-top">{new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</td>
+                    </tr>
+                    <tr>
+                        <td className="uppercase align-top">NTE CODE</td>
+                        <td className="align-top">:</td>
+                        <td className="font-bold align-top">{nteNumber}</td>
+                    </tr>
+                    <tr>
+                        <td className="uppercase align-top pb-6">CC</td>
+                        <td className="align-top pb-6">:</td>
+                        <td className="font-bold align-top pb-6">{template.cc}</td>
+                    </tr>
+
+                    <tr>
+                        <td className="uppercase align-top">SUBJECT</td>
+                        <td className="align-top">:</td>
+                        <td className="font-bold align-top">{template.subject}</td>
                     </tr>
                 </tbody>
             </table>
@@ -141,25 +161,28 @@ const NTEPreview: React.FC<NTEPreviewProps> = ({ template, employeeName, nteNumb
             
             <div className="mt-12">
                 {template.signatorySignatureUrl && (
-                    <img src={template.signatorySignatureUrl} alt="Signature" className="h-16 mb-2" />
+                    <img 
+                        src={template.signatorySignatureUrl} 
+                        alt="Signature" 
+                        className="h-16 mb-2" 
+                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    />
                 )}
                 <p className="font-bold">{template.signatoryName}</p>
                 <p>{template.signatoryTitle}</p>
             </div>
             
              <div className="mt-16 pt-4 border-t border-gray-400">
-                <p className="font-bold mb-8">Acknowledgement Receipt of Notice</p>
-                <div className="grid grid-cols-3 gap-8">
-                    <div className="col-span-2 border-b border-gray-600 pb-1"></div>
-                    <div className="border-b border-gray-600 pb-1"></div>
-                    <div className="col-span-2 text-center text-xs">Signature over Printed Name</div>
-                    <div className="text-center text-xs">Date</div>
-                </div>
-                 <div className="grid grid-cols-3 gap-8 mt-8">
-                    <div className="border-b border-gray-600 pb-1"></div>
-                </div>
-                 <div className="grid grid-cols-3 gap-8">
-                    <div className="text-center text-xs">Time</div>
+                <p className="font-bold mb-12">Acknowledgement Receipt of Notice</p>
+                <div className="flex justify-between gap-12">
+                    <div className="w-[55%] text-center">
+                        <div className="border-b border-gray-800 w-full"></div>
+                        <div className="text-xs mt-1">Signature over Printed Name</div>
+                    </div>
+                    <div className="w-[35%] text-center">
+                        <div className="border-b border-gray-800 w-full"></div>
+                        <div className="text-xs mt-1">Date & Time</div>
+                    </div>
                 </div>
             </div>
 

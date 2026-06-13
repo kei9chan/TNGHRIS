@@ -256,6 +256,8 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
           <NTEPreview
             template={selectedTemplate}
             employeeName={employee.name}
+            employeePosition={employee.position}
+            employeeDepartment={employee.department}
             nteNumber={nteDisplayNum}
             allegations={allegations}
             deadline={new Date(deadline || Date.now())}
@@ -492,6 +494,8 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
               <NTEPreview
                 template={selectedTemplate}
                 employeeName={previewEmployee.name}
+                employeePosition={previewEmployee.position}
+                employeeDepartment={previewEmployee.department}
                 nteNumber={manualNteNumber ? formatNTEDisplayId(manualNteNumber) || `NTE-${new Date().getFullYear()}-XXX-XXX` : `NTE-${new Date().getFullYear()}-XXX-XXX`}
                 allegations={allegations}
                 deadline={new Date(deadline || Date.now())}
