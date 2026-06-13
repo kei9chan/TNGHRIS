@@ -87,8 +87,13 @@ const NTEPreview: React.FC<NTEPreviewProps> = ({ template, employeeName, employe
     return (
         <div className="p-8 bg-white text-black font-serif text-sm leading-relaxed shadow-lg aspect-[8.5/11]">
             {template.logoUrl && (
-                <div className="text-center mb-6">
-                    <img src={template.logoUrl} alt="Company Logo" className="h-20 mx-auto" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                <div className="text-center mb-8">
+                    <img 
+                        src={template.logoUrl} 
+                        alt="Company Logo" 
+                        className="max-h-32 w-auto mx-auto object-contain" 
+                        style={{ display: 'block', margin: '0 auto' }}
+                    />
                 </div>
             )}
             
@@ -164,8 +169,8 @@ const NTEPreview: React.FC<NTEPreviewProps> = ({ template, employeeName, employe
                     <img 
                         src={template.signatorySignatureUrl} 
                         alt="Signature" 
-                        className="h-16 mb-2" 
-                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                        className="h-16 mb-2 object-contain" 
+                        style={{ display: 'block' }}
                     />
                 )}
                 <p className="font-bold">{template.signatoryName}</p>
