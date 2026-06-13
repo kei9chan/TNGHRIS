@@ -68,6 +68,9 @@ const TemplateEditorModal: React.FC<TemplateEditorModalProps> = ({ isOpen, onClo
                                 height = MAX_DIMENSION;
                             }
                         }
+                        // Ensure minimum 1x1 size to prevent data:,
+                        width = Math.max(1, width);
+                        height = Math.max(1, height);
                         canvas.width = width;
                         canvas.height = height;
                         const ctx = canvas.getContext('2d');
@@ -75,8 +78,15 @@ const TemplateEditorModal: React.FC<TemplateEditorModalProps> = ({ isOpen, onClo
                             // Fallback to original if canvas not supported
                             return resolve(event.target?.result as string);
                         }
+                        // Fill white background for transparent PNGs
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, width, height);
                         ctx.drawImage(img, 0, 0, width, height);
-                        resolve(canvas.toDataURL('image/jpeg', 0.8));
+                        const compressed = canvas.toDataURL('image/jpeg', 0.8);
+                        if (compressed === 'data:,' || compressed.length < 50) {
+                            return resolve(event.target?.result as string);
+                        }
+                        resolve(compressed);
                     };
                     img.onerror = () => reject(new Error('Failed to load image for resizing'));
                     img.src = event.target?.result as string;

@@ -1119,7 +1119,7 @@ const HRDashboard: React.FC = () => {
                     };
                 case NotificationType.NTE_RESPONSE_SUBMITTED:
                     return {
-                        icon: <ShieldExclamationIcon className="h-5 w-5" />,
+                        icon: <ClipboardCheckIcon className="h-5 w-5" />,
                         title: "NTE Response",
                         colorClass: 'bg-red-500'
                     };

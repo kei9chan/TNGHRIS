@@ -96,9 +96,9 @@ const AssignedCasesWidget: React.FC<AssignedCasesWidgetProps> = ({ userId }) => 
                         type: 'res-approval',
                         caseIdStr,
                         category: 'Resolution Approval Required',
-                        involvedNames: res.employeeName,
+                        involvedNames: 'Employee ID: ' + res.employeeId,
                         stageLabel: 'Pending Your Approval',
-                        dateTime: new Date(res.dateIssued),
+                        dateTime: new Date(res.decisionDate),
                         link: `/feedback/cases?action=approve_resolution&caseId=${res.incidentReportId}&employeeId=${res.employeeId}`,
                         colorClass: 'border-yellow-500'
                     });
