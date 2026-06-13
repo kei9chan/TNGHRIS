@@ -114,6 +114,12 @@ const TemplateEditorModal: React.FC<TemplateEditorModalProps> = ({ isOpen, onClo
         try {
             setUploadingLogo(true);
             const url = await uploadToBucket(file, 'logos');
+            // === DEBUG ===
+            console.log('[TemplateEditorModal] handleFile - url type:', typeof url);
+            console.log('[TemplateEditorModal] handleFile - url length:', url?.length || 0);
+            console.log('[TemplateEditorModal] handleFile - url starts with data:?', url?.startsWith('data:'));
+            console.log('[TemplateEditorModal] handleFile - url preview:', url?.substring(0, 80));
+            // === END DEBUG ===
             setCurrent(prev => ({...prev, logoUrl: url}));
         } catch (err) {
             console.error('Logo upload failed', err);
@@ -141,6 +147,13 @@ const TemplateEditorModal: React.FC<TemplateEditorModalProps> = ({ isOpen, onClo
             alert("Title and Body are required.");
             return;
         }
+        // === DEBUG: Trace what's being sent to parent ===
+        console.log('[TemplateEditorModal] handleSave - logoUrl type:', typeof current.logoUrl);
+        console.log('[TemplateEditorModal] handleSave - logoUrl length:', current.logoUrl?.length || 0);
+        console.log('[TemplateEditorModal] handleSave - logoUrl preview:', current.logoUrl?.substring(0, 80));
+        console.log('[TemplateEditorModal] handleSave - sigUrl length:', current.signatorySignatureUrl?.length || 0);
+        console.log('[TemplateEditorModal] handleSave - sigUrl preview:', current.signatorySignatureUrl?.substring(0, 80));
+        // === END DEBUG ===
         onSave(current as FeedbackTemplate);
     };
 

@@ -64,11 +64,22 @@ const FeedbackTemplates: React.FC = () => {
                 from: templateToSave.from,
                 subject: templateToSave.subject,
                 cc: templateToSave.cc,
-                logo_url: templateToSave.logoUrl,
+                logo_url: templateToSave.logoUrl || null,
                 signatory_name: templateToSave.signatoryName,
                 signatory_title: templateToSave.signatoryTitle,
                 signatory_signature_url: templateToSave.signatorySignatureUrl || null,
             };
+
+            // === DEBUG: Trace what's being saved ===
+            console.log('[FeedbackTemplates] handleSave called');
+            console.log('[FeedbackTemplates] logo_url type:', typeof payload.logo_url);
+            console.log('[FeedbackTemplates] logo_url length:', payload.logo_url?.length || 0);
+            console.log('[FeedbackTemplates] logo_url preview:', payload.logo_url?.substring(0, 80));
+            console.log('[FeedbackTemplates] sig_url length:', payload.signatory_signature_url?.length || 0);
+            console.log('[FeedbackTemplates] sig_url preview:', payload.signatory_signature_url?.substring(0, 80));
+            console.log('[FeedbackTemplates] is UPDATE?', !!templateToSave.id, 'id:', templateToSave.id);
+            // === END DEBUG ===
+
             if (templateToSave.id) {
                 const { data, error } = await supabase
                     .from('feedback_templates')
@@ -87,6 +98,13 @@ const FeedbackTemplates: React.FC = () => {
                 if (error) throw error;
                 saved = data;
             }
+
+            // === DEBUG: Trace what came back from DB ===
+            console.log('[FeedbackTemplates] DB response logo_url length:', saved?.logo_url?.length || 0);
+            console.log('[FeedbackTemplates] DB response logo_url preview:', saved?.logo_url?.substring(0, 80));
+            console.log('[FeedbackTemplates] DB response sig_url length:', saved?.signatory_signature_url?.length || 0);
+            // === END DEBUG ===
+
             const mapped = mapRowToTemplate(saved);
             setTemplates(prev => {
                 const exists = prev.find(t => t.id === mapped.id);
