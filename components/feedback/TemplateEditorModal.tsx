@@ -38,63 +38,76 @@ const TemplateEditorModal: React.FC<TemplateEditorModalProps> = ({ isOpen, onClo
         const bucket = 'feedback-templates-assets';
         const ext = file.name.split('.').pop() || 'bin';
         const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+        
+        let finalUrl: string | null = null;
+        
         try {
             const { error: uploadError } = await supabase.storage.from(bucket).upload(path, file, {
                 cacheControl: '3600',
                 upsert: false,
             });
-            if (uploadError) throw uploadError;
-            const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-            return data.publicUrl;
+            if (!uploadError) {
+                const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+                finalUrl = data.publicUrl;
+                
+                // Test if the public URL is actually accessible (bucket might be private)
+                try {
+                    const testRes = await fetch(finalUrl, { method: 'HEAD' });
+                    if (!testRes.ok) throw new Error('Public URL not accessible');
+                } catch (e) {
+                    console.warn('Bucket is private or inaccessible, falling back to base64');
+                    finalUrl = null;
+                }
+            }
         } catch (err: any) {
-            // If bucket doesn't exist or upload fails, fall back to a RESIZED data URL to prevent payload limits
-            console.warn(`Storage upload failed (${err?.message || 'unknown'}), using local compressed data URL`);
-            return new Promise<string>((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    const img = new Image();
-                    img.onload = () => {
-                        const canvas = document.createElement('canvas');
-                        let { width, height } = img;
-                        const MAX_DIMENSION = 400; // compress down to max 400px
-                        if (width > height) {
-                            if (width > MAX_DIMENSION) {
-                                height = Math.round((height * MAX_DIMENSION) / width);
-                                width = MAX_DIMENSION;
-                            }
-                        } else {
-                            if (height > MAX_DIMENSION) {
-                                width = Math.round((width * MAX_DIMENSION) / height);
-                                height = MAX_DIMENSION;
-                            }
-                        }
-                        // Ensure minimum 1x1 size to prevent data:,
-                        width = Math.max(1, width);
-                        height = Math.max(1, height);
-                        canvas.width = width;
-                        canvas.height = height;
-                        const ctx = canvas.getContext('2d');
-                        if (!ctx) {
-                            // Fallback to original if canvas not supported
-                            return resolve(event.target?.result as string);
-                        }
-                        // Fill white background for transparent PNGs
-                        ctx.fillStyle = '#ffffff';
-                        ctx.fillRect(0, 0, width, height);
-                        ctx.drawImage(img, 0, 0, width, height);
-                        const compressed = canvas.toDataURL('image/jpeg', 0.8);
-                        if (compressed === 'data:,' || compressed.length < 50) {
-                            return resolve(event.target?.result as string);
-                        }
-                        resolve(compressed);
-                    };
-                    img.onerror = () => reject(new Error('Failed to load image for resizing'));
-                    img.src = event.target?.result as string;
-                };
-                reader.onerror = () => reject(new Error('Failed to read file'));
-                reader.readAsDataURL(file);
-            });
+            console.warn(`Storage upload failed (${err?.message || 'unknown'})`);
         }
+        
+        if (finalUrl) return finalUrl;
+
+        // Fall back to a RESIZED data URL
+        return new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    let { width, height } = img;
+                    const MAX_DIMENSION = 400; // compress down to max 400px
+                    if (width > height) {
+                        if (width > MAX_DIMENSION) {
+                            height = Math.round((height * MAX_DIMENSION) / width);
+                            width = MAX_DIMENSION;
+                        }
+                    } else {
+                        if (height > MAX_DIMENSION) {
+                            width = Math.round((width * MAX_DIMENSION) / height);
+                            height = MAX_DIMENSION;
+                        }
+                    }
+                    width = Math.max(1, width);
+                    height = Math.max(1, height);
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) {
+                        return resolve(event.target?.result as string);
+                    }
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, width, height);
+                    ctx.drawImage(img, 0, 0, width, height);
+                    const compressed = canvas.toDataURL('image/jpeg', 0.8);
+                    if (compressed === 'data:,' || compressed.length < 50) {
+                        return resolve(event.target?.result as string);
+                    }
+                    resolve(compressed);
+                };
+                img.onerror = () => reject(new Error('Failed to load image for resizing'));
+                img.src = event.target?.result as string;
+            };
+            reader.onerror = () => reject(new Error('Failed to read file'));
+            reader.readAsDataURL(file);
+        });
     };
 
     const handleFile = async (file: File) => {
