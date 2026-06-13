@@ -236,14 +236,11 @@ const NTEPreview: React.FC<NTEPreviewProps> = ({ template, employeeName, employe
                     <div className="flex justify-between gap-12">
                         <div className="w-1/2">
                             <div className="border-b border-gray-400 w-full mb-2"></div>
-                            <div className="text-[11px] text-gray-500 italic px-2">Signature over Printed Name</div>
-                            
-                            <div className="border-b border-gray-400 w-1/2 mt-8 mb-2"></div>
-                            <div className="text-[11px] text-gray-500 italic px-2">Time</div>
+                            <div className="text-[11px] text-gray-500 italic px-2 text-center">Signature over Printed Name</div>
                         </div>
-                        <div className="w-1/3">
+                        <div className="w-1/2">
                             <div className="border-b border-gray-400 w-full mb-2"></div>
-                            <div className="text-[11px] text-gray-500 italic px-2 text-center">Date</div>
+                            <div className="text-[11px] text-gray-500 italic px-2 text-center">Date & Time</div>
                         </div>
                     </div>
                 </div>
