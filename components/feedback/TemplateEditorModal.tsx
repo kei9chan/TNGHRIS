@@ -47,11 +47,40 @@ const TemplateEditorModal: React.FC<TemplateEditorModalProps> = ({ isOpen, onClo
             const { data } = supabase.storage.from(bucket).getPublicUrl(path);
             return data.publicUrl;
         } catch (err: any) {
-            // If bucket doesn't exist or upload fails, fall back to data URL
-            console.warn(`Storage upload failed (${err?.message || 'unknown'}), using local data URL`);
+            // If bucket doesn't exist or upload fails, fall back to a RESIZED data URL to prevent payload limits
+            console.warn(`Storage upload failed (${err?.message || 'unknown'}), using local compressed data URL`);
             return new Promise<string>((resolve, reject) => {
                 const reader = new FileReader();
-                reader.onload = () => resolve(reader.result as string);
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let { width, height } = img;
+                        const MAX_DIMENSION = 400; // compress down to max 400px
+                        if (width > height) {
+                            if (width > MAX_DIMENSION) {
+                                height = Math.round((height * MAX_DIMENSION) / width);
+                                width = MAX_DIMENSION;
+                            }
+                        } else {
+                            if (height > MAX_DIMENSION) {
+                                width = Math.round((width * MAX_DIMENSION) / height);
+                                height = MAX_DIMENSION;
+                            }
+                        }
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) {
+                            // Fallback to original if canvas not supported
+                            return resolve(event.target?.result as string);
+                        }
+                        ctx.drawImage(img, 0, 0, width, height);
+                        resolve(canvas.toDataURL('image/jpeg', 0.8));
+                    };
+                    img.onerror = () => reject(new Error('Failed to load image for resizing'));
+                    img.src = event.target?.result as string;
+                };
                 reader.onerror = () => reject(new Error('Failed to read file'));
                 reader.readAsDataURL(file);
             });
