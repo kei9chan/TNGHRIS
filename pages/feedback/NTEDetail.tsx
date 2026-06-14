@@ -372,6 +372,7 @@ const NTEDetail: React.FC = () => {
 
     return (
         <div className="space-y-6">
+            {/* Back link and header - full width */}
             <div>
                 <Link to="/feedback/cases" className="flex items-center text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 mb-2">
                     <ArrowLeftIcon />
@@ -401,311 +402,324 @@ const NTEDetail: React.FC = () => {
                 </dl>
             </div>
 
-            {isEmployeeAcknowledgeNeeded && (
-                <Card title="Notice of Decision Issued" className="bg-indigo-50 border border-indigo-200 dark:bg-indigo-900/40 dark:border-indigo-800">
-                    <p className="mb-4 text-indigo-900 dark:text-indigo-100">A decision has been reached regarding this case. Please review and acknowledge the resolution to close this case.</p>
-                    <Button onClick={() => setResolutionModalOpen(true)}>View Decision</Button>
-                </Card>
-            )}
-            
-            {nte.hearingDetails && (
-                 <Card title="Hearing Scheduled" className="bg-orange-50 border border-orange-200 dark:bg-orange-900/40 dark:border-orange-800">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                         <div>
-                            <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Date & Time</p>
-                            <p className="font-bold text-lg text-gray-900 dark:text-white">
-                                {new Date(nte.hearingDetails.date).toLocaleString()}
-                            </p>
-                         </div>
-                         <div>
-                            <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Location / Link</p>
-                             <p className="font-semibold text-gray-900 dark:text-white">
-                                {nte.hearingDetails.type === 'Virtual' ? (
-                                    <a href={nte.hearingDetails.location} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">Join Meeting</a>
-                                ) : (
-                                    nte.hearingDetails.location
-                                )}
-                            </p>
-                         </div>
-                         <div className="md:col-span-2">
-                            <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Panelists</p>
-                            <p className="text-gray-900 dark:text-white">
-                                {nte.hearingDetails.panelIds.map(id => users.find(u => u.id === id)?.name).join(', ')}
-                            </p>
-                         </div>
-                         {nte.hearingDetails.notes && (
-                            <div className="md:col-span-2">
-                                <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Notes</p>
-                                <p className="text-gray-700 dark:text-gray-300 italic">{nte.hearingDetails.notes}</p>
+            {/* Horizontal split: Left panel (metadata/actions) | Right panel (document) */}
+            <div className="flex flex-col lg:flex-row gap-6">
+                {/* LEFT SIDE - Everything else */}
+                <div className="flex-1 min-w-0 space-y-6">
+                    {isEmployeeAcknowledgeNeeded && (
+                        <Card title="Notice of Decision Issued" className="bg-indigo-50 border border-indigo-200 dark:bg-indigo-900/40 dark:border-indigo-800">
+                            <p className="mb-4 text-indigo-900 dark:text-indigo-100">A decision has been reached regarding this case. Please review and acknowledge the resolution to close this case.</p>
+                            <Button onClick={() => setResolutionModalOpen(true)}>View Decision</Button>
+                        </Card>
+                    )}
+                    
+                    {nte.hearingDetails && (
+                         <Card title="Hearing Scheduled" className="bg-orange-50 border border-orange-200 dark:bg-orange-900/40 dark:border-orange-800">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                 <div>
+                                    <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Date & Time</p>
+                                    <p className="font-bold text-lg text-gray-900 dark:text-white">
+                                        {new Date(nte.hearingDetails.date).toLocaleString()}
+                                    </p>
+                                 </div>
+                                 <div>
+                                    <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Location / Link</p>
+                                     <p className="font-semibold text-gray-900 dark:text-white">
+                                        {nte.hearingDetails.type === 'Virtual' ? (
+                                            <a href={nte.hearingDetails.location} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">Join Meeting</a>
+                                        ) : (
+                                            nte.hearingDetails.location
+                                        )}
+                                    </p>
+                                 </div>
+                                 <div className="md:col-span-2">
+                                    <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Panelists</p>
+                                    <p className="text-gray-900 dark:text-white">
+                                        {nte.hearingDetails.panelIds.map(id => users.find(u => u.id === id)?.name).join(', ')}
+                                    </p>
+                                 </div>
+                                 {nte.hearingDetails.notes && (
+                                    <div className="md:col-span-2">
+                                        <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Notes</p>
+                                        <p className="text-gray-700 dark:text-gray-300 italic">{nte.hearingDetails.notes}</p>
+                                    </div>
+                                 )}
                             </div>
-                         )}
-                    </div>
 
-                    <div className="mt-6 border-t border-orange-200 dark:border-orange-800 pt-4">
-                         <h4 className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-2">Participant Status</h4>
-                         <div className="space-y-2 text-sm">
-                            {/* Employee Status */}
-                            <div className="flex justify-between items-center bg-white dark:bg-slate-800 p-2 rounded border border-orange-100 dark:border-orange-900">
-                                <span>{nte.employeeName} (Employee)</span>
-                                {nte.hearingDetails.acknowledgments?.some(a => a.userId === nte.employeeId) ? (
-                                    <span className="text-green-600 font-bold flex items-center"><CheckCircleIcon /> Confirmed</span>
-                                ) : (
-                                    <span className="text-orange-600 italic">Pending Acknowledgement</span>
-                                )}
-                            </div>
-                            {/* Panel Status */}
-                            {nte.hearingDetails.panelIds.map(pid => {
-                                const panelistName = users.find(u => u.id === pid)?.name;
-                                const hasAck = nte.hearingDetails!.acknowledgments?.some(a => a.userId === pid);
-                                return (
-                                    <div key={pid} className="flex justify-between items-center bg-white dark:bg-slate-800 p-2 rounded border border-orange-100 dark:border-orange-900">
-                                        <span>{panelistName} (Panel)</span>
-                                        {hasAck ? (
+                            <div className="mt-6 border-t border-orange-200 dark:border-orange-800 pt-4">
+                                 <h4 className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-2">Participant Status</h4>
+                                 <div className="space-y-2 text-sm">
+                                    {/* Employee Status */}
+                                    <div className="flex justify-between items-center bg-white dark:bg-slate-800 p-2 rounded border border-orange-100 dark:border-orange-900">
+                                        <span>{nte.employeeName} (Employee)</span>
+                                        {nte.hearingDetails.acknowledgments?.some(a => a.userId === nte.employeeId) ? (
                                             <span className="text-green-600 font-bold flex items-center"><CheckCircleIcon /> Confirmed</span>
                                         ) : (
                                             <span className="text-orange-600 italic">Pending Acknowledgement</span>
                                         )}
                                     </div>
-                                );
-                            })}
-                         </div>
-                    </div>
+                                    {/* Panel Status */}
+                                    {nte.hearingDetails.panelIds.map(pid => {
+                                        const panelistName = users.find(u => u.id === pid)?.name;
+                                        const hasAck = nte.hearingDetails!.acknowledgments?.some(a => a.userId === pid);
+                                        return (
+                                            <div key={pid} className="flex justify-between items-center bg-white dark:bg-slate-800 p-2 rounded border border-orange-100 dark:border-orange-900">
+                                                <span>{panelistName} (Panel)</span>
+                                                {hasAck ? (
+                                                    <span className="text-green-600 font-bold flex items-center"><CheckCircleIcon /> Confirmed</span>
+                                                ) : (
+                                                    <span className="text-orange-600 italic">Pending Acknowledgement</span>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                 </div>
+                            </div>
 
-                    <div className="mt-6 flex justify-between items-center">
-                        {isHearingParticipant && !userHasAcknowledgedHearing && (
-                            <Button onClick={handleAcknowledgeHearing}>
-                                Acknowledge Schedule
-                            </Button>
-                        )}
-                        {isHearingParticipant && userHasAcknowledgedHearing && (
-                            <span className="text-sm text-green-600 font-medium">
-                                You have acknowledged this schedule.
-                            </span>
-                        )}
+                            <div className="mt-6 flex justify-between items-center">
+                                {isHearingParticipant && !userHasAcknowledgedHearing && (
+                                    <Button onClick={handleAcknowledgeHearing}>
+                                        Acknowledge Schedule
+                                    </Button>
+                                )}
+                                {isHearingParticipant && userHasAcknowledgedHearing && (
+                                    <span className="text-sm text-green-600 font-medium">
+                                        You have acknowledged this schedule.
+                                    </span>
+                                )}
 
-                        {canResolve && (
-                             <Button variant="secondary" size="sm" onClick={() => setIsHearingModalOpen(true)}>Edit Schedule</Button>
-                        )}
-                    </div>
-                </Card>
-            )}
-
-            {nte.approverSteps && nte.approverSteps.length > 0 && (
-                <Card title="Approval Status">
-                    <ul className="space-y-4">
-                        {nte.approverSteps.map(step => (
-                            <li key={step.userId} className="flex items-start space-x-3">
-                                <div className="mt-1"><ApproverStatusIcon status={step.status} /></div>
-                                <div>
-                                    <p className="font-medium text-gray-900 dark:text-white">{step.userName}</p>
-                                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                                        Status: {step.status}
-                                        {step.timestamp && ` on ${new Date(step.timestamp).toLocaleDateString()}`}
-                                    </p>
-                                    {step.rejectionReason && <p className="text-sm text-red-600 italic">Reason: "{step.rejectionReason}"</p>}
-                                </div>
-                            </li>
-                        ))}
-                    </ul>
-                </Card>
-            )}
-            
-            {currentUserStep && (
-                <Card title="Your Action Required" className="bg-yellow-50 dark:bg-yellow-900/40 border-yellow-400">
-                    <p className="text-sm mb-4">This Notice to Explain requires your approval before it is issued to the employee.</p>
-                    <div className="flex justify-end space-x-2">
-                        <Button variant="danger" onClick={() => setIsRejectModalOpen(true)}>Reject</Button>
-                        <Button onClick={handleApprove}>Approve</Button>
-                    </div>
-                </Card>
-            )}
-
-            <Card>
-                <h2 className="text-xl font-bold mb-4">Issue Summary</h2>
-                <div className="space-y-4">
-                    {user?.id !== nte.employeeId && (
-                        <div>
-                            <h3 className="font-semibold text-gray-800 dark:text-gray-200">Detailed Context</h3>
-                            <p className="mt-1 text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{incidentReport.description}</p>
-                        </div>
+                                {canResolve && (
+                                     <Button variant="secondary" size="sm" onClick={() => setIsHearingModalOpen(true)}>Edit Schedule</Button>
+                                )}
+                            </div>
+                        </Card>
                     )}
-                    <div>
-                        <h3 className="font-semibold text-gray-800 dark:text-gray-200">Allegations</h3>
-                         <p className="mt-1 text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{nte.details}</p>
-                    </div>
-                     {references.length > 0 && (
-                        <div>
-                            <h3 className="font-semibold text-gray-800 dark:text-gray-200">Reference(s)</h3>
-                            <ul className="mt-1 space-y-1">
-                                {references.map(ref => (
-                                    <li key={ref.id} className="text-sm text-gray-600 dark:text-gray-400">
-                                        <span className="font-mono bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300 px-1 rounded-sm">{ref.code}</span>: {ref.description}
+
+                    {nte.approverSteps && nte.approverSteps.length > 0 && (
+                        <Card title="Approval Status">
+                            <ul className="space-y-4">
+                                {nte.approverSteps.map(step => (
+                                    <li key={step.userId} className="flex items-start space-x-3">
+                                        <div className="mt-1"><ApproverStatusIcon status={step.status} /></div>
+                                        <div>
+                                            <p className="font-medium text-gray-900 dark:text-white">{step.userName}</p>
+                                            <p className="text-sm text-gray-500 dark:text-gray-400">
+                                                Status: {step.status}
+                                                {step.timestamp && ` on ${new Date(step.timestamp).toLocaleDateString()}`}
+                                            </p>
+                                            {step.rejectionReason && <p className="text-sm text-red-600 italic">Reason: "{step.rejectionReason}"</p>}
+                                        </div>
                                     </li>
                                 ))}
                             </ul>
-                        </div>
-                    )}
-                    {nte.evidenceUrl && (
-                        <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                            <h3 className="font-semibold text-gray-800 dark:text-gray-200">Supporting Evidence</h3>
-                            <a href={formatExternalUrl(nte.evidenceUrl)} target="_blank" rel="noopener noreferrer" className="mt-1 text-indigo-600 dark:text-indigo-400 hover:underline break-all">{nte.evidenceUrl}</a>
-                        </div>
-                    )}
-                </div>
-            </Card>
-
-            <Card>
-                <div className="flex justify-between items-center mb-4 border-b pb-2">
-                    <h2 className="text-xl font-bold">Notice to Explain Document</h2>
-                    <Button variant="secondary" size="sm" onClick={() => {
-                        const printWindow = window.open('', '_blank');
-                        if (printWindow) {
-                            printWindow.document.write(`
-                                <html>
-                                    <head>
-                                        <title>Print NTE Document</title>
-                                        <script src="https://cdn.tailwindcss.com"></script>
-                                        <style>
-                                            @media print {
-                                                @page { size: A4; margin: 20mm; }
-                                            }
-                                        </style>
-                                    </head>
-                                    <body onload="setTimeout(() => { window.print(); window.close(); }, 500);">
-                                        ${nte.body}
-                                    </body>
-                                </html>
-                            `);
-                            printWindow.document.close();
-                        }
-                    }}>
-                        Download / Print Document
-                    </Button>
-                </div>
-                <div className="bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg p-2 max-h-[800px] overflow-auto">
-                    <div className="bg-white transform scale-90 sm:scale-100 origin-top p-4" dangerouslySetInnerHTML={{ __html: nte.body }} />
-                </div>
-            </Card>
-
-            {isAwaitingEmployeeResponse && (
-                <Card title="Respond to this Notice">
-                    <div className="space-y-4">
-                        <Textarea label="Your Written Explanation" value={responseText} onChange={e => setResponseText(e.target.value)} rows={8} required />
-                        <Input label="Link to Additional Evidence/Documentation (Optional)" value={responseEvidenceUrl} onChange={e => setResponseEvidenceUrl(e.target.value)} placeholder="https://example.com/document.pdf" />
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Signature</label>
-                            <SignaturePad ref={signaturePadRef} />
-                        </div>
-                        <div className="flex justify-end pt-4 border-t dark:border-gray-700">
-                            <Button onClick={handleSubmitResponse}>Submit Response</Button>
-                        </div>
-                    </div>
-                </Card>
-            )}
-
-            {hasEmployeeResponded && (
-                 <Card title="Your Submitted Response">
-                     <div className="space-y-4">
-                        <div>
-                            <h3 className="font-semibold text-gray-800 dark:text-gray-200">Date Submitted</h3>
-                            <p className="mt-1 text-gray-600 dark:text-gray-400">{nte.responseDate ? new Date(nte.responseDate).toLocaleString() : 'N/A'}</p>
-                        </div>
-                        <div>
-                            <h3 className="font-semibold text-gray-800 dark:text-gray-200">Explanation</h3>
-                            <p className="mt-1 text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{nte.employeeResponse}</p>
-                        </div>
-                        {nte.employeeResponseEvidenceUrl && (
-                            <div className="mt-4">
-                                <h3 className="font-semibold text-gray-800 dark:text-gray-200">Supporting Evidence</h3>
-                                <a href={formatExternalUrl(nte.employeeResponseEvidenceUrl)} target="_blank" rel="noopener noreferrer" className="mt-1 text-indigo-600 dark:text-indigo-400 hover:underline break-all">{nte.employeeResponseEvidenceUrl}</a>
-                            </div>
-                        )}
-                         {nte.employeeResponseSignatureUrl && (
-                            <div>
-                                <h3 className="font-semibold text-gray-800 dark:text-gray-200">Your Signature</h3>
-                                <img src={nte.employeeResponseSignatureUrl} alt="Your Signature" className="mt-2 border rounded-md p-2 bg-gray-100 dark:bg-gray-700 max-h-24"/>
-                            </div>
-                        )}
-                        <div className="flex justify-end pt-4 border-t dark:border-gray-700">
-                            <Button variant="secondary" onClick={() => setResponseToPrint(nte)}>Download My Response as PDF</Button>
-                        </div>
-                    </div>
-                    {/* Post-Response Actions for HR */}
-                    {canResolve && nte.status !== NTEStatus.Closed && (!resolution || resolution.status === ResolutionStatus.Rejected || resolution.status === ResolutionStatus.Draft) && (
-                        <div className="flex flex-wrap justify-center gap-4 p-4 border-t dark:border-gray-700">
-                            {canScheduleHearing && (
-                                <Button variant="secondary" onClick={() => setIsHearingModalOpen(true)}>
-                                    <CalendarIcon /> Schedule Hearing
-                                </Button>
-                            )}
-                            <Button onClick={() => setResolutionModalOpen(true)}>
-                                {resolution && resolution.status === ResolutionStatus.Rejected ? "Resubmit Resolution" : "Convert Case for Resolution"}
-                            </Button>
-                        </div>
+                        </Card>
                     )}
                     
-                    {/* Show Hearing Proceedings section if hearing scheduled */}
-                    {nte.hearingDetails && (
-                        <div className="mt-6 pt-6 border-t dark:border-gray-700">
-                            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Hearing Proceedings</h3>
-                            <div className="p-4 bg-gray-50 dark:bg-slate-800/50 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center">
-                                <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Upload Minutes of Meeting or Hearing Summary here.</p>
-                                <Button variant="secondary" size="sm" onClick={() => alert('File upload for Minutes of Meeting coming soon.')}>Upload Minutes</Button>
+                    {currentUserStep && (
+                        <Card title="Your Action Required" className="bg-yellow-50 dark:bg-yellow-900/40 border-yellow-400">
+                            <p className="text-sm mb-4">This Notice to Explain requires your approval before it is issued to the employee.</p>
+                            <div className="flex justify-end space-x-2">
+                                <Button variant="danger" onClick={() => setIsRejectModalOpen(true)}>Reject</Button>
+                                <Button onClick={handleApprove}>Approve</Button>
+                            </div>
+                        </Card>
+                    )}
+
+                    <Card>
+                        <h2 className="text-xl font-bold mb-4">Issue Summary</h2>
+                        <div className="space-y-4">
+                            {user?.id !== nte.employeeId && (
+                                <div>
+                                    <h3 className="font-semibold text-gray-800 dark:text-gray-200">Detailed Context</h3>
+                                    <p className="mt-1 text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{incidentReport.description}</p>
+                                </div>
+                            )}
+                            <div>
+                                <h3 className="font-semibold text-gray-800 dark:text-gray-200">Allegations</h3>
+                                 <p className="mt-1 text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{nte.details}</p>
+                            </div>
+                             {references.length > 0 && (
+                                <div>
+                                    <h3 className="font-semibold text-gray-800 dark:text-gray-200">Reference(s)</h3>
+                                    <ul className="mt-1 space-y-1">
+                                        {references.map(ref => (
+                                            <li key={ref.id} className="text-sm text-gray-600 dark:text-gray-400">
+                                                <span className="font-mono bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300 px-1 rounded-sm">{ref.code}</span>: {ref.description}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+                            {nte.evidenceUrl && (
+                                <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                                    <h3 className="font-semibold text-gray-800 dark:text-gray-200">Supporting Evidence</h3>
+                                    <a href={formatExternalUrl(nte.evidenceUrl)} target="_blank" rel="noopener noreferrer" className="mt-1 text-indigo-600 dark:text-indigo-400 hover:underline break-all">{nte.evidenceUrl}</a>
+                                </div>
+                            )}
+                        </div>
+                    </Card>
+
+                    {isAwaitingEmployeeResponse && (
+                        <Card title="Respond to this Notice">
+                            <div className="space-y-4">
+                                <Textarea label="Your Written Explanation" value={responseText} onChange={e => setResponseText(e.target.value)} rows={8} required />
+                                <Input label="Link to Additional Evidence/Documentation (Optional)" value={responseEvidenceUrl} onChange={e => setResponseEvidenceUrl(e.target.value)} placeholder="https://example.com/document.pdf" />
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Signature</label>
+                                    <SignaturePad ref={signaturePadRef} />
+                                </div>
+                                <div className="flex justify-end pt-4 border-t dark:border-gray-700">
+                                    <Button onClick={handleSubmitResponse}>Submit Response</Button>
+                                </div>
+                            </div>
+                        </Card>
+                    )}
+
+                    {hasEmployeeResponded && (
+                         <Card title="Your Submitted Response">
+                             <div className="space-y-4">
+                                <div>
+                                    <h3 className="font-semibold text-gray-800 dark:text-gray-200">Date Submitted</h3>
+                                    <p className="mt-1 text-gray-600 dark:text-gray-400">{nte.responseDate ? new Date(nte.responseDate).toLocaleString() : 'N/A'}</p>
+                                </div>
+                                <div>
+                                    <h3 className="font-semibold text-gray-800 dark:text-gray-200">Explanation</h3>
+                                    <p className="mt-1 text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{nte.employeeResponse}</p>
+                                </div>
+                                {nte.employeeResponseEvidenceUrl && (
+                                    <div className="mt-4">
+                                        <h3 className="font-semibold text-gray-800 dark:text-gray-200">Supporting Evidence</h3>
+                                        <a href={formatExternalUrl(nte.employeeResponseEvidenceUrl)} target="_blank" rel="noopener noreferrer" className="mt-1 text-indigo-600 dark:text-indigo-400 hover:underline break-all">{nte.employeeResponseEvidenceUrl}</a>
+                                    </div>
+                                )}
+                                 {nte.employeeResponseSignatureUrl && (
+                                    <div>
+                                        <h3 className="font-semibold text-gray-800 dark:text-gray-200">Your Signature</h3>
+                                        <img src={nte.employeeResponseSignatureUrl} alt="Your Signature" className="mt-2 border rounded-md p-2 bg-gray-100 dark:bg-gray-700 max-h-24"/>
+                                    </div>
+                                )}
+                                <div className="flex justify-end pt-4 border-t dark:border-gray-700">
+                                    <Button variant="secondary" onClick={() => setResponseToPrint(nte)}>Download My Response as PDF</Button>
+                                </div>
+                            </div>
+                            {/* Post-Response Actions for HR */}
+                            {canResolve && nte.status !== NTEStatus.Closed && (!resolution || resolution.status === ResolutionStatus.Rejected || resolution.status === ResolutionStatus.Draft) && (
+                                <div className="flex flex-wrap justify-center gap-4 p-4 border-t dark:border-gray-700">
+                                    {canScheduleHearing && (
+                                        <Button variant="secondary" onClick={() => setIsHearingModalOpen(true)}>
+                                            <CalendarIcon /> Schedule Hearing
+                                        </Button>
+                                    )}
+                                    <Button onClick={() => setResolutionModalOpen(true)}>
+                                        {resolution && resolution.status === ResolutionStatus.Rejected ? "Resubmit Resolution" : "Convert Case for Resolution"}
+                                    </Button>
+                                </div>
+                            )}
+                            
+                            {/* Show Hearing Proceedings section if hearing scheduled */}
+                            {nte.hearingDetails && (
+                                <div className="mt-6 pt-6 border-t dark:border-gray-700">
+                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Hearing Proceedings</h3>
+                                    <div className="p-4 bg-gray-50 dark:bg-slate-800/50 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center">
+                                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Upload Minutes of Meeting or Hearing Summary here.</p>
+                                        <Button variant="secondary" size="sm" onClick={() => alert('File upload for Minutes of Meeting coming soon.')}>Upload Minutes</Button>
+                                    </div>
+                                </div>
+                            )}
+
+                         </Card>
+                    )}
+
+                    {user && user.id !== nte.employeeId && user.id !== incidentReport.reportedBy && (
+                        <div className="bg-white dark:bg-slate-800 shadow-md rounded-lg flex flex-col">
+                            <div className="flex-grow p-4 space-y-4 overflow-y-auto">
+                                <div className="text-center my-2">
+                                    <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 rounded-full px-3 py-1">
+                                        This is the beginning of your conversation
+                                    </span>
+                                </div>
+                                <div className="flex items-start space-x-3">
+                                    <div className="flex-shrink-0 h-8 w-8 rounded-full bg-indigo-500 text-white flex items-center justify-center font-bold text-xs">{nteIssuer?.name.substring(0, 2) || 'HR'}</div>
+                                    <div>
+                                        <div className="p-3 bg-gray-100 dark:bg-slate-700 rounded-lg rounded-tl-none">
+                                            <p className="text-sm text-gray-800 dark:text-gray-200">Internal Case Discussion. Involved employees and reporters cannot view this thread.</p>
+                                        </div>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{nteIssuer ? `${nteIssuer.name} (${nteIssuer.role})` : 'System Message'}</p>
+                                    </div>
+                                </div>
+                                {incidentReport.chatThread.map(msg => (
+                                    <div key={msg.id} className={`flex items-start space-x-3 ${msg.userId === user?.id ? 'flex-row-reverse space-x-reverse' : ''}`}>
+                                        <div className="flex-shrink-0 h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center font-bold text-xs">{msg.userName.substring(0, 2)}</div>
+                                        <div>
+                                            <div className={`p-3 rounded-lg ${msg.userId === user?.id ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-gray-100 dark:bg-slate-700 rounded-bl-none'}`}>
+                                                <p className="text-sm">{msg.text}</p>
+                                            </div>
+                                            <p className={`text-xs text-gray-500 dark:text-gray-400 mt-1 ${msg.userId === user?.id ? 'text-right' : ''}`}>{msg.userName} at {new Date(msg.timestamp).toLocaleTimeString()}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                                 <div ref={messagesEndRef} />
+                            </div>
+                            <div className="p-4 border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/50">
+                                <div className="relative">
+                                     <textarea
+                                        value={newMessage}
+                                        onChange={e => setNewMessage(e.target.value)}
+                                        onKeyDown={e => {if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); }}}
+                                        placeholder="Type your message for internal discussion..."
+                                        className="w-full p-2 pr-20 border rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                                        rows={2}
+                                    />
+                                    <div className="absolute bottom-2 right-2 flex space-x-1">
+                                        <Button size="sm" variant="secondary" className="!p-2"><PaperclipIcon /></Button>
+                                        <Button size="sm" className="!p-2" onClick={handleSendMessage}><PaperAirplaneIcon /></Button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     )}
+                </div>
 
-                 </Card>
-            )}
-
-            {user && user.id !== nte.employeeId && user.id !== incidentReport.reportedBy && (
-                <div className="bg-white dark:bg-slate-800 shadow-md rounded-lg flex flex-col">
-                    <div className="flex-grow p-4 space-y-4 overflow-y-auto">
-                        <div className="text-center my-2">
-                            <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 rounded-full px-3 py-1">
-                                This is the beginning of your conversation
-                            </span>
-                        </div>
-                        <div className="flex items-start space-x-3">
-                            <div className="flex-shrink-0 h-8 w-8 rounded-full bg-indigo-500 text-white flex items-center justify-center font-bold text-xs">{nteIssuer?.name.substring(0, 2) || 'HR'}</div>
-                            <div>
-                                <div className="p-3 bg-gray-100 dark:bg-slate-700 rounded-lg rounded-tl-none">
-                                    <p className="text-sm text-gray-800 dark:text-gray-200">Internal Case Discussion. Involved employees and reporters cannot view this thread.</p>
-                                </div>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{nteIssuer ? `${nteIssuer.name} (${nteIssuer.role})` : 'System Message'}</p>
+                {/* RIGHT SIDE - Notice to Explain Document (sticky) */}
+                <div className="lg:w-[60%] lg:flex-shrink-0">
+                    <div className="lg:sticky lg:top-6">
+                        <Card>
+                            <div className="flex justify-between items-center mb-4 border-b pb-2">
+                                <h2 className="text-xl font-bold">Notice to Explain Document</h2>
+                                <Button variant="secondary" size="sm" onClick={() => {
+                                    const printWindow = window.open('', '_blank');
+                                    if (printWindow) {
+                                        printWindow.document.write(`
+                                            <html>
+                                                <head>
+                                                    <title>Print NTE Document</title>
+                                                    <script src="https://cdn.tailwindcss.com"></script>
+                                                    <style>
+                                                        @media print {
+                                                            @page { size: A4; margin: 20mm; }
+                                                        }
+                                                    </style>
+                                                </head>
+                                                <body onload="setTimeout(() => { window.print(); window.close(); }, 500);">
+                                                    ${nte.body}
+                                                </body>
+                                            </html>
+                                        `);
+                                        printWindow.document.close();
+                                    }
+                                }}>
+                                    Download / Print Document
+                                </Button>
                             </div>
-                        </div>
-                        {incidentReport.chatThread.map(msg => (
-                            <div key={msg.id} className={`flex items-start space-x-3 ${msg.userId === user?.id ? 'flex-row-reverse space-x-reverse' : ''}`}>
-                                <div className="flex-shrink-0 h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center font-bold text-xs">{msg.userName.substring(0, 2)}</div>
-                                <div>
-                                    <div className={`p-3 rounded-lg ${msg.userId === user?.id ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-gray-100 dark:bg-slate-700 rounded-bl-none'}`}>
-                                        <p className="text-sm">{msg.text}</p>
-                                    </div>
-                                    <p className={`text-xs text-gray-500 dark:text-gray-400 mt-1 ${msg.userId === user?.id ? 'text-right' : ''}`}>{msg.userName} at {new Date(msg.timestamp).toLocaleTimeString()}</p>
-                                </div>
+                            <div className="bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg p-2 max-h-[calc(100vh-8rem)] overflow-y-auto overflow-x-hidden">
+                                <div className="bg-white origin-top p-4 overflow-hidden [&_*]:max-w-full [&_table]:w-full [&_table]:table-fixed [&_img]:max-w-full [&_img]:h-auto" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }} dangerouslySetInnerHTML={{ __html: nte.body }} />
                             </div>
-                        ))}
-                         <div ref={messagesEndRef} />
-                    </div>
-                    <div className="p-4 border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/50">
-                        <div className="relative">
-                             <textarea
-                                value={newMessage}
-                                onChange={e => setNewMessage(e.target.value)}
-                                onKeyDown={e => {if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); }}}
-                                placeholder="Type your message for internal discussion..."
-                                className="w-full p-2 pr-20 border rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                                rows={2}
-                            />
-                            <div className="absolute bottom-2 right-2 flex space-x-1">
-                                <Button size="sm" variant="secondary" className="!p-2"><PaperclipIcon /></Button>
-                                <Button size="sm" className="!p-2" onClick={handleSendMessage}><PaperAirplaneIcon /></Button>
-                            </div>
-                        </div>
+                        </Card>
                     </div>
                 </div>
-            )}
+            </div>
+
+            {/* Modals - remain outside the split layout */}
              {isResolutionModalOpen && (
                 <ResolutionModal
                     isOpen={isResolutionModalOpen}
