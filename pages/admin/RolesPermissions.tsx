@@ -213,8 +213,9 @@ const RolesPermissions: React.FC = () => {
     };
 
 
-    const persistMatrix = async (matrix: PermissionsMatrix) => {
+    const persistMatrix = async (matrix: PermissionsMatrix): Promise<boolean> => {
         setSavingMatrix(true);
+        setError(null); // Clear previous errors
         const rows: { role_id: string; resource_id: string; permissions: Permission[] }[] = [];
         allRoles.forEach(role => {
             allResources.forEach(resource => {
@@ -226,19 +227,22 @@ const RolesPermissions: React.FC = () => {
         });
         const { error: delErr } = await supabase.from('role_permissions').delete().neq('role_id', '');
         if (delErr) {
+            console.error("Delete Error:", delErr);
             setError(delErr.message);
             setSavingMatrix(false);
-            return;
+            return false;
         }
         if (rows.length > 0) {
             const { error: insErr } = await supabase.from('role_permissions').insert(rows);
             if (insErr) {
+                console.error("Insert Error:", insErr);
                 setError(insErr.message);
                 setSavingMatrix(false);
-                return;
+                return false;
             }
         }
         setSavingMatrix(false);
+        return true;
     };
 
     const handlePermissionChange = (role: Role, resource: Resource, permission: Permission, checked: boolean) => {
@@ -276,9 +280,11 @@ const RolesPermissions: React.FC = () => {
     };
 
     const handleSave = async () => {
-        await persistMatrix(permissions);
-        setShowSuccess(true);
-        setTimeout(() => setShowSuccess(false), 3000);
+        const success = await persistMatrix(permissions);
+        if (success) {
+            setShowSuccess(true);
+            setTimeout(() => setShowSuccess(false), 3000);
+        }
     };
 
     if (!canView) {
