@@ -57,7 +57,7 @@ const normalizeUrl = (url: string) => {
 
 const WFHRequests: React.FC = () => {
   const { user } = useAuth();
-  const { can } = usePermissions();
+  const { can, getDashboardRequestAccess } = usePermissions();
   const canView = can('WFH', Permission.View);
   const canCreate = can('WFH', Permission.Create) || can('WFH', Permission.Manage);
   const [reporteeIds, setReporteeIds] = useState<string[]>([]);
@@ -81,50 +81,27 @@ const WFHRequests: React.FC = () => {
     // the auth UUID as employee_id would return empty results and wipe the visible list.
     if (user.authUserId && user.id === user.authUserId) return;
 
-    const role = user.role as Role;
+    const access = getDashboardRequestAccess();
+    if (!access.canView) return;
+
     let query = supabase.from('wfh_requests').select('*').order('date', { ascending: false });
 
-    switch (role) {
-      case Role.Admin:
-      case Role.HRManager:
-      case Role.HRStaff:
-        // full visibility
-        break;
-      case Role.BOD:
-        // view all
-        break;
-      case Role.GeneralManager:
-        if (user.businessUnitId) query = query.eq('business_unit_id', user.businessUnitId);
-        break;
-      case Role.OperationsDirector:
-        if (user.businessUnitId) query = query.eq('business_unit_id', user.businessUnitId);
-        break;
-      case Role.BusinessUnitManager:
-        if (user.businessUnitId) query = query.eq('business_unit_id', user.businessUnitId);
-        break;
-      case Role.Manager:
-        if (!reporteeIdsLoaded) return;
-        if (reporteeIds.length > 0) {
-          query = query.in('employee_id', reporteeIds);
-        } else {
-          // Managers only review direct reports via reports_to.
-          setRequests([]);
-          return;
-        }
-        break;
-      case Role.Employee:
-        query = query.eq('employee_id', user.id);
-        break;
-      case Role.Auditor:
-        // logs: allow view all
-        break;
-      case Role.FinanceStaff:
-      case Role.Recruiter:
-      case Role.IT:
-      default:
-        // none or not allowed -> show only own (or nothing if you prefer strict)
-        query = query.eq('employee_id', user.id);
-        break;
+    if (access.scope === 'global') {
+      // view all
+    } else if (access.scope === 'bu') {
+      if (user.businessUnitId) query = query.eq('business_unit_id', user.businessUnitId);
+    } else if (access.scope === 'team') {
+      if (!reporteeIdsLoaded) return;
+      if (reporteeIds.length > 0) {
+        query = query.in('employee_id', reporteeIds);
+      } else {
+        setRequests([]);
+        return;
+      }
+    } else if (access.scope === 'self') {
+      query = query.eq('employee_id', user.id);
+    } else {
+      query = query.eq('employee_id', user.id);
     }
 
     const { data, error } = await query;

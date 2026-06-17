@@ -772,9 +772,11 @@ export const usePermissions = () => {
             case Role.BOD:
                 return { canSubmit: false, canRespond: false, canView: true, scope: 'global' as const }; // View
             case Role.GeneralManager:
+                return { canSubmit: false, canRespond: true, canView: true, scope: 'bu' as const }; // View & Respond (BU)
             case Role.OperationsDirector:
             case Role.BusinessUnitManager:
-                return { canSubmit: false, canRespond: true, canView: true, scope: 'bu' as const }; // View & Respond (BU)
+            case Role.Manager:
+                return { canSubmit: true, canRespond: true, canView: true, scope: 'self' as const }; // Own Request; View & Respond
             case Role.FinanceStaff:
             case Role.IT:
                 return { canSubmit: false, canRespond: true, canView: true, scope: 'global' as const }; // View & Respond
@@ -782,8 +784,6 @@ export const usePermissions = () => {
                 return { canSubmit: true, canRespond: false, canView: true, scope: 'self' as const }; // Own
             case Role.Auditor:
                 return { canSubmit: false, canRespond: false, canView: true, scope: 'global' as const }; // View Logs
-            case Role.Manager:
-                return { canSubmit: false, canRespond: true, canView: true, scope: 'self' as const }; // Assigned/self
             case Role.Recruiter:
                 return { canSubmit: false, canRespond: false, canView: false, scope: 'none' as const }; // None
             default:
@@ -882,6 +882,36 @@ export const usePermissions = () => {
         });
     };
 
+    const getDashboardRequestAccess = () => {
+        const user = getCurrentUser();
+        if (!user) {
+            return { canRequest: false, canApprove: false, canView: false, scope: 'none' as const };
+        }
+
+        switch (user.role) {
+            case Role.Admin:
+            case Role.HRManager:
+            case Role.HRStaff:
+                return { canRequest: true, canApprove: true, canView: true, scope: 'global' as const };
+            case Role.BOD:
+                return { canRequest: false, canApprove: true, canView: true, scope: 'global' as const };
+            case Role.GeneralManager:
+                return { canRequest: false, canApprove: true, canView: true, scope: 'bu' as const };
+            case Role.OperationsDirector:
+                return { canRequest: false, canApprove: true, canView: true, scope: 'bu' as const };
+            case Role.BusinessUnitManager:
+                return { canRequest: true, canApprove: true, canView: true, scope: 'bu' as const };
+            case Role.Manager:
+                return { canRequest: true, canApprove: true, canView: true, scope: 'team' as const };
+            case Role.Employee:
+                return { canRequest: true, canApprove: false, canView: true, scope: 'self' as const };
+            case Role.Auditor:
+                return { canRequest: false, canApprove: false, canView: true, scope: 'global' as const };
+            default:
+                return { canRequest: false, canApprove: false, canView: false, scope: 'none' as const };
+        }
+    };
+
     const getCoeAccess = () => {
         const user = getCurrentUser();
         if (!user) {
@@ -935,7 +965,7 @@ export const usePermissions = () => {
                 break;
             case Role.Manager:
                 canRequest = true;
-                canApprove = true; // Own team
+                canApprove = false;
                 canView = true;
                 scope = 'team';
                 break;
@@ -1051,7 +1081,6 @@ export const usePermissions = () => {
                 break;
             case Role.Manager:
                 canRequest = true;
-                canApprove = true;
                 canView = true;
                 scope = 'team';
                 break;
@@ -1111,6 +1140,7 @@ export const usePermissions = () => {
                 return { canCreate: false, canView: true, scope: 'global' as const };
             case Role.GeneralManager:
                 return { canCreate: false, canView: true, scope: 'bu' as const };
+            case Role.OperationsDirector:
             case Role.BusinessUnitManager:
             case Role.Manager:
                 return { canCreate: true, canView: true, scope: 'self' as const };
@@ -1135,6 +1165,9 @@ export const usePermissions = () => {
                 return { canAssign: false, canApprove: false, canView: true, scope: 'global' as const };
             case Role.Auditor:
                 return { canAssign: false, canApprove: false, canView: true, scope: 'logs' as const };
+            case Role.OperationsDirector:
+            case Role.BusinessUnitManager:
+            case Role.Manager:
             case Role.Employee:
                 return { canAssign: false, canApprove: false, canView: true, scope: 'self' as const };
             default:
@@ -1272,5 +1305,5 @@ export const usePermissions = () => {
         return user?.role === Role.Admin;
     };
 
-    return { can, isSuperAdmin, getVisibleEmployeeIds, filterByScope, filterIncidentReportsByScope, filterTicketsByScope, hasDirectReports, getAccessibleBusinessUnits, isUserEligibleEvaluator, getCoeAccess, getOtAccess, getTicketAccess, getIrAccess, getJobRequisitionAccess, getAnnouncementAccess, getAwardsAccess, getPanAccess, getLifecycleAccess };
+    return { can, isSuperAdmin, getVisibleEmployeeIds, filterByScope, filterIncidentReportsByScope, filterTicketsByScope, hasDirectReports, getAccessibleBusinessUnits, isUserEligibleEvaluator, getDashboardRequestAccess, getCoeAccess, getOtAccess, getTicketAccess, getIrAccess, getJobRequisitionAccess, getAnnouncementAccess, getAwardsAccess, getPanAccess, getLifecycleAccess };
 };

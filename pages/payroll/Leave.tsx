@@ -18,7 +18,8 @@ type ActiveView = 'my_requests' | 'team_requests' | 'schedule';
 
 const Leave: React.FC = () => {
   const { user } = useAuth();
-  const { can, hasDirectReports } = usePermissions();
+  const { can, hasDirectReports, getDashboardRequestAccess } = usePermissions();
+  const access = getDashboardRequestAccess();
 
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [leaveTypes, setLeaveTypes] = useState<{ id: string; name: string }[]>([]);
@@ -34,15 +35,7 @@ const Leave: React.FC = () => {
   });
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
 
-  const roleCanApprove =
-    user &&
-    [
-      Role.Admin,
-      Role.HRManager,
-      Role.HRStaff,
-      Role.OperationsDirector,
-      Role.Manager,
-    ].includes(user.role as Role);
+  const roleCanApprove = access.canApprove;
   const canApprove = (can('Leave', Permission.Approve) || hasDirectReports() || roleCanApprove) ?? false;
 
   const loadLeaveTypes = async () => {
@@ -62,41 +55,19 @@ const Leave: React.FC = () => {
 
   const loadLeaveRequests = async () => {
     if (!user) return;
-    const role = user.role as Role;
     let query = supabase.from('leave_requests').select('*').order('start_date', { ascending: false });
 
-    switch (role) {
-      case Role.Admin:
-      case Role.HRManager:
-      case Role.HRStaff:
-        // full visibility
-        break;
-      case Role.BOD:
-      case Role.GeneralManager:
-        if (user.businessUnitId) query = query.eq('business_unit_id', user.businessUnitId);
-        break;
-      case Role.Auditor:
-        // view all (logs)
-        break;
-      case Role.GeneralManager:
-      case Role.OperationsDirector:
-      case Role.BusinessUnitManager:
-        if (user.businessUnitId) query = query.eq('business_unit_id', user.businessUnitId);
-        break;
-      case Role.Manager:
-        if (user.departmentId) query = query.eq('department_id', user.departmentId);
-        else query = query.eq('employee_id', user.id);
-        break;
-      case Role.Employee:
-        query = query.eq('employee_id', user.id);
-        break;
-      case Role.FinanceStaff:
-      case Role.Recruiter:
-      case Role.IT:
-      default:
-        // no visibility per matrix; return empty set
-        query = query.eq('id', null);
-        break;
+    if (access.scope === 'global') {
+      // view all
+    } else if (access.scope === 'bu') {
+      if (user.businessUnitId) query = query.eq('business_unit_id', user.businessUnitId);
+    } else if (access.scope === 'team') {
+      if (user.departmentId) query = query.eq('department_id', user.departmentId);
+      else query = query.eq('employee_id', user.id);
+    } else if (access.scope === 'self') {
+      query = query.eq('employee_id', user.id);
+    } else {
+      query = query.eq('id', null);
     }
 
     const { data, error } = await query;
@@ -173,32 +144,27 @@ const Leave: React.FC = () => {
 
   const teamRequests = useMemo(() => {
     if (!user) return [];
-    const role = user.role as Role;
-    if (role === Role.Manager && user.departmentId) {
+    if (access.scope === 'global') return leaveRequests;
+    if (access.scope === 'bu' && user.businessUnitId) {
+      return leaveRequests.filter(r => r.businessUnitId === user.businessUnitId);
+    }
+    if (access.scope === 'team' && user.departmentId) {
       return leaveRequests.filter(r => r.departmentId === user.departmentId);
     }
-    if ([Role.BusinessUnitManager, Role.OperationsDirector, Role.GeneralManager].includes(role) && user.businessUnitId) {
-      return leaveRequests.filter(r => r.businessUnitId === user.businessUnitId);
-    }
-    if ([Role.HRManager, Role.HRStaff, Role.Admin, Role.BOD, Role.Auditor].includes(role)) {
-      return leaveRequests;
-    }
     return [];
-  }, [leaveRequests, user]);
+  }, [leaveRequests, user, access.scope]);
 
-    const visibleRequests = useMemo(() => {
+  const visibleRequests = useMemo(() => {
     if (!user) return [];
-    const role = user.role as Role;
-    if ([Role.Admin, Role.HRManager, Role.HRStaff, Role.BOD, Role.Auditor].includes(role)) return leaveRequests;
-    if ([Role.GeneralManager, Role.BOD].includes(role) && user.businessUnitId) {
+    if (access.scope === 'global') return leaveRequests;
+    if (access.scope === 'bu' && user.businessUnitId) {
       return leaveRequests.filter(r => r.businessUnitId === user.businessUnitId);
     }
-    if ([Role.BusinessUnitManager, Role.OperationsDirector].includes(role) && user.businessUnitId) {
-      return leaveRequests.filter(r => r.businessUnitId === user.businessUnitId);
+    if (access.scope === 'team' && user.departmentId) {
+      return leaveRequests.filter(r => r.departmentId === user.departmentId);
     }
-    if (role === Role.Manager && user.departmentId) return leaveRequests.filter(r => r.departmentId === user.departmentId);
     return leaveRequests.filter(r => r.employeeId === user.id);
-  }, [leaveRequests, user]);
+  }, [leaveRequests, user, access.scope]);
 
   const calendarLeaves = useMemo(() => {
     return visibleRequests.filter(r => r.status === LeaveRequestStatus.Approved);

@@ -4,6 +4,7 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { ManpowerRequest, ManpowerRequestStatus, NotificationType, Role } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
+import { usePermissions } from '../../hooks/usePermissions';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import ManpowerRequestModal from '../../components/payroll/ManpowerRequestModal';
@@ -22,6 +23,7 @@ const getStatusColor = (status: ManpowerRequestStatus) => {
 
 const ManpowerPlanning: React.FC = () => {
     const { user } = useAuth();
+    const { getDashboardRequestAccess } = usePermissions();
     const location = useLocation();
 
     const [requests, setRequests] = useState<ManpowerRequest[]>([]);
@@ -44,62 +46,25 @@ const ManpowerPlanning: React.FC = () => {
     }, [role]);
 
     const canApprove = useMemo(() => {
-        if (!role) return false;
-        return [
-            Role.Admin,
-            Role.HRManager,
-            Role.HRStaff,
-            Role.OperationsDirector,
-            Role.BusinessUnitManager,
-            Role.Manager,
-        ].includes(role);
-    }, [role]);
+        return getDashboardRequestAccess().canApprove;
+    }, [user]);
 
     const loadRequests = useCallback(async () => {
-        if (!user || !role) return;
-
+        if (!user) return;
+        const access = getDashboardRequestAccess();
         let query = supabase.from('manpower_requests').select('*').order('created_at', { ascending: false });
 
-        switch (role) {
-            case Role.Admin:
-            case Role.HRManager:
-            case Role.HRStaff:
-                // full visibility
-                break;
-            case Role.BOD:
-                // view all
-                break;
-            case Role.GeneralManager:
-            case Role.OperationsDirector:
-            case Role.BusinessUnitManager:
-                if (user.businessUnitId) {
-                    query = query.eq('business_unit_id', user.businessUnitId);
-                } else {
-                    query = query.eq('requester_id', user.id);
-                }
-                break;
-            case Role.Manager:
-                if (user.departmentId) {
-                    query = query.eq('department_id', user.departmentId);
-                } else if (user.businessUnitId) {
-                    query = query.eq('business_unit_id', user.businessUnitId);
-                } else {
-                    query = query.eq('requester_id', user.id);
-                }
-                break;
-            case Role.Employee:
-                query = query.eq('requester_id', user.id);
-                break;
-            case Role.FinanceStaff:
-            case Role.Auditor:
-                // logs: view all
-                break;
-            case Role.Recruiter:
-            case Role.IT:
-            default:
-                // No access
-                query = query.eq('requester_id', '__none__');
-                break;
+        if (access.scope === 'global') {
+            // view all
+        } else if (access.scope === 'bu') {
+            if (user.businessUnitId) query = query.eq('business_unit_id', user.businessUnitId);
+        } else if (access.scope === 'team') {
+            if (user.departmentId) query = query.eq('department_id', user.departmentId);
+            else query = query.eq('requester_id', user.id);
+        } else if (access.scope === 'self') {
+            query = query.eq('requester_id', user.id);
+        } else {
+            query = query.eq('requester_id', '__none__');
         }
 
         const { data, error } = await query;
@@ -129,7 +94,7 @@ const ManpowerPlanning: React.FC = () => {
         })) as ManpowerRequest[];
 
         setRequests(mapped);
-    }, [role, user]);
+    }, [user, getDashboardRequestAccess]);
 
     useEffect(() => {
         loadRequests();
