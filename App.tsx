@@ -310,13 +310,17 @@ const AppRoutes: React.FC = () => {
   );
 };
 
+import { PermissionsProvider } from './context/PermissionsContext';
+
 const App: React.FC = () => {
   return (
     <AuthProvider>
       <SettingsProvider>
-        <BrowserRouter>
-          <AppRoutes />
-        </BrowserRouter>
+        <PermissionsProvider>
+          <BrowserRouter>
+            <AppRoutes />
+          </BrowserRouter>
+        </PermissionsProvider>
       </SettingsProvider>
     </AuthProvider>
   );

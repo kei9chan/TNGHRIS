@@ -8,6 +8,7 @@ import { usePermissions } from '../../hooks/usePermissions';
 import { useAuth } from '../../hooks/useAuth';
 import BusinessUnitModal from '../../components/admin/BusinessUnitModal';
 import { supabase } from '../../services/supabaseClient';
+import { usePermissionsContext } from '../../context/PermissionsContext';
 
 
 const roleDescriptions: Record<Role, string> = {
@@ -28,6 +29,7 @@ const roleDescriptions: Record<Role, string> = {
 
 const RolesPermissions: React.FC = () => {
     const { user } = useAuth();
+    const { refreshPermissions } = usePermissionsContext();
     const { can } = usePermissions();
     const canView = can('RolesPermissions', Permission.View);
     const canManage = can('RolesPermissions', Permission.Manage);
@@ -282,6 +284,7 @@ const RolesPermissions: React.FC = () => {
     const handleSave = async () => {
         const success = await persistMatrix(permissions);
         if (success) {
+            await refreshPermissions();
             setShowSuccess(true);
             setTimeout(() => setShowSuccess(false), 3000);
         }

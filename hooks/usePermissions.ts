@@ -1,5 +1,6 @@
-
+import { supabase } from '../services/supabaseClient';
 import { useAuth } from './useAuth';
+import { usePermissionsContext } from '../context/PermissionsContext';
 import { useSettings } from '../context/SettingsContext';
 import { Resource, Permission, Role, IncidentReport, Ticket, BusinessUnit, Department, Evaluation, EvaluatorType, User, COERequest, OTRequest, OTStatus, PermissionsMatrix } from '../types';
 
@@ -655,6 +656,8 @@ export const usePermissions = () => {
         return [];
     };
 
+    const { permissionsMatrix } = usePermissionsContext();
+
     const can = (resource: Resource, permission: Permission): boolean => {
         const user = getCurrentUser();
 
@@ -666,295 +669,31 @@ export const usePermissions = () => {
             return false;
         }
 
-        if (resource === 'Evaluation') {
-            const perms = evaluationsPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'OrgChart') {
-            const perms = orgChartPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'Calendar') {
-            const perms = calendarPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'Helpdesk') {
-            const perms = knowledgeBasePermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'Exceptions') {
-            const perms = attendanceExceptionsPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'DailyTimeReview') {
-            const perms = dailyTimeReviewPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'Clock') {
-            const perms = clockPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'ClockLog') {
-            const perms = clockLogPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-        if (resource === 'WFH') {
-            const perms = wfhPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        // Employee Correspondence custom matrix (only if rbac enabled)
-        if (resource === 'Employee Correspondence' as Resource) {
-            const perms = contractsPermissions[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'Benefits') {
-            const perms = benefitsPermissions[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'Assets') {
-            const perms = assetManagementPermissions[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'MemoLibrary') {
-            const perms = memoPermissions[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'PulseSurvey') {
-            const perms = pulseSurveyPermissions[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'RolesPermissions') {
-            const perms = rolesPermissionsAccess[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'UserManagement') {
-            const perms = userManagementPermissions[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'Departments') {
-            const perms = departmentsPermissions[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'SiteManagement') {
-            const perms = siteManagementPermissions[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'LeavePolicies') {
-            const perms = leavePoliciesPermissions[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'Holidays') {
-            const perms = holidaysPermissions[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'AuditLog') {
-            const perms = auditLogPermissions[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'FeedbackTemplates') {
-            const perms = feedbackTemplatesPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'Pipeline') {
-            const perms = pipelinePermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'WorkforcePlanning' || resource === 'WorkforcePlanningAdmin') {
-            const perms = workforcePlanningPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'Timekeeping') {
-            const perms = timekeepingPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'Coaching') {
-            const perms = coachingPermissions[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'CodeOfDiscipline') {
-            const perms = codeOfDisciplinePermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-        if (resource === 'JobPosts') {
-            const perms = jobPostsPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-        if (resource === 'Applicants') {
-            const perms = applicantsPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-        if (resource === 'Offers') {
-            const perms = offersPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-        if (resource === 'ApplicationPages') {
-            const perms = applicationPagesPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
         if (resource === 'MyCases') {
             return true;
         }
 
-        const rolePermissions = defaultPermissions[user.role];
+        const roleKey = (user.role || '').toLowerCase();
+        const rolePermissions = permissionsMatrix[roleKey];
+        
         if (!rolePermissions) {
             return false;
         }
 
+        // If the resource is 'Employee Correspondence', it maps to 'Employee Correspondence' 
+        // string. The DB should have 'Employee Correspondence' or 'Contracts' depending on the data.
+        // Wait, if it's dynamic, we just lookup the resource.
         const resourcePermissions = rolePermissions[resource];
+        
         if (!resourcePermissions || resourcePermissions.length === 0) {
             return false;
         }
 
-        if (permission === Permission.View && resourcePermissions.length > 0) {
+        if (resourcePermissions.includes(Permission.Manage)) {
             return true;
         }
 
-        if (resourcePermissions.includes(Permission.Manage)) {
+        if (permission === Permission.View && resourcePermissions.length > 0) {
             return true;
         }
 
