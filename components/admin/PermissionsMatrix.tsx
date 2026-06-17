@@ -37,8 +37,8 @@ const Toggle: React.FC<{
         aria-checked={checked}
         disabled={disabled}
         onClick={() => !disabled && onChange(!checked)}
-        className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-gray-900 ${
-            checked ? 'bg-purple-600' : 'bg-gray-600'
+        className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-gray-900 ${
+            checked ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-gray-600'
         } ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
     >
         <span
@@ -98,11 +98,11 @@ const PermissionsMatrixTable: React.FC<PermissionsMatrixProps> = ({
     };
 
     return (
-        <div className="flex h-full min-h-[600px] rounded-xl overflow-hidden border border-gray-700/60 bg-gray-900">
+        <div className="flex h-full min-h-[600px] rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-900">
             {/* ── Left sidebar: Role list ── */}
-            <aside className="w-52 flex-shrink-0 flex flex-col border-r border-gray-700/60 bg-gray-900">
-                <div className="px-4 py-3 border-b border-gray-700/60">
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Select Role</p>
+            <aside className="w-52 flex-shrink-0 flex flex-col border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-slate-900">
+                <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                    <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest">Select Role</p>
                 </div>
                 <nav className="flex-1 overflow-y-auto py-1">
                     {roles.map(role => (
@@ -111,33 +111,33 @@ const PermissionsMatrixTable: React.FC<PermissionsMatrixProps> = ({
                             onClick={() => setSelectedRole(role)}
                             className={`w-full text-left px-4 py-2.5 text-sm font-medium transition-colors flex items-center justify-between group ${
                                 selectedRole === role
-                                    ? 'bg-purple-600/20 text-purple-300 border-r-2 border-purple-500'
-                                    : 'text-gray-400 hover:text-white hover:bg-gray-800/60'
+                                    ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 border-r-2 border-indigo-500'
+                                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-slate-800'
                             }`}
                         >
                             <span className="uppercase tracking-wide text-xs">{role}</span>
                             {selectedRole === role && (
-                                <span className="text-purple-400">›</span>
+                                <span className="text-indigo-600 dark:text-indigo-400">›</span>
                             )}
                         </button>
                     ))}
                 </nav>
 
                 {/* Add New Role hint slot */}
-                <div className="px-3 py-3 border-t border-gray-700/60">
-                    <p className="text-xs text-gray-600 italic">Manage roles above ↑</p>
+                <div className="px-3 py-3 border-t border-gray-200 dark:border-gray-700">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 italic">Manage roles above ↑</p>
                 </div>
             </aside>
 
             {/* ── Right panel: Permissions ── */}
-            <div className="flex-1 flex flex-col overflow-hidden bg-gray-900/50">
+            <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-slate-800/50">
                 {/* Panel header */}
-                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700/60 bg-gray-900/80 backdrop-blur">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-slate-900/80 backdrop-blur z-10">
                     <div>
-                        <h2 className="text-xl font-bold text-white uppercase tracking-wide">
+                        <h2 className="text-xl font-bold text-gray-900 dark:text-white uppercase tracking-wide">
                             {selectedRole ?? '—'}
                         </h2>
-                        <p className="text-xs text-gray-400 mt-0.5">
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                             {selectedRole ? 'Manage permissions for this role.' : 'Select a role to view permissions.'}
                         </p>
                     </div>
@@ -153,7 +153,7 @@ const PermissionsMatrixTable: React.FC<PermissionsMatrixProps> = ({
                             value={search}
                             onChange={e => setSearch(e.target.value)}
                             placeholder="Search permissions..."
-                            className="w-full pl-9 pr-3 py-1.5 text-sm rounded-lg bg-gray-800 border border-gray-700 text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                            className="w-full pl-9 pr-3 py-1.5 text-sm rounded-lg bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         />
                     </div>
                 </div>
@@ -166,14 +166,14 @@ const PermissionsMatrixTable: React.FC<PermissionsMatrixProps> = ({
                     {selectedRole && Object.entries(filteredGroups).map(([groupName, resources]) => {
                         const groupFull = isGroupFullySelected(resources as Resource[]);
                         return (
-                            <div key={groupName} className="rounded-lg border border-gray-700/60 overflow-hidden">
+                            <div key={groupName} className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
                                 {/* Group header */}
-                                <div className="flex items-center justify-between px-5 py-3 bg-gray-800/70">
-                                    <span className="text-xs font-bold text-gray-300 uppercase tracking-widest">{groupName}</span>
+                                <div className="flex items-center justify-between px-5 py-3 bg-gray-50 dark:bg-slate-800">
+                                    <span className="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-widest">{groupName}</span>
                                     {!readOnly && (
                                         <button
                                             onClick={() => handleSelectAll(resources as Resource[], !groupFull)}
-                                            className="text-xs text-purple-400 hover:text-purple-300 font-medium transition-colors"
+                                            className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-medium transition-colors"
                                         >
                                             {groupFull ? 'Deselect All' : 'Select All'}
                                         </button>
@@ -181,17 +181,17 @@ const PermissionsMatrixTable: React.FC<PermissionsMatrixProps> = ({
                                 </div>
 
                                 {/* Permission rows: 2-column grid */}
-                                <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 divide-gray-700/40 bg-gray-900/60">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 divide-gray-200 dark:divide-gray-700 bg-white dark:bg-slate-800/50">
                                     {(resources as Resource[]).map((resource, idx) => (
                                         <div
                                             key={resource}
                                             className={`px-5 py-4 flex flex-col gap-3 ${
-                                                idx % 2 === 0 ? 'sm:border-r border-gray-700/40' : ''
-                                            } ${idx > 1 ? 'border-t border-gray-700/40' : ''}`}
+                                                idx % 2 === 0 ? 'sm:border-r border-gray-200 dark:border-gray-700' : ''
+                                            } ${idx > 1 ? 'border-t border-gray-200 dark:border-gray-700' : ''}`}
                                         >
                                             {/* Resource name + permission toggles */}
                                             <div className="flex items-center justify-between gap-3">
-                                                <span className="text-sm text-gray-200 font-medium truncate">{resource}</span>
+                                                <span className="text-sm text-gray-900 dark:text-gray-200 font-medium truncate">{resource}</span>
                                                 <div className="flex items-center gap-3 flex-shrink-0">
                                                     {permissionOrder.map(permission => {
                                                         const has = permissionsMatrix[selectedRole]?.[resource]?.includes(permission) ?? false;
