@@ -55,8 +55,14 @@ export const fetchOtRequests = async (): Promise<OTRequest[]> => {
 export const saveOtRequest = async (
   request: Partial<OTRequest>,
   status: OTStatus,
-  user: User
+  user: User,
+  managerIsBOD: boolean = false
 ): Promise<OTRequest> => {
+  let finalStatus = status;
+  if (status === OTStatus.Submitted && managerIsBOD) {
+    finalStatus = OTStatus.PendingBOD;
+  }
+
   const payload: Partial<OtRequestRow> = {
     employee_id: request.employeeId || user.id,
     employee_name: request.employeeName || user.name,
@@ -64,7 +70,7 @@ export const saveOtRequest = async (
     start_time: request.startTime || '',
     end_time: request.endTime || '',
     reason: request.reason || '',
-    status: status,
+    status: finalStatus,
     submitted_at: status === OTStatus.Submitted ? new Date().toISOString() : request.submittedAt?.toISOString(),
     approved_hours: request.approvedHours ?? null,
     manager_note: request.managerNote || null,

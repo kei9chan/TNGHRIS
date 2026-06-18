@@ -1,4 +1,3 @@
-import { createClient } from '@supabase/supabase-js';
 import fs from 'fs';
 
 let dotenvStr = '';
@@ -21,7 +20,8 @@ const anonKey = env['VITE_SUPABASE_ANON_KEY']?.trim() || '';
 async function fetchSchema() {
   const res = await fetch(`${supabaseUrl}/rest/v1/?apikey=${anonKey}`);
   const spec = await res.json();
-  console.log("Keys:", Object.keys(spec.definitions || {}));
+  console.log(Object.keys(spec));
+  if (spec.definitions) console.log(Object.keys(spec.definitions));
 }
 
 fetchSchema();

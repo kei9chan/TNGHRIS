@@ -60,8 +60,8 @@ const WFHRequests: React.FC = () => {
   const { user } = useAuth();
   const { can, getDashboardRequestAccess } = usePermissions();
   const access = getDashboardRequestAccess();
-  const canView = can('WFH', Permission.View);
-  const canCreate = can('WFH', Permission.Create) || can('WFH', Permission.Manage);
+  const canView = can('WFH', Permission.View) || [Role.Manager, Role.BusinessUnitManager, Role.Employee, Role.BOD, Role.GeneralManager, Role.HRManager, Role.HRStaff, Role.OperationsDirector, Role.Admin].includes(user?.role as Role);
+  const canCreate = can('WFH', Permission.Create) || can('WFH', Permission.Manage) || [Role.Manager, Role.BusinessUnitManager, Role.Employee, Role.HRManager, Role.HRStaff, Role.Admin].includes(user?.role as Role);
   const [reporteeIds, setReporteeIds] = useState<string[]>([]);
   const [reporteeIdsLoaded, setReporteeIdsLoaded] = useState(false);
   const canManage = can('WFH', Permission.Manage) || can('WFH', Permission.Approve) || reporteeIds.length > 0;

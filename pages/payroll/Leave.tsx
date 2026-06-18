@@ -204,8 +204,32 @@ const Leave: React.FC = () => {
     setIsModalOpen(true);
   };
 
+  const [managerIsBOD, setManagerIsBOD] = useState(false);
+
+  useEffect(() => {
+    if (user?.reportsTo) {
+      const loadManager = async () => {
+        const { data } = await supabase.from('hris_users').select('role').eq('id', user.reportsTo).single();
+        if (data?.role === Role.BOD) {
+          setManagerIsBOD(true);
+        } else {
+          const bodIds: string[] = approverConfigs?.bodApprovers?.user_ids || [];
+          if (bodIds.includes(user.reportsTo!)) {
+            setManagerIsBOD(true);
+          }
+        }
+      }
+      loadManager();
+    }
+  }, [user, approverConfigs]);
+
   const handleSave = async (requestToSave: Partial<LeaveRequest>, status: LeaveRequestStatus) => {
     if (!user) return;
+
+    let finalStatus = status;
+    if (status === LeaveRequestStatus.Pending && managerIsBOD) {
+        finalStatus = LeaveRequestStatus.PendingBOD;
+    }
 
     let attachmentUrl: string | undefined = requestToSave.attachmentUrl;
 
@@ -226,7 +250,7 @@ const Leave: React.FC = () => {
       userName: user.name,
       timestamp: new Date().toISOString(),
       action: requestToSave.id ? 'Updated' : 'Created',
-      details: `Request saved as ${status}`,
+      details: `Request saved as ${finalStatus}`,
     };
 
     const payload = {
@@ -239,7 +263,7 @@ const Leave: React.FC = () => {
       end_time: requestToSave.endTime,
       duration_days: requestToSave.durationDays || 1,
       reason: requestToSave.reason,
-      status,
+      status: finalStatus,
       approver_chain: requestToSave.approverChain || [],
       history_log: [...(requestToSave.historyLog || []), historyEntry],
       attachment_url: attachmentUrl,

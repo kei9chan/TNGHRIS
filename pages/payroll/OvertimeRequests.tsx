@@ -71,6 +71,9 @@ const OvertimeRequests: React.FC = () => {
     }, [user, approverConfigs]);
 
     const otAccess = getOtAccess();
+    const canView = canModule('OT', Permission.View) || otAccess.canView;
+    const canCreate = canModule('OT', Permission.Create) || otAccess.canRequest;
+    const canManage = canModule('OT', Permission.Manage);
     // Configured BOD approvers can also approve
     const canApprove = otAccess.canApprove || reporteeIds.length > 0 || hasDirectReports() || isConfiguredBOD;
     const canViewLedger = canApprove;
@@ -370,7 +373,20 @@ const OvertimeRequests: React.FC = () => {
         };
 
         try {
-            const saved = await saveOtRequest(updatedRequestData, status, user);
+            let managerIsBOD = false;
+            if (user?.reportsTo && status === OTStatus.Submitted) {
+                const { data } = await supabase.from('hris_users').select('role').eq('id', user.reportsTo).single();
+                if (data?.role === Role.BOD) {
+                    managerIsBOD = true;
+                } else {
+                    const bodIds: string[] = approverConfigs?.bodApprovers?.user_ids || [];
+                    if (bodIds.includes(user.reportsTo)) {
+                        managerIsBOD = true;
+                    }
+                }
+            }
+
+            const saved = await saveOtRequest(updatedRequestData, status, user, managerIsBOD);
             setRequests(prev => {
                 const existing = prev.find(r => r.id === saved.id);
                 if (existing) {

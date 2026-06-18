@@ -260,7 +260,7 @@ const HRDashboard: React.FC = () => {
     }, [user?.id]);
 
     useEffect(() => {
-        if (!user?.id || reporteeIds.length === 0) {
+        if (!user?.id || (!isConfiguredBOD && reporteeIds.length === 0)) {
             setPendingOtApprovals([]);
             return;
         }
