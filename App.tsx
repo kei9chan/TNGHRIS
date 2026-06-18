@@ -49,6 +49,7 @@ const ClockLog = React.lazy(() => import('./pages/payroll/ClockLog'));
 const OvertimeRequests = React.lazy(() => import('./pages/payroll/OvertimeRequests'));
 import WFHRequests from './pages/payroll/WFHRequests'; // NEW
 const Leave = React.lazy(() => import('./pages/payroll/Leave'));
+const LeaveCredits = React.lazy(() => import('./pages/payroll/LeaveCredits'));
 const Loans = React.lazy(() => import('./pages/payroll/Loans'));
 const PayrollPrep = React.lazy(() => import('./pages/payroll/PayrollPrep'));
 const AttendanceExceptions = React.lazy(() => import('./pages/payroll/AttendanceExceptions'));
@@ -233,6 +234,7 @@ const AppRoutes: React.FC = () => {
             <Route path="overtime" element={<Navigate to="/payroll/overtime-requests" replace />} />
             <Route path="wfh-requests" element={<ProtectedRoute><WFHRequests /></ProtectedRoute>} /> {/* NEW */}
             <Route path="leave" element={<ProtectedRoute><Leave /></ProtectedRoute>} />
+            <Route path="leave-credits" element={<ProtectedRoute><LeaveCredits /></ProtectedRoute>} />
             <Route path="loans" element={<ProtectedRoute><Loans /></ProtectedRoute>} />
             <Route path="payroll-prep" element={<ProtectedRoute><PayrollPrep /></ProtectedRoute>} />
             <Route path="exceptions" element={<ProtectedRoute><AttendanceExceptions /></ProtectedRoute>} />
