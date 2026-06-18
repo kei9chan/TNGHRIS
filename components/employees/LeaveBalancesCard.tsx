@@ -34,6 +34,7 @@ const LeaveBalancesCard: React.FC<LeaveBalancesCardProps> = ({ user }) => {
         const name = type.name.toLowerCase();
         if (name.includes('vacation') || type.id === 'lt1') return user.leaveQuotaVacation;
         if (name.includes('sick') || type.id === 'lt2') return user.leaveQuotaSick;
+        if (name.includes('offset')) return user.leaveQuotaOffset;
         return 0;
     };
 

@@ -15,11 +15,20 @@ const OTStats: React.FC<OTStatsProps> = ({ requests }) => {
     
     const calculateDuration = (start: string, end: string): number => {
         if (!start || !end) return 0;
-        const startTime = new Date(`1970-01-01T${start}:00`);
-        const endTime = new Date(`1970-01-01T${end}:00`);
-        if (endTime <= startTime) return 0;
-        const diffMs = endTime.getTime() - startTime.getTime();
-        return diffMs / (1000 * 60 * 60);
+        
+        const [startH, startM] = start.split(':').map(Number);
+        const [endH, endM] = end.split(':').map(Number);
+        
+        if (isNaN(startH) || isNaN(startM) || isNaN(endH) || isNaN(endM)) return 0;
+
+        let startMinutes = startH * 60 + startM;
+        let endMinutes = endH * 60 + endM;
+
+        if (endMinutes <= startMinutes) {
+            endMinutes += 24 * 60; // Crossed midnight
+        }
+        
+        return (endMinutes - startMinutes) / 60;
     };
 
     const stats = useMemo(() => {

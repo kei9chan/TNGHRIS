@@ -9,6 +9,7 @@ interface OTRequestTableProps {
     onEdit: (request: OTRequest) => void;
     onDelete: (requestId: string) => void;
     onWithdraw: (requestId: string) => void;
+    onConvert?: (requestId: string) => void;
     canReviewRequest?: (request: OTRequest) => boolean;
 }
 
@@ -30,7 +31,7 @@ const statusLabels: { [key in OTStatus]: string } = {
     [OTStatus.Rejected]: 'Rejected',
 };
 
-const OTRequestTable: React.FC<OTRequestTableProps> = ({ requests, onEdit, onDelete, onWithdraw, canReviewRequest }) => {
+const OTRequestTable: React.FC<OTRequestTableProps> = ({ requests, onEdit, onDelete, onWithdraw, onConvert, canReviewRequest }) => {
     const { user } = useAuth();
     const { can } = usePermissions();
 
@@ -93,7 +94,15 @@ const OTRequestTable: React.FC<OTRequestTableProps> = ({ requests, onEdit, onDel
                                             </>
                                         )}
                                         {(req.status === OTStatus.Approved || req.status === OTStatus.Rejected) && (
-                                            <Button variant="secondary" size="sm" onClick={() => onEdit(req)}>View</Button>
+                                            <>
+                                                {onConvert && req.status === OTStatus.Approved && req.otType === 'Offset' && !req.isConverted && (
+                                                    <Button variant="primary" size="sm" onClick={() => onConvert(req.id)}>Verify & Convert</Button>
+                                                )}
+                                                {req.isConverted && (
+                                                    <span className="text-xs text-green-600 font-medium px-2 py-1">Converted</span>
+                                                )}
+                                                <Button variant="secondary" size="sm" onClick={() => onEdit(req)}>View</Button>
+                                            </>
                                         )}
                                     </div>
                                 </td>

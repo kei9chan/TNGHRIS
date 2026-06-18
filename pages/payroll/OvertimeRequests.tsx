@@ -15,7 +15,7 @@ import OTCalendar from '../../components/payroll/OTCalendar';
 import OTLedger from '../../components/payroll/OTLedger';
 import EditableDescription from '../../components/ui/EditableDescription';
 import { logActivity } from '../../services/auditService';
-import { fetchOtRequests, saveOtRequest, approveRejectOtRequest, managerApproveOtRequest, bodApproveOtRequest, deleteOtRequest, withdrawOtRequest } from '../../services/otService';
+import { fetchOtRequests, saveOtRequest, approveRejectOtRequest, managerApproveOtRequest, bodApproveOtRequest, deleteOtRequest, withdrawOtRequest, verifyAndConvertOT } from '../../services/otService';
 import { createNotification } from '../../services/notificationService';
 import { fetchApproverConfigs } from '../../services/approverConfigService';
 import { supabase } from '../../services/supabaseClient';
@@ -189,18 +189,27 @@ const OvertimeRequests: React.FC = () => {
     const teamRequests = useMemo(() => {
         if (!user || !canApprove) return [];
 
-        // Configured BOD approvers see ALL PendingBOD requests org-wide
-        if (isConfiguredBOD) {
-            return requests.filter(r => r.status === OTStatus.PendingBOD);
-        }
+        let visibleRequests: OTRequest[] = [];
 
         // Regular managers see Submitted + PendingBOD requests from their direct reports
-        if (reporteeIds.length === 0) return [];
-        return requests.filter(r =>
-            reporteeIds.includes(r.employeeId) && (
-                r.status === OTStatus.Submitted || r.status === OTStatus.PendingBOD
-            )
-        );
+        if (reporteeIds.length > 0) {
+            const reporteeRequests = requests.filter(r =>
+                reporteeIds.includes(r.employeeId) && (
+                    r.status === OTStatus.Submitted || r.status === OTStatus.PendingBOD
+                )
+            );
+            visibleRequests = [...visibleRequests, ...reporteeRequests];
+        }
+
+        // Configured BOD approvers see ALL PendingBOD requests org-wide
+        if (isConfiguredBOD) {
+            const bodRequests = requests.filter(r => r.status === OTStatus.PendingBOD);
+            visibleRequests = [...visibleRequests, ...bodRequests];
+        }
+
+        // Deduplicate in case a request is both from a direct report and PendingBOD
+        const uniqueRequests = Array.from(new Map(visibleRequests.map(r => [r.id, r])).values());
+        return uniqueRequests;
     }, [requests, reporteeIds, user, canApprove, isConfiguredBOD]);
 
     // 3. Calendar Data Source
@@ -277,6 +286,29 @@ const OvertimeRequests: React.FC = () => {
             } catch (err: any) {
                 alert(err?.message || 'Failed to delete request.');
             }
+        }
+    };
+
+    const handleConvertRequest = async (requestId: string) => {
+        if (!user) return;
+        if (!window.confirm("Are you sure you want to verify this OT and convert the approved hours into Offset Leave?")) return;
+        try {
+            const updated = await verifyAndConvertOT(requestId, user.id);
+            setRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
+            
+            // Notify the employee
+            if (updated.employeeId) {
+                createNotification({
+                    userId: updated.employeeId,
+                    title: '✅ Offset Leave Converted',
+                    message: `Your approved Offset OT for ${new Date(updated.date).toLocaleDateString()} has been verified and converted to your Offset Leave balance.`,
+                    type: NotificationType.OT_APPROVED,
+                    link: '/payroll/leave',
+                }).catch(console.error);
+            }
+        } catch (error: any) {
+            console.error('Failed to convert OT', error);
+            alert(error.message || 'Failed to convert OT');
         }
     };
 
@@ -376,47 +408,87 @@ const OvertimeRequests: React.FC = () => {
             let updated: OTRequest;
 
             if (isSubmitted && newStatus === OTStatus.Approved) {
-                // Step 2 → Reporting Manager approves: advance to PendingBOD
-                updated = await managerApproveOtRequest(requestToUpdate.id!, details);
-                updated.historyLog = [...(updated.historyLog || []), newHistoryEntry];
-                setRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
-                logActivity(user, 'APPROVE', 'OTRequest', requestToUpdate.id!, `Manager approved OT for ${requestToUpdate.employeeName} — forwarded to BOD`);
+                if (user.role === Role.BOD || isConfiguredBOD) {
+                    // Bypass Step 2 → BOD is the manager, go straight to fully Approved
+                    updated = await bodApproveOtRequest(requestToUpdate.id!, details);
+                    updated.historyLog = [...(updated.historyLog || []), newHistoryEntry];
+                    setRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
+                    logActivity(user, 'APPROVE', 'OTRequest', requestToUpdate.id!, `BOD gave direct final approval for ${requestToUpdate.employeeName}'s OT request`);
 
-                // Notify BOD (configured approvers + role-based BOD users)
-                try {
-                    const configs = await fetchApproverConfigs();
-                    const configuredIds: string[] = configs.bodApprovers.user_ids || [];
-
-                    const { data: roleBodUsers } = await supabase
-                        .from('hris_users')
-                        .select('id')
-                        .eq('role', Role.BOD);
-                    const roleIds: string[] = (roleBodUsers || []).map((u: any) => u.id);
-
-                    const allBodIds = Array.from(new Set([...configuredIds, ...roleIds]));
-
-                    allBodIds.forEach(bodId => {
+                    if (requestToUpdate.employeeId) {
                         createNotification({
-                            userId: bodId,
-                            title: '📋 OT Request Pending BOD Approval',
-                            message: `${requestToUpdate.employeeName}'s OT request was approved by their Reporting Manager and requires your final approval.`,
+                            userId: requestToUpdate.employeeId,
+                            title: '✅ OT Request Fully Approved',
+                            message: `Your OT request has been fully approved by your manager (BOD).`,
+                            type: NotificationType.OT_APPROVED,
+                            link: '/payroll/overtime-requests',
+                        }).catch(console.error);
+                    }
+
+                    // Notify HR/Timekeeping about the final approval
+                    try {
+                        const { data: hrUsersData } = await supabase
+                            .from('hris_users')
+                            .select('id')
+                            .in('role', [Role.HRManager, Role.HRStaff, Role.Admin]);
+                        
+                        if (hrUsersData) {
+                            hrUsersData.forEach(hr => {
+                                createNotification({
+                                    userId: hr.id,
+                                    title: '✅ OT Request Approved (BOD Direct)',
+                                    message: `${requestToUpdate.employeeName}'s OT request has been fully approved by their BOD manager and is ready for timekeeping.`,
+                                    type: NotificationType.OT_APPROVED,
+                                    link: '/payroll/overtime-requests',
+                                }).catch(console.error);
+                            });
+                        }
+                    } catch (e) {
+                        console.error('Failed to notify HR of OT approval', e);
+                    }
+                } else {
+                    // Step 2 → Reporting Manager approves: advance to PendingBOD
+                    updated = await managerApproveOtRequest(requestToUpdate.id!, details);
+                    updated.historyLog = [...(updated.historyLog || []), newHistoryEntry];
+                    setRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
+                    logActivity(user, 'APPROVE', 'OTRequest', requestToUpdate.id!, `Manager approved OT for ${requestToUpdate.employeeName} — forwarded to BOD`);
+
+                    // Notify BOD (configured approvers + role-based BOD users)
+                    try {
+                        const configs = await fetchApproverConfigs();
+                        const configuredIds: string[] = configs.bodApprovers.user_ids || [];
+
+                        const { data: roleBodUsers } = await supabase
+                            .from('hris_users')
+                            .select('id')
+                            .eq('role', Role.BOD);
+                        const roleIds: string[] = (roleBodUsers || []).map((u: any) => u.id);
+
+                        const allBodIds = Array.from(new Set([...configuredIds, ...roleIds]));
+
+                        allBodIds.forEach(bodId => {
+                            createNotification({
+                                userId: bodId,
+                                title: '📋 OT Request Pending BOD Approval',
+                                message: `${requestToUpdate.employeeName}'s OT request was approved by their Reporting Manager and requires your final approval.`,
+                                type: NotificationType.OT_PENDING_BOD,
+                                link: '/payroll/overtime-requests',
+                            }).catch(console.error);
+                        });
+                    } catch (e) {
+                        console.error('Failed to fetch BOD approvers for OT notification', e);
+                    }
+
+                    // Notify employee
+                    if (requestToUpdate.employeeId) {
+                        createNotification({
+                            userId: requestToUpdate.employeeId,
+                            title: '🔄 OT Request Forwarded to BOD',
+                            message: `Your OT request has been approved by your Reporting Manager and is now pending BOD final approval.`,
                             type: NotificationType.OT_PENDING_BOD,
                             link: '/payroll/overtime-requests',
                         }).catch(console.error);
-                    });
-                } catch (e) {
-                    console.error('Failed to fetch BOD approvers for OT notification', e);
-                }
-
-                // Notify employee
-                if (requestToUpdate.employeeId) {
-                    createNotification({
-                        userId: requestToUpdate.employeeId,
-                        title: '🔄 OT Request Forwarded to BOD',
-                        message: `Your OT request has been approved by your Reporting Manager and is now pending BOD final approval.`,
-                        type: NotificationType.OT_PENDING_BOD,
-                        link: '/payroll/overtime-requests',
-                    }).catch(console.error);
+                    }
                 }
 
             } else if (isPendingBOD && newStatus === OTStatus.Approved) {
@@ -569,6 +641,7 @@ const OvertimeRequests: React.FC = () => {
                         onEdit={handleEditRequest}
                         onDelete={handleDeleteRequest}
                         onWithdraw={handleWithdrawRequest}
+                        onConvert={user?.role === Role.HRManager || user?.role === Role.HRStaff || user?.role === Role.Admin || user?.role === Role.GeneralManager ? handleConvertRequest : undefined}
                         canReviewRequest={(req) =>
                             reporteeIds.includes(req.employeeId) ||
                             otAccess.canActOn(req) ||

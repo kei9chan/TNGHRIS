@@ -19,6 +19,8 @@ type OtRequestRow = {
   paid_ot_type?: string;
   created_at?: string;
   updated_at?: string;
+  is_converted?: boolean;
+  converted_at?: string;
 };
 
 const mapRow = (row: OtRequestRow): OTRequest => ({
@@ -37,6 +39,8 @@ const mapRow = (row: OtRequestRow): OTRequest => ({
   attachmentUrl: row.attachment_url ?? undefined,
   otType: (row.ot_type as 'Paid' | 'Offset') || 'Paid',
   paidOtType: (row.paid_ot_type as 'Regular Overtime' | 'Legal Holiday' | 'Special Holiday' | 'Rest Day') || undefined,
+  isConverted: row.is_converted ?? false,
+  convertedAt: row.converted_at ? new Date(row.converted_at) : undefined,
 });
 
 export const fetchOtRequests = async (): Promise<OTRequest[]> => {
@@ -67,7 +71,7 @@ export const saveOtRequest = async (
     history_log: request.historyLog || [],
     attachment_url: request.attachmentUrl || null,
     ot_type: request.otType || 'Paid',
-    paid_ot_type: request.paidOtType || null,
+    paid_ot_type: (request.otType || 'Paid') === 'Offset' ? null : (request.paidOtType || 'Regular Overtime'),
   };
 
   const query = request.id
@@ -100,15 +104,6 @@ export const approveRejectOtRequest = async (
 
   if (error) throw new Error(error.message || 'Failed to update OT request');
 
-  if (data && newStatus === OTStatus.Approved && data.ot_type === 'Offset' && data.approved_hours) {
-    const { data: userRecord } = await supabase.from('hris_users').select('leave_quota_offset').eq('id', data.employee_id).single();
-    if (userRecord) {
-      const currentOffset = Number(userRecord.leave_quota_offset) || 0;
-      const earnedDays = data.approved_hours / 8;
-      await supabase.from('hris_users').update({ leave_quota_offset: currentOffset + earnedDays }).eq('id', data.employee_id);
-    }
-  }
-
   return mapRow(data as OtRequestRow);
 };
 
@@ -131,7 +126,6 @@ export const withdrawOtRequest = async (
 
   const payload: Partial<OtRequestRow> = {
     status: OTStatus.Draft,
-    submitted_at: null as any,
     history_log: [...(requestToUpdate.historyLog || []), newHistoryEntry],
     updated_at: new Date().toISOString(),
   };
@@ -193,14 +187,51 @@ export const bodApproveOtRequest = async (
 
   if (error) throw new Error(error.message || 'Failed to approve OT request (BOD)');
 
-  if (data && data.ot_type === 'Offset' && data.approved_hours) {
-    const { data: userRecord } = await supabase.from('hris_users').select('leave_quota_offset').eq('id', data.employee_id).single();
-    if (userRecord) {
-      const currentOffset = Number(userRecord.leave_quota_offset) || 0;
-      const earnedDays = data.approved_hours / 8;
-      await supabase.from('hris_users').update({ leave_quota_offset: currentOffset + earnedDays }).eq('id', data.employee_id);
-    }
+  return mapRow(data as OtRequestRow);
+};
+
+export const verifyAndConvertOT = async (requestId: string, userId: string): Promise<OTRequest> => {
+  const { data: request, error: fetchError } = await supabase
+    .from('ot_requests')
+    .select('*')
+    .eq('id', requestId)
+    .single();
+
+  if (fetchError || !request) throw new Error(fetchError?.message || 'Request not found');
+  if (request.ot_type !== 'Offset') throw new Error('Only Offset OT can be converted');
+  if (request.status !== OTStatus.Approved) throw new Error('OT must be Approved before conversion');
+  if (request.is_converted) throw new Error('OT has already been converted');
+  if (!request.approved_hours) throw new Error('OT requires approved hours to convert');
+
+  const { data: userRecord } = await supabase.from('hris_users').select('leave_quota_offset').eq('id', request.employee_id).single();
+  if (userRecord) {
+    const currentOffset = Number(userRecord.leave_quota_offset) || 0;
+    const earnedDays = request.approved_hours / 8;
+    await supabase.from('hris_users').update({ leave_quota_offset: currentOffset + earnedDays }).eq('id', request.employee_id);
   }
 
+  const historyLog: OTRequestHistory[] = [
+    ...(request.history_log || []),
+    {
+      userId,
+      userName: 'HR/Timekeeping',
+      timestamp: new Date(),
+      action: 'CONVERTED',
+      details: 'Converted approved Offset OT hours to Offset Leave balance'
+    }
+  ];
+
+  const { data, error } = await supabase
+    .from('ot_requests')
+    .update({ 
+      is_converted: true, 
+      converted_at: new Date().toISOString(),
+      history_log: historyLog 
+    })
+    .eq('id', requestId)
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message || 'Failed to convert OT');
   return mapRow(data as OtRequestRow);
 };

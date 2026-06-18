@@ -6,6 +6,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Card from '../ui/Card';
 import { OTStatus, Role, ResolutionStatus, ApproverStatus, PANStatus, PANStepStatus, JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, NotificationType, TicketStatus, OnboardingTaskStatus, PANActionTaken, AssetRequest, AssetRequestStatus, NTEStatus, PAN, Resolution, NTE, JobRequisition, OTRequest, AttendanceExceptionRecord, EmployeeAward, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, Envelope, EnvelopeStatus, RoutingStepStatus, BenefitRequest, BenefitRequestStatus, CoachingStatus, COETemplate, User, LeaveRequest, LeaveRequestStatus, WFHRequest, WFHRequestStatus, AttendanceRecord, ShiftAssignment, ShiftTemplate, Evaluation, EvaluatorType, Memo, MemoAcknowledgement, CoachingSession, EvaluationSubmission, EvaluationTimeline } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
+import { useSettings } from '../../context/SettingsContext';
 import { useAuth } from '../../hooks/useAuth';
 import ActionItemCard from './ActionItemCard';
 import QuickAnalyticsPreview from './QuickAnalyticsPreview';
@@ -144,8 +145,17 @@ const mapMemoRow = (row: any): Memo => ({
 const ManagerDashboard: React.FC = () => {
     const { user } = useAuth();
     const { getVisibleEmployeeIds, isUserEligibleEvaluator, getCoeAccess } = usePermissions();
+    const { approverConfigs } = useSettings();
     const location = useLocation();
     const navigate = useNavigate();
+
+    // Check if the current user is a configured BOD approver
+    const isConfiguredBOD = useMemo(() => {
+        if (!user) return false;
+        if (user.role === Role.BOD) return true;
+        const bodIds: string[] = approverConfigs?.bodApprovers?.user_ids || [];
+        return bodIds.includes(user.id);
+    }, [user, approverConfigs]);
 
     // Local state — all initialized empty; populated by Supabase useEffect hooks
     const [requests, setRequests] = useState<AssetRequest[]>([]);
@@ -638,7 +648,7 @@ const ManagerDashboard: React.FC = () => {
         };
 
         const loadPendingApprovals = async () => {
-            if (!user?.id || reporteeIds.length === 0) {
+            if (!user?.id || (reporteeIds.length === 0 && !isConfiguredBOD)) {
                 setPendingLeaveApprovals([]);
                 setPendingWfhApprovals([]);
                 setPendingOtApprovals([]);
@@ -646,25 +656,44 @@ const ManagerDashboard: React.FC = () => {
                 return;
             }
 
+            let leaveQuery = supabase
+                .from('leave_requests')
+                .select('id, employee_id, employee_name, leave_type_id, start_date, end_date, start_time, end_time, duration_days, reason, status, history_log, attachment_url, approver_id, business_unit_id, department_id');
+            if (isConfiguredBOD) {
+                leaveQuery = leaveQuery.or(`and(employee_id.in.(${reporteeIds.join(',') || 'uuid-placeholder'}),status.eq.pending),status.eq.PendingBOD`);
+            } else {
+                leaveQuery = leaveQuery.in('employee_id', reporteeIds).eq('status', 'pending');
+            }
+
+            let wfhQuery = supabase
+                .from('wfh_requests')
+                .select('id, employee_id, employee_name, date, reason, status, report_link, approved_by, approved_at, rejection_reason, created_at');
+            if (isConfiguredBOD) {
+                wfhQuery = wfhQuery.or(`and(employee_id.in.(${reporteeIds.join(',') || 'uuid-placeholder'}),status.eq.${WFHRequestStatus.PendingDeptHead}),status.eq.${WFHRequestStatus.PendingBOD}`);
+            } else {
+                wfhQuery = wfhQuery.in('employee_id', reporteeIds).eq('status', WFHRequestStatus.PendingDeptHead);
+            }
+
+            let otQuery = supabase
+                .from('ot_requests')
+                .select('id, employee_id, employee_name, date, start_time, end_time, reason, status, submitted_at, approved_hours, manager_note, history_log, attachment_url');
+            if (isConfiguredBOD) {
+                otQuery = otQuery.or(`and(employee_id.in.(${reporteeIds.join(',') || 'uuid-placeholder'}),status.eq.${OTStatus.Submitted}),status.eq.${OTStatus.PendingBOD}`);
+            } else {
+                otQuery = otQuery.in('employee_id', reporteeIds).eq('status', OTStatus.Submitted);
+            }
+
+            let manpowerQuery = supabase
+                .from('manpower_requests')
+                .select('id, business_unit_id, business_unit_name, department_id, requester_id, requester_name, date_needed, forecasted_pax, general_note, items, grand_total, status, created_at, approved_by, approved_at, rejection_reason');
+            // Manpower requests only have 'Pending', 'Approved', 'Rejected'
+            manpowerQuery = manpowerQuery.in('requester_id', reporteeIds).eq('status', ManpowerRequestStatus.Pending);
+
             const [leaveRes, wfhRes, otRes, manpowerRes] = await Promise.all([
-                supabase
-                    .from('leave_requests')
-                    .select('id, employee_id, employee_name, leave_type_id, start_date, end_date, start_time, end_time, duration_days, reason, status, history_log, attachment_url, approver_id, business_unit_id, department_id')
-                    .in('employee_id', reporteeIds),
-                supabase
-                    .from('wfh_requests')
-                    .select('id, employee_id, employee_name, date, reason, status, report_link, approved_by, approved_at, rejection_reason, created_at')
-                    .in('employee_id', reporteeIds),
-                supabase
-                    .from('ot_requests')
-                    .select('id, employee_id, employee_name, date, start_time, end_time, reason, status, submitted_at, approved_hours, manager_note, history_log, attachment_url')
-                    .in('employee_id', reporteeIds)
-                    .eq('status', OTStatus.Submitted),
-                supabase
-                    .from('manpower_requests')
-                    .select('id, business_unit_id, business_unit_name, department_id, requester_id, requester_name, date_needed, forecasted_pax, general_note, items, grand_total, status, created_at, approved_by, approved_at, rejection_reason')
-                    .in('requester_id', reporteeIds)
-                    .eq('status', ManpowerRequestStatus.Pending),
+                leaveQuery,
+                wfhQuery,
+                otQuery,
+                manpowerQuery,
             ]);
 
             if (!leaveRes.error && leaveRes.data) {
@@ -686,7 +715,7 @@ const ManagerDashboard: React.FC = () => {
                     businessUnitId: row.business_unit_id || undefined,
                     departmentId: row.department_id || undefined,
                 }));
-                setPendingLeaveApprovals(mapped.filter(r => r.status === LeaveRequestStatus.Pending));
+                setPendingLeaveApprovals(mapped);
             } else {
                 setPendingLeaveApprovals([]);
             }
@@ -705,7 +734,7 @@ const ManagerDashboard: React.FC = () => {
                     rejectionReason: row.rejection_reason || undefined,
                     createdAt: row.created_at ? new Date(row.created_at) : new Date(),
                 }));
-                setPendingWfhApprovals(mapped.filter(r => r.status === WFHRequestStatus.PendingDeptHead));
+                setPendingWfhApprovals(mapped);
             } else {
                 setPendingWfhApprovals([]);
             }

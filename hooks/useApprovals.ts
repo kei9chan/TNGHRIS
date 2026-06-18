@@ -106,24 +106,29 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
                 skipOt = true;
             }
         } else if (isGM) {
-            // GM sees PendingGM requests across the organization
-            leaveQuery = leaveQuery.eq('status', LeaveRequestStatus.PendingGM).order('start_date', { ascending: false });
-            wfhQuery = wfhQuery.eq('status', WFHRequestStatus.PendingGM).order('created_at', { ascending: false });
-            otQuery = otQuery.eq('status', OTStatus.PendingGM).order('submitted_at', { ascending: false });
-            // GM also sees manpower from their reportees
             if (reporteeIds.length > 0) {
+                const reporteesStr = `(${reporteeIds.join(',')})`;
+                leaveQuery = leaveQuery.or(`status.eq.${LeaveRequestStatus.PendingGM},and(employee_id.in.${reporteesStr},status.eq.Pending)`).order('start_date', { ascending: false });
+                wfhQuery = wfhQuery.or(`status.eq.${WFHRequestStatus.PendingGM},and(employee_id.in.${reporteesStr},status.eq.${WFHRequestStatus.PendingDeptHead})`).order('created_at', { ascending: false });
+                otQuery = otQuery.or(`status.eq.${OTStatus.PendingGM},and(employee_id.in.${reporteesStr},status.eq.${OTStatus.Submitted})`).order('submitted_at', { ascending: false });
                 manpowerQuery = manpowerQuery.in('requester_id', reporteeIds);
             } else {
+                leaveQuery = leaveQuery.eq('status', LeaveRequestStatus.PendingGM).order('start_date', { ascending: false });
+                wfhQuery = wfhQuery.eq('status', WFHRequestStatus.PendingGM).order('created_at', { ascending: false });
+                otQuery = otQuery.eq('status', OTStatus.PendingGM).order('submitted_at', { ascending: false });
                 skipManpower = true;
             }
         } else if (isBOD) {
-            // BOD sees PendingBOD requests across the organization for final approval
-            leaveQuery = leaveQuery.eq('status', LeaveRequestStatus.PendingBOD).order('start_date', { ascending: false });
-            wfhQuery = wfhQuery.eq('status', WFHRequestStatus.PendingBOD).order('created_at', { ascending: false });
-            otQuery = otQuery.eq('status', OTStatus.PendingBOD).order('submitted_at', { ascending: false });
             if (reporteeIds.length > 0) {
+                const reporteesStr = `(${reporteeIds.join(',')})`;
+                leaveQuery = leaveQuery.or(`status.eq.${LeaveRequestStatus.PendingBOD},and(employee_id.in.${reporteesStr},status.eq.Pending)`).order('start_date', { ascending: false });
+                wfhQuery = wfhQuery.or(`status.eq.${WFHRequestStatus.PendingBOD},and(employee_id.in.${reporteesStr},status.eq.${WFHRequestStatus.PendingDeptHead})`).order('created_at', { ascending: false });
+                otQuery = otQuery.or(`status.eq.${OTStatus.PendingBOD},and(employee_id.in.${reporteesStr},status.eq.${OTStatus.Submitted})`).order('submitted_at', { ascending: false });
                 manpowerQuery = manpowerQuery.in('requester_id', reporteeIds);
             } else {
+                leaveQuery = leaveQuery.eq('status', LeaveRequestStatus.PendingBOD).order('start_date', { ascending: false });
+                wfhQuery = wfhQuery.eq('status', WFHRequestStatus.PendingBOD).order('created_at', { ascending: false });
+                otQuery = otQuery.eq('status', OTStatus.PendingBOD).order('submitted_at', { ascending: false });
                 skipManpower = true;
             }
         } else {

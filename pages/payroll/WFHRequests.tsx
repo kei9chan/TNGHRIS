@@ -5,6 +5,7 @@ import { WFHRequest, WFHRequestStatus, Role, Permission } from '../../types';
 import { NotificationType } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
+import { useSettings } from '../../context/SettingsContext';
 import { supabase } from '../../services/supabaseClient';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -58,6 +59,7 @@ const normalizeUrl = (url: string) => {
 const WFHRequests: React.FC = () => {
   const { user } = useAuth();
   const { can, getDashboardRequestAccess } = usePermissions();
+  const access = getDashboardRequestAccess();
   const canView = can('WFH', Permission.View);
   const canCreate = can('WFH', Permission.Create) || can('WFH', Permission.Manage);
   const [reporteeIds, setReporteeIds] = useState<string[]>([]);
@@ -65,6 +67,15 @@ const WFHRequests: React.FC = () => {
   const canManage = can('WFH', Permission.Manage) || can('WFH', Permission.Approve) || reporteeIds.length > 0;
   const navigate = useNavigate();
   const location = useLocation();
+  const { approverConfigs } = useSettings();
+
+  // Check if the current user is a configured BOD approver
+  const isConfiguredBOD = useMemo(() => {
+      if (!user) return false;
+      if (user.role === Role.BOD) return true;
+      const bodIds: string[] = approverConfigs?.bodApprovers?.user_ids || [];
+      return bodIds.includes(user.id);
+  }, [user, approverConfigs]);
 
   const [requests, setRequests] = useState<WFHRequest[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -72,6 +83,22 @@ const WFHRequests: React.FC = () => {
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [selectedReviewRequest, setSelectedReviewRequest] = useState<WFHRequest | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [managerIsBOD, setManagerIsBOD] = useState(false);
+
+  useEffect(() => {
+    if (user?.managerId) {
+      const bodIds: string[] = approverConfigs?.bodApprovers?.user_ids || [];
+      if (bodIds.includes(user.managerId)) {
+        setManagerIsBOD(true);
+        return;
+      }
+      supabase.from('hris_users').select('role').eq('id', user.managerId).single().then(({data}) => {
+        if (data?.role === Role.BOD) {
+          setManagerIsBOD(true);
+        }
+      });
+    }
+  }, [user, approverConfigs]);
 
   const loadRequests = async () => {
     if (!user || !canView) return;
@@ -81,7 +108,6 @@ const WFHRequests: React.FC = () => {
     // the auth UUID as employee_id would return empty results and wipe the visible list.
     if (user.authUserId && user.id === user.authUserId) return;
 
-    const access = getDashboardRequestAccess();
     if (!access.canView) return;
 
     let query = supabase.from('wfh_requests').select('*').order('date', { ascending: false });
@@ -203,7 +229,7 @@ const WFHRequests: React.FC = () => {
           if (data.id) {
               if (selectedRequest?.status === WFHRequestStatus.PendingSubmission && !isDraft) {
                   await updateWfhRequestDetails(data.id, data);
-                  await submitWfhRequest(data.id, user);
+                  await submitWfhRequest(data.id, user, managerIsBOD);
               } else {
                   await updateWfhRequestDetails(data.id, data);
               }
@@ -212,7 +238,7 @@ const WFHRequests: React.FC = () => {
                   logActivity(user, 'UPDATE', 'WFHRequest', data.id, 'Added accomplishment report link.');
               }
           } else {
-              const inserted = await createWfhRequest(data, user, isDraft);
+              const inserted = await createWfhRequest(data, user, isDraft, managerIsBOD);
               logActivity(user, 'CREATE', 'WFHRequest', inserted.id, `Requested WFH for ${new Date(inserted.date).toLocaleDateString()}`);
 
               if (!isDraft) {
@@ -262,38 +288,53 @@ const WFHRequests: React.FC = () => {
 
       try {
         if (req.status === WFHRequestStatus.PendingDeptHead) {
-            await deptHeadApproveWfhRequest(requestId, user.id);
-            logActivity(user, 'APPROVE', 'WFHRequest', requestId, 'Approved WFH request as Department Head.');
+            if (isConfiguredBOD) {
+                await bodApproveWfhRequest(requestId, user.id);
+                logActivity(user, 'APPROVE', 'WFHRequest', requestId, 'BOD gave direct final approval for WFH request.');
 
-            // Notify the requester that their request moved forward (not yet final)
-            if (req.employeeId) {
-              createNotification({
-                userId: req.employeeId,
-                title: '🔄 WFH Request Forwarded',
-                message: `Your WFH request for ${new Date(req.date).toLocaleDateString()} has been approved by your department head and is now pending BOD approval.`,
-                type: NotificationType.WFH_SUBMITTED,
-                link: '/payroll/wfh-requests',
-              }).catch(console.error);
-            }
-
-            // Notify all BOD users that a request needs their approval
-            supabase
-              .from('hris_users')
-              .select('id')
-              .eq('role', Role.BOD)
-              .then(({ data: bodUsers }) => {
-                if (bodUsers) {
-                  bodUsers.forEach(bod => {
-                    createNotification({
-                      userId: bod.id,
-                      title: '📋 WFH Request Pending BOD Approval',
-                      message: `${req.employeeName}'s WFH request for ${new Date(req.date).toLocaleDateString()} has been approved by the department head and requires your final approval.`,
-                      type: NotificationType.WFH_SUBMITTED,
-                      link: '/payroll/wfh-requests',
-                    }).catch(e => console.error('Failed to send WFH BOD notification', e));
-                  });
+                if (req.employeeId) {
+                  createNotification({
+                    userId: req.employeeId,
+                    title: '✅ WFH Request Approved',
+                    message: `Your WFH request for ${new Date(req.date).toLocaleDateString()} has been fully approved by your manager (BOD).`,
+                    type: NotificationType.WFH_APPROVED,
+                    link: '/payroll/wfh-requests',
+                  }).catch(console.error);
                 }
-              });
+            } else {
+                await deptHeadApproveWfhRequest(requestId, user.id);
+                logActivity(user, 'APPROVE', 'WFHRequest', requestId, 'Approved WFH request as Department Head.');
+
+                // Notify the requester that their request moved forward (not yet final)
+                if (req.employeeId) {
+                  createNotification({
+                    userId: req.employeeId,
+                    title: '🔄 WFH Request Forwarded',
+                    message: `Your WFH request for ${new Date(req.date).toLocaleDateString()} has been approved by your department head and is now pending BOD approval.`,
+                    type: NotificationType.WFH_SUBMITTED,
+                    link: '/payroll/wfh-requests',
+                  }).catch(console.error);
+                }
+
+                // Notify all BOD users that a request needs their approval
+                supabase
+                  .from('hris_users')
+                  .select('id')
+                  .eq('role', Role.BOD)
+                  .then(({ data: bodUsers }) => {
+                    if (bodUsers) {
+                      bodUsers.forEach(bod => {
+                        createNotification({
+                          userId: bod.id,
+                          title: '📋 WFH Request Pending BOD Approval',
+                          message: `${req.employeeName}'s WFH request for ${new Date(req.date).toLocaleDateString()} has been approved by the department head and requires your final approval.`,
+                          type: NotificationType.WFH_SUBMITTED,
+                          link: '/payroll/wfh-requests',
+                        }).catch(e => console.error('Failed to send WFH BOD notification', e));
+                      });
+                    }
+                  });
+            }
 
         } else if (req.status === WFHRequestStatus.PendingBOD) {
             await bodApproveWfhRequest(requestId, user.id);
@@ -427,7 +468,10 @@ const WFHRequests: React.FC = () => {
                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                     <div className="flex justify-end space-x-2">
                                         {/* Show Review only when the viewer is a manager/approver AND is not the one who filed the request */}
-                                        {canManage && req.employeeId !== user?.id && (req.status === WFHRequestStatus.PendingDeptHead || req.status === WFHRequestStatus.PendingBOD) ? (
+                                        {canManage && req.employeeId !== user?.id && (
+                                            (req.status === WFHRequestStatus.PendingDeptHead && reporteeIds.includes(req.employeeId)) || 
+                                            (req.status === WFHRequestStatus.PendingBOD && (isConfiguredBOD || access.scope === 'global'))
+                                        ) ? (
                                             <Button size="sm" variant="secondary" onClick={() => handleOpenReview(req)}>
                                                 Review
                                             </Button>

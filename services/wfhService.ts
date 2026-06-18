@@ -64,7 +64,7 @@ export const fetchWfhRequestsByEmployee = async (employeeId: string): Promise<WF
   return (data as WfhRequestRow[]).map(mapWfhRequest);
 };
 
-export const createWfhRequest = async (request: Partial<WFHRequest>, user: User, isDraft: boolean = false): Promise<WFHRequest> => {
+export const createWfhRequest = async (request: Partial<WFHRequest>, user: User, isDraft: boolean = false, skipToBOD: boolean = false): Promise<WFHRequest> => {
   // Determine if user is a manager (triggers GM → BOD approval chain)
   const managerRoles = [
     Role.Manager, Role.BusinessUnitManager,
@@ -74,8 +74,12 @@ export const createWfhRequest = async (request: Partial<WFHRequest>, user: User,
 
   let initialStatus = WFHRequestStatus.PendingSubmission;
   if (!isDraft) {
-    // Managers go through GM → BOD flow; regular employees go to Dept Head
-    initialStatus = isManager ? WFHRequestStatus.PendingGM : WFHRequestStatus.PendingDeptHead;
+    if (skipToBOD) {
+      initialStatus = WFHRequestStatus.PendingBOD;
+    } else {
+      // Managers go through GM → BOD flow; regular employees go to Dept Head
+      initialStatus = isManager ? WFHRequestStatus.PendingGM : WFHRequestStatus.PendingDeptHead;
+    }
   }
 
   const payload = {
@@ -114,14 +118,18 @@ export const updateWfhRequestDetails = async (id: string, request: Partial<WFHRe
   return mapWfhRequest(data as WfhRequestRow);
 };
 
-export const submitWfhRequest = async (id: string, user: User): Promise<WFHRequest> => {
+export const submitWfhRequest = async (id: string, user: User, skipToBOD: boolean = false): Promise<WFHRequest> => {
   const managerRoles = [
     Role.Manager, Role.BusinessUnitManager,
     Role.OperationsDirector, Role.HRManager,
   ];
   const isManager = managerRoles.includes(user.role);
   // Managers go through GM → BOD flow; regular employees go to Dept Head
-  const newStatus = isManager ? WFHRequestStatus.PendingGM : WFHRequestStatus.PendingDeptHead;
+  let newStatus = isManager ? WFHRequestStatus.PendingGM : WFHRequestStatus.PendingDeptHead;
+  
+  if (skipToBOD) {
+    newStatus = WFHRequestStatus.PendingBOD;
+  }
 
   const { data, error } = await supabase
     .from('wfh_requests')

@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import Card from '../ui/Card';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions'; // Import added
+import { useSettings } from '../../context/SettingsContext';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { mergePanParticulars } from '../../services/panUtils';
@@ -141,8 +142,17 @@ const mapMemoRow = (row: any): Memo => ({
 const HRDashboard: React.FC = () => {
     const { user } = useAuth();
     const { isUserEligibleEvaluator, getCoeAccess } = usePermissions(); // Added hook
+    const { approverConfigs } = useSettings();
     const isHR = user && [Role.Admin, Role.HRManager, Role.HRStaff].includes(user.role);
     
+    // Check if the current user is a configured BOD approver
+    const isConfiguredBOD = useMemo(() => {
+        if (!user) return false;
+        if (user.role === Role.BOD) return true;
+        const bodIds: string[] = approverConfigs?.bodApprovers?.user_ids || [];
+        return bodIds.includes(user.id);
+    }, [user, approverConfigs]);
+
     const [assignments, setAssignments] = useState<AssetAssignment[]>([]);
     const [useSupabaseAssignments, setUseSupabaseAssignments] = useState(false);
     const [checklists, setChecklists] = useState<OnboardingChecklist[]>([]);
@@ -257,12 +267,18 @@ const HRDashboard: React.FC = () => {
         let active = true;
         const loadOtApprovals = async () => {
             try {
-                const { data, error } = await supabase
+                let query = supabase
                     .from('ot_requests')
                     .select('id, employee_id, employee_name, date, start_time, end_time, reason, status, submitted_at, approved_hours, manager_note, history_log, attachment_url')
-                    .in('employee_id', reporteeIds)
-                    .eq('status', OTStatus.Submitted)
                     .order('submitted_at', { ascending: false });
+
+                if (isConfiguredBOD) {
+                    query = query.or(`and(employee_id.in.(${reporteeIds.join(',') || 'uuid-placeholder'}),status.eq.${OTStatus.Submitted}),status.eq.${OTStatus.PendingBOD}`);
+                } else {
+                    query = query.in('employee_id', reporteeIds).eq('status', OTStatus.Submitted);
+                }
+
+                const { data, error } = await query;
                 if (error) throw error;
                 if (!active) return;
                 setPendingOtApprovals(
@@ -1090,6 +1106,70 @@ const HRDashboard: React.FC = () => {
                 });
             });
         }
+
+        // Pending OT Approvals
+        pendingOtApprovals.forEach(req => {
+            const sortDate = req.submittedAt || req.date;
+            allItems.push({
+                id: `ot-approve-${req.id}`,
+                icon: <ClipboardCheckIcon {...iconProps} />,
+                title: "Overtime Request",
+                subtitle: `From ${req.employeeName} for ${new Date(req.date).toLocaleDateString()}`,
+                date: new Date(sortDate).toLocaleDateString(),
+                sortDate: sortDate,
+                link: '/payroll/overtime-requests',
+                colorClass: "bg-blue-500",
+                priority: 1
+            });
+        });
+
+        // Pending Leave Approvals
+        pendingLeaveApprovals.forEach(req => {
+            const sortDate = req.startDate;
+            allItems.push({
+                id: `leave-approve-${req.id}`,
+                icon: <ClipboardCheckIcon {...iconProps} />,
+                title: "Leave Request",
+                subtitle: `From ${req.employeeName} for ${new Date(req.startDate).toLocaleDateString()}`,
+                date: new Date(sortDate).toLocaleDateString(),
+                sortDate: sortDate,
+                link: '/payroll/leave',
+                colorClass: "bg-blue-500",
+                priority: 1
+            });
+        });
+
+        // Pending WFH Approvals
+        pendingWfhApprovals.forEach(req => {
+            const sortDate = req.date;
+            allItems.push({
+                id: `wfh-approve-${req.id}`,
+                icon: <ClipboardCheckIcon {...iconProps} />,
+                title: "WFH Request",
+                subtitle: `From ${req.employeeName} for ${new Date(req.date).toLocaleDateString()}`,
+                date: new Date(sortDate).toLocaleDateString(),
+                sortDate: sortDate,
+                link: '/payroll/wfh',
+                colorClass: "bg-blue-500",
+                priority: 1
+            });
+        });
+
+        // Pending Manpower Approvals
+        pendingManpowerApprovals.forEach(req => {
+            const sortDate = req.createdAt || req.dateNeeded;
+            allItems.push({
+                id: `manpower-approve-${req.id}`,
+                icon: <ClipboardCheckIcon {...iconProps} />,
+                title: "Manpower Request",
+                subtitle: `From ${req.requesterName} (Needed: ${new Date(req.dateNeeded).toLocaleDateString()})`,
+                date: new Date(sortDate).toLocaleDateString(),
+                sortDate: sortDate,
+                link: '/payroll/manpower',
+                colorClass: "bg-blue-500",
+                priority: 1
+            });
+        });
 
         const getNotificationDetails = (notification: Notification) => {
             switch(notification.type) {

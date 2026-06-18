@@ -1064,6 +1064,8 @@ export interface OTRequest {
   paidOtType?: 'Regular Overtime' | 'Legal Holiday' | 'Special Holiday' | 'Rest Day';
   status: OTStatus;
   submittedAt?: Date;
+  isConverted?: boolean;
+  convertedAt?: Date;
   approvedHours?: number;
   managerNote?: string;
   historyLog: OTRequestHistory[];
