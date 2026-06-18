@@ -94,8 +94,8 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
           // Apply the same hierarchy rules used in HR Review Queue
           const isManagerLevel = user.role === 'Manager' || user.role === 'Business Unit Manager';
           const allowedRoles = isManagerLevel
-            ? ['Operations Director', 'GeneralManager', 'Board of Director']
-            : ['Manager', 'Business Unit Manager', 'Operations Director', 'GeneralManager', 'Board of Director'];
+            ? ['Operations Director', 'GeneralManager', 'Board of Director', 'Admin']
+            : ['Manager', 'Business Unit Manager', 'Operations Director', 'GeneralManager', 'Board of Director', 'Admin'];
 
           const options = data
             .filter((row: any) => row.id !== user.id && allowedRoles.includes(row.role))
@@ -435,8 +435,8 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
                 </select>
                 <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
                   {(user.role === 'Manager' || user.role === 'Business Unit Manager')
-                    ? 'Managers may report to: Operations Director, General Manager, or Board of Director.'
-                    : 'Employees may report to: Manager, Business Unit Manager, Operations Director, General Manager, or Board of Director.'}
+                    ? 'Managers may report to: Operations Director, General Manager, Board of Director, or Admin.'
+                    : 'Employees may report to: Manager, Business Unit Manager, Operations Director, General Manager, Board of Director, or Admin.'}
                 </p>
               </div>
             )}
