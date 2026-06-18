@@ -20,7 +20,7 @@ import { createNotification } from '../../services/notificationService';
 import { fetchApproverConfigs } from '../../services/approverConfigService';
 import { supabase } from '../../services/supabaseClient';
 
-type Tab = 'my_ot' | 'team_approvals' | 'calendar' | 'ledger';
+type Tab = 'my_ot' | 'team_approvals' | 'hr_verification' | 'calendar' | 'ledger';
 
 const SuccessToast: React.FC<{ message: string; show: boolean; onClose: () => void }> = ({ message, show, onClose }) => {
     useEffect(() => {
@@ -130,14 +130,22 @@ const OvertimeRequests: React.FC = () => {
             setIsModalOpen(true);
             navigate(location.pathname, { replace: true, state: {} });
         }
-    }, [location.state, navigate]);
+        const searchParams = new URLSearchParams(location.search);
+        const tab = searchParams.get('tab');
+        if (tab === 'hr_verification') {
+            setActiveTab('hr_verification');
+        }
+    }, [location.state, navigate, location.search]);
 
     // When arriving from a notification (no modal state), BOD approvers should land on Team Approvals
     useEffect(() => {
         if (isConfiguredBOD && !location.state?.openNewOTModal) {
-            setActiveTab('team_approvals');
+            const searchParams = new URLSearchParams(location.search);
+            if (!searchParams.get('tab')) {
+                setActiveTab('team_approvals');
+            }
         }
-    }, [isConfiguredBOD]);
+    }, [isConfiguredBOD, location.search]);
 
     // Identify if user is "Privileged" to see BU-wide stats
     const isPrivilegedViewer = useMemo(() => {
@@ -239,6 +247,17 @@ const OvertimeRequests: React.FC = () => {
         return isPrivilegedViewer ? buFilteredRequests : myRequests;
     }, [isPrivilegedViewer, buFilteredRequests, myRequests]);
 
+    // 5b. Data for HR Verification
+    const hrVerificationRequests = useMemo(() => {
+        if (!user || (!canViewLedger && !isConfiguredBOD)) return [];
+        const baseRequests = isPrivilegedViewer ? buFilteredRequests : scopedRequests;
+        return baseRequests.filter(r => 
+            r.status === OTStatus.Approved && 
+            r.otType === 'Offset' && 
+            !r.isConverted
+        );
+    }, [scopedRequests, buFilteredRequests, isPrivilegedViewer, user, canViewLedger, isConfiguredBOD]);
+
 
     // 6. Shift Data for Context
     // Passed to calendar and modal for context-aware features (e.g., auto-fill shift end time)
@@ -249,7 +268,9 @@ const OvertimeRequests: React.FC = () => {
 
     // 7. Filtered Display Data based on Active Tab & Sub-filter (For Table View)
     const displayedTableRequests = useMemo(() => {
-        let data = activeTab === 'team_approvals' ? teamRequests : myRequests;
+        let data = myRequests;
+        if (activeTab === 'team_approvals') data = teamRequests;
+        if (activeTab === 'hr_verification') data = hrVerificationRequests;
 
         if (activeTab === 'my_ot' && viewFilter !== 'all') {
             if (viewFilter === 'pending') data = data.filter(r =>
@@ -262,7 +283,7 @@ const OvertimeRequests: React.FC = () => {
         }
         
         return data.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [activeTab, viewFilter, myRequests, teamRequests]);
+    }, [activeTab, viewFilter, myRequests, teamRequests, hrVerificationRequests]);
 
 
     const handleNewRequest = () => {
@@ -439,7 +460,7 @@ const OvertimeRequests: React.FC = () => {
                                     title: '✅ OT Request Approved (BOD Direct)',
                                     message: `${requestToUpdate.employeeName}'s OT request has been fully approved by their BOD manager and is ready for timekeeping.`,
                                     type: NotificationType.OT_APPROVED,
-                                    link: '/payroll/overtime-requests',
+                                    link: '/payroll/overtime-requests?tab=hr_verification',
                                 }).catch(console.error);
                             });
                         }
@@ -604,6 +625,16 @@ const OvertimeRequests: React.FC = () => {
                         {teamRequests.length > 0 && <span className="ml-2 bg-red-100 text-red-800 text-xs font-semibold px-2 py-0.5 rounded-full">{teamRequests.length}</span>}
                     </button>
                 )}
+                {(canViewLedger || isConfiguredBOD) && (
+                    <button className={getTabClass('hr_verification')} onClick={() => setActiveTab('hr_verification')}>
+                        Pending Conversion
+                        {hrVerificationRequests.length > 0 && (
+                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+                                {hrVerificationRequests.length}
+                            </span>
+                        )}
+                    </button>
+                )}
                 <button className={getTabClass('calendar')} onClick={() => setActiveTab('calendar')}>
                     OT Calendar
                 </button>
@@ -615,7 +646,7 @@ const OvertimeRequests: React.FC = () => {
             </div>
 
             {/* Filters (Only for My OT) */}
-            {activeTab === 'my_ot' && (
+            {(activeTab === 'my_ot' || activeTab === 'hr_verification') && (
                 <Card>
                     <div className="flex space-x-4 p-1">
                         <button onClick={() => setViewFilter('all')} className={`text-sm font-medium ${viewFilter === 'all' ? 'text-indigo-600 underline' : 'text-gray-500'}`}>All</button>

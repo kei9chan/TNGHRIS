@@ -558,7 +558,7 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
                                 title: '✅ OT Request Approved (BOD)',
                                 message: `${request.employeeName}'s OT request has been fully approved by the BOD and is ready for timekeeping.`,
                                 type: NotificationType.OT_APPROVED,
-                                link: '/payroll/overtime-requests',
+                                link: '/payroll/overtime-requests?tab=hr_verification',
                             }).catch(e => console.error('Failed to send HR OT approved notification', e));
                         });
                     }
