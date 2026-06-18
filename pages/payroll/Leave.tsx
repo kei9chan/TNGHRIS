@@ -34,6 +34,7 @@ const Leave: React.FC = () => {
     message: '',
   });
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [liveQuotas, setLiveQuotas] = useState({ vacation: 0, sick: 0 });
 
   const roleCanApprove = access.canApprove;
   const canApprove = (can('Leave', Permission.Approve) || hasDirectReports() || roleCanApprove) ?? false;
@@ -120,22 +121,47 @@ const Leave: React.FC = () => {
 
   useEffect(() => {
     loadLeaveRequests();
+    
+    if (user) {
+      supabase
+        .from('hris_users')
+        .select('leave_quota_vacation, leave_quota_sick')
+        .eq('id', user.id)
+        .single()
+        .then(({ data }) => {
+          if (data) {
+            setLiveQuotas({ 
+              vacation: data.leave_quota_vacation || 0, 
+              sick: data.leave_quota_sick || 0 
+            });
+          }
+        });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const myBalances = useMemo(() => {
     if (!user) return [];
-    return leaveTypes.map(lt => ({
-      employeeId: user.id,
-      leaveTypeId: lt.id,
-      opening: 0,
-      accrued: 0,
-      used: 0,
-      adjusted: 0,
-      available: 0,
-      name: lt.name,
-    }));
-  }, [leaveTypes, user]);
+    return leaveTypes.map(lt => {
+      const isVacation = lt.name.toLowerCase().includes('vacation');
+      const isSick = lt.name.toLowerCase().includes('sick');
+      
+      let available = 0;
+      if (isVacation) available = liveQuotas.vacation;
+      else if (isSick) available = liveQuotas.sick;
+
+      return {
+        employeeId: user.id,
+        leaveTypeId: lt.id,
+        opening: available,
+        accrued: 0,
+        used: 0,
+        adjusted: 0,
+        available: available,
+        name: lt.name,
+      };
+    });
+  }, [leaveTypes, user, liveQuotas]);
 
   const myRequests = useMemo(() => {
     if (!user) return [];
