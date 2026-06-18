@@ -641,7 +641,7 @@ const OvertimeRequests: React.FC = () => {
                         onEdit={handleEditRequest}
                         onDelete={handleDeleteRequest}
                         onWithdraw={handleWithdrawRequest}
-                        onConvert={user?.role === Role.HRManager || user?.role === Role.HRStaff || user?.role === Role.Admin || user?.role === Role.GeneralManager ? handleConvertRequest : undefined}
+                        onConvert={user?.role === Role.HRManager || user?.role === Role.HRStaff || user?.role === Role.Admin || user?.role === Role.GeneralManager || user?.role === Role.BOD ? handleConvertRequest : undefined}
                         canReviewRequest={(req) =>
                             reporteeIds.includes(req.employeeId) ||
                             otAccess.canActOn(req) ||
