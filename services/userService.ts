@@ -102,10 +102,10 @@ const mapUser = (row: HrisUserRow): User => ({
     accountType: (row.bank_account_type as 'Savings' | 'Checking') || 'Savings',
   } : undefined,
   rateType: row.rate_type as RateType | undefined,
-  rateAmount: row.rate_amount || undefined,
+  rateAmount: row.rate_amount ?? undefined,
   taxStatus: row.tax_status as TaxStatus | undefined,
-  leaveQuotaVacation: row.leave_quota_vacation || undefined,
-  leaveQuotaSick: row.leave_quota_sick || undefined,
+  leaveQuotaVacation: row.leave_quota_vacation ?? undefined,
+  leaveQuotaSick: row.leave_quota_sick ?? undefined,
   leaveLastCreditDate: row.leave_last_credit_date ? new Date(row.leave_last_credit_date) : undefined,
   accessScope: row.data_access_scope as AccessScope | undefined,
 });

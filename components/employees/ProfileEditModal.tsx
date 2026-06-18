@@ -211,8 +211,8 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
       leaveInfo: {
         ...(prev.leaveInfo || { balances: { vacation: 0, sick: 0 }, accrualRate: 0 }),
         balances: {
-          vacation: Math.max(0, (prev.leaveQuotaVacation ?? 0) - (computedLeaves.usedVacation || 0)),
-          sick: Math.max(0, (prev.leaveQuotaSick ?? 0) - (computedLeaves.usedSick || 0)),
+          vacation: Math.max(0, Number(prev.leaveQuotaVacation ?? 0) - (computedLeaves.usedVacation || 0)),
+          sick: Math.max(0, Number(prev.leaveQuotaSick ?? 0) - (computedLeaves.usedSick || 0)),
         },
         accrualRate: computedLeaves.accrualRate || 0,
         lastCreditDate: prev.leaveLastCreditDate || computedLeaves.lastCreditDate || prev.leaveInfo?.lastCreditDate,
@@ -254,7 +254,8 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
       }));
     } else {
       const isNumberField = e.target.type === 'number';
-      setFormData(prev => ({ ...prev, [name]: isNumberField ? parseFloat(value) || 0 : value }));
+      // Store string value to allow typing decimals like "0." and handle empty string
+      setFormData(prev => ({ ...prev, [name]: isNumberField ? (value === '' ? undefined : (value as unknown as number)) : value }));
     }
   };
 
