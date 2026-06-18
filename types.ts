@@ -494,6 +494,7 @@ export interface User {
   taxStatus?: TaxStatus;
   leaveQuotaVacation?: number;
   leaveQuotaSick?: number;
+  leaveQuotaOffset?: number;
   leaveLastCreditDate?: Date;
   leaveInfo?: {
     balances: {
@@ -1059,6 +1060,7 @@ export interface OTRequest {
   startTime: string;
   endTime: string;
   reason: string;
+  otType?: 'Paid' | 'Offset';
   status: OTStatus;
   submittedAt?: Date;
   approvedHours?: number;

@@ -34,7 +34,7 @@ const Leave: React.FC = () => {
     message: '',
   });
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
-  const [liveQuotas, setLiveQuotas] = useState({ vacation: 0, sick: 0 });
+  const [liveQuotas, setLiveQuotas] = useState({ vacation: 0, sick: 0, offset: 0 });
 
   const roleCanApprove = access.canApprove;
   const canApprove = (can('Leave', Permission.Approve) || hasDirectReports() || roleCanApprove) ?? false;
@@ -125,14 +125,15 @@ const Leave: React.FC = () => {
     if (user) {
       supabase
         .from('hris_users')
-        .select('leave_quota_vacation, leave_quota_sick')
+        .select('leave_quota_vacation, leave_quota_sick, leave_quota_offset')
         .eq('id', user.id)
         .single()
         .then(({ data }) => {
           if (data) {
             setLiveQuotas({ 
               vacation: data.leave_quota_vacation || 0, 
-              sick: data.leave_quota_sick || 0 
+              sick: data.leave_quota_sick || 0,
+              offset: data.leave_quota_offset || 0
             });
           }
         });
@@ -145,10 +146,12 @@ const Leave: React.FC = () => {
     return leaveTypes.map(lt => {
       const isVacation = lt.name.toLowerCase().includes('vacation');
       const isSick = lt.name.toLowerCase().includes('sick');
+      const isOffset = lt.name.toLowerCase().includes('offset');
       
       let available = 0;
       if (isVacation) available = liveQuotas.vacation;
       else if (isSick) available = liveQuotas.sick;
+      else if (isOffset) available = liveQuotas.offset;
 
       return {
         employeeId: user.id,
@@ -298,16 +301,17 @@ const Leave: React.FC = () => {
         if (leaveType) {
           const isVacation = leaveType.name.toLowerCase().includes('vacation');
           const isSick = leaveType.name.toLowerCase().includes('sick');
+          const isOffset = leaveType.name.toLowerCase().includes('offset');
           
-          if (isVacation || isSick) {
+          if (isVacation || isSick || isOffset) {
             const { data: userData } = await supabase
               .from('hris_users')
-              .select('leave_quota_vacation, leave_quota_sick')
+              .select('leave_quota_vacation, leave_quota_sick, leave_quota_offset')
               .eq('id', request.employeeId)
               .single();
               
             if (userData) {
-              const fieldToUpdate = isVacation ? 'leave_quota_vacation' : 'leave_quota_sick';
+              const fieldToUpdate = isVacation ? 'leave_quota_vacation' : isSick ? 'leave_quota_sick' : 'leave_quota_offset';
               const currentQuota = userData[fieldToUpdate] || 0;
               const deduction = request.durationDays || 1;
               const newQuota = currentQuota - deduction; // Allow actual subtraction in case of negative balance

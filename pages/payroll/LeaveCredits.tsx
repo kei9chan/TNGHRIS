@@ -15,6 +15,7 @@ interface EmployeeLeaveData {
   department: string;
   leave_quota_vacation: number | null;
   leave_quota_sick: number | null;
+  leave_quota_offset: number | null;
 }
 
 const LeaveCredits: React.FC = () => {
@@ -27,10 +28,10 @@ const LeaveCredits: React.FC = () => {
   
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeLeaveData | null>(null);
-  const [editFormData, setEditFormData] = useState({ vacation: 0, sick: 0 });
+  const [editFormData, setEditFormData] = useState({ vacation: 0, sick: 0, offset: 0 });
   
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
-  const [batchFormData, setBatchFormData] = useState({ amount: 5.0, type: 'vacation' as 'vacation' | 'sick' });
+  const [batchFormData, setBatchFormData] = useState({ amount: 5.0, type: 'vacation' as 'vacation' | 'sick' | 'offset' });
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
 
   const [toastInfo, setToastInfo] = useState({ show: false, title: '', message: '' });
@@ -42,7 +43,7 @@ const LeaveCredits: React.FC = () => {
     setLoading(true);
     const { data, error } = await supabase
       .from('hris_users')
-      .select('id, full_name, department, leave_quota_vacation, leave_quota_sick')
+      .select('id, full_name, department, leave_quota_vacation, leave_quota_sick, leave_quota_offset')
       .eq('status', 'Active')
       .order('full_name');
       
@@ -62,7 +63,8 @@ const LeaveCredits: React.FC = () => {
     setSelectedEmployee(emp);
     setEditFormData({
       vacation: emp.leave_quota_vacation || 0,
-      sick: emp.leave_quota_sick || 0
+      sick: emp.leave_quota_sick || 0,
+      offset: emp.leave_quota_offset || 0
     });
     setIsEditModalOpen(true);
   };
@@ -72,12 +74,14 @@ const LeaveCredits: React.FC = () => {
     
     const vacValue = typeof editFormData.vacation === 'string' ? parseFloat(editFormData.vacation) || 0 : editFormData.vacation;
     const sickValue = typeof editFormData.sick === 'string' ? parseFloat(editFormData.sick) || 0 : editFormData.sick;
+    const offsetValue = typeof editFormData.offset === 'string' ? parseFloat(editFormData.offset) || 0 : editFormData.offset;
 
     const { error } = await supabase
       .from('hris_users')
       .update({
         leave_quota_vacation: vacValue,
         leave_quota_sick: sickValue,
+        leave_quota_offset: offsetValue,
         leave_last_credit_date: new Date().toISOString().split('T')[0]
       })
       .eq('id', selectedEmployee.id);
@@ -100,7 +104,7 @@ const LeaveCredits: React.FC = () => {
       // Update one by one for simplicity and safety of data.
       let successCount = 0;
       for (const emp of employees) {
-        const field = batchFormData.type === 'vacation' ? 'leave_quota_vacation' : 'leave_quota_sick';
+        const field = batchFormData.type === 'vacation' ? 'leave_quota_vacation' : batchFormData.type === 'sick' ? 'leave_quota_sick' : 'leave_quota_offset';
         const currentAmount = emp[field] || 0;
         const addAmount = typeof batchFormData.amount === 'string' ? parseFloat(batchFormData.amount) || 0 : batchFormData.amount;
         const newAmount = currentAmount + addAmount;
@@ -172,17 +176,18 @@ const LeaveCredits: React.FC = () => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Department</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Vacation Quota</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Sick Quota</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Offset Quota</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-800">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">Loading...</td>
+                  <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">Loading...</td>
                 </tr>
               ) : filteredEmployees.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">No employees found.</td>
+                  <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">No employees found.</td>
                 </tr>
               ) : (
                 filteredEmployees.map(emp => (
@@ -198,6 +203,9 @@ const LeaveCredits: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white font-medium">
                       {emp.leave_quota_sick ?? 0}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white font-medium">
+                      {emp.leave_quota_offset ?? 0}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <button 
@@ -235,6 +243,13 @@ const LeaveCredits: React.FC = () => {
             value={editFormData.sick === 0 && editFormData.sick.toString() !== '0' ? '' : editFormData.sick}
             onChange={(e) => setEditFormData(prev => ({ ...prev, sick: e.target.value as any }))}
           />
+          <Input 
+            label="Offset Leave Quota"
+            type="number"
+            step="0.01"
+            value={editFormData.offset === 0 && editFormData.offset.toString() !== '0' ? '' : editFormData.offset}
+            onChange={(e) => setEditFormData(prev => ({ ...prev, offset: e.target.value as any }))}
+          />
           <div className="flex justify-end space-x-2 pt-4">
             <Button variant="secondary" onClick={() => setIsEditModalOpen(false)}>Cancel</Button>
             <Button onClick={handleSaveEdit}>Save Credits</Button>
@@ -260,6 +275,7 @@ const LeaveCredits: React.FC = () => {
             >
               <option value="vacation">Vacation Leave</option>
               <option value="sick">Sick Leave</option>
+              <option value="offset">Offset Leave</option>
             </select>
           </div>
           <Input 

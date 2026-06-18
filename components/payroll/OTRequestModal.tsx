@@ -92,6 +92,7 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
             startTime: '', // Will be populated dynamically
             endTime: '',
             reason: '',
+            otType: 'Paid',
             status: OTStatus.Draft,
             historyLog: [],
         };
@@ -377,6 +378,23 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
                         required
                         disabled={isFinalized || isManagerReviewing || request.status === OTStatus.Submitted}
                     />
+                </div>
+                
+                <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" htmlFor="otType">
+                        Overtime Type
+                    </label>
+                    <select
+                        id="otType"
+                        name="otType"
+                        value={request.otType || 'Paid'}
+                        onChange={(e) => setRequest(prev => ({ ...prev, otType: e.target.value as 'Paid' | 'Offset' }))}
+                        disabled={isFinalized || isManagerReviewing || request.status === OTStatus.Submitted}
+                        className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-sm text-gray-900 dark:text-white focus:ring-indigo-500 focus:border-indigo-500"
+                    >
+                        <option value="Paid">Paid Overtime</option>
+                        <option value="Offset">Offset Overtime</option>
+                    </select>
                 </div>
                 
                 <Textarea

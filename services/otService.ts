@@ -15,6 +15,7 @@ type OtRequestRow = {
   manager_note?: string | null;
   history_log?: any;
   attachment_url?: string | null;
+  ot_type?: string;
   created_at?: string;
   updated_at?: string;
 };
@@ -33,6 +34,7 @@ const mapRow = (row: OtRequestRow): OTRequest => ({
   managerNote: row.manager_note ?? undefined,
   historyLog: (row.history_log as OTRequestHistory[]) || [],
   attachmentUrl: row.attachment_url ?? undefined,
+  otType: (row.ot_type as 'Paid' | 'Offset') || 'Paid',
 });
 
 export const fetchOtRequests = async (): Promise<OTRequest[]> => {
@@ -62,6 +64,7 @@ export const saveOtRequest = async (
     manager_note: request.managerNote || null,
     history_log: request.historyLog || [],
     attachment_url: request.attachmentUrl || null,
+    ot_type: request.otType || 'Paid',
   };
 
   const query = request.id
@@ -93,6 +96,16 @@ export const approveRejectOtRequest = async (
     .single();
 
   if (error) throw new Error(error.message || 'Failed to update OT request');
+
+  if (data && newStatus === OTStatus.Approved && data.ot_type === 'Offset' && data.approved_hours) {
+    const { data: userRecord } = await supabase.from('hris_users').select('leave_quota_offset').eq('id', data.employee_id).single();
+    if (userRecord) {
+      const currentOffset = Number(userRecord.leave_quota_offset) || 0;
+      const earnedDays = data.approved_hours / 8;
+      await supabase.from('hris_users').update({ leave_quota_offset: currentOffset + earnedDays }).eq('id', data.employee_id);
+    }
+  }
+
   return mapRow(data as OtRequestRow);
 };
 
@@ -176,5 +189,15 @@ export const bodApproveOtRequest = async (
     .single();
 
   if (error) throw new Error(error.message || 'Failed to approve OT request (BOD)');
+
+  if (data && data.ot_type === 'Offset' && data.approved_hours) {
+    const { data: userRecord } = await supabase.from('hris_users').select('leave_quota_offset').eq('id', data.employee_id).single();
+    if (userRecord) {
+      const currentOffset = Number(userRecord.leave_quota_offset) || 0;
+      const earnedDays = data.approved_hours / 8;
+      await supabase.from('hris_users').update({ leave_quota_offset: currentOffset + earnedDays }).eq('id', data.employee_id);
+    }
+  }
+
   return mapRow(data as OtRequestRow);
 };

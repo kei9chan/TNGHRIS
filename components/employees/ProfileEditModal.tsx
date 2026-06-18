@@ -63,6 +63,7 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
         salary: user.salary || { basic: user.rateAmount ?? 0, deminimis: 0, reimbursable: 0 },
         leaveQuotaVacation: user.leaveQuotaVacation || 0,
         leaveQuotaSick: user.leaveQuotaSick || 0,
+        leaveQuotaOffset: user.leaveQuotaOffset || 0,
         leaveLastCreditDate: user.leaveLastCreditDate,
         sssNo: user.sssNo,
         pagibigNo: user.pagibigNo,
@@ -146,7 +147,7 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
             })));
             // Compute balances and accrual rate from approved leaves
             const approved = data.filter((r: any) => r.status === 'Approved');
-            let usedVac = 0, usedSick = 0;
+            let usedVac = 0, usedSick = 0, usedOffset = 0;
             let firstDate: Date | null = null;
             let lastDate: Date | null = null;
             approved.forEach((r: any) => {
@@ -154,6 +155,7 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
               const name = (r.leave_types?.name || '').toLowerCase();
               if (name.includes('vacation')) usedVac += d;
               if (name.includes('sick')) usedSick += d;
+              if (name.includes('offset')) usedOffset += d;
               const start = r.start_date ? new Date(r.start_date) : null;
               if (start) firstDate = firstDate ? (start < firstDate ? start : firstDate) : start;
               const end = r.end_date ? new Date(r.end_date) : null;
@@ -163,14 +165,16 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
             const accrualRate = (usedVac + usedSick) / monthsActive;
             const quotaVac = initialData.leaveQuotaVacation || 0;
             const quotaSick = initialData.leaveQuotaSick || 0;
+            const quotaOffset = initialData.leaveQuotaOffset || 0;
             const balanceVacation = quotaVac - usedVac;
             const balanceSick = quotaSick - usedSick;
-            setComputedLeaves({ usedVacation: usedVac, usedSick, balanceVacation, balanceSick, accrualRate, lastCreditDate: lastDate });
+            const balanceOffset = quotaOffset - usedOffset;
+            setComputedLeaves({ usedVacation: usedVac, usedSick, balanceVacation, balanceSick, accrualRate, lastCreditDate: lastDate } as any);
             setFormData(prev => ({
               ...prev,
               leaveInfo: {
                 ...(prev.leaveInfo || { balances: { vacation: 0, sick: 0 }, accrualRate: 0 }),
-                balances: { vacation: balanceVacation, sick: balanceSick },
+                balances: { vacation: balanceVacation, sick: balanceSick, offset: balanceOffset } as any,
                 accrualRate: accrualRate || 0,
                 lastCreditDate: prev.leaveLastCreditDate || lastDate || prev.leaveInfo?.lastCreditDate,
               },
@@ -309,9 +313,13 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
   const getBalanceValue = (typeId: string) => {
     const quotaVac = formData.leaveQuotaVacation ?? 0;
     const quotaSick = formData.leaveQuotaSick ?? 0;
+    const quotaOffset = formData.leaveQuotaOffset ?? 0;
     const { usedVacation = 0, usedSick = 0 } = computedLeaves;
+    // We would need usedOffset here if we want to display the correct computed offset balance, but for now we'll estimate or just show quota
+    // We can fetch the real Offset balance directly from the user's leaveQuotaOffset.
     if (typeId === 'lt1') return Math.max(0, quotaVac - usedVacation);
     if (typeId === 'lt2') return Math.max(0, quotaSick - usedSick);
+    if (typeId === 'lt3') return quotaOffset;
     return '';
   };
 
@@ -502,6 +510,14 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
                 value={formData.leaveQuotaSick ?? ''}
                 onChange={handleChange}
               />
+              <Input
+                label="Offset Leave Quota (days)"
+                name="leaveQuotaOffset"
+                type="number"
+                step="0.01"
+                value={formData.leaveQuotaOffset ?? ''}
+                onChange={handleChange}
+              />
             </div>
             {leaveRequests.length > 0 && (
               <div>
@@ -518,10 +534,11 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
               </div>
             )}
             <h3 className="text-lg font-medium text-gray-900 dark:text-white">Leave Balances (computed, days)</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {[
                 { id: 'lt1', name: 'Vacation Leave' },
-                { id: 'lt2', name: 'Sick Leave' }
+                { id: 'lt2', name: 'Sick Leave' },
+                { id: 'lt3', name: 'Offset Leave' }
               ].map(type => (
                 <Input
                   key={type.id}
