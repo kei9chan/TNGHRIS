@@ -6,7 +6,7 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   unit?: string;
 }
 
-const Input = React.forwardRef<HTMLInputElement, InputProps>(({ label, id, error, unit, ...props }, ref) => {
+const Input = React.forwardRef<HTMLInputElement, InputProps>(({ label, id, error, unit, className, ...props }, ref) => {
   return (
     <div>
       <label htmlFor={id} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -21,7 +21,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(({ label, id, error
         <input
           id={id}
           ref={ref}
-          className={`appearance-none block w-full py-2 border rounded-md placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white ${error ? 'border-red-500' : 'border-gray-300 dark:border-slate-600'} ${unit ? 'pl-12 pr-3' : 'px-3'}`}
+          className={`appearance-none block w-full py-2 border rounded-md placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white ${error ? 'border-red-500' : 'border-gray-300 dark:border-slate-600'} ${unit ? 'pl-12 pr-3' : 'px-3'} ${className || ''}`}
           {...props}
         />
       </div>
