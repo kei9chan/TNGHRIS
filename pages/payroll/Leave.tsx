@@ -266,6 +266,35 @@ const Leave: React.FC = () => {
       .eq('id', request.id);
 
     if (!error && request.employeeId) {
+      if (approved) {
+        // Deduct from leave quota
+        const leaveType = leaveTypes.find(lt => lt.id === request.leaveTypeId);
+        if (leaveType) {
+          const isVacation = leaveType.name.toLowerCase().includes('vacation');
+          const isSick = leaveType.name.toLowerCase().includes('sick');
+          
+          if (isVacation || isSick) {
+            const { data: userData } = await supabase
+              .from('hris_users')
+              .select('leave_quota_vacation, leave_quota_sick')
+              .eq('id', request.employeeId)
+              .single();
+              
+            if (userData) {
+              const fieldToUpdate = isVacation ? 'leave_quota_vacation' : 'leave_quota_sick';
+              const currentQuota = userData[fieldToUpdate] || 0;
+              const deduction = request.durationDays || 1;
+              const newQuota = currentQuota - deduction; // Allow actual subtraction in case of negative balance
+              
+              await supabase
+                .from('hris_users')
+                .update({ [fieldToUpdate]: newQuota })
+                .eq('id', request.employeeId);
+            }
+          }
+        }
+      }
+
       // Notify the requester
       createNotification({
         userId: request.employeeId,

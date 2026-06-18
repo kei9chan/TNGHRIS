@@ -51,11 +51,30 @@ const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({ isOpen, onClose, 
 
     const handleDateChange = (field: 'startDate' | 'endDate', value: string) => {
         const newDate = new Date(value);
-        if (field === 'startDate' && newDate > (current.endDate || new Date())) {
-            setCurrent(prev => ({ ...prev, startDate: newDate, endDate: newDate }));
+        let newStartDate = current.startDate || new Date();
+        let newEndDate = current.endDate || new Date();
+        
+        if (field === 'startDate') {
+            newStartDate = newDate;
+            if (newDate > newEndDate) {
+                newEndDate = newDate;
+            }
         } else {
-            setCurrent(prev => ({ ...prev, [field]: newDate }));
+            newEndDate = newDate;
         }
+        
+        // Calculate diff in days (inclusive, so +1)
+        // Note: For a more advanced HRIS, this should skip weekends and holidays. 
+        // For now, doing simple math.
+        const diffTime = Math.abs(newEndDate.getTime() - newStartDate.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
+        setCurrent(prev => ({ 
+            ...prev, 
+            startDate: newStartDate, 
+            endDate: newEndDate,
+            durationDays: diffDays
+        }));
     };
     
     const footer = () => {
