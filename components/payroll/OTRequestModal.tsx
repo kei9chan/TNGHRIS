@@ -93,6 +93,7 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
             endTime: '',
             reason: '',
             otType: 'Paid',
+            paidOtType: 'Regular Overtime',
             status: OTStatus.Draft,
             historyLog: [],
         };
@@ -396,6 +397,27 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
                         <option value="Offset">Offset Overtime</option>
                     </select>
                 </div>
+
+                {request.otType === 'Paid' && (
+                    <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" htmlFor="paidOtType">
+                            Paid Overtime Category
+                        </label>
+                        <select
+                            id="paidOtType"
+                            name="paidOtType"
+                            value={request.paidOtType || 'Regular Overtime'}
+                            onChange={(e) => setRequest(prev => ({ ...prev, paidOtType: e.target.value as any }))}
+                            disabled={isFinalized || isManagerReviewing || request.status === OTStatus.Submitted}
+                            className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-sm text-gray-900 dark:text-white focus:ring-indigo-500 focus:border-indigo-500"
+                        >
+                            <option value="Regular Overtime">Regular Overtime</option>
+                            <option value="Legal Holiday">Legal Holiday</option>
+                            <option value="Special Holiday">Special Holiday</option>
+                            <option value="Rest Day">Rest Day</option>
+                        </select>
+                    </div>
+                )}
                 
                 <Textarea
                     label="Reason"

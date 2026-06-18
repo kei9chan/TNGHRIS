@@ -16,6 +16,7 @@ type OtRequestRow = {
   history_log?: any;
   attachment_url?: string | null;
   ot_type?: string;
+  paid_ot_type?: string;
   created_at?: string;
   updated_at?: string;
 };
@@ -35,6 +36,7 @@ const mapRow = (row: OtRequestRow): OTRequest => ({
   historyLog: (row.history_log as OTRequestHistory[]) || [],
   attachmentUrl: row.attachment_url ?? undefined,
   otType: (row.ot_type as 'Paid' | 'Offset') || 'Paid',
+  paidOtType: (row.paid_ot_type as 'Regular Overtime' | 'Legal Holiday' | 'Special Holiday' | 'Rest Day') || undefined,
 });
 
 export const fetchOtRequests = async (): Promise<OTRequest[]> => {
@@ -65,6 +67,7 @@ export const saveOtRequest = async (
     history_log: request.historyLog || [],
     attachment_url: request.attachmentUrl || null,
     ot_type: request.otType || 'Paid',
+    paid_ot_type: request.paidOtType || null,
   };
 
   const query = request.id

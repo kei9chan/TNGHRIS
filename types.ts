@@ -1061,6 +1061,7 @@ export interface OTRequest {
   endTime: string;
   reason: string;
   otType?: 'Paid' | 'Offset';
+  paidOtType?: 'Regular Overtime' | 'Legal Holiday' | 'Special Holiday' | 'Rest Day';
   status: OTStatus;
   submittedAt?: Date;
   approvedHours?: number;

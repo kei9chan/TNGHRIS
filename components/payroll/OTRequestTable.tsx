@@ -63,7 +63,7 @@ const OTRequestTable: React.FC<OTRequestTableProps> = ({ requests, onEdit, onDel
                                     {req.otType === 'Offset' ? (
                                         <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200">Offset</span>
                                     ) : (
-                                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">Paid</span>
+                                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">Paid {req.paidOtType ? `(${req.paidOtType})` : ''}</span>
                                     )}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{req.startTime} - {req.endTime}</td>
