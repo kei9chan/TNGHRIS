@@ -273,7 +273,7 @@ const HRDashboard: React.FC = () => {
                     .order('submitted_at', { ascending: false });
 
                 if (isConfiguredBOD) {
-                    query = query.or(`and(employee_id.in.(${reporteeIds.join(',') || 'uuid-placeholder'}),status.eq.${OTStatus.Submitted}),status.eq.${OTStatus.PendingBOD}`);
+                    query = query.or(`and(employee_id.in.(${reporteeIds.join(',') || '00000000-0000-0000-0000-000000000000'}),status.eq.${OTStatus.Submitted}),status.eq.${OTStatus.PendingBOD}`);
                 } else {
                     query = query.in('employee_id', reporteeIds).eq('status', OTStatus.Submitted);
                 }

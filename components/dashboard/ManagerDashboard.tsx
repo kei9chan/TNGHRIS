@@ -660,7 +660,7 @@ const ManagerDashboard: React.FC = () => {
                 .from('leave_requests')
                 .select('id, employee_id, employee_name, leave_type_id, start_date, end_date, start_time, end_time, duration_days, reason, status, history_log, attachment_url, approver_id, business_unit_id, department_id');
             if (isConfiguredBOD) {
-                leaveQuery = leaveQuery.or(`and(employee_id.in.(${reporteeIds.join(',') || 'uuid-placeholder'}),status.eq.pending),status.eq.PendingBOD`);
+                leaveQuery = leaveQuery.or(`and(employee_id.in.(${reporteeIds.join(',') || '00000000-0000-0000-0000-000000000000'}),status.eq.pending),status.eq.PendingBOD`);
             } else {
                 leaveQuery = leaveQuery.in('employee_id', reporteeIds).eq('status', 'pending');
             }
@@ -669,7 +669,7 @@ const ManagerDashboard: React.FC = () => {
                 .from('wfh_requests')
                 .select('id, employee_id, employee_name, date, reason, status, report_link, approved_by, approved_at, rejection_reason, created_at');
             if (isConfiguredBOD) {
-                wfhQuery = wfhQuery.or(`and(employee_id.in.(${reporteeIds.join(',') || 'uuid-placeholder'}),status.eq.${WFHRequestStatus.PendingDeptHead}),status.eq.${WFHRequestStatus.PendingBOD}`);
+                wfhQuery = wfhQuery.or(`and(employee_id.in.(${reporteeIds.join(',') || '00000000-0000-0000-0000-000000000000'}),status.eq.${WFHRequestStatus.PendingDeptHead}),status.eq.${WFHRequestStatus.PendingBOD}`);
             } else {
                 wfhQuery = wfhQuery.in('employee_id', reporteeIds).eq('status', WFHRequestStatus.PendingDeptHead);
             }
@@ -678,7 +678,7 @@ const ManagerDashboard: React.FC = () => {
                 .from('ot_requests')
                 .select('id, employee_id, employee_name, date, start_time, end_time, reason, status, submitted_at, approved_hours, manager_note, history_log, attachment_url');
             if (isConfiguredBOD) {
-                otQuery = otQuery.or(`and(employee_id.in.(${reporteeIds.join(',') || 'uuid-placeholder'}),status.eq.${OTStatus.Submitted}),status.eq.${OTStatus.PendingBOD}`);
+                otQuery = otQuery.or(`and(employee_id.in.(${reporteeIds.join(',') || '00000000-0000-0000-0000-000000000000'}),status.eq.${OTStatus.Submitted}),status.eq.${OTStatus.PendingBOD}`);
             } else {
                 otQuery = otQuery.in('employee_id', reporteeIds).eq('status', OTStatus.Submitted);
             }
