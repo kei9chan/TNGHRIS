@@ -44,7 +44,7 @@ const SuccessToast: React.FC<{ message: string; show: boolean; onClose: () => vo
 
 const OvertimeRequests: React.FC = () => {
     const { user } = useAuth();
-    const { hasDirectReports, getAccessibleBusinessUnits, getOtAccess } = usePermissions();
+    const { hasDirectReports, getAccessibleBusinessUnits, getOtAccess, can: canModule } = usePermissions();
     const { approverConfigs } = useSettings();
     const location = useLocation();
     const navigate = useNavigate();
