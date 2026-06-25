@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
+import { useSettings } from '../../context/SettingsContext';
 import { LeaveRequest, LeaveRequestStatus, Role, Permission } from '../../types';
 import { NotificationType } from '../../types';
 import { supabase } from '../../services/supabaseClient';
@@ -18,6 +19,7 @@ type ActiveView = 'my_requests' | 'team_requests' | 'schedule';
 
 const Leave: React.FC = () => {
   const { user } = useAuth();
+  const { approverConfigs } = useSettings();
   const { can, hasDirectReports, getDashboardRequestAccess } = usePermissions();
   const access = getDashboardRequestAccess();
 
