@@ -143,7 +143,7 @@ const HRReviewQueue: React.FC = () => {
 
     // Role-based hierarchy for "Reports To" selection
     const getReportsToOptions = (pendingRole: Role) => {
-        const seniorRoles: Role[] = [Role.OperationsDirector, Role.GeneralManager, Role.BOD];
+        const seniorRoles: Role[] = [Role.Admin, Role.OperationsDirector, Role.GeneralManager, Role.BOD];
         const managerAndAbove: Role[] = [Role.Manager, Role.BusinessUnitManager, ...seniorRoles];
         const isManagerLevel = pendingRole === Role.Manager || pendingRole === Role.BusinessUnitManager;
         return activeUsers.filter(u => (isManagerLevel ? seniorRoles : managerAndAbove).includes(u.role));
@@ -435,8 +435,8 @@ const HRReviewQueue: React.FC = () => {
                             const selectedReportsTo = reportingToMap[pendingUser.id] || '';
                             const isManagerLevel = pendingUser.role === Role.Manager || pendingUser.role === Role.BusinessUnitManager;
                             const hintText = isManagerLevel
-                                ? 'Managers must report to: Operations Director, General Manager, or Board of Director.'
-                                : 'Employees must report to: Manager, Business Unit Manager, Operations Director, General Manager, or Board of Director.';
+                                ? 'Managers must report to: Admin, Operations Director, General Manager, or Board of Director.'
+                                : 'Employees must report to: Manager, Business Unit Manager, Admin, Operations Director, General Manager, or Board of Director.';
                             return (
                                 <div key={pendingUser.id} className="p-4 border dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800/50">
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
