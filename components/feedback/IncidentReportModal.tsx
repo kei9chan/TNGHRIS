@@ -120,15 +120,19 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
 
   const availableEmployees = useMemo(() => {
     if (!currentReport.businessUnitId) {
-      return allUsers.filter(u => u.status === 'Active' || !u.status);
+      return allUsers.filter(u => !u.status || u.status.toLowerCase() === 'active');
     }
     const selectedBu = businessUnits.find(b => b.id === currentReport.businessUnitId);
+    const selectedBuName = selectedBu?.name?.trim().toLowerCase();
+
     return allUsers.filter(u => {
-      const isActive = u.status === 'Active' || !u.status;
+      const isActive = !u.status || u.status.toLowerCase() === 'active';
       if (!isActive) return false;
+
+      const userBuName = u.businessUnit?.trim().toLowerCase();
       return (
         u.businessUnitId === currentReport.businessUnitId ||
-        (selectedBu && u.businessUnit && u.businessUnit.toLowerCase() === selectedBu.name.toLowerCase())
+        (selectedBuName && userBuName === selectedBuName)
       );
     });
   }, [allUsers, currentReport.businessUnitId, businessUnits]);
@@ -165,6 +169,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
           return;
         }
         if (data) {
+          console.log('[IRModal] Loaded users count:', data.length, data);
           const mapped = data.map((u: any) => ({
             id: u.id,
             name: formatEmployeeName(u.full_name || 'User'),
@@ -256,13 +261,14 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
       setCurrentReport(prev => ({ ...prev, dateTime: new Date(value) }));
     } else if (name === 'businessUnitId') {
       const bu = businessUnits.find(b => b.id === value);
+      const buName = bu?.name?.trim().toLowerCase();
       setCurrentReport(prev => ({ ...prev, businessUnitId: value, businessUnitName: bu?.name }));
       if (value) {
         setInvolvedEmployees(prev => prev.filter(u => 
-          u.businessUnitId === value || (bu && u.businessUnit && u.businessUnit.toLowerCase() === bu.name.toLowerCase())
+          u.businessUnitId === value || (buName && u.businessUnit?.trim().toLowerCase() === buName)
         ));
         setWitnesses(prev => prev.filter(u => 
-          u.businessUnitId === value || (bu && u.businessUnit && u.businessUnit.toLowerCase() === bu.name.toLowerCase())
+          u.businessUnitId === value || (buName && u.businessUnit?.trim().toLowerCase() === buName)
         ));
       }
     } else if (name === 'assignedToId') {
