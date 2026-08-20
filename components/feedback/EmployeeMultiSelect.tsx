@@ -34,13 +34,15 @@ const EmployeeMultiSelect: React.FC<EmployeeMultiSelectProps> = ({ label, allUse
         return pool
             .slice()
             .sort((a, b) => a.name.localeCompare(b.name))
-            .slice(0, 20); // show first 20 by default
+            .slice(0, 100); // show up to 100 by default
     }
     const lowerSearch = searchTerm.toLowerCase();
     return pool.filter(user => 
         user.name.toLowerCase().includes(lowerSearch) ||
         formatEmployeeName(user.name).toLowerCase().includes(lowerSearch) ||
-        (user.email || '').toLowerCase().includes(lowerSearch)
+        (user.email || '').toLowerCase().includes(lowerSearch) ||
+        (user.position || '').toLowerCase().includes(lowerSearch) ||
+        (user.department || '').toLowerCase().includes(lowerSearch)
     );
   }, [searchTerm, allUsers, selectedUsers]);
 
@@ -94,7 +96,9 @@ const EmployeeMultiSelect: React.FC<EmployeeMultiSelectProps> = ({ label, allUse
                         <p className="text-sm font-medium text-gray-900 dark:text-white">
                           {formatEmployeeName(user.name)}
                         </p>
-                        {user.role && <p className="text-sm text-gray-500 dark:text-gray-400">{user.role}</p>}
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {user.role || 'Employee'}{user.position ? ` • ${user.position}` : ''}
+                        </p>
                     </div>
                 </div>
               ))
@@ -113,7 +117,9 @@ const EmployeeMultiSelect: React.FC<EmployeeMultiSelectProps> = ({ label, allUse
                     <p className="text-sm font-semibold text-gray-900 dark:text-white">
                       {formatEmployeeName(user.name)}
                     </p>
-                    {user.role && <p className="text-xs text-gray-500 dark:text-gray-400">{user.role}</p>}
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {user.role || 'Employee'}{user.position ? ` • ${user.position}` : ''}
+                    </p>
                 </div>
             </div>
             <button type="button" onClick={() => handleRemoveUser(user.id)} className="text-gray-400 hover:text-red-500 disabled:cursor-not-allowed disabled:hover:text-gray-400" disabled={disabled}>

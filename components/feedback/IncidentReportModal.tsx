@@ -118,6 +118,21 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
     return allUsers.filter(u => [Role.HRManager, Role.HRStaff, Role.Admin].includes(u.role) && u.status === 'Active');
   }, [allUsers]);
 
+  const availableEmployees = useMemo(() => {
+    if (!currentReport.businessUnitId) {
+      return allUsers.filter(u => u.status === 'Active' || !u.status);
+    }
+    const selectedBu = businessUnits.find(b => b.id === currentReport.businessUnitId);
+    return allUsers.filter(u => {
+      const isActive = u.status === 'Active' || !u.status;
+      if (!isActive) return false;
+      return (
+        u.businessUnitId === currentReport.businessUnitId ||
+        (selectedBu && u.businessUnit && u.businessUnit.toLowerCase() === selectedBu.name.toLowerCase())
+      );
+    });
+  }, [allUsers, currentReport.businessUnitId, businessUnits]);
+
   const canAssign = user?.role === Role.Admin || user?.role === Role.HRManager;
 
   // Load users from Supabase for selectors
@@ -183,12 +198,16 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
         signaturePathRef.current = report.signatureDataUrl || null;
         setSignaturePreview(report.signatureDataUrl || null);
       } else {
+        const defaultBu = businessUnits.find(
+          b => b.id === user?.businessUnitId || (user?.businessUnit && b.name.toLowerCase() === user.businessUnit.toLowerCase())
+        );
         setCurrentReport({
           status: IRStatus.Submitted,
           pipelineStage: 'ir-review',
           dateTime: new Date(),
           category: '',
-          businessUnitId: '',
+          businessUnitId: defaultBu?.id || user?.businessUnitId || '',
+          businessUnitName: defaultBu?.name || user?.businessUnit || '',
         });
         setInvolvedEmployees([]);
         setWitnesses([]);
@@ -196,7 +215,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
         setSignaturePreview(null);
       }
     }
-  }, [report, isOpen, user, allUsers]);
+  }, [report, isOpen, user, allUsers, businessUnits]);
 
   // Build signed URLs for attachment/signature when viewing an existing report
   useEffect(() => {
@@ -238,6 +257,14 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
     } else if (name === 'businessUnitId') {
       const bu = businessUnits.find(b => b.id === value);
       setCurrentReport(prev => ({ ...prev, businessUnitId: value, businessUnitName: bu?.name }));
+      if (value) {
+        setInvolvedEmployees(prev => prev.filter(u => 
+          u.businessUnitId === value || (bu && u.businessUnit && u.businessUnit.toLowerCase() === bu.name.toLowerCase())
+        ));
+        setWitnesses(prev => prev.filter(u => 
+          u.businessUnitId === value || (bu && u.businessUnit && u.businessUnit.toLowerCase() === bu.name.toLowerCase())
+        ));
+      }
     } else if (name === 'assignedToId') {
       const handler = potentialHandlers.find(u => u.id === value);
       setCurrentReport(prev => ({ ...prev, assignedToId: value, assignedToName: handler?.name }));
@@ -484,7 +511,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
         <div className="md:col-span-2">
           <EmployeeMultiSelect
             label="Involved Employees*"
-            allUsers={allUsers}
+            allUsers={availableEmployees}
             selectedUsers={involvedEmployees}
             onSelectionChange={setInvolvedEmployees}
           />
@@ -494,7 +521,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
         <div className="md:col-span-2">
           <EmployeeMultiSelect
             label="Witnesses"
-            allUsers={allUsers}
+            allUsers={availableEmployees}
             selectedUsers={witnesses}
             onSelectionChange={setWitnesses}
           />
