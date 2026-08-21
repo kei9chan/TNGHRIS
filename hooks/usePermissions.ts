@@ -1,1533 +1,183 @@
-
+import { useContext, useMemo } from 'react';
+import { PermissionsContext } from '../context/PermissionsContext';
 import { useAuth } from './useAuth';
-import { useSettings } from '../context/SettingsContext';
-import { Resource, Permission, Role, IncidentReport, Ticket, BusinessUnit, Department, Evaluation, EvaluatorType, User, COERequest, OTRequest, OTStatus, PermissionsMatrix } from '../types';
-
-// Inline permissions matrix (formerly in mockData)
-const defaultPermissions: PermissionsMatrix = {
-    [Role.Admin]: {
-        'Dashboard': [Permission.View], 'Employees': [Permission.Manage], 'Settings': [Permission.Manage],
-        'Recruitment': [Permission.Manage], 'Evaluation': [Permission.Manage], 'Payroll': [Permission.Manage],
-        'Feedback': [Permission.Manage], 'Helpdesk': [Permission.Manage], 'Analytics': [Permission.View],
-        'Manpower': [Permission.Manage], 'COE': [Permission.Manage], 'Benefits': [Permission.Manage],
-        'PulseSurvey': [Permission.Manage], 'Coaching': [Permission.Manage], 'WFH': [Permission.Manage],
-    },
-    [Role.Employee]: {
-        'Dashboard': [Permission.View], 'Employees': [Permission.View], 'PAN': [Permission.View],
-        'COE': [Permission.Create, Permission.View], 'Benefits': [Permission.Create, Permission.View],
-        'PulseSurvey': [Permission.View], 'Coaching': [Permission.View],
-        'WFH': [Permission.Create, Permission.View, Permission.Edit],
-    },
-    [Role.Manager]: {
-        'Dashboard': [Permission.View], 'Employees': [Permission.View], 'Evaluation': [Permission.View],
-        'Payroll': [Permission.View], 'Manpower': [Permission.View], 'OT': [Permission.Approve],
-        'Leave': [Permission.Approve], 'Feedback': [Permission.View], 'Helpdesk': [Permission.View],
-        'COE': [Permission.Create, Permission.View], 'Benefits': [Permission.View],
-        'PulseSurvey': [Permission.View], 'Coaching': [Permission.Create, Permission.View], 'WFH': [Permission.View],
-    },
-    [Role.HRManager]: {
-        'Dashboard': [Permission.View], 'Employees': [Permission.Manage], 'PAN': [Permission.Manage],
-        'Lifecycle': [Permission.Manage], 'Assets': [Permission.Manage], 'AssetRequests': [Permission.Manage],
-        'Settings': [Permission.Manage], 'Recruitment': [Permission.Manage], 'Evaluation': [Permission.Manage],
-        'Payroll': [Permission.Manage], 'Feedback': [Permission.Manage], 'Helpdesk': [Permission.Manage],
-        'Analytics': [Permission.View], 'Manpower': [Permission.Manage], 'COE': [Permission.Manage],
-        'Benefits': [Permission.Manage], 'PulseSurvey': [Permission.Manage], 'Coaching': [Permission.Manage], 'WFH': [Permission.View],
-    },
-    [Role.HRStaff]: {
-        'Dashboard': [Permission.View], 'Employees': [Permission.Create, Permission.View, Permission.Edit],
-        'PAN': [Permission.Create, Permission.View, Permission.Edit],
-        'Lifecycle': [Permission.Create, Permission.View, Permission.Edit],
-        'Assets': [Permission.Create, Permission.View, Permission.Edit],
-        'AssetRequests': [Permission.Create, Permission.View, Permission.Edit, Permission.Approve],
-        'Analytics': [Permission.View], 'Payroll': [Permission.Create, Permission.View, Permission.Edit],
-        'Feedback': [Permission.Create, Permission.View, Permission.Edit], 'Helpdesk': [Permission.Manage],
-        'Manpower': [Permission.Create, Permission.View], 'COE': [Permission.Manage], 'Benefits': [Permission.Manage],
-        'PulseSurvey': [Permission.Manage], 'Coaching': [Permission.Create, Permission.View, Permission.Edit],
-        'WFH': [Permission.View], 'Recruitment': [Permission.Manage],
-    },
-    [Role.BusinessUnitManager]: {
-        'Dashboard': [Permission.View], 'Employees': [Permission.View], 'Evaluation': [Permission.View],
-        'Payroll': [Permission.View], 'Timekeeping': [Permission.View, Permission.Edit],
-        'WorkforcePlanning': [Permission.Manage], 'Manpower': [Permission.Create, Permission.View, Permission.Approve],
-        'OT': [Permission.View, Permission.Approve], 'Leave': [Permission.View, Permission.Approve],
-        'WFH': [Permission.Create, Permission.View, Permission.Approve], 'Feedback': [Permission.View],
-        'Helpdesk': [Permission.View], 'COE': [Permission.Create, Permission.View], 'Benefits': [Permission.View],
-        'PulseSurvey': [Permission.View], 'Coaching': [Permission.Create, Permission.View],
-    },
-    [Role.OperationsDirector]: {
-        'Dashboard': [Permission.View], 'Employees': [Permission.View], 'Evaluation': [Permission.View],
-        'Payroll': [Permission.View], 'Feedback': [Permission.View], 'Manpower': [Permission.Approve],
-        'COE': [Permission.Create, Permission.View], 'Benefits': [Permission.View],
-        'PulseSurvey': [Permission.View], 'Coaching': [Permission.Create, Permission.View], 'WFH': [Permission.View],
-    },
-    [Role.BOD]: {
-        'Dashboard': [Permission.View], 'Employees': [Permission.View], 'Payroll': [Permission.View],
-        'Manpower': [Permission.Approve], 'COE': [Permission.Create, Permission.View],
-        'Benefits': [Permission.Approve, Permission.View], 'PulseSurvey': [Permission.View],
-        'Coaching': [Permission.View], 'WFH': [Permission.Approve, Permission.View],
-    },
-    [Role.GeneralManager]: {
-        'Dashboard': [Permission.View], 'Employees': [Permission.View], 'Payroll': [Permission.View],
-        'Manpower': [Permission.Approve], 'COE': [Permission.Create, Permission.View], 'Benefits': [Permission.View],
-        'PulseSurvey': [Permission.View], 'Coaching': [Permission.View], 'WFH': [Permission.View],
-    },
-    [Role.FinanceStaff]: {
-        'Dashboard': [Permission.View], 'Employees': [Permission.View], 'Payroll': [Permission.Manage], 'Benefits': [Permission.View],
-    },
-    [Role.Auditor]: {
-        'Dashboard': [Permission.View], 'AuditLog': [Permission.View], 'Benefits': [Permission.View],
-    },
-    [Role.Recruiter]: {
-        'Dashboard': [Permission.View], 'Benefits': [Permission.View],
-    },
-};
-
-// Knowledge Base RBAC matrix
-const knowledgeBasePermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [Permission.View],
-    [Role.OperationsDirector]: [Permission.View],
-    [Role.BusinessUnitManager]: [Permission.View],
-    [Role.Manager]: [Permission.View],
-    [Role.Employee]: [Permission.View],
-    [Role.FinanceStaff]: [Permission.View],
-    [Role.Auditor]: [], // None
-    [Role.Recruiter]: [Permission.Manage],
-    [Role.IT]: [], // None
-};
-
-// Org Chart RBAC matrix
-const orgChartPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [Permission.View], // View BU and Departments
-    [Role.OperationsDirector]: [Permission.View], // View BU only
-    [Role.BusinessUnitManager]: [Permission.View], // Own BU
-    [Role.Manager]: [Permission.View], // Own Team
-    [Role.Employee]: [Permission.View], // Own
-    [Role.FinanceStaff]: [Permission.View],
-    [Role.Auditor]: [], // None
-    [Role.Recruiter]: [Permission.Manage],
-    [Role.IT]: [], // None
-};
-
-// Job Posts RBAC matrix
-const jobPostsPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [],
-    [Role.GeneralManager]: [],
-    [Role.OperationsDirector]: [],
-    [Role.BusinessUnitManager]: [],
-    [Role.Manager]: [],
-    [Role.Employee]: [],
-    [Role.FinanceStaff]: [],
-    [Role.Auditor]: [],
-    [Role.Recruiter]: [],
-    [Role.IT]: [],
-};
-
-// Application Pages RBAC matrix
-const applicationPagesPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [],
-    [Role.GeneralManager]: [],
-    [Role.OperationsDirector]: [],
-    [Role.BusinessUnitManager]: [],
-    [Role.Manager]: [],
-    [Role.Employee]: [],
-    [Role.FinanceStaff]: [],
-    [Role.Auditor]: [],
-    [Role.Recruiter]: [],
-    [Role.IT]: [],
-};
-
-// Applicants RBAC matrix
-const applicantsPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [],
-    [Role.GeneralManager]: [],
-    [Role.OperationsDirector]: [],
-    [Role.BusinessUnitManager]: [],
-    [Role.Manager]: [],
-    [Role.Employee]: [],
-    [Role.FinanceStaff]: [],
-    [Role.Auditor]: [],
-    [Role.Recruiter]: [],
-    [Role.IT]: [],
-};
-
-// Offers RBAC matrix
-const offersPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [],
-    [Role.GeneralManager]: [],
-    [Role.OperationsDirector]: [],
-    [Role.BusinessUnitManager]: [],
-    [Role.Manager]: [],
-    [Role.Employee]: [],
-    [Role.FinanceStaff]: [],
-    [Role.Auditor]: [],
-    [Role.Recruiter]: [],
-    [Role.IT]: [],
-};
-
-// Calendar RBAC matrix
-const calendarPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [Permission.View], // View BU/Departments
-    [Role.OperationsDirector]: [Permission.View], // View BU only
-    [Role.BusinessUnitManager]: [Permission.View], // Own BU
-    [Role.Manager]: [Permission.View], // Own Team
-    [Role.Employee]: [Permission.View], // Own
-    [Role.FinanceStaff]: [Permission.View],
-    [Role.Auditor]: [], // None
-    [Role.Recruiter]: [Permission.Manage],
-    [Role.IT]: [], // None
-};
-
-// Evaluations RBAC matrix
-const evaluationsPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [Permission.View], // View BU/Departments (scope handled elsewhere)
-    [Role.OperationsDirector]: [Permission.View], // View BU only
-    [Role.BusinessUnitManager]: [Permission.View], // Own BU
-    [Role.Manager]: [Permission.View], // Own Team
-    [Role.Employee]: [Permission.View], // Own
-    [Role.FinanceStaff]: [], // None
-    [Role.Auditor]: [], // None
-    [Role.Recruiter]: [], // None
-    [Role.IT]: [], // None
-};
-// Daily Time Review RBAC matrix
-const dailyTimeReviewPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [Permission.View], // View BU/Departments
-    [Role.OperationsDirector]: [Permission.View], // View BU only
-    [Role.BusinessUnitManager]: [Permission.View], // Own BU
-    [Role.Manager]: [Permission.View], // Own Team
-    [Role.Employee]: [], // None
-    [Role.FinanceStaff]: [], // None
-    [Role.Auditor]: [], // None
-    [Role.Recruiter]: [], // None
-    [Role.IT]: [], // None
-};
-
-// Attendance Exceptions RBAC matrix
-const attendanceExceptionsPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [], // None
-    [Role.OperationsDirector]: [], // None
-    [Role.BusinessUnitManager]: [], // None
-    [Role.Manager]: [], // None
-    [Role.Employee]: [], // None
-    [Role.FinanceStaff]: [], // None
-    [Role.Auditor]: [], // None
-    [Role.Recruiter]: [], // None
-    [Role.IT]: [], // None
-};
-
-// Clock-in/Out RBAC matrix
-const clockPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [], // None
-    [Role.OperationsDirector]: [], // None
-    [Role.BusinessUnitManager]: [], // None
-    [Role.Manager]: [], // None
-    [Role.Employee]: [Permission.View], // Own scope handled by filter
-    [Role.FinanceStaff]: [], // None
-    [Role.Auditor]: [], // None
-    [Role.Recruiter]: [], // None
-    [Role.IT]: [], // None
-};
-
-// Clock Log RBAC matrix
-const clockLogPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [], // None
-    [Role.OperationsDirector]: [], // None
-    [Role.BusinessUnitManager]: [], // None
-    [Role.Manager]: [], // None
-    [Role.Employee]: [Permission.View], // Own scope handled by filter
-    [Role.FinanceStaff]: [], // None
-    [Role.Auditor]: [], // None
-    [Role.Recruiter]: [], // None
-    [Role.IT]: [], // None
-};
-
-// WFH Requests RBAC matrix
-const wfhPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [Permission.View], // View BU/Departments (scope elsewhere)
-    [Role.OperationsDirector]: [Permission.View, Permission.Approve], // View/Approve BU
-    [Role.BusinessUnitManager]: [Permission.View, Permission.Create], // View/request own BU
-    [Role.Manager]: [Permission.View], // Own team
-    [Role.Employee]: [Permission.View, Permission.Create], // Own
-    [Role.FinanceStaff]: [], // None
-    [Role.Auditor]: [Permission.View], // View logs
-    [Role.Recruiter]: [], // None
-    [Role.IT]: [], // None
-};
-
-// Contracts RBAC matrix derived from user request
-const contractsPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [], // None
-    [Role.OperationsDirector]: [], // None
-    [Role.BusinessUnitManager]: [], // None
-    [Role.Manager]: [], // None
-    [Role.Employee]: [], // None
-    [Role.FinanceStaff]: [], // None
-    [Role.Auditor]: [], // None
-    [Role.Recruiter]: [Permission.Manage], // Full per matrix
-    [Role.IT]: [], // None
-};
-
-// Benefits RBAC matrix
-const benefitsPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [Permission.Approve], // View + respond
-    [Role.OperationsDirector]: [Permission.Approve], // View + respond
-    [Role.BusinessUnitManager]: [], // None
-    [Role.Manager]: [], // None
-    [Role.Employee]: [], // None
-    [Role.FinanceStaff]: [Permission.Manage],
-    [Role.Auditor]: [Permission.View], // View logs
-    [Role.Recruiter]: [Permission.Manage],
-    [Role.IT]: [], // None
-};
-
-// Asset Management RBAC matrix
-const assetManagementPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [Permission.View], // View BU/Departments (scope handled elsewhere)
-    [Role.OperationsDirector]: [Permission.View], // View BU/Departments
-    [Role.BusinessUnitManager]: [Permission.View], // Own BU
-    [Role.Manager]: [Permission.View], // Own Team
-    [Role.Employee]: [], // None
-    [Role.FinanceStaff]: [], // None
-    [Role.Auditor]: [], // None
-    [Role.Recruiter]: [Permission.Manage],
-    [Role.IT]: [Permission.Manage],
-};
-
-// Coaching Log RBAC matrix
-const coachingPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [Permission.View], // View BU/Departments (scope handled elsewhere)
-    [Role.OperationsDirector]: [Permission.View], // View BU only
-    [Role.BusinessUnitManager]: [Permission.View], // Own BU
-    [Role.Manager]: [Permission.View], // Own Team
-    [Role.Employee]: [Permission.View], // Own logs
-    [Role.FinanceStaff]: [], // None
-    [Role.Auditor]: [], // None
-    [Role.Recruiter]: [], // None
-    [Role.IT]: [], // None
-};
-
-// Memo Library RBAC matrix
-const memoPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [Permission.View], // View BU/Departments (scope handled elsewhere)
-    [Role.OperationsDirector]: [Permission.View], // View BU only
-    [Role.BusinessUnitManager]: [Permission.View], // Own BU
-    [Role.Manager]: [Permission.View], // Own Team
-    [Role.Employee]: [Permission.View], // Own BU
-    [Role.FinanceStaff]: [], // None
-    [Role.Auditor]: [], // None
-    [Role.Recruiter]: [Permission.Manage], // Full
-    [Role.IT]: [], // None
-};
-
-// Pulse Survey RBAC matrix
-const pulseSurveyPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [Permission.View], // View BU/Departments (scope handled elsewhere)
-    [Role.OperationsDirector]: [Permission.View], // View BU only
-    [Role.BusinessUnitManager]: [Permission.View], // Own BU
-    [Role.Manager]: [Permission.View], // Own Team
-    [Role.Employee]: [Permission.View], // Own
-    [Role.FinanceStaff]: [], // None
-    [Role.Auditor]: [], // None
-    [Role.Recruiter]: [], // None
-    [Role.IT]: [], // None
-};
-
-// Roles & Permissions RBAC matrix
-const rolesPermissionsAccess: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [], // None
-    [Role.OperationsDirector]: [], // None
-    [Role.BusinessUnitManager]: [], // None
-    [Role.Manager]: [], // None
-    [Role.Employee]: [], // None
-    [Role.FinanceStaff]: [], // None
-    [Role.Auditor]: [], // None
-    [Role.Recruiter]: [], // None
-    [Role.IT]: [], // None
-};
-
-// User Management RBAC matrix
-const userManagementPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [], // None
-    [Role.OperationsDirector]: [], // None
-    [Role.BusinessUnitManager]: [], // None
-    [Role.Manager]: [], // None
-    [Role.Employee]: [], // None
-    [Role.FinanceStaff]: [], // None
-    [Role.Auditor]: [], // None
-    [Role.Recruiter]: [], // None
-    [Role.IT]: [], // None
-};
-
-// Departments RBAC matrix
-const departmentsPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [], // None
-    [Role.OperationsDirector]: [], // None
-    [Role.BusinessUnitManager]: [], // None
-    [Role.Manager]: [], // None
-    [Role.Employee]: [], // None
-    [Role.FinanceStaff]: [], // None
-    [Role.Auditor]: [], // None
-    [Role.Recruiter]: [], // None
-    [Role.IT]: [], // None
-};
-
-// Site Management RBAC
-const siteManagementPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [], // None
-    [Role.OperationsDirector]: [], // None
-    [Role.BusinessUnitManager]: [], // None
-    [Role.Manager]: [], // None
-    [Role.Employee]: [], // None
-    [Role.FinanceStaff]: [], // None
-    [Role.Auditor]: [], // None
-    [Role.Recruiter]: [], // None
-    [Role.IT]: [], // None
-};
-
-// Leave Policies RBAC
-const leavePoliciesPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [], // None
-    [Role.OperationsDirector]: [], // None
-    [Role.BusinessUnitManager]: [], // None
-    [Role.Manager]: [], // None
-    [Role.Employee]: [], // None
-    [Role.FinanceStaff]: [], // None
-    [Role.Auditor]: [], // None
-    [Role.Recruiter]: [], // None
-    [Role.IT]: [], // None
-};
-
-// Holidays RBAC
-const holidaysPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [], // None
-    [Role.OperationsDirector]: [], // None
-    [Role.BusinessUnitManager]: [], // None
-    [Role.Manager]: [], // None
-    [Role.Employee]: [], // None
-    [Role.FinanceStaff]: [], // None
-    [Role.Auditor]: [], // None
-    [Role.Recruiter]: [], // None
-    [Role.IT]: [], // None
-};
-
-// Audit Log RBAC
-const auditLogPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [], // None
-    [Role.OperationsDirector]: [], // None
-    [Role.BusinessUnitManager]: [], // None
-    [Role.Manager]: [], // None
-    [Role.Employee]: [], // None
-    [Role.FinanceStaff]: [], // None
-    [Role.Auditor]: [Permission.Manage],
-    [Role.Recruiter]: [], // None
-    [Role.IT]: [], // None
-};
-
-// Code of Discipline RBAC
-const codeOfDisciplinePermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [Permission.View], // View BU/Departments (scope handled elsewhere)
-    [Role.OperationsDirector]: [Permission.View], // View BU only
-    [Role.BusinessUnitManager]: [Permission.View], // Own BU
-    [Role.Manager]: [Permission.View], // Own Team
-    [Role.Employee]: [Permission.View], // Own BU
-    [Role.FinanceStaff]: [], // None
-    [Role.Auditor]: [], // None
-    [Role.Recruiter]: [Permission.Manage], // Full
-    [Role.IT]: [], // None
-};
-
-// Feedback Templates RBAC
-const feedbackTemplatesPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [], // None
-    [Role.OperationsDirector]: [], // None
-    [Role.BusinessUnitManager]: [], // None
-    [Role.Manager]: [], // None
-    [Role.Employee]: [], // None
-    [Role.FinanceStaff]: [], // None
-    [Role.Auditor]: [], // None
-    [Role.Recruiter]: [], // None
-    [Role.IT]: [], // None
-};
-
-// Pipeline RBAC
-const pipelinePermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [], // None
-    [Role.OperationsDirector]: [], // None
-    [Role.BusinessUnitManager]: [], // None
-    [Role.Manager]: [], // None
-    [Role.Employee]: [], // None
-    [Role.FinanceStaff]: [], // None
-    [Role.Auditor]: [], // None
-    [Role.Recruiter]: [], // None
-    [Role.IT]: [], // None
-};
-
-// Workforce Planning RBAC
-const workforcePlanningPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.View],
-    [Role.GeneralManager]: [Permission.View], // View BU/Departments
-    [Role.OperationsDirector]: [Permission.View], // View BU only
-    [Role.BusinessUnitManager]: [Permission.View], // Own BU
-    [Role.Manager]: [Permission.View], // Own Team
-    [Role.Employee]: [], // None
-    [Role.FinanceStaff]: [], // None
-    [Role.Auditor]: [], // None
-    [Role.Recruiter]: [], // None
-    [Role.IT]: [], // None
-};
-
-// Timekeeping RBAC matrix (View Schedule)
-const timekeepingPermissions: Record<Role, Permission[]> = {
-    [Role.Admin]: [Permission.Manage],
-    [Role.HRManager]: [Permission.Manage],
-    [Role.HRStaff]: [Permission.Manage],
-    [Role.BOD]: [Permission.Manage],
-    [Role.GeneralManager]: [Permission.View],
-    [Role.OperationsDirector]: [Permission.View],
-    [Role.BusinessUnitManager]: [Permission.View],
-    [Role.Manager]: [Permission.View],
-    [Role.Employee]: [Permission.View],
-    [Role.FinanceStaff]: [], // None
-    [Role.Auditor]: [], // View logs only, not schedule
-    [Role.Recruiter]: [], // None
-    [Role.IT]: [], // None
-};
+import {
+  COERequest,
+  Evaluation,
+  EvaluatorType,
+  IncidentReport,
+  OTRequest,
+  OTStatus,
+  Permission,
+  Ticket,
+  User,
+} from '../types';
+import { allowedBusinessUnitIds, normalizeAccessScope } from '../services/rbac';
 
 export const usePermissions = () => {
-    const { user: sessionUser } = useAuth();
-    const { isRbacEnabled } = useSettings();
+  const context = useContext(PermissionsContext);
+  const { user } = useAuth();
+  if (!context) throw new Error('usePermissions must be used within PermissionsProvider');
 
-    // Use the session user directly from AuthContext (live Supabase data)
-    const getCurrentUser = () => {
-        return sessionUser || null;
+  return useMemo(() => {
+    const scope = normalizeAccessScope(user?.accessScope);
+    const allowedBuIds = allowedBusinessUnitIds(scope, user?.businessUnitId);
+    const isGlobal = allowedBuIds === null;
+    const scopeName = isGlobal ? 'global' : scope.type === 'HOME_ONLY' ? 'self' : 'bu';
+    const can = context.can;
+
+    const getVisibleEmployeeIds = (): string[] => (isGlobal ? [] : user ? [user.id] : []);
+    const hasDirectReports = () =>
+      can('Employees', Permission.Approve) ||
+      can('OT', Permission.Approve) ||
+      can('Leave', Permission.Approve);
+
+    const filterByScope = <T extends { employeeId: string }>(rows: T[]): T[] =>
+      isGlobal ? rows : rows.filter(row => row.employeeId === user?.id);
+
+    const filterIncidentReportsByScope = (rows: IncidentReport[]) =>
+      isGlobal
+        ? rows
+        : rows.filter(row => user && row.involvedEmployeeIds.includes(user.id));
+
+    const getTicketAccess = () => ({
+      canSubmit: can('Helpdesk', Permission.Create),
+      canRespond: can('Helpdesk', Permission.Edit) || can('Helpdesk', Permission.Approve),
+      canView: can('Helpdesk', Permission.View),
+      scope: scopeName as 'global' | 'bu' | 'self',
+    });
+
+    const filterTicketsByScope = (rows: Ticket[]) => {
+      const access = getTicketAccess();
+      if (!access.canView || !user) return [];
+      if (isGlobal) return rows;
+      const allowed = new Set(allowedBuIds || []);
+      return rows.filter(
+        row =>
+          row.requesterId === user.id ||
+          row.assignedToId === user.id ||
+          (!!row.businessUnitId && allowed.has(row.businessUnitId)),
+      );
     };
 
-    const getAccessibleBusinessUnits = (allBusinessUnits: BusinessUnit[]): BusinessUnit[] => {
-        const user = getCurrentUser();
-        if (!user) return [];
-        if (!isRbacEnabled) return allBusinessUnits;
-
-        // Special Rule: Managers of Marketing, Finance, and HR get global view access
-        const specialDepartments = ['Marketing', 'Finance', 'Finance and Accounting', 'Human Resources'];
-        if (user.role === Role.Manager && user.department && specialDepartments.includes(user.department)) {
-            return allBusinessUnits;
-        }
-
-        // Global-access roles should see all business units even without an explicit scope.
-        if ([Role.Admin, Role.HRManager, Role.HRStaff, Role.BOD, Role.GeneralManager, Role.FinanceStaff, Role.Auditor, Role.Recruiter].includes(user.role)) {
-            return allBusinessUnits;
-        }
-
-        const scope = user.accessScope || { type: 'HOME_ONLY' };
-
-        if (scope.type === 'GLOBAL') {
-            return allBusinessUnits;
-        }
-
-        if (scope.type === 'SPECIFIC') {
-            if (!scope.allowedBuIds || scope.allowedBuIds.length === 0) {
-                return [];
-            }
-            return allBusinessUnits.filter(bu => scope.allowedBuIds?.includes(bu.id));
-        }
-
-        if (user.businessUnitId) {
-            return allBusinessUnits.filter(bu => bu.id === user.businessUnitId);
-        }
-        if (user.businessUnit) {
-            return allBusinessUnits.filter(bu => bu.name === user.businessUnit);
-        }
-        return [];
-    };
-
-    const can = (resource: Resource, permission: Permission): boolean => {
-        const user = getCurrentUser();
-
-        if (!isRbacEnabled || user?.role === Role.Admin) {
-            return true;
-        }
-
-        if (!user) {
-            return false;
-        }
-
-        if (resource === 'Evaluation') {
-            const perms = evaluationsPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'OrgChart') {
-            const perms = orgChartPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'Calendar') {
-            const perms = calendarPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'Helpdesk') {
-            const perms = knowledgeBasePermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'Exceptions') {
-            const perms = attendanceExceptionsPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'DailyTimeReview') {
-            const perms = dailyTimeReviewPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'Clock') {
-            const perms = clockPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'ClockLog') {
-            const perms = clockLogPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-        if (resource === 'WFH') {
-            const perms = wfhPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        // Contracts & Signing custom matrix (only if rbac enabled)
-        if (resource === 'Contracts & Signing' as Resource) {
-            const perms = contractsPermissions[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'Benefits') {
-            const perms = benefitsPermissions[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'Assets') {
-            const perms = assetManagementPermissions[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'MemoLibrary') {
-            const perms = memoPermissions[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'PulseSurvey') {
-            const perms = pulseSurveyPermissions[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'RolesPermissions') {
-            const perms = rolesPermissionsAccess[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'UserManagement') {
-            const perms = userManagementPermissions[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'Departments') {
-            const perms = departmentsPermissions[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'SiteManagement') {
-            const perms = siteManagementPermissions[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'LeavePolicies') {
-            const perms = leavePoliciesPermissions[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'Holidays') {
-            const perms = holidaysPermissions[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'AuditLog') {
-            const perms = auditLogPermissions[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'FeedbackTemplates') {
-            const perms = feedbackTemplatesPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'Pipeline') {
-            const perms = pipelinePermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'WorkforcePlanning' || resource === 'WorkforcePlanningAdmin') {
-            const perms = workforcePlanningPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'Timekeeping') {
-            const perms = timekeepingPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'Coaching') {
-            const perms = coachingPermissions[user.role];
-            if (!perms || perms.length === 0) {
-                return false;
-            }
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        if (resource === 'CodeOfDiscipline') {
-            const perms = codeOfDisciplinePermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-        if (resource === 'JobPosts') {
-            const perms = jobPostsPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-        if (resource === 'Applicants') {
-            const perms = applicantsPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-        if (resource === 'Offers') {
-            const perms = offersPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-        if (resource === 'ApplicationPages') {
-            const perms = applicationPagesPermissions[user.role];
-            if (!perms || perms.length === 0) return false;
-            if (perms.includes(Permission.Manage)) return true;
-            if (permission === Permission.View && perms.length > 0) return true;
-            return perms.includes(permission);
-        }
-
-        const rolePermissions = defaultPermissions[user.role];
-        if (!rolePermissions) {
-            return false;
-        }
-
-        const resourcePermissions = rolePermissions[resource];
-        if (!resourcePermissions || resourcePermissions.length === 0) {
-            return false;
-        }
-
-        if (permission === Permission.View && resourcePermissions.length > 0) {
-            return true;
-        }
-
-        if (resourcePermissions.includes(Permission.Manage)) {
-            return true;
-        }
-
-        return resourcePermissions.includes(permission);
-    };
-
-    const getVisibleEmployeeIds = (): string[] => {
-        const user = getCurrentUser();
-        if (!user) return [];
-
-        if ([Role.Admin, Role.HRManager, Role.HRStaff, Role.BOD, Role.GeneralManager, Role.Auditor, Role.FinanceStaff, Role.Recruiter, Role.BusinessUnitManager, Role.OperationsDirector].includes(user.role)) {
-            // For broad-access roles, return empty to signal "all visible" — callers should treat empty as global
-            return [];
-        }
-
-        const managerRoles = [Role.Manager];
-        if (managerRoles.includes(user.role)) {
-            // Manager scope: self only (team filtering done at query level via Supabase)
-            return [user.id];
-        }
-
-        return [user.id];
-    };
-
-    const hasDirectReports = (): boolean => {
-        const user = getCurrentUser();
-        if (!user) return false;
-        // Admin has access to all direct-report widgets; other managerial roles as scoped.
-        return [Role.Admin, Role.Manager, Role.BusinessUnitManager, Role.HRManager, Role.GeneralManager, Role.OperationsDirector].includes(user.role);
-    };
-
-    const filterByScope = <T extends { employeeId: string }>(data: T[]): T[] => {
-        const user = getCurrentUser();
-        if (!user) return [];
-        const visibleIds = getVisibleEmployeeIds();
-        
-        // Empty array means global access
-        if (visibleIds.length === 0) {
-            return data;
-        }
-
-        return data.filter(item => visibleIds.includes(item.employeeId));
-    };
-
-    const filterIncidentReportsByScope = (data: IncidentReport[]): IncidentReport[] => {
-        const user = getCurrentUser();
-        if (!user) return [];
-        const visibleIds = getVisibleEmployeeIds();
-
-        // Empty array means global access
-        if (visibleIds.length === 0) {
-            return data;
-        }
-
-        return data.filter(item =>
-            item.involvedEmployeeIds.some(id => visibleIds.includes(id))
-        );
-    };
-
-    const getTicketAccess = () => {
-        const user = getCurrentUser();
-        if (!user) {
-            return {
-                canSubmit: false,
-                canRespond: false,
-                canView: false,
-                scope: 'none' as const,
-            };
-        }
-
-        switch (user.role) {
-            case Role.Admin:
-            case Role.HRManager:
-            case Role.HRStaff:
-                return { canSubmit: true, canRespond: true, canView: true, scope: 'global' as const }; // Full
-            case Role.BOD:
-                return { canSubmit: false, canRespond: false, canView: true, scope: 'global' as const }; // View
-            case Role.GeneralManager:
-            case Role.OperationsDirector:
-            case Role.BusinessUnitManager:
-                return { canSubmit: false, canRespond: true, canView: true, scope: 'bu' as const }; // View & Respond (BU)
-            case Role.FinanceStaff:
-            case Role.IT:
-                return { canSubmit: false, canRespond: true, canView: true, scope: 'global' as const }; // View & Respond
-            case Role.Employee:
-                return { canSubmit: true, canRespond: false, canView: true, scope: 'self' as const }; // Own
-            case Role.Auditor:
-                return { canSubmit: false, canRespond: false, canView: true, scope: 'global' as const }; // View Logs
-            case Role.Manager:
-                return { canSubmit: false, canRespond: true, canView: true, scope: 'self' as const }; // Assigned/self
-            case Role.Recruiter:
-                return { canSubmit: false, canRespond: false, canView: false, scope: 'none' as const }; // None
-            default:
-                return { canSubmit: false, canRespond: false, canView: false, scope: 'none' as const };
-        }
-    };
-
-    const filterTicketsByScope = (data: Ticket[]): Ticket[] => {
-        const user = getCurrentUser();
-        if (!user) return [];
-        const access = getTicketAccess();
-        if (!access.canView && !access.canRespond) return [];
-
-        return data.filter(item => {
-            if (user.role === Role.Manager) {
-                return item.assignedToId === user.id || item.requesterId === user.id;
-            }
-
-            if (item.assignedToId === user.id) return true;
-
-            if (access.scope === 'global') return true;
-
-            if (access.scope === 'self') {
-                return item.requesterId === user.id;
-            }
-
-            if (access.scope === 'bu') {
-                const matchesBuId = item.businessUnitId && user.businessUnitId && item.businessUnitId === user.businessUnitId;
-                const matchesBuName = item.businessUnitName && user.businessUnit && item.businessUnitName === user.businessUnit;
-                return matchesBuId || matchesBuName || item.requesterId === user.id;
-            }
-
-            return false;
-        });
-    };
-
-    /**
-     * Checks if the current user is eligible to evaluate a specific subject based on the evaluation configuration.
-     * Handles both Individual assignments and Group logic (BU/Dept matching).
-     */
-    const isUserEligibleEvaluator = (user: User, evaluation: Evaluation, subjectId: string): boolean => {
-        // User cannot evaluate themselves unless it is a Self Evaluation (which is usually an Individual config pointing to them)
-        // However, the 'excludeSubject' flag in Group configs handles the self-exclusion.
-
-        if (subjectId === user.id && evaluation.targetEmployeeIds.includes(user.id)) {
-            return true;
-        }
-
-        return evaluation.evaluators.some(config => {
-            // 1. Individual Assignment
-            if (config.type === EvaluatorType.Individual) {
-                return config.userId === user.id && subjectId === config.userId ? true : config.userId === user.id;
-                // Logic tweak: If Individual, and userId matches user.id, they are eligible. 
-                // If it's a self-eval, userId will equal subjectId.
-            }
-
-            // 2. Group Assignment
-            if (config.type === EvaluatorType.Group && config.groupFilter) {
-                // Check Self-Exclusion
-                if (config.excludeSubject && user.id === subjectId) {
-                    return false;
-                }
-
-                const targetBuId = config.groupFilter?.businessUnitId;
-                const targetDeptId = config.groupFilter?.departmentId;
-                const targetBuName = targetBuId
-                    ? undefined // BU name lookup deferred to caller
-                    : undefined;
-                const targetDeptName = targetDeptId
-                    ? undefined // Dept name lookup deferred to caller
-                    : undefined;
-
-                if (targetBuId) {
-                    if (user.businessUnitId && user.businessUnitId !== targetBuId) {
-                        return false;
-                    }
-                    if (!user.businessUnitId && targetBuName && user.businessUnit !== targetBuName) {
-                        return false;
-                    }
-                }
-
-                if (targetDeptId) {
-                    if (user.departmentId && user.departmentId !== targetDeptId) {
-                        return false;
-                    }
-                    if (!user.departmentId && targetDeptName && user.department !== targetDeptName) {
-                        return false;
-                    }
-                }
-
-                // If we got here, the user matches the group criteria
-                return true;
-            }
-
-            return false;
-        });
+    const isUserEligibleEvaluator = (
+      evaluator: User,
+      evaluation: Evaluation,
+      subjectId: string,
+    ): boolean =>
+      evaluation.evaluators.some(config => {
+        if (config.type === EvaluatorType.Individual) return config.userId === evaluator.id;
+        if (config.type !== EvaluatorType.Group || !config.groupFilter) return false;
+        if (config.excludeSubject && evaluator.id === subjectId) return false;
+        if (
+          config.groupFilter.businessUnitId &&
+          evaluator.businessUnitId !== config.groupFilter.businessUnitId
+        ) return false;
+        if (
+          config.groupFilter.departmentId &&
+          evaluator.departmentId !== config.groupFilter.departmentId
+        ) return false;
+        return true;
+      });
+
+    const filterRequests = <T extends { employeeId: string; businessUnitId?: string }>(
+      rows: T[],
+      canView: boolean,
+    ) => {
+      if (!canView || !user) return [];
+      if (isGlobal) return rows;
+      const allowed = new Set(allowedBuIds || []);
+      return rows.filter(
+        row => row.employeeId === user.id || (!!row.businessUnitId && allowed.has(row.businessUnitId)),
+      );
     };
 
     const getCoeAccess = () => {
-        const user = getCurrentUser();
-        if (!user) {
-            return {
-                canRequest: false,
-                canApprove: false,
-                canView: false,
-                scope: 'none' as const,
-                filterRequests: (_reqs: COERequest[]) => [],
-                canActOn: (_req: COERequest) => false,
-            };
-        }
-
-        let canRequest = false;
-        let canApprove = false;
-        let canView = false;
-        let scope: 'global' | 'bu' | 'team' | 'self' | 'dept' | 'none' = 'none';
-
-        switch (user.role) {
-            case Role.Admin:
-            case Role.HRManager:
-            case Role.HRStaff:
-                canRequest = true;
-                canApprove = true;
-                canView = true;
-                scope = 'global';
-                break;
-            case Role.BOD:
-                canRequest = false;
-                canApprove = false;
-                canView = true;
-                scope = 'global';
-                break;
-            case Role.GeneralManager:
-                canRequest = false;
-                canApprove = false;
-                canView = true;
-                scope = 'dept'; // View BU/Department
-                break;
-            case Role.OperationsDirector:
-                canRequest = false;
-                canApprove = true;
-                canView = true;
-                scope = 'bu';
-                break;
-            case Role.BusinessUnitManager:
-                canRequest = true;
-                canApprove = false;
-                canView = true;
-                scope = 'bu';
-                break;
-            case Role.Manager:
-                canRequest = true;
-                canApprove = true; // Own team
-                canView = true;
-                scope = 'team';
-                break;
-            case Role.Employee:
-                canRequest = true;
-                canView = true;
-                scope = 'self';
-                break;
-            case Role.Auditor:
-                canRequest = false;
-                canApprove = false;
-                canView = false; // Logs only, not COE queue
-                scope = 'none';
-                break;
-            default:
-                scope = 'none';
-        }
-
-        const filterRequests = (requests: COERequest[]): COERequest[] => {
-            if (!canView) return [];
-            if (scope === 'global') return requests;
-
-            if (scope === 'self') {
-                return requests.filter(r => r.employeeId === user.id);
-            }
-
-            if (scope === 'team') {
-                const deptId = user.departmentId;
-                const buIds = new Set([user.businessUnitId].filter(Boolean) as string[]);
-
-                return requests.filter(r => {
-                    const isSelf = r.employeeId === user.id;
-                    const sameBu = r.businessUnitId ? buIds.has(r.businessUnitId) : true;
-                    const sameDept =
-                        deptId && r.employeeDepartmentId
-                            ? deptId === r.employeeDepartmentId
-                            : true; // if dept missing on either side, rely on BU
-                    return isSelf || (sameBu && sameDept);
-                });
-            }
-
-            if (scope === 'dept') {
-                const targetDeptId = user.departmentId;
-                const targetBuIds = new Set([user.businessUnitId].filter(Boolean) as string[]);
-
-                return requests.filter(r => {
-                    const matchesDept = targetDeptId && r.employeeDepartmentId ? r.employeeDepartmentId === targetDeptId : false;
-                    const matchesBu = targetBuIds.has(r.businessUnitId);
-                    return matchesDept || matchesBu;
-                });
-            }
-
-            if (scope === 'bu') {
-                const accessibleBuIds = new Set([user.businessUnitId].filter(Boolean) as string[]);
-                return requests.filter(r => accessibleBuIds.has(r.businessUnitId));
-            }
-
-            return [];
-        };
-
-        const canActOn = (request: COERequest) => {
-            if (!canApprove) return false;
-            return filterRequests([request]).length > 0;
-        };
-
-        return { canRequest, canApprove, canView, scope, filterRequests, canActOn };
+      const canRequest = can('COE', Permission.Create);
+      const canApprove = can('COE', Permission.Approve) || can('COE', Permission.Manage);
+      const canView = can('COE', Permission.View);
+      const filter = (rows: COERequest[]) => filterRequests(rows, canView);
+      return {
+        canRequest,
+        canApprove,
+        canView,
+        scope: scopeName,
+        filterRequests: filter,
+        canActOn: (request: COERequest) => canApprove && filter([request]).length > 0,
+      };
     };
 
     const getOtAccess = () => {
-        const user = getCurrentUser();
-        if (!user) {
-            return {
-                canRequest: false,
-                canApprove: false,
-                canView: false,
-                scope: 'none' as const,
-                filterRequests: (_reqs: OTRequest[]) => [],
-                canActOn: (_req: OTRequest) => false,
-            };
-        }
-
-        let canRequest = false;
-        let canApprove = false;
-        let canView = false;
-        let scope: 'global' | 'bu' | 'team' | 'self' | 'dept' | 'none' = 'none';
-
-        switch (user.role) {
-            case Role.Admin:
-            case Role.HRManager:
-            case Role.HRStaff:
-                canRequest = true;
-                canApprove = true;
-                canView = true;
-                scope = 'global';
-                break;
-            case Role.BOD:
-                canView = true;
-                scope = 'global';
-                break;
-            case Role.GeneralManager:
-                canView = true;
-                scope = 'dept';
-                break;
-            case Role.OperationsDirector:
-                canApprove = true;
-                canView = true;
-                scope = 'bu';
-                break;
-            case Role.BusinessUnitManager:
-                canRequest = true;
-                canView = true;
-                scope = 'bu';
-                break;
-            case Role.Manager:
-                canRequest = true;
-                canApprove = true;
-                canView = true;
-                scope = 'team';
-                break;
-            case Role.Employee:
-                canRequest = true;
-                canView = true;
-                scope = 'self';
-                break;
-            case Role.Auditor:
-                canView = true; // view logs
-                scope = 'global';
-                break;
-            default:
-                scope = 'none';
-        }
-
-        const filterRequests = (requests: OTRequest[]): OTRequest[] => {
-            if (!canView) return [];
-            if (scope === 'global') return requests;
-            if (scope === 'self') return requests.filter(r => r.employeeId === user.id);
-            if (scope === 'team') {
-                // OTRequest has no BU/dept fields; for team scope just show self
-                return requests.filter(r => r.employeeId === user.id);
-            }
-            if (scope === 'dept') {
-                // OTRequest has no dept field; show self 
-                return requests.filter(r => r.employeeId === user.id);
-            }
-            if (scope === 'bu') {
-                // OTRequest has no BU field; show self
-                return requests.filter(r => r.employeeId === user.id);
-            }
-            return [];
-        };
-
-        const canActOn = (request: OTRequest) => {
-            if (!canApprove) return false;
-            if (request.status === OTStatus.Approved || request.status === OTStatus.Rejected) return false;
-            return filterRequests([request]).length > 0;
-        };
-
-        return { canRequest, canApprove, canView, scope, filterRequests, canActOn };
+      const canRequest = can('OT', Permission.Create);
+      const canApprove = can('OT', Permission.Approve) || can('OT', Permission.Manage);
+      const canView = can('OT', Permission.View);
+      const filter = (rows: OTRequest[]) => filterRequests(rows, canView);
+      return {
+        canRequest,
+        canApprove,
+        canView,
+        scope: scopeName,
+        filterRequests: filter,
+        canActOn: (request: OTRequest) =>
+          canApprove &&
+          request.status !== OTStatus.Approved &&
+          request.status !== OTStatus.Rejected &&
+          filter([request]).length > 0,
+      };
     };
 
-    const getIrAccess = () => {
-        const user = getCurrentUser();
-        if (!user) {
-            return { canCreate: false, canView: false, scope: 'none' as const };
-        }
+    const getIrAccess = () => ({
+      canCreate: can('Feedback', Permission.Create),
+      canView: can('Feedback', Permission.View),
+      scope: scopeName,
+    });
+    const getAwardsAccess = () => ({
+      canAssign: can('Evaluation', Permission.Create),
+      canApprove: can('Evaluation', Permission.Approve),
+      canView: can('Evaluation', Permission.View),
+      scope: scopeName,
+    });
+    const getPanAccess = () => ({
+      canView: can('PAN', Permission.View),
+      canRespond: can('PAN', Permission.Edit) || can('PAN', Permission.Approve),
+      canCreate: can('PAN', Permission.Create),
+      scope: scopeName,
+    });
+    const getJobRequisitionAccess = () => ({
+      canCreate: can('Requisitions', Permission.Create),
+      canView: can('Requisitions', Permission.View),
+      scope: scopeName,
+    });
+    const getAnnouncementAccess = () => ({
+      canView: can('Announcements', Permission.View),
+      canManage: can('Announcements', Permission.Manage),
+      scope: scopeName,
+    });
+    const getLifecycleAccess = () => ({
+      canView: can('Lifecycle', Permission.View),
+      canManage: can('Lifecycle', Permission.Manage),
+      scope: scopeName,
+    });
 
-        switch (user.role) {
-            case Role.Admin:
-            case Role.HRManager:
-            case Role.HRStaff:
-                return { canCreate: true, canView: true, scope: 'global' as const };
-            case Role.BOD:
-                return { canCreate: false, canView: true, scope: 'global' as const };
-            case Role.GeneralManager:
-                return { canCreate: false, canView: true, scope: 'bu' as const };
-            case Role.BusinessUnitManager:
-            case Role.Manager:
-                return { canCreate: true, canView: true, scope: 'self' as const };
-            case Role.Employee:
-                return { canCreate: true, canView: true, scope: 'self' as const };
-            case Role.Auditor:
-                return { canCreate: false, canView: true, scope: 'global' as const };
-            default:
-                return { canCreate: false, canView: false, scope: 'none' as const };
-        }
+    return {
+      ...context,
+      can,
+      isSuperAdmin: () => user?.role === 'Admin',
+      getVisibleEmployeeIds,
+      filterByScope,
+      filterIncidentReportsByScope,
+      filterTicketsByScope,
+      hasDirectReports,
+      isUserEligibleEvaluator,
+      getCoeAccess,
+      getOtAccess,
+      getTicketAccess,
+      getIrAccess,
+      getJobRequisitionAccess,
+      getAnnouncementAccess,
+      getAwardsAccess,
+      getPanAccess,
+      getLifecycleAccess,
     };
-
-    const getAwardsAccess = () => {
-        const user = getCurrentUser();
-        if (!user) return { canAssign: false, canApprove: false, canView: false, scope: 'none' as const };
-        switch (user.role) {
-            case Role.Admin:
-            case Role.HRManager:
-            case Role.HRStaff:
-                return { canAssign: true, canApprove: true, canView: true, scope: 'global' as const };
-            case Role.BOD:
-                return { canAssign: false, canApprove: false, canView: true, scope: 'global' as const };
-            case Role.Auditor:
-                return { canAssign: false, canApprove: false, canView: true, scope: 'logs' as const };
-            case Role.Employee:
-                return { canAssign: false, canApprove: false, canView: true, scope: 'self' as const };
-            default:
-                // GM, Ops Director, BUM, Manager, Finance, Recruiter, IT -> no access per matrix
-                return { canAssign: false, canApprove: false, canView: false, scope: 'none' as const };
-        }
-    };
-
-    const getPanAccess = () => {
-        const user = getCurrentUser();
-        if (!user) return { canView: false, canRespond: false, canCreate: false, scope: 'none' as const };
-        switch (user.role) {
-            case Role.Admin:
-            case Role.HRManager:
-            case Role.HRStaff:
-            case Role.Recruiter: // Full per matrix
-                return { canView: true, canRespond: true, canCreate: true, scope: 'global' as const };
-            case Role.BOD:
-                return { canView: true, canRespond: false, canCreate: false, scope: 'global' as const };
-            case Role.GeneralManager:
-            case Role.OperationsDirector:
-                return { canView: true, canRespond: true, canCreate: false, scope: 'buDept' as const };
-            case Role.BusinessUnitManager:
-                return { canView: true, canRespond: true, canCreate: false, scope: 'bu' as const };
-            case Role.Manager:
-                return { canView: true, canRespond: true, canCreate: false, scope: 'team' as const };
-            case Role.Employee:
-                return { canView: true, canRespond: false, canCreate: false, scope: 'self' as const };
-            case Role.Auditor:
-            case Role.FinanceStaff:
-            case Role.IT:
-            default:
-                return { canView: false, canRespond: false, canCreate: false, scope: 'none' as const };
-        }
-    };
-
-    const getJobRequisitionAccess = () => {
-        const user = getCurrentUser();
-        if (!user) {
-            return { canCreate: false, canView: false, scope: 'none' as const };
-        }
-        switch (user.role) {
-            case Role.Admin:
-            case Role.HRManager:
-            case Role.HRStaff:
-            case Role.Recruiter: // Recruiter Full per matrix
-                return { canCreate: true, canView: true, scope: 'global' as const };
-            case Role.BOD:
-                return { canCreate: false, canView: true, scope: 'buDept' as const };
-            case Role.GeneralManager:
-                return { canCreate: false, canView: true, scope: 'buDept' as const };
-            case Role.OperationsDirector:
-                return { canCreate: false, canView: true, scope: 'bu' as const }; // View BU only
-            case Role.BusinessUnitManager:
-                return { canCreate: true, canView: true, scope: 'bu' as const }; // Own BU
-            case Role.Manager:
-                return { canCreate: true, canView: true, scope: 'team' as const }; // Own Team
-            case Role.Employee:
-            case Role.FinanceStaff:
-                return { canCreate: false, canView: false, scope: 'none' as const };
-            case Role.Auditor:
-                return { canCreate: false, canView: true, scope: 'logs' as const };
-            case Role.IT:
-            default:
-                return { canCreate: false, canView: false, scope: 'none' as const };
-        }
-    };
-
-    const getAnnouncementAccess = () => {
-        const user = getCurrentUser();
-        if (!user) {
-            return { canView: false, canManage: false, scope: 'none' as const };
-        }
-        switch (user.role) {
-            case Role.Admin:
-            case Role.HRManager:
-            case Role.HRStaff:
-            case Role.Recruiter: // Full
-                return { canView: true, canManage: true, scope: 'global' as const };
-            case Role.BOD:
-                return { canView: true, canManage: false, scope: 'global' as const };
-            case Role.GeneralManager:
-                return { canView: true, canManage: false, scope: 'buDept' as const };
-            case Role.OperationsDirector:
-                return { canView: true, canManage: false, scope: 'bu' as const };
-            case Role.BusinessUnitManager:
-                return { canView: true, canManage: false, scope: 'ownBu' as const };
-            case Role.Manager:
-                return { canView: true, canManage: false, scope: 'team' as const };
-            case Role.Employee:
-                return { canView: true, canManage: false, scope: 'ownBu' as const };
-            case Role.Auditor:
-                return { canView: true, canManage: false, scope: 'logs' as const };
-            case Role.FinanceStaff:
-            case Role.IT:
-            default:
-                return { canView: false, canManage: false, scope: 'none' as const };
-        }
-    };
-
-    const getLifecycleAccess = () => {
-        const user = getCurrentUser();
-        if (!user) return { canView: false, canManage: false, scope: 'none' as const };
-        switch (user.role) {
-            case Role.Admin:
-            case Role.HRManager:
-            case Role.HRStaff:
-            case Role.Recruiter:
-                return { canView: true, canManage: true, scope: 'global' as const };
-            case Role.BOD:
-                return { canView: true, canManage: false, scope: 'global' as const };
-            case Role.BusinessUnitManager:
-                return { canView: true, canManage: true, scope: 'bu' as const };
-            case Role.Manager:
-                return { canView: true, canManage: true, scope: 'team' as const };
-            case Role.Employee:
-                return { canView: true, canManage: false, scope: 'self' as const };
-            case Role.GeneralManager:
-            case Role.OperationsDirector:
-            case Role.FinanceStaff:
-            case Role.Auditor:
-            case Role.IT:
-            default:
-                return { canView: false, canManage: false, scope: 'none' as const };
-        }
-    };
-
-    /**
-     * Returns true if the current authenticated user has the Admin (Superuser) role.
-     * Use this for UI guards that need a direct role check rather than a resource/permission check.
-     * The Admin role bypasses all RBAC restrictions — both in this hook and in Supabase RLS.
-     */
-    const isSuperAdmin = (): boolean => {
-        const user = getCurrentUser();
-        return user?.role === Role.Admin;
-    };
-
-    return { can, isSuperAdmin, getVisibleEmployeeIds, filterByScope, filterIncidentReportsByScope, filterTicketsByScope, hasDirectReports, getAccessibleBusinessUnits, isUserEligibleEvaluator, getCoeAccess, getOtAccess, getTicketAccess, getIrAccess, getJobRequisitionAccess, getAnnouncementAccess, getAwardsAccess, getPanAccess, getLifecycleAccess };
+  }, [context, user]);
 };
