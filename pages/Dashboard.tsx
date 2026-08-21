@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { Role } from '../types';
+import { usePermissions } from '../hooks/usePermissions';
 import HRDashboard from '../components/dashboard/HRDashboard';
 import ManagerDashboard from '../components/dashboard/ManagerDashboard';
 // FIX: Changed to a named import as the default export was not being resolved correctly, likely due to syntax errors in the imported file.
@@ -9,26 +9,22 @@ import AlertBanner from '../components/dashboard/AlertBanner';
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
+  const { dashboardType, loading } = usePermissions();
 
   const renderDashboard = () => {
-    switch (user?.role) {
-      case Role.Admin:
-      case Role.HRManager:
-      case Role.HRStaff:
+    if (loading) {
+      return <div className="py-12 text-center text-slate-500">Resolving dashboard access...</div>;
+    }
+    switch (dashboardType) {
+      case 'hr':
         return <HRDashboard />;
-      case Role.BOD:
-      case Role.GeneralManager:
-      case Role.BusinessUnitManager:
-      case Role.Manager:
-      case Role.OperationsDirector:
-      case Role.FinanceStaff:
-      case Role.Recruiter:
-      case Role.Auditor:
+      case 'manager':
+      case 'executive':
         return <ManagerDashboard />;
-      case Role.Employee:
+      case 'employee':
         return <EmployeeDashboard />;
       default:
-        return <div>Welcome! Your dashboard is being prepared.</div>;
+        return <div>Your role does not have a valid dashboard configuration.</div>;
     }
   };
 
