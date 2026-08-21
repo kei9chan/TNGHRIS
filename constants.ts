@@ -60,7 +60,7 @@ export const NAV_LINKS: NavLink[] = [
                     { name: 'Templates', path: '/employees/coe/templates', requiredPermission: { resource: 'COE', permission: Permission.Manage } }
                 ]
             },
-            { name: 'Contracts & Signing', path: '/employees/contracts', requiredPermission: { resource: 'Employees', permission: Permission.View } },
+            { name: 'Contracts & Signing', path: '/employees/contracts', requiredPermission: { resource: 'Contracts & Signing', permission: Permission.View } },
             { name: 'Benefits', path: '/employees/benefits', requiredPermission: { resource: 'Benefits', permission: Permission.View } },
             { 
                 name: 'Asset Management', 
@@ -95,7 +95,7 @@ export const NAV_LINKS: NavLink[] = [
             { name: 'Timekeeping', path: '/payroll/timekeeping', requiredPermission: { resource: 'Timekeeping', permission: Permission.View } },
             { name: 'Manpower Planning', path: '/payroll/manpower-planning', requiredPermission: { resource: 'Manpower', permission: Permission.View } },
             { name: 'Workforce Planning', path: '/payroll/workforce-planning', requiredPermission: { resource: 'WorkforcePlanning', permission: Permission.View } },
-            { name: 'Daily Time Review', path: '/payroll/daily-review', requiredPermission: { resource: 'Timekeeping', permission: Permission.View } },
+            { name: 'Daily Time Review', path: '/payroll/daily-review', requiredPermission: { resource: 'DailyTimeReview', permission: Permission.View } },
             { name: 'Clock-in/Out', path: '/payroll/clock-in-out', requiredPermission: { resource: 'Clock', permission: Permission.View } },
             { name: 'Clock Log', path: '/payroll/clock-log', requiredPermission: { resource: 'ClockLog', permission: Permission.View } },
             { name: 'Overtime Requests', path: '/payroll/overtime-requests', requiredPermission: { resource: 'OT', permission: Permission.View } },
@@ -156,21 +156,21 @@ export const NAV_LINKS: NavLink[] = [
             { name: 'Tickets', path: '/helpdesk/tickets', requiredPermission: { resource: 'Helpdesk', permission: Permission.View } },
             { name: 'Announcements', path: '/helpdesk/announcements', requiredPermission: { resource: 'Announcements', permission: Permission.View } },
             { name: 'Knowledge Base', path: '/helpdesk/knowledge-base', requiredPermission: { resource: 'Helpdesk', permission: Permission.View } },
-            { name: 'Calendar', path: '/helpdesk/calendar', requiredPermission: { resource: 'Helpdesk', permission: Permission.View } },
-            { name: 'Organizational Chart', path: '/helpdesk/org-chart', requiredPermission: { resource: 'Employees', permission: Permission.View } },
+            { name: 'Calendar', path: '/helpdesk/calendar', requiredPermission: { resource: 'Calendar', permission: Permission.View } },
+            { name: 'Organizational Chart', path: '/helpdesk/org-chart', requiredPermission: { resource: 'OrgChart', permission: Permission.View } },
         ]
     },
     {
         name: 'Admin',
         path: '/admin/roles',
-        requiredPermission: { resource: 'Settings', permission: Permission.View },
+        requiredPermission: { resource: 'RolesPermissions', permission: Permission.View },
         children: [
-            { name: 'Roles & Permissions', path: '/admin/roles', requiredPermission: { resource: 'Settings', permission: Permission.View } },
-            { name: 'User Management', path: '/admin/users', requiredPermission: { resource: 'Settings', permission: Permission.Manage } },
+            { name: 'Roles & Permissions', path: '/admin/roles', requiredPermission: { resource: 'RolesPermissions', permission: Permission.View } },
+            { name: 'User Management', path: '/admin/users', requiredPermission: { resource: 'UserManagement', permission: Permission.View } },
             { name: 'Departments', path: '/admin/departments', requiredPermission: { resource: 'Departments', permission: Permission.Manage } },
-            { name: 'Site Management', path: '/admin/sites', requiredPermission: { resource: 'Sites', permission: Permission.Manage } },
+            { name: 'Site Management', path: '/admin/sites', requiredPermission: { resource: 'SiteManagement', permission: Permission.View } },
             { name: 'Leave Policies', path: '/admin/leave-policies', requiredPermission: { resource: 'LeavePolicies', permission: Permission.Manage } },
-            { name: 'Holidays', path: '/admin/holidays', requiredPermission: { resource: 'Settings', permission: Permission.Manage } }, 
+            { name: 'Holidays', path: '/admin/holidays', requiredPermission: { resource: 'Holidays', permission: Permission.View } },
             { name: 'Audit Log', path: '/admin/audit-log', requiredPermission: { resource: 'AuditLog', permission: Permission.View } },
             { name: 'Settings', path: '/admin/settings', requiredPermission: { resource: 'Settings', permission: Permission.Manage } },
         ]
