@@ -10,6 +10,20 @@ import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../hooks/useAuth';
 
 const GlobeAltIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" /></svg>;
+const HERO_ASSET_BUCKET = 'application-page-assets';
+
+const getHeroStoragePath = (value?: string | null): string | null => {
+    if (!value) return null;
+    const marker = `/storage/v1/object/public/${HERO_ASSET_BUCKET}/`;
+    const markerIndex = value.indexOf(marker);
+    if (markerIndex < 0) return null;
+
+    try {
+        return decodeURIComponent(value.slice(markerIndex + marker.length).split('?')[0]);
+    } catch {
+        return null;
+    }
+};
 
 const ApplicationPages: React.FC = () => {
     const { can } = usePermissions();
@@ -93,6 +107,7 @@ const ApplicationPages: React.FC = () => {
     };
 
     const handleSave = async (theme: ApplicantPageTheme) => {
+        const previousHeroImage = selectedTheme?.heroImage || null;
         const payload = {
             business_unit_id: theme.businessUnitId,
             name: theme.name,
@@ -116,6 +131,7 @@ const ApplicationPages: React.FC = () => {
             cta_link: theme.ctaLink || null,
         };
         try {
+            let savedThemeId = theme.id;
             if (theme.id) {
                 const { data, error } = await supabase
                     .from('applicant_page_themes')
@@ -125,6 +141,7 @@ const ApplicationPages: React.FC = () => {
                     .single();
                 if (error) throw error;
                 if (!data) throw new Error('No data returned on update');
+                savedThemeId = data.id;
                 setThemes(prev => prev.map(t => t.id === theme.id ? mapTheme(data) : t));
             } else {
                 const { data, error } = await supabase
@@ -134,12 +151,34 @@ const ApplicationPages: React.FC = () => {
                     .single();
                 if (error) throw error;
                 if (!data) throw new Error('No data returned on insert');
+                savedThemeId = data.id;
                 setThemes(prev => [mapTheme(data), ...prev]);
+            }
+
+            // Delete a replaced asset only after the database now points at
+            // the new URL, and only when no other page still references it.
+            const previousHeroPath = getHeroStoragePath(previousHeroImage);
+            if (previousHeroPath && previousHeroImage !== payload.hero_image_url) {
+                const { data: references, error: referenceError } = await supabase
+                    .from('applicant_page_themes')
+                    .select('id')
+                    .eq('hero_image_url', previousHeroImage)
+                    .neq('id', savedThemeId)
+                    .limit(1);
+
+                if (referenceError) {
+                    console.warn('Saved page, but could not verify old hero image references', referenceError);
+                } else if (!references?.length) {
+                    const { error: removeError } = await supabase.storage
+                        .from(HERO_ASSET_BUCKET)
+                        .remove([previousHeroPath]);
+                    if (removeError) console.warn('Saved page, but could not remove old hero image', removeError);
+                }
             }
             setIsEditorOpen(false);
         } catch (err: any) {
             console.error('Failed to save page', err);
-            alert(err?.message || 'Failed to save page.');
+            throw new Error(err?.message || 'Failed to save page.');
         }
     };
 

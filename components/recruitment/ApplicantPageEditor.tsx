@@ -1,7 +1,7 @@
 
 
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ApplicantPageTheme } from '../../types';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
@@ -9,20 +9,34 @@ import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
 import CareerPagePreview from './CareerPagePreview';
 import FileUploader from '../ui/FileUploader';
+import { supabase } from '../../services/supabaseClient';
+import { useAuth } from '../../hooks/useAuth';
 
 interface ApplicantPageEditorProps {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (theme: ApplicantPageTheme) => void;
+    onSave: (theme: ApplicantPageTheme) => void | Promise<void>;
     theme: ApplicantPageTheme | null;
     businessUnits: { id: string; name: string }[];
 }
 
 const icons = ['rocket', 'smile', 'wallet', 'heart', 'star'];
+const HERO_ASSET_BUCKET = 'application-page-assets';
+const HERO_IMAGE_MAX_SIZE = 20 * 1024 * 1024;
+const HERO_IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const HERO_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
 
 const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClose, onSave, theme, businessUnits }) => {
+    const { user } = useAuth();
     const [config, setConfig] = useState<Partial<ApplicantPageTheme>>({});
     const [activeTab, setActiveTab] = useState<'general' | 'hero' | 'benefits' | 'preview'>('general');
+    const [isUploadingHero, setIsUploadingHero] = useState(false);
+    const [heroUploadError, setHeroUploadError] = useState<string | null>(null);
+    const [heroPreviewUrl, setHeroPreviewUrl] = useState<string | null>(null);
+    const [uploadedHeroImagePath, setUploadedHeroImagePath] = useState<string | null>(null);
+    const [isSaving, setIsSaving] = useState(false);
+    const [saveError, setSaveError] = useState<string | null>(null);
+    const wasOpen = useRef(false);
 
     const defaultConfig = useMemo<ApplicantPageTheme>(() => ({
         id: '',
@@ -45,14 +59,22 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
         testimonials: [],
     } as ApplicantPageTheme), [businessUnits]);
 
-    // Initialize form when modal opens
+    // Initialize form once each time the modal opens. This keeps an in-progress
+    // new page intact while the business-unit list finishes loading.
     useEffect(() => {
-        if (!isOpen) return;
-        setConfig(prev => {
-            // If already populated during this open, keep user input
-            if (Object.keys(prev).length && !theme) return prev;
-            return theme || { ...defaultConfig, businessUnitId: theme?.businessUnitId || businessUnits[0]?.id || '' };
-        });
+        if (!isOpen) {
+            wasOpen.current = false;
+            return;
+        }
+        if (!wasOpen.current) {
+            wasOpen.current = true;
+            setConfig(theme || { ...defaultConfig, businessUnitId: businessUnits[0]?.id || '' });
+            setActiveTab('general');
+            setHeroPreviewUrl(null);
+            setUploadedHeroImagePath(null);
+            setHeroUploadError(null);
+            setSaveError(null);
+        }
     }, [isOpen, theme, defaultConfig, businessUnits]);
 
     // Backfill BU once options finish loading without nuking user input
@@ -65,12 +87,52 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
         setConfig(prev => ({ ...prev, [field]: value }));
     };
     
-    const handleHeroImageUpload = (file: File) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            handleChange('heroImage', reader.result);
-        };
-        reader.readAsDataURL(file);
+    const handleHeroImageUpload = async (file: File) => {
+        setHeroUploadError(null);
+        setSaveError(null);
+
+        if (!user?.id) {
+            setHeroUploadError('You must be signed in to upload a hero image.');
+            return;
+        }
+
+        const extension = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+        const path = `hero/${user.id}/${crypto.randomUUID()}.${extension}`;
+        const localPreviewUrl = URL.createObjectURL(file);
+        setHeroPreviewUrl(localPreviewUrl);
+        setIsUploadingHero(true);
+
+        try {
+            const { data, error } = await supabase.storage
+                .from(HERO_ASSET_BUCKET)
+                .upload(path, file, {
+                    cacheControl: '31536000',
+                    contentType: file.type,
+                    upsert: false,
+                });
+
+            if (error) throw error;
+            if (!data?.path) throw new Error('The image upload completed without a storage path.');
+
+            const { data: publicUrlData } = supabase.storage
+                .from(HERO_ASSET_BUCKET)
+                .getPublicUrl(data.path);
+
+            if (!publicUrlData?.publicUrl) {
+                throw new Error('The image uploaded, but a public image URL could not be generated.');
+            }
+
+            handleChange('heroImage', publicUrlData.publicUrl);
+            URL.revokeObjectURL(localPreviewUrl);
+            setHeroPreviewUrl(null);
+            setUploadedHeroImagePath(data.path);
+        } catch (error: any) {
+            URL.revokeObjectURL(localPreviewUrl);
+            setHeroPreviewUrl(null);
+            setHeroUploadError(error?.message || 'Hero image upload failed. Please try again.');
+        } finally {
+            setIsUploadingHero(false);
+        }
     };
     
     const handleBenefitChange = (index: number, field: string, value: string) => {
@@ -88,12 +150,40 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
         setConfig(prev => ({ ...prev, benefits: prev.benefits?.filter((_, i) => i !== index) }));
     };
 
-    const handleSave = () => {
+    const handleRemoveHeroImage = async () => {
+        const pathToRemove = uploadedHeroImagePath;
+        setHeroPreviewUrl(null);
+        setUploadedHeroImagePath(null);
+        handleChange('heroImage', '');
+
+        // A newly uploaded but not-yet-saved replacement is safe to remove
+        // immediately. Existing saved assets are retained until a successful
+        // page save so a failed replacement never destroys the old image.
+        if (pathToRemove) {
+            const { error } = await supabase.storage.from(HERO_ASSET_BUCKET).remove([pathToRemove]);
+            if (error) console.warn('Failed to remove temporary hero image', error);
+        }
+    };
+
+    const handleSave = async () => {
         if (!config.name?.trim() || !config.slug?.trim() || !config.businessUnitId) {
-            alert('Name, slug, and Business Unit are required.');
+            setSaveError('Name, slug, and Business Unit are required.');
             return;
         }
-        onSave(config as ApplicantPageTheme);
+        if (isUploadingHero) {
+            setSaveError('Please wait for the hero image to finish uploading.');
+            return;
+        }
+
+        setSaveError(null);
+        setIsSaving(true);
+        try {
+            await onSave(config as ApplicantPageTheme);
+        } catch (error: any) {
+            setSaveError(error?.message || 'Failed to save page. Please try again.');
+        } finally {
+            setIsSaving(false);
+        }
     };
     
     const tabClass = (tab: string) => `px-4 py-2 text-sm font-medium border-b-2 ${activeTab === tab ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`;
@@ -106,8 +196,8 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
             size="4xl"
             footer={
                 <div className="flex justify-end w-full space-x-2">
-                    <Button variant="secondary" onClick={onClose}>Cancel</Button>
-                    <Button onClick={handleSave}>Save Page</Button>
+                    <Button variant="secondary" onClick={onClose} disabled={isUploadingHero || isSaving}>Cancel</Button>
+                    <Button onClick={handleSave} disabled={isUploadingHero || isSaving}>{isSaving ? 'Saving…' : 'Save Page'}</Button>
                 </div>
             }
         >
@@ -161,20 +251,36 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
                         
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Hero Image</label>
-                            <FileUploader onFileUpload={handleHeroImageUpload} />
-                            {config.heroImage && (
+                            <FileUploader
+                                onFileUpload={handleHeroImageUpload}
+                                maxSize={HERO_IMAGE_MAX_SIZE}
+                                accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                                allowedMimeTypes={HERO_IMAGE_MIME_TYPES}
+                                allowedExtensions={HERO_IMAGE_EXTENSIONS}
+                                inputId="application-page-hero-upload"
+                                disabled={isUploadingHero || isSaving}
+                            />
+                            {heroUploadError && (
+                                <p className="mt-2 text-sm text-red-600" role="alert">{heroUploadError}</p>
+                            )}
+                            {heroPreviewUrl || config.heroImage ? (
                                 <div className="mt-2 relative h-40 w-full rounded-md overflow-hidden border border-gray-300 dark:border-gray-600">
-                                    <img src={config.heroImage} alt="Hero Preview" className="w-full h-full object-cover" />
+                                    <img src={heroPreviewUrl || config.heroImage} alt="Hero Preview" className="w-full h-full object-cover" />
                                     <button 
-                                        onClick={() => handleChange('heroImage', '')} 
-                                        className="absolute top-2 right-2 bg-red-600 text-white p-1.5 rounded-full shadow-md hover:bg-red-700 transition-colors"
+                                        onClick={handleRemoveHeroImage}
+                                        disabled={isUploadingHero || isSaving}
+                                        className="absolute top-2 right-2 bg-red-600 text-white px-2 py-1 text-xs rounded shadow-md hover:bg-red-700 transition-colors disabled:opacity-50"
                                         title="Remove Image"
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                                             <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
                                         </svg>
+                                        Remove Image
                                     </button>
                                 </div>
+                            ) : null}
+                            {saveError && (
+                                <p className="mt-2 text-sm text-red-600" role="alert">{saveError}</p>
                             )}
                         </div>
                     </div>

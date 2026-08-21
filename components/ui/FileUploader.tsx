@@ -11,6 +11,9 @@ interface FileUploaderProps {
   existingFileUrl?: string; // URL of previously uploaded file
   readOnly?: boolean; // If true, hide upload UI and only show existing file
   disabled?: boolean; // If true, disable file input and show uploading state
+  accept?: string;
+  allowedMimeTypes?: string[];
+  allowedExtensions?: string[];
 }
 
 const UploadIcon = () => (
@@ -31,7 +34,17 @@ const isImageFile = (file?: File | null, url?: string): boolean => {
     return false;
 };
 
-const FileUploader: React.FC<FileUploaderProps> = ({ onFileUpload, maxSize, inputId, existingFileUrl, readOnly, disabled }) => {
+const FileUploader: React.FC<FileUploaderProps> = ({
+  onFileUpload,
+  maxSize,
+  inputId,
+  existingFileUrl,
+  readOnly,
+  disabled,
+  accept,
+  allowedMimeTypes = ALLOWED_FILE_TYPES,
+  allowedExtensions = ALLOWED_FILE_EXTENSIONS,
+}) => {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [error, setError] = useState<string>('');
@@ -59,8 +72,14 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onFileUpload, maxSize, inpu
       return false;
     }
 
-    if (!ALLOWED_FILE_TYPES.includes(selectedFile.type)) {
-      setError(`Invalid file type. Allowed types: ${ALLOWED_FILE_EXTENSIONS.join(', ')}`);
+    const normalizedName = selectedFile.name.toLowerCase();
+    const hasAllowedMimeType = allowedMimeTypes.includes(selectedFile.type);
+    const hasAllowedExtension = allowedExtensions.some(extension => normalizedName.endsWith(extension.toLowerCase()));
+
+    // Some browsers provide an empty MIME type for dragged files, so accept a
+    // known-safe extension as a fallback while still rejecting everything else.
+    if (!hasAllowedMimeType && !(selectedFile.type === '' && hasAllowedExtension)) {
+      setError(`Invalid file type. Allowed types: ${allowedExtensions.join(', ')}`);
       return false;
     }
     
@@ -114,6 +133,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onFileUpload, maxSize, inpu
   };
   
   const sizeLimitInMB = (maxSize || MAX_FILE_SIZE) / 1024 / 1024;
+  const acceptedTypesLabel = allowedExtensions.join(', ').toUpperCase();
 
   // Show the preview of the newly selected file
   const showNewFilePreview = file && !error;
@@ -169,11 +189,11 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onFileUpload, maxSize, inpu
                       ) : (
                         <>
                           <p className="mb-2 text-sm text-gray-500 dark:text-gray-400"><span className="font-semibold">Click to upload</span> or drag and drop</p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">PDF, JPG, PNG, DOCX, XLSX (MAX. {sizeLimitInMB}MB)</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{acceptedTypesLabel} (MAX. {sizeLimitInMB}MB)</p>
                         </>
                       )}
                   </div>
-                  <input id={controlId} type="file" className="hidden" onChange={handleFileChange} disabled={disabled} />
+                  <input id={controlId} type="file" className="hidden" onChange={handleFileChange} disabled={disabled} accept={accept} />
               </label>
           </div>
         )}
