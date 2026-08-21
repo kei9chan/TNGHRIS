@@ -9,7 +9,7 @@ import { usePermissions } from '../../hooks/usePermissions'; // Import added
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { mergePanParticulars } from '../../services/panUtils';
-import { JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, Role, NotificationType, ResignationStatus, Notification, TicketStatus, UserDocumentStatus, OnboardingTaskStatus, ChangeHistoryStatus, PANStatus, PANActionTaken, PANStepStatus, PAN, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, COERequestStatus, COETemplate, BenefitRequestStatus, IRStatus, IncidentReport, User, Evaluation, EvaluatorType, Memo, MemoAcknowledgement, OTRequest, OTStatus, BenefitRequest, EvaluationSubmission, JobRequisition, Resignation, LeaveRequest, LeaveRequestStatus, WFHRequest, WFHRequestStatus } from '../../types';
+import { JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, Role, Permission, NotificationType, ResignationStatus, Notification, TicketStatus, UserDocumentStatus, OnboardingTaskStatus, ChangeHistoryStatus, PANStatus, PANActionTaken, PANStepStatus, PAN, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, COERequestStatus, COETemplate, BenefitRequestStatus, IRStatus, IncidentReport, User, Evaluation, EvaluatorType, Memo, MemoAcknowledgement, OTRequest, OTStatus, BenefitRequest, EvaluationSubmission, JobRequisition, Resignation, LeaveRequest, LeaveRequestStatus, WFHRequest, WFHRequestStatus } from '../../types';
 import ActionItemCard from './ActionItemCard';
 import QuickAnalyticsPreview from './QuickAnalyticsPreview';
 import UpcomingEventsWidget from './UpcomingEventsWidget';
@@ -138,8 +138,8 @@ const mapMemoRow = (row: any): Memo => ({
 
 const HRDashboard: React.FC = () => {
     const { user } = useAuth();
-    const { isUserEligibleEvaluator, getCoeAccess } = usePermissions(); // Added hook
-    const isHR = user && [Role.Admin, Role.HRManager, Role.HRStaff].includes(user.role);
+    const { isUserEligibleEvaluator, getCoeAccess, can } = usePermissions();
+    const isHR = !!user && can('Employees', Permission.View);
     
     const [assignments, setAssignments] = useState<AssetAssignment[]>([]);
     const [useSupabaseAssignments, setUseSupabaseAssignments] = useState(false);
@@ -1049,7 +1049,7 @@ const HRDashboard: React.FC = () => {
         });
 
         // HR Manager & Admin: Cases pending assignment
-        if (user.role === Role.HRManager || user.role === Role.Admin) {
+        if (can('Feedback', Permission.Manage)) {
             const unassignedCases = incidentReports.filter(ir =>
                 ir.status === IRStatus.Submitted &&
                 ir.pipelineStage === 'ir-review' &&
