@@ -66,7 +66,7 @@ export const fetchWfhRequestsByEmployee = async (employeeId: string): Promise<WF
 
 export const createWfhRequest = async (request: Partial<WFHRequest>, user: User, isDraft: boolean = false): Promise<WFHRequest> => {
   // Determine if user is a manager
-  const managerRoles = [
+  const managerRoles: string[] = [
     Role.Manager, Role.BusinessUnitManager, Role.GeneralManager, 
     Role.OperationsDirector, Role.HRManager, Role.BOD
   ];
@@ -114,7 +114,7 @@ export const updateWfhRequestDetails = async (id: string, request: Partial<WFHRe
 };
 
 export const submitWfhRequest = async (id: string, user: User): Promise<WFHRequest> => {
-  const managerRoles = [
+  const managerRoles: string[] = [
     Role.Manager, Role.BusinessUnitManager, Role.GeneralManager, 
     Role.OperationsDirector, Role.HRManager, Role.BOD
   ];
