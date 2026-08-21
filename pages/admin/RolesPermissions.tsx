@@ -2,12 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-import { Role, Permission, Resource, PermissionsMatrix, BusinessUnit } from '../../types';
+import { Role, Permission, Resource, PermissionsMatrix, BusinessUnit, DashboardType } from '../../types';
 import PermissionsMatrixTable from '../../components/admin/PermissionsMatrix';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useAuth } from '../../hooks/useAuth';
 import BusinessUnitModal from '../../components/admin/BusinessUnitModal';
 import { supabase } from '../../services/supabaseClient';
+import { dispatchRbacInvalidation } from '../../services/rbac';
 
 
 const roleDescriptions: Record<Role, string> = {
@@ -36,12 +37,13 @@ const RolesPermissions: React.FC = () => {
     const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
     const [isBuModalOpen, setIsBuModalOpen] = useState(false);
     const [selectedBu, setSelectedBu] = useState<BusinessUnit | null>(null);
-    const [roles, setRoles] = useState<{ id: string; description?: string | null }[]>([]);
+    const [roles, setRoles] = useState<{ id: string; description?: string | null; dashboard_type: DashboardType }[]>([]);
     const [resources, setResources] = useState<{ id: string; group_name?: string | null }[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState<boolean>(false);
     const [newRoleId, setNewRoleId] = useState('');
     const [newRoleDescription, setNewRoleDescription] = useState('');
+    const [newRoleDashboardType, setNewRoleDashboardType] = useState<DashboardType>('employee');
     const [savingMatrix, setSavingMatrix] = useState<boolean>(false);
     const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
 
@@ -62,7 +64,7 @@ const RolesPermissions: React.FC = () => {
         setError(null);
         const [{ data: roleRows, error: roleErr }, { data: resourceRows, error: resErr }, { data: permRows, error: permErr }, { data: buRows, error: buErr }] =
             await Promise.all([
-                supabase.from('roles').select('id, description').order('id'),
+                supabase.from('roles').select('id, description, dashboard_type').order('id'),
                 supabase.from('resources').select('id, group_name').order('group_name'),
                 supabase.from('role_permissions').select('role_id, resource_id, permissions'),
                 supabase.from('business_units').select('id, name').order('name')
@@ -169,13 +171,13 @@ const RolesPermissions: React.FC = () => {
             }
             // Upsert roles table
             if (isRename) {
-                const { error: insErr } = await supabase.from('roles').insert({ id: roleId, description: newRoleDescription || null });
+                const { error: insErr } = await supabase.from('roles').insert({ id: roleId, description: newRoleDescription || null, dashboard_type: newRoleDashboardType });
                 if (insErr) {
                     alert(insErr.message);
                     return;
                 }
             } else {
-                const { error: updErr } = await supabase.from('roles').update({ description: newRoleDescription || null }).eq('id', roleId);
+                const { error: updErr } = await supabase.from('roles').update({ description: newRoleDescription || null, dashboard_type: newRoleDashboardType }).eq('id', roleId);
                 if (updErr) {
                     alert(updErr.message);
                     return;
@@ -190,26 +192,28 @@ const RolesPermissions: React.FC = () => {
             setPermissions(updatedMatrix);
             setRoles(prev => {
                 const filtered = prev.filter(r => r.id !== editingRoleId);
-                return [...filtered, { id: roleId, description: newRoleDescription || null }].sort((a, b) => a.id.localeCompare(b.id));
+                return [...filtered, { id: roleId, description: newRoleDescription || null, dashboard_type: newRoleDashboardType }].sort((a, b) => a.id.localeCompare(b.id));
             });
         } else {
-            const { data, error: err } = await supabase.from('roles').insert({ id: roleId, description: newRoleDescription || null }).select('id, description').single();
+            const { data, error: err } = await supabase.from('roles').insert({ id: roleId, description: newRoleDescription || null, dashboard_type: newRoleDashboardType }).select('id, description, dashboard_type').single();
             if (err) {
                 alert(err.message);
                 return;
             }
-            setRoles(prev => [...prev, { id: data.id, description: data.description }]);
+            setRoles(prev => [...prev, { id: data.id, description: data.description, dashboard_type: data.dashboard_type as DashboardType }]);
         }
 
         setNewRoleId('');
         setNewRoleDescription('');
+        setNewRoleDashboardType('employee');
         setEditingRoleId(null);
     };
 
-    const handleEditRole = (roleId: string, description?: string | null) => {
+    const handleEditRole = (roleId: string, description?: string | null, dashboardType: DashboardType = 'employee') => {
         setEditingRoleId(roleId);
         setNewRoleId(roleId);
         setNewRoleDescription(description || '');
+        setNewRoleDashboardType(dashboardType);
     };
 
 
@@ -238,10 +242,11 @@ const RolesPermissions: React.FC = () => {
                 return;
             }
         }
+        dispatchRbacInvalidation();
         setSavingMatrix(false);
     };
 
-    const handlePermissionChange = (role: Role, resource: Resource, permission: Permission, checked: boolean) => {
+    const handlePermissionChange = (role: string, resource: Resource, permission: Permission, checked: boolean) => {
         setPermissions(prev => {
             const newMatrix: PermissionsMatrix = JSON.parse(JSON.stringify(prev));
             const rolePermissions = (newMatrix[role] as Partial<Record<Resource, Permission[]>>)?.[resource] || [];
@@ -324,6 +329,15 @@ const RolesPermissions: React.FC = () => {
                         <div className="flex-1">
                             <Input label="Description" value={newRoleDescription} onChange={(e) => setNewRoleDescription(e.target.value)} placeholder="Short description" />
                         </div>
+                        <div className="flex-1">
+                            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Dashboard</label>
+                            <select value={newRoleDashboardType} onChange={e => setNewRoleDashboardType(e.target.value as DashboardType)} className="w-full rounded-md border border-gray-300 px-3 py-2 dark:border-gray-600 dark:bg-slate-700 dark:text-white">
+                                <option value="employee">Employee</option>
+                                <option value="manager">Manager</option>
+                                <option value="hr">HR</option>
+                                <option value="executive">Executive</option>
+                            </select>
+                        </div>
                         <Button onClick={handleSubmitRole} disabled={!newRoleId.trim()}>
                             {editingRoleId ? 'Save Role' : 'Add Role'}
                         </Button>
@@ -334,9 +348,10 @@ const RolesPermissions: React.FC = () => {
                         <div key={role.id} className="p-3 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg">
                             <h3 className="font-semibold text-gray-900 dark:text-white">{role.id}</h3>
                             <p className="text-sm text-gray-600 dark:text-gray-400">{role.description || roleDescriptions[role.id as Role] || ''}</p>
+                            <p className="mt-1 text-xs font-medium uppercase tracking-wide text-indigo-600">{role.dashboard_type || 'employee'} dashboard</p>
                             {canManage && (
                                 <div className="mt-2">
-                                    <Button size="sm" variant="secondary" onClick={() => handleEditRole(role.id, role.description || '')}>Edit</Button>
+                                    <Button size="sm" variant="secondary" onClick={() => handleEditRole(role.id, role.description || '', role.dashboard_type)}>Edit</Button>
                                 </div>
                             )}
                         </div>
