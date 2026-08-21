@@ -2,6 +2,13 @@
 import { useAuth } from './useAuth';
 import { useSettings } from '../context/SettingsContext';
 import { Resource, Permission, Role, IncidentReport, Ticket, BusinessUnit, Department, Evaluation, EvaluatorType, User, COERequest, OTRequest, OTStatus, PermissionsMatrix } from '../types';
+import {
+    getUserRoleIds,
+    hasAnyRole,
+    hasRole,
+    mergeResourcePermissions,
+    mergeRolePermissions,
+} from '../services/roleAccess';
 
 // Inline permissions matrix (formerly in mockData)
 const defaultPermissions: PermissionsMatrix = {
@@ -624,12 +631,12 @@ export const usePermissions = () => {
 
         // Special Rule: Managers of Marketing, Finance, and HR get global view access
         const specialDepartments = ['Marketing', 'Finance', 'Finance and Accounting', 'Human Resources'];
-        if (user.role === Role.Manager && user.department && specialDepartments.includes(user.department)) {
+        if (hasRole(user, Role.Manager) && user.department && specialDepartments.includes(user.department)) {
             return allBusinessUnits;
         }
 
         // Global-access roles should see all business units even without an explicit scope.
-        if ([Role.Admin, Role.HRManager, Role.HRStaff, Role.BOD, Role.GeneralManager, Role.FinanceStaff, Role.Auditor, Role.Recruiter].includes(user.role)) {
+        if (hasAnyRole(user, [Role.Admin, Role.HRManager, Role.HRStaff, Role.BOD, Role.GeneralManager, Role.FinanceStaff, Role.Auditor, Role.Recruiter])) {
             return allBusinessUnits;
         }
 
@@ -658,7 +665,7 @@ export const usePermissions = () => {
     const can = (resource: Resource, permission: Permission): boolean => {
         const user = getCurrentUser();
 
-        if (!isRbacEnabled || user?.role === Role.Admin) {
+        if (!isRbacEnabled || hasRole(user, Role.Admin)) {
             return true;
         }
 
@@ -666,8 +673,10 @@ export const usePermissions = () => {
             return false;
         }
 
+        const roleIds = getUserRoleIds(user);
+
         if (resource === 'Evaluation') {
-            const perms = evaluationsPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, evaluationsPermissions);
             if (!perms || perms.length === 0) return false;
             if (perms.includes(Permission.Manage)) return true;
             if (permission === Permission.View && perms.length > 0) return true;
@@ -675,7 +684,7 @@ export const usePermissions = () => {
         }
 
         if (resource === 'OrgChart') {
-            const perms = orgChartPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, orgChartPermissions);
             if (!perms || perms.length === 0) return false;
             if (perms.includes(Permission.Manage)) return true;
             if (permission === Permission.View && perms.length > 0) return true;
@@ -683,7 +692,7 @@ export const usePermissions = () => {
         }
 
         if (resource === 'Calendar') {
-            const perms = calendarPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, calendarPermissions);
             if (!perms || perms.length === 0) return false;
             if (perms.includes(Permission.Manage)) return true;
             if (permission === Permission.View && perms.length > 0) return true;
@@ -691,7 +700,7 @@ export const usePermissions = () => {
         }
 
         if (resource === 'Helpdesk') {
-            const perms = knowledgeBasePermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, knowledgeBasePermissions);
             if (!perms || perms.length === 0) return false;
             if (perms.includes(Permission.Manage)) return true;
             if (permission === Permission.View && perms.length > 0) return true;
@@ -699,7 +708,7 @@ export const usePermissions = () => {
         }
 
         if (resource === 'Exceptions') {
-            const perms = attendanceExceptionsPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, attendanceExceptionsPermissions);
             if (!perms || perms.length === 0) return false;
             if (perms.includes(Permission.Manage)) return true;
             if (permission === Permission.View && perms.length > 0) return true;
@@ -707,7 +716,7 @@ export const usePermissions = () => {
         }
 
         if (resource === 'DailyTimeReview') {
-            const perms = dailyTimeReviewPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, dailyTimeReviewPermissions);
             if (!perms || perms.length === 0) return false;
             if (perms.includes(Permission.Manage)) return true;
             if (permission === Permission.View && perms.length > 0) return true;
@@ -715,7 +724,7 @@ export const usePermissions = () => {
         }
 
         if (resource === 'Clock') {
-            const perms = clockPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, clockPermissions);
             if (!perms || perms.length === 0) return false;
             if (perms.includes(Permission.Manage)) return true;
             if (permission === Permission.View && perms.length > 0) return true;
@@ -723,14 +732,14 @@ export const usePermissions = () => {
         }
 
         if (resource === 'ClockLog') {
-            const perms = clockLogPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, clockLogPermissions);
             if (!perms || perms.length === 0) return false;
             if (perms.includes(Permission.Manage)) return true;
             if (permission === Permission.View && perms.length > 0) return true;
             return perms.includes(permission);
         }
         if (resource === 'WFH') {
-            const perms = wfhPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, wfhPermissions);
             if (!perms || perms.length === 0) return false;
             if (perms.includes(Permission.Manage)) return true;
             if (permission === Permission.View && perms.length > 0) return true;
@@ -739,7 +748,7 @@ export const usePermissions = () => {
 
         // Contracts & Signing custom matrix (only if rbac enabled)
         if (resource === 'Contracts & Signing' as Resource) {
-            const perms = contractsPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, contractsPermissions);
             if (!perms || perms.length === 0) {
                 return false;
             }
@@ -749,7 +758,7 @@ export const usePermissions = () => {
         }
 
         if (resource === 'Benefits') {
-            const perms = benefitsPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, benefitsPermissions);
             if (!perms || perms.length === 0) {
                 return false;
             }
@@ -759,7 +768,7 @@ export const usePermissions = () => {
         }
 
         if (resource === 'Assets') {
-            const perms = assetManagementPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, assetManagementPermissions);
             if (!perms || perms.length === 0) {
                 return false;
             }
@@ -769,7 +778,7 @@ export const usePermissions = () => {
         }
 
         if (resource === 'MemoLibrary') {
-            const perms = memoPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, memoPermissions);
             if (!perms || perms.length === 0) {
                 return false;
             }
@@ -779,7 +788,7 @@ export const usePermissions = () => {
         }
 
         if (resource === 'PulseSurvey') {
-            const perms = pulseSurveyPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, pulseSurveyPermissions);
             if (!perms || perms.length === 0) {
                 return false;
             }
@@ -789,7 +798,7 @@ export const usePermissions = () => {
         }
 
         if (resource === 'RolesPermissions') {
-            const perms = rolesPermissionsAccess[user.role];
+            const perms = mergeRolePermissions(roleIds, rolesPermissionsAccess);
             if (!perms || perms.length === 0) {
                 return false;
             }
@@ -799,7 +808,7 @@ export const usePermissions = () => {
         }
 
         if (resource === 'UserManagement') {
-            const perms = userManagementPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, userManagementPermissions);
             if (!perms || perms.length === 0) {
                 return false;
             }
@@ -809,7 +818,7 @@ export const usePermissions = () => {
         }
 
         if (resource === 'Departments') {
-            const perms = departmentsPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, departmentsPermissions);
             if (!perms || perms.length === 0) {
                 return false;
             }
@@ -819,7 +828,7 @@ export const usePermissions = () => {
         }
 
         if (resource === 'SiteManagement') {
-            const perms = siteManagementPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, siteManagementPermissions);
             if (!perms || perms.length === 0) {
                 return false;
             }
@@ -829,7 +838,7 @@ export const usePermissions = () => {
         }
 
         if (resource === 'LeavePolicies') {
-            const perms = leavePoliciesPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, leavePoliciesPermissions);
             if (!perms || perms.length === 0) {
                 return false;
             }
@@ -839,7 +848,7 @@ export const usePermissions = () => {
         }
 
         if (resource === 'Holidays') {
-            const perms = holidaysPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, holidaysPermissions);
             if (!perms || perms.length === 0) {
                 return false;
             }
@@ -849,7 +858,7 @@ export const usePermissions = () => {
         }
 
         if (resource === 'AuditLog') {
-            const perms = auditLogPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, auditLogPermissions);
             if (!perms || perms.length === 0) {
                 return false;
             }
@@ -859,7 +868,7 @@ export const usePermissions = () => {
         }
 
         if (resource === 'FeedbackTemplates') {
-            const perms = feedbackTemplatesPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, feedbackTemplatesPermissions);
             if (!perms || perms.length === 0) return false;
             if (perms.includes(Permission.Manage)) return true;
             if (permission === Permission.View && perms.length > 0) return true;
@@ -867,7 +876,7 @@ export const usePermissions = () => {
         }
 
         if (resource === 'Pipeline') {
-            const perms = pipelinePermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, pipelinePermissions);
             if (!perms || perms.length === 0) return false;
             if (perms.includes(Permission.Manage)) return true;
             if (permission === Permission.View && perms.length > 0) return true;
@@ -875,7 +884,7 @@ export const usePermissions = () => {
         }
 
         if (resource === 'WorkforcePlanning' || resource === 'WorkforcePlanningAdmin') {
-            const perms = workforcePlanningPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, workforcePlanningPermissions);
             if (!perms || perms.length === 0) return false;
             if (perms.includes(Permission.Manage)) return true;
             if (permission === Permission.View && perms.length > 0) return true;
@@ -883,7 +892,7 @@ export const usePermissions = () => {
         }
 
         if (resource === 'Timekeeping') {
-            const perms = timekeepingPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, timekeepingPermissions);
             if (!perms || perms.length === 0) return false;
             if (perms.includes(Permission.Manage)) return true;
             if (permission === Permission.View && perms.length > 0) return true;
@@ -891,7 +900,7 @@ export const usePermissions = () => {
         }
 
         if (resource === 'Coaching') {
-            const perms = coachingPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, coachingPermissions);
             if (!perms || perms.length === 0) {
                 return false;
             }
@@ -901,47 +910,42 @@ export const usePermissions = () => {
         }
 
         if (resource === 'CodeOfDiscipline') {
-            const perms = codeOfDisciplinePermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, codeOfDisciplinePermissions);
             if (!perms || perms.length === 0) return false;
             if (perms.includes(Permission.Manage)) return true;
             if (permission === Permission.View && perms.length > 0) return true;
             return perms.includes(permission);
         }
         if (resource === 'JobPosts') {
-            const perms = jobPostsPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, jobPostsPermissions);
             if (!perms || perms.length === 0) return false;
             if (perms.includes(Permission.Manage)) return true;
             if (permission === Permission.View && perms.length > 0) return true;
             return perms.includes(permission);
         }
         if (resource === 'Applicants') {
-            const perms = applicantsPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, applicantsPermissions);
             if (!perms || perms.length === 0) return false;
             if (perms.includes(Permission.Manage)) return true;
             if (permission === Permission.View && perms.length > 0) return true;
             return perms.includes(permission);
         }
         if (resource === 'Offers') {
-            const perms = offersPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, offersPermissions);
             if (!perms || perms.length === 0) return false;
             if (perms.includes(Permission.Manage)) return true;
             if (permission === Permission.View && perms.length > 0) return true;
             return perms.includes(permission);
         }
         if (resource === 'ApplicationPages') {
-            const perms = applicationPagesPermissions[user.role];
+            const perms = mergeRolePermissions(roleIds, applicationPagesPermissions);
             if (!perms || perms.length === 0) return false;
             if (perms.includes(Permission.Manage)) return true;
             if (permission === Permission.View && perms.length > 0) return true;
             return perms.includes(permission);
         }
 
-        const rolePermissions = defaultPermissions[user.role];
-        if (!rolePermissions) {
-            return false;
-        }
-
-        const resourcePermissions = rolePermissions[resource];
+        const resourcePermissions = mergeResourcePermissions(roleIds, defaultPermissions, resource);
         if (!resourcePermissions || resourcePermissions.length === 0) {
             return false;
         }
@@ -1526,7 +1530,7 @@ export const usePermissions = () => {
      */
     const isSuperAdmin = (): boolean => {
         const user = getCurrentUser();
-        return user?.role === Role.Admin;
+        return hasRole(user, Role.Admin);
     };
 
     return { can, isSuperAdmin, getVisibleEmployeeIds, filterByScope, filterIncidentReportsByScope, filterTicketsByScope, hasDirectReports, getAccessibleBusinessUnits, isUserEligibleEvaluator, getCoeAccess, getOtAccess, getTicketAccess, getIrAccess, getJobRequisitionAccess, getAnnouncementAccess, getAwardsAccess, getPanAccess, getLifecycleAccess };

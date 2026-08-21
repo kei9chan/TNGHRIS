@@ -17,7 +17,9 @@ import {
     OTRequest,
     ManpowerRequest,
     OTStatus,
+    Role,
 } from '../../types';
+import { hasAnyRole, hasRole } from '../../services/roleAccess';
 
 // ── Type badge colours ───────────────────────────────────────────────────────
 const BADGE: Record<string, string> = {
@@ -61,8 +63,12 @@ function ApprovalRow({ type, name, subtitle, onReview }: ApprovalRowProps) {
 
 // ── Main widget ──────────────────────────────────────────────────────────────
 export default function ApprovalWidget() {
-    const { user, profile } = useAuth();
-    const isHR = profile?.role === 'HR' || profile?.department === 'HR';
+    const { user } = useAuth();
+    const isTechnicalAdmin = hasRole(user, Role.IT);
+    const isHR = !isTechnicalAdmin && (
+        hasAnyRole(user, [Role.Admin, Role.HRManager, Role.HRStaff]) ||
+        user?.department === 'HR'
+    );
     const [reporteeIds, setReporteeIds] = useState<string[]>([]);
 
     // ── Active modal state ───────────────────────────────────────────────────

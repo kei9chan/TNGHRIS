@@ -2,6 +2,7 @@
 import React, { createContext, useEffect, useState, ReactNode } from 'react';
 import { User, Role } from '../types';
 import { supabase } from '../services/supabaseClient';
+import { getUserRoleIds } from '../services/roleAccess';
 
 // Keep this so existing imports don't break.
 export class DeviceConflictError extends Error {
@@ -64,6 +65,29 @@ const mapRoleFromDb = (raw: string | null): Role | null => {
 const isActiveStatus = (status?: string | null) =>
   (status || '').toString().toLowerCase() === 'active';
 
+const loadAssignedRoles = async (
+  userId: string,
+  fallbackRole: Role,
+): Promise<{ primaryRole: Role; roleIds: Role[] }> => {
+  const { data, error } = await supabase
+    .from('user_roles')
+    .select('role_id, is_primary')
+    .eq('user_id', userId);
+
+  if (error) {
+    // The audit preview remains login-compatible until the additive migration is applied.
+    console.warn('[Auth] user_roles unavailable; using the legacy primary role', error.message);
+    return { primaryRole: fallbackRole, roleIds: [fallbackRole] };
+  }
+
+  const assignments = (data || [])
+    .map((row: any) => ({ role: mapRoleFromDb(row.role_id), isPrimary: row.is_primary === true }))
+    .filter((row): row is { role: Role; isPrimary: boolean } => Boolean(row.role));
+  const primaryRole = assignments.find(row => row.isPrimary)?.role || fallbackRole;
+  const roleIds = getUserRoleIds({ role: primaryRole, roleIds: assignments.map(row => row.role) } as User);
+  return { primaryRole, roleIds: roleIds.length > 0 ? roleIds : [fallbackRole] };
+};
+
 const setHrPendingNotice = () => {
   try {
     localStorage.setItem('authNotice', 'hr_pending');
@@ -117,6 +141,7 @@ const buildAppUserFromSupabase = async (
       name: sbUser.email ?? 'User',
       email: sbUser.email ?? '',
       role: Role.Employee,
+      roleIds: [Role.Employee],
       status: 'Active',
       department: '',
       businessUnit: '',
@@ -129,12 +154,15 @@ const buildAppUserFromSupabase = async (
   }
 
   const mappedRole = mapRoleFromDb(data.role);
+  const legacyRole = mappedRole ?? Role.Employee;
+  const assignedRoles = await loadAssignedRoles(data.id ?? sbUser.id, legacyRole);
 
   const appUser: User = {
     id: data.id ?? sbUser.id,
     name: data.full_name ?? sbUser.email ?? 'User',
     email: data.email ?? (sbUser.email as string) ?? '',
-    role: mappedRole ?? Role.Employee,
+    role: assignedRoles.primaryRole,
+    roleIds: assignedRoles.roleIds,
     status: data.status ?? 'Active',
     department: data.department ?? '',
     departmentId: (data as any)?.department_id ?? undefined,
@@ -212,6 +240,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       name: sbUser.email ?? 'User',
       email: sbUser.email ?? '',
       role: Role.Employee,
+      roleIds: [Role.Employee],
       status: 'Inactive',
       department: '',
       businessUnit: '',
