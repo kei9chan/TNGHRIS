@@ -18,4 +18,18 @@ Before any RBAC implementation is merged, this branch must contain and receive r
 
 Conflict handling: preserve the more restrictive existing behavior until a documented target rule is approved.
 
+## Approved target: limited dual-role assignments
+
+The permission model may support multiple role assignments, but the initial rollout will assign two roles only to these verified accounts:
+
+1. Designated owner account: `Admin` + `Board of Director`
+   - Primary dashboard: executive/BOD
+   - Default data scope: `GLOBAL`
+   - BOD workflow approvals must be explicitly granted; they must not be inferred from Admin or Global scope.
+2. Designated IT administrator account: `Admin` + `IT`
+   - Primary dashboard: admin/IT
+   - System-administration permissions must not automatically expose sensitive HR fields or confer HR workflow approval authority.
+
+All other users remain single-role at initial rollout. The implementation must use role assignments stored in Supabase (for example, a `user_roles` junction table) and must not hardcode a person's name or email into the permission resolver. Exact account IDs must be verified during the reviewed seed/deployment step.
+
 The earlier `fix/rbac-single-source-of-truth` pull request is preliminary and must not be merged or used as the audit baseline.
