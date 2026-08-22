@@ -60,6 +60,8 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
                     requisitionId: '',
                   };
             setCurrent(initialData);
+            setSelectedStarterId('');
+            setStarterTemplateError('');
 
             // Initialize search term if a requisition is already selected
             if (initialData.requisitionId) {

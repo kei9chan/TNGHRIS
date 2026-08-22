@@ -32,6 +32,15 @@ const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
 
+const validateImageFile = (file: File): string => {
+    const lowerName = file.name.toLowerCase();
+    if (!IMAGE_TYPES.includes(file.type) && !IMAGE_EXTENSIONS.some(extension => lowerName.endsWith(extension))) {
+        return 'Unsupported image type. Use JPG, PNG, or WebP.';
+    }
+    if (file.size > MAX_IMAGE_SIZE) return 'The template image must be 20 MB or smaller.';
+    return '';
+};
+
 const SectionHeader = ({ title }: { title: string }) => (
     <div className="mt-6 mb-3 flex items-center gap-2 border-b border-slate-700 pb-1">
         <span className="text-xs font-bold uppercase tracking-widest text-indigo-400">{title}</span>
@@ -164,9 +173,8 @@ const JobPostTemplateGenerator: React.FC<JobPostTemplateGeneratorProps> = ({ isO
 
     const handleImageUpload = async (key: ImageConfigKey, file: File) => {
         setAssetError('');
-        const lowerName = file.name.toLowerCase();
-        if (!IMAGE_TYPES.includes(file.type) && !IMAGE_EXTENSIONS.some(extension => lowerName.endsWith(extension))) return setAssetError('Unsupported image type. Use JPG, PNG, or WebP.');
-        if (file.size > MAX_IMAGE_SIZE) return setAssetError('The template image must be 20 MB or smaller.');
+        const validationError = validateImageFile(file);
+        if (validationError) return setAssetError(validationError);
         const previousValue = config[key];
         const localPreview = URL.createObjectURL(file);
         updateConfig(key, localPreview);
@@ -184,6 +192,8 @@ const JobPostTemplateGenerator: React.FC<JobPostTemplateGeneratorProps> = ({ isO
 
     const handleDetailIconUpload = async (index: number, file: File) => {
         setAssetError('');
+        const validationError = validateImageFile(file);
+        if (validationError) return setAssetError(validationError);
         const localPreview = URL.createObjectURL(file);
         const previous = config.details[index]?.icon || '';
         const nextDetails = [...config.details];
