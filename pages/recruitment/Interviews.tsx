@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Interview, InterviewFeedback, InterviewStatus, Permission, ApplicationStage, Role, Application, Candidate, JobPost, User, BusinessUnit } from '../../types';
+import { Interview, InterviewFeedback, InterviewStatus, Permission, ApplicationStage, Role, Application, Candidate, JobPost, User, BusinessUnit, Department } from '../../types';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -15,6 +15,7 @@ import RichTextEditor from '../../components/ui/RichTextEditor';
 import { logActivity } from '../../services/auditService';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
+import { InterviewCandidateOption, InterviewScheduleOptions, scheduleInterviewWorkflow } from '../../services/interviewSchedulingService';
 
 // Date Helpers (to avoid external libraries)
 const addDays = (date: Date, amount: number) => { const d = new Date(date); d.setDate(d.getDate() + amount); return d; };
@@ -37,18 +38,28 @@ const Interviews: React.FC = () => {
     const [candidates, setCandidates] = useState<Candidate[]>([]);
     const [jobPosts, setJobPosts] = useState<JobPost[]>([]);
     const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
+    const [departments, setDepartments] = useState<Department[]>([]);
+    const [requisitions, setRequisitions] = useState<{ id: string; businessUnitId?: string; departmentId?: string }[]>([]);
     const [users, setUsers] = useState<User[]>([]);
-    const candidateOptions = useMemo(() => {
-        return candidates.map(cand => {
-            const apps = applications.filter(app => app.candidateId === cand.id);
-            const latest = apps.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-            const jobTitle = latest ? (jobPosts.find(p => p.id === latest.jobPostId)?.title || 'Unknown') : 'No application';
-            return {
-                appId: latest?.id || '',
-                label: `${cand.firstName} ${cand.lastName} - ${jobTitle}`,
-            };
-        }).filter(opt => opt.appId); // only candidates with applications
-    }, [applications, candidates, jobPosts]);
+    const candidateOptions = useMemo<InterviewCandidateOption[]>(() => applications.map(application => {
+        const candidate = candidates.find(item => item.id === application.candidateId);
+        const post = jobPosts.find(item => item.id === application.jobPostId);
+        const requisition = requisitions.find(item => item.id === (application.requisitionId || post?.requisitionId));
+        const businessUnitId = post?.businessUnitId || requisition?.businessUnitId;
+        const departmentId = requisition?.departmentId;
+        return {
+            appId: application.id,
+            candidateName: candidate ? `${candidate.firstName} ${candidate.lastName}`.trim() : 'Unknown applicant',
+            firstName: candidate?.firstName || 'Applicant',
+            email: candidate?.email || '',
+            position: post?.title || 'Position not specified',
+            businessUnitId,
+            businessUnitName: businessUnits.find(item => item.id === businessUnitId)?.name || 'Business unit not specified',
+            departmentId,
+            departmentName: departments.find(item => item.id === departmentId)?.name || '',
+            stage: application.stage,
+        };
+    }), [applications, businessUnits, candidates, departments, jobPosts, requisitions]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSchedulerOpen, setIsSchedulerOpen] = useState(false);
     const [isDetailOpen, setIsDetailOpen] = useState(false);
@@ -81,9 +92,18 @@ const Interviews: React.FC = () => {
         interviewType: row.type === 'Remote' ? 'Virtual' : row.type,
         scheduledStart: row.start_at ? new Date(row.start_at) : new Date(),
         scheduledEnd: row.end_at ? new Date(row.end_at) : new Date(),
-        location: row.location || '',
+        location: row.google_meet_link || row.location || '',
         panelUserIds: row.panel_user_ids || (row.interviewer_id ? [row.interviewer_id] : []),
         calendarEventId: row.calendar_event_id || '',
+        googleMeetLink: row.google_meet_link || undefined,
+        calendarInviteStatus: row.calendar_invite_status || 'not_requested',
+        applicantInviteStatus: row.applicant_invite_status || 'not_requested',
+        panelInviteStatus: row.panel_invite_status || 'not_requested',
+        confirmationEmailStatus: row.confirmation_email_status || 'not_requested',
+        applicantInviteSentAt: row.applicant_invite_sent_at ? new Date(row.applicant_invite_sent_at) : undefined,
+        panelInviteSentAt: row.panel_invite_sent_at ? new Date(row.panel_invite_sent_at) : undefined,
+        confirmationEmailSentAt: row.confirmation_email_sent_at ? new Date(row.confirmation_email_sent_at) : undefined,
+        calendarError: row.calendar_error || undefined,
         status: row.status as InterviewStatus,
         notes: row.notes || '',
     }), []);
@@ -91,14 +111,16 @@ const Interviews: React.FC = () => {
     const loadData = useCallback(async () => {
         setIsLoading(true);
         try {
-            const [intRes, appRes, candRes, postRes, userRes, fbRes, buRes] = await Promise.all([
+            const [intRes, appRes, candRes, postRes, userRes, fbRes, buRes, deptRes, reqRes] = await Promise.all([
                 supabase.from('job_interviews').select('*'),
                 supabase.from('job_applications').select('*'),
                 supabase.from('job_candidates').select('*'),
-                supabase.from('job_posts').select('id,title,business_unit_id'),
-                supabase.from('hris_users').select('id,full_name,role,email'),
+                supabase.from('job_posts').select('id,title,business_unit_id,requisition_id'),
+                supabase.from('hris_users').select('id,full_name,role,email,position,department,department_id,business_unit,business_unit_id,status'),
                 supabase.from('job_interview_feedback').select('*'),
                 supabase.from('business_units').select('id,name'),
+                supabase.from('departments').select('id,name,business_unit_id'),
+                supabase.from('job_requisitions').select('id,business_unit_id,department_id'),
             ]);
             if (intRes.error) throw intRes.error;
             if (appRes.error) throw appRes.error;
@@ -107,6 +129,8 @@ const Interviews: React.FC = () => {
             if (userRes.error) throw userRes.error;
             if (fbRes.error) throw fbRes.error;
             if (buRes.error) console.warn('Business units unavailable for interview details', buRes.error);
+            if (deptRes.error) console.warn('Departments unavailable for interview filters', deptRes.error);
+            if (reqRes.error) console.warn('Requisitions unavailable for interview filters', reqRes.error);
 
             setInterviews((intRes.data || []).map(mapInterview));
             setApplications((appRes.data || []).map((a: any) => ({
@@ -136,24 +160,35 @@ const Interviews: React.FC = () => {
                 id: p.id,
                 title: p.title,
                 businessUnitId: p.business_unit_id,
+                requisitionId: p.requisition_id,
             } as JobPost)));
             setBusinessUnits((buRes.data || []).map((bu: any) => ({
                 id: bu.id,
                 name: bu.name,
             } as BusinessUnit)));
+            setDepartments((deptRes.data || []).map((department: any) => ({
+                id: department.id,
+                name: department.name,
+                businessUnitId: department.business_unit_id,
+            } as Department)));
+            setRequisitions((reqRes.data || []).map((requisition: any) => ({
+                id: requisition.id,
+                businessUnitId: requisition.business_unit_id || undefined,
+                departmentId: requisition.department_id || undefined,
+            })));
             setUsers((userRes.data || []).map((u: any) => ({
                 id: u.id,
                 name: formatEmployeeName(u.full_name || u.email || 'User'),
                 email: u.email || '',
                 role: u.role as Role,
-                department: '',
-                businessUnit: '',
-                status: 'Active',
+                department: u.department || '',
+                businessUnit: u.business_unit || '',
+                status: u.status === 'Inactive' ? 'Inactive' : 'Active',
                 isPhotoEnrolled: false,
                 dateHired: new Date(),
-                position: '',
-                businessUnitId: undefined,
-                departmentId: undefined,
+                position: u.position || '',
+                businessUnitId: u.business_unit_id || undefined,
+                departmentId: u.department_id || undefined,
             } as User)));
             setFeedbacks((fbRes.data || []).map((f: any) => ({
                 id: f.id,
@@ -188,48 +223,25 @@ const Interviews: React.FC = () => {
         setIsDetailOpen(true);
     };
 
-    const handleSaveInterview = async (interviewToSave: Interview) => {
-        const normalizedType =
-            interviewToSave.interviewType === 'Virtual' ? 'Remote' :
-            interviewToSave.interviewType === 'Phone Screen' ? 'Phone' :
-            interviewToSave.interviewType || 'Remote';
-        const normalizedStatus =
-            interviewToSave.status === 'Completed' ? 'Completed' :
-            interviewToSave.status === 'Cancelled' ? 'Cancelled' :
-            'Scheduled';
-        const payload = {
-            application_id: interviewToSave.applicationId,
-            interviewer_id: interviewToSave.panelUserIds?.[0] || interviewToSave.interviewerId || null,
-            start_at: interviewToSave.scheduledStart,
-            end_at: interviewToSave.scheduledEnd,
-            location: interviewToSave.location || null,
-            type: normalizedType,
-            status: normalizedStatus,
-            notes: interviewToSave.notes || null,
-        };
-        try {
-            if (interviewToSave.id) {
-                const { data, error } = await supabase.from('job_interviews').update(payload).eq('id', interviewToSave.id).select().single();
-                if (error) throw error;
-                setInterviews(prev => prev.map(i => i.id === interviewToSave.id ? mapInterview(data) : i));
-            } else {
-                const { data, error } = await supabase.from('job_interviews').insert(payload).select().single();
-                if (error) throw error;
-                setInterviews(prev => [mapInterview(data), ...prev]);
-                // set application stage to Interview
-                if (interviewToSave.applicationId) {
-                    await supabase.from('job_applications').update({ stage: ApplicationStage.Interview }).eq('id', interviewToSave.applicationId);
-                }
-            }
-            if (user) {
-                logActivity(user, 'CREATE', 'Interview', interviewToSave.id || 'new', 'Scheduled interview');
-            }
-        } catch (err) {
-            console.error('Failed to save interview', err);
-            alert('Failed to save interview.');
-        } finally {
-            setIsSchedulerOpen(false);
-        }
+    const handleSaveInterview = async (interviewToSave: Interview, options: InterviewScheduleOptions) => {
+        const applicant = candidateOptions.find(item => item.appId === interviewToSave.applicationId);
+        if (!applicant) throw new Error('The selected applicant could not be loaded.');
+        const panel = users.filter(member => interviewToSave.panelUserIds?.includes(member.id));
+        if (panel.length !== interviewToSave.panelUserIds?.length) throw new Error('One or more panel members could not be loaded.');
+
+        const outcome = await scheduleInterviewWorkflow({ interview: interviewToSave, options, applicant, panel });
+        const saved = mapInterview(outcome.row);
+        setInterviews(previous => previous.some(item => item.id === saved.id)
+            ? previous.map(item => item.id === saved.id ? saved : item)
+            : [saved, ...previous]);
+        setApplications(previous => previous.map(application => application.id === saved.applicationId
+            ? { ...application, stage: ApplicationStage.Interview, updatedAt: new Date() }
+            : application));
+        setSelectedInterview(saved);
+        setIsSchedulerOpen(false);
+        setIsDetailOpen(true);
+        if (user) logActivity(user, interviewToSave.id ? 'UPDATE' : 'CREATE', 'Interview', saved.id, 'Scheduled interview');
+        if (outcome.warning) alert(outcome.warning);
     };
 
     const handleSaveFeedback = async (feedbackToSave: InterviewFeedback) => {
@@ -372,6 +384,8 @@ const Interviews: React.FC = () => {
                     onSave={handleSaveInterview}
                     candidateOptions={candidateOptions}
                     users={users}
+                    businessUnits={businessUnits}
+                    departments={departments}
                 />
             )}
 

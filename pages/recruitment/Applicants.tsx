@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Application, ApplicationStage, Candidate, CandidateSource, JobPostStatus, Role, BusinessUnit, JobRequisition, Interview, JobPost, Permission } from '../../types';
+import { Application, ApplicationStage, Candidate, CandidateSource, JobPostStatus, Role, BusinessUnit, JobRequisition, Interview, JobPost, Permission, User } from '../../types';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { useAuth } from '../../hooks/useAuth';
@@ -15,6 +15,8 @@ import { logActivity } from '../../services/auditService';
 import InterviewSchedulerModal from '../../components/recruitment/InterviewSchedulerModal';
 import RejectionEmailModal from '../../components/recruitment/RejectionEmailModal';
 import { supabase } from '../../services/supabaseClient';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
+import { InterviewCandidateOption, InterviewScheduleOptions, scheduleInterviewWorkflow } from '../../services/interviewSchedulingService';
 
 export interface EnrichedApplication extends Application {
     candidateName: string;
@@ -28,6 +30,7 @@ export interface EnrichedApplication extends Application {
     businessUnitName: string;
     businessUnitId?: string;
     departmentName: string;
+    departmentId?: string;
     candidateSource?: CandidateSource;
 }
 
@@ -86,6 +89,7 @@ const Applicants: React.FC = () => {
     const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
     const [jobRequisitions, setJobRequisitions] = useState<JobRequisition[]>([]);
     const [departments, setDepartments] = useState<{ id: string; name: string; businessUnitId: string }[]>([]);
+    const [users, setUsers] = useState<User[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     const [selectedApplication, setSelectedApplication] = useState<EnrichedApplication | null>(null);
@@ -115,13 +119,14 @@ const Applicants: React.FC = () => {
     const loadData = useCallback(async () => {
         setIsLoading(true);
         try {
-            const [buRes, deptRes, reqRes, postRes, candRes, appRes] = await Promise.all([
+            const [buRes, deptRes, reqRes, postRes, candRes, appRes, userRes] = await Promise.all([
                 supabase.from('business_units').select('id,name'),
                 supabase.from('departments').select('id,name,business_unit_id'),
                 supabase.from('job_requisitions').select('*'),
                 supabase.from('job_posts').select('*'),
                 supabase.from('job_candidates').select('*'),
                 supabase.from('job_applications').select('*'),
+                supabase.from('hris_users').select('id,full_name,email,role,position,department,department_id,business_unit,business_unit_id,status'),
             ]);
             if (buRes.error) throw buRes.error;
             if (deptRes.error) throw deptRes.error;
@@ -129,6 +134,7 @@ const Applicants: React.FC = () => {
             if (postRes.error) throw postRes.error;
             if (candRes.error) throw candRes.error;
             if (appRes.error) throw appRes.error;
+            if (userRes.error) throw userRes.error;
 
             setBusinessUnits(buRes.data || []);
             setDepartments((deptRes.data || []).map((d: any) => ({ id: d.id, name: d.name, businessUnitId: d.business_unit_id })));
@@ -186,6 +192,20 @@ const Applicants: React.FC = () => {
                 updatedAt: a.updated_at ? new Date(a.updated_at) : new Date(),
             } as Application));
             setApplications(appsMapped);
+            setUsers((userRes.data || []).map((employee: any) => ({
+                id: employee.id,
+                name: formatEmployeeName(employee.full_name || employee.email || 'Employee'),
+                email: employee.email || '',
+                role: employee.role as Role,
+                department: employee.department || '',
+                businessUnit: employee.business_unit || '',
+                departmentId: employee.department_id || undefined,
+                businessUnitId: employee.business_unit_id || undefined,
+                status: employee.status === 'Inactive' ? 'Inactive' : 'Active',
+                isPhotoEnrolled: false,
+                dateHired: new Date(),
+                position: employee.position || '',
+            } as User)));
         } catch (err) {
             console.error('Failed to load applicants', err);
             alert('Failed to load applicant data.');
@@ -218,10 +238,24 @@ const Applicants: React.FC = () => {
                 businessUnitName: businessUnit?.name || 'N/A',
                 businessUnitId: businessUnit?.id,
                 departmentName: department?.name || 'N/A',
+                departmentId: department?.id,
                 candidateSource: candidate?.source,
             };
         }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     }, [applications, candidates, jobPosts, jobRequisitions, businessUnits, departments]);
+
+    const candidateOptions = useMemo<InterviewCandidateOption[]>(() => enrichedApplications.map(application => ({
+        appId: application.id,
+        candidateName: application.candidateName,
+        firstName: application.candidateFirstName || application.candidateName.split(' ')[0] || 'Applicant',
+        email: application.candidateEmail || '',
+        position: application.jobTitle,
+        businessUnitId: application.businessUnitId,
+        businessUnitName: application.businessUnitName,
+        departmentId: application.departmentId,
+        departmentName: application.departmentName === 'N/A' ? '' : application.departmentName,
+        stage: application.stage,
+    })), [enrichedApplications]);
 
     const departmentsForBU = useMemo(() => {
         if (!buFilter) return departments;
@@ -287,28 +321,20 @@ const Applicants: React.FC = () => {
         performStageUpdate(applicationId, newStage);
     };
 
-    const handleSaveInterview = async (interviewToSave: Interview) => {
-        try {
-            const payload = {
-                application_id: interviewToSave.applicationId,
-                interviewer_id: interviewToSave.interviewerId || null,
-                start_at: interviewToSave.startAt,
-                end_at: interviewToSave.endAt || null,
-                location: interviewToSave.location || null,
-                type: interviewToSave.type || null,
-                status: interviewToSave.status || 'Scheduled',
-                notes: interviewToSave.notes || null,
-            };
-            const { error } = await supabase.from('job_interviews').insert(payload);
-            if (error) throw error;
-            setIsSchedulerOpen(false);
-            setPendingAppId(null);
-            setPendingStage(null);
-            alert("Interview scheduled successfully.");
-        } catch (err) {
-            console.error('Failed to save interview', err);
-            alert('Failed to save interview.');
-        }
+    const handleSaveInterview = async (interviewToSave: Interview, options: InterviewScheduleOptions) => {
+        const applicant = candidateOptions.find(item => item.appId === interviewToSave.applicationId);
+        if (!applicant) throw new Error('The selected applicant could not be loaded.');
+        const panel = users.filter(member => interviewToSave.panelUserIds?.includes(member.id));
+        if (panel.length !== interviewToSave.panelUserIds?.length) throw new Error('One or more panel members could not be loaded.');
+
+        const outcome = await scheduleInterviewWorkflow({ interview: interviewToSave, options, applicant, panel });
+        setApplications(previous => previous.map(application => application.id === interviewToSave.applicationId
+            ? { ...application, stage: ApplicationStage.Interview, updatedAt: new Date() }
+            : application));
+        setIsSchedulerOpen(false);
+        setPendingAppId(null);
+        setPendingStage(null);
+        alert(outcome.warning || 'Interview scheduled successfully.');
     };
     
     const handleRejectionComplete = () => {
@@ -497,8 +523,10 @@ const Applicants: React.FC = () => {
                     onClose={() => { setIsSchedulerOpen(false); setPendingAppId(null); }}
                     interview={pendingInterviewStub}
                     onSave={handleSaveInterview}
-                    candidateOptions={[]}
-                    users={[]}
+                    candidateOptions={candidateOptions}
+                    users={users}
+                    businessUnits={businessUnits}
+                    departments={departments}
                 />
             )}
 

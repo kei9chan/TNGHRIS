@@ -1,6 +1,6 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Interview, InterviewFeedback, User, Application, Candidate, JobPost, BusinessUnit } from '../../types';
+import { Interview, InterviewFeedback, User, Application, Candidate, JobPost, BusinessUnit, InterviewInviteStatus } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
@@ -42,13 +42,36 @@ const getValidGoogleMeetUrl = (location?: string): string | null => {
     if (!location) return null;
     try {
         const url = new URL(location.trim());
-        const hasMeetingPath = url.pathname.replace(/\//g, '').length > 0;
-        return url.protocol === 'https:' && url.hostname === 'meet.google.com' && hasMeetingPath
+        const hasMeetingCode = /^\/[a-z]{3}-[a-z]{4}-[a-z]{3}$/.test(url.pathname);
+        return url.protocol === 'https:' && url.hostname === 'meet.google.com' && hasMeetingCode
             ? url.toString()
             : null;
     } catch {
         return null;
     }
+};
+
+const statusPresentation = (status?: InterviewInviteStatus) => {
+    if (status === 'created' || status === 'sent' || status === 'email_sent') return {
+        label: status === 'email_sent' ? 'Email sent' : 'Sent',
+        classes: 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300',
+    };
+    if (status === 'failed') return { label: 'Failed', classes: 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300' };
+    if (status === 'pending') return { label: 'Pending', classes: 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300' };
+    return { label: 'Not requested', classes: 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300' };
+};
+
+const InviteStatusRow: React.FC<{ label: string; status?: InterviewInviteStatus; sentAt?: Date }> = ({ label, status, sentAt }) => {
+    const presentation = statusPresentation(status);
+    return (
+        <div className="flex items-center justify-between gap-4 border-b border-gray-100 py-3 last:border-b-0 dark:border-gray-700">
+            <div>
+                <p className="text-sm font-medium text-gray-900 dark:text-white">{label}</p>
+                {sentAt && <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{new Date(sentAt).toLocaleString()}</p>}
+            </div>
+            <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${presentation.classes}`}>{presentation.label}</span>
+        </div>
+    );
 };
 
 const InterviewDetailModal: React.FC<InterviewDetailModalProps> = ({ isOpen, onClose, interview, feedbacks, onSaveFeedback, applications, candidates, jobPosts, businessUnits, users }) => {
@@ -60,7 +83,7 @@ const InterviewDetailModal: React.FC<InterviewDetailModalProps> = ({ isOpen, onC
     const jobPost = jobPosts.find(post => post.id === application?.jobPostId);
     const businessUnit = businessUnits.find(unit => unit.id === jobPost?.businessUnitId);
     const panel = users.filter(u => (interview.panelUserIds || []).includes(u.id));
-    const meetingUrl = useMemo(() => getValidGoogleMeetUrl(interview.location), [interview.location]);
+    const meetingUrl = useMemo(() => getValidGoogleMeetUrl(interview.googleMeetLink || interview.location), [interview.googleMeetLink, interview.location]);
     const candidateName = candidate ? `${candidate.firstName} ${candidate.lastName}` : 'Unknown applicant';
 
     const currentUserIsOnPanel = user ? (interview.panelUserIds || []).includes(user.id) : false;
@@ -140,17 +163,17 @@ const InterviewDetailModal: React.FC<InterviewDetailModalProps> = ({ isOpen, onC
 
                 <section>
                     <h3 className="text-lg font-medium text-gray-900 dark:text-white border-b pb-2 mb-3">Calendar Invite Status</h3>
-                    <div className={`flex items-start justify-between gap-4 rounded-lg border p-4 ${interview.calendarEventId ? 'border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30' : 'border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900/40'}`}>
-                        <div>
-                            <p className="text-sm font-medium text-gray-900 dark:text-white">Google Calendar event</p>
-                            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                {interview.calendarEventId ? 'A calendar event is recorded for this interview. Invite delivery is not tracked by the current data.' : 'No calendar event or invite status is recorded for this interview.'}
-                            </p>
-                        </div>
-                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${interview.calendarEventId ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300' : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}`}>
-                            {interview.calendarEventId ? 'Created' : 'Not recorded'}
-                        </span>
+                    <div className="rounded-lg border border-gray-200 px-4 dark:border-gray-700">
+                        <InviteStatusRow label="Google Calendar event" status={interview.calendarInviteStatus} />
+                        <InviteStatusRow label="Applicant calendar invite" status={interview.applicantInviteStatus} sentAt={interview.applicantInviteSentAt} />
+                        <InviteStatusRow label="Panel calendar invites" status={interview.panelInviteStatus} sentAt={interview.panelInviteSentAt} />
+                        <InviteStatusRow label="Confirmation email" status={interview.confirmationEmailStatus} sentAt={interview.confirmationEmailSentAt} />
                     </div>
+                    {interview.calendarError && (
+                        <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
+                            {interview.calendarError}
+                        </div>
+                    )}
                 </section>
 
                 {interview.notes && (

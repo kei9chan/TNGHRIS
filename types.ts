@@ -1700,6 +1700,14 @@ export enum InterviewStatus {
   Cancelled = 'Cancelled',
 }
 
+export type InterviewInviteStatus =
+  | 'not_requested'
+  | 'pending'
+  | 'created'
+  | 'sent'
+  | 'email_sent'
+  | 'failed';
+
 export interface Interview {
   id: string;
   applicationId: string;
@@ -1709,6 +1717,15 @@ export interface Interview {
   location: string; // URL for virtual, address for on-site
   panelUserIds: string[];
   calendarEventId?: string;
+  googleMeetLink?: string;
+  calendarInviteStatus?: InterviewInviteStatus;
+  applicantInviteStatus?: InterviewInviteStatus;
+  panelInviteStatus?: InterviewInviteStatus;
+  confirmationEmailStatus?: InterviewInviteStatus;
+  applicantInviteSentAt?: Date;
+  panelInviteSentAt?: Date;
+  confirmationEmailSentAt?: Date;
+  calendarError?: string;
   status: InterviewStatus;
   interviewerId?: string;
   startAt?: string;
