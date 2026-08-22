@@ -444,7 +444,10 @@ export interface User {
   authUserId?: string;
   name: string;
   email: string;
+  /** Primary role retained for legacy workflows and dashboard selection. */
   role: Role;
+  /** All effective roles loaded from public.user_roles; always includes role. */
+  roleIds?: Role[];
   department: string;
   businessUnit: string;
   departmentId?: string;

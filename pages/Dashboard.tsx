@@ -6,11 +6,16 @@ import ManagerDashboard from '../components/dashboard/ManagerDashboard';
 // FIX: Changed to a named import as the default export was not being resolved correctly, likely due to syntax errors in the imported file.
 import EmployeeDashboard from '../components/dashboard/EmployeeDashboard';
 import AlertBanner from '../components/dashboard/AlertBanner';
+import { hasRole } from '../services/roleAccess';
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
 
   const renderDashboard = () => {
+    // Preserve the user's functional dashboard when a secondary Admin role is assigned.
+    if (hasRole(user, Role.BOD)) return <ManagerDashboard />;
+    if (hasRole(user, Role.IT) && hasRole(user, Role.Admin)) return <HRDashboard />;
+
     switch (user?.role) {
       case Role.Admin:
       case Role.HRManager:

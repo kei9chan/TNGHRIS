@@ -48,6 +48,7 @@ const UserManagement: React.FC = () => {
     const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
     const [roles, setRoles] = useState<string[]>([]);
     const [error, setError] = useState<string | null>(null);
+    const [roleAssignmentWarning, setRoleAssignmentWarning] = useState<string | null>(null);
     const [loading, setLoading] = useState<boolean>(false);
 
     const accessibleBus = useMemo(() => getAccessibleBusinessUnits(businessUnits), [getAccessibleBusinessUnits, businessUnits]);
@@ -61,11 +62,13 @@ const UserManagement: React.FC = () => {
                 { data: buRows, error: buErr },
                 { data: deptRows, error: deptErr },
                 { data: roleRows, error: roleErr },
+                { data: userRoleRows, error: userRoleErr },
             ] = await Promise.all([
                 supabase.from('hris_users').select('id, email, first_name, last_name, full_name, role, status, business_unit, department, business_unit_id, department_id, data_access_scope'),
                 supabase.from('business_units').select('id, name'),
                 supabase.from('departments').select('id, name'),
                 supabase.from('roles').select('id'),
+                supabase.from('user_roles').select('user_id, role_id, is_primary'),
             ]);
             if (userErr || buErr || deptErr || roleErr) {
                 setError(userErr?.message || buErr?.message || deptErr?.message || roleErr?.message || 'Failed to load users.');
@@ -74,22 +77,40 @@ const UserManagement: React.FC = () => {
             }
             const buMap = new Map((buRows || []).map((b: any) => [b.id, b.name]));
             const deptMap = new Map((deptRows || []).map((d: any) => [d.id, d.name]));
+            const roleAssignments = new Map<string, { roles: Role[]; primary?: Role }>();
+            if (userRoleErr) {
+                setRoleAssignmentWarning('Multi-role migration is not active in this database yet. Showing legacy primary roles only.');
+            } else {
+                setRoleAssignmentWarning(null);
+                (userRoleRows || []).forEach((row: any) => {
+                    const current = roleAssignments.get(row.user_id) || { roles: [] };
+                    if (!current.roles.includes(row.role_id as Role)) current.roles.push(row.role_id as Role);
+                    if (row.is_primary) current.primary = row.role_id as Role;
+                    roleAssignments.set(row.user_id, current);
+                });
+            }
             setBusinessUnits((buRows || []).map((b: any) => ({ id: b.id, name: b.name } as BusinessUnit)));
             setRoles((roleRows || []).map((r: any) => r.id as string));
-            setUsers((userRows || []).map((u: any) => ({
+            setUsers((userRows || []).map((u: any) => {
+                const assignment = roleAssignments.get(u.id);
+                const primaryRole = assignment?.primary || (u.role as Role) || Role.Employee;
+                const roleIds = assignment?.roles?.length ? assignment.roles : [primaryRole];
+                return ({
                 id: u.id,
                 name: formatEmployeeName(
                   u.full_name || `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
                 ),
                 email: u.email || '',
-                role: (u.role as Role) || Role.Employee,
+                role: primaryRole,
+                roleIds,
                 status: u.status || '',
                 businessUnit: buMap.get(u.business_unit_id) || u.business_unit || '',
                 businessUnitId: u.business_unit_id || '',
                 department: deptMap.get(u.department_id) || u.department || '',
                 departmentId: u.department_id || '',
                 accessScope: u.data_access_scope || { type: 'HOME_ONLY' },
-            } as User)));
+            } as User);
+            }));
             setLoading(false);
         };
         loadData();
@@ -132,13 +153,14 @@ const UserManagement: React.FC = () => {
         setIsEditModalOpen(false);
     };
 
-    const handleSaveUserConfig = (userId: string, newRole: string, newScope: AccessScope) => {
+    const handleSaveUserConfig = async (userId: string, roleIds: string[], primaryRole: string, newScope: AccessScope) => {
         const targetUser = users.find(u => u.id === userId);
         if (!targetUser) return;
 
         // Guard: warn before demoting an Admin user
-        const isTargetCurrentlyAdmin = targetUser.role === Role.Admin;
-        const isNewRoleDowngrade = newRole !== Role.Admin;
+        const currentRoles = targetUser.roleIds || [targetUser.role];
+        const isTargetCurrentlyAdmin = currentRoles.includes(Role.Admin);
+        const isNewRoleDowngrade = !roleIds.includes(Role.Admin);
         if (isTargetCurrentlyAdmin && isNewRoleDowngrade) {
             const confirmed = window.confirm(
                 `⚠️ Superuser Demotion Warning\n\nYou are about to remove the Admin (Superuser) role from "${targetUser.name}".\n\nThis will revoke their unrestricted access to all system functions and database records. This action cannot be undone automatically.\n\nAre you sure you want to continue?`
@@ -146,16 +168,33 @@ const UserManagement: React.FC = () => {
             if (!confirmed) return;
         }
 
-        // Persist to Supabase
-        supabase.from('hris_users').update({ role: newRole, data_access_scope: newScope }).eq('id', userId).then(({ error: err }) => {
-            if (err) {
-                alert(err.message);
-                return;
-            }
-            const updatedUsers = users.map(u => u.id === userId ? { ...u, role: newRole as Role, accessScope: newScope } : u);
-            setUsers(updatedUsers);
-            handleCloseEditModal();
+        if (!isTargetCurrentlyAdmin && roleIds.includes(Role.Admin)) {
+            const confirmed = window.confirm(
+                `⚠️ High-Risk Super Admin Grant\n\nYou are about to grant Admin access to "${targetUser.name}". This may expose sensitive HR and payroll records under the current RLS policies.\n\nContinue?`
+            );
+            if (!confirmed) return;
+        }
+
+        const { error: saveError } = await supabase.rpc('update_user_role_assignments', {
+            p_target_user_id: userId,
+            p_role_ids: roleIds,
+            p_primary_role_id: primaryRole,
+            p_data_access_scope: newScope,
         });
+        if (saveError) {
+            alert(saveError.message.includes('update_user_role_assignments')
+                ? 'The multi-role Supabase migration must be reviewed and applied before saving role assignments.'
+                : saveError.message);
+            return;
+        }
+        const updatedUsers = users.map(u => u.id === userId ? {
+            ...u,
+            role: primaryRole as Role,
+            roleIds: roleIds as Role[],
+            accessScope: newScope,
+        } : u);
+        setUsers(updatedUsers);
+        handleCloseEditModal();
     };
 
     const getScopeLabel = (user: User) => {
@@ -181,6 +220,11 @@ const UserManagement: React.FC = () => {
             </div>
             {error && (
                 <div className="p-3 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded">{error}</div>
+            )}
+            {roleAssignmentWarning && (
+                <div className="p-3 text-sm text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-800">
+                    {roleAssignmentWarning}
+                </div>
             )}
             {loading && (
                 <div className="p-3 text-sm text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-slate-900/30 rounded">Loading users...</div>
@@ -228,14 +272,18 @@ const UserManagement: React.FC = () => {
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{user.email}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                         <div className="flex items-center gap-1.5">
-                                            {user.role === Role.Admin && (
+                                            {(user.roleIds || [user.role]).includes(Role.Admin) && (
                                                 <span title="Superuser — unrestricted access">
                                                     <ShieldCheckIcon className="h-4 w-4 text-indigo-500 flex-shrink-0" />
                                                 </span>
                                             )}
-                                            <span className={user.role === Role.Admin ? 'font-semibold text-indigo-600 dark:text-indigo-400' : ''}>
-                                                {user.role}
-                                            </span>
+                                            <div className="flex flex-wrap gap-1">
+                                                {(user.roleIds || [user.role]).map(role => (
+                                                    <span key={role} className={`rounded-full px-2 py-0.5 text-xs ${role === Role.Admin ? 'bg-indigo-100 text-indigo-700 font-semibold dark:bg-indigo-900/40 dark:text-indigo-300' : 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200'}`}>
+                                                        {role}{role === user.role ? ' · Primary' : ''}
+                                                    </span>
+                                                ))}
+                                            </div>
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">

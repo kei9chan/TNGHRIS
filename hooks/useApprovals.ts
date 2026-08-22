@@ -11,6 +11,7 @@ import {
     User, Role
 } from '../types';
 import { deptHeadApproveWfhRequest, bodApproveWfhRequest, rejectWfhRequest } from '../services/wfhService';
+import { hasRole } from '../services/roleAccess';
 
 interface UseApprovalsOptions {
     user: User | null;
@@ -85,9 +86,28 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
 
         // BOD users have org-wide authority — they approve all PendingBOD WFH requests
         // regardless of direct-report relationships (managers skip Dept Head and go straight to BOD).
-        const isBOD = user?.role === Role.BOD;
+        const isBOD = hasRole(user, Role.BOD);
+        const isBODSuperAdmin = isBOD && hasRole(user, Role.Admin);
 
-        if (isHR) {
+        if (isBOD) {
+            // BOD sees all pending leaves and WFH requests org-wide for final approval.
+            // They also see OT/manpower scoped to their reportees only (standard).
+            leaveQuery = leaveQuery.eq('status', 'pending').order('start_date', { ascending: false });
+            // BOD approves ALL PendingBOD WFH requests — no employee_id filter.
+            wfhQuery = wfhQuery.eq('status', WFHRequestStatus.PendingBOD).order('created_at', { ascending: false });
+            if (isBODSuperAdmin) {
+                // The explicitly approved Admin + BOD combination receives the complete
+                // organization-wide final approval queue. Admin alone does not imply this.
+                otQuery = otQuery.order('submitted_at', { ascending: false });
+                manpowerQuery = manpowerQuery.order('created_at', { ascending: false });
+            } else if (reporteeIds.length > 0) {
+                otQuery = otQuery.in('employee_id', reporteeIds).order('submitted_at', { ascending: false });
+                manpowerQuery = manpowerQuery.in('requester_id', reporteeIds);
+            } else {
+                skipOt = true;       // No reportees — skip OT query
+                skipManpower = true; // No reportees — skip manpower query
+            }
+        } else if (isHR) {
             leaveQuery = leaveQuery.eq('status', 'pending').order('start_date', { ascending: false });
             wfhQuery = wfhQuery.eq('status', WFHRequestStatus.ForTimekeeping).order('created_at', { ascending: false });
             manpowerQuery = manpowerQuery.eq('status', ManpowerRequestStatus.Pending).order('created_at', { ascending: false });
@@ -96,19 +116,6 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
                 otQuery = otQuery.in('employee_id', reporteeIds).order('submitted_at', { ascending: false });
             } else {
                 skipOt = true; // No reportees — skip OT query entirely
-            }
-        } else if (isBOD) {
-            // BOD sees all pending leaves and WFH requests org-wide for final approval.
-            // They also see OT/manpower scoped to their reportees only (standard).
-            leaveQuery = leaveQuery.eq('status', 'pending').order('start_date', { ascending: false });
-            // BOD approves ALL PendingBOD WFH requests — no employee_id filter.
-            wfhQuery = wfhQuery.eq('status', WFHRequestStatus.PendingBOD).order('created_at', { ascending: false });
-            if (reporteeIds.length > 0) {
-                otQuery = otQuery.in('employee_id', reporteeIds).order('submitted_at', { ascending: false });
-                manpowerQuery = manpowerQuery.in('requester_id', reporteeIds);
-            } else {
-                skipOt = true;       // No reportees — skip OT query
-                skipManpower = true; // No reportees — skip manpower query
             }
         } else {
             if (reporteeIds.length === 0) {
