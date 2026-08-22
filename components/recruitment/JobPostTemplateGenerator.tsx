@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../hooks/useAuth';
 import Button from '../ui/Button';
@@ -415,13 +416,13 @@ const JobPostTemplateGenerator: React.FC<JobPostTemplateGeneratorProps> = ({ isO
     const brandWordmark = config.brandWordmark || config.businessUnit || 'TNG HRIS';
     if (!isOpen) return null;
 
-    return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-2 backdrop-blur-sm sm:p-4" onMouseDown={event => { if (event.target === event.currentTarget) requestClose(); }}>
+    const modal = (
+        <div className="fixed inset-0 z-[9999] flex h-[100dvh] w-screen items-center justify-center overflow-hidden bg-black/90 p-2 backdrop-blur-sm sm:p-4" onMouseDown={event => { if (event.target === event.currentTarget) requestClose(); }}>
             <div role="dialog" aria-modal="true" aria-labelledby="job-post-template-generator-title" className="relative flex w-full max-w-[1600px] flex-col overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-2xl" style={{ height: 'calc(100dvh - 2rem)', maxHeight: 'calc(100dvh - 2rem)' }}>
                 <div className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-700 bg-slate-950 px-4 py-3 sm:px-6">
                     <div className="min-w-0"><h2 id="job-post-template-generator-title" className="truncate text-base font-bold text-white sm:text-lg">Job Post Template Generator</h2><p className="hidden text-xs text-slate-400 sm:block">Edit the template, review the complete preview, then save or download it.</p></div>
                     <div className="flex shrink-0 items-center gap-2">
-                        <button type="button" onClick={requestClose} className="hidden rounded-md border border-slate-600 px-3 py-2 text-xs font-semibold text-slate-200 transition-colors hover:bg-slate-800 sm:inline-flex">Back to Job Post Templates</button>
+                        <button type="button" onClick={requestClose} className="inline-flex rounded-md border border-slate-600 px-2 py-2 text-[11px] font-semibold text-slate-200 transition-colors hover:bg-slate-800 sm:px-3 sm:text-xs">Back to Job Post Templates</button>
                         <button type="button" onClick={requestClose} className="rounded-full border border-white/10 bg-slate-800 p-2 text-white transition-colors hover:bg-slate-700" aria-label="Close editor"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293-1.414 1.414L11.414 10l4.293 4.293-1.414 1.414L10 11.414l-4.293-4.293-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg></button>
                     </div>
                 </div>
@@ -465,6 +466,12 @@ const JobPostTemplateGenerator: React.FC<JobPostTemplateGeneratorProps> = ({ isO
             </div>
         </div>
     );
+
+    // This editor is rendered from inside the routed page, which also contains
+    // sticky HRIS navigation bars. Portaling it to body prevents those bars
+    // from creating a higher stacking context that hides the modal header and
+    // its close controls.
+    return createPortal(modal, document.body);
 };
 
 export default JobPostTemplateGenerator;
