@@ -1,11 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import { Role, Permission, Resource, PermissionsMatrix } from '../../types';
+import { Permission, Resource, PermissionsMatrix, RoleId } from '../../types';
 
 interface PermissionsMatrixProps {
-    roles: Role[];
+    roles: RoleId[];
     resourceGroups: Record<string, Resource[]>;
     permissionsMatrix: PermissionsMatrix;
-    onPermissionChange?: (role: Role, resource: Resource, permission: Permission, checked: boolean) => void;
+    onPermissionChange?: (role: RoleId, resource: Resource, permission: Permission, checked: boolean) => void;
 }
 
 const permissionOrder: Permission[] = [
@@ -56,7 +56,7 @@ const PermissionsMatrixTable: React.FC<PermissionsMatrixProps> = ({
     permissionsMatrix,
     onPermissionChange,
 }) => {
-    const [selectedRole, setSelectedRole] = useState<Role | null>(roles[0] ?? null);
+    const [selectedRole, setSelectedRole] = useState<RoleId | null>(roles[0] ?? null);
     const [search, setSearch] = useState('');
 
     const readOnly = !onPermissionChange;

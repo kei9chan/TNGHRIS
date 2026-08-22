@@ -1,13 +1,13 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { User, Role, AccessScope, BusinessUnit, Permission } from '../../types';
-import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import Button from '../../components/ui/Button';
-import UserRoleEditModal from '../../components/admin/UserRoleEditModal';
+import UserRoleEditModal, { RoleOption } from '../../components/admin/UserRoleEditModal';
 import Input from '../../components/ui/Input';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
+import { dispatchRbacInvalidation } from '../../services/rbac';
 
 const ChevronUpIcon: React.FC = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -35,7 +35,6 @@ const ShieldCheckIcon: React.FC<{ className?: string }> = ({ className }) => (
 
 
 const UserManagement: React.FC = () => {
-    const { user: currentUser } = useAuth();
     const { getAccessibleBusinessUnits, can } = usePermissions();
     const canView = can('UserManagement', Permission.View);
     const canManage = can('UserManagement', Permission.Manage);
@@ -46,7 +45,8 @@ const UserManagement: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [buFilter, setBuFilter] = useState('');
     const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
-    const [roles, setRoles] = useState<string[]>([]);
+    const [roles, setRoles] = useState<RoleOption[]>([]);
+    const [success, setSuccess] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState<boolean>(false);
 
@@ -61,21 +61,32 @@ const UserManagement: React.FC = () => {
                 { data: buRows, error: buErr },
                 { data: deptRows, error: deptErr },
                 { data: roleRows, error: roleErr },
+                { data: permissionRows, error: permissionErr },
             ] = await Promise.all([
                 supabase.from('hris_users').select('id, email, first_name, last_name, full_name, role, status, business_unit, department, business_unit_id, department_id, data_access_scope'),
                 supabase.from('business_units').select('id, name'),
                 supabase.from('departments').select('id, name'),
-                supabase.from('roles').select('id'),
+                supabase.from('roles').select('id, dashboard_type'),
+                supabase.from('role_permissions').select('role_id, resource_id, permissions'),
             ]);
-            if (userErr || buErr || deptErr || roleErr) {
-                setError(userErr?.message || buErr?.message || deptErr?.message || roleErr?.message || 'Failed to load users.');
+            if (userErr || buErr || deptErr || roleErr || permissionErr) {
+                setError(userErr?.message || buErr?.message || deptErr?.message || roleErr?.message || permissionErr?.message || 'Failed to load users.');
                 setLoading(false);
                 return;
             }
             const buMap = new Map((buRows || []).map((b: any) => [b.id, b.name]));
             const deptMap = new Map((deptRows || []).map((d: any) => [d.id, d.name]));
             setBusinessUnits((buRows || []).map((b: any) => ({ id: b.id, name: b.name } as BusinessUnit)));
-            setRoles((roleRows || []).map((r: any) => r.id as string));
+            const permissionsByRole: Record<string, Record<string, Permission[]>> = {};
+            (permissionRows || []).forEach((row: any) => {
+                if (!permissionsByRole[row.role_id]) permissionsByRole[row.role_id] = {};
+                permissionsByRole[row.role_id][row.resource_id] = row.permissions || [];
+            });
+            setRoles((roleRows || []).map((r: any) => ({
+                id: r.id,
+                dashboardType: r.dashboard_type || 'employee',
+                permissions: permissionsByRole[r.id] || {},
+            } as RoleOption)));
             setUsers((userRows || []).map((u: any) => ({
                 id: u.id,
                 name: formatEmployeeName(
@@ -98,7 +109,7 @@ const UserManagement: React.FC = () => {
     // Filter users based on access scope and search term
     const filteredUsers = useMemo(() => {
         // Show all users by default; if a BU filter is chosen, filter by that BU.
-        const accessibleBuNames = new Set(businessUnits.map(b => b.name));
+        const accessibleBuNames = new Set(accessibleBus.map(b => b.name));
         const lowerSearch = searchTerm.toLowerCase();
 
         return users.filter(user => {
@@ -132,9 +143,13 @@ const UserManagement: React.FC = () => {
         setIsEditModalOpen(false);
     };
 
-    const handleSaveUserConfig = (userId: string, newRole: string, newScope: AccessScope) => {
+    const handleSaveUserConfig = async (userId: string, newRole: string, newScope: AccessScope) => {
         const targetUser = users.find(u => u.id === userId);
-        if (!targetUser) return;
+        if (!targetUser) throw new Error('The selected user could not be found.');
+        if (!roles.some(role => role.id === newRole)) throw new Error('The selected role no longer exists.');
+        if (newScope.type === 'SPECIFIC' && (!newScope.allowedBuIds || newScope.allowedBuIds.length === 0)) {
+            throw new Error('Specific access requires at least one business unit.');
+        }
 
         // Guard: warn before demoting an Admin user
         const isTargetCurrentlyAdmin = targetUser.role === Role.Admin;
@@ -143,19 +158,34 @@ const UserManagement: React.FC = () => {
             const confirmed = window.confirm(
                 `⚠️ Superuser Demotion Warning\n\nYou are about to remove the Admin (Superuser) role from "${targetUser.name}".\n\nThis will revoke their unrestricted access to all system functions and database records. This action cannot be undone automatically.\n\nAre you sure you want to continue?`
             );
-            if (!confirmed) return;
+            if (!confirmed) throw new Error('Role change cancelled.');
         }
 
-        // Persist to Supabase
-        supabase.from('hris_users').update({ role: newRole, data_access_scope: newScope }).eq('id', userId).then(({ error: err }) => {
-            if (err) {
-                alert(err.message);
-                return;
-            }
-            const updatedUsers = users.map(u => u.id === userId ? { ...u, role: newRole as Role, accessScope: newScope } : u);
-            setUsers(updatedUsers);
-            handleCloseEditModal();
+        setError(null);
+        setSuccess(null);
+        const { error: saveError } = await supabase.rpc('update_user_rbac', {
+            p_target_user_id: userId,
+            p_role_id: newRole,
+            p_data_access_scope: newScope,
         });
+        if (saveError) throw new Error(saveError.message);
+
+        const { data: refreshed, error: refreshError } = await supabase
+            .from('hris_users')
+            .select('role, data_access_scope')
+            .eq('id', userId)
+            .single();
+        if (refreshError) throw new Error(refreshError.message);
+        setUsers(previous => previous.map(item => item.id === userId ? {
+            ...item,
+            role: refreshed.role,
+            roleId: refreshed.role,
+            dashboardType: roles.find(role => role.id === refreshed.role)?.dashboardType,
+            accessScope: refreshed.data_access_scope,
+        } : item));
+        dispatchRbacInvalidation();
+        setSuccess(`Access updated for ${targetUser.name}.`);
+        handleCloseEditModal();
     };
 
     const getScopeLabel = (user: User) => {
@@ -181,6 +211,9 @@ const UserManagement: React.FC = () => {
             </div>
             {error && (
                 <div className="p-3 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded">{error}</div>
+            )}
+            {success && (
+                <div className="p-3 text-sm text-green-700 bg-green-50 rounded">{success}</div>
             )}
             {loading && (
                 <div className="p-3 text-sm text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-slate-900/30 rounded">Loading users...</div>
@@ -251,8 +284,6 @@ const UserManagement: React.FC = () => {
                                                 onClick={() => handleOpenEditModal(user)}
                                                 className="!bg-slate-700 hover:!bg-slate-600 !text-slate-300"
                                                 title={`Edit role and permissions for ${user.name}`}
-                                                // Only allow Admin/HR to change roles, or manager if implemented
-                                                disabled={currentUser?.role === Role.Manager && user.role === Role.Manager}
                                             >
                                                 <EditIcon />
                                             </Button>

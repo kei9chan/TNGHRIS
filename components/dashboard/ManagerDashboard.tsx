@@ -4,7 +4,7 @@ import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Card from '../ui/Card';
-import { OTStatus, Role, ResolutionStatus, ApproverStatus, PANStatus, PANStepStatus, JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, NotificationType, TicketStatus, OnboardingTaskStatus, PANActionTaken, AssetRequest, AssetRequestStatus, NTEStatus, PAN, Resolution, NTE, JobRequisition, OTRequest, AttendanceExceptionRecord, EmployeeAward, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, Envelope, EnvelopeStatus, RoutingStepStatus, BenefitRequest, BenefitRequestStatus, CoachingStatus, COETemplate, User, LeaveRequest, LeaveRequestStatus, WFHRequest, WFHRequestStatus, AttendanceRecord, ShiftAssignment, ShiftTemplate, Evaluation, EvaluatorType, Memo, MemoAcknowledgement, CoachingSession, EvaluationSubmission, EvaluationTimeline } from '../../types';
+import { OTStatus, Role, Permission, ResolutionStatus, ApproverStatus, PANStatus, PANStepStatus, JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, NotificationType, TicketStatus, OnboardingTaskStatus, PANActionTaken, AssetRequest, AssetRequestStatus, NTEStatus, PAN, Resolution, NTE, JobRequisition, OTRequest, AttendanceExceptionRecord, EmployeeAward, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, Envelope, EnvelopeStatus, RoutingStepStatus, BenefitRequest, BenefitRequestStatus, CoachingStatus, COETemplate, User, LeaveRequest, LeaveRequestStatus, WFHRequest, WFHRequestStatus, AttendanceRecord, ShiftAssignment, ShiftTemplate, Evaluation, EvaluatorType, Memo, MemoAcknowledgement, CoachingSession, EvaluationSubmission, EvaluationTimeline } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useAuth } from '../../hooks/useAuth';
 import ActionItemCard from './ActionItemCard';
@@ -142,7 +142,7 @@ const mapMemoRow = (row: any): Memo => ({
 
 const ManagerDashboard: React.FC = () => {
     const { user } = useAuth();
-    const { getVisibleEmployeeIds, isUserEligibleEvaluator, getCoeAccess } = usePermissions();
+    const { getVisibleEmployeeIds, isUserEligibleEvaluator, getCoeAccess, can } = usePermissions();
     const location = useLocation();
     const navigate = useNavigate();
 
@@ -736,9 +736,9 @@ const ManagerDashboard: React.FC = () => {
         return visibleEmployeeIds.filter(id => id !== user.id);
     }, [user, visibleEmployeeIds]);
 
-    const isApprover = user && (user.role === Role.GeneralManager || user.role === Role.OperationsDirector || user.role === Role.BOD);
+    const isApprover = !!user && can('Manpower', Permission.Approve);
     // Check if Business Unit Manager to allow broader approvals
-    const isBusinessUnitManager = user && user.role === Role.BusinessUnitManager;
+    const isBusinessUnitManager = !!user && can('Manpower', Permission.Create);
 
     const handleCloseManpowerModal = () => {
         setIsManpowerModalOpen(false);
@@ -1368,7 +1368,7 @@ const ManagerDashboard: React.FC = () => {
         });
 
         // 13. Benefit Approval (BOD/GM only)
-        const isBOD = user?.role === Role.BOD || user?.role === Role.GeneralManager;
+        const isBOD = can('Benefits', Permission.Approve);
         if (isBOD) {
             const pendingBenefits = benefitRequests.filter(r => r.status === BenefitRequestStatus.PendingBOD);
             pendingBenefits.forEach(req => {

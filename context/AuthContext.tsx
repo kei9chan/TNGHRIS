@@ -1,9 +1,8 @@
-// src/context/AuthContext.tsx
-import React, { createContext, useEffect, useState, ReactNode } from 'react';
-import { User, Role } from '../types';
+import React, { createContext, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { AccessScope, DashboardType, User } from '../types';
 import { supabase } from '../services/supabaseClient';
+import { normalizeAccessScope } from '../services/rbac';
 
-// Keep this so existing imports don't break.
 export class DeviceConflictError extends Error {
   constructor(message: string) {
     super(message);
@@ -23,6 +22,8 @@ export class SupabaseAuthError extends Error {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  profileError: string | null;
+  refreshUser: () => Promise<User | null>;
   login: (email: string, pass: string) => Promise<User | null>;
   forceLogin: (email: string, pass: string) => Promise<User | null>;
   loginWithGoogle: () => Promise<User | null>;
@@ -30,36 +31,12 @@ interface AuthContextType {
   connectGoogle: () => void;
 }
 
-export const AuthContext = createContext<AuthContextType | undefined>(
-  undefined
-);
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// --- helpers --------------------------------------------------------
+type SupabaseUser = { id: string; email?: string | null };
 
-type SupabaseUser = {
-  id: string;
-  email?: string | null;
-};
-
-/**
- * Map a string coming from DB -> Role enum.
- */
-const mapRoleFromDb = (raw: string | null): Role | null => {
-  if (!raw) return null;
-  const trimmed = raw.trim();
-
-  // exact enum key match, e.g. "Admin"
-  if ((Role as any)[trimmed]) {
-    return (Role as any)[trimmed] as Role;
-  }
-
-  // case-insensitive match against enum values
-  const upper = trimmed.toUpperCase();
-  const match = Object.values(Role).find(
-    (val) => String(val).toUpperCase() === upper
-  );
-  return (match as Role) ?? null;
-};
+const INVALID_ROLE_MESSAGE =
+  'Your account has an invalid role assignment. Please contact an administrator.';
 
 const isActiveStatus = (status?: string | null) =>
   (status || '').toString().toLowerCase() === 'active';
@@ -68,285 +45,195 @@ const setHrPendingNotice = () => {
   try {
     localStorage.setItem('authNotice', 'hr_pending');
   } catch {
-    // ignore storage failures
+    // Storage is optional.
   }
 };
 
-/**
- * Build a User directly from Supabase data — no more legacy mock merging.
- */
-const applyAuthUserId = (
-  sbUser: SupabaseUser,
-  base: User
-): User => {
-  return { ...base, authUserId: sbUser.id };
-};
-
-/**
- * Given a Supabase auth user, load their HRIS profile and build our app User.
- * Uses the hris_users table: id, full_name, role, status, auth_user_id.
- * If there is NO hris_users row yet, we fall back to a minimal user object
- * based only on Supabase info so Supabase-only accounts can still log in.
- */
-const buildAppUserFromSupabase = async (
-  sbUser: SupabaseUser | null
-): Promise<User | null> => {
-  if (!sbUser) return null;
-
-  const { data, error } = await supabase
+const buildAppUserFromSupabase = async (sbUser: SupabaseUser): Promise<User> => {
+  const { data: profile, error: profileError } = await supabase
     .from('hris_users')
     .select(
-      'id, full_name, role, status, department, business_unit, position, date_hired, is_photo_enrolled, email, business_unit_id, department_id, reports_to'
+      'id, full_name, role, status, department, business_unit, position, date_hired, is_photo_enrolled, email, business_unit_id, department_id, reports_to, data_access_scope, auth_user_id',
     )
     .eq('auth_user_id', sbUser.id)
     .maybeSingle();
 
-  if (error) {
-    console.error('AuthProvider: failed to load HRIS profile', error);
-    // still allow login with bare Supabase user
+  if (profileError) throw profileError;
+  if (!profile) {
+    throw new SupabaseAuthError('Your account is pending HR approval.', 'hr_pending');
+  }
+  if (!profile.role || typeof profile.role !== 'string') {
+    throw new SupabaseAuthError(INVALID_ROLE_MESSAGE, 'invalid_role');
   }
 
-  if (!data) {
-    console.warn(
-      'AuthProvider: no hris_users row found, falling back to bare Supabase user',
-      sbUser.id
-    );
+  const { data: role, error: roleError } = await supabase
+    .from('roles')
+    .select('id, description, dashboard_type')
+    .eq('id', profile.role)
+    .maybeSingle();
 
-    const fallback: User = {
-      id: sbUser.id,
-      name: sbUser.email ?? 'User',
-      email: sbUser.email ?? '',
-      role: Role.Employee,
-      status: 'Active',
-      department: '',
-      businessUnit: '',
-      position: '',
-      dateHired: new Date(),
-      isPhotoEnrolled: false,
-    } as User;
+  if (roleError) throw roleError;
+  if (!role) throw new SupabaseAuthError(INVALID_ROLE_MESSAGE, 'invalid_role');
 
-    return applyAuthUserId(sbUser, fallback);
-  }
-
-  const mappedRole = mapRoleFromDb(data.role);
-
-  const appUser: User = {
-    id: data.id ?? sbUser.id,
-    name: data.full_name ?? sbUser.email ?? 'User',
-    email: data.email ?? (sbUser.email as string) ?? '',
-    role: mappedRole ?? Role.Employee,
-    status: data.status ?? 'Active',
-    department: data.department ?? '',
-    departmentId: (data as any)?.department_id ?? undefined,
-    businessUnit: data.business_unit ?? '',
-    businessUnitId: (data as any)?.business_unit_id ?? undefined,
-    position: data.position ?? '',
-    dateHired: data.date_hired ? new Date(data.date_hired) : new Date(),
-    isPhotoEnrolled: data.is_photo_enrolled ?? false,
-    managerId: (data as any)?.reports_to ?? undefined,
+  return {
+    id: profile.id,
+    authUserId: sbUser.id,
+    name: profile.full_name ?? sbUser.email ?? 'User',
+    email: profile.email ?? sbUser.email ?? '',
+    role: role.id,
+    roleId: role.id,
+    roleDescription: role.description ?? undefined,
+    dashboardType: (role.dashboard_type || 'employee') as DashboardType,
+    status: profile.status ?? 'Inactive',
+    department: profile.department ?? '',
+    departmentId: profile.department_id ?? undefined,
+    businessUnit: profile.business_unit ?? '',
+    businessUnitId: profile.business_unit_id ?? undefined,
+    position: profile.position ?? '',
+    dateHired: profile.date_hired ? new Date(profile.date_hired) : new Date(),
+    isPhotoEnrolled: profile.is_photo_enrolled ?? false,
+    reportsTo: profile.reports_to ?? undefined,
+    managerId: profile.reports_to ?? undefined,
+    accessScope: normalizeAccessScope(profile.data_access_scope) as AccessScope,
   } as User;
-
-  return applyAuthUserId(sbUser, appUser);
 };
 
-// --- provider -------------------------------------------------------
-
-export const AuthProvider: React.FC<{ children: ReactNode }> = ({
-  children,
-}) => {
+export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const currentAuthUser = useRef<SupabaseUser | null>(null);
 
-  // On first load, get current Supabase session + HRIS profile
+  const hydrateSupabaseUser = useCallback(async (sbUser: SupabaseUser): Promise<User | null> => {
+    currentAuthUser.current = sbUser;
+    setLoading(true);
+    setProfileError(null);
+    try {
+      const hydrated = await buildAppUserFromSupabase(sbUser);
+      if (!isActiveStatus(hydrated.status)) {
+        setHrPendingNotice();
+        await supabase.auth.signOut().catch(() => undefined);
+        setUser(null);
+        return null;
+      }
+      setUser(hydrated);
+      return hydrated;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to load your HRIS profile.';
+      console.error('[Auth] failed to hydrate HRIS profile', error);
+      setUser(null);
+      setProfileError(message);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const refreshUser = useCallback(async () => {
+    let sbUser = currentAuthUser.current;
+    if (!sbUser) {
+      const { data } = await supabase.auth.getUser();
+      sbUser = data.user as SupabaseUser | null;
+    }
+    if (!sbUser) {
+      setUser(null);
+      setLoading(false);
+      return null;
+    }
+    return hydrateSupabaseUser(sbUser);
+  }, [hydrateSupabaseUser]);
+
   useEffect(() => {
     let mounted = true;
-
-    const init = async () => {
-      setLoading(true);
-      console.log('[Auth] init: calling supabase.auth.getUser()');
-      const { data, error } = await supabase.auth.getUser();
-
+    void supabase.auth.getUser().then(({ data, error }) => {
+      if (!mounted) return;
       if (error || !data.user) {
-        console.log('[Auth] init: no Supabase user, user=null');
-        if (mounted) {
-          setUser(null);
-          setLoading(false);
-        }
+        setUser(null);
+        setLoading(false);
         return;
       }
+      void hydrateSupabaseUser(data.user as SupabaseUser);
+    });
 
-      console.log('[Auth] init: Supabase user found, hydrating app user');
-      await hydrateSupabaseUser(data.user as SupabaseUser);
-      if (mounted) {
+    const { data: authSubscription } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session?.user) {
+        currentAuthUser.current = null;
+        setUser(null);
         setLoading(false);
+        return;
       }
-    };
+      void hydrateSupabaseUser(session.user as SupabaseUser);
+    });
 
-    init();
-
-    // Keep auth state in sync if Supabase session changes
-    const { data: sub } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('[Auth] onAuthStateChange event:', event);
-        if (!session?.user) {
-          setUser(null);
-          return;
-        }
-        hydrateSupabaseUser(session.user as SupabaseUser, true);
-      }
-    );
+    const onFocus = () => void refreshUser();
+    const onRbacInvalidated = () => void refreshUser();
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('hris:rbac-invalidated', onRbacInvalidated);
 
     return () => {
       mounted = false;
-      sub.subscription.unsubscribe();
+      authSubscription.subscription.unsubscribe();
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('hris:rbac-invalidated', onRbacInvalidated);
     };
-  }, []);
+  }, [hydrateSupabaseUser, refreshUser]);
 
-  /**
-   * Immediately set a minimal Supabase-backed user (merged with mock if present),
-   * then hydrate from hris_users in the background to avoid blocking login UI.
-   */
-  const hydrateSupabaseUser = async (sbUser: SupabaseUser, preserveExisting = false) => {
-    const minimal: User = applyAuthUserId(sbUser, {
-      id: sbUser.id,
-      name: sbUser.email ?? 'User',
-      email: sbUser.email ?? '',
-      role: Role.Employee,
-      status: 'Inactive',
-      department: '',
-      businessUnit: '',
-      position: '',
-      dateHired: new Date(),
-      isPhotoEnrolled: false,
-    } as User);
+  useEffect(() => {
+    if (!user?.id) return;
+    const channel = supabase
+      .channel(`current-hris-user:${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'hris_users', filter: `id=eq.${user.id}` },
+        () => void refreshUser(),
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [refreshUser, user?.id]);
 
-    if (!preserveExisting) {
-      setUser(minimal);
-    }
-
-    try {
-      const hydrated = await buildAppUserFromSupabase(sbUser);
-      if (hydrated) {
-        if (!isActiveStatus(hydrated.status)) {
-          setHrPendingNotice();
-          await supabase.auth.signOut().catch(() => { });
-          setUser(null);
-          return;
-        }
-        setUser(hydrated);
-        return;
-      }
-      // No HRIS profile yet -> treat as pending HR approval
-      setHrPendingNotice();
-      await supabase.auth.signOut().catch(() => { });
-      setUser(null);
-    } catch (err) {
-      console.error('[Auth] hydrateSupabaseUser failed to load HRIS profile', err);
-      setHrPendingNotice();
-      await supabase.auth.signOut().catch(() => { });
-      setUser(null);
-    }
-  };
-
-  const login = async (
-    email: string,
-    pass: string
-  ): Promise<User | null> => {
-    console.log('[Auth] login called with', email);
+  const login = async (email: string, pass: string): Promise<User | null> => {
     setLoading(true);
-
-    try {
-      const normalizedEmail = email.trim();
-
-      // -- 1) Try Supabase first ----------------------------------------------
-      let data: Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>['data'] = {
-        user: null,
-        session: null,
-      };
-      let error: any = null;
-
-      try {
-        const result = await supabase.auth.signInWithPassword({
-          email: normalizedEmail,
-          password: pass,
-        });
-        data = result.data;
-        error = result.error;
-      } catch (err) {
-        console.error('[Auth] Supabase signInWithPassword threw', err);
-        error = err;
-      }
-
-      console.log('[Auth] AFTER signInWithPassword', { data, error });
-
-      const supabaseErrorCode =
-        (error as any)?.code || (error instanceof SupabaseAuthError ? error.code : undefined);
-      const supabaseErrorMsg =
-        error?.message ??
-        (supabaseErrorCode === 'email_not_confirmed'
-          ? 'Please verify your email before signing in.'
-          : 'Login failed. Please check your credentials.');
-
-      if (!error && data?.user) {
-        console.log('[Auth] Supabase signInWithPassword succeeded');
-        const sbUser = data.user as SupabaseUser;
-        const profile = await buildAppUserFromSupabase(sbUser);
-        if (!profile) {
-          setHrPendingNotice();
-          await supabase.auth.signOut().catch(() => { });
-          throw new SupabaseAuthError(
-            'Your account is pending HR approval.',
-            'hr_pending'
-          );
-        }
-        const userCandidate = profile;
-        const statusLower = (userCandidate.status || '').toString().toLowerCase();
-        const isActive = statusLower === 'active';
-        if (!isActive) {
-          setHrPendingNotice();
-          await supabase.auth.signOut().catch(() => { });
-          throw new SupabaseAuthError(
-            'Your account is pending HR approval.',
-            'hr_pending'
-          );
-        }
-
-        setUser(userCandidate);
-        return userCandidate;
-      }
-
-      console.warn('[Auth] signInWithPassword failed', error);
-      throw new SupabaseAuthError(supabaseErrorMsg, supabaseErrorCode);
-    } finally {
+    setProfileError(null);
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password: pass,
+    });
+    if (error || !data.user) {
       setLoading(false);
-      console.log('[Auth] login finally, user =', user);
+      throw new SupabaseAuthError(
+        error?.message || 'Login failed. Please check your credentials.',
+        error?.code,
+      );
     }
+    const profile = await hydrateSupabaseUser(data.user as SupabaseUser);
+    if (!profile) {
+      throw new SupabaseAuthError(INVALID_ROLE_MESSAGE, 'invalid_profile');
+    }
+    return profile;
   };
 
-  // For now, forceLogin behaves the same as login (no device binding yet).
   const forceLogin = login;
-
   const loginWithGoogle = async (): Promise<User | null> => {
     alert('Google login is not wired to Supabase yet.');
     return null;
   };
-
   const logout = () => {
-    supabase.auth
-      .signOut()
-      .catch((err) => console.error('AuthProvider.logout error', err))
-      .finally(() => setUser(null));
+    void supabase.auth.signOut().finally(() => {
+      currentAuthUser.current = null;
+      setUser(null);
+    });
   };
-
-  const connectGoogle = () => {
-    alert('Connect Google is not implemented in Supabase yet.');
-  };
+  const connectGoogle = () => alert('Connect Google is not implemented in Supabase yet.');
 
   return (
     <AuthContext.Provider
       value={{
         user,
         loading,
+        profileError,
+        refreshUser,
         login,
         forceLogin,
         loginWithGoogle,

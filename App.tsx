@@ -9,10 +9,13 @@
 
 
 import React, { useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { SettingsProvider } from './context/SettingsContext';
+import { PermissionsProvider } from './context/PermissionsContext';
 import { useAuth } from './hooks/useAuth';
+import PermissionRoute from './components/auth/PermissionRoute';
+import { Permission, Resource } from './types';
 import Layout from './components/layout/Layout';
 const Login = React.lazy(() => import('./pages/Login'));
 const SignUp = React.lazy(() => import('./pages/SignUp'));
@@ -121,8 +124,74 @@ const DisciplineAnalytics = React.lazy(() => import('./pages/analytics/Disciplin
 import { autoCelebrateBirthdays } from './services/workflows';
 
 
+const ROUTE_PERMISSIONS: Array<{ prefix: string; resource: Resource; action?: Permission }> = [
+  { prefix: '/my-profile', resource: 'Employees' },
+  { prefix: '/users/', resource: 'Employees' },
+  { prefix: '/notifications', resource: 'Helpdesk' },
+  { prefix: '/submit-resignation', resource: 'Employees', action: Permission.View },
+  { prefix: '/admin/roles', resource: 'RolesPermissions' },
+  { prefix: '/admin/users', resource: 'UserManagement' },
+  { prefix: '/admin/departments', resource: 'Departments' },
+  { prefix: '/admin/sites', resource: 'SiteManagement' },
+  { prefix: '/admin/leave-policies', resource: 'LeavePolicies' },
+  { prefix: '/admin/holidays', resource: 'Holidays' },
+  { prefix: '/admin/audit-log', resource: 'AuditLog' },
+  { prefix: '/admin/settings', resource: 'Settings' },
+  { prefix: '/employees/asset-management/asset-requests', resource: 'AssetRequests' },
+  { prefix: '/employees/asset-management', resource: 'Assets' },
+  { prefix: '/employees/coe/templates', resource: 'COE', action: Permission.Manage },
+  { prefix: '/employees/coe', resource: 'COE' },
+  { prefix: '/employees/contracts', resource: 'Contracts & Signing' },
+  { prefix: '/employees/benefits', resource: 'Benefits' },
+  { prefix: '/employees/pan', resource: 'PAN' },
+  { prefix: '/employees/onboarding', resource: 'Lifecycle' },
+  { prefix: '/employees/analytics', resource: 'Analytics' },
+  { prefix: '/employees', resource: 'Employees' },
+  { prefix: '/feedback/coaching', resource: 'Coaching' },
+  { prefix: '/feedback/memos', resource: 'MemoLibrary' },
+  { prefix: '/feedback/discipline', resource: 'CodeOfDiscipline' },
+  { prefix: '/feedback/templates', resource: 'FeedbackTemplates' },
+  { prefix: '/feedback/pipeline', resource: 'Pipeline' },
+  { prefix: '/feedback', resource: 'Feedback' },
+  { prefix: '/payroll/manpower-planning', resource: 'Manpower' },
+  { prefix: '/payroll/workforce-planning', resource: 'WorkforcePlanning' },
+  { prefix: '/payroll/daily-review', resource: 'DailyTimeReview' },
+  { prefix: '/payroll/clock-in-out', resource: 'Clock' },
+  { prefix: '/payroll/clock-log', resource: 'ClockLog' },
+  { prefix: '/payroll/overtime-requests', resource: 'OT' },
+  { prefix: '/payroll/wfh-requests', resource: 'WFH' },
+  { prefix: '/payroll/leave', resource: 'Leave' },
+  { prefix: '/payroll/loans', resource: 'Loans' },
+  { prefix: '/payroll/payroll-prep', resource: 'PayrollPrep' },
+  { prefix: '/payroll/exceptions', resource: 'Exceptions' },
+  { prefix: '/payroll/reports', resource: 'Reports' },
+  { prefix: '/payroll/staging', resource: 'PayrollStaging' },
+  { prefix: '/payroll/payslips', resource: 'Payslips' },
+  { prefix: '/payroll/government-reports', resource: 'GovernmentReports' },
+  { prefix: '/payroll/report-templates', resource: 'ReportTemplates' },
+  { prefix: '/payroll/final-pay', resource: 'FinalPay' },
+  { prefix: '/payroll/configuration', resource: 'Settings', action: Permission.Manage },
+  { prefix: '/payroll', resource: 'Timekeeping' },
+  { prefix: '/evaluation/pulse', resource: 'PulseSurvey' },
+  { prefix: '/evaluation', resource: 'Evaluation' },
+  { prefix: '/helpdesk/announcements', resource: 'Announcements' },
+  { prefix: '/helpdesk/calendar', resource: 'Calendar' },
+  { prefix: '/helpdesk/org-chart', resource: 'OrgChart' },
+  { prefix: '/helpdesk', resource: 'Helpdesk' },
+  { prefix: '/recruitment/requisitions', resource: 'Requisitions' },
+  { prefix: '/recruitment/job-posts', resource: 'JobPosts' },
+  { prefix: '/recruitment/job-post-templates', resource: 'JobPosts', action: Permission.Manage },
+  { prefix: '/recruitment/application-pages', resource: 'ApplicationPages' },
+  { prefix: '/recruitment/applicants', resource: 'Applicants' },
+  { prefix: '/recruitment/candidates', resource: 'Candidates' },
+  { prefix: '/recruitment/interviews', resource: 'Interviews' },
+  { prefix: '/recruitment/offers', resource: 'Offers' },
+  { prefix: '/recruitment', resource: 'Recruitment' },
+];
+
 const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }) => {
-  const { user, loading } = useAuth();
+  const { user, loading, profileError } = useAuth();
+  const { pathname } = useLocation();
 
   if (loading) {
     return (
@@ -133,11 +202,29 @@ const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }
   }
 
   if (!user) {
+    if (profileError) {
+      return <div className="mx-auto mt-12 max-w-xl rounded-xl border border-red-200 bg-white p-8 text-center text-red-700">{profileError}</div>;
+    }
     return <Navigate to="/login" replace />;
+  }
+
+  const rule = ROUTE_PERMISSIONS.find(candidate => pathname.startsWith(candidate.prefix));
+  if (rule) {
+    return (
+      <PermissionRoute resource={rule.resource} action={rule.action || Permission.View}>
+        {children}
+      </PermissionRoute>
+    );
   }
 
   return children;
 };
+
+const withPermission = (
+  element: React.ReactElement,
+  resource: Resource,
+  action: Permission = Permission.View,
+) => <PermissionRoute resource={resource} action={action}>{element}</PermissionRoute>;
 
 const AppRoutes: React.FC = () => {
   return (
@@ -163,7 +250,7 @@ const AppRoutes: React.FC = () => {
         }
       >
         <Route index element={<Navigate to="/dashboard" replace />} />
-        <Route path="dashboard" element={<Dashboard />} />
+        <Route path="dashboard" element={withPermission(<Dashboard />, 'Dashboard')} />
         <Route path="my-profile" element={<ProtectedRoute><EmployeeProfile/></ProtectedRoute>} />
         <Route path="notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
         <Route path="users/:userId" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
@@ -307,11 +394,13 @@ const AppRoutes: React.FC = () => {
 const App: React.FC = () => {
   return (
     <AuthProvider>
-      <SettingsProvider>
-        <BrowserRouter>
-          <AppRoutes />
-        </BrowserRouter>
-      </SettingsProvider>
+      <PermissionsProvider>
+        <SettingsProvider>
+          <BrowserRouter>
+            <AppRoutes />
+          </BrowserRouter>
+        </SettingsProvider>
+      </PermissionsProvider>
     </AuthProvider>
   );
 };

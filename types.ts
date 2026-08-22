@@ -29,6 +29,9 @@ export enum Role {
   IT = 'IT',
 }
 
+export type RoleId = string;
+export type DashboardType = 'employee' | 'manager' | 'hr' | 'executive';
+
 export type Resource =
   | 'Dashboard' | 'Employees' | 'PAN' | 'Files' | 'Feedback' | 'Evaluation' | 'Timekeeping' | 'Clock' | 'OT'
   | 'Leave' | 'LeavePolicies' | 'Exceptions' | 'PayrollPrep' | 'PayrollStaging' | 'Payslips' | 'GovernmentReports'
@@ -39,7 +42,7 @@ export type Resource =
   | 'ApplicationPages';
 
 export type PermissionsMatrix = {
-  [key in Role]?: Partial<Record<Resource, Permission[]>>;
+  [roleId: string]: Partial<Record<Resource, Permission[]>>;
 };
 
 export interface NavLink {
@@ -444,7 +447,11 @@ export interface User {
   authUserId?: string;
   name: string;
   email: string;
-  role: Role;
+  /** Dynamic identifier backed by public.roles.id. */
+  role: RoleId;
+  roleId?: RoleId;
+  dashboardType?: DashboardType;
+  roleDescription?: string;
   department: string;
   businessUnit: string;
   departmentId?: string;
