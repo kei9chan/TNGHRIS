@@ -6,7 +6,6 @@ import { usePermissions } from '../../hooks/usePermissions';
 import { NAV_LINKS } from '../../constants';
 import type { NavLink } from '../../types';
 import { useSettings } from '../../context/SettingsContext';
-import GoogleIcon from '../icons/GoogleIcon';
 import NotificationBell from './NotificationBell';
 
 const UserIcon = () => (
@@ -18,12 +17,6 @@ const UserIcon = () => (
 const LogoutIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-    </svg>
-);
-
-const CheckCircleIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
     </svg>
 );
 
@@ -58,7 +51,7 @@ const NavItem: React.FC<{ link: NavLink }> = ({ link }) => {
 };
 
 const Header: React.FC = () => {
-    const { user, logout, connectGoogle } = useAuth();
+    const { user, logout } = useAuth();
     const { settings } = useSettings();
     const navigate = useNavigate();
     const [isProfileMenuOpen, setProfileMenuOpen] = React.useState(false);
@@ -119,17 +112,6 @@ const Header: React.FC = () => {
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
                                         My Profile
                                     </RouterNavLink>
-                                    {user?.isGoogleConnected ? (
-                                        <div className="w-full text-left flex items-center px-4 py-2 text-sm text-green-600">
-                                            <CheckCircleIcon />
-                                            Google Connected
-                                        </div>
-                                    ) : (
-                                        <button onClick={() => { connectGoogle(); setProfileMenuOpen(false); }} className="w-full text-left flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                                            <GoogleIcon className="w-5 h-5 mr-2" />
-                                            Connect with Google
-                                        </button>
-                                    )}
                                     <button onClick={handleLogout} className="w-full text-left flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                                         <LogoutIcon />
                                         Sign out

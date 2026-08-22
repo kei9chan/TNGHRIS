@@ -1792,6 +1792,7 @@ export interface Interview {
   location: string; // URL for virtual, address for on-site
   panelUserIds: string[];
   calendarEventId?: string;
+  googleCalendarLink?: string;
   googleMeetLink?: string;
   calendarInviteStatus?: 'not_requested' | 'sent' | 'failed' | 'partial' | string;
   applicantInviteStatus?: 'not_requested' | 'sent' | 'failed' | string;

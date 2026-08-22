@@ -152,6 +152,7 @@ const mapInterview = (r: InterviewRow): Interview => ({
   location: r.location || '',
   panelUserIds: Array.isArray(r.panel_user_ids) ? r.panel_user_ids : (r.interviewer_id ? [r.interviewer_id] : []),
   calendarEventId: r.calendar_event_id || undefined,
+  googleCalendarLink: r.google_calendar_link || undefined,
   googleMeetLink: r.google_meet_link || undefined,
   calendarInviteStatus: r.calendar_invite_status || 'not_requested',
   applicantInviteStatus: r.applicant_invite_status || 'not_requested',

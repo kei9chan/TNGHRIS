@@ -108,6 +108,13 @@ const InterviewDetailModal: React.FC<InterviewDetailModalProps> = ({
                 </> : <span className="text-amber-700 dark:text-amber-300">No valid meeting link generated</span> : interview.location || 'N/A'}
               </dd>
             </div>
+            {interview.googleCalendarLink && <div className="sm:col-span-2">
+              <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Google Calendar</dt>
+              <dd className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                <a href={interview.googleCalendarLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center rounded-md border border-indigo-300 bg-indigo-50 px-3 py-2 font-medium text-indigo-700 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300">View in Google Calendar ↗</a>
+                {interview.calendarEventId && <span className="text-xs text-gray-500">Event ID: {interview.calendarEventId}</span>}
+              </dd>
+            </div>}
           </dl>
         </section>
 

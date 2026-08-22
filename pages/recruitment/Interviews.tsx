@@ -86,6 +86,7 @@ const Interviews: React.FC = () => {
         location: row.location || '',
         panelUserIds: row.panel_user_ids || (row.interviewer_id ? [row.interviewer_id] : []),
         calendarEventId: row.calendar_event_id || undefined,
+        googleCalendarLink: row.google_calendar_link || undefined,
         googleMeetLink: row.google_meet_link || undefined,
         calendarInviteStatus: row.calendar_invite_status || 'not_requested',
         applicantInviteStatus: row.applicant_invite_status || 'not_requested',
