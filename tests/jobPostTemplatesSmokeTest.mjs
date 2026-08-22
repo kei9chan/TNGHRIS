@@ -23,6 +23,11 @@ assert.equal((presets.match(/isStarter: true/g) || []).length, 5, 'exactly five 
 assert.ok(!presets.includes('[TEXT_PLACEHOLDER'), 'starter presets must not contain text placeholders');
 assert.ok(!generator.includes('[LOGO_PLACEHOLDER]'), 'preview must use a wordmark fallback');
 assert.ok(generator.includes('application-page-assets'), 'editor must use the shared storage bucket');
+assert.ok(generator.includes('Back to Job Post Templates'), 'editor must provide a visible route back to the template list');
+assert.ok(generator.includes("event.key === 'Escape'"), 'editor must support Escape to close');
+assert.ok(generator.includes('scrollHeight'), 'image export must measure the full preview height');
+assert.ok(generator.includes("exportNode.style.overflow = 'visible'"), 'image export must not clip overflow');
+assert.ok(generator.includes('CONTENT_LIMITS'), 'editor must validate content length');
 for (const column of ['template_key', 'business_unit', 'status', 'is_starter', 'sections', 'cta_link', 'brand_wordmark']) {
   assert.ok(migration.includes(`add column if not exists ${column}`), `migration missing ${column}`);
 }
