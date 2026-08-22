@@ -117,6 +117,7 @@ const ApplicantDetailModal: React.FC<ApplicantDetailModalProps> = ({ isOpen, onC
                     <h3 className="text-lg font-medium text-gray-900 dark:text-white border-b pb-2 mb-2">Application Details</h3>
                     <dl className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
                         <DetailItem label="Applying For" value={application.jobTitle} />
+                        <DetailItem label="Application Reference" value={application.applicationReference} />
                         <DetailItem label="Current Stage" value={<span className="px-2 py-1 text-sm font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300">{application.stage}</span>} />
                         <DetailItem label="Application Date" value={new Date(application.createdAt).toLocaleString()} />
                         <DetailItem label="Last Updated" value={new Date(application.updatedAt).toLocaleString()} />

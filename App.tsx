@@ -115,6 +115,7 @@ const ApplicationPages = React.lazy(() => import('./pages/recruitment/Applicatio
 const CareerPagePreview = React.lazy(() => import('./components/recruitment/CareerPagePreview'));
 const OpenRolesPage = React.lazy(() => import('./components/recruitment/OpenRolesPage'));
 const CareerRolePage = React.lazy(() => import('./components/recruitment/CareerRolePage'));
+const CareerApplicationPage = React.lazy(() => import('./components/recruitment/CareerApplicationPage'));
 const UserProfile = React.lazy(() => import('./pages/users/UserProfile'));
 
 // Analytics Pages
@@ -157,6 +158,8 @@ const AppRoutes: React.FC = () => {
       <Route path="/apply/:jobPostId/:jobSlug?" element={<Apply />} />
         <Route path="/thank-you" element={<ThankYou />} />
         {/* Public Career Pages */}
+        <Route path="/careers/:slug/apply/:roleSlug" element={<CareerApplicationPage />} />
+        <Route path="/careers/:slug/apply" element={<CareerApplicationPage />} />
         <Route path="/careers/:slug/roles/:roleSlug" element={<CareerRolePage />} />
         <Route path="/careers/:slug/:subpage" element={<OpenRolesPage />} />
         <Route path="/careers/:slug" element={<CareerPagePreview isPublic={true} />} />

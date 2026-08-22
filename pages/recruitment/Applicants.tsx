@@ -29,6 +29,7 @@ export interface EnrichedApplication extends Application {
     businessUnitId?: string;
     departmentName: string;
     candidateSource?: CandidateSource;
+    applicationReference?: string;
 }
 
 // --- ICONS ---
@@ -174,6 +175,11 @@ const Applicants: React.FC = () => {
                 tags: c.tags || [],
                 portfolioUrl: c.portfolio_url || '',
                 consentAt: c.consent_at ? new Date(c.consent_at) : undefined,
+                currentCity: c.current_city || undefined,
+                currentEmployer: c.current_employer || undefined,
+                yearsRelevantExperience: c.years_relevant_experience || undefined,
+                earliestStartDate: c.earliest_start_date || undefined,
+                linkedinUrl: c.linkedin_url || undefined,
             } as Candidate)));
             const appsMapped = (appRes.data || []).map((a: any) => ({
                 id: a.id,
@@ -184,6 +190,20 @@ const Applicants: React.FC = () => {
                 notes: a.notes || '',
                 createdAt: a.created_at ? new Date(a.created_at) : new Date(),
                 updatedAt: a.updated_at ? new Date(a.updated_at) : new Date(),
+                roleId: a.role_id || undefined,
+                roleSlug: a.role_slug || undefined,
+                roleTitleSnapshot: a.role_title_snapshot || undefined,
+                departmentSnapshot: a.department_snapshot || undefined,
+                locationSnapshot: a.location_snapshot || undefined,
+                employmentTypeSnapshot: a.employment_type_snapshot || undefined,
+                workArrangementSnapshot: a.work_arrangement_snapshot || undefined,
+                roleAnswers: a.role_answers || undefined,
+                sourceApplicationPage: a.source_application_page || undefined,
+                applicationReference: a.application_reference || undefined,
+                submissionToken: a.submission_token || undefined,
+                resumeFileUrl: a.resume_file_url || undefined,
+                resumeFilePath: a.resume_file_path || undefined,
+                coverLetter: a.cover_letter || undefined,
             } as Application));
             setApplications(appsMapped);
         } catch (err) {
@@ -214,11 +234,12 @@ const Applicants: React.FC = () => {
                 candidatePhone: candidate?.phone,
                 candidatePortfolioUrl: candidate?.portfolioUrl,
                 candidateTags: candidate?.tags,
-                jobTitle: jobPost?.title || 'N/A',
+                jobTitle: jobPost?.title || app.roleTitleSnapshot || 'General Application',
                 businessUnitName: businessUnit?.name || 'N/A',
                 businessUnitId: businessUnit?.id,
-                departmentName: department?.name || 'N/A',
+                departmentName: department?.name || app.departmentSnapshot || 'N/A',
                 candidateSource: candidate?.source,
+                applicationReference: app.applicationReference,
             };
         }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     }, [applications, candidates, jobPosts, jobRequisitions, businessUnits, departments]);

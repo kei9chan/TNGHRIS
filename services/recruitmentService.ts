@@ -29,12 +29,18 @@ type JobPostRow = {
 type CandidateRow = {
   id: string; first_name: string; last_name: string; email: string; phone: string;
   source: string; tags: any; portfolio_url?: string | null; consent_at?: string | null;
+  current_city?: string | null; linkedin_url?: string | null; current_employer?: string | null;
+  years_relevant_experience?: string | null; earliest_start_date?: string | null;
 };
 
 type ApplicationRow = {
-  id: string; candidate_id: string; job_post_id: string; requisition_id: string;
+  id: string; candidate_id: string; job_post_id: string | null; requisition_id: string | null;
   stage: string; owner_user_id?: string | null; created_at: string; updated_at: string;
-  notes?: string | null; referrer?: string | null;
+  notes?: string | null; referrer?: string | null; role_id?: string | null; role_slug?: string | null;
+  role_title_snapshot?: string | null; department_snapshot?: string | null; location_snapshot?: string | null;
+  employment_type_snapshot?: string | null; work_arrangement_snapshot?: string | null; role_answers?: any;
+  source_application_page?: string | null; application_reference?: string | null; submission_token?: string | null;
+  resume_file_url?: string | null; resume_file_path?: string | null; cover_letter?: string | null;
 };
 
 type InterviewRow = {
@@ -100,14 +106,33 @@ const mapCandidate = (r: CandidateRow): Candidate => ({
   tags: Array.isArray(r.tags) ? r.tags : [],
   portfolioUrl: r.portfolio_url || undefined,
   consentAt: r.consent_at ? new Date(r.consent_at) : undefined,
+  currentCity: r.current_city || undefined,
+  linkedinUrl: r.linkedin_url || undefined,
+  currentEmployer: r.current_employer || undefined,
+  yearsRelevantExperience: r.years_relevant_experience || undefined,
+  earliestStartDate: r.earliest_start_date || undefined,
 });
 
 const mapApplication = (r: ApplicationRow): Application => ({
-  id: r.id, candidateId: r.candidate_id, jobPostId: r.job_post_id,
-  requisitionId: r.requisition_id, stage: r.stage as ApplicationStage,
+  id: r.id, candidateId: r.candidate_id, jobPostId: r.job_post_id || '',
+  requisitionId: r.requisition_id || '', stage: r.stage as ApplicationStage,
   ownerUserId: r.owner_user_id || undefined,
   createdAt: new Date(r.created_at), updatedAt: new Date(r.updated_at),
   notes: r.notes || undefined, referrer: r.referrer || undefined,
+  roleId: r.role_id || undefined,
+  roleSlug: r.role_slug || undefined,
+  roleTitleSnapshot: r.role_title_snapshot || undefined,
+  departmentSnapshot: r.department_snapshot || undefined,
+  locationSnapshot: r.location_snapshot || undefined,
+  employmentTypeSnapshot: r.employment_type_snapshot || undefined,
+  workArrangementSnapshot: r.work_arrangement_snapshot || undefined,
+  roleAnswers: r.role_answers || undefined,
+  sourceApplicationPage: r.source_application_page || undefined,
+  applicationReference: r.application_reference || undefined,
+  submissionToken: r.submission_token || undefined,
+  resumeFileUrl: r.resume_file_url || undefined,
+  resumeFilePath: r.resume_file_path || undefined,
+  coverLetter: r.cover_letter || undefined,
 });
 
 const mapInterview = (r: InterviewRow): Interview => ({
@@ -220,6 +245,19 @@ export const saveApplication = async (app: Partial<Application>): Promise<Applic
     requisition_id: app.requisitionId, stage: app.stage,
     owner_user_id: app.ownerUserId || null, notes: app.notes || null,
     referrer: app.referrer || null,
+    role_id: app.roleId || null,
+    role_slug: app.roleSlug || null,
+    role_title_snapshot: app.roleTitleSnapshot || null,
+    department_snapshot: app.departmentSnapshot || null,
+    location_snapshot: app.locationSnapshot || null,
+    employment_type_snapshot: app.employmentTypeSnapshot || null,
+    work_arrangement_snapshot: app.workArrangementSnapshot || null,
+    role_answers: app.roleAnswers || {},
+    source_application_page: app.sourceApplicationPage || null,
+    application_reference: app.applicationReference || null,
+    submission_token: app.submissionToken || null,
+    resume_file_url: app.resumeFileUrl || null,
+    resume_file_path: app.resumeFilePath || null,
   };
   const { data, error } = app.id
     ? await supabase.from('job_applications').update(payload).eq('id', app.id).select().single()

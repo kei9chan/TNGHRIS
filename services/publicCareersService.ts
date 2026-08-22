@@ -1,4 +1,4 @@
-import { ApplicantPageTheme, JobPost, JobPostStatus, OpenRolesBenefit, OpenRolesConfig, RoleDetails, RoleFAQ } from '../types';
+import { ApplicantPageTheme, JobPost, JobPostStatus, OpenRolesBenefit, OpenRolesConfig, RoleApplicationQuestion, RoleDetails, RoleFAQ } from '../types';
 
 export const DEFAULT_OPEN_ROLES_BENEFITS: OpenRolesBenefit[] = [
   { id: 'competitive-pay', title: 'Competitive Pay', description: 'Be rewarded for the value you bring.', icon: 'wallet' },
@@ -32,6 +32,21 @@ const normalizeFaqs = (value: unknown): RoleFAQ[] => {
     .filter(faq => faq.question && faq.answer);
 };
 
+const normalizeQuestions = (value: unknown): RoleApplicationQuestion[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((question, index) => ({
+      id: String(question?.id || `question-${index + 1}`),
+      label: String(question?.label || '').trim(),
+      type: question?.type || 'shortText',
+      required: question?.required !== false,
+      step: (question?.step === 3 ? 3 : 2) as 2 | 3,
+      options: Array.isArray(question?.options) ? question.options.map((option: unknown) => String(option).trim()).filter(Boolean) : [],
+      helpText: question?.helpText ? String(question.helpText).trim() : undefined,
+    }))
+    .filter(question => question.label);
+};
+
 const normalizeRoleDetails = (row: any): RoleDetails => {
   const details = row.role_details || row.roleDetails || {};
   return {
@@ -46,6 +61,8 @@ const normalizeRoleDetails = (row: any): RoleDetails => {
     benefits: details.benefits || undefined,
     faqs: normalizeFaqs(details.faqs || row.faqs),
     roleImage: details.roleImage || row.role_image_url || undefined,
+    allowResumeLink: details.allowResumeLink !== false,
+    applicationQuestions: normalizeQuestions(details.applicationQuestions || row.application_questions),
   };
 };
 
@@ -140,4 +157,4 @@ export const getRolePath = (careerSlug: string, job: JobPost): string =>
   `/careers/${encodeURIComponent(careerSlug)}/roles/${encodeURIComponent(job.slug || job.id)}`;
 
 export const getApplicationPath = (careerSlug: string, job: JobPost, openRolesSlug = 'open-roles'): string =>
-  `/apply/${encodeURIComponent(job.id)}/${encodeURIComponent(job.slug || job.id)}?career=${encodeURIComponent(careerSlug)}&openRoles=${encodeURIComponent(openRolesSlug)}`;
+  `/careers/${encodeURIComponent(careerSlug)}/apply/${encodeURIComponent(job.slug || job.id)}?roleId=${encodeURIComponent(job.id)}&openRoles=${encodeURIComponent(openRolesSlug)}`;

@@ -155,7 +155,16 @@ const OpenRolesPage: React.FC = () => {
       <main id="open-roles-list" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14">
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-7">
           <div><p className="text-sm font-semibold" style={{ color: theme.primaryColor }}>OPPORTUNITIES</p><h2 className="mt-1 text-3xl font-extrabold text-gray-900">Find your next role</h2></div>
-          <p className="text-sm text-gray-600">{filteredJobs.length} {filteredJobs.length === 1 ? 'role' : 'roles'} available</p>
+          <div className="flex items-center gap-4">
+            <p className="text-sm text-gray-600">{filteredJobs.length} {filteredJobs.length === 1 ? 'role' : 'roles'} available</p>
+            <Link
+              to={`/careers/${encodeURIComponent(theme.slug)}/apply?openRoles=${encodeURIComponent(config.pageSlug)}`}
+              className="text-sm font-semibold hover:underline"
+              style={{ color: theme.primaryColor }}
+            >
+              Submit General Application
+            </Link>
+          </div>
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-200 p-4 sm:p-5 shadow-sm grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 mb-8">
@@ -167,7 +176,17 @@ const OpenRolesPage: React.FC = () => {
         </div>
 
         {filteredJobs.length === 0 ? (
-          <div className="rounded-2xl bg-white border border-gray-200 p-10 text-center"><h3 className="text-xl font-bold text-gray-900">No open roles at the moment</h3><p className="mt-2 text-gray-600">Please check back soon or submit a general application.</p></div>
+          <div className="rounded-2xl bg-white border border-gray-200 p-10 text-center">
+            <h3 className="text-xl font-bold text-gray-900">No open roles at the moment</h3>
+            <p className="mt-2 text-gray-600">Please check back soon or submit a general application.</p>
+            <Link
+              to={`/careers/${encodeURIComponent(theme.slug)}/apply?openRoles=${encodeURIComponent(config.pageSlug)}`}
+              className="mt-5 inline-flex items-center justify-center px-4 py-2 rounded-md text-white font-semibold text-sm"
+              style={{ backgroundColor: theme.primaryColor }}
+            >
+              Submit General Application
+            </Link>
+          </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {filteredJobs.map(job => (

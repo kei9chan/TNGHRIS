@@ -1674,6 +1674,18 @@ export interface RoleFAQ {
   answer: string;
 }
 
+export type RoleApplicationQuestionType = 'shortText' | 'longText' | 'select' | 'yesNo' | 'number' | 'date';
+
+export interface RoleApplicationQuestion {
+  id: string;
+  label: string;
+  type: RoleApplicationQuestionType;
+  required: boolean;
+  step?: 2 | 3;
+  options?: string[];
+  helpText?: string;
+}
+
 /** Optional public-facing content for the reusable role information page. */
 export interface RoleDetails {
   shortSummary?: string;
@@ -1687,6 +1699,8 @@ export interface RoleDetails {
   benefits?: string;
   faqs?: RoleFAQ[];
   roleImage?: string;
+  allowResumeLink?: boolean;
+  applicationQuestions?: RoleApplicationQuestion[];
 }
 
 export enum CandidateSource {
@@ -1707,6 +1721,11 @@ export interface Candidate {
   tags: string[];
   portfolioUrl?: string;
   consentAt?: Date;
+  currentCity?: string;
+  currentEmployer?: string;
+  yearsRelevantExperience?: string;
+  earliestStartDate?: string;
+  linkedinUrl?: string;
 }
 
 export enum ApplicationStage {
@@ -1731,6 +1750,20 @@ export interface Application {
   updatedAt: Date;
   notes?: string;
   referrer?: string;
+  roleId?: string;
+  roleSlug?: string;
+  roleTitleSnapshot?: string;
+  departmentSnapshot?: string;
+  locationSnapshot?: string;
+  employmentTypeSnapshot?: string;
+  workArrangementSnapshot?: string;
+  roleAnswers?: Record<string, unknown>;
+  sourceApplicationPage?: string;
+  applicationReference?: string;
+  submissionToken?: string;
+  resumeFileUrl?: string;
+  resumeFilePath?: string;
+  coverLetter?: string;
 }
 
 export enum InterviewType {

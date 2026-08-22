@@ -6,6 +6,7 @@ import Button from './Button';
 
 interface FileUploaderProps {
   onFileUpload: (file: File) => void | Promise<void>;
+  onFileRemove?: () => void | Promise<void>;
   maxSize?: number; // in bytes
   inputId?: string;
   existingFileUrl?: string; // URL of previously uploaded file
@@ -36,6 +37,7 @@ const isImageFile = (file?: File | null, url?: string): boolean => {
 
 const FileUploader: React.FC<FileUploaderProps> = ({
   onFileUpload,
+  onFileRemove,
   maxSize,
   inputId,
   existingFileUrl,
@@ -130,6 +132,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({
   const handleRemoveFile = () => {
     setFile(null);
     setPreviewUrl(null);
+    onFileRemove?.();
   };
   
   const sizeLimitInMB = (maxSize || MAX_FILE_SIZE) / 1024 / 1024;
@@ -217,6 +220,12 @@ const FileUploader: React.FC<FileUploaderProps> = ({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
+          </div>
+          <div className="mb-3">
+            <label htmlFor={`${controlId}-replace`} className="inline-flex items-center px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-800 cursor-pointer">
+              Replace file
+            </label>
+            <input id={`${controlId}-replace`} type="file" className="hidden" onChange={handleFileChange} disabled={disabled} accept={accept} />
           </div>
           {previewUrl && (
             <div className="mt-2 rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800">

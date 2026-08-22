@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { JobPost, JobPostStatus, JobRequisitionStatus, JobRequisition, BusinessUnit, RoleDetails, RoleFAQ } from '../../types';
+import { JobPost, JobPostStatus, JobRequisitionStatus, JobRequisition, BusinessUnit, RoleApplicationQuestion, RoleApplicationQuestionType, RoleDetails, RoleFAQ } from '../../types';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
@@ -153,6 +153,7 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
 
     const roleDetails = current.roleDetails || {};
     const faqs = roleDetails.faqs || [];
+    const applicationQuestions = roleDetails.applicationQuestions || [];
 
     const updateFaq = (index: number, updates: Partial<RoleFAQ>) => {
         updateRoleDetails({
@@ -168,6 +169,22 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
 
     const removeFaq = (index: number) => {
         updateRoleDetails({ faqs: faqs.filter((_, faqIndex) => faqIndex !== index) });
+    };
+
+    const updateApplicationQuestion = (index: number, updates: Partial<RoleApplicationQuestion>) => {
+        updateRoleDetails({
+            applicationQuestions: applicationQuestions.map((question, questionIndex) => questionIndex === index ? { ...question, ...updates } : question),
+        });
+    };
+
+    const addApplicationQuestion = () => {
+        updateRoleDetails({
+            applicationQuestions: [...applicationQuestions, { id: `question-${Date.now()}`, label: '', type: 'shortText', required: true, step: 2, options: [] }],
+        });
+    };
+
+    const removeApplicationQuestion = (index: number) => {
+        updateRoleDetails({ applicationQuestions: applicationQuestions.filter((_, questionIndex) => questionIndex !== index) });
     };
 
     const handleRoleImageUpload = async (file: File) => {
@@ -224,6 +241,10 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
             roleDetails: {
                 ...current.roleDetails,
                 faqs: (current.roleDetails?.faqs || []).filter(faq => faq.question?.trim() && faq.answer?.trim()),
+                applicationQuestions: (current.roleDetails?.applicationQuestions || []).filter(question => question.label?.trim()).map(question => ({
+                    ...question,
+                    options: (question.options || []).filter(option => option.trim()),
+                })),
             },
         } as JobPost;
 
@@ -349,7 +370,31 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
                         <Textarea label="Required Experience" value={roleDetails.requiredExperience || ''} onChange={e => updateRoleDetails({ requiredExperience: e.target.value })} rows={3} />
                         <Textarea label="Preferred Experience" value={roleDetails.preferredExperience || ''} onChange={e => updateRoleDetails({ preferredExperience: e.target.value })} rows={3} />
                     </div>
-                    <Textarea label="What You Get / Role Benefits" value={roleDetails.benefits || ''} onChange={e => updateRoleDetails({ benefits: e.target.value })} rows={3} placeholder="Leave blank to use the main Benefits field above." />
+                        <Textarea label="What You Get / Role Benefits" value={roleDetails.benefits || ''} onChange={e => updateRoleDetails({ benefits: e.target.value })} rows={3} placeholder="Leave blank to use the main Benefits field above." />
+                        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                            <input type="checkbox" checked={roleDetails.allowResumeLink !== false} onChange={e => updateRoleDetails({ allowResumeLink: e.target.checked })} className="h-4 w-4 text-indigo-600 rounded" />
+                            Allow applicants to provide a resume link instead of uploading a file
+                        </label>
+
+                        <div className="space-y-3 border-t border-gray-200 dark:border-gray-700 pt-4">
+                            <div className="flex items-center justify-between gap-3">
+                                <div><h4 className="text-sm font-semibold text-gray-900 dark:text-white">Application Questions</h4><p className="text-xs text-gray-500">These questions appear on Steps 2 or 3 of this role’s application.</p></div>
+                                <Button type="button" size="sm" variant="secondary" onClick={addApplicationQuestion}>Add Question</Button>
+                            </div>
+                            {applicationQuestions.map((question, index) => (
+                                <div key={question.id || index} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-3">
+                                    <div className="flex justify-between items-center"><span className="text-xs font-semibold text-gray-500">Question {index + 1}</span><button type="button" onClick={() => removeApplicationQuestion(index)} className="text-xs text-red-600 hover:underline">Remove</button></div>
+                                    <Input label="Question / Prompt" value={question.label} onChange={e => updateApplicationQuestion(index, { label: e.target.value })} placeholder="e.g., How many years of relevant experience do you have?" />
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                        <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Answer type</label><select value={question.type} onChange={e => updateApplicationQuestion(index, { type: e.target.value as RoleApplicationQuestionType })} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"><option value="shortText">Short text</option><option value="longText">Long text</option><option value="select">Dropdown</option><option value="yesNo">Yes / No</option><option value="number">Number</option><option value="date">Date</option></select></div>
+                                        <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Step</label><select value={question.step || 2} onChange={e => updateApplicationQuestion(index, { step: Number(e.target.value) === 3 ? 3 : 2 })} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"><option value="2">Step 2 — Experience</option><option value="3">Step 3 — Final Details</option></select></div>
+                                        <label className="flex items-center gap-2 self-end pb-2 text-sm text-gray-700 dark:text-gray-300"><input type="checkbox" checked={question.required !== false} onChange={e => updateApplicationQuestion(index, { required: e.target.checked })} className="h-4 w-4 text-indigo-600 rounded" />Required</label>
+                                    </div>
+                                    {question.type === 'select' && <Input label="Dropdown options (comma separated)" value={(question.options || []).join(', ')} onChange={e => updateApplicationQuestion(index, { options: e.target.value.split(',').map(option => option.trim()).filter(Boolean) })} placeholder="Option 1, Option 2" />}
+                                    <Input label="Help text (optional)" value={question.helpText || ''} onChange={e => updateApplicationQuestion(index, { helpText: e.target.value })} />
+                                </div>
+                            ))}
+                        </div>
 
                     <div className="space-y-3">
                         <div className="flex items-center justify-between gap-3">
