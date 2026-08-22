@@ -423,7 +423,7 @@ const JobPostTemplateGenerator: React.FC<JobPostTemplateGeneratorProps> = ({ isO
                     <div className="min-w-0"><h2 id="job-post-template-generator-title" className="truncate text-base font-bold text-white sm:text-lg">Job Post Template Generator</h2><p className="hidden text-xs text-slate-400 sm:block">Edit the template, review the complete preview, then save or download it.</p></div>
                     <div className="flex shrink-0 items-center gap-2">
                         <button type="button" onClick={requestClose} className="inline-flex rounded-md border border-slate-600 px-2 py-2 text-[11px] font-semibold text-slate-200 transition-colors hover:bg-slate-800 sm:px-3 sm:text-xs">Back to Job Post Templates</button>
-                        <button type="button" onClick={requestClose} className="rounded-full border border-white/10 bg-slate-800 p-2 text-white transition-colors hover:bg-slate-700" aria-label="Close editor"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293-1.414 1.414L11.414 10l4.293 4.293-1.414 1.414L10 11.414l-4.293-4.293-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg></button>
+                        <button type="button" onClick={requestClose} className="rounded-full border border-white/10 bg-slate-800 p-2 text-white transition-colors hover:bg-slate-700" aria-label="Close editor"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M6 6l8 8M14 6l-8 8" /></svg></button>
                     </div>
                 </div>
 
