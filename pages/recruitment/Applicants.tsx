@@ -17,6 +17,8 @@ import RejectionEmailModal from '../../components/recruitment/RejectionEmailModa
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { InterviewCandidateOption, InterviewScheduleOptions, scheduleInterviewWorkflow } from '../../services/interviewSchedulingService';
+import { rejectApplicationWithEmail } from '../../services/applicationRejectionService';
+import { RejectionEmailDraft } from '../../components/recruitment/RejectionEmailModal';
 
 export interface EnrichedApplication extends Application {
     candidateName: string;
@@ -48,7 +50,13 @@ const getStageColor = (stage: ApplicationStage) => ({
     [ApplicationStage.Withdrawn]: 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300',
 }[stage] || 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200');
 
-const ApplicantListTable: React.FC<{ applications: EnrichedApplication[]; onRowClick: (app: EnrichedApplication) => void }> = ({ applications, onRowClick }) => (
+const ApplicantListTable: React.FC<{
+    applications: EnrichedApplication[];
+    canManage: boolean;
+    onRowClick: (app: EnrichedApplication) => void;
+    onScheduleInterview: (app: EnrichedApplication) => void;
+    onReject: (app: EnrichedApplication) => void;
+}> = ({ applications, canManage, onRowClick, onScheduleInterview, onReject }) => (
     <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50 dark:bg-gray-700">
@@ -58,6 +66,7 @@ const ApplicantListTable: React.FC<{ applications: EnrichedApplication[]; onRowC
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase">Business Unit</th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase">Stage</th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase">Applied</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium uppercase">Actions</th>
                 </tr>
             </thead>
             <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
@@ -68,6 +77,37 @@ const ApplicantListTable: React.FC<{ applications: EnrichedApplication[]; onRowC
                         <td className="px-6 py-4 whitespace-nowrap text-sm">{app.businessUnitName}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStageColor(app.stage)}`}>{app.stage}</span></td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">{new Date(app.createdAt).toLocaleDateString()}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                            {canManage ? (
+                                <div className="flex items-center justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={event => { event.stopPropagation(); onScheduleInterview(app); }}
+                                        disabled={[ApplicationStage.Rejected, ApplicationStage.Withdrawn, ApplicationStage.Hired].includes(app.stage)}
+                                        className="rounded-md border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 transition-colors hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300"
+                                    >
+                                        Schedule Interview
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={event => { event.stopPropagation(); onReject(app); }}
+                                        disabled={[ApplicationStage.Rejected, ApplicationStage.Withdrawn, ApplicationStage.Hired].includes(app.stage)}
+                                        className="rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300"
+                                    >
+                                        {app.stage === ApplicationStage.Rejected ? 'Rejected' : 'Reject'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={event => { event.stopPropagation(); onRowClick(app); }}
+                                        className="rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-bold text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                                        aria-label={`More actions for ${app.candidateName}`}
+                                        title="View applicant details"
+                                    >
+                                        ···
+                                    </button>
+                                </div>
+                            ) : <span className="text-xs text-gray-400">No actions available</span>}
+                        </td>
                     </tr>
                 ))}
             </tbody>
@@ -99,7 +139,6 @@ const Applicants: React.FC = () => {
     const [isSchedulerOpen, setIsSchedulerOpen] = useState(false);
     const [isRejectionModalOpen, setIsRejectionModalOpen] = useState(false);
     const [pendingAppId, setPendingAppId] = useState<string | null>(null);
-    const [pendingStage, setPendingStage] = useState<ApplicationStage | null>(null);
     
     const [buFilter, setBuFilter] = useState<string>('');
     const [departmentFilter, setDepartmentFilter] = useState<string>('');
@@ -298,22 +337,15 @@ const Applicants: React.FC = () => {
     };
 
     const handleUpdateStage = (applicationId: string, newStage: ApplicationStage) => {
-        // --- Automation Logic ---
-        
         if (newStage === ApplicationStage.Interview) {
             setPendingAppId(applicationId);
-            setPendingStage(newStage);
-            // Update state first so kanban reflects drop, then prompt
-            performStageUpdate(applicationId, newStage);
-            setTimeout(() => setIsSchedulerOpen(true), 200); // Slight delay for UX
+            setIsSchedulerOpen(true);
             return;
         }
 
         if (newStage === ApplicationStage.Rejected) {
             setPendingAppId(applicationId);
-            setPendingStage(newStage);
             setIsRejectionModalOpen(true);
-            // Don't update stage yet, wait for confirmation/email send
             return;
         }
         
@@ -333,17 +365,36 @@ const Applicants: React.FC = () => {
             : application));
         setIsSchedulerOpen(false);
         setPendingAppId(null);
-        setPendingStage(null);
         alert(outcome.warning || 'Interview scheduled successfully.');
     };
-    
-    const handleRejectionComplete = () => {
-        if (pendingAppId && pendingStage) {
-            performStageUpdate(pendingAppId, pendingStage);
-        }
+
+    const handleScheduleInterviewAction = (application: EnrichedApplication) => {
+        if (!can('Applicants', Permission.Manage)) return;
+        setPendingAppId(application.id);
+        setIsSchedulerOpen(true);
+    };
+
+    const handleRejectAction = (application: EnrichedApplication) => {
+        if (!can('Applicants', Permission.Manage) || [ApplicationStage.Rejected, ApplicationStage.Withdrawn, ApplicationStage.Hired].includes(application.stage)) return;
+        setPendingAppId(application.id);
+        setIsRejectionModalOpen(true);
+    };
+
+    const handleRejectionComplete = async (draft: RejectionEmailDraft) => {
+        if (!pendingAppId) throw new Error('The selected application could not be loaded.');
+        const outcome = await rejectApplicationWithEmail({
+            applicationId: pendingAppId,
+            subject: draft.subject,
+            message: draft.message,
+            rejectionReason: draft.rejectionReason,
+        });
+        const updatedAt = outcome.application?.updated_at ? new Date(outcome.application.updated_at) : new Date();
+        setApplications(previous => previous.map(application => application.id === pendingAppId
+            ? { ...application, stage: ApplicationStage.Rejected, updatedAt }
+            : application));
         setIsRejectionModalOpen(false);
         setPendingAppId(null);
-        setPendingStage(null);
+        alert(outcome.warning || 'Rejection email sent and applicant marked as Rejected.');
     };
 
 
@@ -434,6 +485,13 @@ const Applicants: React.FC = () => {
         if (!pendingApplication) return null;
         return jobPosts.find(p => p.id === pendingApplication.jobPostId)?.title || null;
     }, [pendingApplication, jobPosts]);
+    const pendingBusinessUnitName = useMemo(() => {
+        if (!pendingApplication) return null;
+        const post = jobPosts.find(item => item.id === pendingApplication.jobPostId);
+        const requisition = jobRequisitions.find(item => item.id === pendingApplication.requisitionId);
+        const businessUnitId = post?.businessUnitId || requisition?.businessUnitId;
+        return businessUnits.find(item => item.id === businessUnitId)?.name || null;
+    }, [businessUnits, jobPosts, jobRequisitions, pendingApplication]);
 
 
     const canView = can('Applicants', Permission.View) || can('Applicants', Permission.Manage);
@@ -505,7 +563,15 @@ const Applicants: React.FC = () => {
 
             {isLoading ? (
                 <Card><div className="p-6 text-gray-500">Loading applicants...</div></Card>
-            ) : view === 'kanban' ? <ApplicantKanbanBoard applications={filteredApplications} onUpdateStage={handleUpdateStage} onCardClick={setSelectedApplication} /> : <ApplicantListTable applications={filteredApplications} onRowClick={setSelectedApplication}/>}
+            ) : view === 'kanban' ? <ApplicantKanbanBoard applications={filteredApplications} onUpdateStage={handleUpdateStage} onCardClick={setSelectedApplication} /> : (
+                <ApplicantListTable
+                    applications={filteredApplications}
+                    canManage={canManage}
+                    onRowClick={setSelectedApplication}
+                    onScheduleInterview={handleScheduleInterviewAction}
+                    onReject={handleRejectAction}
+                />
+            )}
             {selectedApplication && <ApplicantDetailModal isOpen={!!selectedApplication} onClose={() => setSelectedApplication(null)} application={selectedApplication} />}
             <AddApplicantModal
                 isOpen={isAddModalOpen}
@@ -537,6 +603,7 @@ const Applicants: React.FC = () => {
                     application={pendingApplication}
                     candidate={pendingCandidate}
                     jobTitle={pendingJobTitle}
+                    businessUnitName={pendingBusinessUnitName}
                     onSend={handleRejectionComplete}
                 />
             )}

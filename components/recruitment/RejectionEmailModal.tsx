@@ -1,154 +1,121 @@
-import { supabase } from '../../services/supabaseClient';
-import React, { useState, useEffect } from 'react';
-import { Candidate, Application } from '../../types';
+import React, { useEffect, useState } from 'react';
+import { Application, Candidate } from '../../types';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
-import { useAuth } from '../../hooks/useAuth';
-import { logActivity } from '../../services/auditService';
 
-interface RejectionEmailModalProps {
-    isOpen: boolean;
-    onClose: () => void;
-    application: Application | null;
-    candidate?: Candidate | null;
-    jobTitle?: string | null;
-    onSend: () => void;
+export interface RejectionEmailDraft {
+  subject: string;
+  message: string;
+  rejectionReason: string;
 }
 
-const RejectionEmailModal: React.FC<RejectionEmailModalProps> = ({ isOpen, onClose, application, candidate, jobTitle, onSend }) => {
-    const { user } = useAuth();
-    const [subject, setSubject] = useState('');
-    const [message, setMessage] = useState('');
-    const [isSending, setIsSending] = useState(false);
-    
-    const [fetchedCandidate, setFetchedCandidate] = useState<Candidate | null>(null);
-    const [fetchedJobTitle, setFetchedJobTitle] = useState<string | null>(null);
+interface RejectionEmailModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  application: Application | null;
+  candidate?: Candidate | null;
+  jobTitle?: string | null;
+  businessUnitName?: string | null;
+  onSend: (draft: RejectionEmailDraft) => Promise<void> | void;
+}
 
-    const resolvedCandidate = candidate || fetchedCandidate;
-    const resolvedJobTitle = jobTitle || fetchedJobTitle;
+const RejectionEmailModal: React.FC<RejectionEmailModalProps> = ({
+  isOpen,
+  onClose,
+  application,
+  candidate,
+  jobTitle,
+  businessUnitName,
+  onSend,
+}) => {
+  const [subject, setSubject] = useState('');
+  const [message, setMessage] = useState('');
+  const [rejectionReason, setRejectionReason] = useState('Current role fit');
+  const [isSending, setIsSending] = useState(false);
+  const [formError, setFormError] = useState('');
 
-    useEffect(() => {
-        const loadDetails = async () => {
-            if (!isOpen || !application) return;
-            
-            if (!candidate && application.candidateId) {
-                const { data } = await supabase.from('candidates').select('*').eq('id', application.candidateId).single();
-                if (data) {
-                    setFetchedCandidate({
-                        id: data.id,
-                        firstName: data.first_name,
-                        lastName: data.last_name,
-                        email: data.email,
-                        phone: data.phone,
-                        source: data.source,
-                        portfolioUrl: data.portfolio_url,
-                        consentAt: new Date(data.consent_at),
-                        tags: data.tags || []
-                    });
-                }
-            }
-            
-            if (!jobTitle && application.jobPostId) {
-                const { data } = await supabase.from('job_posts').select('title').eq('id', application.jobPostId).single();
-                if (data) setFetchedJobTitle(data.title);
-            }
-        };
-        loadDetails();
-    }, [isOpen, application, candidate, jobTitle]);
+  useEffect(() => {
+    if (!isOpen || !candidate) return;
+    const position = jobTitle || 'the position';
+    const businessUnit = businessUnitName || 'TNG';
+    setSubject('Update on Your Application');
+    setMessage(`Dear ${candidate.firstName},
 
-    useEffect(() => {
-        if (isOpen && resolvedCandidate && resolvedJobTitle) {
-            setSubject(`Update on your application for ${resolvedJobTitle}`);
-            setMessage(`Dear ${resolvedCandidate.firstName},
+Thank you very much for taking the time to apply for the ${position} position with ${businessUnit}. We appreciate your interest in joining our team.
 
-Thank you for giving us the opportunity to consider your application for the ${resolvedJobTitle} position. We have reviewed your background and qualifications and appreciate the time and effort you put into sharing them with us.
+After carefully reviewing your application, we have decided to move forward with other candidates whose backgrounds more closely match our current needs for this role.
 
-While your skills and experience are impressive, we have decided to proceed with other candidates who more closely align with our current needs for this role.
+We truly appreciate the time and effort you put into your application, and we encourage you to apply again for future opportunities that may be a better fit.
 
-We will keep your resume on file for future openings that may be a good fit. We wish you the best of luck in your job search.
+We wish you all the best in your career journey.
 
 Sincerely,
-The Hiring Team`);
-        }
-    }, [isOpen, resolvedCandidate, resolvedJobTitle]);
+${businessUnit} / TNG Recruitment Team`);
+    setRejectionReason('Current role fit');
+    setFormError('');
+  }, [businessUnitName, candidate, isOpen, jobTitle]);
 
-    const handleSend = async () => {
-        if (!resolvedCandidate?.email) {
-            alert('Candidate email is missing.');
-            return;
-        }
+  const handleSend = async () => {
+    setFormError('');
+    if (!candidate?.email) return setFormError('The applicant does not have an email address.');
+    if (!subject.trim() || !message.trim()) return setFormError('Subject and email message are required.');
 
-        setIsSending(true);
-        try {
-            const response = await fetch('/api/send-email', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    to: resolvedCandidate.email,
-                    subject,
-                    message,
-                }),
-            });
+    setIsSending(true);
+    try {
+      await onSend({ subject: subject.trim(), message: message.trim(), rejectionReason: rejectionReason.trim() || 'Current role fit' });
+    } catch (error: any) {
+      setFormError(error?.message || 'The rejection email could not be sent.');
+    } finally {
+      setIsSending(false);
+    }
+  };
 
-            if (!response.ok) {
-                const data = await response.json().catch(() => ({}));
-                throw new Error(data?.error || 'Failed to send rejection email.');
-            }
+  if (!application || !candidate) return null;
 
-            if (user) {
-                logActivity(user, 'EXPORT', 'Application', application?.id || '', `Sent rejection email to ${resolvedCandidate.email}`);
-            }
-            alert(`Rejection email sent to ${resolvedCandidate.email}`);
-            onSend();
-        } catch (error: any) {
-            alert(error?.message || 'Failed to send rejection email.');
-        } finally {
-            setIsSending(false);
-        }
-    };
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={`Reject Application: ${candidate.firstName} ${candidate.lastName}`}
+      size="2xl"
+      footer={(
+        <div className="flex w-full justify-end gap-2">
+          <Button variant="secondary" onClick={onClose} disabled={isSending}>Cancel</Button>
+          <Button variant="danger" onClick={handleSend} disabled={isSending}>
+            {isSending ? 'Sending…' : 'Send Email & Reject'}
+          </Button>
+        </div>
+      )}
+    >
+      <div className="space-y-4">
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30">
+          <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">Nothing has been sent yet.</p>
+          <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">Review and edit the message. The application is marked Rejected only after you click “Send Email & Reject” and the email sends successfully.</p>
+        </div>
 
-    if (!application || !resolvedCandidate) return null;
+        <div className="grid grid-cols-1 gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-700 dark:bg-gray-900/40 sm:grid-cols-2">
+          <div><span className="block text-xs text-gray-500">Applicant</span><span className="font-medium">{candidate.firstName} {candidate.lastName}</span></div>
+          <div><span className="block text-xs text-gray-500">Position</span><span className="font-medium">{jobTitle || 'Position unavailable'}</span></div>
+          <div><span className="block text-xs text-gray-500">Business Unit</span><span className="font-medium">{businessUnitName || 'TNG'}</span></div>
+          <div><span className="block text-xs text-gray-500">Email</span><span className="font-medium">{candidate.email}</span></div>
+        </div>
 
-    return (
-        <Modal
-            isOpen={isOpen}
-            onClose={onClose}
-            title="Send Rejection Email"
-            footer={
-                <div className="flex justify-end w-full space-x-2">
-                    <Button variant="secondary" onClick={onClose}>Cancel</Button>
-                    <Button variant="danger" onClick={handleSend} disabled={isSending}>
-                        {isSending ? 'Sending...' : 'Send Rejection'}
-                    </Button>
-                </div>
-            }
-        >
-            <div className="space-y-4">
-                 <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 rounded-md">
-                    <p className="text-sm text-red-800 dark:text-red-200 font-medium">
-                        This action will finalize the rejection status. Please review the email below.
-                    </p>
-                </div>
+        <Input label="Subject" value={subject} onChange={event => setSubject(event.target.value)} maxLength={200} />
+        <Textarea label="Email Message" value={message} onChange={event => setMessage(event.target.value)} rows={13} />
+        <Textarea
+          label="Internal Rejection Reason (not included in the email)"
+          value={rejectionReason}
+          onChange={event => setRejectionReason(event.target.value)}
+          rows={2}
+          placeholder="Example: Current role fit"
+        />
 
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">To</label>
-                    <Input label="" value={`${resolvedCandidate.firstName} ${resolvedCandidate.lastName} <${resolvedCandidate.email}>`} disabled />
-                </div>
-                
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Subject</label>
-                    <Input label="" value={subject} onChange={e => setSubject(e.target.value)} />
-                </div>
-
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Message</label>
-                    <Textarea label="" value={message} onChange={e => setMessage(e.target.value)} rows={10} />
-                </div>
-            </div>
-        </Modal>
-    );
+        {formError && <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{formError}</div>}
+      </div>
+    </Modal>
+  );
 };
 
 export default RejectionEmailModal;
