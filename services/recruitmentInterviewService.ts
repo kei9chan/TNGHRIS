@@ -38,6 +38,12 @@ const getFunctionErrorMessage = async (error: any): Promise<string> => {
   }
 };
 
+const localDateTime = (value: Date) => {
+  const date = new Date(value);
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:00`;
+};
+
 const mapInterviewRow = (row: any): Interview => ({
   id: row.id,
   applicationId: row.application_id,
@@ -74,6 +80,8 @@ export const saveInterviewSchedule = async (
       panelUserIds: draft.panelUserIds || [],
       startAt: draft.scheduledStart.toISOString(),
       endAt: draft.scheduledEnd.toISOString(),
+      localStart: localDateTime(draft.scheduledStart),
+      localEnd: localDateTime(draft.scheduledEnd),
       interviewType: draft.interviewType,
       location: draft.location || null,
       notes: draft.notes || null,

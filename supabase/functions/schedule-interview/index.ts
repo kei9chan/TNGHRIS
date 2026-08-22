@@ -58,6 +58,8 @@ const normalizeInterviewType = (value: string) => {
   return value;
 };
 
+const localDateTimePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/;
+
 Deno.serve(async (request: Request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
@@ -92,6 +94,12 @@ Deno.serve(async (request: Request) => {
   const panelUserIds = Array.from(new Set((Array.isArray(body.panelUserIds) ? body.panelUserIds : []).filter(Boolean))) as string[];
   const startAt = new Date(body.startAt);
   const endAt = new Date(body.endAt);
+  const localStart = typeof body.localStart === 'string' && localDateTimePattern.test(body.localStart)
+    ? body.localStart
+    : null;
+  const localEnd = typeof body.localEnd === 'string' && localDateTimePattern.test(body.localEnd)
+    ? body.localEnd
+    : null;
   const interviewType = String(body.interviewType || 'Virtual');
   const createCalendarEvent = Boolean(body.createCalendarEvent);
 
@@ -210,8 +218,8 @@ Deno.serve(async (request: Request) => {
 
   const idempotencyValue = interviewId || [
     applicationId,
-    startAt.toISOString(),
-    endAt.toISOString(),
+    localStart || startAt.toISOString(),
+    localEnd || endAt.toISOString(),
     interviewType,
     [...panelUserIds].sort().join(','),
   ].join('|');
@@ -265,8 +273,8 @@ Deno.serve(async (request: Request) => {
     const eventBody: any = {
       summary: `${firstName} — ${position}`,
       description,
-      start: { dateTime: startAt.toISOString(), timeZone },
-      end: { dateTime: endAt.toISOString(), timeZone },
+      start: { dateTime: localStart || startAt.toISOString(), timeZone },
+      end: { dateTime: localEnd || endAt.toISOString(), timeZone },
       attendees,
       guestsCanInviteOthers: false,
       guestsCanModify: false,
@@ -320,6 +328,8 @@ Deno.serve(async (request: Request) => {
 
     const sentAt = new Date().toISOString();
     const { data: saved, error: saveError } = await saveInterview({
+      start_at: new Date(event.start?.dateTime || startAt).toISOString(),
+      end_at: new Date(event.end?.dateTime || endAt).toISOString(),
       calendar_event_id: event.id,
       google_calendar_link: event.htmlLink,
       google_meet_link: meetLink,
