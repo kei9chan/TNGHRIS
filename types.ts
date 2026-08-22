@@ -1917,6 +1917,15 @@ export interface OpenRolesConfig {
   benefits: OpenRolesBenefit[];
 }
 
+export interface WorkplaceGalleryPhoto {
+  id: string;
+  url: string;
+  caption?: string;
+  isFeatured?: boolean;
+  isActive?: boolean;
+  storagePath?: string;
+}
+
 // --- NEW: Application Page / Career Site Builder Types ---
 export interface ApplicantPageTheme {
   id: string;
@@ -1950,6 +1959,8 @@ export interface ApplicantPageTheme {
     author: string;
     role: string;
   }[];
+
+  workplaceGallery?: WorkplaceGalleryPhoto[];
 
   // Contact Info for Footer
   contactEmail: string;

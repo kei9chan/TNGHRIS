@@ -1,4 +1,4 @@
-import { ApplicantPageTheme, JobPost, JobPostStatus, OpenRolesBenefit, OpenRolesConfig, RoleApplicationQuestion, RoleDetails, RoleFAQ } from '../types';
+import { ApplicantPageTheme, JobPost, JobPostStatus, OpenRolesBenefit, OpenRolesConfig, RoleApplicationQuestion, RoleDetails, RoleFAQ, WorkplaceGalleryPhoto } from '../types';
 
 export const DEFAULT_OPEN_ROLES_BENEFITS: OpenRolesBenefit[] = [
   { id: 'competitive-pay', title: 'Competitive Pay', description: 'Be rewarded for the value you bring.', icon: 'wallet' },
@@ -45,6 +45,20 @@ const normalizeQuestions = (value: unknown): RoleApplicationQuestion[] => {
       helpText: question?.helpText ? String(question.helpText).trim() : undefined,
     }))
     .filter(question => question.label);
+};
+
+export const normalizeWorkplaceGallery = (value: unknown): WorkplaceGalleryPhoto[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((photo, index) => ({
+      id: String(photo?.id || `workplace-photo-${index + 1}`),
+      url: String(photo?.url || photo?.imageUrl || photo?.src || '').trim(),
+      caption: photo?.caption ? String(photo.caption).trim() : undefined,
+      isFeatured: photo?.isFeatured === true,
+      isActive: photo?.isActive !== false,
+      storagePath: photo?.storagePath ? String(photo.storagePath) : undefined,
+    }))
+    .filter(photo => photo.url);
 };
 
 const normalizeRoleDetails = (row: any): RoleDetails => {
@@ -142,6 +156,7 @@ export const mapApplicantPageTheme = (row: any): ApplicantPageTheme => {
     logoImage: row.logo_url || '',
     benefits: sections.benefits || [],
     testimonials: sections.testimonials || [],
+    workplaceGallery: normalizeWorkplaceGallery(sections.workplaceGallery || sections.workplaceAlbum),
     contactEmail: sections.contactEmail || '',
     ctaText: row.cta_text || '',
     ctaLink: row.cta_link || '',

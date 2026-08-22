@@ -2,7 +2,7 @@
 
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { ApplicantPageTheme, OpenRolesBenefit, OpenRolesConfig } from '../../types';
+import { ApplicantPageTheme, OpenRolesBenefit, OpenRolesConfig, WorkplaceGalleryPhoto } from '../../types';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
@@ -27,18 +27,33 @@ const HERO_IMAGE_MAX_SIZE = 20 * 1024 * 1024;
 const HERO_IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const HERO_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
 
+const getImageExtension = (file: File): string => {
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    return extension && HERO_IMAGE_EXTENSIONS.includes(`.${extension}`) ? extension : 'jpg';
+};
+
+const getStorageOwnerId = (user: any): string | null => user?.authUserId || user?.id || null;
+
 const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClose, onSave, theme, businessUnits }) => {
     const { user } = useAuth();
     const [config, setConfig] = useState<Partial<ApplicantPageTheme>>({});
-    const [activeTab, setActiveTab] = useState<'general' | 'hero' | 'openRoles' | 'benefits' | 'preview'>('general');
+    const [activeTab, setActiveTab] = useState<'general' | 'hero' | 'openRoles' | 'benefits' | 'workplace' | 'preview'>('general');
     const [isUploadingHero, setIsUploadingHero] = useState(false);
     const [heroUploadError, setHeroUploadError] = useState<string | null>(null);
     const [heroPreviewUrl, setHeroPreviewUrl] = useState<string | null>(null);
     const [uploadedHeroImagePath, setUploadedHeroImagePath] = useState<string | null>(null);
+    const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+    const [logoUploadError, setLogoUploadError] = useState<string | null>(null);
+    const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
+    const [uploadedLogoImagePath, setUploadedLogoImagePath] = useState<string | null>(null);
     const [isUploadingOpenRoles, setIsUploadingOpenRoles] = useState(false);
     const [openRolesUploadError, setOpenRolesUploadError] = useState<string | null>(null);
     const [openRolesPreviewUrl, setOpenRolesPreviewUrl] = useState<string | null>(null);
     const [uploadedOpenRolesImagePath, setUploadedOpenRolesImagePath] = useState<string | null>(null);
+    const [isUploadingGallery, setIsUploadingGallery] = useState(false);
+    const [galleryUploadError, setGalleryUploadError] = useState<string | null>(null);
+    const [draggingGalleryIndex, setDraggingGalleryIndex] = useState<number | null>(null);
+    const newGalleryPathsRef = useRef<Set<string>>(new Set());
     const [isSaving, setIsSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
     const wasOpen = useRef(false);
@@ -56,12 +71,16 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
         primaryColor: '#4F46E5',
         backgroundColor: '#F3F4F6',
         heroImage: '',
+        logoImage: '',
         contactEmail: '',
+        ctaText: 'View Open Roles',
+        ctaLink: '/open-roles',
         benefits: [
             { id: 'b1', title: 'Great Culture', description: 'Work with amazing people', icon: 'smile' },
             { id: 'b2', title: 'Competitive Pay', description: 'We reward performance', icon: 'wallet' },
         ],
         testimonials: [],
+        workplaceGallery: [],
     } as ApplicantPageTheme), [businessUnits]);
 
     // Initialize form once each time the modal opens. This keeps an in-progress
@@ -78,9 +97,14 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
             setHeroPreviewUrl(null);
             setUploadedHeroImagePath(null);
             setHeroUploadError(null);
+            setLogoPreviewUrl(null);
+            setUploadedLogoImagePath(null);
+            setLogoUploadError(null);
             setOpenRolesUploadError(null);
             setOpenRolesPreviewUrl(null);
             setUploadedOpenRolesImagePath(null);
+            setGalleryUploadError(null);
+            newGalleryPathsRef.current = new Set();
             setSaveError(null);
         }
     }, [isOpen, theme, defaultConfig, businessUnits]);
@@ -147,6 +171,52 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
         }
     };
 
+    const handleLogoImageUpload = async (file: File) => {
+        setLogoUploadError(null);
+        setSaveError(null);
+
+        const storageOwnerId = getStorageOwnerId(user);
+        if (!storageOwnerId) {
+            setLogoUploadError('You must be signed in to upload a business unit logo.');
+            return;
+        }
+
+        const path = `hero/${storageOwnerId}/logo-${crypto.randomUUID()}.${getImageExtension(file)}`;
+        const localPreviewUrl = URL.createObjectURL(file);
+        setLogoPreviewUrl(localPreviewUrl);
+        setIsUploadingLogo(true);
+
+        try {
+            const { data, error } = await supabase.storage
+                .from(HERO_ASSET_BUCKET)
+                .upload(path, file, {
+                    cacheControl: '31536000',
+                    contentType: file.type,
+                    upsert: false,
+                });
+
+            if (error) throw error;
+            if (!data?.path) throw new Error('The logo upload completed without a storage path.');
+
+            const { data: publicUrlData } = supabase.storage
+                .from(HERO_ASSET_BUCKET)
+                .getPublicUrl(data.path);
+
+            if (!publicUrlData?.publicUrl) {
+                throw new Error('The logo uploaded, but a public image URL could not be generated.');
+            }
+
+            handleChange('logoImage', publicUrlData.publicUrl);
+            setUploadedLogoImagePath(data.path);
+        } catch (error: any) {
+            setLogoUploadError(error?.message || 'Logo upload failed. Please try again.');
+        } finally {
+            URL.revokeObjectURL(localPreviewUrl);
+            setLogoPreviewUrl(null);
+            setIsUploadingLogo(false);
+        }
+    };
+
     const updateOpenRoles = (updates: Partial<OpenRolesConfig>) => {
         setConfig(prev => ({
             ...prev,
@@ -204,6 +274,82 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
             setIsUploadingOpenRoles(false);
         }
     };
+
+    const validateGalleryFile = (file: File): string | null => {
+        if (file.size > HERO_IMAGE_MAX_SIZE) {
+            return `${file.name}: image must be 20 MB or smaller.`;
+        }
+
+        const extensionAllowed = HERO_IMAGE_EXTENSIONS.some(extension => file.name.toLowerCase().endsWith(extension));
+        if (!HERO_IMAGE_MIME_TYPES.includes(file.type) && !(file.type === '' && extensionAllowed)) {
+            return `${file.name}: only JPG, PNG, and WebP images are supported.`;
+        }
+
+        return null;
+    };
+
+    const uploadGalleryFiles = async (files: File[]) => {
+        if (!files.length) return;
+
+        setGalleryUploadError(null);
+        setSaveError(null);
+        const storageOwnerId = getStorageOwnerId(user);
+        if (!storageOwnerId) {
+            setGalleryUploadError('You must be signed in to upload workplace photos.');
+            return;
+        }
+
+        const errors = files.map(validateGalleryFile).filter(Boolean) as string[];
+        const validFiles = files.filter(file => !validateGalleryFile(file));
+        if (!validFiles.length) {
+            setGalleryUploadError(errors.join(' '));
+            return;
+        }
+
+        setIsUploadingGallery(true);
+        const uploaded: WorkplaceGalleryPhoto[] = [];
+        try {
+            for (const file of validFiles) {
+                const id = crypto.randomUUID();
+                const path = `hero/${storageOwnerId}/gallery-${id}.${getImageExtension(file)}`;
+                const { data, error } = await supabase.storage
+                    .from(HERO_ASSET_BUCKET)
+                    .upload(path, file, {
+                        cacheControl: '31536000',
+                        contentType: file.type,
+                        upsert: false,
+                    });
+
+                if (error) throw error;
+                if (!data?.path) throw new Error(`${file.name}: upload completed without a storage path.`);
+
+                const { data: publicUrlData } = supabase.storage
+                    .from(HERO_ASSET_BUCKET)
+                    .getPublicUrl(data.path);
+                if (!publicUrlData?.publicUrl) throw new Error(`${file.name}: public image URL could not be generated.`);
+
+                newGalleryPathsRef.current.add(data.path);
+                uploaded.push({
+                    id,
+                    url: publicUrlData.publicUrl,
+                    caption: '',
+                    isFeatured: (config.workplaceGallery || []).length === 0 && uploaded.length === 0,
+                    isActive: true,
+                    storagePath: data.path,
+                });
+            }
+
+            setConfig(prev => ({
+                ...prev,
+                workplaceGallery: [...(prev.workplaceGallery || []), ...uploaded],
+            }));
+            if (errors.length) setGalleryUploadError(errors.join(' '));
+        } catch (error: any) {
+            setGalleryUploadError(error?.message || 'Workplace photo upload failed. Please try again.');
+        } finally {
+            setIsUploadingGallery(false);
+        }
+    };
     
     const handleBenefitChange = (index: number, field: string, value: string) => {
         const newBenefits = [...(config.benefits || [])];
@@ -254,6 +400,17 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
         }
     };
 
+    const handleRemoveLogoImage = async () => {
+        const pathToRemove = uploadedLogoImagePath;
+        setLogoPreviewUrl(null);
+        setUploadedLogoImagePath(null);
+        handleChange('logoImage', '');
+        if (pathToRemove) {
+            const { error } = await supabase.storage.from(HERO_ASSET_BUCKET).remove([pathToRemove]);
+            if (error) console.warn('Failed to remove temporary logo', error);
+        }
+    };
+
     const handleRemoveOpenRolesImage = async () => {
         const pathToRemove = uploadedOpenRolesImagePath;
         setOpenRolesPreviewUrl(null);
@@ -265,13 +422,70 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
         }
     };
 
+    const updateGalleryPhoto = (index: number, updates: Partial<WorkplaceGalleryPhoto>) => {
+        setConfig(prev => {
+            const gallery = [...(prev.workplaceGallery || [])];
+            if (!gallery[index]) return prev;
+
+            gallery[index] = { ...gallery[index], ...updates };
+            if (updates.isFeatured) {
+                return {
+                    ...prev,
+                    workplaceGallery: gallery.map((photo, photoIndex) => ({
+                        ...photo,
+                        isFeatured: photoIndex === index,
+                    })),
+                };
+            }
+            return { ...prev, workplaceGallery: gallery };
+        });
+    };
+
+    const moveGalleryPhoto = (index: number, direction: -1 | 1) => {
+        setConfig(prev => {
+            const gallery = [...(prev.workplaceGallery || [])];
+            const target = index + direction;
+            if (target < 0 || target >= gallery.length) return prev;
+            [gallery[index], gallery[target]] = [gallery[target], gallery[index]];
+            return { ...prev, workplaceGallery: gallery };
+        });
+    };
+
+    const reorderGalleryPhoto = (fromIndex: number, toIndex: number) => {
+        setConfig(prev => {
+            const gallery = [...(prev.workplaceGallery || [])];
+            if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= gallery.length || toIndex >= gallery.length) return prev;
+            const [photo] = gallery.splice(fromIndex, 1);
+            gallery.splice(toIndex, 0, photo);
+            return { ...prev, workplaceGallery: gallery };
+        });
+    };
+
+    const handleRemoveGalleryPhoto = async (index: number) => {
+        const photo = config.workplaceGallery?.[index];
+        if (!photo) return;
+
+        setConfig(prev => ({
+            ...prev,
+            workplaceGallery: prev.workplaceGallery?.filter((_, photoIndex) => photoIndex !== index),
+        }));
+
+        if (photo.storagePath && newGalleryPathsRef.current.has(photo.storagePath)) {
+            newGalleryPathsRef.current.delete(photo.storagePath);
+            const { error } = await supabase.storage.from(HERO_ASSET_BUCKET).remove([photo.storagePath]);
+            if (error) console.warn('Failed to remove temporary workplace photo', error);
+        }
+    };
+
+    const busy = isUploadingHero || isUploadingLogo || isUploadingOpenRoles || isUploadingGallery || isSaving;
+
     const handleSave = async () => {
         if (!config.name?.trim() || !config.slug?.trim() || !config.businessUnitId) {
             setSaveError('Name, slug, and Business Unit are required.');
             return;
         }
-        if (isUploadingHero || isUploadingOpenRoles) {
-            setSaveError('Please wait for the image to finish uploading.');
+        if (busy) {
+            setSaveError('Please wait for uploads to finish.');
             return;
         }
 
@@ -296,23 +510,29 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
             title={theme ? 'Edit Application Page' : 'Create Application Page'}
             size="4xl"
             footer={
-                <div className="flex justify-end w-full space-x-2">
-                    <Button variant="secondary" onClick={onClose} disabled={isUploadingHero || isUploadingOpenRoles || isSaving}>Cancel</Button>
-                    <Button onClick={handleSave} disabled={isUploadingHero || isUploadingOpenRoles || isSaving}>{isSaving ? 'Saving…' : 'Save Page'}</Button>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between w-full">
+                    <div className="text-sm" role="status">
+                        {saveError && <span className="text-red-600">{saveError}</span>}
+                    </div>
+                    <div className="flex justify-end space-x-2">
+                        <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+                        <Button onClick={handleSave} disabled={busy}>{isSaving ? 'Saving…' : 'Save Page'}</Button>
+                    </div>
                 </div>
             }
         >
-            <div className="flex space-x-2 mb-4 border-b border-gray-200 dark:border-gray-700">
-                <button onClick={() => setActiveTab('general')} className={tabClass('general')}>General</button>
-                <button onClick={() => setActiveTab('hero')} className={tabClass('hero')}>Hero & Colors</button>
-                <button onClick={() => setActiveTab('openRoles')} className={tabClass('openRoles')}>Open Roles</button>
-                <button onClick={() => setActiveTab('benefits')} className={tabClass('benefits')}>Benefits</button>
-                <button onClick={() => setActiveTab('preview')} className={tabClass('preview')}>Live Preview</button>
+            <div className="flex space-x-2 mb-4 border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
+                <button type="button" onClick={() => setActiveTab('general')} className={tabClass('general')}>General</button>
+                <button type="button" onClick={() => setActiveTab('hero')} className={tabClass('hero')}>Hero & Colors</button>
+                <button type="button" onClick={() => setActiveTab('openRoles')} className={tabClass('openRoles')}>Open Roles</button>
+                <button type="button" onClick={() => setActiveTab('benefits')} className={tabClass('benefits')}>Why Join Us</button>
+                <button type="button" onClick={() => setActiveTab('workplace')} className={tabClass('workplace')}>Workplace Album</button>
+                <button type="button" onClick={() => setActiveTab('preview')} className={tabClass('preview')}>Live Preview</button>
             </div>
 
             <div className="min-h-[400px]">
                 {activeTab === 'general' && (
-                    <div className="space-y-4 max-w-lg">
+                    <div className="space-y-4 max-w-2xl">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
                             <select 
@@ -327,12 +547,16 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
                         <Input label="URL Slug (e.g., inflatable-island)" value={config.slug || ''} onChange={e => handleChange('slug', e.target.value)} required />
                         <Input label="Page Title" value={config.pageTitle || ''} onChange={e => handleChange('pageTitle', e.target.value)} />
                         <Input label="Contact Email" value={config.contactEmail || ''} onChange={e => handleChange('contactEmail', e.target.value)} />
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <Input label="CTA Text" value={config.ctaText || ''} onChange={e => handleChange('ctaText', e.target.value)} />
+                            <Input label="CTA Destination" value={config.ctaLink || ''} onChange={e => handleChange('ctaLink', e.target.value)} placeholder="/careers/your-slug/open-roles" />
+                        </div>
                     </div>
                 )}
 
                 {activeTab === 'hero' && (
                     <div className="space-y-4">
-                         <div className="grid grid-cols-2 gap-4">
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Primary Color</label>
                                 <div className="flex items-center mt-1">
@@ -350,6 +574,26 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
                         </div>
                         <Input label="Hero Headline" value={config.heroHeadline || ''} onChange={e => handleChange('heroHeadline', e.target.value)} />
                         <Textarea label="Hero Description" value={config.heroDescription || ''} onChange={e => handleChange('heroDescription', e.target.value)} rows={3} />
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Business Unit Logo</label>
+                            <FileUploader
+                                onFileUpload={handleLogoImageUpload}
+                                maxSize={HERO_IMAGE_MAX_SIZE}
+                                accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                                allowedMimeTypes={HERO_IMAGE_MIME_TYPES}
+                                allowedExtensions={HERO_IMAGE_EXTENSIONS}
+                                inputId="application-page-logo-upload"
+                                disabled={isUploadingLogo || isSaving}
+                            />
+                            {logoUploadError && <p className="mt-2 text-sm text-red-600" role="alert">{logoUploadError}</p>}
+                            {(logoPreviewUrl || config.logoImage) && (
+                                <div className="mt-2 relative h-28 rounded-md overflow-hidden border border-gray-300 dark:border-gray-600 bg-white">
+                                    <img src={logoPreviewUrl || config.logoImage} alt="Business unit logo preview" className="w-full h-full object-contain p-3" />
+                                    <button type="button" onClick={handleRemoveLogoImage} disabled={busy} className="absolute top-2 right-2 bg-red-600 text-white px-2 py-1 text-xs rounded shadow-md hover:bg-red-700 disabled:opacity-50">Remove</button>
+                                </div>
+                            )}
+                        </div>
                         
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Hero Image</label>
@@ -471,6 +715,59 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
                             </div>
                         ))}
                         <Button variant="secondary" onClick={handleAddBenefit}>+ Add Benefit</Button>
+                    </div>
+                )}
+
+                {activeTab === 'workplace' && (
+                    <div className="space-y-5">
+                        <div>
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Workplace Album</h3>
+                            <p className="text-sm text-gray-500">Upload multiple photos, choose a featured image, and arrange the album using the existing application-page asset storage.</p>
+                        </div>
+                        <label
+                            className={`block rounded-lg border-2 border-dashed p-6 text-center cursor-pointer transition-colors ${isUploadingGallery ? 'opacity-60 cursor-wait' : 'border-indigo-300 hover:border-indigo-500'}`}
+                            onDragOver={event => event.preventDefault()}
+                            onDrop={event => {
+                                event.preventDefault();
+                                if (!busy) void uploadGalleryFiles(Array.from(event.dataTransfer.files));
+                            }}
+                        >
+                            <input
+                                type="file"
+                                className="sr-only"
+                                multiple
+                                accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                                disabled={busy}
+                                onChange={event => {
+                                    void uploadGalleryFiles(Array.from(event.target.files || []));
+                                    event.currentTarget.value = '';
+                                }}
+                            />
+                            <span className="text-sm font-medium text-indigo-600">{isUploadingGallery ? 'Uploading photos…' : 'Upload photos or drag and drop here'}</span>
+                            <span className="block mt-1 text-xs text-gray-500">JPG, PNG, or WebP · up to 20 MB each</span>
+                        </label>
+                        {galleryUploadError && <p className="text-sm text-red-600" role="alert">{galleryUploadError}</p>}
+                        {(config.workplaceGallery || []).length === 0 ? (
+                            <p className="text-sm text-gray-500">No workplace photos uploaded yet. The public album stays hidden until photos are added.</p>
+                        ) : (
+                            <div className="space-y-3">
+                                {(config.workplaceGallery || []).map((photo, index) => (
+                                    <div key={photo.id} draggable onDragStart={() => setDraggingGalleryIndex(index)} onDragOver={event => event.preventDefault()} onDrop={() => { if (draggingGalleryIndex !== null) reorderGalleryPhoto(draggingGalleryIndex, index); setDraggingGalleryIndex(null); }} onDragEnd={() => setDraggingGalleryIndex(null)} className="flex flex-col md:flex-row gap-4 rounded-lg border border-gray-200 dark:border-gray-700 p-3 cursor-grab active:cursor-grabbing">
+                                        <img src={photo.url} alt={photo.caption || `Workplace photo ${index + 1}`} className="h-28 w-full md:w-40 rounded-md object-cover bg-gray-100" />
+                                        <div className="flex-1 space-y-2">
+                                            <Input label="Caption (optional)" value={photo.caption || ''} onChange={event => updateGalleryPhoto(index, { caption: event.target.value })} />
+                                            <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 dark:text-gray-300">
+                                                <label className="flex items-center gap-2"><input type="checkbox" checked={photo.isFeatured === true} onChange={event => updateGalleryPhoto(index, { isFeatured: event.target.checked })} />Featured</label>
+                                                <label className="flex items-center gap-2"><input type="checkbox" checked={photo.isActive !== false} onChange={event => updateGalleryPhoto(index, { isActive: event.target.checked })} />Active</label>
+                                                <button type="button" onClick={() => moveGalleryPhoto(index, -1)} disabled={index === 0} className="text-indigo-600 disabled:text-gray-400">Move up</button>
+                                                <button type="button" onClick={() => moveGalleryPhoto(index, 1)} disabled={index === (config.workplaceGallery || []).length - 1} className="text-indigo-600 disabled:text-gray-400">Move down</button>
+                                                <button type="button" onClick={() => void handleRemoveGalleryPhoto(index)} className="text-red-600">Remove</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 )}
 
