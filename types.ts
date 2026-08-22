@@ -1792,12 +1792,25 @@ export interface Interview {
   location: string; // URL for virtual, address for on-site
   panelUserIds: string[];
   calendarEventId?: string;
+  googleMeetLink?: string;
+  calendarInviteStatus?: 'not_requested' | 'sent' | 'failed' | 'partial' | string;
+  applicantInviteStatus?: 'not_requested' | 'sent' | 'failed' | string;
+  panelInviteStatus?: 'not_requested' | 'sent' | 'failed' | string;
+  confirmationEmailStatus?: 'not_requested' | 'sent' | 'failed' | string;
+  applicantInviteSentAt?: Date;
+  panelInviteSentAt?: Date;
+  confirmationEmailSentAt?: Date;
+  calendarError?: string;
   status: InterviewStatus;
   interviewerId?: string;
   startAt?: string;
   endAt?: string;
   type?: string;
   notes?: string;
+  /** UI-only flag used by the scheduling form; never persisted directly. */
+  createCalendarEvent?: boolean;
+  /** UI-only flag used by the scheduling form; never persisted directly. */
+  generateMeetLink?: boolean;
 }
 
 export enum HireRecommendation {

@@ -2,6 +2,8 @@ import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import nodemailer from 'nodemailer';
+import googleCalendarHandler from './api/google-calendar-event';
+import recruitmentEmailHandler from './api/recruitment-email';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
@@ -75,6 +77,33 @@ export default defineConfig(({ mode }) => {
         attachments: resolvedAttachments,
       });
     };
+
+    const mountJsonApi = (handler: (req: any, res: any) => Promise<void>) => (req: any, res: any) => {
+      let body = '';
+      req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+      req.on('end', async () => {
+        const response = {
+          statusCode: 200,
+          status(code: number) {
+            this.statusCode = code;
+            return this;
+          },
+          json(payload: unknown) {
+            res.statusCode = this.statusCode;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify(payload));
+          },
+        };
+        try {
+          req.body = body ? JSON.parse(body) : {};
+          await handler(req, response);
+        } catch (error: any) {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: error?.message || 'Request failed' }));
+        }
+      });
+    };
     return {
       server: {
         port: 3000,
@@ -112,6 +141,8 @@ export default defineConfig(({ mode }) => {
                 }
               });
             });
+            server.middlewares.use('/api/google-calendar-event', mountJsonApi(googleCalendarHandler));
+            server.middlewares.use('/api/recruitment-email', mountJsonApi(recruitmentEmailHandler));
           },
         },
       ],

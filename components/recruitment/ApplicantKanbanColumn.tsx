@@ -11,9 +11,10 @@ interface ApplicantKanbanColumnProps {
   onDragStart: (e: React.DragEvent<HTMLDivElement>, applicationId: string) => void;
   onDragEnd: () => void;
   draggedItemId: string | null;
+  canManage?: boolean;
 }
 
-const ApplicantKanbanColumn: React.FC<ApplicantKanbanColumnProps> = ({ stage, applications, onUpdateStage, onCardClick, onDragStart, onDragEnd, draggedItemId }) => {
+const ApplicantKanbanColumn: React.FC<ApplicantKanbanColumnProps> = ({ stage, applications, onUpdateStage, onCardClick, onDragStart, onDragEnd, draggedItemId, canManage = true }) => {
     const [isDragOver, setIsDragOver] = useState(false);
 
     const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
@@ -44,9 +45,9 @@ const ApplicantKanbanColumn: React.FC<ApplicantKanbanColumnProps> = ({ stage, ap
                 </span>
             </div>
             <div
-                onDrop={handleDrop}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
+                onDrop={canManage ? handleDrop : undefined}
+                onDragOver={canManage ? handleDragOver : undefined}
+                onDragLeave={canManage ? handleDragLeave : undefined}
                 className={`bg-gray-100 dark:bg-gray-800 rounded-lg p-2 space-y-3 min-h-[60vh] transition-colors ${isDragOver ? 'bg-indigo-100 dark:bg-indigo-900/50 ring-2 ring-indigo-400' : ''}`}
             >
                 {applications.map(app => (
@@ -57,11 +58,12 @@ const ApplicantKanbanColumn: React.FC<ApplicantKanbanColumnProps> = ({ stage, ap
                         onDragStart={onDragStart}
                         onDragEnd={onDragEnd}
                         isDragging={draggedItemId === app.id}
+                        canManage={canManage}
                     />
                 ))}
                 {applications.length === 0 && (
                     <div className="flex items-center justify-center h-full text-gray-400 dark:text-gray-500 text-sm p-4">
-                        Drop applicants here
+                        {canManage ? 'Drop applicants here' : 'No applicants'}
                     </div>
                 )}
             </div>

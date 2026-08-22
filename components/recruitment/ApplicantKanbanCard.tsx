@@ -7,6 +7,7 @@ interface ApplicantKanbanCardProps {
     onDragStart: (e: React.DragEvent<HTMLDivElement>, applicationId: string) => void;
     onDragEnd: () => void;
     isDragging: boolean;
+    canManage?: boolean;
 }
 
 const BriefcaseIcon = () => (
@@ -14,15 +15,15 @@ const BriefcaseIcon = () => (
 );
 
 
-const ApplicantKanbanCard: React.FC<ApplicantKanbanCardProps> = ({ application, onCardClick, onDragStart, onDragEnd, isDragging }) => {
+const ApplicantKanbanCard: React.FC<ApplicantKanbanCardProps> = ({ application, onCardClick, onDragStart, onDragEnd, isDragging, canManage = true }) => {
     
     return (
         <div
-            draggable
-            onDragStart={(e) => onDragStart(e, application.id)}
-            onDragEnd={onDragEnd}
+            draggable={canManage}
+            onDragStart={canManage ? (e) => onDragStart(e, application.id) : undefined}
+            onDragEnd={canManage ? onDragEnd : undefined}
             onClick={() => onCardClick(application)}
-            className={`bg-white dark:bg-gray-900 rounded-lg shadow-md p-3 cursor-grab hover:shadow-lg transition-shadow active:cursor-grabbing ${isDragging ? 'opacity-50 ring-2 ring-indigo-500' : ''}`}
+            className={`bg-white dark:bg-gray-900 rounded-lg shadow-md p-3 ${canManage ? 'cursor-grab active:cursor-grabbing' : ''} hover:shadow-lg transition-shadow ${isDragging ? 'opacity-50 ring-2 ring-indigo-500' : ''}`}
             aria-grabbed={isDragging}
         >
             <h4 className="font-bold text-gray-800 dark:text-gray-200 text-base truncate">{application.candidateName}</h4>

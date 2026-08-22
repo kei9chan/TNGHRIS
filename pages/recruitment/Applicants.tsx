@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Application, ApplicationStage, Candidate, CandidateSource, JobPostStatus, Role, BusinessUnit, JobRequisition, Interview, JobPost, Permission } from '../../types';
+import { Application, ApplicationStage, Candidate, CandidateSource, JobPostStatus, Role, BusinessUnit, JobRequisition, Interview, JobPost, Permission, User } from '../../types';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { useAuth } from '../../hooks/useAuth';
@@ -15,6 +15,8 @@ import { logActivity } from '../../services/auditService';
 import InterviewSchedulerModal from '../../components/recruitment/InterviewSchedulerModal';
 import RejectionEmailModal from '../../components/recruitment/RejectionEmailModal';
 import { supabase } from '../../services/supabaseClient';
+import { buildInterviewApplicantOption, saveInterviewSchedule } from '../../services/recruitmentInterviewService';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 export interface EnrichedApplication extends Application {
     candidateName: string;
@@ -46,7 +48,7 @@ const getStageColor = (stage: ApplicationStage) => ({
     [ApplicationStage.Withdrawn]: 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300',
 }[stage] || 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200');
 
-const ApplicantListTable: React.FC<{ applications: EnrichedApplication[]; onRowClick: (app: EnrichedApplication) => void }> = ({ applications, onRowClick }) => (
+const ApplicantListTable: React.FC<{ applications: EnrichedApplication[]; onRowClick: (app: EnrichedApplication) => void; onScheduleInterview: (app: EnrichedApplication) => void; onReject: (app: EnrichedApplication) => void; canManage: boolean }> = ({ applications, onRowClick, onScheduleInterview, onReject, canManage }) => (
     <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50 dark:bg-gray-700">
@@ -56,6 +58,7 @@ const ApplicantListTable: React.FC<{ applications: EnrichedApplication[]; onRowC
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase">Business Unit</th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase">Stage</th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase">Applied</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase">Actions</th>
                 </tr>
             </thead>
             <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
@@ -66,6 +69,7 @@ const ApplicantListTable: React.FC<{ applications: EnrichedApplication[]; onRowC
                         <td className="px-6 py-4 whitespace-nowrap text-sm">{app.businessUnitName}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStageColor(app.stage)}`}>{app.stage}</span></td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">{new Date(app.createdAt).toLocaleDateString()}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm"><div className="flex gap-2" onClick={(event) => event.stopPropagation()}>{canManage && app.stage !== ApplicationStage.Rejected && app.stage !== ApplicationStage.Withdrawn && <><button type="button" onClick={() => onScheduleInterview(app)} className="rounded-md bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700">Schedule Interview</button><button type="button" onClick={() => onReject(app)} className="rounded-md border border-red-300 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-900/20">Reject</button></>}</div></td>
                     </tr>
                 ))}
             </tbody>
@@ -87,6 +91,7 @@ const Applicants: React.FC = () => {
     const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
     const [jobRequisitions, setJobRequisitions] = useState<JobRequisition[]>([]);
     const [departments, setDepartments] = useState<{ id: string; name: string; businessUnitId: string }[]>([]);
+    const [users, setUsers] = useState<User[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     const [selectedApplication, setSelectedApplication] = useState<EnrichedApplication | null>(null);
@@ -116,13 +121,14 @@ const Applicants: React.FC = () => {
     const loadData = useCallback(async () => {
         setIsLoading(true);
         try {
-            const [buRes, deptRes, reqRes, postRes, candRes, appRes] = await Promise.all([
+            const [buRes, deptRes, reqRes, postRes, candRes, appRes, userRes] = await Promise.all([
                 supabase.from('business_units').select('id,name'),
                 supabase.from('departments').select('id,name,business_unit_id'),
                 supabase.from('job_requisitions').select('*'),
                 supabase.from('job_posts').select('*'),
                 supabase.from('job_candidates').select('*'),
                 supabase.from('job_applications').select('*'),
+                supabase.from('hris_users').select('id,full_name,role,email,department,position,business_unit,business_unit_id,department_id,status'),
             ]);
             if (buRes.error) throw buRes.error;
             if (deptRes.error) throw deptRes.error;
@@ -130,6 +136,7 @@ const Applicants: React.FC = () => {
             if (postRes.error) throw postRes.error;
             if (candRes.error) throw candRes.error;
             if (appRes.error) throw appRes.error;
+            if (userRes.error) throw userRes.error;
 
             setBusinessUnits(buRes.data || []);
             setDepartments((deptRes.data || []).map((d: any) => ({ id: d.id, name: d.name, businessUnitId: d.business_unit_id })));
@@ -162,6 +169,7 @@ const Applicants: React.FC = () => {
                     publishedAt: p.published_at ? new Date(p.published_at) : undefined,
                     channels: p.channels || { careerSite: false, qr: false, social: false, jobBoards: false },
                     referralBonus: p.referral_bonus ?? undefined,
+                    departmentLabel: p.department_label ?? undefined,
                 } as JobPost;
             });
             setJobPosts(postsMapped);
@@ -207,6 +215,20 @@ const Applicants: React.FC = () => {
                 coverLetter: a.cover_letter || undefined,
             } as Application));
             setApplications(appsMapped);
+            setUsers((userRes.data || []).map((u: any) => ({
+                id: u.id,
+                name: formatEmployeeName(u.full_name || u.email || 'User'),
+                email: u.email || '',
+                role: u.role as Role,
+                department: u.department || '',
+                businessUnit: u.business_unit || '',
+                businessUnitId: u.business_unit_id || undefined,
+                departmentId: u.department_id || undefined,
+                position: u.position || '',
+                status: u.status === 'Inactive' ? 'Inactive' : 'Active',
+                isPhotoEnrolled: false,
+                dateHired: new Date(),
+            } as User)));
         } catch (err) {
             console.error('Failed to load applicants', err);
             alert('Failed to load applicant data.');
@@ -244,6 +266,18 @@ const Applicants: React.FC = () => {
             };
         }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     }, [applications, candidates, jobPosts, jobRequisitions, businessUnits, departments]);
+
+    const interviewCandidateOptions = useMemo(() => enrichedApplications.map((application) => {
+        const candidate = candidates.find((item) => item.id === application.candidateId);
+        if (!candidate) return null;
+        return buildInterviewApplicantOption({
+            application,
+            candidate,
+            jobPost: jobPosts.find((post) => post.id === application.jobPostId),
+            businessUnitName: application.businessUnitName,
+            departmentName: application.departmentName,
+        });
+    }).filter(Boolean) as ReturnType<typeof buildInterviewApplicantOption>[], [candidates, enrichedApplications, jobPosts]);
 
     const departmentsForBU = useMemo(() => {
         if (!buFilter) return departments;
@@ -291,9 +325,8 @@ const Applicants: React.FC = () => {
         if (newStage === ApplicationStage.Interview) {
             setPendingAppId(applicationId);
             setPendingStage(newStage);
-            // Update state first so kanban reflects drop, then prompt
-            performStageUpdate(applicationId, newStage);
-            setTimeout(() => setIsSchedulerOpen(true), 200); // Slight delay for UX
+            // The stage is updated only after the interview is successfully saved.
+            setIsSchedulerOpen(true);
             return;
         }
 
@@ -309,34 +342,54 @@ const Applicants: React.FC = () => {
         performStageUpdate(applicationId, newStage);
     };
 
+    const openInterviewScheduler = (application: EnrichedApplication) => {
+        setPendingAppId(application.id);
+        setPendingStage(ApplicationStage.Interview);
+        setIsSchedulerOpen(true);
+    };
+
+    const openRejectionEmail = (application: EnrichedApplication) => {
+        setPendingAppId(application.id);
+        setPendingStage(ApplicationStage.Rejected);
+        setIsRejectionModalOpen(true);
+    };
+
     const handleSaveInterview = async (interviewToSave: Interview) => {
-        try {
-            const payload = {
-                application_id: interviewToSave.applicationId,
-                interviewer_id: interviewToSave.interviewerId || null,
-                start_at: interviewToSave.startAt,
-                end_at: interviewToSave.endAt || null,
-                location: interviewToSave.location || null,
-                type: interviewToSave.type || null,
-                status: interviewToSave.status || 'Scheduled',
-                notes: interviewToSave.notes || null,
-            };
-            const { error } = await supabase.from('job_interviews').insert(payload);
-            if (error) throw error;
-            setIsSchedulerOpen(false);
-            setPendingAppId(null);
-            setPendingStage(null);
-            alert("Interview scheduled successfully.");
-        } catch (err) {
-            console.error('Failed to save interview', err);
-            alert('Failed to save interview.');
-        }
+        const application = applications.find((item) => item.id === interviewToSave.applicationId);
+        const candidate = candidates.find((item) => item.id === application?.candidateId);
+        if (!application || !candidate) throw new Error('The selected applicant could not be found. Refresh the page and try again.');
+        const jobPost = jobPosts.find((item) => item.id === application.jobPostId);
+        const panelUsers = users.filter((item) => interviewToSave.panelUserIds?.includes(item.id));
+        const result = await saveInterviewSchedule(interviewToSave, {
+            application,
+            candidate,
+            jobPost,
+            businessUnitName: enrichedApplications.find((item) => item.id === application.id)?.businessUnitName,
+            panelUsers,
+            currentUser: user,
+        });
+        setApplications((previous) => previous.map((item) => item.id === application.id ? { ...item, stage: ApplicationStage.Interview, updatedAt: new Date() } : item));
+        setIsSchedulerOpen(false);
+        setPendingAppId(null);
+        setPendingStage(null);
+        if (result.warnings.length) alert(result.warnings.join('\n'));
     };
     
-    const handleRejectionComplete = () => {
-        if (pendingAppId && pendingStage) {
-            performStageUpdate(pendingAppId, pendingStage);
-        }
+    const handleRejectionComplete = async ({ subject, message }: { subject: string; message: string }) => {
+        if (!pendingAppId) return;
+        const rejectedAt = new Date().toISOString();
+        const { error } = await supabase.from('job_applications').update({
+            stage: ApplicationStage.Rejected,
+            updated_at: rejectedAt,
+            rejected_at: rejectedAt,
+            rejected_by: user?.id || null,
+            rejection_reason: message,
+            rejection_email_sent_at: rejectedAt,
+            rejection_email_subject: subject,
+        }).eq('id', pendingAppId);
+        if (error) throw new Error(`Rejection email sent, but the application status could not be updated: ${error.message}`);
+        setApplications((previous) => previous.map((item) => item.id === pendingAppId ? { ...item, stage: ApplicationStage.Rejected, updatedAt: new Date() } : item));
+        await logActivity(user, 'UPDATE', 'Application', pendingAppId, 'Rejected applicant and sent rejection email');
         setIsRejectionModalOpen(false);
         setPendingAppId(null);
         setPendingStage(null);
@@ -430,6 +483,10 @@ const Applicants: React.FC = () => {
         if (!pendingApplication) return null;
         return jobPosts.find(p => p.id === pendingApplication.jobPostId)?.title || null;
     }, [pendingApplication, jobPosts]);
+    const pendingBusinessUnitName = useMemo(() => {
+        if (!pendingApplication) return null;
+        return enrichedApplications.find((item) => item.id === pendingApplication.id)?.businessUnitName || null;
+    }, [enrichedApplications, pendingApplication]);
 
 
     const canView = can('Applicants', Permission.View) || can('Applicants', Permission.Manage);
@@ -501,7 +558,7 @@ const Applicants: React.FC = () => {
 
             {isLoading ? (
                 <Card><div className="p-6 text-gray-500">Loading applicants...</div></Card>
-            ) : view === 'kanban' ? <ApplicantKanbanBoard applications={filteredApplications} onUpdateStage={handleUpdateStage} onCardClick={setSelectedApplication} /> : <ApplicantListTable applications={filteredApplications} onRowClick={setSelectedApplication}/>}
+            ) : view === 'kanban' ? <ApplicantKanbanBoard applications={filteredApplications} onUpdateStage={handleUpdateStage} onCardClick={setSelectedApplication} canManage={canManage} /> : <ApplicantListTable applications={filteredApplications} onRowClick={setSelectedApplication} onScheduleInterview={openInterviewScheduler} onReject={openRejectionEmail} canManage={canManage}/>}
             {selectedApplication && <ApplicantDetailModal isOpen={!!selectedApplication} onClose={() => setSelectedApplication(null)} application={selectedApplication} />}
             <AddApplicantModal
                 isOpen={isAddModalOpen}
@@ -516,21 +573,22 @@ const Applicants: React.FC = () => {
             {isSchedulerOpen && (
                 <InterviewSchedulerModal
                     isOpen={isSchedulerOpen}
-                    onClose={() => { setIsSchedulerOpen(false); setPendingAppId(null); }}
+                    onClose={() => { setIsSchedulerOpen(false); setPendingAppId(null); setPendingStage(null); }}
                     interview={pendingInterviewStub}
                     onSave={handleSaveInterview}
-                    candidateOptions={[]}
-                    users={[]}
+                    candidateOptions={interviewCandidateOptions}
+                    users={users}
                 />
             )}
 
             {isRejectionModalOpen && (
                 <RejectionEmailModal
                     isOpen={isRejectionModalOpen}
-                    onClose={() => { setIsRejectionModalOpen(false); setPendingAppId(null); }}
+                    onClose={() => { setIsRejectionModalOpen(false); setPendingAppId(null); setPendingStage(null); }}
                     application={pendingApplication}
                     candidate={pendingCandidate}
                     jobTitle={pendingJobTitle}
+                    businessUnitName={pendingBusinessUnitName}
                     onSend={handleRejectionComplete}
                 />
             )}

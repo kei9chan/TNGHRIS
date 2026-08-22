@@ -44,9 +44,16 @@ type ApplicationRow = {
 };
 
 type InterviewRow = {
-  id: string; application_id: string; interview_type: string; scheduled_start: string;
-  scheduled_end: string; location: string; panel_user_ids: any;
-  calendar_event_id?: string | null; status: string;
+  id: string; application_id: string; type?: string | null; start_at?: string | null;
+  end_at?: string | null; location?: string | null; interviewer_id?: string | null;
+  panel_user_ids: any; calendar_event_id?: string | null; google_meet_link?: string | null;
+  calendar_invite_status?: string | null; applicant_invite_status?: string | null;
+  panel_invite_status?: string | null; confirmation_email_status?: string | null;
+  applicant_invite_sent_at?: string | null; panel_invite_sent_at?: string | null;
+  confirmation_email_sent_at?: string | null; calendar_error?: string | null;
+  status: string;
+  /** Kept only so this mapper remains tolerant of pre-migration rows/fixtures. */
+  interview_type?: string | null; scheduled_start?: string | null; scheduled_end?: string | null;
 };
 
 type InterviewFeedbackRow = {
@@ -138,11 +145,22 @@ const mapApplication = (r: ApplicationRow): Application => ({
 
 const mapInterview = (r: InterviewRow): Interview => ({
   id: r.id, applicationId: r.application_id,
-  interviewType: r.interview_type as any,
-  scheduledStart: new Date(r.scheduled_start), scheduledEnd: new Date(r.scheduled_end),
-  location: r.location,
-  panelUserIds: Array.isArray(r.panel_user_ids) ? r.panel_user_ids : [],
+  interviewerId: r.interviewer_id || undefined,
+  interviewType: (r.type === 'Remote' ? 'Virtual' : r.type === 'Phone' ? 'Phone Screen' : r.type || r.interview_type) as any,
+  scheduledStart: new Date(r.start_at || r.scheduled_start || 0),
+  scheduledEnd: new Date(r.end_at || r.scheduled_end || 0),
+  location: r.location || '',
+  panelUserIds: Array.isArray(r.panel_user_ids) ? r.panel_user_ids : (r.interviewer_id ? [r.interviewer_id] : []),
   calendarEventId: r.calendar_event_id || undefined,
+  googleMeetLink: r.google_meet_link || undefined,
+  calendarInviteStatus: r.calendar_invite_status || 'not_requested',
+  applicantInviteStatus: r.applicant_invite_status || 'not_requested',
+  panelInviteStatus: r.panel_invite_status || 'not_requested',
+  confirmationEmailStatus: r.confirmation_email_status || 'not_requested',
+  applicantInviteSentAt: r.applicant_invite_sent_at ? new Date(r.applicant_invite_sent_at) : undefined,
+  panelInviteSentAt: r.panel_invite_sent_at ? new Date(r.panel_invite_sent_at) : undefined,
+  confirmationEmailSentAt: r.confirmation_email_sent_at ? new Date(r.confirmation_email_sent_at) : undefined,
+  calendarError: r.calendar_error || undefined,
   status: r.status as InterviewStatus,
 });
 
@@ -269,7 +287,7 @@ export const saveApplication = async (app: Partial<Application>): Promise<Applic
 };
 
 export const fetchInterviews = async (): Promise<Interview[]> => {
-  const { data, error } = await supabase.from('job_interviews').select('*').order('scheduled_start', { ascending: false });
+  const { data, error } = await supabase.from('job_interviews').select('*').order('start_at', { ascending: false });
   if (error) throw new Error(error.message);
   return (data as InterviewRow[]).map(mapInterview);
 };

@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test:recruitment": "node tests/recruitmentFlowSmokeTest.mjs",
-    "test:job-social-generator": "node tests/jobSocialMediaPostGeneratorSmokeTest.mjs"
+    "test:job-social-generator": "node tests/jobSocialMediaPostGeneratorSmokeTest.mjs",
+    "test:interview-workflow": "node tests/interviewWorkflowSmokeTest.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.84.0",

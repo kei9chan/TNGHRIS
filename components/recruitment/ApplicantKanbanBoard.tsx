@@ -7,9 +7,10 @@ interface ApplicantKanbanBoardProps {
   applications: EnrichedApplication[];
   onUpdateStage: (applicationId: string, newStage: ApplicationStage) => void;
   onCardClick: (application: EnrichedApplication) => void;
+  canManage?: boolean;
 }
 
-const ApplicantKanbanBoard: React.FC<ApplicantKanbanBoardProps> = ({ applications, onUpdateStage, onCardClick }) => {
+const ApplicantKanbanBoard: React.FC<ApplicantKanbanBoardProps> = ({ applications, onUpdateStage, onCardClick, canManage = true }) => {
     const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
 
     const columns = Object.values(ApplicationStage);
@@ -32,6 +33,7 @@ const ApplicantKanbanBoard: React.FC<ApplicantKanbanBoardProps> = ({ application
                     applications={applications.filter(app => app.stage === stage)}
                     onUpdateStage={onUpdateStage}
                     onCardClick={onCardClick}
+                    canManage={canManage}
                     onDragStart={handleDragStart}
                     onDragEnd={handleDragEnd}
                     draggedItemId={draggedItemId}
