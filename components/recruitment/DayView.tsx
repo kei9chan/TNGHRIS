@@ -1,16 +1,17 @@
 import React from 'react';
-import { Interview, Application, Candidate, User } from '../../types';
+import { Interview, Application, Candidate, JobPost, User } from '../../types';
 
 interface DayViewProps {
     currentDate: Date;
     interviews: Interview[];
     applications: Application[];
     candidates: Candidate[];
+    jobPosts: JobPost[];
     users: User[];
     onInterviewClick: (interview: Interview) => void;
 }
 
-const DayView: React.FC<DayViewProps> = ({ currentDate, interviews, applications, candidates, users, onInterviewClick }) => {
+const DayView: React.FC<DayViewProps> = ({ currentDate, interviews, applications, candidates, jobPosts, users, onInterviewClick }) => {
     const interviewsForDay = interviews
         .filter(i => new Date(i.scheduledStart).toDateString() === currentDate.toDateString())
         .sort((a,b) => new Date(a.scheduledStart).getTime() - new Date(b.scheduledStart).getTime());
@@ -22,7 +23,10 @@ const DayView: React.FC<DayViewProps> = ({ currentDate, interviews, applications
                     {interviewsForDay.map(interview => {
                         const application = applications.find(a => a.id === interview.applicationId);
                         const candidate = candidates.find(c => c.id === application?.candidateId);
+                        const jobPost = jobPosts.find(post => post.id === application?.jobPostId);
                         const panel = users.filter(u => interview.panelUserIds.includes(u.id));
+                        const firstName = candidate?.firstName || 'Unknown';
+                        const position = jobPost?.title || 'Position unavailable';
 
                         return (
                             <li key={interview.id} onClick={() => onInterviewClick(interview)} className="py-4 px-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-md">
@@ -32,7 +36,8 @@ const DayView: React.FC<DayViewProps> = ({ currentDate, interviews, applications
                                         <p className="text-xs text-gray-500">{interview.interviewType}</p>
                                     </div>
                                     <div className="flex-1">
-                                        <p className="font-bold text-gray-900 dark:text-white">{candidate ? `${candidate.firstName} ${candidate.lastName}` : 'Unknown Applicant'}</p>
+                                        <p className="font-bold text-gray-900 dark:text-white">{firstName} — {position}</p>
+                                        {candidate && <p className="text-sm text-gray-500 dark:text-gray-400">{candidate.firstName} {candidate.lastName}</p>}
                                         <p className="text-sm text-gray-500 dark:text-gray-400">Panel: {panel.map(p => p.name).join(', ')}</p>
                                     </div>
                                 </div>

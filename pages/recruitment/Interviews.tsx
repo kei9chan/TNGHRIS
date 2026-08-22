@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Interview, InterviewFeedback, InterviewStatus, Permission, ApplicationStage, Role, Application, Candidate, JobPost, User } from '../../types';
+import { Interview, InterviewFeedback, InterviewStatus, Permission, ApplicationStage, Role, Application, Candidate, JobPost, User, BusinessUnit } from '../../types';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -36,6 +36,7 @@ const Interviews: React.FC = () => {
     const [applications, setApplications] = useState<Application[]>([]);
     const [candidates, setCandidates] = useState<Candidate[]>([]);
     const [jobPosts, setJobPosts] = useState<JobPost[]>([]);
+    const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
     const [users, setUsers] = useState<User[]>([]);
     const candidateOptions = useMemo(() => {
         return candidates.map(cand => {
@@ -90,13 +91,14 @@ const Interviews: React.FC = () => {
     const loadData = useCallback(async () => {
         setIsLoading(true);
         try {
-            const [intRes, appRes, candRes, postRes, userRes, fbRes] = await Promise.all([
+            const [intRes, appRes, candRes, postRes, userRes, fbRes, buRes] = await Promise.all([
                 supabase.from('job_interviews').select('*'),
                 supabase.from('job_applications').select('*'),
                 supabase.from('job_candidates').select('*'),
-                supabase.from('job_posts').select('id,title'),
+                supabase.from('job_posts').select('id,title,business_unit_id'),
                 supabase.from('hris_users').select('id,full_name,role,email'),
                 supabase.from('job_interview_feedback').select('*'),
+                supabase.from('business_units').select('id,name'),
             ]);
             if (intRes.error) throw intRes.error;
             if (appRes.error) throw appRes.error;
@@ -104,6 +106,7 @@ const Interviews: React.FC = () => {
             if (postRes.error) throw postRes.error;
             if (userRes.error) throw userRes.error;
             if (fbRes.error) throw fbRes.error;
+            if (buRes.error) console.warn('Business units unavailable for interview details', buRes.error);
 
             setInterviews((intRes.data || []).map(mapInterview));
             setApplications((appRes.data || []).map((a: any) => ({
@@ -132,7 +135,12 @@ const Interviews: React.FC = () => {
             setJobPosts((postRes.data || []).map((p: any) => ({
                 id: p.id,
                 title: p.title,
+                businessUnitId: p.business_unit_id,
             } as JobPost)));
+            setBusinessUnits((buRes.data || []).map((bu: any) => ({
+                id: bu.id,
+                name: bu.name,
+            } as BusinessUnit)));
             setUsers((userRes.data || []).map((u: any) => ({
                 id: u.id,
                 name: formatEmployeeName(u.full_name || u.email || 'User'),
@@ -288,12 +296,12 @@ const Interviews: React.FC = () => {
     const renderView = () => {
         switch (view) {
             case 'day':
-                return <DayView currentDate={currentDate} interviews={interviews} applications={applications} candidates={candidates} users={users} onInterviewClick={handleOpenDetail} />;
+                return <DayView currentDate={currentDate} interviews={interviews} applications={applications} candidates={candidates} jobPosts={jobPosts} users={users} onInterviewClick={handleOpenDetail} />;
             case 'month':
-                return <MonthView currentDate={currentDate} interviews={interviews} onDateClick={(date) => { setCurrentDate(date); setView('day'); }} />;
+                return <MonthView currentDate={currentDate} interviews={interviews} applications={applications} candidates={candidates} jobPosts={jobPosts} onDateClick={(date) => { setCurrentDate(date); setView('day'); }} onInterviewClick={handleOpenDetail} />;
             case 'week':
             default:
-                return <WeekView currentDate={currentDate} interviews={interviews} applications={applications} candidates={candidates} onInterviewClick={handleOpenDetail} />;
+                return <WeekView currentDate={currentDate} interviews={interviews} applications={applications} candidates={candidates} jobPosts={jobPosts} onInterviewClick={handleOpenDetail} />;
         }
     };
 
@@ -376,6 +384,8 @@ const Interviews: React.FC = () => {
                     onSaveFeedback={handleSaveFeedback}
                     applications={applications}
                     candidates={candidates}
+                    jobPosts={jobPosts}
+                    businessUnits={businessUnits}
                     users={users}
                 />
             )}

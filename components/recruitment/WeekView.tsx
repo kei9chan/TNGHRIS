@@ -1,15 +1,16 @@
 import React from 'react';
-import { Interview, Application, Candidate } from '../../types';
+import { Interview, Application, Candidate, JobPost } from '../../types';
 
 interface WeekViewProps {
     currentDate: Date;
     interviews: Interview[];
     applications: Application[];
     candidates: Candidate[];
+    jobPosts: JobPost[];
     onInterviewClick: (interview: Interview) => void;
 }
 
-const WeekView: React.FC<WeekViewProps> = ({ currentDate, interviews, applications, candidates, onInterviewClick }) => {
+const WeekView: React.FC<WeekViewProps> = ({ currentDate, interviews, applications, candidates, jobPosts, onInterviewClick }) => {
     const weekDates = Array.from({ length: 7 }, (_, i) => {
         const date = new Date(currentDate);
         date.setDate(date.getDate() - date.getDay() + i);
@@ -31,11 +32,14 @@ const WeekView: React.FC<WeekViewProps> = ({ currentDate, interviews, applicatio
                             {interviewsForDay.map(interview => {
                                 const application = applications.find(a => a.id === interview.applicationId);
                                 const candidate = candidates.find(c => c.id === application?.candidateId);
+                                const jobPost = jobPosts.find(post => post.id === application?.jobPostId);
+                                const firstName = candidate?.firstName || 'Unknown';
+                                const position = jobPost?.title || 'Position unavailable';
+                                const time = new Date(interview.scheduledStart).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
                                 return (
-                                    <div key={interview.id} onClick={() => onInterviewClick(interview)} className="p-2 bg-blue-50 dark:bg-blue-900/30 border-l-4 border-blue-500 rounded-md cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/50">
-                                        <p className="text-sm font-semibold text-blue-800 dark:text-blue-200 truncate">{candidate ? `${candidate.firstName} ${candidate.lastName}` : 'Unknown'}</p>
-                                        <p className="text-xs text-blue-600 dark:text-blue-400">{new Date(interview.scheduledStart).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
-                                    </div>
+                                    <button key={interview.id} type="button" onClick={() => onInterviewClick(interview)} className="block w-full cursor-pointer rounded-md border-l-4 border-blue-500 bg-blue-50 p-2 text-left hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-blue-900/30 dark:hover:bg-blue-900/50" title={`${firstName} — ${position}`}>
+                                        <p className="truncate text-xs font-semibold text-blue-800 dark:text-blue-200"><span className="font-mono font-medium">{time}</span> {firstName} — {position}</p>
+                                    </button>
                                 )
                             })}
                         </div>

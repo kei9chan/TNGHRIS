@@ -85,15 +85,9 @@ const InterviewSchedulerModal: React.FC<InterviewSchedulerModalProps> = ({ isOpe
             return;
         }
 
-        const payload: Partial<Interview> = { ...current };
-        
-        // Simulate Google Calendar/Meet integration
-        if (payload.interviewType === InterviewType.Virtual) {
-            payload.calendarEventId = `gcal-event-${Date.now()}`;
-            payload.location = `https://meet.google.com/${Math.random().toString(36).substring(2, 5)}-${Math.random().toString(36).substring(2, 6)}-${Math.random().toString(36).substring(2, 5)}`;
-        }
-
-        onSave(payload as Interview);
+        // Meeting links and calendar IDs must come from a real calendar provider.
+        // Never generate placeholder Meet URLs because they appear valid but cannot be joined.
+        onSave({ ...current } as Interview);
     };
 
     const formatDateForInput = (date?: Date) => date ? new Date(date).toISOString().split('T')[0] : '';
@@ -161,9 +155,8 @@ const InterviewSchedulerModal: React.FC<InterviewSchedulerModalProps> = ({ isOpe
                     </div>
                 </div>
                  {current.interviewType === 'Virtual' && (
-                    <div className="flex items-center">
-                        <input type="checkbox" id="gcal" checked={true} readOnly className="h-4 w-4 text-indigo-600 rounded"/>
-                        <label htmlFor="gcal" className="ml-2 text-sm">Create Google Calendar event and generate Meet link</label>
+                    <div className="rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-300">
+                        Google Calendar and Meet status will appear in the interview details. A placeholder meeting link will not be generated.
                     </div>
                  )}
             </div>
