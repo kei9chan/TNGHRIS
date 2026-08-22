@@ -27,7 +27,6 @@ interface AuthContextType {
   forceLogin: (email: string, pass: string) => Promise<User | null>;
   loginWithGoogle: () => Promise<User | null>;
   logout: () => void;
-  connectGoogle: () => void;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(
@@ -338,10 +337,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       .finally(() => setUser(null));
   };
 
-  const connectGoogle = () => {
-    alert('Connect Google is not implemented in Supabase yet.');
-  };
-
   return (
     <AuthContext.Provider
       value={{
@@ -351,7 +346,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         forceLogin,
         loginWithGoogle,
         logout,
-        connectGoogle,
       }}
     >
       {children}

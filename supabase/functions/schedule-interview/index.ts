@@ -14,7 +14,6 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 const normalizeInterviewType = (value: string) => {
   if (value === 'Virtual') return 'Remote';
   if (value === 'Phone Screen') return 'Phone';
-  if (value === 'Onsite') return 'Onsite';
   return value;
 };
 
@@ -48,7 +47,21 @@ const meetLinkFromEvent = (event: any) => validMeetLink(event?.hangoutLink)
 
 const googleErrorMessage = async (response: Response) => {
   const payload = await response.json().catch(() => ({}));
-  return payload?.error?.message || payload?.error_description || `Google Calendar returned ${response.status}.`;
+  const reason = payload?.error?.errors?.[0]?.reason;
+  const message = payload?.error?.message || payload?.error_description || `Google Calendar returned HTTP ${response.status}.`;
+  return reason && !message.includes(reason) ? `${message} (${reason})` : message;
+};
+
+const googleEventIdFor = async (value: string) => {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  const hex = Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, '0')).join('');
+  return `tnghris${hex}`;
+};
+
+const requiredSecret = (name: string) => {
+  const value = Deno.env.get(name)?.trim();
+  if (!value) throw new Error(`Google integration secret ${name} is not configured.`);
+  return value;
 };
 
 Deno.serve(async (request: Request) => {
@@ -64,7 +77,7 @@ Deno.serve(async (request: Request) => {
 
   const supabase = createClient(supabaseUrl, supabaseKey, {
     global: { headers: { Authorization: authorization } },
-    auth: { persistSession: false },
+    auth: { persistSession: false, autoRefreshToken: false },
   });
 
   const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -80,8 +93,9 @@ Deno.serve(async (request: Request) => {
     return json({ error: 'Invalid request body.' }, 400);
   }
 
-  const applicationId = String(body.applicationId || '');
-  const panelUserIds = Array.from(new Set((body.panelUserIds || []).filter(Boolean))) as string[];
+  const applicationId = String(body.applicationId || '').trim();
+  const interviewId = body.interviewId ? String(body.interviewId).trim() : null;
+  const panelUserIds = Array.from(new Set((Array.isArray(body.panelUserIds) ? body.panelUserIds : []).filter(Boolean))) as string[];
   const startAt = new Date(body.startAt);
   const endAt = new Date(body.endAt);
   const interviewType = String(body.interviewType || 'Virtual');
@@ -95,12 +109,24 @@ Deno.serve(async (request: Request) => {
     return json({ error: 'An onsite interview location is required.' }, 400);
   }
 
-  const { data: application, error: applicationError } = await supabase
-    .from('job_applications')
-    .select('id,candidate_id,job_post_id,requisition_id,role_title_snapshot,department_snapshot')
-    .eq('id', applicationId)
-    .single();
-  if (applicationError || !application) return json({ error: 'The selected application could not be found.' }, 404);
+  const [applicationResult, existingInterviewResult] = await Promise.all([
+    supabase.from('job_applications')
+      .select('id,candidate_id,job_post_id,requisition_id,role_title_snapshot,department_snapshot')
+      .eq('id', applicationId)
+      .single(),
+    interviewId
+      ? supabase.from('job_interviews').select('*').eq('id', interviewId).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+
+  const application = applicationResult.data;
+  if (applicationResult.error || !application) return json({ error: 'The selected application could not be found.' }, 404);
+  if (existingInterviewResult.error) return json({ error: existingInterviewResult.error.message }, 400);
+  const existingInterview = existingInterviewResult.data;
+  if (interviewId && !existingInterview) return json({ error: 'The interview to update could not be found.' }, 404);
+  if (existingInterview && existingInterview.application_id !== applicationId) {
+    return json({ error: 'The interview does not belong to the selected application.' }, 400);
+  }
 
   const [candidateResult, postResult, requisitionResult, panelResult, schedulerResult] = await Promise.all([
     supabase.from('job_candidates').select('id,first_name,last_name,email').eq('id', application.candidate_id).single(),
@@ -138,8 +164,7 @@ Deno.serve(async (request: Request) => {
   const position = post?.title || requisition?.title || application.role_title_snapshot || 'Position';
   const businessUnit = businessUnitResult.data?.name || 'Not specified';
   const department = departmentResult.data?.name || post?.department_label || application.department_snapshot || '';
-  const pendingStatus = createCalendarEvent ? 'pending' : 'not_requested';
-  const interviewPayload = {
+  const baseInterviewPayload = {
     application_id: applicationId,
     interviewer_id: panelUserIds[0],
     panel_user_ids: panelUserIds,
@@ -149,51 +174,74 @@ Deno.serve(async (request: Request) => {
     type: normalizeInterviewType(interviewType),
     status: 'Scheduled',
     notes: body.notes || null,
-    calendar_event_id: null,
-    google_meet_link: null,
-    calendar_invite_status: pendingStatus,
-    applicant_invite_status: pendingStatus,
-    panel_invite_status: pendingStatus,
-    confirmation_email_status: 'pending',
-    applicant_invite_sent_at: null,
-    panel_invite_sent_at: null,
-    confirmation_email_sent_at: null,
-    calendar_error: null,
   };
 
-  const existingId = body.interviewId ? String(body.interviewId) : null;
-  const saveQuery = existingId
-    ? supabase.from('job_interviews').update(interviewPayload).eq('id', existingId).select().single()
-    : supabase.from('job_interviews').insert(interviewPayload).select().single();
-  const { data: savedInterview, error: saveError } = await saveQuery;
-  if (saveError || !savedInterview) return json({ error: saveError?.message || 'The interview could not be saved.' }, 400);
+  const saveInterview = async (calendarFields: Record<string, unknown>) => {
+    const payload = { ...baseInterviewPayload, ...calendarFields };
+    const query = existingInterview
+      ? supabase.from('job_interviews').update(payload).eq('id', existingInterview.id).select().single()
+      : supabase.from('job_interviews').insert(payload).select().single();
+    return await query;
+  };
 
-  await supabase.from('job_applications').update({ stage: 'Interview', updated_at: new Date().toISOString() }).eq('id', applicationId);
-  if (!createCalendarEvent) return json({ interview: savedInterview });
-
-  const failCalendar = async (message: string) => {
-    const { data: failed } = await supabase.from('job_interviews').update({
-      calendar_invite_status: 'failed',
-      applicant_invite_status: 'failed',
-      panel_invite_status: 'failed',
+  if (!createCalendarEvent) {
+    const { data: saved, error: saveError } = await saveInterview({
       calendar_event_id: null,
+      google_calendar_link: null,
       google_meet_link: null,
-      calendar_error: message,
-    }).eq('id', savedInterview.id).select().single();
-    return json({ interview: failed || { ...savedInterview, calendar_error: message }, warning: message });
-  };
-
-  if (!validEmail(candidate.email) || panel.some(member => !validEmail(member.email))) {
-    return await failCalendar('Interview scheduled, but one or more invite recipients do not have a valid email address.');
+      calendar_invite_status: 'not_requested',
+      applicant_invite_status: 'not_requested',
+      panel_invite_status: 'not_requested',
+      confirmation_email_status: 'not_requested',
+      applicant_invite_sent_at: null,
+      panel_invite_sent_at: null,
+      calendar_error: null,
+    });
+    if (saveError || !saved) return json({ error: saveError?.message || 'The interview could not be saved.' }, 400);
+    const { error: stageError } = await supabase.from('job_applications')
+      .update({ stage: 'Interview', updated_at: new Date().toISOString() })
+      .eq('id', applicationId);
+    if (stageError) return json({ error: `Interview saved, but the application stage could not be updated: ${stageError.message}` }, 500);
+    return json({ interview: saved });
   }
 
-  const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
-  const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET');
-  const refreshToken = Deno.env.get('GOOGLE_REFRESH_TOKEN');
-  const calendarId = Deno.env.get('GOOGLE_CALENDAR_ID') || 'primary';
-  const timeZone = Deno.env.get('GOOGLE_CALENDAR_TIME_ZONE') || 'Asia/Manila';
-  if (!clientId || !clientSecret || !refreshToken) {
-    return await failCalendar('Unable to create Google Calendar event. Please check Google integration settings.');
+  if (!validEmail(candidate.email)) return json({ error: 'The applicant does not have a valid email address.' }, 400);
+  const invalidPanel = panel.find(member => !validEmail(member.email));
+  if (invalidPanel) return json({ error: `${invalidPanel.full_name || 'A selected panel member'} does not have a valid email address.` }, 400);
+
+  let clientId: string;
+  let clientSecret: string;
+  let refreshToken: string;
+  let calendarId: string;
+  let timeZone: string;
+  try {
+    clientId = requiredSecret('GOOGLE_CLIENT_ID');
+    clientSecret = requiredSecret('GOOGLE_CLIENT_SECRET');
+    refreshToken = requiredSecret('GOOGLE_REFRESH_TOKEN');
+    calendarId = requiredSecret('GOOGLE_CALENDAR_ID');
+    timeZone = requiredSecret('GOOGLE_CALENDAR_TIME_ZONE');
+  } catch (error: any) {
+    return json({ error: error.message }, 500);
+  }
+
+  const idempotencySource = interviewId || [
+    applicationId,
+    startAt.toISOString(),
+    endAt.toISOString(),
+    interviewType,
+    [...panelUserIds].sort().join(','),
+  ].join('|');
+  const deterministicEventId = await googleEventIdFor(idempotencySource);
+  const googleEventId = existingInterview?.calendar_event_id || deterministicEventId;
+
+  if (!existingInterview) {
+    const { data: alreadyScheduled, error: duplicateLookupError } = await supabase
+      .from('job_interviews')
+      .select('*')
+      .eq('calendar_event_id', googleEventId)
+      .maybeSingle();
+    if (duplicateLookupError) return json({ error: duplicateLookupError.message }, 400);
+    if (alreadyScheduled) return json({ interview: alreadyScheduled, idempotent: true });
   }
 
   try {
@@ -209,7 +257,11 @@ Deno.serve(async (request: Request) => {
     });
     if (!tokenResponse.ok) throw new Error(await googleErrorMessage(tokenResponse));
     const tokenPayload = await tokenResponse.json();
-    if (!tokenPayload.access_token) throw new Error('Google did not return an access token.');
+    if (!tokenPayload.access_token) throw new Error('Google OAuth did not return an access token.');
+    const googleHeaders = {
+      Authorization: `Bearer ${tokenPayload.access_token}`,
+      'Content-Type': 'application/json',
+    };
 
     const attendees = [
       { email: candidate.email, displayName: fullNameFrom(candidate) },
@@ -219,7 +271,7 @@ Deno.serve(async (request: Request) => {
         : []),
     ].filter((attendee, index, list) => list.findIndex(item => item.email.toLowerCase() === attendee.email.toLowerCase()) === index);
 
-    const title = `Interview: ${firstNameFrom(candidate)} — ${position}`;
+    const title = `${firstNameFrom(candidate)} — ${position}`;
     const description = [
       `Applicant: ${fullNameFrom(candidate)}`,
       `Position: ${position}`,
@@ -228,6 +280,17 @@ Deno.serve(async (request: Request) => {
       `Interview Type: ${interviewType}`,
       `Panel: ${panel.map(member => member.full_name || member.email).join(', ')}`,
     ].filter(Boolean).join('\n');
+
+    let currentGoogleEvent: any = null;
+    if (existingInterview?.calendar_event_id) {
+      const currentResponse = await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(googleEventId)}?conferenceDataVersion=1`,
+        { headers: { Authorization: googleHeaders.Authorization } },
+      );
+      if (!currentResponse.ok) throw new Error(await googleErrorMessage(currentResponse));
+      currentGoogleEvent = await currentResponse.json();
+    }
+
     const eventBody: any = {
       summary: title,
       description,
@@ -237,90 +300,117 @@ Deno.serve(async (request: Request) => {
       guestsCanInviteOthers: false,
       guestsCanModify: false,
     };
+    if (!existingInterview?.calendar_event_id) eventBody.id = googleEventId;
     if (interviewType === 'Onsite' && body.location) eventBody.location = String(body.location).trim();
-    if (interviewType === 'Virtual') {
+    if (interviewType === 'Virtual' && !meetLinkFromEvent(currentGoogleEvent)) {
       eventBody.conferenceData = {
         createRequest: {
-          requestId: `tnghris-${savedInterview.id}-${crypto.randomUUID()}`,
+          requestId: `${googleEventId}-meet`,
           conferenceSolutionKey: { type: 'hangoutsMeet' },
         },
       };
     }
 
-    const eventResponse = await fetch(
-      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?conferenceDataVersion=1&sendUpdates=all`,
-      {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${tokenPayload.access_token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(eventBody),
-      },
-    );
-    if (!eventResponse.ok) throw new Error(await googleErrorMessage(eventResponse));
-    let event = await eventResponse.json();
+    const eventUrl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
+    let eventResponse: Response;
+    let eventWasCreated = false;
+    if (existingInterview?.calendar_event_id) {
+      eventResponse = await fetch(
+        `${eventUrl}/${encodeURIComponent(googleEventId)}?conferenceDataVersion=1&sendUpdates=all`,
+        { method: 'PATCH', headers: googleHeaders, body: JSON.stringify(eventBody) },
+      );
+    } else {
+      eventResponse = await fetch(
+        `${eventUrl}?conferenceDataVersion=1&sendUpdates=all`,
+        { method: 'POST', headers: googleHeaders, body: JSON.stringify(eventBody) },
+      );
+      eventWasCreated = eventResponse.ok;
+    }
+
+    let event: any;
+    if (eventResponse.status === 409 && !existingInterview) {
+      const existingEventResponse = await fetch(
+        `${eventUrl}/${encodeURIComponent(googleEventId)}?conferenceDataVersion=1`,
+        { headers: { Authorization: googleHeaders.Authorization } },
+      );
+      if (!existingEventResponse.ok) throw new Error(await googleErrorMessage(existingEventResponse));
+      event = await existingEventResponse.json();
+    } else {
+      if (!eventResponse.ok) throw new Error(await googleErrorMessage(eventResponse));
+      event = await eventResponse.json();
+    }
 
     let meetLink = interviewType === 'Virtual' ? meetLinkFromEvent(event) : null;
-    for (let attempt = 0; interviewType === 'Virtual' && !meetLink && attempt < 3; attempt += 1) {
-      await new Promise(resolve => setTimeout(resolve, 700));
+    for (let attempt = 0; interviewType === 'Virtual' && !meetLink && attempt < 5; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 800));
       const pollResponse = await fetch(
-        `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(event.id)}?conferenceDataVersion=1`,
-        { headers: { Authorization: `Bearer ${tokenPayload.access_token}` } },
+        `${eventUrl}/${encodeURIComponent(event.id)}?conferenceDataVersion=1`,
+        { headers: { Authorization: googleHeaders.Authorization } },
       );
-      if (pollResponse.ok) {
-        event = await pollResponse.json();
-        meetLink = meetLinkFromEvent(event);
-      }
+      if (!pollResponse.ok) throw new Error(await googleErrorMessage(pollResponse));
+      event = await pollResponse.json();
+      meetLink = meetLinkFromEvent(event);
     }
 
     if (interviewType === 'Virtual' && !meetLink) {
-      if (event.id) {
-        await fetch(
-          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(event.id)}?sendUpdates=all`,
-          { method: 'DELETE', headers: { Authorization: `Bearer ${tokenPayload.access_token}` } },
-        );
+      if (eventWasCreated) {
+        await fetch(`${eventUrl}/${encodeURIComponent(event.id)}?sendUpdates=all`, {
+          method: 'DELETE',
+          headers: { Authorization: googleHeaders.Authorization },
+        });
       }
-      throw new Error('Google Calendar did not generate a valid Google Meet link.');
+      throw new Error('Google Calendar created the event but did not generate a valid Google Meet link.');
     }
+    if (!event.id) throw new Error('Google Calendar did not return an event ID.');
+    if (!event.htmlLink) throw new Error('Google Calendar did not return an event link.');
 
-    if (meetLink) {
+    if (meetLink && !String(event.description || '').includes(meetLink)) {
       const descriptionResponse = await fetch(
-        `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(event.id)}?conferenceDataVersion=1&sendUpdates=all`,
+        `${eventUrl}/${encodeURIComponent(event.id)}?conferenceDataVersion=1&sendUpdates=none`,
         {
           method: 'PATCH',
-          headers: { Authorization: `Bearer ${tokenPayload.access_token}`, 'Content-Type': 'application/json' },
+          headers: googleHeaders,
           body: JSON.stringify({ description: `${description}\nGoogle Meet: ${meetLink}` }),
         },
       );
-      if (!descriptionResponse.ok) {
-        await fetch(
-          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(event.id)}?sendUpdates=all`,
-          { method: 'DELETE', headers: { Authorization: `Bearer ${tokenPayload.access_token}` } },
-        );
-        throw new Error(await googleErrorMessage(descriptionResponse));
-      }
+      if (!descriptionResponse.ok) throw new Error(await googleErrorMessage(descriptionResponse));
+      event = await descriptionResponse.json();
     }
 
     const sentAt = new Date().toISOString();
-    const { data: completed, error: updateError } = await supabase.from('job_interviews').update({
+    const { data: saved, error: saveError } = await saveInterview({
       calendar_event_id: event.id,
+      google_calendar_link: event.htmlLink,
       google_meet_link: meetLink,
-      location: meetLink || interviewPayload.location,
+      location: meetLink || baseInterviewPayload.location,
       calendar_invite_status: 'created',
       applicant_invite_status: 'sent',
       panel_invite_status: 'sent',
+      confirmation_email_status: 'not_requested',
       applicant_invite_sent_at: sentAt,
       panel_invite_sent_at: sentAt,
       calendar_error: null,
-    }).eq('id', savedInterview.id).select().single();
-    if (updateError || !completed) {
-      await fetch(
-        `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(event.id)}?sendUpdates=all`,
-        { method: 'DELETE', headers: { Authorization: `Bearer ${tokenPayload.access_token}` } },
-      );
-      throw new Error(updateError?.message || 'Calendar event was created but the interview could not be updated.');
+    });
+
+    if (saveError || !saved) {
+      if (!existingInterview && saveError?.code === '23505') {
+        const { data: duplicate } = await supabase.from('job_interviews')
+          .select('*')
+          .eq('calendar_event_id', event.id)
+          .maybeSingle();
+        if (duplicate) return json({ interview: duplicate, idempotent: true });
+      }
+      throw new Error(`Google event ${event.id} was created, but the interview could not be saved: ${saveError?.message || 'Unknown database error.'}`);
     }
 
-    return json({ interview: completed });
+    const { error: stageError } = await supabase.from('job_applications')
+      .update({ stage: 'Interview', updated_at: sentAt })
+      .eq('id', applicationId);
+    if (stageError) return json({ error: `Google Calendar succeeded, but the application stage could not be updated: ${stageError.message}` }, 500);
+
+    return json({ interview: saved });
   } catch (error: any) {
-    return await failCalendar(`Unable to create Google Calendar event. ${error?.message || 'Please check Google integration settings.'}`);
+    console.error('schedule-interview Google integration failed', error?.message || error);
+    return json({ error: error?.message || 'Google Calendar request failed.' }, 502);
   }
 });

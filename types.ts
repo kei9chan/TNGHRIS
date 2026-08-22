@@ -1717,6 +1717,7 @@ export interface Interview {
   location: string; // URL for virtual, address for on-site
   panelUserIds: string[];
   calendarEventId?: string;
+  googleCalendarLink?: string;
   googleMeetLink?: string;
   calendarInviteStatus?: InterviewInviteStatus;
   applicantInviteStatus?: InterviewInviteStatus;

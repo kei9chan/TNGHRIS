@@ -51,6 +51,17 @@ const getValidGoogleMeetUrl = (location?: string): string | null => {
     }
 };
 
+const getValidGoogleCalendarUrl = (value?: string): string | null => {
+    if (!value) return null;
+    try {
+        const url = new URL(value.trim());
+        const allowedHost = url.hostname === 'calendar.google.com' || url.hostname === 'www.google.com';
+        return url.protocol === 'https:' && allowedHost ? url.toString() : null;
+    } catch {
+        return null;
+    }
+};
+
 const statusPresentation = (status?: InterviewInviteStatus) => {
     if (status === 'created' || status === 'sent' || status === 'email_sent') return {
         label: status === 'email_sent' ? 'Email sent' : 'Sent',
@@ -84,6 +95,7 @@ const InterviewDetailModal: React.FC<InterviewDetailModalProps> = ({ isOpen, onC
     const businessUnit = businessUnits.find(unit => unit.id === jobPost?.businessUnitId);
     const panel = users.filter(u => (interview.panelUserIds || []).includes(u.id));
     const meetingUrl = useMemo(() => getValidGoogleMeetUrl(interview.googleMeetLink || interview.location), [interview.googleMeetLink, interview.location]);
+    const calendarUrl = useMemo(() => getValidGoogleCalendarUrl(interview.googleCalendarLink), [interview.googleCalendarLink]);
     const candidateName = candidate ? `${candidate.firstName} ${candidate.lastName}` : 'Unknown applicant';
 
     const currentUserIsOnPanel = user ? (interview.panelUserIds || []).includes(user.id) : false;
@@ -163,6 +175,18 @@ const InterviewDetailModal: React.FC<InterviewDetailModalProps> = ({ isOpen, onC
 
                 <section>
                     <h3 className="text-lg font-medium text-gray-900 dark:text-white border-b pb-2 mb-3">Calendar Invite Status</h3>
+                    {(calendarUrl || interview.calendarEventId) && (
+                        <div className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                            {calendarUrl && (
+                                <a href={calendarUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300">
+                                    View in Google Calendar <ExternalLinkIcon />
+                                </a>
+                            )}
+                            {interview.calendarEventId && (
+                                <span className="min-w-0 break-all text-xs text-gray-500 dark:text-gray-400">Event ID: {interview.calendarEventId}</span>
+                            )}
+                        </div>
+                    )}
                     <div className="rounded-lg border border-gray-200 px-4 dark:border-gray-700">
                         <InviteStatusRow label="Google Calendar event" status={interview.calendarInviteStatus} />
                         <InviteStatusRow label="Applicant calendar invite" status={interview.applicantInviteStatus} sentAt={interview.applicantInviteSentAt} />

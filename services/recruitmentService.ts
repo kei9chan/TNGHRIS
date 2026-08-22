@@ -37,7 +37,7 @@ type ApplicationRow = {
 type InterviewRow = {
   id: string; application_id: string; interview_type: string; scheduled_start: string;
   scheduled_end: string; location: string; panel_user_ids: any;
-  calendar_event_id?: string | null; status: string;
+  calendar_event_id?: string | null; google_calendar_link?: string | null; status: string;
 };
 
 type InterviewFeedbackRow = {
@@ -106,6 +106,7 @@ const mapInterview = (r: InterviewRow): Interview => ({
   location: r.location,
   panelUserIds: Array.isArray(r.panel_user_ids) ? r.panel_user_ids : [],
   calendarEventId: r.calendar_event_id || undefined,
+  googleCalendarLink: r.google_calendar_link || undefined,
   status: r.status as InterviewStatus,
 });
 
