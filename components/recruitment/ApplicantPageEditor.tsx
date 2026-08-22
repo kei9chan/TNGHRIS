@@ -91,13 +91,17 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
         setHeroUploadError(null);
         setSaveError(null);
 
-        if (!user?.id) {
+        // `user.id` is the HRIS profile primary key, while Storage RLS scopes
+        // uploads to the authenticated Supabase user UUID. Use the latter for
+        // the object prefix so the insert policy can authorize the upload.
+        const storageOwnerId = user?.authUserId || user?.id;
+        if (!storageOwnerId) {
             setHeroUploadError('You must be signed in to upload a hero image.');
             return;
         }
 
         const extension = file.name.split('.').pop()?.toLowerCase() || 'jpg';
-        const path = `hero/${user.id}/${crypto.randomUUID()}.${extension}`;
+        const path = `hero/${storageOwnerId}/${crypto.randomUUID()}.${extension}`;
         const localPreviewUrl = URL.createObjectURL(file);
         setHeroPreviewUrl(localPreviewUrl);
         setIsUploadingHero(true);
