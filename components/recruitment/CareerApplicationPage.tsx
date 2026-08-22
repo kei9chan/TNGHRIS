@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import FileUploader from '../ui/FileUploader';
 import {
@@ -216,6 +216,7 @@ const CareerApplicationPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [submission, setSubmission] = useState<SubmissionResult | null>(null);
+  const submitLock = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -377,7 +378,8 @@ const CareerApplicationPage: React.FC = () => {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (hasSubmitted || isSubmitting || !validateStep(3)) return;
+    if (hasSubmitted || isSubmitting || submitLock.current || !validateStep(3)) return;
+    submitLock.current = true;
     setSubmitError('');
     setIsSubmitting(true);
     try {
@@ -445,6 +447,7 @@ const CareerApplicationPage: React.FC = () => {
       setHasSubmitted(true);
     } catch (error: any) {
       console.error('Application submission failed', error);
+      submitLock.current = false;
       setSubmitError(error?.message || 'We could not submit your application. Please try again.');
     } finally {
       setIsSubmitting(false);
