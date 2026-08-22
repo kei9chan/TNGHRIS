@@ -2,7 +2,7 @@
 
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { ApplicantPageTheme } from '../../types';
+import { ApplicantPageTheme, OpenRolesBenefit, OpenRolesConfig } from '../../types';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
@@ -11,6 +11,7 @@ import CareerPagePreview from './CareerPagePreview';
 import FileUploader from '../ui/FileUploader';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../hooks/useAuth';
+import { getOpenRolesConfig } from '../../services/publicCareersService';
 
 interface ApplicantPageEditorProps {
     isOpen: boolean;
@@ -29,11 +30,15 @@ const HERO_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
 const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClose, onSave, theme, businessUnits }) => {
     const { user } = useAuth();
     const [config, setConfig] = useState<Partial<ApplicantPageTheme>>({});
-    const [activeTab, setActiveTab] = useState<'general' | 'hero' | 'benefits' | 'preview'>('general');
+    const [activeTab, setActiveTab] = useState<'general' | 'hero' | 'openRoles' | 'benefits' | 'preview'>('general');
     const [isUploadingHero, setIsUploadingHero] = useState(false);
     const [heroUploadError, setHeroUploadError] = useState<string | null>(null);
     const [heroPreviewUrl, setHeroPreviewUrl] = useState<string | null>(null);
     const [uploadedHeroImagePath, setUploadedHeroImagePath] = useState<string | null>(null);
+    const [isUploadingOpenRoles, setIsUploadingOpenRoles] = useState(false);
+    const [openRolesUploadError, setOpenRolesUploadError] = useState<string | null>(null);
+    const [openRolesPreviewUrl, setOpenRolesPreviewUrl] = useState<string | null>(null);
+    const [uploadedOpenRolesImagePath, setUploadedOpenRolesImagePath] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
     const wasOpen = useRef(false);
@@ -73,6 +78,9 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
             setHeroPreviewUrl(null);
             setUploadedHeroImagePath(null);
             setHeroUploadError(null);
+            setOpenRolesUploadError(null);
+            setOpenRolesPreviewUrl(null);
+            setUploadedOpenRolesImagePath(null);
             setSaveError(null);
         }
     }, [isOpen, theme, defaultConfig, businessUnits]);
@@ -138,6 +146,64 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
             setIsUploadingHero(false);
         }
     };
+
+    const updateOpenRoles = (updates: Partial<OpenRolesConfig>) => {
+        setConfig(prev => ({
+            ...prev,
+            sections: {
+                ...(prev.sections || {}),
+                openRoles: {
+                    ...(prev.sections?.openRoles || {}),
+                    ...updates,
+                },
+            },
+        }));
+    };
+
+    const handleOpenRolesImageUpload = async (file: File) => {
+        setOpenRolesUploadError(null);
+        setSaveError(null);
+
+        const storageOwnerId = user?.authUserId || user?.id;
+        if (!storageOwnerId) {
+            setOpenRolesUploadError('You must be signed in to upload an Open Roles image.');
+            return;
+        }
+
+        const extension = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+        // Keep the existing storage policy compatible by using the hero/<user>
+        // owner prefix for all application-page assets.
+        const path = `hero/${storageOwnerId}/open-roles-${crypto.randomUUID()}.${extension}`;
+        const localPreviewUrl = URL.createObjectURL(file);
+        setOpenRolesPreviewUrl(localPreviewUrl);
+        setIsUploadingOpenRoles(true);
+
+        try {
+            const { data, error } = await supabase.storage
+                .from(HERO_ASSET_BUCKET)
+                .upload(path, file, {
+                    cacheControl: '31536000',
+                    contentType: file.type,
+                    upsert: false,
+                });
+            if (error) throw error;
+            if (!data?.path) throw new Error('The Open Roles image upload completed without a storage path.');
+
+            const { data: publicUrlData } = supabase.storage.from(HERO_ASSET_BUCKET).getPublicUrl(data.path);
+            if (!publicUrlData?.publicUrl) throw new Error('The Open Roles image uploaded, but a public URL could not be generated.');
+
+            updateOpenRoles({ heroImage: publicUrlData.publicUrl });
+            URL.revokeObjectURL(localPreviewUrl);
+            setOpenRolesPreviewUrl(null);
+            setUploadedOpenRolesImagePath(data.path);
+        } catch (error: any) {
+            URL.revokeObjectURL(localPreviewUrl);
+            setOpenRolesPreviewUrl(null);
+            setOpenRolesUploadError(error?.message || 'Open Roles image upload failed. Please try again.');
+        } finally {
+            setIsUploadingOpenRoles(false);
+        }
+    };
     
     const handleBenefitChange = (index: number, field: string, value: string) => {
         const newBenefits = [...(config.benefits || [])];
@@ -152,6 +218,25 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
     
     const handleRemoveBenefit = (index: number) => {
         setConfig(prev => ({ ...prev, benefits: prev.benefits?.filter((_, i) => i !== index) }));
+    };
+
+    const handleOpenRolesBenefitChange = (index: number, field: keyof OpenRolesBenefit, value: string) => {
+        const current = getOpenRolesConfig(config as ApplicantPageTheme);
+        const benefits = [...current.benefits];
+        benefits[index] = { ...benefits[index], [field]: value } as OpenRolesBenefit;
+        updateOpenRoles({ benefits });
+    };
+
+    const handleAddOpenRolesBenefit = () => {
+        const current = getOpenRolesConfig(config as ApplicantPageTheme);
+        updateOpenRoles({
+            benefits: [...current.benefits, { id: `open-role-benefit-${Date.now()}`, title: 'New Highlight', description: 'Describe this benefit.', icon: 'star' }],
+        });
+    };
+
+    const handleRemoveOpenRolesBenefit = (index: number) => {
+        const current = getOpenRolesConfig(config as ApplicantPageTheme);
+        updateOpenRoles({ benefits: current.benefits.filter((_, benefitIndex) => benefitIndex !== index) });
     };
 
     const handleRemoveHeroImage = async () => {
@@ -169,13 +254,24 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
         }
     };
 
+    const handleRemoveOpenRolesImage = async () => {
+        const pathToRemove = uploadedOpenRolesImagePath;
+        setOpenRolesPreviewUrl(null);
+        setUploadedOpenRolesImagePath(null);
+        updateOpenRoles({ heroImage: '' });
+        if (pathToRemove) {
+            const { error } = await supabase.storage.from(HERO_ASSET_BUCKET).remove([pathToRemove]);
+            if (error) console.warn('Failed to remove temporary Open Roles image', error);
+        }
+    };
+
     const handleSave = async () => {
         if (!config.name?.trim() || !config.slug?.trim() || !config.businessUnitId) {
             setSaveError('Name, slug, and Business Unit are required.');
             return;
         }
-        if (isUploadingHero) {
-            setSaveError('Please wait for the hero image to finish uploading.');
+        if (isUploadingHero || isUploadingOpenRoles) {
+            setSaveError('Please wait for the image to finish uploading.');
             return;
         }
 
@@ -191,6 +287,7 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
     };
     
     const tabClass = (tab: string) => `px-4 py-2 text-sm font-medium border-b-2 ${activeTab === tab ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`;
+    const openRolesConfig = getOpenRolesConfig(config as ApplicantPageTheme);
 
     return (
         <Modal
@@ -200,14 +297,15 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
             size="4xl"
             footer={
                 <div className="flex justify-end w-full space-x-2">
-                    <Button variant="secondary" onClick={onClose} disabled={isUploadingHero || isSaving}>Cancel</Button>
-                    <Button onClick={handleSave} disabled={isUploadingHero || isSaving}>{isSaving ? 'Saving…' : 'Save Page'}</Button>
+                    <Button variant="secondary" onClick={onClose} disabled={isUploadingHero || isUploadingOpenRoles || isSaving}>Cancel</Button>
+                    <Button onClick={handleSave} disabled={isUploadingHero || isUploadingOpenRoles || isSaving}>{isSaving ? 'Saving…' : 'Save Page'}</Button>
                 </div>
             }
         >
             <div className="flex space-x-2 mb-4 border-b border-gray-200 dark:border-gray-700">
                 <button onClick={() => setActiveTab('general')} className={tabClass('general')}>General</button>
                 <button onClick={() => setActiveTab('hero')} className={tabClass('hero')}>Hero & Colors</button>
+                <button onClick={() => setActiveTab('openRoles')} className={tabClass('openRoles')}>Open Roles</button>
                 <button onClick={() => setActiveTab('benefits')} className={tabClass('benefits')}>Benefits</button>
                 <button onClick={() => setActiveTab('preview')} className={tabClass('preview')}>Live Preview</button>
             </div>
@@ -286,6 +384,67 @@ const ApplicantPageEditor: React.FC<ApplicantPageEditorProps> = ({ isOpen, onClo
                             {saveError && (
                                 <p className="mt-2 text-sm text-red-600" role="alert">{saveError}</p>
                             )}
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === 'openRoles' && (
+                    <div className="space-y-5">
+                        <div className="rounded-lg border border-indigo-100 bg-indigo-50 p-4 dark:border-indigo-900/50 dark:bg-indigo-950/20">
+                            <p className="text-sm text-indigo-800 dark:text-indigo-200">Configure the connected Open Roles page. It automatically reads published job posts from Recruitment → Job Posts.</p>
+                        </div>
+
+                        <div className="flex flex-wrap gap-6">
+                            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                                <input type="checkbox" checked={openRolesConfig.enabled} onChange={e => updateOpenRoles({ enabled: e.target.checked })} className="h-4 w-4 text-indigo-600 rounded" />
+                                Show Open Roles page
+                            </label>
+                            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                                <input type="checkbox" checked={openRolesConfig.published} onChange={e => updateOpenRoles({ published: e.target.checked })} className="h-4 w-4 text-indigo-600 rounded" />
+                                Published
+                            </label>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <Input label="Open Roles Page Name" value={openRolesConfig.pageName} onChange={e => updateOpenRoles({ pageName: e.target.value })} />
+                            <Input label="Open Roles URL Slug" value={openRolesConfig.pageSlug} onChange={e => updateOpenRoles({ pageSlug: e.target.value.toLowerCase().trim().replace(/\s+/g, '-') })} />
+                            <Input label="Navigation Label" value={openRolesConfig.navigationLabel} onChange={e => updateOpenRoles({ navigationLabel: e.target.value })} />
+                            <Input label="Display Order" type="number" value={openRolesConfig.displayOrder} onChange={e => updateOpenRoles({ displayOrder: Number(e.target.value) || 0 })} />
+                        </div>
+
+                        <Input label="Open Roles Hero Heading" value={openRolesConfig.heroHeadline} onChange={e => updateOpenRoles({ heroHeadline: e.target.value })} />
+                        <Textarea label="Open Roles Hero Description" value={openRolesConfig.heroDescription} onChange={e => updateOpenRoles({ heroDescription: e.target.value })} rows={3} />
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Open Roles Hero Image</label>
+                            <FileUploader
+                                onFileUpload={handleOpenRolesImageUpload}
+                                maxSize={HERO_IMAGE_MAX_SIZE}
+                                accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                                allowedMimeTypes={HERO_IMAGE_MIME_TYPES}
+                                allowedExtensions={HERO_IMAGE_EXTENSIONS}
+                                inputId="application-page-open-roles-upload"
+                                disabled={isUploadingOpenRoles || isSaving}
+                            />
+                            {openRolesUploadError && <p className="mt-2 text-sm text-red-600" role="alert">{openRolesUploadError}</p>}
+                            {(openRolesPreviewUrl || openRolesConfig.heroImage) && (
+                                <div className="mt-2 relative h-40 w-full rounded-md overflow-hidden border border-gray-300 dark:border-gray-600">
+                                    <img src={openRolesPreviewUrl || openRolesConfig.heroImage} alt="Open Roles hero preview" className="w-full h-full object-cover" />
+                                    <button onClick={handleRemoveOpenRolesImage} disabled={isUploadingOpenRoles || isSaving} className="absolute top-2 right-2 bg-red-600 text-white px-2 py-1 text-xs rounded shadow-md hover:bg-red-700 transition-colors disabled:opacity-50">Remove Image</button>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="space-y-3">
+                            <div><h3 className="text-sm font-semibold text-gray-900 dark:text-white">Benefits / Highlights</h3><p className="text-xs text-gray-500">These appear above the role list.</p></div>
+                            {openRolesConfig.benefits.map((benefit, index) => (
+                                <div key={benefit.id} className="flex items-start space-x-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-md border dark:border-gray-700">
+                                    <div className="flex-shrink-0"><label className="block text-xs font-medium text-gray-500 mb-1">Icon</label><select value={benefit.icon} onChange={e => handleOpenRolesBenefitChange(index, 'icon', e.target.value)} className="block w-24 pl-2 pr-8 py-1 text-sm border-gray-300 rounded-md dark:bg-gray-700">{icons.map(icon => <option key={icon} value={icon}>{icon}</option>)}</select></div>
+                                    <div className="flex-grow space-y-2"><Input label="Title" value={benefit.title} onChange={e => handleOpenRolesBenefitChange(index, 'title', e.target.value)} /><Input label="Description" value={benefit.description} onChange={e => handleOpenRolesBenefitChange(index, 'description', e.target.value)} /></div>
+                                    <Button variant="danger" size="sm" onClick={() => handleRemoveOpenRolesBenefit(index)} className="mt-6">X</Button>
+                                </div>
+                            ))}
+                            <Button variant="secondary" onClick={handleAddOpenRolesBenefit}>+ Add Highlight</Button>
                         </div>
                     </div>
                 )}

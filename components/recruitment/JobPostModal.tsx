@@ -157,12 +157,19 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
             status,
             publishedAt: status === JobPostStatus.Published && !current.publishedAt ? new Date() : current.publishedAt,
             channels: current.channels || { careerSite: isNewPost, qr: false, social: false, jobBoards: false },
+            applicationOpenAt: current.applicationOpenAt ? new Date(current.applicationOpenAt) : undefined,
+            applicationCloseAt: current.applicationCloseAt ? new Date(current.applicationCloseAt) : undefined,
+            isActive: current.isActive ?? true,
+            isArchived: current.isArchived ?? false,
+            isFeatured: current.isFeatured ?? false,
+            isUrgent: current.isUrgent ?? requisition.isUrgent ?? false,
         } as JobPost;
 
         onSave(payload);
     };
 
     const isPublished = current.status === JobPostStatus.Published;
+    const dateInputValue = (value?: Date) => value ? new Date(value).toISOString().slice(0, 10) : '';
 
     const footer = (
         <div className="flex justify-end w-full space-x-2">
@@ -243,6 +250,48 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Input label="Location Label" name="locationLabel" value={current.locationLabel || ''} onChange={handleChange} placeholder="e.g., Manila, Philippines" />
                     <Input label="Referral Bonus" name="referralBonus" type="number" value={current.referralBonus || ''} onChange={handleChange} />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Application Opens</label>
+                        <input
+                            type="date"
+                            value={dateInputValue(current.applicationOpenAt)}
+                            onChange={e => setCurrent(prev => ({ ...prev, applicationOpenAt: e.target.value ? new Date(`${e.target.value}T00:00:00`) : undefined }))}
+                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        />
+                        <p className="mt-1 text-xs text-gray-500">Leave blank to open immediately.</p>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Application Closes</label>
+                        <input
+                            type="date"
+                            value={dateInputValue(current.applicationCloseAt)}
+                            onChange={e => setCurrent(prev => ({ ...prev, applicationCloseAt: e.target.value ? new Date(`${e.target.value}T23:59:59`) : undefined }))}
+                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        />
+                        <p className="mt-1 text-xs text-gray-500">Leave blank for no closing date.</p>
+                    </div>
+                </div>
+
+                <div className="flex flex-wrap gap-5">
+                    <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                        <input type="checkbox" checked={current.isActive !== false} onChange={e => setCurrent(prev => ({ ...prev, isActive: e.target.checked }))} className="h-4 w-4 text-indigo-600 rounded" />
+                        Active
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                        <input type="checkbox" checked={current.isArchived === true} onChange={e => setCurrent(prev => ({ ...prev, isArchived: e.target.checked }))} className="h-4 w-4 text-indigo-600 rounded" />
+                        Archived
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                        <input type="checkbox" checked={current.isFeatured === true} onChange={e => setCurrent(prev => ({ ...prev, isFeatured: e.target.checked }))} className="h-4 w-4 text-indigo-600 rounded" />
+                        Featured
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                        <input type="checkbox" checked={current.isUrgent === true} onChange={e => setCurrent(prev => ({ ...prev, isUrgent: e.target.checked }))} className="h-4 w-4 text-indigo-600 rounded" />
+                        Urgent
+                    </label>
                 </div>
                 
                 <div>

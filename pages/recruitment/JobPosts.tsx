@@ -59,6 +59,13 @@ const JobPosts: React.FC = () => {
     publishedAt: row.published_at ? new Date(row.published_at) : undefined,
     channels: row.channels ?? { careerSite: false, qr: false, social: false, jobBoards: false },
     referralBonus: row.referral_bonus ?? undefined,
+    applicationOpenAt: row.application_open_at ? new Date(row.application_open_at) : undefined,
+    applicationCloseAt: row.application_close_at ? new Date(row.application_close_at) : undefined,
+    isActive: row.is_active ?? true,
+    isArchived: row.is_archived ?? false,
+    isFeatured: row.is_featured ?? false,
+    isUrgent: row.is_urgent ?? false,
+    departmentLabel: row.department_label ?? undefined,
   }), []);
 
   const mapRequisition = useCallback((row: any): JobRequisition => ({
@@ -147,6 +154,13 @@ const JobPosts: React.FC = () => {
       published_at: postToSave.publishedAt ?? (postToSave.status === JobPostStatus.Published ? new Date().toISOString() : null),
       channels: postToSave.channels || { careerSite: false, qr: false, social: false, jobBoards: false },
       referral_bonus: postToSave.referralBonus ?? null,
+      application_open_at: postToSave.applicationOpenAt?.toISOString() || null,
+      application_close_at: postToSave.applicationCloseAt?.toISOString() || null,
+      is_active: postToSave.isActive ?? true,
+      is_archived: postToSave.isArchived ?? false,
+      is_featured: postToSave.isFeatured ?? false,
+      is_urgent: postToSave.isUrgent ?? false,
+      department_label: postToSave.departmentLabel ?? null,
       created_by_user_id: user?.id || null,
     };
 

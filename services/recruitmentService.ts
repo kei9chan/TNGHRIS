@@ -21,6 +21,9 @@ type JobPostRow = {
   description: string; requirements: string; benefits: string; location_label: string;
   employment_type: string; status: string; published_at?: string | null;
   channels: any; referral_bonus?: number | null;
+  application_open_at?: string | null; application_close_at?: string | null;
+  is_active?: boolean | null; is_archived?: boolean | null; is_featured?: boolean | null;
+  is_urgent?: boolean | null; department_label?: string | null;
 };
 
 type CandidateRow = {
@@ -81,6 +84,13 @@ const mapJobPost = (r: JobPostRow): JobPost => ({
   publishedAt: r.published_at ? new Date(r.published_at) : undefined,
   channels: r.channels || { careerSite: false, qr: false, social: false, jobBoards: false },
   referralBonus: r.referral_bonus ?? undefined,
+  applicationOpenAt: r.application_open_at ? new Date(r.application_open_at) : undefined,
+  applicationCloseAt: r.application_close_at ? new Date(r.application_close_at) : undefined,
+  isActive: r.is_active ?? true,
+  isArchived: r.is_archived ?? false,
+  isFeatured: r.is_featured ?? false,
+  isUrgent: r.is_urgent ?? false,
+  departmentLabel: r.department_label || undefined,
 });
 
 const mapCandidate = (r: CandidateRow): Candidate => ({
@@ -175,6 +185,13 @@ export const saveJobPost = async (post: Partial<JobPost>): Promise<JobPost> => {
     location_label: post.locationLabel, employment_type: post.employmentType,
     status: post.status, channels: post.channels || {},
     referral_bonus: post.referralBonus ?? null,
+    application_open_at: post.applicationOpenAt?.toISOString() || null,
+    application_close_at: post.applicationCloseAt?.toISOString() || null,
+    is_active: post.isActive ?? true,
+    is_archived: post.isArchived ?? false,
+    is_featured: post.isFeatured ?? false,
+    is_urgent: post.isUrgent ?? false,
+    department_label: post.departmentLabel || null,
   };
   const { data, error } = post.id
     ? await supabase.from('job_posts').update(payload).eq('id', post.id).select().single()

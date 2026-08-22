@@ -1658,6 +1658,13 @@ export interface JobPost {
     jobBoards: boolean;
   };
   referralBonus?: number;
+  applicationOpenAt?: Date;
+  applicationCloseAt?: Date;
+  isActive?: boolean;
+  isArchived?: boolean;
+  isFeatured?: boolean;
+  isUrgent?: boolean;
+  departmentLabel?: string;
 }
 
 export enum CandidateSource {
@@ -1830,6 +1837,26 @@ export interface JobPostVisualTemplate {
   mode?: TemplateMode;
 }
 
+export interface OpenRolesBenefit {
+  id: string;
+  title: string;
+  description: string;
+  icon: 'rocket' | 'smile' | 'wallet' | 'heart' | 'star';
+}
+
+export interface OpenRolesConfig {
+  enabled: boolean;
+  published: boolean;
+  pageName: string;
+  pageSlug: string;
+  navigationLabel: string;
+  displayOrder: number;
+  heroHeadline: string;
+  heroDescription: string;
+  heroImage?: string;
+  benefits: OpenRolesBenefit[];
+}
+
 // --- NEW: Application Page / Career Site Builder Types ---
 export interface ApplicantPageTheme {
   id: string;
@@ -1868,6 +1895,7 @@ export interface ApplicantPageTheme {
   contactEmail: string;
   ctaText?: string;
   ctaLink?: string;
+  openRoles?: OpenRolesConfig;
 }
 
 // =================================================================================

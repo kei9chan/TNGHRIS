@@ -1,10 +1,9 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { ApplicantPageTheme, JobPost, JobPostStatus } from '../../types';
+import { ApplicantPageTheme, JobPost } from '../../types';
 import { useParams, Link } from 'react-router-dom';
-import Modal from '../ui/Modal';
-import PublicJobApplicationForm from './PublicJobApplicationForm';
 import { supabase } from '../../services/supabaseClient';
+import { getOpenRolesConfig, getOpenRolesPath, getRolePath, isJobCurrentlyOpen, mapPublicJobPost } from '../../services/publicCareersService';
 
 interface CareerPagePreviewProps {
     theme?: ApplicantPageTheme;
@@ -29,9 +28,6 @@ const iconMap = {
 
 const CareerPagePreview: React.FC<CareerPagePreviewProps> = ({ theme: propTheme, isPublic, isPreview }) => {
     const { slug } = useParams<{ slug: string }>();
-    const [selectedJob, setSelectedJob] = useState<JobPost | null>(null);
-    const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
-
     const [theme, setTheme] = useState<ApplicantPageTheme | null>(propTheme || null);
     const [jobs, setJobs] = useState<JobPost[]>([]);
     const [buName, setBuName] = useState<string>('');
@@ -95,27 +91,9 @@ const CareerPagePreview: React.FC<CareerPagePreviewProps> = ({ theme: propTheme,
                     const { data: jobRows, error: jobErr } = await supabase
                         .from('job_posts')
                         .select('*')
-                        .eq('status', 'Published')
                         .eq('business_unit_id', resolvedTheme.businessUnitId);
                     if (jobErr) throw jobErr;
-                    setJobs(
-                        (jobRows || []).map((row: any) => ({
-                            id: row.id,
-                            requisitionId: row.requisition_id,
-                            businessUnitId: row.business_unit_id,
-                            title: row.title,
-                            slug: row.slug,
-                            description: row.description || '',
-                            requirements: row.requirements || '',
-                            benefits: row.benefits || '',
-                            locationLabel: row.location_label || 'Location',
-                            employmentType: row.employment_type || 'Full-Time',
-                            status: row.status as JobPostStatus,
-                            publishedAt: row.published_at ? new Date(row.published_at) : undefined,
-                            channels: row.channels || { careerSite: true, qr: false, social: false, jobBoards: false },
-                            referralBonus: row.referral_bonus || undefined,
-                        }))
-                    );
+                    setJobs((jobRows || []).map(mapPublicJobPost));
                 } else {
                     setJobs([]);
                 }
@@ -137,7 +115,7 @@ const CareerPagePreview: React.FC<CareerPagePreviewProps> = ({ theme: propTheme,
     }, [propTheme, slug, mapTheme, isPublic]);
 
     const openJobs = useMemo(
-        () => jobs.filter(j => j.status === JobPostStatus.Published),
+        () => jobs.filter(j => isJobCurrentlyOpen(j)),
         [jobs]
     );
 
@@ -149,16 +127,6 @@ const CareerPagePreview: React.FC<CareerPagePreviewProps> = ({ theme: propTheme,
         return <div className="p-10 text-center">Page not found.</div>;
     }
 
-    const handleApplyClick = (job: JobPost) => {
-        if (isPreview) return;
-        setSelectedJob(job);
-    };
-
-    const handleApplicationSuccess = () => {
-        setSelectedJob(null);
-        setIsSuccessModalOpen(true);
-    };
-
     const scrollToJobs = () => {
         const element = document.getElementById('jobs');
         if (element) {
@@ -166,13 +134,20 @@ const CareerPagePreview: React.FC<CareerPagePreviewProps> = ({ theme: propTheme,
         }
     };
 
+    const openRolesPath = getOpenRolesPath(theme.slug, theme);
+    const openRolesConfig = getOpenRolesConfig(theme);
+
     return (
         <div className="min-h-screen font-sans" style={{ backgroundColor: theme.backgroundColor }}>
             {/* Public Nav for Context */}
             {isPublic && (
-                <div className="bg-white shadow p-4 flex justify-between items-center sticky top-0 z-50">
-                    <span className="font-bold text-xl text-gray-800">{theme.pageTitle}</span>
-                    <Link to="/login" className="text-sm text-blue-600 hover:underline">Admin Login</Link>
+                <div className="bg-white shadow p-4 flex justify-between items-center sticky top-0 z-50 gap-4">
+                    <Link to={`/careers/${theme.slug}`} className="font-bold text-xl text-gray-800 truncate">{theme.pageTitle}</Link>
+                    <nav className="flex items-center gap-4 text-sm font-medium">
+                        {openRolesConfig.enabled && openRolesConfig.published && <Link to={openRolesPath} className="text-gray-600 hover:text-gray-900">{openRolesConfig.navigationLabel}</Link>}
+                        {openRolesConfig.enabled && openRolesConfig.published && <Link to={openRolesPath} className="px-3 py-2 rounded-md text-white" style={{ backgroundColor: theme.primaryColor }}>Apply Now</Link>}
+                        <Link to="/login" className="text-sm text-blue-600 hover:underline">Admin Login</Link>
+                    </nav>
                 </div>
             )}
 
@@ -190,13 +165,23 @@ const CareerPagePreview: React.FC<CareerPagePreviewProps> = ({ theme: propTheme,
                                 </p>
                                 <div className="mt-5 sm:mt-8 sm:flex sm:justify-center lg:justify-start">
                                     <div className="rounded-md shadow">
-                                        <button 
-                                            onClick={scrollToJobs}
-                                            className="w-full flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white md:py-4 md:text-lg transition-transform hover:scale-105"
-                                            style={{ backgroundColor: theme.primaryColor }}
-                                        >
-                                            View Open Roles
-                                        </button>
+                                        {isPreview || !openRolesConfig.enabled || !openRolesConfig.published ? (
+                                            <button
+                                                onClick={scrollToJobs}
+                                                className="w-full flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white md:py-4 md:text-lg transition-transform hover:scale-105"
+                                                style={{ backgroundColor: theme.primaryColor }}
+                                            >
+                                                View Open Roles
+                                            </button>
+                                        ) : (
+                                            <Link
+                                                to={openRolesPath}
+                                                className="w-full flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white md:py-4 md:text-lg transition-transform hover:scale-105"
+                                                style={{ backgroundColor: theme.primaryColor }}
+                                            >
+                                                View Open Roles
+                                            </Link>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -262,17 +247,17 @@ const CareerPagePreview: React.FC<CareerPagePreviewProps> = ({ theme: propTheme,
                              {openJobs.map(job => (
                                  <div key={job.id} className="bg-white overflow-hidden shadow rounded-lg divide-y divide-gray-200 hover:shadow-lg transition-shadow">
                                      <div className="px-4 py-5 sm:p-6">
+                                         <div className="flex flex-wrap gap-2 mb-2">
+                                             {job.isFeatured && <span className="px-2 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800">Featured</span>}
+                                             {job.isUrgent && <span className="px-2 py-1 rounded-full text-xs font-bold bg-red-100 text-red-800">Urgent</span>}
+                                         </div>
                                          <h3 className="text-lg leading-6 font-medium text-gray-900">{job.title}</h3>
                                          <div className="mt-2 max-w-xl text-sm text-gray-500">
-                                             <p>{job.locationLabel} • {job.employmentType}</p>
+                                             <p>{job.locationLabel} • {job.employmentType} • {job.departmentLabel}</p>
                                          </div>
-                                         <div className="mt-5">
-                                             <button 
-                                                onClick={() => handleApplyClick(job)}
-                                                className="inline-flex items-center justify-center px-4 py-2 border border-transparent font-medium rounded-md text-indigo-700 bg-indigo-100 hover:bg-indigo-200 sm:text-sm transition-colors"
-                                            >
-                                                 Apply Now
-                                             </button>
+                                         <div className="mt-5 flex flex-wrap gap-3">
+                                             <Link to={isPreview ? '#' : getRolePath(theme.slug, job)} className="inline-flex items-center justify-center px-4 py-2 border font-medium rounded-md text-sm" style={{ borderColor: theme.primaryColor, color: theme.primaryColor }}>View Role</Link>
+                                             {!isPreview && <Link to={`/apply/${job.id}`} className="inline-flex items-center justify-center px-4 py-2 border border-transparent font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 sm:text-sm transition-colors" style={{ backgroundColor: theme.primaryColor }}>Apply Now</Link>}
                                          </div>
                                      </div>
                                  </div>
@@ -295,48 +280,6 @@ const CareerPagePreview: React.FC<CareerPagePreviewProps> = ({ theme: propTheme,
                 </div>
             </footer>
 
-            {/* APPLICATION MODAL */}
-            {selectedJob && (
-                <Modal
-                    isOpen={!!selectedJob}
-                    onClose={() => setSelectedJob(null)}
-                    title={`Apply for ${selectedJob.title}`}
-                    size="lg"
-                >
-                    <PublicJobApplicationForm 
-                        jobPost={selectedJob}
-                        onClose={() => setSelectedJob(null)}
-                        onSuccess={handleApplicationSuccess}
-                    />
-                </Modal>
-            )}
-
-            {/* SUCCESS MODAL */}
-            <Modal
-                isOpen={isSuccessModalOpen}
-                onClose={() => setIsSuccessModalOpen(false)}
-                title="Application Submitted"
-            >
-                <div className="text-center py-6">
-                    <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 mb-4">
-                        <svg className="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                    </div>
-                    <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-white">Success!</h3>
-                    <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                        Your application has been successfully submitted. Our team will review your details and get back to you shortly.
-                    </p>
-                    <div className="mt-6">
-                        <button
-                            onClick={() => setIsSuccessModalOpen(false)}
-                            className="inline-flex justify-center px-4 py-2 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-500"
-                        >
-                            Close
-                        </button>
-                    </div>
-                </div>
-            </Modal>
         </div>
     );
 };

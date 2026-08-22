@@ -1,13 +1,14 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { JobPostStatus, CandidateSource, ApplicationStage, JobPost } from '../types';
+import { CandidateSource, ApplicationStage, JobPost } from '../types';
 import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
 import Textarea from '../components/ui/Textarea';
 import Button from '../components/ui/Button';
 import FileUploader from '../components/ui/FileUploader';
 import { supabase } from '../services/supabaseClient';
+import { isJobCurrentlyOpen, mapPublicJobPost } from '../services/publicCareersService';
 
 const Apply: React.FC = () => {
     const { jobPostId } = useParams<{ jobPostId: string }>();
@@ -42,29 +43,7 @@ const Apply: React.FC = () => {
             if (postRes.error) throw postRes.error;
             if (buRes.error) throw buRes.error;
             setBusinessUnits(buRes.data || []);
-            setJobPosts((postRes.data || []).map((p: any) => {
-                const statusRaw = (p.status || '').toString().toLowerCase();
-                const status =
-                    statusRaw === 'published' ? JobPostStatus.Published :
-                    statusRaw === 'paused' ? JobPostStatus.Paused :
-                    statusRaw === 'closed' ? JobPostStatus.Closed :
-                    JobPostStatus.Draft;
-                return {
-                    id: p.id,
-                    requisitionId: p.requisition_id,
-                    businessUnitId: p.business_unit_id,
-                    title: p.title,
-                    slug: p.slug,
-                    description: p.description,
-                    requirements: p.requirements ?? '',
-                    benefits: p.benefits ?? '',
-                    locationLabel: p.location_label ?? '',
-                    employmentType: p.employment_type,
-                    status,
-                    publishedAt: p.published_at ? new Date(p.published_at) : undefined,
-                    channels: p.channels || { careerSite: false, qr: false, social: false, jobBoards: false },
-                } as JobPost;
-            }));
+            setJobPosts((postRes.data || []).map(mapPublicJobPost));
         } catch (err) {
             console.error('Failed to load jobs', err);
             setError('Failed to load job posts. Please try again later.');
@@ -84,19 +63,18 @@ const Apply: React.FC = () => {
 
     // Get ALL available job posts for the career site.
     const availableJobPosts = useMemo(() => {
-        return jobPosts.filter(post => 
-            post.status === JobPostStatus.Published &&
-            post.channels?.careerSite
-        );
+        return jobPosts.filter(post => isJobCurrentlyOpen(post));
     }, [jobPosts]);
 
     // Pre-fill form if accessed via a direct link
     useEffect(() => {
         if (jobPostId) {
             const post = jobPosts.find(p => p.id === jobPostId);
-            if (post) {
+            if (post && isJobCurrentlyOpen(post)) {
                 setSelectedBuId(post.businessUnitId);
                 setSelectedJobPostId(post.id);
+            } else if (post) {
+                setError('This job post is no longer accepting applications.');
             }
         }
     }, [jobPostId, jobPosts]);
@@ -127,7 +105,7 @@ const Apply: React.FC = () => {
         setIsSubmitting(true);
 
         const jobPost = jobPosts.find(p => p.id === selectedJobPostId);
-        if (!jobPost) {
+        if (!jobPost || !isJobCurrentlyOpen(jobPost)) {
             setError('Selected job post is no longer available.');
             setIsSubmitting(false);
             return;
