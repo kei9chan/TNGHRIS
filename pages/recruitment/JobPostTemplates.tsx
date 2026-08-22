@@ -99,7 +99,6 @@ const JobPostTemplates: React.FC = () => {
     const [selectedTemplate, setSelectedTemplate] = useState<JobPostTemplateRecord | null>(null);
     const [loadError, setLoadError] = useState('');
     const [saveError, setSaveError] = useState('');
-    const [hasAutoOpenedDemo, setHasAutoOpenedDemo] = useState(false);
 
     const sortTemplates = useCallback((items: JobPostTemplateRecord[]) => [...items].sort((left, right) => {
         if (left.templateKey === DEMO_TEMPLATE_KEY) return -1;
@@ -147,17 +146,6 @@ const JobPostTemplates: React.FC = () => {
     }, [canManage, canView, sortTemplates, user?.id]);
 
     useEffect(() => { loadTemplates(); }, [loadTemplates]);
-
-    useEffect(() => {
-        if (!isLoading && canManage && !hasAutoOpenedDemo && templates.length > 0) {
-            const demo = templates.find(template => template.templateKey === DEMO_TEMPLATE_KEY) || templates[0];
-            if (demo) {
-                setSelectedTemplate(demo);
-                setIsGeneratorOpen(true);
-            }
-            setHasAutoOpenedDemo(true);
-        }
-    }, [canManage, hasAutoOpenedDemo, isLoading, templates]);
 
     const handleCreate = () => {
         setSaveError('');

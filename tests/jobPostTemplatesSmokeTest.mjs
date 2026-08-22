@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const presets = fs.readFileSync(path.join(root, 'components/recruitment/jobPostTemplatePresets.ts'), 'utf8');
 const generator = fs.readFileSync(path.join(root, 'components/recruitment/JobPostTemplateGenerator.tsx'), 'utf8');
+const templatesPage = fs.readFileSync(path.join(root, 'pages/recruitment/JobPostTemplates.tsx'), 'utf8');
 const migration = fs.readFileSync(path.join(root, 'supabase/migrations/20260822050000_job_post_template_starters.sql'), 'utf8');
 
 const names = [
@@ -28,6 +29,7 @@ assert.ok(generator.includes("event.key === 'Escape'"), 'editor must support Esc
 assert.ok(generator.includes('scrollHeight'), 'image export must measure the full preview height');
 assert.ok(generator.includes("exportNode.style.overflow = 'visible'"), 'image export must not clip overflow');
 assert.ok(generator.includes('CONTENT_LIMITS'), 'editor must validate content length');
+assert.ok(!templatesPage.includes('hasAutoOpenedDemo'), 'templates list must not auto-open the generator');
 for (const column of ['template_key', 'business_unit', 'status', 'is_starter', 'sections', 'cta_link', 'brand_wordmark']) {
   assert.ok(migration.includes(`add column if not exists ${column}`), `migration missing ${column}`);
 }
