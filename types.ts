@@ -1700,6 +1700,10 @@ export interface RoleDetails {
   faqs?: RoleFAQ[];
   roleImage?: string;
   allowResumeLink?: boolean;
+  collectCurrentCity?: boolean;
+  collectLinkedIn?: boolean;
+  collectCurrentEmployer?: boolean;
+  collectEarliestStartDate?: boolean;
   applicationQuestions?: RoleApplicationQuestion[];
 }
 
@@ -1761,6 +1765,7 @@ export interface Application {
   sourceApplicationPage?: string;
   applicationReference?: string;
   submissionToken?: string;
+  resumeLink?: string;
   resumeFileUrl?: string;
   resumeFilePath?: string;
   coverLetter?: string;

@@ -18,7 +18,12 @@ import {
 } from '../../services/publicCareersService';
 
 const RESUME_BUCKET = 'recruitment-uploads';
-const MAX_RESUME_SIZE = 5 * 1024 * 1024;
+// Keep the shared bucket limit unchanged because it is also used by onboarding
+// and existing recruitment records. This public form rejects files at 1 MB or
+// larger before they reach storage.
+const MAX_RESUME_SIZE = 1024 * 1024 - 1;
+const RESUME_SIZE_ERROR = 'Your resume file must be less than 1 MB.';
+const MISSING_RESUME_ERROR = 'Please provide either a resume link or upload your resume.';
 const RESUME_MIME_TYPES = [
   'application/pdf',
   'image/jpeg',
@@ -34,15 +39,11 @@ type UploadStatus = 'idle' | 'uploading' | 'success' | 'error';
 
 interface FormState {
   fullName: string;
-  firstName: string;
-  lastName: string;
   email: string;
   mobile: string;
   currentCity: string;
   linkedinUrl: string;
   currentEmployer: string;
-  yearsRelevantExperience: string;
-  whyRole: string;
   earliestStartDate: string;
   resumeLink: string;
   resumeFileName: string;
@@ -61,15 +62,11 @@ interface SubmissionResult {
 
 const initialForm: FormState = {
   fullName: '',
-  firstName: '',
-  lastName: '',
   email: '',
   mobile: '',
   currentCity: '',
   linkedinUrl: '',
   currentEmployer: '',
-  yearsRelevantExperience: '',
-  whyRole: '',
   earliestStartDate: '',
   resumeLink: '',
   resumeFileName: '',
@@ -112,8 +109,6 @@ const displayDate = (value?: string): string => {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
 };
 
-const questionLabel = (question: RoleApplicationQuestion): string => `${question.label}${question.required ? ' *' : ''}`;
-
 const FieldLabel: React.FC<{ htmlFor: string; children: React.ReactNode; required?: boolean }> = ({ htmlFor, children, required }) => (
   <label htmlFor={htmlFor} className="mb-1.5 block text-sm font-semibold text-gray-800">
     {children}{required ? <span className="text-red-500"> *</span> : null}
@@ -140,14 +135,10 @@ const CareerHeader: React.FC<{ theme: ApplicantPageTheme; openRolesPath: string 
   </header>
 );
 
-const Stepper: React.FC<{ step: 1 | 2 | 3; primaryColor: string }> = ({ step, primaryColor }) => {
-  const steps = [
-    ['1', 'Personal Info'],
-    ['2', 'Experience'],
-    ['3', 'Final Details'],
-  ];
+const Stepper: React.FC<{ step: 1 | 2; primaryColor: string; hasQuestions: boolean }> = ({ step, primaryColor, hasQuestions }) => {
+  const steps = hasQuestions ? [['1', 'Application Details'], ['2', 'Role Questions']] : [['1', 'Application Details']];
   return (
-    <div className="mb-8 grid grid-cols-3 gap-2 border-b border-gray-200 pb-5">
+    <div className={`mb-8 grid gap-2 border-b border-gray-200 pb-5 ${hasQuestions ? 'grid-cols-2' : 'grid-cols-1'}`}>
       {steps.map(([number, label], index) => {
         const active = step === index + 1;
         const complete = step > index + 1;
@@ -209,7 +200,7 @@ const CareerApplicationPage: React.FC = () => {
   const [roleClosed, setRoleClosed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2>(1);
   const [form, setForm] = useState<FormState>(initialForm);
   const [validationError, setValidationError] = useState('');
   const [submitError, setSubmitError] = useState('');
@@ -257,6 +248,10 @@ const CareerApplicationPage: React.FC = () => {
         if (!cancelled) {
           setTheme(resolvedTheme);
           setSelectedJob(candidate);
+          setStep(1);
+          setForm(initialForm);
+          setValidationError('');
+          setSubmitError('');
           setRoleClosed(Boolean(roleSlug && (!candidate || !isJobCurrentlyOpen(candidate))));
           setOpenJobs(jobs.filter(job => isJobCurrentlyOpen(job)));
         }
@@ -276,9 +271,13 @@ const CareerApplicationPage: React.FC = () => {
   const isRoleApplication = Boolean(roleSlug);
   const roleDetails = selectedJob?.roleDetails || {};
   const allowResumeLink = roleDetails.allowResumeLink !== false;
-  const questions = useMemo(() => roleDetails.applicationQuestions || [], [roleDetails.applicationQuestions]);
-  const stepTwoQuestions = useMemo(() => questions.filter(question => question.step !== 3), [questions]);
-  const stepThreeQuestions = useMemo(() => questions.filter(question => question.step === 3), [questions]);
+  const collectCurrentCity = roleDetails.collectCurrentCity === true;
+  const collectLinkedIn = roleDetails.collectLinkedIn === true;
+  const collectCurrentEmployer = roleDetails.collectCurrentEmployer === true;
+  const collectEarliestStartDate = roleDetails.collectEarliestStartDate === true;
+  const roleQuestions = useMemo(() => roleDetails.applicationQuestions || [], [roleDetails.applicationQuestions]);
+  const hasRoleQuestions = roleQuestions.length > 0;
+  const totalSteps = hasRoleQuestions ? 2 : 1;
   const benefits = theme?.benefits?.length ? theme.benefits : (openRolesConfig?.benefits || []);
   const roleTitle = selectedJob?.title || 'General Application';
 
@@ -294,7 +293,7 @@ const CareerApplicationPage: React.FC = () => {
     });
     setValidationError('');
     try {
-      if (file.size > MAX_RESUME_SIZE) throw new Error('Resume files must be 5 MB or smaller.');
+      if (file.size > MAX_RESUME_SIZE) throw new Error(RESUME_SIZE_ERROR);
       const lowerName = file.name.toLowerCase();
       const validType = RESUME_MIME_TYPES.includes(file.type) || (file.type === '' && RESUME_EXTENSIONS.some(extension => lowerName.endsWith(extension)));
       if (!validType) throw new Error(`Unsupported resume type. Use ${RESUME_EXTENSIONS.join(', ')}.`);
@@ -334,51 +333,45 @@ const CareerApplicationPage: React.FC = () => {
     });
   };
 
-  const validateStep = (targetStep: 1 | 2 | 3): boolean => {
+  const validateStep = (targetStep: 1 | 2): boolean => {
     const errors: string[] = [];
     if (targetStep === 1) {
-      if (!form.fullName.trim() && (!form.firstName.trim() || !form.lastName.trim())) errors.push('Enter your full name.');
+      if (!form.fullName.trim()) errors.push('Enter your full name.');
       if (!form.email.trim() || !/^\S+@\S+\.\S+$/.test(form.email.trim())) errors.push('Enter a valid email address.');
       if (!form.mobile.trim()) errors.push('Enter your mobile number.');
-      if (!form.currentCity.trim()) errors.push('Enter your current city or location.');
-      if (!form.currentEmployer.trim()) errors.push('Enter your current or most recent employer.');
-      if (!form.yearsRelevantExperience.trim()) errors.push('Tell us your years of relevant experience.');
-      if (!form.whyRole.trim()) errors.push(isRoleApplication ? 'Tell us why you want this role.' : 'Tell us why you want to join us.');
-      if (!form.earliestStartDate) errors.push('Select your earliest available start date.');
-      const hasValidResumeLink = allowResumeLink && form.resumeLink.trim() && isValidUrl(form.resumeLink.trim());
+      if (collectCurrentCity && !form.currentCity.trim()) errors.push('Enter your current city or location.');
+      const resumeLinkValue = form.resumeLink.trim();
+      const hasValidResumeLink = allowResumeLink && Boolean(resumeLinkValue) && isValidUrl(resumeLinkValue);
       const hasUploadedResume = form.resumeUploadStatus === 'success' && Boolean(form.resumeFileUrl);
       if (!hasUploadedResume && !hasValidResumeLink) {
-        errors.push(allowResumeLink ? 'Upload a resume or provide a valid resume link.' : 'Upload a resume before continuing.');
+        errors.push(resumeLinkValue ? 'Please enter a valid resume link.' : MISSING_RESUME_ERROR);
       }
-      if (form.resumeUploadStatus === 'uploading') errors.push('Wait for the resume upload to finish.');
-      if (form.resumeUploadStatus === 'error') errors.push('Fix the resume upload error before continuing.');
+      if (form.resumeUploadStatus === 'uploading' && !hasValidResumeLink) errors.push('Wait for the resume upload to finish.');
+      if (form.resumeUploadStatus === 'error' && !hasValidResumeLink) errors.push('Fix the resume upload error before continuing.');
     }
-    if (targetStep === 2) {
-      stepTwoQuestions.filter(question => question.required && !String(form.roleAnswers[question.id] || '').trim()).forEach(question => errors.push(`Answer: ${question.label}`));
+    if (targetStep === 2 && hasRoleQuestions) {
+      roleQuestions.filter(question => question.required && !String(form.roleAnswers[question.id] || '').trim()).forEach(question => errors.push(`Answer: ${question.label}`));
     }
-    if (targetStep === 3) {
-      stepThreeQuestions.filter(question => question.required && !String(form.roleAnswers[question.id] || '').trim()).forEach(question => errors.push(`Answer: ${question.label}`));
-      if (!form.consent) errors.push('Accept the privacy and consent agreement to submit.');
-    }
+    if (targetStep === totalSteps && !form.consent) errors.push('Accept the privacy and consent agreement to submit.');
     const message = errors.join(' ');
     setValidationError(message);
     return !message;
   };
 
   const goToNextStep = () => {
-    if (!validateStep(step)) return;
+    if (!hasRoleQuestions || step !== 1 || !validateStep(1)) return;
     setValidationError('');
-    if (step < 3) setStep((step + 1) as 2 | 3);
+    setStep(2);
   };
 
   const goToPreviousStep = () => {
     setValidationError('');
-    if (step > 1) setStep((step - 1) as 1 | 2);
+    if (hasRoleQuestions && step > 1) setStep(1);
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (hasSubmitted || isSubmitting || submitLock.current || !validateStep(3)) return;
+    if (hasSubmitted || isSubmitting || submitLock.current || !validateStep(totalSteps as 1 | 2)) return;
     submitLock.current = true;
     setSubmitError('');
     setIsSubmitting(true);
@@ -396,9 +389,10 @@ const CareerApplicationPage: React.FC = () => {
       }
 
       const nameParts = form.fullName.trim().split(/\s+/).filter(Boolean);
-      const firstName = form.firstName.trim() || nameParts[0] || 'Applicant';
-      const lastName = form.lastName.trim() || nameParts.slice(1).join(' ') || 'Applicant';
-      const resumeValue = form.resumeFileUrl || (allowResumeLink ? form.resumeLink.trim() : '') || null;
+      const firstName = nameParts[0] || 'Applicant';
+      const lastName = nameParts.slice(1).join(' ') || 'Applicant';
+      const resumeLinkValue = allowResumeLink && isValidUrl(form.resumeLink.trim()) ? form.resumeLink.trim() : null;
+      const resumeValue = form.resumeFileUrl || resumeLinkValue || null;
       const applicationReference = createApplicationReference();
       const submissionToken = newId();
       const sourceApplicationPage = window.location.pathname;
@@ -409,14 +403,13 @@ const CareerApplicationPage: React.FC = () => {
         email: form.email.trim(),
         phone: form.mobile.trim(),
         source: CandidateSource.CareerSite,
-        portfolio_url: form.linkedinUrl.trim() || resumeValue,
+        portfolio_url: (collectLinkedIn ? form.linkedinUrl.trim() : '') || resumeLinkValue || resumeValue,
         tags: [],
         consent_at: new Date().toISOString(),
-        current_city: form.currentCity.trim(),
-        linkedin_url: form.linkedinUrl.trim() || null,
-        current_employer: form.currentEmployer.trim(),
-        years_relevant_experience: form.yearsRelevantExperience.trim(),
-        earliest_start_date: form.earliestStartDate || null,
+        current_city: collectCurrentCity ? form.currentCity.trim() : null,
+        linkedin_url: collectLinkedIn ? (form.linkedinUrl.trim() || null) : null,
+        current_employer: collectCurrentEmployer ? (form.currentEmployer.trim() || null) : null,
+        earliest_start_date: collectEarliestStartDate ? (form.earliestStartDate || null) : null,
       }).select().single();
       if (candidateError) throw candidateError;
 
@@ -432,8 +425,9 @@ const CareerApplicationPage: React.FC = () => {
         employment_type_snapshot: liveJob?.employmentType || null,
         work_arrangement_snapshot: liveJob?.roleDetails?.workArrangement || null,
         stage: ApplicationStage.New,
-        cover_letter: form.whyRole.trim(),
+        cover_letter: null,
         resume_url: resumeValue,
+        resume_link: resumeLinkValue,
         resume_file_url: form.resumeFileUrl || null,
         resume_file_path: form.resumeFilePath || null,
         role_answers: form.roleAnswers,
@@ -497,7 +491,8 @@ const CareerApplicationPage: React.FC = () => {
   }
 
   const updateAnswer = (questionId: string, value: string) => updateForm({ roleAnswers: { ...form.roleAnswers, [questionId]: value } });
-  const nameRequired = !form.fullName.trim() && (!form.firstName.trim() || !form.lastName.trim());
+  const nameRequired = !form.fullName.trim();
+  const hasValidResumeLink = allowResumeLink && Boolean(form.resumeLink.trim()) && isValidUrl(form.resumeLink.trim());
 
   return (
     <div className="min-h-screen font-sans" style={{ backgroundColor: theme.backgroundColor }}>
@@ -516,6 +511,7 @@ const CareerApplicationPage: React.FC = () => {
               <div>
                 <h1 className="text-4xl font-extrabold tracking-tight text-gray-900 sm:text-5xl">{isRoleApplication ? <>Apply for <span style={{ color: theme.primaryColor }}>{roleTitle}</span></> : <>Submit a <span style={{ color: theme.primaryColor }}>General Application</span></>}</h1>
                 <p className="mt-4 max-w-3xl text-lg text-gray-600">Fast application. Clear next steps. We review every serious candidate.</p>
+                <p className="mt-2 text-sm font-semibold text-gray-500">Takes about {hasRoleQuestions ? '2' : '1'} minute{hasRoleQuestions ? 's' : ''}.</p>
                 <div className="mt-6 flex flex-wrap gap-2 text-sm">
                   {[
                     ['Location', selectedJob?.locationLabel],
@@ -533,22 +529,22 @@ const CareerApplicationPage: React.FC = () => {
 
         <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[minmax(0,1fr)_350px] lg:px-8 lg:py-12">
           <form onSubmit={handleSubmit} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-8">
-            <Stepper step={step} primaryColor={theme.primaryColor} />
+            <Stepper step={step} primaryColor={theme.primaryColor} hasQuestions={hasRoleQuestions} />
             {validationError && <div className="mb-6 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{validationError}</div>}
             {submitError && <div className="mb-6 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{submitError}</div>}
 
             {step === 1 && <section className="space-y-6">
-              <div><h2 className="text-2xl font-bold text-gray-900">Personal Information</h2><p className="mt-1 text-sm text-gray-600">Tell us a little about yourself.</p></div>
+              <div><h2 className="text-2xl font-bold text-gray-900">Application Details</h2><p className="mt-1 text-sm text-gray-600">Share the essentials so our hiring team can get to know you.</p></div>
               <div className="grid gap-5 md:grid-cols-2">
                 <div><FieldLabel htmlFor="full-name" required={nameRequired}>Full name</FieldLabel><input id="full-name" value={form.fullName} onChange={event => updateForm({ fullName: event.target.value })} className={INPUT_CLASS} placeholder="e.g. Juan Dela Cruz" /></div>
                 <div><FieldLabel htmlFor="email" required>Email address</FieldLabel><input id="email" type="email" value={form.email} onChange={event => updateForm({ email: event.target.value })} className={INPUT_CLASS} placeholder="e.g. juan@email.com" /></div>
-                <div><FieldLabel htmlFor="first-name">First name</FieldLabel><input id="first-name" value={form.firstName} onChange={event => updateForm({ firstName: event.target.value })} className={INPUT_CLASS} placeholder="Juan" /></div>
-                <div><FieldLabel htmlFor="last-name">Last name</FieldLabel><input id="last-name" value={form.lastName} onChange={event => updateForm({ lastName: event.target.value })} className={INPUT_CLASS} placeholder="Dela Cruz" /></div>
                 <div><FieldLabel htmlFor="mobile" required>Mobile number</FieldLabel><input id="mobile" type="tel" value={form.mobile} onChange={event => updateForm({ mobile: event.target.value })} className={INPUT_CLASS} placeholder="+63 912 345 6789" /></div>
-                <div><FieldLabel htmlFor="current-city" required>Current city / location</FieldLabel><input id="current-city" value={form.currentCity} onChange={event => updateForm({ currentCity: event.target.value })} className={INPUT_CLASS} placeholder="e.g. Olongapo City, Zambales" /></div>
-                <div className="md:col-span-2"><FieldLabel htmlFor="linkedin">LinkedIn or portfolio link <span className="font-normal text-gray-500">(optional)</span></FieldLabel><input id="linkedin" type="url" value={form.linkedinUrl} onChange={event => updateForm({ linkedinUrl: event.target.value })} className={INPUT_CLASS} placeholder="https://linkedin.com/in/yourprofile" /></div>
+                {collectCurrentCity && <div><FieldLabel htmlFor="current-city" required>Current city / location</FieldLabel><input id="current-city" value={form.currentCity} onChange={event => updateForm({ currentCity: event.target.value })} className={INPUT_CLASS} placeholder="e.g. Olongapo City, Zambales" /></div>}
+                {collectLinkedIn && <div className="md:col-span-2"><FieldLabel htmlFor="linkedin">LinkedIn or portfolio link <span className="font-normal text-gray-500">(optional)</span></FieldLabel><input id="linkedin" type="url" value={form.linkedinUrl} onChange={event => updateForm({ linkedinUrl: event.target.value })} className={INPUT_CLASS} placeholder="https://linkedin.com/in/yourprofile" /></div>}
                 <div className="md:col-span-2">
-                  <FieldLabel htmlFor="resume-upload" required>Upload resume / CV</FieldLabel>
+                  <FieldLabel htmlFor="resume-upload" required>Resume / CV</FieldLabel>
+                  <p className="mb-3 text-xs text-gray-500">Provide either a resume link or upload a file under 1 MB.</p>
+                  {allowResumeLink && !form.resumeFileUrl && <div className="mb-4"><FieldLabel htmlFor="resume-link">Resume link <span className="font-normal text-gray-500">(optional if you upload a file)</span></FieldLabel><input id="resume-link" type="url" value={form.resumeLink} onChange={event => updateForm({ resumeLink: event.target.value })} className={INPUT_CLASS} placeholder="https://drive.google.com/..." />{form.resumeLink.trim() && !hasValidResumeLink && <p className="mt-1 text-sm text-red-600">Please enter a valid resume link.</p>}</div>}
                   <FileUploader
                     inputId="resume-upload"
                     onFileUpload={handleResumeUpload}
@@ -558,35 +554,33 @@ const CareerApplicationPage: React.FC = () => {
                     accept={RESUME_EXTENSIONS.join(',')}
                     allowedMimeTypes={RESUME_MIME_TYPES}
                     allowedExtensions={RESUME_EXTENSIONS}
+                    maxSizeErrorMessage={RESUME_SIZE_ERROR}
+                    sizeLimitLabel="1MB"
                   />
                   {form.resumeUploadStatus === 'uploading' && <p className="mt-2 text-sm font-medium text-indigo-600">Uploading {form.resumeFileName}…</p>}
                   {form.resumeUploadStatus === 'success' && <p className="mt-2 text-sm font-medium text-green-600">Resume uploaded successfully. You can replace or remove it before submitting.</p>}
                   {form.resumeUploadError && <p className="mt-2 text-sm font-medium text-red-600" role="alert">{form.resumeUploadError}</p>}
                 </div>
-                {allowResumeLink && <div className="md:col-span-2"><FieldLabel htmlFor="resume-link">Resume link <span className="font-normal text-gray-500">(optional if you upload a file)</span></FieldLabel><input id="resume-link" type="url" value={form.resumeLink} onChange={event => updateForm({ resumeLink: event.target.value })} className={INPUT_CLASS} placeholder="https://drive.google.com/..." /></div>}
-                <div><FieldLabel htmlFor="employer" required>Current / most recent employer</FieldLabel><input id="employer" value={form.currentEmployer} onChange={event => updateForm({ currentEmployer: event.target.value })} className={INPUT_CLASS} placeholder="Company name" /></div>
-                <div><FieldLabel htmlFor="experience" required>Years of relevant experience</FieldLabel><input id="experience" value={form.yearsRelevantExperience} onChange={event => updateForm({ yearsRelevantExperience: event.target.value })} className={INPUT_CLASS} placeholder="e.g. 3 years" /></div>
-                <div className="md:col-span-2"><FieldLabel htmlFor="why-role" required>{isRoleApplication ? 'Why do you want this role?' : 'Why do you want to join us?'}</FieldLabel><textarea id="why-role" value={form.whyRole} onChange={event => updateForm({ whyRole: event.target.value })} className={TEXTAREA_CLASS} maxLength={1000} placeholder={isRoleApplication ? 'Tell us what excites you about this role.' : 'Tell us what excites you about joining our team.'} /></div>
-                <div className="md:col-span-2"><FieldLabel htmlFor="start-date" required>Earliest available start date</FieldLabel><div className="mb-3 flex flex-wrap gap-2"><button type="button" onClick={() => updateForm({ earliestStartDate: asDateInput(0) })} className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:border-indigo-400">Immediately</button><button type="button" onClick={() => updateForm({ earliestStartDate: asDateInput(14) })} className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:border-indigo-400">2 weeks</button><button type="button" onClick={() => updateForm({ earliestStartDate: asDateInput(30) })} className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:border-indigo-400">1 month</button></div><input id="start-date" type="date" value={form.earliestStartDate} onChange={event => updateForm({ earliestStartDate: event.target.value })} className={INPUT_CLASS} /></div>
+                {collectCurrentEmployer && <div><FieldLabel htmlFor="employer">Current / most recent employer <span className="font-normal text-gray-500">(optional)</span></FieldLabel><input id="employer" value={form.currentEmployer} onChange={event => updateForm({ currentEmployer: event.target.value })} className={INPUT_CLASS} placeholder="Company name" /></div>}
+                {collectEarliestStartDate && <div className="md:col-span-2"><FieldLabel htmlFor="start-date">Earliest available start date <span className="font-normal text-gray-500">(optional)</span></FieldLabel><div className="mb-3 flex flex-wrap gap-2"><button type="button" onClick={() => updateForm({ earliestStartDate: asDateInput(0) })} className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:border-indigo-400">Immediately</button><button type="button" onClick={() => updateForm({ earliestStartDate: asDateInput(14) })} className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:border-indigo-400">2 weeks</button><button type="button" onClick={() => updateForm({ earliestStartDate: asDateInput(30) })} className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:border-indigo-400">1 month</button></div><input id="start-date" type="date" value={form.earliestStartDate} onChange={event => updateForm({ earliestStartDate: event.target.value })} className={INPUT_CLASS} /></div>}
               </div>
             </section>}
 
-            {step === 2 && <section className="space-y-6">
-              <div><h2 className="text-2xl font-bold text-gray-900">Experience</h2><p className="mt-1 text-sm text-gray-600">Answer the questions configured for {roleTitle}.</p></div>
+            {step === 2 && hasRoleQuestions && <section className="space-y-6">
+              <div><h2 className="text-2xl font-bold text-gray-900">Role Questions</h2><p className="mt-1 text-sm text-gray-600">Answer the questions configured for {roleTitle}.</p></div>
               {selectedJob && (roleDetails.requiredExperience || roleDetails.preferredExperience || roleDetails.qualifications) && <div className="rounded-xl bg-gray-50 p-5 text-sm text-gray-700"><h3 className="font-bold text-gray-900">What we’re looking for</h3>{roleDetails.requiredExperience && <p className="mt-2 whitespace-pre-wrap"><strong>Required experience:</strong> {roleDetails.requiredExperience}</p>}{roleDetails.preferredExperience && <p className="mt-2 whitespace-pre-wrap"><strong>Preferred experience:</strong> {roleDetails.preferredExperience}</p>}{roleDetails.qualifications && <p className="mt-2 whitespace-pre-wrap"><strong>Qualifications:</strong> {roleDetails.qualifications}</p>}</div>}
-              {stepTwoQuestions.length > 0 ? <div className="grid gap-5 md:grid-cols-2">{stepTwoQuestions.map(question => <QuestionField key={question.id} question={question} value={form.roleAnswers[question.id] || ''} onChange={value => updateAnswer(question.id, value)} />)}</div> : <div className="rounded-xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-600">No additional experience questions are configured for this application.</div>}
+              <div className="grid gap-5 md:grid-cols-2">{roleQuestions.map(question => <QuestionField key={question.id} question={question} value={form.roleAnswers[question.id] || ''} onChange={value => updateAnswer(question.id, value)} />)}</div>
             </section>}
 
-            {step === 3 && <section className="space-y-6">
-              <div><h2 className="text-2xl font-bold text-gray-900">Final Details</h2><p className="mt-1 text-sm text-gray-600">Review your information and complete your application.</p></div>
-              {stepThreeQuestions.length > 0 && <div className="grid gap-5 md:grid-cols-2">{stepThreeQuestions.map(question => <QuestionField key={question.id} question={question} value={form.roleAnswers[question.id] || ''} onChange={value => updateAnswer(question.id, value)} />)}</div>}
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-5"><h3 className="font-bold text-gray-900">Application review</h3><dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-gray-500">Applicant</dt><dd className="font-semibold text-gray-900">{form.fullName || `${form.firstName} ${form.lastName}`.trim() || 'Not provided'}</dd></div><div><dt className="text-gray-500">Email</dt><dd className="font-semibold text-gray-900">{form.email || 'Not provided'}</dd></div><div><dt className="text-gray-500">Role</dt><dd className="font-semibold text-gray-900">{roleTitle}</dd></div><div><dt className="text-gray-500">Earliest start</dt><dd className="font-semibold text-gray-900">{displayDate(form.earliestStartDate)}</dd></div><div className="sm:col-span-2"><dt className="text-gray-500">Resume</dt><dd className="font-semibold text-gray-900">{form.resumeFileName || (form.resumeLink ? 'Resume link provided' : 'Not provided')}</dd></div></dl></div>
+            {((!hasRoleQuestions && step === 1) || (hasRoleQuestions && step === 2)) && <section className="space-y-6">
+              <div><h2 className="text-2xl font-bold text-gray-900">{hasRoleQuestions ? 'Review your application' : 'Before you submit'}</h2><p className="mt-1 text-sm text-gray-600">Review your details and confirm your consent.</p></div>
+              {hasRoleQuestions && <div className="rounded-xl border border-gray-200 bg-gray-50 p-5"><h3 className="font-bold text-gray-900">Application review</h3><dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-gray-500">Applicant</dt><dd className="font-semibold text-gray-900">{form.fullName || 'Not provided'}</dd></div><div><dt className="text-gray-500">Email</dt><dd className="font-semibold text-gray-900">{form.email || 'Not provided'}</dd></div><div><dt className="text-gray-500">Role</dt><dd className="font-semibold text-gray-900">{roleTitle}</dd></div><div><dt className="text-gray-500">Resume</dt><dd className="font-semibold text-gray-900">{form.resumeFileName || (form.resumeLink ? 'Resume link provided' : 'Not provided')}</dd></div></dl></div>}
               <label className="flex items-start gap-3 rounded-xl border border-gray-200 p-4 text-sm text-gray-700"><input type="checkbox" checked={form.consent} onChange={event => updateForm({ consent: event.target.checked })} className="mt-1 h-4 w-4 rounded border-gray-300" /> <span>I agree that the hiring team may use the information in this application to evaluate me for this opportunity and related recruitment communications.</span></label>
             </section>}
 
             <div className="mt-9 flex flex-col-reverse gap-3 border-t border-gray-200 pt-6 sm:flex-row sm:items-center sm:justify-between">
-              {step > 1 ? <button type="button" onClick={goToPreviousStep} className="rounded-md border border-gray-300 px-5 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">Back</button> : <Link to={openRolesPath} className="text-center text-sm font-semibold text-gray-600 hover:text-gray-900 sm:text-left">Back to Open Roles</Link>}
-              {step < 3 ? <button type="button" onClick={goToNextStep} className="rounded-md px-5 py-3 text-sm font-bold text-white" style={{ backgroundColor: theme.primaryColor }}>{step === 1 ? 'Continue Application' : 'Continue to Final Details'} →</button> : <button type="submit" disabled={isSubmitting || form.resumeUploadStatus === 'uploading'} className="rounded-md px-5 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60" style={{ backgroundColor: theme.primaryColor }}>{isSubmitting ? 'Submitting application…' : 'Submit Application'}</button>}
+              {hasRoleQuestions && step > 1 ? <button type="button" onClick={goToPreviousStep} className="rounded-md border border-gray-300 px-5 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">Back</button> : <Link to={openRolesPath} className="text-center text-sm font-semibold text-gray-600 hover:text-gray-900 sm:text-left">Back to Open Roles</Link>}
+              {hasRoleQuestions && step === 1 ? <button type="button" onClick={goToNextStep} className="rounded-md px-5 py-3 text-sm font-bold text-white" style={{ backgroundColor: theme.primaryColor }}>Continue to Role Questions →</button> : <button type="submit" disabled={isSubmitting || (form.resumeUploadStatus === 'uploading' && !hasValidResumeLink)} className="rounded-md px-5 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60" style={{ backgroundColor: theme.primaryColor }}>{isSubmitting ? 'Submitting application…' : 'Submit Application'}</button>}
             </div>
             <p className="mt-4 text-xs text-gray-500">* Required fields</p>
           </form>

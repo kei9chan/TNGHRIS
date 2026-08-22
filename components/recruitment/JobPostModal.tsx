@@ -19,6 +19,8 @@ interface JobPostModalProps {
     saving?: boolean;
 }
 
+const MAX_APPLICATION_QUESTIONS = 5;
+
 const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, onSave, jobRequisitions, businessUnits, saving }) => {
     const { getAccessibleBusinessUnits } = usePermissions();
     const { user } = useAuth();
@@ -178,6 +180,7 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
     };
 
     const addApplicationQuestion = () => {
+        if (applicationQuestions.length >= MAX_APPLICATION_QUESTIONS) return;
         updateRoleDetails({
             applicationQuestions: [...applicationQuestions, { id: `question-${Date.now()}`, label: '', type: 'shortText', required: true, step: 2, options: [] }],
         });
@@ -376,18 +379,31 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
                             Allow applicants to provide a resume link instead of uploading a file
                         </label>
 
+                        <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50">
+                            <div>
+                                <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Optional applicant fields</h4>
+                                <p className="text-xs text-gray-500">Only ask for these when they are relevant to this role.</p>
+                            </div>
+                            <div className="grid gap-2 sm:grid-cols-2">
+                                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"><input type="checkbox" checked={roleDetails.collectCurrentCity === true} onChange={e => updateRoleDetails({ collectCurrentCity: e.target.checked })} className="h-4 w-4 rounded text-indigo-600" /> Current city / location</label>
+                                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"><input type="checkbox" checked={roleDetails.collectLinkedIn === true} onChange={e => updateRoleDetails({ collectLinkedIn: e.target.checked })} className="h-4 w-4 rounded text-indigo-600" /> LinkedIn / portfolio link</label>
+                                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"><input type="checkbox" checked={roleDetails.collectCurrentEmployer === true} onChange={e => updateRoleDetails({ collectCurrentEmployer: e.target.checked })} className="h-4 w-4 rounded text-indigo-600" /> Current / most recent employer</label>
+                                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"><input type="checkbox" checked={roleDetails.collectEarliestStartDate === true} onChange={e => updateRoleDetails({ collectEarliestStartDate: e.target.checked })} className="h-4 w-4 rounded text-indigo-600" /> Earliest available start date</label>
+                            </div>
+                        </div>
+
                         <div className="space-y-3 border-t border-gray-200 dark:border-gray-700 pt-4">
                             <div className="flex items-center justify-between gap-3">
-                                <div><h4 className="text-sm font-semibold text-gray-900 dark:text-white">Application Questions</h4><p className="text-xs text-gray-500">These questions appear on Steps 2 or 3 of this role’s application.</p></div>
-                                <Button type="button" size="sm" variant="secondary" onClick={addApplicationQuestion}>Add Question</Button>
+                                <div><h4 className="text-sm font-semibold text-gray-900 dark:text-white">Role screening questions</h4><p className="text-xs text-gray-500">Show up to {MAX_APPLICATION_QUESTIONS} concise questions together on the Role Questions step.</p></div>
+                                <Button type="button" size="sm" variant="secondary" onClick={addApplicationQuestion} disabled={applicationQuestions.length >= MAX_APPLICATION_QUESTIONS}>Add Question</Button>
                             </div>
+                            {applicationQuestions.length >= MAX_APPLICATION_QUESTIONS && <p className="text-xs text-amber-700">The maximum of {MAX_APPLICATION_QUESTIONS} new screening questions has been reached. Existing questions are preserved.</p>}
                             {applicationQuestions.map((question, index) => (
                                 <div key={question.id || index} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-3">
                                     <div className="flex justify-between items-center"><span className="text-xs font-semibold text-gray-500">Question {index + 1}</span><button type="button" onClick={() => removeApplicationQuestion(index)} className="text-xs text-red-600 hover:underline">Remove</button></div>
                                     <Input label="Question / Prompt" value={question.label} onChange={e => updateApplicationQuestion(index, { label: e.target.value })} placeholder="e.g., How many years of relevant experience do you have?" />
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                         <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Answer type</label><select value={question.type} onChange={e => updateApplicationQuestion(index, { type: e.target.value as RoleApplicationQuestionType })} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"><option value="shortText">Short text</option><option value="longText">Long text</option><option value="select">Dropdown</option><option value="yesNo">Yes / No</option><option value="number">Number</option><option value="date">Date</option></select></div>
-                                        <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Step</label><select value={question.step || 2} onChange={e => updateApplicationQuestion(index, { step: Number(e.target.value) === 3 ? 3 : 2 })} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"><option value="2">Step 2 — Experience</option><option value="3">Step 3 — Final Details</option></select></div>
                                         <label className="flex items-center gap-2 self-end pb-2 text-sm text-gray-700 dark:text-gray-300"><input type="checkbox" checked={question.required !== false} onChange={e => updateApplicationQuestion(index, { required: e.target.checked })} className="h-4 w-4 text-indigo-600 rounded" />Required</label>
                                     </div>
                                     {question.type === 'select' && <Input label="Dropdown options (comma separated)" value={(question.options || []).join(', ')} onChange={e => updateApplicationQuestion(index, { options: e.target.value.split(',').map(option => option.trim()).filter(Boolean) })} placeholder="Option 1, Option 2" />}

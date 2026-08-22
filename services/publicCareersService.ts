@@ -62,6 +62,10 @@ const normalizeRoleDetails = (row: any): RoleDetails => {
     faqs: normalizeFaqs(details.faqs || row.faqs),
     roleImage: details.roleImage || row.role_image_url || undefined,
     allowResumeLink: details.allowResumeLink !== false,
+    collectCurrentCity: details.collectCurrentCity === true,
+    collectLinkedIn: details.collectLinkedIn === true,
+    collectCurrentEmployer: details.collectCurrentEmployer === true,
+    collectEarliestStartDate: details.collectEarliestStartDate === true,
     applicationQuestions: normalizeQuestions(details.applicationQuestions || row.application_questions),
   };
 };

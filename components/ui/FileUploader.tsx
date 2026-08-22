@@ -15,6 +15,8 @@ interface FileUploaderProps {
   accept?: string;
   allowedMimeTypes?: string[];
   allowedExtensions?: string[];
+  maxSizeErrorMessage?: string;
+  sizeLimitLabel?: string;
 }
 
 const UploadIcon = () => (
@@ -46,6 +48,8 @@ const FileUploader: React.FC<FileUploaderProps> = ({
   accept,
   allowedMimeTypes = ALLOWED_FILE_TYPES,
   allowedExtensions = ALLOWED_FILE_EXTENSIONS,
+  maxSizeErrorMessage,
+  sizeLimitLabel,
 }) => {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -70,7 +74,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({
     const sizeLimit = maxSize || MAX_FILE_SIZE;
 
     if (selectedFile.size > sizeLimit) {
-      setError(`File size cannot exceed ${sizeLimit / 1024 / 1024} MB.`);
+      setError(maxSizeErrorMessage || `File size cannot exceed ${sizeLimit / 1024 / 1024} MB.`);
       return false;
     }
 
@@ -136,6 +140,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({
   };
   
   const sizeLimitInMB = (maxSize || MAX_FILE_SIZE) / 1024 / 1024;
+  const sizeLimitText = sizeLimitLabel || `${sizeLimitInMB}MB`;
   const acceptedTypesLabel = allowedExtensions.join(', ').toUpperCase();
 
   // Show the preview of the newly selected file
@@ -192,7 +197,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({
                       ) : (
                         <>
                           <p className="mb-2 text-sm text-gray-500 dark:text-gray-400"><span className="font-semibold">Click to upload</span> or drag and drop</p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">{acceptedTypesLabel} (MAX. {sizeLimitInMB}MB)</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{acceptedTypesLabel} (MAX. {sizeLimitText})</p>
                         </>
                       )}
                   </div>

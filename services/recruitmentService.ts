@@ -40,7 +40,7 @@ type ApplicationRow = {
   role_title_snapshot?: string | null; department_snapshot?: string | null; location_snapshot?: string | null;
   employment_type_snapshot?: string | null; work_arrangement_snapshot?: string | null; role_answers?: any;
   source_application_page?: string | null; application_reference?: string | null; submission_token?: string | null;
-  resume_file_url?: string | null; resume_file_path?: string | null; cover_letter?: string | null;
+  resume_link?: string | null; resume_file_url?: string | null; resume_file_path?: string | null; cover_letter?: string | null;
 };
 
 type InterviewRow = {
@@ -130,6 +130,7 @@ const mapApplication = (r: ApplicationRow): Application => ({
   sourceApplicationPage: r.source_application_page || undefined,
   applicationReference: r.application_reference || undefined,
   submissionToken: r.submission_token || undefined,
+  resumeLink: r.resume_link || undefined,
   resumeFileUrl: r.resume_file_url || undefined,
   resumeFilePath: r.resume_file_path || undefined,
   coverLetter: r.cover_letter || undefined,
@@ -256,6 +257,7 @@ export const saveApplication = async (app: Partial<Application>): Promise<Applic
     source_application_page: app.sourceApplicationPage || null,
     application_reference: app.applicationReference || null,
     submission_token: app.submissionToken || null,
+    resume_link: app.resumeLink || null,
     resume_file_url: app.resumeFileUrl || null,
     resume_file_path: app.resumeFilePath || null,
   };

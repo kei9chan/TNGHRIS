@@ -201,6 +201,7 @@ const Applicants: React.FC = () => {
                 sourceApplicationPage: a.source_application_page || undefined,
                 applicationReference: a.application_reference || undefined,
                 submissionToken: a.submission_token || undefined,
+                resumeLink: a.resume_link || undefined,
                 resumeFileUrl: a.resume_file_url || undefined,
                 resumeFilePath: a.resume_file_path || undefined,
                 coverLetter: a.cover_letter || undefined,
