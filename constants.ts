@@ -143,6 +143,7 @@ export const NAV_LINKS: NavLink[] = [
                 children: [
                     { name: 'Job Post Manager', path: '/recruitment/job-posts', requiredPermission: { resource: 'JobPosts', permission: Permission.View } },
                     { name: 'Job Post Templates', path: '/recruitment/job-post-templates', requiredPermission: { resource: 'JobPosts', permission: Permission.Manage } },
+                    { name: 'Social Media Generator', path: '/recruitment/job-social-media-generator', requiredPermission: { resource: 'JobPosts', permission: Permission.Manage } },
                 ]
             },
             { name: 'Applicants', path: '/recruitment/applicants', requiredPermission: { resource: 'Applicants', permission: Permission.View } },

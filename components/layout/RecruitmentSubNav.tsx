@@ -22,6 +22,7 @@ const iconMap: { [key: string]: React.FC<{className?: string}> } = {
     'Job Posts': ClipboardDocumentListIcon,
     'Job Post Manager': ClipboardDocumentListIcon,
     'Job Post Templates': DocumentDuplicateIcon,
+    'Social Media Generator': DocumentDuplicateIcon,
     'Application Pages': GlobeAltIcon,
     'Applicants': ApplicantsIcon,
     'Candidates': IdentificationIcon,
