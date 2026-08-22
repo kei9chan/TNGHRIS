@@ -21,12 +21,26 @@ interface JobPostModalProps {
 
 const MAX_APPLICATION_QUESTIONS = 5;
 
+type StarterTemplate = {
+    id: string;
+    name: string;
+    businessUnit: string;
+    jobTitle: string;
+    description: string;
+    details: Array<{ icon: string; label: string }>;
+    col2Content: string;
+    sections: Array<{ title: string; content: string }>;
+};
+
 const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, onSave, jobRequisitions, businessUnits, saving }) => {
     const { getAccessibleBusinessUnits } = usePermissions();
     const { user } = useAuth();
     const [current, setCurrent] = useState<Partial<JobPost>>(jobPost || {});
     const [roleImageUploadError, setRoleImageUploadError] = useState('');
     const [isRoleImageUploading, setIsRoleImageUploading] = useState(false);
+    const [starterTemplates, setStarterTemplates] = useState<StarterTemplate[]>([]);
+    const [selectedStarterId, setSelectedStarterId] = useState('');
+    const [starterTemplateError, setStarterTemplateError] = useState('');
     
     // Searchable Requisition State
     const [reqSearchTerm, setReqSearchTerm] = useState('');
@@ -55,6 +69,8 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
                   };
             setCurrent(initialData);
             setRoleImageUploadError('');
+            setSelectedStarterId('');
+            setStarterTemplateError('');
 
             // Initialize search term if a requisition is already selected
             if (initialData.requisitionId) {
@@ -66,6 +82,37 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
             setIsReqDropdownOpen(false);
         }
     }, [jobPost, isOpen]);
+
+    useEffect(() => {
+        if (!isOpen || jobPost) return;
+        let cancelled = false;
+        const loadStarterTemplates = async () => {
+            const { data, error } = await supabase
+                .from('job_post_templates')
+                .select('id, name, business_unit, job_title, description, details, col2_content, sections, is_starter')
+                .eq('is_starter', true)
+                .order('name');
+            if (cancelled) return;
+            if (error) {
+                console.warn('Starter templates are not available in Job Post Manager yet', error);
+                setStarterTemplateError('Starter templates are unavailable until the template migration is applied.');
+                setStarterTemplates([]);
+                return;
+            }
+            setStarterTemplates((data || []).map((row: any) => ({
+                id: row.id,
+                name: row.name || 'Starter template',
+                businessUnit: row.business_unit || '',
+                jobTitle: row.job_title || '',
+                description: row.description || '',
+                details: Array.isArray(row.details) ? row.details : [],
+                col2Content: row.col2_content || '',
+                sections: Array.isArray(row.sections) ? row.sections : [],
+            })));
+        };
+        loadStarterTemplates();
+        return () => { cancelled = true; };
+    }, [isOpen, jobPost]);
 
     // Sync search term when requisitions load after opening
     useEffect(() => {
@@ -127,6 +174,26 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
         setCurrent(prev => ({ ...prev, requisitionId: req.id }));
         setReqSearchTerm(`${req.reqCode}: ${req.title}`);
         setIsReqDropdownOpen(false);
+    };
+
+    const applyStarterTemplate = (templateId: string) => {
+        setSelectedStarterId(templateId);
+        const starter = starterTemplates.find(template => template.id === templateId);
+        if (!starter) return;
+        const perks = starter.sections.find(section => section.title.trim().toLowerCase() === 'perks')?.content || '';
+        const lookingFor = starter.sections.find(section => section.title.toLowerCase().includes('looking'))?.content || starter.col2Content;
+        const location = starter.details.find(detail => detail.icon === '📍')?.label || '';
+        const employment = starter.details.find(detail => /full-time|part-time|contract/i.test(detail.label))?.label || '';
+        const normalizedEmployment: JobPost['employmentType'] = employment.toLowerCase().includes('part') ? 'Part-Time' : employment.toLowerCase().includes('contract') ? 'Contract' : 'Full-Time';
+        setCurrent(previous => ({
+            ...previous,
+            title: starter.jobTitle || previous.title,
+            description: starter.description || previous.description,
+            requirements: lookingFor || previous.requirements,
+            benefits: perks || previous.benefits,
+            locationLabel: location || previous.locationLabel,
+            employmentType: normalizedEmployment,
+        }));
     };
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -316,6 +383,18 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
                         </div>
                     )}
                 </div>
+
+                {!jobPost && (
+                    <div className="rounded-lg border border-indigo-200 bg-indigo-50/70 p-3 dark:border-indigo-900 dark:bg-indigo-950/20">
+                        <label className="block text-sm font-medium text-gray-800 dark:text-gray-200">Start from a reusable job post template <span className="font-normal text-gray-500">(optional)</span></label>
+                        <select value={selectedStarterId} onChange={event => applyStarterTemplate(event.target.value)} className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white">
+                            <option value="">Choose a business-unit starter…</option>
+                            {starterTemplates.map(template => <option key={template.id} value={template.id}>{template.name}{template.businessUnit ? ` · ${template.businessUnit}` : ''}</option>)}
+                        </select>
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">This copies the starter content into this new job post. The reusable original is not changed.</p>
+                        {starterTemplateError && <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">{starterTemplateError}</p>}
+                    </div>
+                )}
 
                 <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
