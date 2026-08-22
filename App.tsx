@@ -154,7 +154,7 @@ const AppRoutes: React.FC = () => {
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/apply" element={<Apply />} />
-      <Route path="/apply/:jobPostId" element={<Apply />} />
+      <Route path="/apply/:jobPostId/:jobSlug?" element={<Apply />} />
         <Route path="/thank-you" element={<ThankYou />} />
         {/* Public Career Pages */}
         <Route path="/careers/:slug/roles/:roleSlug" element={<CareerRolePage />} />

@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ApplicantPageTheme, JobPost } from '../../types';
 import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
-import { getOpenRolesConfig, getOpenRolesPath, getRolePath, isJobCurrentlyOpen, mapPublicJobPost } from '../../services/publicCareersService';
+import { getApplicationPath, getOpenRolesConfig, getOpenRolesPath, getRolePath, isJobCurrentlyOpen, mapPublicJobPost } from '../../services/publicCareersService';
 
 interface CareerPagePreviewProps {
     theme?: ApplicantPageTheme;
@@ -257,7 +257,7 @@ const CareerPagePreview: React.FC<CareerPagePreviewProps> = ({ theme: propTheme,
                                          </div>
                                          <div className="mt-5 flex flex-wrap gap-3">
                                              <Link to={isPreview ? '#' : getRolePath(theme.slug, job)} className="inline-flex items-center justify-center px-4 py-2 border font-medium rounded-md text-sm" style={{ borderColor: theme.primaryColor, color: theme.primaryColor }}>View Role</Link>
-                                             {!isPreview && <Link to={`/apply/${job.id}`} className="inline-flex items-center justify-center px-4 py-2 border border-transparent font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 sm:text-sm transition-colors" style={{ backgroundColor: theme.primaryColor }}>Apply Now</Link>}
+                                             {!isPreview && <Link to={getApplicationPath(theme.slug, job, openRolesConfig.pageSlug)} className="inline-flex items-center justify-center px-4 py-2 border border-transparent font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 sm:text-sm transition-colors" style={{ backgroundColor: theme.primaryColor }}>Apply Now</Link>}
                                          </div>
                                      </div>
                                  </div>

@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { CandidateSource, ApplicationStage, JobPost } from '../types';
 import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
@@ -11,7 +11,8 @@ import { supabase } from '../services/supabaseClient';
 import { isJobCurrentlyOpen, mapPublicJobPost } from '../services/publicCareersService';
 
 const Apply: React.FC = () => {
-    const { jobPostId } = useParams<{ jobPostId: string }>();
+    const { jobPostId, jobSlug } = useParams<{ jobPostId: string; jobSlug?: string }>();
+    const [searchParams] = useSearchParams();
     const navigate = useNavigate();
 
     const [selectedBuId, setSelectedBuId] = useState('');
@@ -30,6 +31,7 @@ const Apply: React.FC = () => {
     const [jobPosts, setJobPosts] = useState<JobPost[]>([]);
     const [businessUnits, setBusinessUnits] = useState<{ id: string; name: string }[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [isRoleUnavailable, setIsRoleUnavailable] = useState(false);
     
     const isDirectLink = !!jobPostId;
 
@@ -69,15 +71,21 @@ const Apply: React.FC = () => {
     // Pre-fill form if accessed via a direct link
     useEffect(() => {
         if (jobPostId) {
-            const post = jobPosts.find(p => p.id === jobPostId);
+            const post = jobPosts.find(p => p.id === jobPostId && (!jobSlug || p.slug === jobSlug));
             if (post && isJobCurrentlyOpen(post)) {
                 setSelectedBuId(post.businessUnitId);
                 setSelectedJobPostId(post.id);
             } else if (post) {
                 setError('This job post is no longer accepting applications.');
+                setIsRoleUnavailable(true);
+            } else if (!isLoading && jobPosts.length > 0) {
+                setError('This role is no longer accepting applications or could not be found.');
+                setIsRoleUnavailable(true);
             }
+        } else {
+            setIsRoleUnavailable(false);
         }
-    }, [jobPostId, jobPosts]);
+    }, [jobPostId, jobSlug, jobPosts, isLoading]);
 
     // Automatically update the Business Unit when a job is selected.
     useEffect(() => {
@@ -107,6 +115,7 @@ const Apply: React.FC = () => {
         const jobPost = jobPosts.find(p => p.id === selectedJobPostId);
         if (!jobPost || !isJobCurrentlyOpen(jobPost)) {
             setError('Selected job post is no longer available.');
+            if (isDirectLink) setIsRoleUnavailable(true);
             setIsSubmitting(false);
             return;
         }
@@ -152,13 +161,32 @@ const Apply: React.FC = () => {
         }
     };
 
+    if (isLoading) {
+        return <div className="min-h-screen flex items-center justify-center text-gray-600">Loading application…</div>;
+    }
+
+    if (isDirectLink && isRoleUnavailable) {
+        const careerSlug = searchParams.get('career');
+        const openRolesSlug = searchParams.get('openRoles') || 'open-roles';
+        const openRolesPath = careerSlug ? `/careers/${encodeURIComponent(careerSlug)}/${encodeURIComponent(openRolesSlug)}` : '/careers';
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 py-12 px-4">
+                <div className="max-w-xl w-full bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-8 text-center">
+                    <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">Applications are closed for this role</h1>
+                    <p className="mt-3 text-gray-600 dark:text-gray-300">{error || 'This role is no longer accepting applications.'}</p>
+                    <Link to={openRolesPath} className="mt-6 inline-flex px-5 py-3 rounded-md text-white font-semibold bg-indigo-600 hover:bg-indigo-700">Back to Open Roles</Link>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
             <div className="max-w-2xl w-full space-y-8">
                 <div>
                     <h1 className="text-center text-3xl font-extrabold text-gray-900 dark:text-white">TNG HRIS</h1>
-                    <h2 className="mt-2 text-center text-xl font-bold text-indigo-600 dark:text-indigo-400">
-                        Apply for a Position
+                        <h2 className="mt-2 text-center text-xl font-bold text-indigo-600 dark:text-indigo-400">
+                        {selectedJobPost ? `Apply for ${selectedJobPost.title}` : 'Apply for a Position'}
                     </h2>
                 </div>
                  <Card>
@@ -171,7 +199,7 @@ const Apply: React.FC = () => {
                                 {businessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
                             </select>
                         </div>
-                         <div>
+                        <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Job Application</label>
                             <select value={selectedJobPostId} onChange={e => setSelectedJobPostId(e.target.value)} disabled={isDirectLink || isLoading} required className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:bg-gray-200 dark:disabled:bg-gray-800">
                                 {availableJobPosts.length > 0 ? (

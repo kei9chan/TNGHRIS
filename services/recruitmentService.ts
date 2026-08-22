@@ -23,7 +23,7 @@ type JobPostRow = {
   channels: any; referral_bonus?: number | null;
   application_open_at?: string | null; application_close_at?: string | null;
   is_active?: boolean | null; is_archived?: boolean | null; is_featured?: boolean | null;
-  is_urgent?: boolean | null; department_label?: string | null;
+  is_urgent?: boolean | null; department_label?: string | null; role_details?: any;
 };
 
 type CandidateRow = {
@@ -91,6 +91,7 @@ const mapJobPost = (r: JobPostRow): JobPost => ({
   isFeatured: r.is_featured ?? false,
   isUrgent: r.is_urgent ?? false,
   departmentLabel: r.department_label || undefined,
+  roleDetails: r.role_details || {},
 });
 
 const mapCandidate = (r: CandidateRow): Candidate => ({
@@ -192,6 +193,7 @@ export const saveJobPost = async (post: Partial<JobPost>): Promise<JobPost> => {
     is_featured: post.isFeatured ?? false,
     is_urgent: post.isUrgent ?? false,
     department_label: post.departmentLabel || null,
+    role_details: post.roleDetails || {},
   };
   const { data, error } = post.id
     ? await supabase.from('job_posts').update(payload).eq('id', post.id).select().single()

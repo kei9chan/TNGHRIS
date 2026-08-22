@@ -1,4 +1,4 @@
-import { ApplicantPageTheme, JobPost, JobPostStatus, OpenRolesBenefit, OpenRolesConfig } from '../types';
+import { ApplicantPageTheme, JobPost, JobPostStatus, OpenRolesBenefit, OpenRolesConfig, RoleDetails, RoleFAQ } from '../types';
 
 export const DEFAULT_OPEN_ROLES_BENEFITS: OpenRolesBenefit[] = [
   { id: 'competitive-pay', title: 'Competitive Pay', description: 'Be rewarded for the value you bring.', icon: 'wallet' },
@@ -19,6 +19,34 @@ const normalizeStatus = (value: unknown): JobPostStatus => {
   if (status === 'paused') return JobPostStatus.Paused;
   if (status === 'closed') return JobPostStatus.Closed;
   return JobPostStatus.Draft;
+};
+
+const normalizeFaqs = (value: unknown): RoleFAQ[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((faq, index) => ({
+      id: String(faq?.id || `faq-${index + 1}`),
+      question: String(faq?.question || '').trim(),
+      answer: String(faq?.answer || '').trim(),
+    }))
+    .filter(faq => faq.question && faq.answer);
+};
+
+const normalizeRoleDetails = (row: any): RoleDetails => {
+  const details = row.role_details || row.roleDetails || {};
+  return {
+    shortSummary: details.shortSummary || row.short_summary || undefined,
+    workArrangement: details.workArrangement || row.work_arrangement || undefined,
+    salaryRange: details.salaryRange || row.salary_range || undefined,
+    whyThisRoleMatters: details.whyThisRoleMatters || row.why_this_role_matters || undefined,
+    responsibilities: details.responsibilities || row.responsibilities || undefined,
+    qualifications: details.qualifications || row.qualifications || undefined,
+    requiredExperience: details.requiredExperience || row.required_experience || undefined,
+    preferredExperience: details.preferredExperience || row.preferred_experience || undefined,
+    benefits: details.benefits || undefined,
+    faqs: normalizeFaqs(details.faqs || row.faqs),
+    roleImage: details.roleImage || row.role_image_url || undefined,
+  };
 };
 
 export const mapPublicJobPost = (row: any): JobPost => ({
@@ -49,6 +77,7 @@ export const mapPublicJobPost = (row: any): JobPost => ({
     row.job_requisitions?.department_name ||
     row.job_requisitions?.departments?.name ||
     'Department not specified',
+  roleDetails: normalizeRoleDetails(row),
 });
 
 export const isJobCurrentlyOpen = (job: JobPost, now = new Date()): boolean => {
@@ -109,3 +138,6 @@ export const getOpenRolesPath = (careerSlug: string, theme: ApplicantPageTheme):
 
 export const getRolePath = (careerSlug: string, job: JobPost): string =>
   `/careers/${encodeURIComponent(careerSlug)}/roles/${encodeURIComponent(job.slug || job.id)}`;
+
+export const getApplicationPath = (careerSlug: string, job: JobPost, openRolesSlug = 'open-roles'): string =>
+  `/apply/${encodeURIComponent(job.id)}/${encodeURIComponent(job.slug || job.id)}?career=${encodeURIComponent(careerSlug)}&openRoles=${encodeURIComponent(openRolesSlug)}`;

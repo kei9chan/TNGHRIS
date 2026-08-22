@@ -8,6 +8,7 @@ import {
   mapApplicantPageTheme,
   mapPublicJobPost,
   getRolePath,
+  getApplicationPath,
 } from '../../services/publicCareersService';
 
 const RocketIcon = ({ className = 'h-6 w-6' }: { className?: string }) => <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>;
@@ -180,7 +181,7 @@ const OpenRolesPage: React.FC = () => {
                 <p className="mt-4 text-sm leading-6 text-gray-600 flex-grow">{stripMarkup(job.description).slice(0, 220)}{stripMarkup(job.description).length > 220 ? '…' : ''}</p>
                 <div className="mt-6 flex flex-wrap gap-3">
                   <Link to={getRolePath(theme.slug, job)} className="inline-flex items-center justify-center px-4 py-2 rounded-md border font-semibold text-sm" style={{ borderColor: theme.primaryColor, color: theme.primaryColor }}>View Role</Link>
-                  <Link to={`/apply/${job.id}`} className="inline-flex items-center justify-center px-4 py-2 rounded-md text-white font-semibold text-sm" style={{ backgroundColor: theme.primaryColor }}>Apply Now</Link>
+                  <Link to={getApplicationPath(theme.slug, job, config.pageSlug)} className="inline-flex items-center justify-center px-4 py-2 rounded-md text-white font-semibold text-sm" style={{ backgroundColor: theme.primaryColor }}>Apply Now</Link>
                 </div>
               </article>
             ))}

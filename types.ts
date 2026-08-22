@@ -1665,6 +1665,28 @@ export interface JobPost {
   isFeatured?: boolean;
   isUrgent?: boolean;
   departmentLabel?: string;
+  roleDetails?: RoleDetails;
+}
+
+export interface RoleFAQ {
+  id: string;
+  question: string;
+  answer: string;
+}
+
+/** Optional public-facing content for the reusable role information page. */
+export interface RoleDetails {
+  shortSummary?: string;
+  workArrangement?: 'On-site' | 'Hybrid' | 'Remote' | string;
+  salaryRange?: string;
+  whyThisRoleMatters?: string;
+  responsibilities?: string;
+  qualifications?: string;
+  requiredExperience?: string;
+  preferredExperience?: string;
+  benefits?: string;
+  faqs?: RoleFAQ[];
+  roleImage?: string;
 }
 
 export enum CandidateSource {

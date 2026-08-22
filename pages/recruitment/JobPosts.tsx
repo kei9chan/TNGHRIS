@@ -66,6 +66,7 @@ const JobPosts: React.FC = () => {
     isFeatured: row.is_featured ?? false,
     isUrgent: row.is_urgent ?? false,
     departmentLabel: row.department_label ?? undefined,
+    roleDetails: row.role_details || {},
   }), []);
 
   const mapRequisition = useCallback((row: any): JobRequisition => ({
@@ -139,8 +140,18 @@ const JobPosts: React.FC = () => {
 
   const handleSave = async (postToSave: JobPost) => {
     setIsSaving(true);
-    const slug = postToSave.slug || postToSave.title.toLowerCase().replace(/\s+/g, '-');
-    const payload = {
+    let slug = (postToSave.slug || postToSave.title)
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || `role-${Date.now()}`;
+    try {
+      const { data: matchingSlug, error: slugError } = await supabase.from('job_posts').select('id').eq('slug', slug).maybeSingle();
+      if (slugError) throw slugError;
+      if (matchingSlug && matchingSlug.id !== postToSave.id) {
+        slug = `${slug}-${(postToSave.id || Date.now().toString()).toString().slice(-8)}`;
+      }
+      const payload = {
       requisition_id: postToSave.requisitionId,
       business_unit_id: postToSave.businessUnitId,
       title: postToSave.title,
@@ -161,10 +172,10 @@ const JobPosts: React.FC = () => {
       is_featured: postToSave.isFeatured ?? false,
       is_urgent: postToSave.isUrgent ?? false,
       department_label: postToSave.departmentLabel ?? null,
+      role_details: postToSave.roleDetails ?? {},
       created_by_user_id: user?.id || null,
-    };
+      };
 
-    try {
       if (postToSave.id) {
         const { data, error } = await supabase.from('job_posts').update(payload).eq('id', postToSave.id).select().single();
         if (error) throw error;

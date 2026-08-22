@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { JobPost, JobPostStatus, JobRequisitionStatus, JobRequisition, BusinessUnit } from '../../types';
+import { JobPost, JobPostStatus, JobRequisitionStatus, JobRequisition, BusinessUnit, RoleDetails, RoleFAQ } from '../../types';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
 import Button from '../ui/Button';
+import FileUploader from '../ui/FileUploader';
 import { usePermissions } from '../../hooks/usePermissions';
+import { useAuth } from '../../hooks/useAuth';
+import { supabase } from '../../services/supabaseClient';
 
 interface JobPostModalProps {
     isOpen: boolean;
@@ -18,7 +21,10 @@ interface JobPostModalProps {
 
 const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, onSave, jobRequisitions, businessUnits, saving }) => {
     const { getAccessibleBusinessUnits } = usePermissions();
+    const { user } = useAuth();
     const [current, setCurrent] = useState<Partial<JobPost>>(jobPost || {});
+    const [roleImageUploadError, setRoleImageUploadError] = useState('');
+    const [isRoleImageUploading, setIsRoleImageUploading] = useState(false);
     
     // Searchable Requisition State
     const [reqSearchTerm, setReqSearchTerm] = useState('');
@@ -46,6 +52,7 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
                     requisitionId: '',
                   };
             setCurrent(initialData);
+            setRoleImageUploadError('');
 
             // Initialize search term if a requisition is already selected
             if (initialData.requisitionId) {
@@ -137,6 +144,57 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
         });
     };
 
+    const updateRoleDetails = (updates: Partial<RoleDetails>) => {
+        setCurrent(prev => ({
+            ...prev,
+            roleDetails: { ...(prev.roleDetails || {}), ...updates },
+        }));
+    };
+
+    const roleDetails = current.roleDetails || {};
+    const faqs = roleDetails.faqs || [];
+
+    const updateFaq = (index: number, updates: Partial<RoleFAQ>) => {
+        updateRoleDetails({
+            faqs: faqs.map((faq, faqIndex) => faqIndex === index ? { ...faq, ...updates } : faq),
+        });
+    };
+
+    const addFaq = () => {
+        updateRoleDetails({
+            faqs: [...faqs, { id: `faq-${Date.now()}`, question: '', answer: '' }],
+        });
+    };
+
+    const removeFaq = (index: number) => {
+        updateRoleDetails({ faqs: faqs.filter((_, faqIndex) => faqIndex !== index) });
+    };
+
+    const handleRoleImageUpload = async (file: File) => {
+        setRoleImageUploadError('');
+        const authUserId = user?.authUserId || user?.id;
+        if (!authUserId) {
+            setRoleImageUploadError('You must be signed in to upload a role image.');
+            return;
+        }
+        setIsRoleImageUploading(true);
+        try {
+            const extension = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+            const randomPart = globalThis.crypto?.randomUUID?.() || String(Date.now());
+            const path = `role/${authUserId}/role-${jobPost?.id || randomPart}.${extension}`;
+            const { data, error } = await supabase.storage.from('application-page-assets').upload(path, file, { upsert: true, contentType: file.type });
+            if (error) throw error;
+            const storagePath = data?.path || path;
+            const { data: publicUrlData } = supabase.storage.from('application-page-assets').getPublicUrl(storagePath);
+            if (!publicUrlData?.publicUrl) throw new Error('The role image uploaded, but a public URL could not be generated.');
+            updateRoleDetails({ roleImage: publicUrlData.publicUrl });
+        } catch (err: any) {
+            setRoleImageUploadError(err?.message || 'Role image upload failed.');
+        } finally {
+            setIsRoleImageUploading(false);
+        }
+    };
+
     const handleSave = (status: JobPostStatus) => {
         if (!current.requisitionId || !current.title || !current.description) {
             alert('Please select a requisition and fill in the title and description.');
@@ -163,6 +221,10 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
             isArchived: current.isArchived ?? false,
             isFeatured: current.isFeatured ?? false,
             isUrgent: current.isUrgent ?? requisition.isUrgent ?? false,
+            roleDetails: {
+                ...current.roleDetails,
+                faqs: (current.roleDetails?.faqs || []).filter(faq => faq.question?.trim() && faq.answer?.trim()),
+            },
         } as JobPost;
 
         onSave(payload);
@@ -243,13 +305,65 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
                     </select>
                 </div>
                 <Input label="Job Title" name="title" value={current.title || ''} onChange={handleChange} required />
+                <Input label="Role URL Slug" name="slug" value={current.slug || ''} onChange={handleChange} placeholder="e.g., guest-experience-host" />
                 <Textarea label="Job Description" name="description" value={current.description || ''} onChange={handleChange} rows={5} required />
                 <Textarea label="Requirements" name="requirements" value={current.requirements || ''} onChange={handleChange} rows={4} />
                 <Textarea label="Benefits" name="benefits" value={current.benefits || ''} onChange={handleChange} rows={3} />
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Input label="Location Label" name="locationLabel" value={current.locationLabel || ''} onChange={handleChange} placeholder="e.g., Manila, Philippines" />
+                    <Input label="Department" name="departmentLabel" value={current.departmentLabel || ''} onChange={handleChange} placeholder="e.g., Operations" />
                     <Input label="Referral Bonus" name="referralBonus" type="number" value={current.referralBonus || ''} onChange={handleChange} />
+                </div>
+
+                <div className="border-t border-gray-200 dark:border-gray-700 pt-5 space-y-4">
+                    <div>
+                        <h3 className="text-base font-semibold text-gray-900 dark:text-white">Role Information Page</h3>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Optional fields appear only when they contain content on the public role page.</p>
+                    </div>
+                    <Textarea label="Short Role Summary" value={roleDetails.shortSummary || ''} onChange={e => updateRoleDetails({ shortSummary: e.target.value })} rows={2} placeholder="A concise summary shown beside the role title." />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Work Arrangement</label>
+                            <select value={roleDetails.workArrangement || ''} onChange={e => updateRoleDetails({ workArrangement: e.target.value || undefined })} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                                <option value="">Not specified</option>
+                                <option value="On-site">On-site</option>
+                                <option value="Hybrid">Hybrid</option>
+                                <option value="Remote">Remote</option>
+                            </select>
+                        </div>
+                        <Input label="Salary Range" value={roleDetails.salaryRange || ''} onChange={e => updateRoleDetails({ salaryRange: e.target.value })} placeholder="e.g., ₱25,000–₱35,000/month" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Role Image</label>
+                        <FileUploader onFileUpload={handleRoleImageUpload} existingFileUrl={roleDetails.roleImage} inputId={`role-image-${jobPost?.id || 'new'}`} disabled={isRoleImageUploading} maxSize={5 * 1024 * 1024} accept="image/jpeg,image/png,image/webp" allowedMimeTypes={['image/jpeg', 'image/png', 'image/webp']} allowedExtensions={['.jpg', '.jpeg', '.png', '.webp']} />
+                        <Input label="Or paste a public image URL" value={roleDetails.roleImage || ''} onChange={e => updateRoleDetails({ roleImage: e.target.value })} placeholder="https://..." type="url" />
+                        {isRoleImageUploading && <p className="mt-1 text-xs text-indigo-600">Uploading role image…</p>}
+                        {roleImageUploadError && <p className="mt-1 text-xs text-red-600">{roleImageUploadError}</p>}
+                        {roleDetails.roleImage && <button type="button" onClick={() => updateRoleDetails({ roleImage: undefined })} className="mt-1 text-xs text-red-600 hover:underline">Remove role image</button>}
+                    </div>
+                    <Textarea label="Why This Role Matters" value={roleDetails.whyThisRoleMatters || ''} onChange={e => updateRoleDetails({ whyThisRoleMatters: e.target.value })} rows={3} />
+                    <Textarea label="What You’ll Do / Responsibilities" value={roleDetails.responsibilities || ''} onChange={e => updateRoleDetails({ responsibilities: e.target.value })} rows={4} />
+                    <Textarea label="What We’re Looking For / Qualifications" value={roleDetails.qualifications || ''} onChange={e => updateRoleDetails({ qualifications: e.target.value })} rows={4} />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Textarea label="Required Experience" value={roleDetails.requiredExperience || ''} onChange={e => updateRoleDetails({ requiredExperience: e.target.value })} rows={3} />
+                        <Textarea label="Preferred Experience" value={roleDetails.preferredExperience || ''} onChange={e => updateRoleDetails({ preferredExperience: e.target.value })} rows={3} />
+                    </div>
+                    <Textarea label="What You Get / Role Benefits" value={roleDetails.benefits || ''} onChange={e => updateRoleDetails({ benefits: e.target.value })} rows={3} placeholder="Leave blank to use the main Benefits field above." />
+
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between gap-3">
+                            <div><h4 className="text-sm font-semibold text-gray-900 dark:text-white">FAQs</h4><p className="text-xs text-gray-500">Only completed questions and answers will be shown publicly.</p></div>
+                            <Button type="button" size="sm" variant="secondary" onClick={addFaq}>Add FAQ</Button>
+                        </div>
+                        {faqs.map((faq, index) => (
+                            <div key={faq.id || index} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-3">
+                                <div className="flex justify-between items-center"><span className="text-xs font-semibold text-gray-500">FAQ {index + 1}</span><button type="button" onClick={() => removeFaq(index)} className="text-xs text-red-600 hover:underline">Remove</button></div>
+                                <Input label="Question" value={faq.question} onChange={e => updateFaq(index, { question: e.target.value })} />
+                                <Textarea label="Answer" value={faq.answer} onChange={e => updateFaq(index, { answer: e.target.value })} rows={2} />
+                            </div>
+                        ))}
+                    </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
