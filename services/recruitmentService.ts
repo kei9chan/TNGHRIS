@@ -47,6 +47,7 @@ type InterviewRow = {
   id: string; application_id: string; type?: string | null; start_at?: string | null;
   end_at?: string | null; location?: string | null; interviewer_id?: string | null;
   panel_user_ids: any; calendar_event_id?: string | null; google_meet_link?: string | null;
+  google_calendar_link?: string | null;
   calendar_invite_status?: string | null; applicant_invite_status?: string | null;
   panel_invite_status?: string | null; confirmation_email_status?: string | null;
   applicant_invite_sent_at?: string | null; panel_invite_sent_at?: string | null;

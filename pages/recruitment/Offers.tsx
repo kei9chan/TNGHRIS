@@ -25,6 +25,7 @@ const Offers: React.FC = () => {
   const [requisitions, setRequisitions] = useState<JobRequisition[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
+  const [businessUnitLogos, setBusinessUnitLogos] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isCreationDrawerOpen, setIsCreationDrawerOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
@@ -46,6 +47,19 @@ const Offers: React.FC = () => {
     status: row.status,
     reportingTo: row.reporting_to || '',
     jobDescription: row.job_description || '',
+    offerDetails: row.offer_details || {},
+    draftStep: row.draft_step || 1,
+    offerExpirationDate: row.offer_expiration_date ? new Date(row.offer_expiration_date) : undefined,
+    logoUrl: row.logo_url || undefined,
+    logoPath: row.logo_path || undefined,
+    lastSavedAt: row.last_saved_at ? new Date(row.last_saved_at) : undefined,
+    sentAt: row.sent_at ? new Date(row.sent_at) : undefined,
+    sentByUserId: row.sent_by_user_id || undefined,
+    recipientEmail: row.recipient_email || undefined,
+    emailSubject: row.email_subject || undefined,
+    emailMessage: row.email_message || undefined,
+    secureToken: row.secure_token || undefined,
+    revision: row.revision || 1,
     // Optional fields not in table
     workScheduleDays: '',
     workScheduleHours: '',
@@ -61,13 +75,14 @@ const Offers: React.FC = () => {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [offRes, appRes, candRes, reqRes, deptRes, buRes] = await Promise.all([
+      const [offRes, appRes, candRes, reqRes, deptRes, buRes, themeRes] = await Promise.all([
         supabase.from('job_offers').select('*').order('created_at', { ascending: false }),
         supabase.from('job_applications').select('*'),
         supabase.from('job_candidates').select('*'),
         supabase.from('job_requisitions').select('*'),
         supabase.from('departments').select('id,name,business_unit_id'),
         supabase.from('business_units').select('id,name'),
+        supabase.from('applicant_page_themes').select('business_unit_id,logo_url').not('business_unit_id', 'is', null).order('updated_at', { ascending: false }),
       ]);
       if (offRes.error) throw offRes.error;
       if (appRes.error) throw appRes.error;
@@ -122,6 +137,12 @@ const Offers: React.FC = () => {
       } as JobRequisition)));
       setDepartments((deptRes.data || []).map((d: any) => ({ id: d.id, name: d.name, businessUnitId: d.business_unit_id } as Department)));
       setBusinessUnits((buRes.data || []).map((b: any) => ({ id: b.id, name: b.name } as BusinessUnit)));
+      if (!themeRes.error) {
+        setBusinessUnitLogos((themeRes.data || []).reduce((logos: Record<string, string>, row: any) => {
+          if (row.business_unit_id && row.logo_url && !logos[row.business_unit_id]) logos[row.business_unit_id] = row.logo_url;
+          return logos;
+        }, {}));
+      }
     } catch (err) {
       console.error('Failed to load offers', err);
       alert('Failed to load offers.');
@@ -163,19 +184,28 @@ const Offers: React.FC = () => {
     setSelectedOffer(null);
   };
 
-  const handleSaveOffer = async (offerToSave: Offer) => {
+  const handleSaveOffer = async (offerToSave: Offer): Promise<Offer> => {
     const allowanceJson = offerToSave.allowanceJSON ? JSON.parse(offerToSave.allowanceJSON) : {};
     const payload = {
       application_id: offerToSave.applicationId,
       offer_number: offerToSave.offerNumber || `OFFER-${Date.now().toString().slice(-6)}`,
       base_pay: offerToSave.basePay,
       allowance_json: allowanceJson,
-      start_date: offerToSave.startDate,
+      start_date: offerToSave.startDate ? new Date(offerToSave.startDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
       probation_months: offerToSave.probationMonths,
       employment_type: offerToSave.employmentType,
       status: offerToSave.status,
       reporting_to: offerToSave.reportingTo || null,
       job_description: offerToSave.jobDescription || null,
+      offer_details: offerToSave.offerDetails || {},
+      draft_step: offerToSave.draftStep || 1,
+      offer_expiration_date: offerToSave.offerExpirationDate ? new Date(offerToSave.offerExpirationDate).toISOString().slice(0, 10) : null,
+      logo_url: offerToSave.logoUrl || null,
+      logo_path: offerToSave.logoPath || null,
+      last_saved_at: new Date().toISOString(),
+      recipient_email: offerToSave.recipientEmail || null,
+      email_subject: offerToSave.emailSubject || null,
+      email_message: offerToSave.emailMessage || null,
       created_by_user_id: user?.id || null,
     };
     try {
@@ -185,19 +215,48 @@ const Offers: React.FC = () => {
         const mapped = mapOffer(data);
         setOffers(prev => prev.map(o => o.id === mapped.id ? mapped : o));
         logActivity(user, 'UPDATE', 'Offer', mapped.id, `Updated offer ${mapped.offerNumber}`);
+        return mapped;
       } else {
         const { data, error } = await supabase.from('job_offers').insert(payload).select().single();
         if (error) throw error;
         const mapped = mapOffer(data);
         setOffers(prev => [mapped, ...prev]);
         logActivity(user, 'CREATE', 'Offer', mapped.id, `Created offer ${mapped.offerNumber}`);
+        return mapped;
       }
     } catch (err) {
       console.error('Failed to save offer', err);
-      alert('Failed to save offer.');
-    } finally {
-      handleCloseModals();
+      throw err;
     }
+  };
+
+  const handleSendOffer = async (offerToSend: Offer, recipient: string, subject: string, message: string, previewHtml: string): Promise<Offer> => {
+    if (!canManage) throw new Error('You do not have permission to send offers.');
+    if (!recipient) throw new Error('The candidate email address is missing.');
+    // Persist first to obtain a stable opaque token, but keep the status Draft until email succeeds.
+    const draft = await handleSaveOffer({ ...offerToSend, status: OfferStatus.Draft, recipientEmail: recipient, emailSubject: subject, emailMessage: message });
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !sessionData.session?.access_token) throw new Error('Your session has expired. Please sign in again.');
+    const secureLink = `${window.location.origin}/offer/${draft.secureToken}`;
+    const html = `${previewHtml}<p style="margin-top:24px"><a href="${secureLink}" style="background:#6d28d9;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600">Review Your Offer</a></p><p style="color:#64748b;font-size:12px">This is a private link intended for the named recipient.</p>`;
+    const response = await fetch('/api/recruitment-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionData.session.access_token}` },
+      body: JSON.stringify({ to: recipient, subject: subject.trim(), message: `${message.trim()}\n\nReview your offer: ${secureLink}`, html, category: 'job-offer' }),
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body?.error || 'The draft was saved, but the offer email could not be sent.');
+    }
+    const sentAt = new Date().toISOString();
+    const { data, error } = await supabase.from('job_offers').update({ status: OfferStatus.Sent, sent_at: sentAt, sent_by_user_id: user?.id || null, last_saved_at: sentAt, recipient_email: recipient, email_subject: subject.trim(), email_message: message.trim() }).eq('id', draft.id).select().single();
+    if (error) throw new Error(`The email was sent, but the offer status could not be updated: ${error.message}`);
+    const mapped = mapOffer(data);
+    setOffers(previous => previous.map(item => item.id === mapped.id ? mapped : item));
+    await logActivity(user, 'UPDATE', 'Offer', mapped.id, `Sent offer ${mapped.offerNumber} to ${recipient}`);
+    setSuccessMessage(`Offer sent successfully to ${recipient}.`);
+    setTimeout(() => setSuccessMessage(''), 5000);
+    return mapped;
   };
 
   const handleStatusChange = async (offerId: string, newStatus: OfferStatus) => {
@@ -267,11 +326,13 @@ const Offers: React.FC = () => {
               isOpen={isCreationDrawerOpen}
               onClose={handleCloseModals}
               onSave={handleSaveOffer}
+              onSend={handleSendOffer}
               applications={applications}
               candidates={candidates}
               requisitions={requisitions}
               businessUnits={businessUnits}
               departments={departments}
+              businessUnitLogos={businessUnitLogos}
             />
           )}
 

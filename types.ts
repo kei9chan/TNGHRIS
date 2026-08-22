@@ -1865,6 +1865,88 @@ export interface Offer {
   signatoryName?: string;
   signatoryPosition?: string;
   specialClauses?: string;
+
+  // Value-first offer builder (additive; legacy scalar fields remain supported)
+  offerDetails?: OfferBuilderDetails;
+  draftStep?: number;
+  offerExpirationDate?: Date;
+  logoUrl?: string;
+  logoPath?: string;
+  lastSavedAt?: Date;
+  sentAt?: Date;
+  sentByUserId?: string;
+  recipientEmail?: string;
+  emailSubject?: string;
+  emailMessage?: string;
+  secureToken?: string;
+  revision?: number;
+}
+
+export interface OfferListItem {
+  id: string;
+  label: string;
+  notes?: string;
+}
+
+export interface OfferMilestone {
+  description: string;
+  successCriteria?: string;
+}
+
+export interface OfferAllowance {
+  id: string;
+  name: string;
+  amount: number;
+  guaranteed: boolean;
+}
+
+export interface OfferBenefit {
+  id: string;
+  name: string;
+  description: string;
+  included: boolean;
+  value?: string;
+  eligibility?: string;
+  notes?: string;
+}
+
+export interface OfferGrowthItem {
+  id: string;
+  name: string;
+  description: string;
+  included: boolean;
+}
+
+export interface OfferBuilderDetails {
+  jobTitle?: string;
+  department?: string;
+  businessUnit?: string;
+  reportingManager?: string;
+  jobCode?: string;
+  workLocation?: string;
+  workSetup?: string;
+  personalNote?: string;
+  rolePurpose?: string;
+  responsibilities?: OfferListItem[];
+  successOutcomes?: OfferListItem[];
+  milestones?: Record<'30' | '60' | '90', OfferMilestone>;
+  currency?: string;
+  payFrequency?: string;
+  grossMonthlySalary?: number;
+  grossAnnualizedSalary?: number;
+  payrollSchedule?: string;
+  probationarySalary?: number;
+  regularizationSalary?: number;
+  overtimeEligibility?: string;
+  commissionOrIncentive?: string;
+  bonusEligibility?: string;
+  allowances?: OfferAllowance[];
+  benefits?: OfferBenefit[];
+  growthItems?: OfferGrowthItem[];
+  workScheduleDays?: string;
+  workScheduleHours?: string;
+  welcomeMessage?: string;
+  termsReviewed?: boolean;
 }
 
 // Visual Job Post Template Types

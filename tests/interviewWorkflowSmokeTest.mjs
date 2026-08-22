@@ -4,7 +4,7 @@ import fs from 'node:fs';
 const read = (path) => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
 const scheduler = read('components/recruitment/InterviewSchedulerModal.tsx');
-const calendarApi = read('api/google-calendar-event.ts');
+const calendarApi = read('supabase/functions/schedule-interview/index.ts');
 const interviewService = read('services/recruitmentInterviewService.ts');
 const detail = read('components/recruitment/InterviewDetailModal.tsx');
 const month = read('components/recruitment/MonthView.tsx');
@@ -24,15 +24,14 @@ assert.match(scheduler, /Generate a real Google Meet link/);
 assert.match(calendarApi, /conferenceDataVersion=1&sendUpdates=all/);
 assert.match(calendarApi, /conferenceData\s*=/);
 assert.match(calendarApi, /conferenceSolutionKey:\s*\{\s*type:\s*'hangoutsMeet'/);
-assert.match(calendarApi, /entryPointType === 'video'/);
-assert.match(calendarApi, /Google Calendar event was created, but Meet link generation failed/);
+assert.match(calendarApi, /meetLinkFromEvent/);
+assert.match(calendarApi, /validMeetLink/);
 assert.doesNotMatch(calendarApi, /meet\.google\.com\/\$\{/);
 
-assert.match(interviewService, /\/api\/google-calendar-event/);
-assert.match(interviewService, /\/api\/recruitment-email/);
-assert.match(interviewService, /google_meet_link:/);
-assert.match(interviewService, /calendar_invite_status:/);
-assert.match(interviewService, /panel_user_ids:/);
+assert.match(interviewService, /functions\.invoke\('schedule-interview'/);
+assert.match(calendarApi, /google_meet_link:/);
+assert.match(calendarApi, /calendar_invite_status:/);
+assert.match(calendarApi, /panel_user_ids:/);
 
 for (const view of [month, week, day]) {
   assert.match(view, /getInterviewLabel/);

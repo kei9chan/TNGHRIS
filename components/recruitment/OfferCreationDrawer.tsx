@@ -1,211 +1,142 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Offer, OfferStatus, ApplicationStage, JobRequisition, Application, Candidate, BusinessUnit, Department } from '../../types';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Application, ApplicationStage, BusinessUnit, Candidate, Department, JobRequisition, Offer, OfferAllowance, OfferBenefit, OfferBuilderDetails, OfferGrowthItem, OfferListItem, OfferStatus } from '../../types';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
-import RichTextEditor from '../ui/RichTextEditor';
-import { useSettings } from '../../context/SettingsContext';
+import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../hooks/useAuth';
 
-interface OfferCreationDrawerProps {
-    isOpen: boolean;
-    onClose: () => void;
-    onSave: (offer: Offer) => void;
-    applications: Application[];
-    candidates: Candidate[];
-    requisitions: JobRequisition[];
-    businessUnits?: BusinessUnit[];
-    departments?: Department[];
+type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+type Errors = Record<string, string>;
+
+interface Props {
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (offer: Offer) => Promise<Offer>;
+  onSend: (offer: Offer, recipient: string, subject: string, message: string, previewHtml: string) => Promise<Offer>;
+  applications: Application[];
+  candidates: Candidate[];
+  requisitions: JobRequisition[];
+  businessUnits?: BusinessUnit[];
+  departments?: Department[];
+  businessUnitLogos?: Record<string, string>;
+  initialOffer?: Offer | null;
 }
 
-interface Allowance {
-    id: number;
-    type: string;
-    amount: number;
-}
+const STEPS = ['Role & Job Details', 'Compensation', 'Schedule & Location', 'Benefits & Growth', 'Review & Send'];
+const inputClass = 'mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 dark:border-slate-600 dark:bg-slate-800 dark:text-white';
+const textAreaClass = `${inputClass} min-h-[92px] resize-y`;
+const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const toDateValue = (value?: Date | string) => value ? new Date(value).toISOString().slice(0, 10) : '';
+const peso = (value = 0) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 }).format(Number(value) || 0);
+const escapeHtml = (value = '') => value.replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[char] || char));
 
-const XIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>;
-const ChevronDownIcon: React.FC<{ className?: string }> = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" className={`h-6 w-6 transition-transform ${className}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>;
+const BENEFITS: OfferBenefit[] = [
+  ['hmo', 'HMO', 'Healthcare coverage to support your well-being.'],
+  ['government', 'Government contributions', 'SSS, PhilHealth and Pag-IBIG contributions as required by law.'],
+  ['paid-leave', 'Paid leave', 'Annual paid time off, subject to company policy.'],
+  ['sick-leave', 'Sick leave', 'Paid sick leave, subject to eligibility and policy.'],
+  ['discounts', 'Staff discounts', 'Discounts on eligible products and services.'],
+  ['meal', 'Meal allowance', 'Support for eligible meal expenses.'],
+  ['transport', 'Transportation allowance', 'Support for eligible commuting expenses.'],
+  ['bonus', 'Bonus or incentive', 'Performance-based rewards subject to policy and eligibility.'],
+  ['training', 'Training and development', 'Learning opportunities relevant to the role.'],
+  ['promotion', 'Promotion review', 'A progression review point; not a guarantee.'],
+  ['events', 'Company events', 'Access to eligible team and company events.'],
+  ['other', 'Other benefit', 'An additional benefit defined by the company.'],
+].map(([id, name, description]) => ({ id, name, description, included: ['hmo', 'government', 'paid-leave'].includes(id) }));
 
-const Section: React.FC<{ title: string; id: string; openSection: string; setOpenSection: (id: string) => void; children: React.ReactNode }> = ({ title, id, openSection, setOpenSection, children }) => {
-    const isOpen = openSection === id;
-    return (
-        <div className="border-b dark:border-slate-700">
-            <button onClick={() => setOpenSection(isOpen ? '' : id)} className="w-full flex justify-between items-center p-4 text-left">
-                <h3 className="text-lg font-semibold">{title}</h3>
-                <ChevronDownIcon className={isOpen ? 'rotate-180' : ''} />
-            </button>
-            {isOpen && <div className="p-4 space-y-4">{children}</div>}
-        </div>
-    );
+const GROWTH: OfferGrowthItem[] = [
+  ['onboarding', '30-day onboarding', 'A structured introduction to the team, tools, and role expectations.'],
+  ['coaching', '60-day coaching check-in', 'A coaching conversation to review progress and remove blockers.'],
+  ['review', '90-day performance review', 'A formal review point to align on progress and next steps.'],
+  ['learning', 'Learning and development', 'Opportunities to build role-relevant skills.'],
+  ['promotion', 'Promotion review', 'A future review point based on readiness and available opportunities.'],
+  ['leadership', 'Leadership opportunities', 'Opportunities to demonstrate leadership as business needs arise.'],
+].map(([id, name, description]) => ({ id, name, description, included: true }));
+
+const blankDetails = (): OfferBuilderDetails => ({
+  currency: 'PHP', payFrequency: 'Monthly', payrollSchedule: '15th and 30th of each month',
+  responsibilities: [{ id: uid(), label: '' }],
+  successOutcomes: [{ id: uid(), label: '' }, { id: uid(), label: '' }, { id: uid(), label: '' }],
+  milestones: { '30': { description: '', successCriteria: '' }, '60': { description: '', successCriteria: '' }, '90': { description: '', successCriteria: '' } },
+  allowances: [], benefits: BENEFITS, growthItems: GROWTH, workSetup: 'Onsite', termsReviewed: false,
+  welcomeMessage: 'We’re excited to welcome you to our team. Here’s a clear look at your role, compensation, benefits, and growth opportunity.',
+});
+
+const Field: React.FC<{ label: string; required?: boolean; error?: string; helper?: string; children: React.ReactNode }> = ({ label, required, error, helper, children }) => <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">{label}{required && <span className="ml-1 text-rose-500">*</span>}{children}{helper && <span className="mt-1 block text-xs font-normal text-slate-500">{helper}</span>}{error && <span className="mt-1 block text-xs font-medium text-rose-600">{error}</span>}</label>;
+const Card: React.FC<{ title: string; subtitle?: string; children: React.ReactNode }> = ({ title, subtitle, children }) => <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900"><div className="mb-5"><h3 className="text-lg font-bold text-slate-900 dark:text-white">{title}</h3>{subtitle && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{subtitle}</p>}</div>{children}</section>;
+
+const ListEditor: React.FC<{ items: OfferListItem[]; onChange: (items: OfferListItem[]) => void; addLabel: string; min?: number; max?: number; placeholders?: string[] }> = ({ items, onChange, addLabel, min = 1, max = 12, placeholders = [] }) => {
+  const move = (index: number, delta: number) => { const target = index + delta; if (target < 0 || target >= items.length) return; const next = [...items]; [next[index], next[target]] = [next[target], next[index]]; onChange(next); };
+  return <div className="space-y-2">{items.map((item, index) => <div key={item.id} className="flex items-center gap-2"><span className="w-6 text-center text-xs font-bold text-slate-400">{index + 1}</span><input className={inputClass} value={item.label} placeholder={placeholders[index] || 'Describe this clearly'} onChange={e => onChange(items.map(row => row.id === item.id ? { ...row, label: e.target.value } : row))}/><div className="flex flex-col"><button type="button" aria-label="Move up" disabled={index === 0} onClick={() => move(index, -1)} className="text-xs text-slate-500 disabled:opacity-30">▲</button><button type="button" aria-label="Move down" disabled={index === items.length - 1} onClick={() => move(index, 1)} className="text-xs text-slate-500 disabled:opacity-30">▼</button></div><button type="button" aria-label="Delete" disabled={items.length <= min} onClick={() => onChange(items.filter(row => row.id !== item.id))} className="rounded-lg px-2 py-2 text-rose-600 disabled:opacity-30">×</button></div>)}<button type="button" disabled={items.length >= max} onClick={() => onChange([...items, { id: uid(), label: '' }])} className="mt-2 text-sm font-semibold text-violet-700 disabled:opacity-40">+ {addLabel}</button></div>;
 };
 
-const OfferCreationDrawer: React.FC<OfferCreationDrawerProps> = ({ isOpen, onClose, onSave, applications, candidates, requisitions, businessUnits = [], departments = [] }) => {
-    const { settings } = useSettings();
-    const { user } = useAuth();
-    const [openSection, setOpenSection] = useState('applicant');
-    
-    // Form State
-    const [applicationId, setApplicationId] = useState('');
-    const [offerData, setOfferData] = useState<Partial<Offer>>({});
-    const [allowances, setAllowances] = useState<Allowance[]>([]);
-    const [error, setError] = useState('');
-    
-    const applicantsInOfferStage = useMemo(() => {
-        return applications
-            .filter(app => [ApplicationStage.Offer, ApplicationStage.Interview, ApplicationStage.Screen, ApplicationStage.HMReview].includes(app.stage))
-            .map(app => {
-                const candidate = candidates.find(c => c.id === app.candidateId);
-                const job = requisitions.find(j => j.id === app.requisitionId);
-                return { appId: app.id, label: `${candidate?.firstName || 'Candidate'} ${candidate?.lastName || ''} - ${job?.title || 'Unknown Role'}` };
-            });
-    }, [applications, candidates, requisitions]);
+export const OfferSheet: React.FC<{ offer: Partial<Offer>; details: OfferBuilderDetails; candidateName: string; companyName: string; logoUrl?: string; previewRef?: React.RefObject<HTMLDivElement | null> }> = ({ offer, details, candidateName, companyName, logoUrl, previewRef }) => {
+  const benefits = (details.benefits || []).filter(item => item.included); const growth = (details.growthItems || []).filter(item => item.included);
+  return <div ref={previewRef} id="offer-sheet" className="mx-auto max-w-5xl overflow-hidden rounded-3xl bg-white text-slate-900 shadow-2xl print:max-w-none print:rounded-none print:shadow-none">
+    <header className="relative overflow-hidden bg-[#071832] px-8 py-9 text-white sm:px-12"><div className="absolute -right-20 -top-28 h-72 w-72 rounded-full bg-violet-600/60"/><div className="absolute -bottom-40 right-8 h-72 w-72 rounded-full bg-orange-500/80"/><div className="relative grid gap-8 sm:grid-cols-[1.4fr,1fr]"><div>{logoUrl ? <img src={logoUrl} alt="Business unit logo" className="mb-5 h-12 max-w-[220px] object-contain object-left"/> : <p className="mb-5 text-sm font-black uppercase tracking-[.2em]">{companyName}</p>}<h1 className="font-serif text-4xl font-bold sm:text-5xl">Your Total Opportunity</h1><p className="mt-2 text-2xl font-bold text-orange-400">at {companyName}</p><p className="mt-5 max-w-xl text-sm text-slate-200">{details.welcomeMessage}</p></div><div className="self-center rounded-2xl border border-white/15 bg-white/10 p-5 backdrop-blur"><p className="text-2xl font-bold">{candidateName || 'Candidate name'}</p><p className="font-semibold text-orange-400">{details.jobTitle || 'Job title'}</p><div className="mt-4 space-y-2 text-sm text-slate-200"><p>Start date: <b>{offer.startDate ? new Date(offer.startDate).toLocaleDateString() : '—'}</b></p><p>Location: <b>{details.workLocation || '—'}</b></p><p>Employment: <b>{offer.employmentType || '—'}</b></p></div></div></div></header>
+    <div className="space-y-7 p-7 sm:p-10"><div className="grid gap-4 md:grid-cols-3"><article className="rounded-2xl border border-violet-100 border-b-4 border-b-violet-600 p-5"><p className="text-lg font-bold text-violet-700">What you earn</p><p className="mt-4 text-3xl font-black text-violet-700">{peso(details.grossMonthlySalary || offer.basePay)}</p><p className="text-xs text-slate-500">gross monthly salary</p><hr className="my-4"/><p className="text-xl font-bold">{peso(details.grossAnnualizedSalary)}</p><p className="text-xs text-slate-500">annualized salary</p>{(details.allowances || []).filter(a => a.name).map(a => <p key={a.id} className="mt-2 text-sm">✓ {a.name}: {peso(a.amount)}</p>)}</article><article className="rounded-2xl border border-orange-100 border-b-4 border-b-orange-500 p-5"><p className="text-lg font-bold text-orange-600">What you receive</p><ul className="mt-4 space-y-2 text-sm">{benefits.length ? benefits.map(b => <li key={b.id}>● <b>{b.name}</b>{b.value ? ` — ${b.value}` : ''}</li>) : <li className="text-slate-500">Benefits will appear here.</li>}</ul></article><article className="rounded-2xl border border-amber-100 border-b-4 border-b-amber-500 p-5"><p className="text-lg font-bold text-amber-700">Where you can grow</p><ul className="mt-4 space-y-2 text-sm">{growth.map(g => <li key={g.id}>● <b>{g.name}</b><span className="block pl-3 text-xs text-slate-500">{g.description}</span></li>)}</ul></article></div>
+      <section><h2 className="text-2xl font-bold">Your Role</h2><div className="mt-3 grid gap-3 text-sm sm:grid-cols-2"><p><b>Position</b><br/>{details.jobTitle || '—'}</p><p><b>Department</b><br/>{details.department || '—'}</p><p><b>Reports to</b><br/>{details.reportingManager || '—'}</p><p><b>Work arrangement</b><br/>{details.workSetup || '—'} · {details.workLocation || '—'}</p></div><p className="mt-4 whitespace-pre-wrap text-sm text-slate-700">{details.rolePurpose}</p></section>
+      <div className="grid gap-6 md:grid-cols-2"><section><h2 className="text-xl font-bold">Key Responsibilities</h2><ol className="mt-3 list-decimal space-y-2 pl-5 text-sm">{(details.responsibilities || []).filter(x => x.label).map(x => <li key={x.id}>{x.label}</li>)}</ol></section><section><h2 className="text-xl font-bold">What Success Looks Like</h2><ul className="mt-3 space-y-2 text-sm">{(details.successOutcomes || []).filter(x => x.label).map(x => <li key={x.id}>✓ {x.label}</li>)}</ul></section></div>
+      <section className="rounded-2xl bg-slate-50 p-5"><h2 className="text-xl font-bold">Your first 90 days</h2><div className="mt-4 grid gap-4 md:grid-cols-3">{(['30','60','90'] as const).map(day => <div key={day}><p className="font-bold text-violet-700">First {day} Days</p><p className="mt-1 text-sm">{details.milestones?.[day]?.description || 'Milestone to be discussed.'}</p>{details.milestones?.[day]?.successCriteria && <p className="mt-2 text-xs text-slate-500">Success: {details.milestones[day].successCriteria}</p>}</div>)}</div></section>
+      <section><h2 className="text-xl font-bold">What You Earn</h2><div className="mt-3 grid gap-3 text-sm sm:grid-cols-2"><p><b>Monthly salary</b><br/>{peso(details.grossMonthlySalary || offer.basePay)}</p><p><b>Annualized salary</b><br/>{peso(details.grossAnnualizedSalary)} annualized</p><p><b>Probationary salary</b><br/>{peso(details.probationarySalary)}</p><p><b>Regularization salary</b><br/>{peso(details.regularizationSalary)}</p><p><b>Incentive eligibility</b><br/>{details.commissionOrIncentive || 'None specified'}</p><p><b>Bonus eligibility</b><br/>{details.bonusEligibility || 'Subject to company policy and eligibility'}</p></div><p className="mt-3 text-xs text-slate-500">Bonuses, incentives, and estimated compensation depend on company policy, eligibility, and/or performance unless expressly stated otherwise.</p></section>
+      <section className="rounded-2xl border border-violet-100 bg-violet-50 p-5"><h2 className="text-xl font-bold">Next Steps</h2><p className="mt-2 text-sm">Please respond by <b>{offer.offerExpirationDate ? new Date(offer.offerExpirationDate).toLocaleDateString() : 'the response deadline'}</b>.</p><div className="mt-5 flex flex-wrap gap-3"><a href="#candidate-response" className="rounded-xl bg-violet-600 px-6 py-3 font-semibold text-white">Accept Offer</a><a href="#candidate-response" className="rounded-xl border border-violet-600 px-6 py-3 font-semibold text-violet-700">Decline Offer</a><a className="rounded-xl px-6 py-3 font-semibold text-violet-700" href="mailto:recruitment@thenextperience.com">Ask a Question</a></div><div className="mt-8 grid gap-5 border-t border-violet-200 pt-5 text-sm sm:grid-cols-2"><p>Candidate signature: ____________________</p><p>Signature date: ____________________</p></div></section>
+    </div>
+  </div>;
+};
 
-    const selectedRequisition = useMemo(() => {
-        if (!applicationId) return null;
-        const app = applications.find(a => a.id === applicationId);
-        return requisitions.find(r => r.id === app?.requisitionId);
-    }, [applicationId, applications, requisitions]);
+const OfferCreationDrawer: React.FC<Props> = ({ isOpen, onClose, onSave, onSend, applications, candidates, requisitions, businessUnits = [], departments = [], businessUnitLogos = {}, initialOffer }) => {
+  const { user } = useAuth(); const [step, setStep] = useState(1); const [applicationId, setApplicationId] = useState('');
+  const [offer, setOffer] = useState<Partial<Offer>>({ status: OfferStatus.Draft, startDate: new Date(), probationMonths: 6, employmentType: 'Full-Time' });
+  const [details, setDetails] = useState<OfferBuilderDetails>(blankDetails); const [search, setSearch] = useState(''); const [pickerOpen, setPickerOpen] = useState(true); const [errors, setErrors] = useState<Errors>({});
+  const [saveState, setSaveState] = useState<SaveState>('idle'); const [lastSaved, setLastSaved] = useState<Date | null>(null); const [dirty, setDirty] = useState(false); const [sending, setSending] = useState(false); const [showPreview, setShowPreview] = useState(false); const [showSend, setShowSend] = useState(false); const [logoBusy, setLogoBusy] = useState(false);
+  const [emailSubject, setEmailSubject] = useState('Your employment offer'); const [emailMessage, setEmailMessage] = useState('We’re excited to share your employment offer. Please review the secure offer link and let us know if you have any questions.');
+  const previewRef = useRef<HTMLDivElement>(null); const initialized = useRef(false); const readyForDirty = useRef(false); const skipDirtyOnce = useRef(false); const localKey = `tng-offer-draft-${user?.id || 'user'}`;
+  const selectedApplication = applications.find(a => a.id === applicationId); const selectedCandidate = candidates.find(c => c.id === selectedApplication?.candidateId); const selectedRequisition = requisitions.find(r => r.id === selectedApplication?.requisitionId); const candidateName = selectedCandidate ? `${selectedCandidate.firstName} ${selectedCandidate.lastName}` : '';
 
-    useEffect(() => {
-        const defaultOffer: Partial<Offer> = {
-            startDate: new Date(),
-            probationMonths: 6,
-            paymentSchedule: "15th and 30th of each month",
-            signatoryName: user?.name,
-            signatoryPosition: user?.position,
-        };
+  const applicants = useMemo(() => applications.filter(app => [ApplicationStage.Offer, ApplicationStage.Interview, ApplicationStage.Screen, ApplicationStage.HMReview].includes(app.stage)).map(app => ({ app, candidate: candidates.find(c => c.id === app.candidateId), req: requisitions.find(r => r.id === app.requisitionId) })).filter(row => row.candidate && row.req).filter(row => `${row.candidate?.firstName} ${row.candidate?.lastName} ${row.candidate?.email} ${row.req?.title}`.toLowerCase().includes(search.toLowerCase())), [applications, candidates, requisitions, search]);
+  const hydrateApplication = useCallback((appId: string) => { const app = applications.find(a => a.id === appId); const req = requisitions.find(r => r.id === app?.requisitionId); if (!req) return; const dept = departments.find(d => d.id === req.departmentId); const bu = businessUnits.find(b => b.id === req.businessUnitId); const amount = Number(req.budgetedSalaryMin || 0); setOffer(current => ({ ...current, applicationId: appId, basePay: current.basePay || amount, employmentType: (req.employmentType as Offer['employmentType']) || 'Full-Time', logoUrl: current.logoUrl || businessUnitLogos[req.businessUnitId] })); setDetails(current => ({ ...current, jobTitle: req.title, department: dept?.name || current.department, businessUnit: bu?.name || current.businessUnit, jobCode: req.reqCode, workLocation: req.workLocation || current.workLocation, grossMonthlySalary: current.grossMonthlySalary || amount, grossAnnualizedSalary: (current.grossMonthlySalary || amount) * 12 })); }, [applications, requisitions, departments, businessUnits, businessUnitLogos]);
 
-        if (selectedRequisition) {
-            setOfferData({
-                ...defaultOffer,
-                basePay: selectedRequisition.budgetedSalaryMin,
-                employmentType: selectedRequisition.employmentType,
-                workLocation: selectedRequisition.workLocation,
-                reportingTo: '',
-            });
-            setAllowances([]);
-        } else {
-            setOfferData(defaultOffer);
-        }
-    }, [selectedRequisition, user]);
-    
-    const handleDataChange = (field: keyof Offer, value: any) => {
-        setOfferData(prev => ({...prev, [field]: value}));
-    };
-    
-    const handleAddAllowance = () => setAllowances([...allowances, {id: Date.now(), type: '', amount: 0}]);
-    const handleRemoveAllowance = (id: number) => setAllowances(allowances.filter(a => a.id !== id));
-    const handleAllowanceChange = (id: number, field: 'type' | 'amount', value: string) => {
-        setAllowances(allowances.map(a => a.id === id ? {...a, [field]: field === 'amount' ? parseFloat(value) || 0 : value} : a));
-    };
+  useEffect(() => { if (!isOpen || initialized.current) return; initialized.current = true; readyForDirty.current = false; if (initialOffer) { setOffer(initialOffer); setApplicationId(initialOffer.applicationId); setStep(initialOffer.draftStep || 1); setDetails({ ...blankDetails(), ...(initialOffer.offerDetails || {}) }); setLastSaved(initialOffer.lastSavedAt || null); } else { const stored = localStorage.getItem(localKey); if (stored) try { const draft = JSON.parse(stored); setOffer({ ...draft.offer, startDate: draft.offer.startDate ? new Date(draft.offer.startDate) : new Date(), offerExpirationDate: draft.offer.offerExpirationDate ? new Date(draft.offer.offerExpirationDate) : undefined }); setApplicationId(draft.applicationId || ''); setDetails({ ...blankDetails(), ...draft.details }); setStep(draft.step || 1); setEmailSubject(draft.emailSubject || 'Your employment offer'); setEmailMessage(draft.emailMessage || emailMessage); } catch { localStorage.removeItem(localKey); } } const timer = window.setTimeout(() => { readyForDirty.current = true; }, 0); return () => window.clearTimeout(timer); }, [isOpen, initialOffer, localKey, emailMessage]);
+  useEffect(() => { if (applicationId && initialized.current) hydrateApplication(applicationId); }, [applicationId, hydrateApplication]);
+  const snapshot = useCallback(() => ({ applicationId, offer, details, step, emailSubject, emailMessage }), [applicationId, offer, details, step, emailSubject, emailMessage]);
+  useEffect(() => { if (!isOpen || !initialized.current) return; localStorage.setItem(localKey, JSON.stringify(snapshot())); if (!readyForDirty.current) return; if (skipDirtyOnce.current) { skipDirtyOnce.current = false; return; } setDirty(true); }, [isOpen, localKey, snapshot]);
+  useEffect(() => { const guard = (event: BeforeUnloadEvent) => { if (dirty) { event.preventDefault(); event.returnValue = ''; } }; window.addEventListener('beforeunload', guard); return () => window.removeEventListener('beforeunload', guard); }, [dirty]);
 
-    const handleSave = (status: OfferStatus) => {
-        if (!applicationId || !offerData.basePay || !offerData.startDate) {
-            setError('Please select an applicant and fill in all required fields.');
-            return;
-        }
+  const buildOffer = useCallback((status = OfferStatus.Draft): Offer => ({ ...offer, id: offer.id || '', applicationId, offerNumber: offer.offerNumber || `OFFER-${Date.now().toString().slice(-6)}`, basePay: Number(details.grossMonthlySalary || offer.basePay || 0), allowanceJSON: JSON.stringify(details.allowances || []), startDate: offer.startDate || new Date(), probationMonths: offer.probationMonths ?? 6, employmentType: offer.employmentType || 'Full-Time', status, reportingTo: details.reportingManager, jobDescription: details.rolePurpose, paymentSchedule: details.payrollSchedule, workScheduleDays: details.workScheduleDays, workScheduleHours: details.workScheduleHours, workLocation: details.workLocation, companyBenefits: (details.benefits || []).filter(b => b.included).map(b => b.name).join(', '), offerDetails: details, draftStep: step, recipientEmail: selectedCandidate?.email, emailSubject, emailMessage }), [offer, applicationId, details, step, selectedCandidate, emailSubject, emailMessage]);
+  const persist = useCallback(async (manual = false) => { if (!applicationId) { if (manual) setErrors({ applicationId: 'Select a candidate before saving this draft.' }); return null; } setSaveState('saving'); try { const saved = await onSave(buildOffer()); skipDirtyOnce.current = true; setOffer(saved); const when = saved.lastSavedAt || new Date(); setLastSaved(when); setSaveState('saved'); setDirty(false); localStorage.setItem(localKey, JSON.stringify({ ...snapshot(), offer: saved })); return saved; } catch { setSaveState('error'); return null; } }, [applicationId, onSave, buildOffer, localKey, snapshot]);
+  useEffect(() => { if (!dirty || !applicationId || sending) return; const timer = window.setTimeout(() => void persist(), 900); return () => window.clearTimeout(timer); }, [dirty, applicationId, sending, persist]);
 
-        const allowanceObject = allowances.reduce((obj, item) => {
-            if(item.type) obj[item.type.toLowerCase()] = item.amount;
-            return obj;
-        }, {} as Record<string, number>);
+  const validate = () => { const next: Errors = {}; if (!applicationId) next.applicationId = 'Candidate is required.'; if (!details.jobTitle?.trim()) next.jobTitle = 'Job title is required.'; if (!details.rolePurpose?.trim()) next.rolePurpose = 'Role purpose is required.'; if (!(details.responsibilities || []).some(i => i.label.trim())) next.responsibilities = 'Add at least one responsibility.'; if (!Number(details.grossMonthlySalary || offer.basePay)) next.salary = 'Monthly salary is required.'; if (!offer.startDate) next.startDate = 'Start date is required.'; if (!offer.offerExpirationDate) next.expiration = 'Offer expiration date is required.'; if (!(details.benefits || []).some(i => i.included)) next.benefits = 'Select at least one benefit.'; if (!details.termsReviewed) next.terms = 'Confirm that the offer terms were reviewed.'; setErrors(next); return Object.keys(next).length === 0; };
+  const close = () => { if (dirty && !window.confirm('You have unsaved changes. Leave the offer builder?')) return; initialized.current = false; readyForDirty.current = false; onClose(); };
+  const uploadLogo = async (file?: File) => { if (!file) return; if (!['image/png','image/jpeg','image/svg+xml'].includes(file.type)) { setErrors(v => ({ ...v, logo: 'Use a PNG, JPG, or SVG file.' })); return; } if (file.size > 2 * 1024 * 1024) { setErrors(v => ({ ...v, logo: 'Logo must be 2MB or smaller.' })); return; } setLogoBusy(true); try { const path = `logos/${user?.id || 'user'}/${Date.now()}.${file.name.split('.').pop()?.toLowerCase() || 'png'}`; const result = await supabase.storage.from('offer-assets').upload(path, file, { contentType: file.type }); if (result.error) throw result.error; const signed = await supabase.storage.from('offer-assets').createSignedUrl(path, 60 * 60 * 24 * 7); setOffer(v => ({ ...v, logoPath: path, logoUrl: signed.data?.signedUrl || '' })); setErrors(v => ({ ...v, logo: '' })); } catch (error: any) { setErrors(v => ({ ...v, logo: error?.message || 'Unable to upload logo.' })); } finally { setLogoBusy(false); } };
+  const downloadPdf = async () => { if (!previewRef.current) return; const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import('html2canvas'), import('jspdf')]); const canvas = await html2canvas(previewRef.current, { scale: 2, useCORS: true }); const pdf = new jsPDF('p', 'mm', 'a4'); const width = 210; const height = canvas.height * width / canvas.width; const image = canvas.toDataURL('image/png'); for (let offset = 0; offset < height; offset += 297) { if (offset) pdf.addPage(); pdf.addImage(image, 'PNG', 0, -offset, width, height); } pdf.save(`${offer.offerNumber || 'employment-offer'}.pdf`); };
+  const previewHtml = () => `<h1>Employment Offer: ${escapeHtml(details.jobTitle || '')}</h1><p>Dear ${escapeHtml(selectedCandidate?.firstName || 'Candidate')},</p><p>${escapeHtml(emailMessage)}</p><p><b>Monthly salary:</b> ${escapeHtml(peso(details.grossMonthlySalary))}</p><p><b>Start date:</b> ${escapeHtml(toDateValue(offer.startDate))}</p>`;
+  const send = async () => { if (!validate()) { setStep(5); setShowSend(false); return; } setSending(true); try { const sent = await onSend(buildOffer(OfferStatus.Sent), selectedCandidate?.email || '', emailSubject, emailMessage, previewHtml()); skipDirtyOnce.current = true; setOffer(sent); setSaveState('saved'); setLastSaved(sent.lastSavedAt || new Date()); setDirty(false); localStorage.removeItem(localKey); setShowSend(false); } catch (error: any) { setErrors(v => ({ ...v, send: error?.message || 'Unable to send offer. Retry.' })); } finally { setSending(false); } };
+  const updateBenefit = (id: string, changes: Partial<OfferBenefit>) => setDetails(v => ({ ...v, benefits: (v.benefits || []).map(b => b.id === id ? { ...b, ...changes } : b) }));
+  const updateGrowth = (id: string, changes: Partial<OfferGrowthItem>) => setDetails(v => ({ ...v, growthItems: (v.growthItems || []).map(g => g.id === id ? { ...g, ...changes } : g) }));
+  const includedBenefits = (details.benefits || []).filter(b => b.included); const includedGrowth = (details.growthItems || []).filter(g => g.included); const guaranteedAllowances = (details.allowances || []).filter(a => a.guaranteed).reduce((sum, a) => sum + Number(a.amount || 0), 0); const totalPackage = Number(details.grossAnnualizedSalary || 0) + guaranteedAllowances * 12;
+  const saveText = saveState === 'saving' ? 'Saving…' : saveState === 'error' ? 'Unable to save. Retry' : lastSaved ? 'Draft saved just now' : 'Draft not saved yet';
+  if (!isOpen) return null;
 
-        const payload: Offer = {
-            ...offerData,
-            id: '', // Set by parent
-            applicationId,
-            status,
-            allowanceJSON: JSON.stringify(allowanceObject),
-            offerNumber: offerData.offerNumber || `OFFER-${Date.now().toString().slice(-6)}`
-        } as Offer;
-        
-        onSave(payload);
-    };
-
-    return (
-        <div className={`fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-            <div className={`fixed top-0 right-0 h-full w-full max-w-4xl bg-white dark:bg-slate-800 shadow-xl z-50 transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-                <div className="flex flex-col h-full">
-                    <div className="flex justify-between items-center p-4 border-b border-gray-200 dark:border-slate-700 sticky top-0 bg-white dark:bg-slate-800 z-10">
-                        <h2 className="text-xl font-semibold">New Job Offer</h2>
-                        <button onClick={onClose} className="p-1 rounded-full text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-700"><XIcon /></button>
-                    </div>
-
-                    <div className="flex-grow overflow-y-auto">
-                        {error && <p className="m-4 text-sm text-red-500 bg-red-50 p-3 rounded-md">{error}</p>}
-                        
-                        <Section id="applicant" title="1. Applicant & Position Details" openSection={openSection} setOpenSection={setOpenSection}>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium">Applicant*</label>
-                                    <select value={applicationId} onChange={e => setApplicationId(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 border-gray-300 rounded-md dark:bg-gray-700">
-                                        <option value="">-- Select an Applicant in Offer Stage --</option>
-                                        {applicantsInOfferStage.map(opt => <option key={opt.appId} value={opt.appId}>{opt.label}</option>)}
-                                    </select>
-                                </div>
-                                <Input label="Job Title" value={selectedRequisition?.title || ''} readOnly />
-                                <Input label="Department" value={departments.find(d=>d.id === selectedRequisition?.departmentId)?.name || ''} readOnly />
-                                <Input label="Reporting To" name="reportingTo" value={offerData.reportingTo || ''} onChange={(e) => handleDataChange('reportingTo', e.target.value)} />
-                                <div>
-                                    <label className="block text-sm font-medium">Employment Type</label>
-                                    <select name="employmentType" value={offerData.employmentType || ''} onChange={(e) => handleDataChange('employmentType', e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 border-gray-300 rounded-md dark:bg-gray-700">
-                                        <option>Full-Time</option><option>Part-Time</option><option>Contract</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </Section>
-
-                        <Section id="jd" title="2. Job Description" openSection={openSection} setOpenSection={setOpenSection}>
-                            <RichTextEditor label="Main Responsibilities" value={offerData.jobDescription || ''} onChange={(value) => handleDataChange('jobDescription', value)} />
-                        </Section>
-                        
-                        <Section id="compensation" title="3. Compensation" openSection={openSection} setOpenSection={setOpenSection}>
-                             <Input label={`Base Pay (Monthly)`} unit={settings.currency} type="number" value={offerData.basePay || ''} onChange={(e) => handleDataChange('basePay', parseFloat(e.target.value) || 0)} required />
-                             <Input label="Payment Schedule" name="paymentSchedule" value={offerData.paymentSchedule || ''} onChange={(e) => handleDataChange('paymentSchedule', e.target.value)} />
-                             <RichTextEditor label="Additional Pay Information (OT, Holidays, etc.)" value={offerData.additionalPayInfo || ''} onChange={(value) => handleDataChange('additionalPayInfo', value)} />
-                             <div>
-                                <h4 className="text-sm font-medium">Allowances</h4>
-                                {allowances.map((allowance) => (
-                                    <div key={allowance.id} className="flex items-center space-x-2 mt-2">
-                                        <Input label="" id={`type-${allowance.id}`} placeholder="Type" value={allowance.type} onChange={e => handleAllowanceChange(allowance.id, 'type', e.target.value)} />
-                                        <Input label="" id={`amount-${allowance.id}`} placeholder="Amount" type="number" unit={settings.currency} value={allowance.amount} onChange={e => handleAllowanceChange(allowance.id, 'amount', e.target.value)} />
-                                        <Button variant="danger" size="sm" onClick={() => handleRemoveAllowance(allowance.id)} className="mt-1 self-center">X</Button>
-                                    </div>
-                                ))}
-                                <Button variant="secondary" size="sm" onClick={handleAddAllowance} className="mt-2">+ Add Allowance</Button>
-                            </div>
-                        </Section>
-
-                        <Section id="schedule" title="4. Work Schedule & Location" openSection={openSection} setOpenSection={setOpenSection}>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <Input label="Work Days" name="workScheduleDays" value={offerData.workScheduleDays || ''} onChange={(e) => handleDataChange('workScheduleDays', e.target.value)} placeholder="e.g. Monday to Friday" />
-                                <Input label="Work Hours" name="workScheduleHours" value={offerData.workScheduleHours || ''} onChange={(e) => handleDataChange('workScheduleHours', e.target.value)} placeholder="e.g. 9:00 AM to 6:00 PM" />
-                                <div className="md:col-span-2">
-                                    <Input label="Work Location" name="workLocation" value={offerData.workLocation || ''} onChange={(e) => handleDataChange('workLocation', e.target.value)} />
-                                </div>
-                            </div>
-                        </Section>
-
-                        <Section id="benefits" title="5. Benefits & Conditions" openSection={openSection} setOpenSection={setOpenSection}>
-                            <RichTextEditor label="Company Benefits" value={offerData.companyBenefits || ''} onChange={(value) => handleDataChange('companyBenefits', value)} />
-                            <RichTextEditor label="Pre-employment Requirements" value={offerData.preEmploymentRequirements || ''} onChange={(value) => handleDataChange('preEmploymentRequirements', value)} />
-                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <Input label="Start Date" type="date" value={offerData.startDate ? new Date(offerData.startDate).toISOString().split('T')[0] : ''} onChange={(e) => handleDataChange('startDate', new Date(e.target.value))} required />
-                                <Input label="Probation (Months)" type="number" value={offerData.probationMonths || ''} onChange={(e) => handleDataChange('probationMonths', parseInt(e.target.value))} />
-                            </div>
-                        </Section>
-                        
-                    </div>
-
-                    <div className="p-4 border-t border-gray-200 dark:border-slate-700 sticky bottom-0 bg-white dark:bg-slate-800 z-10 flex justify-end space-x-2">
-                        <Button variant="secondary" onClick={onClose}>Cancel</Button>
-                        <Button onClick={() => handleSave(OfferStatus.Draft)}>Save as Draft</Button>
-                        <Button onClick={() => handleSave(OfferStatus.Sent)}>Send Offer</Button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
+  return <div className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
+    <header className="border-b border-slate-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900 sm:px-7"><div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4"><div><button onClick={close} className="text-sm font-semibold text-violet-700">← Back to Offers</button><h1 className="mt-1 text-2xl font-black text-slate-950 dark:text-white">Create an Offer That Makes the Decision Easy</h1><p className="text-sm text-slate-500">A clear, valuable package that is easy to understand.</p></div><button onClick={close} aria-label="Close offer builder" className="rounded-full p-2 text-2xl text-slate-500 hover:bg-slate-100">×</button></div></header>
+    <div className="border-b border-slate-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-900"><div className="mx-auto grid max-w-[1400px] grid-cols-2 gap-2 md:grid-cols-5">{STEPS.map((label, index) => { const number = index + 1; const pending = number > step; return <button type="button" key={label} onClick={() => setStep(number)} className="flex items-center gap-2 text-left"><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${pending ? 'bg-slate-200 text-slate-500' : 'bg-violet-600 text-white'}`}>{number < step ? '✓' : number}</span><span className={`hidden text-xs font-semibold sm:block ${pending ? 'text-slate-500' : 'text-violet-700 dark:text-violet-300'}`}>{label}</span></button>; })}</div></div>
+    <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-7"><div className="mx-auto grid max-w-[1600px] gap-6 xl:grid-cols-[minmax(0,1fr),360px]"><div className="space-y-5">
+      {step === 1 && <><Card title="Role & Job Details" subtitle="Start with the candidate and the reason this role exists."><div className="grid gap-4 md:grid-cols-2"><div className="md:col-span-2"><Field label="Candidate" required error={errors.applicationId}><button type="button" onClick={() => setPickerOpen(v => !v)} className={`${inputClass} text-left`}>{selectedCandidate ? `${candidateName} — ${selectedRequisition?.title}` : 'Search and select a candidate'}</button>{pickerOpen && <div className="mt-2 rounded-xl border border-slate-200 bg-white p-2 shadow-lg dark:bg-slate-900"><input autoFocus className={inputClass} placeholder="Search by name, position, or email" value={search} onChange={e => setSearch(e.target.value)}/><div className="mt-2 max-h-56 overflow-y-auto">{applicants.map(({ app, candidate, req }) => <button type="button" key={app.id} onClick={() => { setApplicationId(app.id); setPickerOpen(false); setErrors({}); }} className="w-full rounded-lg px-3 py-2 text-left hover:bg-violet-50 dark:hover:bg-slate-800"><b>{candidate?.firstName} {candidate?.lastName} — {req?.title}</b><span className="block text-xs text-slate-500">{businessUnits.find(b => b.id === req?.businessUnitId)?.name || 'Business unit'} · {app.stage} · {candidate?.email}</span></button>)}</div></div>}</Field></div><Input label="Job title *" value={details.jobTitle || ''} error={errors.jobTitle} onChange={e => setDetails(v => ({ ...v, jobTitle: e.target.value }))}/><Input label="Reporting manager" value={details.reportingManager || ''} onChange={e => setDetails(v => ({ ...v, reportingManager: e.target.value }))}/><Input label="Department" value={details.department || ''} onChange={e => setDetails(v => ({ ...v, department: e.target.value }))}/><Input label="Business unit" value={details.businessUnit || ''} onChange={e => setDetails(v => ({ ...v, businessUnit: e.target.value }))}/><Input label="Job code" value={details.jobCode || ''} onChange={e => setDetails(v => ({ ...v, jobCode: e.target.value }))}/><Field label="Employment type"><select className={inputClass} value={offer.employmentType || 'Full-Time'} onChange={e => setOffer(v => ({ ...v, employmentType: e.target.value as Offer['employmentType'] }))}><option>Full-Time</option><option>Part-Time</option><option>Contract</option></select></Field><div className="md:col-span-2"><Field label="Optional personal note"><textarea className={textAreaClass} maxLength={500} value={details.personalNote || ''} onChange={e => setDetails(v => ({ ...v, personalNote: e.target.value }))}/></Field></div></div></Card>
+        <Card title="Business-unit logo" subtitle="PNG, JPG, or SVG · maximum 2MB"><div className="flex flex-wrap items-center gap-4">{offer.logoUrl ? <img src={offer.logoUrl} alt="Offer logo preview" className="h-20 w-48 rounded-xl border bg-white object-contain p-2"/> : <div className="flex h-20 w-48 items-center justify-center rounded-xl border border-dashed text-sm text-slate-400">Business-unit logo</div>}<label className="cursor-pointer rounded-xl border border-violet-300 px-4 py-2 text-sm font-semibold text-violet-700">{logoBusy ? 'Uploading…' : offer.logoUrl ? 'Replace logo' : 'Upload logo'}<input type="file" className="hidden" accept=".png,.jpg,.jpeg,.svg,image/png,image/jpeg,image/svg+xml" onChange={e => void uploadLogo(e.target.files?.[0])}/></label>{offer.logoUrl && <button type="button" onClick={() => setOffer(v => ({ ...v, logoUrl: '', logoPath: '' }))} className="text-sm font-semibold text-rose-600">Remove</button>}</div>{errors.logo && <p className="mt-2 text-xs text-rose-600">{errors.logo}</p>}</Card>
+        <Card title="Job Description"><Field label="Role Purpose" required error={errors.rolePurpose} helper="Briefly explain why this role exists and the impact the employee is expected to make."><textarea className={textAreaClass} value={details.rolePurpose || ''} onChange={e => setDetails(v => ({ ...v, rolePurpose: e.target.value }))}/></Field><div className="mt-5"><Field label="Key Responsibilities" required error={errors.responsibilities}><ListEditor items={details.responsibilities || []} onChange={responsibilities => setDetails(v => ({ ...v, responsibilities }))} addLabel="Add responsibility" placeholders={['Lead smooth daily operations', 'Coach and support the team', 'Maintain accurate reports']}/></Field></div></Card>
+        <Card title="What Success Looks Like" subtitle="Define 3–6 measurable outcomes."><ListEditor items={details.successOutcomes || []} min={3} max={6} onChange={successOutcomes => setDetails(v => ({ ...v, successOutcomes }))} addLabel="Add success outcome" placeholders={['Smooth daily operations', 'High guest satisfaction', 'Accurate reporting', 'Strong team performance']}/></Card>
+        <Card title="First 90 Days"><div className="grid gap-4 lg:grid-cols-3">{(['30','60','90'] as const).map(day => <div key={day} className="rounded-xl bg-slate-50 p-4 dark:bg-slate-800"><p className="font-bold text-violet-700">First {day} Days</p><textarea className={textAreaClass} placeholder="Milestone description" value={details.milestones?.[day]?.description || ''} onChange={e => setDetails(v => ({ ...v, milestones: { ...(v.milestones || blankDetails().milestones!), [day]: { ...(v.milestones?.[day] || {}), description: e.target.value } } }))}/><input className={inputClass} placeholder="Optional success criteria" value={details.milestones?.[day]?.successCriteria || ''} onChange={e => setDetails(v => ({ ...v, milestones: { ...(v.milestones || blankDetails().milestones!), [day]: { ...(v.milestones?.[day] || {}), successCriteria: e.target.value } } }))}/></div>)}</div></Card></>}
+      {step === 2 && <><Card title="Compensation" subtitle="Keep guaranteed, estimated, and performance-based pay easy to distinguish."><div className="grid gap-4 md:grid-cols-2"><Input label="Basic / gross monthly salary *" unit="₱" type="number" min="0" value={details.grossMonthlySalary || ''} error={errors.salary} onChange={e => { const amount = Number(e.target.value); setDetails(v => ({ ...v, grossMonthlySalary: amount, grossAnnualizedSalary: amount * 12 })); setOffer(v => ({ ...v, basePay: amount })); }}/><Input label="Gross annualized salary" unit="₱" value={details.grossAnnualizedSalary || 0} readOnly/><Field label="Currency"><select className={inputClass} value={details.currency || 'PHP'} onChange={e => setDetails(v => ({ ...v, currency: e.target.value }))}><option value="PHP">Philippine Peso (PHP)</option><option value="USD">US Dollar (USD)</option></select></Field><Field label="Pay frequency"><select className={inputClass} value={details.payFrequency || 'Monthly'} onChange={e => setDetails(v => ({ ...v, payFrequency: e.target.value }))}><option>Monthly</option><option>Semi-monthly</option><option>Weekly</option></select></Field><Input label="Payroll schedule" value={details.payrollSchedule || ''} onChange={e => setDetails(v => ({ ...v, payrollSchedule: e.target.value }))}/><Input label="Probationary period (months)" type="number" min="0" value={offer.probationMonths ?? 6} onChange={e => setOffer(v => ({ ...v, probationMonths: Number(e.target.value) }))}/><Input label="Probationary salary" unit="₱" type="number" value={details.probationarySalary || ''} onChange={e => setDetails(v => ({ ...v, probationarySalary: Number(e.target.value) }))}/><Input label="Regularization salary" unit="₱" type="number" value={details.regularizationSalary || ''} onChange={e => setDetails(v => ({ ...v, regularizationSalary: Number(e.target.value) }))}/><Input label="Overtime eligibility" value={details.overtimeEligibility || ''} placeholder="Eligible / Not eligible / Per policy" onChange={e => setDetails(v => ({ ...v, overtimeEligibility: e.target.value }))}/><Input label="Commission or incentive" value={details.commissionOrIncentive || ''} placeholder="Estimated or performance-based" onChange={e => setDetails(v => ({ ...v, commissionOrIncentive: e.target.value }))}/><div className="md:col-span-2"><Input label="Bonus eligibility" value={details.bonusEligibility || ''} placeholder="Subject to company policy and eligibility" onChange={e => setDetails(v => ({ ...v, bonusEligibility: e.target.value }))}/></div></div></Card><Card title="Allowances" subtitle="Mark guaranteed allowances separately from estimates."><div className="space-y-3">{(details.allowances || []).map(item => <div key={item.id} className="grid gap-3 rounded-xl border p-3 sm:grid-cols-[1fr,180px,130px,40px]"><input className={inputClass} placeholder="Allowance name" value={item.name} onChange={e => setDetails(v => ({ ...v, allowances: (v.allowances || []).map(a => a.id === item.id ? { ...a, name: e.target.value } : a) }))}/><input className={inputClass} type="number" placeholder="Amount" value={item.amount || ''} onChange={e => setDetails(v => ({ ...v, allowances: (v.allowances || []).map(a => a.id === item.id ? { ...a, amount: Number(e.target.value) } : a) }))}/><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={item.guaranteed} onChange={e => setDetails(v => ({ ...v, allowances: (v.allowances || []).map(a => a.id === item.id ? { ...a, guaranteed: e.target.checked } : a) }))}/> Guaranteed</label><button onClick={() => setDetails(v => ({ ...v, allowances: (v.allowances || []).filter(a => a.id !== item.id) }))} className="text-rose-600">×</button></div>)}</div><button type="button" onClick={() => setDetails(v => ({ ...v, allowances: [...(v.allowances || []), { id: uid(), name: '', amount: 0, guaranteed: true } as OfferAllowance] }))} className="mt-3 text-sm font-semibold text-violet-700">+ Add allowance</button><p className="mt-4 text-xs text-slate-500">Bonuses and incentives may depend on company policy, eligibility, or performance. Annualized salary is gross monthly salary × 12.</p></Card></>}
+      {step === 3 && <Card title="Schedule & Location" subtitle="Set clear expectations about when and where work happens."><div className="grid gap-4 md:grid-cols-2"><Input label="Start date *" type="date" error={errors.startDate} value={toDateValue(offer.startDate)} onChange={e => setOffer(v => ({ ...v, startDate: new Date(`${e.target.value}T00:00:00`) }))}/><Input label="Offer expiration date *" type="date" error={errors.expiration} value={toDateValue(offer.offerExpirationDate)} onChange={e => setOffer(v => ({ ...v, offerExpirationDate: new Date(`${e.target.value}T00:00:00`) }))}/><Input label="Work location" value={details.workLocation || ''} onChange={e => setDetails(v => ({ ...v, workLocation: e.target.value }))}/><Field label="Work setup"><select className={inputClass} value={details.workSetup || 'Onsite'} onChange={e => setDetails(v => ({ ...v, workSetup: e.target.value }))}><option>Onsite</option><option>Hybrid</option><option>Remote</option></select></Field><Input label="Work days" placeholder="Monday to Friday" value={details.workScheduleDays || ''} onChange={e => setDetails(v => ({ ...v, workScheduleDays: e.target.value }))}/><Input label="Work hours" placeholder="9:00 AM to 6:00 PM" value={details.workScheduleHours || ''} onChange={e => setDetails(v => ({ ...v, workScheduleHours: e.target.value }))}/></div></Card>}
+      {step === 4 && <><Card title="Benefits & Growth" subtitle="Choose what is included, then make the value and eligibility clear."><div className="grid gap-4 md:grid-cols-2">{(details.benefits || []).map(item => <article key={item.id} className={`rounded-2xl border p-4 ${item.included ? 'border-violet-300 bg-violet-50/50' : 'border-slate-200'}`}><div className="flex items-start justify-between gap-3"><div><p className="font-bold">{item.name}</p><p className="mt-1 text-xs text-slate-500">{item.description}</p></div><input aria-label={`Include ${item.name}`} type="checkbox" checked={item.included} onChange={e => updateBenefit(item.id, { included: e.target.checked })}/></div>{item.included && <div className="mt-3 grid gap-2"><input className={inputClass} placeholder="Value or coverage (optional)" value={item.value || ''} onChange={e => updateBenefit(item.id, { value: e.target.value })}/><input className={inputClass} placeholder="Eligibility" value={item.eligibility || ''} onChange={e => updateBenefit(item.id, { eligibility: e.target.value })}/><input className={inputClass} placeholder="Optional notes" value={item.notes || ''} onChange={e => updateBenefit(item.id, { notes: e.target.value })}/></div>}</article>)}</div>{errors.benefits && <p className="mt-3 text-xs text-rose-600">{errors.benefits}</p>}</Card><Card title="Career Growth Journey" subtitle="Describe opportunities and review points without inventing guarantees."><div className="space-y-3">{(details.growthItems || []).map(item => <div key={item.id} className="grid gap-3 rounded-xl border p-3 sm:grid-cols-[28px,220px,1fr]"><input type="checkbox" checked={item.included} onChange={e => updateGrowth(item.id, { included: e.target.checked })}/><input className={inputClass} value={item.name} onChange={e => updateGrowth(item.id, { name: e.target.value })}/><input className={inputClass} value={item.description} onChange={e => updateGrowth(item.id, { description: e.target.value })}/></div>)}</div></Card></>}
+      {step === 5 && <><Card title="Review & Send" subtitle="Resolve every required item before sending."><div className="grid gap-2 sm:grid-cols-2">{[['Candidate selected', !!applicationId, errors.applicationId], ['Job title defined', !!details.jobTitle, errors.jobTitle], ['Role purpose completed', !!details.rolePurpose, errors.rolePurpose], ['Responsibilities completed', !!details.responsibilities?.some(r => r.label), errors.responsibilities], ['Salary defined', !!details.grossMonthlySalary, errors.salary], ['Annualized salary calculated', !!details.grossAnnualizedSalary, ''], ['Benefits defined', !!includedBenefits.length, errors.benefits], ['Start date defined', !!offer.startDate, errors.startDate], ['Offer expiration date defined', !!offer.offerExpirationDate, errors.expiration], ['Terms reviewed', !!details.termsReviewed, errors.terms], ['Logo added or default confirmed', !!offer.logoUrl, '']].map(([label, ok, error]) => <div key={String(label)} className={`rounded-xl border p-3 text-sm ${ok ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-700'}`}><b>{ok ? '✓' : '○'} {label}</b>{error && <span className="block text-xs">{error}</span>}</div>)}</div><label className="mt-5 flex items-start gap-3 rounded-xl border p-4 text-sm"><input type="checkbox" className="mt-1" checked={!!details.termsReviewed} onChange={e => setDetails(v => ({ ...v, termsReviewed: e.target.checked }))}/><span><b>I have reviewed the offer terms.</b><span className="block text-slate-500">Guaranteed, estimated, and performance-based items are distinguished accurately.</span></span></label>{errors.terms && <p className="mt-2 text-xs text-rose-600">{errors.terms}</p>}{errors.send && <p className="mt-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{errors.send}</p>}</Card><div className="flex justify-center"><Button size="lg" onClick={() => { validate(); setShowPreview(true); }}>Preview final offer</Button></div></>}
+    </div><aside className="xl:sticky xl:top-0 xl:self-start"><div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900"><div className="bg-gradient-to-r from-[#071832] to-violet-800 p-5 text-white"><p className="text-sm font-semibold">What the candidate will receive</p><div className="mt-4 rounded-xl bg-amber-50 p-4 text-amber-900"><p className="text-xs font-bold uppercase">Total estimated package</p><p className="mt-1 text-3xl font-black">{peso(totalPackage)}</p><p className="text-xs">annualized guaranteed cash</p></div></div><div className="space-y-5 p-5"><div><p className="text-xs font-bold uppercase text-slate-400">Role</p><p className="font-bold">{details.jobTitle || 'Select a role'}</p><p className="text-sm text-slate-500">{candidateName || 'Candidate'} · {details.businessUnit || 'Business unit'}</p></div><div className="grid grid-cols-2 gap-3 text-sm"><div className="rounded-xl bg-violet-50 p-3"><p className="text-xs text-slate-500">Monthly</p><b>{peso(details.grossMonthlySalary)}</b></div><div className="rounded-xl bg-amber-50 p-3"><p className="text-xs text-slate-500">Annualized</p><b>{peso(details.grossAnnualizedSalary)}</b></div></div><div><p className="font-bold">What you receive</p><div className="mt-2 flex flex-wrap gap-2">{includedBenefits.slice(0, 6).map(b => <span key={b.id} className="rounded-full bg-orange-50 px-2.5 py-1 text-xs text-orange-700">{b.name}</span>)}{includedBenefits.length > 6 && <span className="text-xs text-slate-500">+{includedBenefits.length - 6} more</span>}</div></div><div><p className="font-bold">Where you can grow</p><p className="mt-1 text-sm text-slate-500">{includedGrowth.slice(0,3).map(g => g.name).join(' → ') || 'Growth path appears here'}</p></div><div className="border-t pt-4 text-xs text-slate-500"><p>Status: <b>{offer.status || OfferStatus.Draft}</b></p><p>Last saved: <b>{lastSaved ? lastSaved.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Not yet saved'}</b></p></div></div></div></aside></div></main>
+    <footer className="border-t border-slate-200 bg-white px-4 py-3 shadow-[0_-8px_20px_rgba(15,23,42,.06)] dark:border-slate-800 dark:bg-slate-900"><div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3"><button onClick={() => saveState === 'error' ? void persist(true) : undefined} className={`text-sm font-medium ${saveState === 'error' ? 'text-rose-600 underline' : saveState === 'saving' ? 'text-amber-600' : 'text-emerald-600'}`}>{saveText}</button><div className="flex flex-wrap gap-2">{step > 1 && <Button variant="secondary" onClick={() => setStep(v => v - 1)}>Back</Button>}<Button variant="secondary" isLoading={saveState === 'saving'} onClick={() => void persist(true)}>Save Draft</Button><Button variant="secondary" onClick={() => setShowPreview(true)}>Preview Offer</Button>{step < 5 ? <Button onClick={() => { if (step === 1 && !applicationId) { setErrors({ applicationId: 'Select a candidate to continue.' }); return; } setStep(v => Math.min(5, v + 1)); setErrors({}); }}>Continue</Button> : <Button isLoading={sending} onClick={() => { if (validate()) setShowSend(true); }}>Send Offer</Button>}</div></div></footer>
+    {showPreview && <div className="fixed inset-0 z-[60] overflow-y-auto bg-slate-950/80 p-4 sm:p-8"><div className="mx-auto mb-4 flex max-w-5xl justify-end gap-2 print:hidden"><Button variant="secondary" onClick={() => window.print()}>Print</Button><Button variant="secondary" onClick={() => void downloadPdf()}>Download PDF</Button><Button onClick={() => setShowPreview(false)}>Close preview</Button></div><OfferSheet offer={offer} details={details} candidateName={candidateName} companyName={details.businessUnit || 'The Nextperience'} logoUrl={offer.logoUrl} previewRef={previewRef}/></div>}
+    {showSend && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/70 p-4"><div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900"><h2 className="text-xl font-bold">Send employment offer</h2><p className="mt-1 text-sm text-slate-500">The offer will be sent to <b>{selectedCandidate?.email}</b>.</p><div className="mt-5 space-y-4"><Input label="Email subject" value={emailSubject} onChange={e => setEmailSubject(e.target.value)}/><Field label="Email message"><textarea className={textAreaClass} value={emailMessage} onChange={e => setEmailMessage(e.target.value)}/></Field></div><div className="mt-6 flex justify-end gap-2"><Button variant="secondary" onClick={() => setShowSend(false)}>Cancel</Button><Button isLoading={sending} disabled={!emailSubject.trim() || !emailMessage.trim()} onClick={() => void send()}>Confirm & Send</Button></div></div></div>}
+  </div>;
 };
 
 export default OfferCreationDrawer;
