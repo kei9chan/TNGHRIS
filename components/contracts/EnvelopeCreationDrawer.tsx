@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Envelope, Role, User, RoutingStep, RoutingStepStatus, ContractTemplate, SignatoryBlock, ContractTemplateSection } from '../../types';
+import { Envelope, Role, User, RoutingStep, RoutingStepStatus, ContractTemplate, SignatoryBlock, ContractTemplateSection, CorrespondenceAttachment } from '../../types';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
@@ -8,6 +8,7 @@ import EmployeeMultiSelect from '../feedback/EmployeeMultiSelect';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { fetchContractTemplates } from '../../services/envelopeService';
+import { useAuth } from '../../hooks/useAuth';
 
 interface EnvelopeCreationDrawerProps {
   isOpen: boolean;
@@ -15,6 +16,7 @@ interface EnvelopeCreationDrawerProps {
   onSave: (envelope: Partial<Envelope>, send: boolean) => void;
   employees?: User[];
   templates?: ContractTemplate[];
+  envelope?: Envelope | null;
 }
 
 const fileToBase64 = (file: File): Promise<string> => {
@@ -28,7 +30,8 @@ const fileToBase64 = (file: File): Promise<string> => {
 
 const TrashIcon: React.FC = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>;
 
-const EnvelopeCreationDrawer: React.FC<EnvelopeCreationDrawerProps> = ({ isOpen, onClose, onSave, employees: employeesProp, templates: templatesProp }) => {
+const EnvelopeCreationDrawer: React.FC<EnvelopeCreationDrawerProps> = ({ isOpen, onClose, onSave, employees: employeesProp, templates: templatesProp, envelope }) => {
+  const { user } = useAuth();
   const [templateId, setTemplateId] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [content, setContent] = useState<Partial<ContractTemplate>>({});
@@ -40,9 +43,12 @@ const EnvelopeCreationDrawer: React.FC<EnvelopeCreationDrawerProps> = ({ isOpen,
   const [selectedApprovers, setSelectedApprovers] = useState<User[]>([]);
   const [employees, setEmployees] = useState<User[]>(employeesProp || []);
   const [internalTemplates, setInternalTemplates] = useState<ContractTemplate[]>([]);
+  const [attachments, setAttachments] = useState<CorrespondenceAttachment[]>([]);
+  const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
 
   const searchWrapperRef = useRef<HTMLDivElement>(null);
   const logoUploadRef = useRef<HTMLInputElement>(null);
+  const attachmentUploadRef = useRef<HTMLInputElement>(null);
 
   const templates = templatesProp && templatesProp.length ? templatesProp : internalTemplates;
 
@@ -77,8 +83,57 @@ const EnvelopeCreationDrawer: React.FC<EnvelopeCreationDrawerProps> = ({ isOpen,
         setEmployeeSearch('');
         setSelectedEmployee(null);
         setSelectedApprovers([]);
+        setAttachments(envelope?.attachments || []);
     }
-  }, [isOpen, templates.length]);
+  }, [isOpen, templates.length, envelope]);
+
+  const handleAttachmentFiles = async (files: FileList | null) => {
+    if (!files?.length || !user) return;
+    const allowedTypes = new Set([
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'text/plain',
+    ]);
+    const selectedFiles = Array.from(files);
+    const invalid = selectedFiles.find(file => file.size > 10 * 1024 * 1024 || !allowedTypes.has(file.type));
+    if (invalid) {
+      alert(`${invalid.name} is unsupported or larger than 10 MB.`);
+      return;
+    }
+
+    setIsUploadingAttachments(true);
+    try {
+      const uploaded: CorrespondenceAttachment[] = [];
+      for (const file of selectedFiles) {
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
+        const path = `${user.id}/${crypto.randomUUID?.() || Date.now()}-${safeName}`;
+        const { error } = await supabase.storage
+          .from('employee_correspondence_attachments')
+          .upload(path, file, { upsert: false, contentType: file.type });
+        if (error) throw error;
+        uploaded.push({
+          path,
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          uploadedAt: new Date(),
+          uploadedBy: user.id,
+        });
+      }
+      setAttachments(previous => [...previous, ...uploaded]);
+    } catch (error: any) {
+      alert(error?.message || 'Failed to upload the attachment.');
+    } finally {
+      setIsUploadingAttachments(false);
+      if (attachmentUploadRef.current) attachmentUploadRef.current.value = '';
+    }
+  };
 
   useEffect(() => {
     if (templateId) {
@@ -227,7 +282,8 @@ const EnvelopeCreationDrawer: React.FC<EnvelopeCreationDrawerProps> = ({ isOpen,
         routingSteps: steps, 
         contentSnapshot: content,
         employeeId: selectedEmployee.id,
-        employeeName: selectedEmployee.name
+        employeeName: selectedEmployee.name,
+        attachments,
     }, send);
   };
 
@@ -297,6 +353,38 @@ const EnvelopeCreationDrawer: React.FC<EnvelopeCreationDrawerProps> = ({ isOpen,
               </select>
             </div>
             <Input label="Due Date" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+        </div>
+
+        <div className="p-4 border rounded-md dark:border-gray-600 space-y-3">
+            <div>
+              <h3 className="font-semibold text-lg">Supporting Attachments</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Attach PDF, Word, Excel, image, or text files up to 10 MB each.</p>
+            </div>
+            <input
+              ref={attachmentUploadRef}
+              type="file"
+              multiple
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.webp,.txt"
+              disabled={isUploadingAttachments}
+              onChange={event => handleAttachmentFiles(event.target.files)}
+              className="block w-full text-sm text-gray-600 file:mr-4 file:rounded-md file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:font-semibold file:text-indigo-700 hover:file:bg-indigo-100 dark:text-gray-300"
+            />
+            {isUploadingAttachments && <p className="text-sm text-indigo-600">Uploading attachment…</p>}
+            {attachments.length > 0 && (
+              <ul className="space-y-2">
+                {attachments.map(attachment => (
+                  <li key={attachment.path} className="flex items-center justify-between gap-3 rounded-md bg-gray-50 p-3 text-sm dark:bg-slate-800">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{attachment.name}</p>
+                      <p className="text-xs text-gray-500">{(attachment.size / 1024).toFixed(1)} KB</p>
+                    </div>
+                    <Button size="sm" variant="secondary" onClick={() => setAttachments(previous => previous.filter(item => item.path !== attachment.path))}>
+                      Remove
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
         </div>
         
         <div className="p-4 border rounded-md dark:border-gray-600 space-y-4">

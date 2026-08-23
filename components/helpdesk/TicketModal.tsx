@@ -28,10 +28,12 @@ interface TicketModalProps {
   onResolve: (ticketId: string) => void;
   onApproveResolution: (ticketId: string) => void;
   onRejectResolution: (ticketId: string) => void;
+  onFollowUp: (ticket: Ticket) => void;
+  followUpBusy?: boolean;
   access: TicketAccess;
 }
 
-const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, ticket, onSave, onSendMessage, onResolve, onApproveResolution, onRejectResolution, access }) => {
+const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, ticket, onSave, onSendMessage, onResolve, onApproveResolution, onRejectResolution, onFollowUp, followUpBusy = false, access }) => {
   const { user } = useAuth();
   const [currentTicket, setCurrentTicket] = useState<Partial<Ticket>>(ticket || {});
   const [attachmentLink, setAttachmentLink] = useState('');
@@ -176,6 +178,7 @@ const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, ticket, onSa
   // Existing tickets: only requester can edit core fields; responders can manage status/assignee.
   const canEditFields = isNewTicket ? canSubmit : isRequester;
   const canEditAssignee = canRespond;
+  const canFollowUp = !!currentTicket.id && isRequester && ![TicketStatus.Resolved, TicketStatus.Closed].includes(currentTicket.status as TicketStatus);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -313,6 +316,20 @@ const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, ticket, onSa
             <Card title="Requester Info">
               <p><span className="font-semibold">Name:</span> {currentTicket.requesterName}</p>
               <p><span className="font-semibold">Submitted:</span> {currentTicket.createdAt ? new Date(currentTicket.createdAt).toLocaleString() : 'N/A'}</p>
+              <p><span className="font-semibold">Due:</span> {currentTicket.slaDeadline ? new Date(currentTicket.slaDeadline).toLocaleString() : 'Not set'}</p>
+              {!!currentTicket.followUpCount && (
+                <p><span className="font-semibold">Follow-ups:</span> {currentTicket.followUpCount}{currentTicket.lastFollowUpAt ? ` · Last sent ${new Date(currentTicket.lastFollowUpAt).toLocaleString()}` : ''}</p>
+              )}
+              {canFollowUp && (
+                <Button
+                  size="sm"
+                  className="mt-3"
+                  disabled={followUpBusy}
+                  onClick={() => onFollowUp(currentTicket as Ticket)}
+                >
+                  {followUpBusy ? 'Sending…' : 'Follow Up'}
+                </Button>
+              )}
             </Card>
           )}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

@@ -56,6 +56,7 @@ const EnvelopeDetail: React.FC = () => {
     const pdfRef = useRef<HTMLDivElement | null>(null);
     const [resolvedUserId, setResolvedUserId] = useState<string | null>(null);
     const [showApprovalWaitBanner, setShowApprovalWaitBanner] = useState(false);
+    const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
 
     const currentUserRecipient = useMemo(() => {
         if (!envelope) return null;
@@ -175,6 +176,12 @@ const EnvelopeDetail: React.FC = () => {
                         ? data.events.map((ev: any) => ({ ...ev, timestamp: new Date(ev.timestamp) }))
                         : [],
                     contentSnapshot: data.content_snapshot || undefined,
+                    attachments: Array.isArray(data.attachments)
+                        ? data.attachments.map((attachment: any) => ({
+                            ...attachment,
+                            uploadedAt: attachment?.uploadedAt ? new Date(attachment.uploadedAt) : new Date(),
+                        }))
+                        : [],
                 };
                 setEnvelope(mapped);
             } catch (error) {
@@ -212,6 +219,23 @@ const EnvelopeDetail: React.FC = () => {
         loadEmployeeProfile();
     }, [envelope?.employeeId]);
 
+    useEffect(() => {
+        if (!envelope?.attachments?.length) {
+            setAttachmentUrls({});
+            return;
+        }
+        let cancelled = false;
+        Promise.all(envelope.attachments.map(async attachment => {
+            const { data, error } = await supabase.storage
+                .from('employee_correspondence_attachments')
+                .createSignedUrl(attachment.path, 60 * 60);
+            return error || !data?.signedUrl ? null : [attachment.path, data.signedUrl] as const;
+        })).then(results => {
+            if (!cancelled) setAttachmentUrls(Object.fromEntries(results.filter(Boolean) as Array<readonly [string, string]>));
+        });
+        return () => { cancelled = true; };
+    }, [envelope?.attachments]);
+
     if (!envelope) {
         return <div>Envelope not found.</div>;
     }
@@ -232,6 +256,12 @@ const EnvelopeDetail: React.FC = () => {
             ? data.events.map((ev: any) => ({ ...ev, timestamp: new Date(ev.timestamp) }))
             : [],
         contentSnapshot: data.content_snapshot || undefined,
+        attachments: Array.isArray(data.attachments)
+            ? data.attachments.map((attachment: any) => ({
+                ...attachment,
+                uploadedAt: attachment?.uploadedAt ? new Date(attachment.uploadedAt) : new Date(),
+            }))
+            : [],
     });
 
     const deriveStatus = (steps: Envelope['routingSteps']) => {
@@ -475,6 +505,29 @@ ${processedContent.sections
                     </Card>
                     <Card title="Timeline & Audit Trail">
                         <EnvelopeTimeline events={envelope.events} />
+                    </Card>
+                    <Card title={`Attachments (${envelope.attachments?.length || 0})`}>
+                        {envelope.attachments?.length ? (
+                            <ul className="space-y-3">
+                                {envelope.attachments.map(attachment => (
+                                    <li key={attachment.path} className="rounded-md border border-gray-200 p-3 dark:border-gray-700">
+                                        <p className="break-all text-sm font-medium text-gray-900 dark:text-white">{attachment.name}</p>
+                                        <p className="mt-1 text-xs text-gray-500">{(attachment.size / 1024).toFixed(1)} KB</p>
+                                        {attachmentUrls[attachment.path] ? (
+                                            <a
+                                                href={attachmentUrls[attachment.path]}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="mt-2 inline-flex text-sm font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
+                                                onClick={() => user && logActivity(user, 'READ', 'EnvelopeAttachment', envelope.id, `Viewed attachment ${attachment.name}.`)}
+                                            >
+                                                View or download
+                                            </a>
+                                        ) : <p className="mt-2 text-xs text-gray-400">Preparing secure link…</p>}
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : <p className="text-sm text-gray-500">No supporting attachments.</p>}
                     </Card>
 
                     {isMyTurnToApprove && (

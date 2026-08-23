@@ -7,13 +7,13 @@ import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import TicketTable from '../../components/helpdesk/TicketTable';
+import TicketTable, { isTicketOverdue } from '../../components/helpdesk/TicketTable';
 import TicketModal from '../../components/helpdesk/TicketModal';
 import EditableDescription from '../../components/ui/EditableDescription';
 import { useSettings } from '../../context/SettingsContext';
 import Input from '../../components/ui/Input';
 import { logActivity } from '../../services/auditService';
-import { fetchTickets, saveTicket, fetchTicketById } from '../../services/ticketService';
+import { fetchTickets, saveTicket, fetchTicketById, followUpTicket } from '../../services/ticketService';
 import { createNotification } from '../../services/notificationService';
 import { supabase } from '../../services/supabaseClient';
 
@@ -35,6 +35,7 @@ const Tickets: React.FC = () => {
     const [tickets, setTickets] = useState<Ticket[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedTicket, setSelectedTicket] = useState<Partial<Ticket> | null>(null);
+    const [followUpBusyId, setFollowUpBusyId] = useState<string | null>(null);
 
     const [searchTerm, setSearchTerm] = useState('');
     const [categoryFilter, setCategoryFilter] = useState('');
@@ -140,7 +141,7 @@ const Tickets: React.FC = () => {
 
             const categoryMatch = !categoryFilter || ticket.category === categoryFilter;
             const priorityMatch = !priorityFilter || ticket.priority === priorityFilter;
-            const statusMatch = !statusFilter || ticket.status === statusFilter;
+            const statusMatch = !statusFilter || (statusFilter === 'Overdue' ? isTicketOverdue(ticket) : ticket.status === statusFilter);
             const buMatch = !buFilter || ticket.businessUnitId === buFilter;
 
             return searchMatch && categoryMatch && priorityMatch && statusMatch && buMatch;
@@ -150,6 +151,24 @@ const Tickets: React.FC = () => {
     const handleViewTicket = (ticket: Ticket) => {
         setSelectedTicket(ticket);
         setIsModalOpen(true);
+    };
+
+    const handleFollowUpTicket = async (ticket: Ticket) => {
+        if (!user || ticket.requesterId !== user.id) return;
+        if ([TicketStatus.Resolved, TicketStatus.Closed].includes(ticket.status)) return;
+        if (!window.confirm('Send a follow-up reminder for this ticket?')) return;
+
+        setFollowUpBusyId(ticket.id);
+        try {
+            const updated = await followUpTicket(ticket.id);
+            setTickets(previous => previous.map(item => item.id === updated.id ? updated : item));
+            if (selectedTicket?.id === updated.id) setSelectedTicket(updated);
+            alert('Follow-up reminder sent successfully. Helpdesk has been notified.');
+        } catch (error: any) {
+            alert(error?.message || 'Failed to send the ticket follow-up.');
+        } finally {
+            setFollowUpBusyId(null);
+        }
     };
 
     const handleSaveTicket = async (ticketToSave: Partial<Ticket>) => {
@@ -514,6 +533,7 @@ const Tickets: React.FC = () => {
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
                         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className={selectClasses}>
                             <option value="">All</option>
+                            <option value="Overdue">Overdue</option>
                             {Object.values(TicketStatus).map(stat => <option key={stat} value={stat}>{stat}</option>)}
                         </select>
                     </div>
@@ -528,7 +548,13 @@ const Tickets: React.FC = () => {
             </Card>
 
             <Card>
-                <TicketTable tickets={filteredTickets} onViewTicket={handleViewTicket} />
+                <TicketTable
+                    tickets={filteredTickets}
+                    onViewTicket={handleViewTicket}
+                    currentUserId={user?.id}
+                    onFollowUp={handleFollowUpTicket}
+                    followUpBusyId={followUpBusyId}
+                />
             </Card>
 
             <TicketModal
@@ -540,6 +566,8 @@ const Tickets: React.FC = () => {
                 onResolve={handleResolveTicket}
                 onApproveResolution={handleApproveResolution}
                 onRejectResolution={handleRejectResolution}
+                onFollowUp={handleFollowUpTicket}
+                followUpBusy={!!selectedTicket?.id && followUpBusyId === selectedTicket.id}
                 access={ticketAccess}
             />
 

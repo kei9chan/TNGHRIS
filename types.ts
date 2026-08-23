@@ -716,6 +716,12 @@ export interface ChatMessage {
   text: string;
 }
 
+export interface FollowUpHistoryItem {
+  sentAt: Date;
+  sentById: string;
+  sentByName: string;
+}
+
 export interface IncidentReport {
   id: string;
   category: string;
@@ -739,6 +745,11 @@ export interface IncidentReport {
   businessUnitId?: string;
   businessUnitName?: string;
   caseNumber?: number;
+  createdAt?: Date;
+  slaDeadline?: Date;
+  followUpCount?: number;
+  lastFollowUpAt?: Date;
+  followUpHistory?: FollowUpHistoryItem[];
 }
 
 export enum NTEStatus {
@@ -1358,6 +1369,9 @@ export interface Ticket {
   attachments?: string[];
   businessUnitId?: string;
   businessUnitName?: string;
+  followUpCount?: number;
+  lastFollowUpAt?: Date;
+  followUpHistory?: FollowUpHistoryItem[];
 }
 
 export enum AnnouncementType {
@@ -1376,6 +1390,20 @@ export interface Announcement {
   createdAt: Date;
   attachmentUrl?: string;
   acknowledgementIds: string[];
+}
+
+export interface AnnouncementRecipientStatus {
+  id: string;
+  announcementId: string;
+  userId: string;
+  employeeName: string;
+  businessUnit?: string;
+  department?: string;
+  notifiedAt?: Date;
+  readAt?: Date;
+  acknowledgedAt?: Date;
+  reminderCount: number;
+  lastReminderAt?: Date;
 }
 
 export interface CalendarEvent {
@@ -2375,6 +2403,15 @@ export interface EnvelopeEvent {
   details?: string;
 }
 
+export interface CorrespondenceAttachment {
+  path: string;
+  name: string;
+  size: number;
+  type: string;
+  uploadedAt: Date;
+  uploadedBy: string;
+}
+
 export interface Envelope {
   id: string;
   templateId: string;
@@ -2389,6 +2426,7 @@ export interface Envelope {
   createdAt: Date;
   events: EnvelopeEvent[];
   contentSnapshot?: Partial<ContractTemplate>; // A snapshot of the template at time of creation
+  attachments?: CorrespondenceAttachment[];
 }
 
 export enum NotificationType {
@@ -2449,6 +2487,10 @@ export enum NotificationType {
   JOB_REQUISITION_SUBMITTED = 'JOB_REQUISITION_SUBMITTED',
   JOB_REQUISITION_APPROVED = 'JOB_REQUISITION_APPROVED',
   JOB_REQUISITION_REJECTED = 'JOB_REQUISITION_REJECTED',
+  INCIDENT_FOLLOW_UP = 'INCIDENT_FOLLOW_UP',
+  TICKET_FOLLOW_UP = 'TICKET_FOLLOW_UP',
+  ANNOUNCEMENT_PUBLISHED = 'ANNOUNCEMENT_PUBLISHED',
+  ANNOUNCEMENT_REMINDER = 'ANNOUNCEMENT_REMINDER',
 }
 
 export interface Notification {

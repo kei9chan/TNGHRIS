@@ -39,6 +39,7 @@ type EnvelopeRow = {
   created_at: string;
   events: any;
   content_snapshot?: any;
+  attachments?: any;
 };
 
 // ---------------------------------------------------------------------------
@@ -79,6 +80,12 @@ const mapEnvelope = (row: EnvelopeRow): Envelope => ({
   createdAt: new Date(row.created_at),
   events: Array.isArray(row.events) ? (row.events as EnvelopeEvent[]) : [],
   contentSnapshot: row.content_snapshot || undefined,
+  attachments: Array.isArray(row.attachments)
+    ? row.attachments.map((attachment: any) => ({
+        ...attachment,
+        uploadedAt: attachment?.uploadedAt ? new Date(attachment.uploadedAt) : new Date(),
+      }))
+    : [],
 });
 
 // ---------------------------------------------------------------------------
@@ -149,6 +156,10 @@ export const saveEnvelope = async (envelope: Partial<Envelope>): Promise<Envelop
     created_by_user_id: envelope.createdByUserId || '',
     events: envelope.events || [],
     content_snapshot: envelope.contentSnapshot || null,
+    attachments: (envelope.attachments || []).map(attachment => ({
+      ...attachment,
+      uploadedAt: new Date(attachment.uploadedAt).toISOString(),
+    })),
   };
 
   const { data, error } = envelope.id

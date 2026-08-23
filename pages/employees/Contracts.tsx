@@ -51,6 +51,7 @@ type EnvelopeRow = {
   created_at?: string;
   events?: any[] | null;
   content_snapshot?: Partial<ContractTemplate> | null;
+  attachments?: any[] | null;
 };
 
 
@@ -247,6 +248,12 @@ const Contracts: React.FC = () => {
       ? row.events.map(ev => ({ ...ev, timestamp: new Date(ev.timestamp) }))
       : [],
     contentSnapshot: row.content_snapshot || undefined,
+    attachments: Array.isArray(row.attachments)
+      ? row.attachments.map((attachment: any) => ({
+          ...attachment,
+          uploadedAt: attachment?.uploadedAt ? new Date(attachment.uploadedAt) : new Date(),
+        }))
+      : [],
   });
 
 
@@ -364,6 +371,10 @@ const Contracts: React.FC = () => {
           created_by_user_id: existing?.createdByUserId || user.id,
           events: (existing?.events?.length ? existing.events : events).map(ev => ({ ...ev, timestamp: new Date(ev.timestamp).toISOString() })),
           content_snapshot: envelopeToSave.contentSnapshot || null,
+          attachments: (envelopeToSave.attachments || []).map(attachment => ({
+            ...attachment,
+            uploadedAt: new Date(attachment.uploadedAt).toISOString(),
+          })),
         };
         const { data, error } = isEdit
           ? await supabase
@@ -394,6 +405,12 @@ const Contracts: React.FC = () => {
           createdAt: data.created_at ? new Date(data.created_at) : new Date(),
           events: data.events || [],
           contentSnapshot: data.content_snapshot || undefined,
+          attachments: Array.isArray(data.attachments)
+            ? data.attachments.map((attachment: any) => ({
+                ...attachment,
+                uploadedAt: attachment?.uploadedAt ? new Date(attachment.uploadedAt) : new Date(),
+              }))
+            : [],
         };
 
         if (!isEdit && send) {

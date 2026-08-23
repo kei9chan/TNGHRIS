@@ -8,7 +8,15 @@ import Card from '../ui/Card';
 interface TicketTableProps {
     tickets: Ticket[];
     onViewTicket: (ticket: Ticket) => void;
+    currentUserId?: string;
+    onFollowUp?: (ticket: Ticket) => void;
+    followUpBusyId?: string | null;
 }
+
+export const isTicketOverdue = (ticket: Ticket) =>
+    ![TicketStatus.Resolved, TicketStatus.Closed].includes(ticket.status) &&
+    !!ticket.slaDeadline &&
+    new Date(ticket.slaDeadline).getTime() < Date.now();
 
 const statusColors: { [key in TicketStatus]: string } = {
     [TicketStatus.New]: 'bg-gray-100 text-gray-800 dark:bg-gray-600 dark:text-gray-100',
@@ -27,8 +35,15 @@ const priorityColors: { [key in TicketPriority]: string } = {
     [TicketPriority.Urgent]: 'border-red-500',
 };
 
-const TicketCard: React.FC<{ ticket: Ticket; onViewTicket: (ticket: Ticket) => void; canManage: boolean; }> = ({ ticket, onViewTicket, canManage }) => {
-    const isOverdue = ticket.status === TicketStatus.New && ticket.slaDeadline && new Date() > new Date(ticket.slaDeadline);
+const TicketCard: React.FC<{
+    ticket: Ticket;
+    onViewTicket: (ticket: Ticket) => void;
+    canManage: boolean;
+    canFollowUp: boolean;
+    onFollowUp?: (ticket: Ticket) => void;
+    followUpBusy: boolean;
+}> = ({ ticket, onViewTicket, canManage, canFollowUp, onFollowUp, followUpBusy }) => {
+    const isOverdue = isTicketOverdue(ticket);
     return (
         <div className={`bg-white dark:bg-gray-800 shadow-md rounded-lg overflow-hidden border-l-4 ${priorityColors[ticket.priority]}`}>
             <div className="p-4">
@@ -61,19 +76,30 @@ const TicketCard: React.FC<{ ticket: Ticket; onViewTicket: (ticket: Ticket) => v
                         <p className="text-gray-500 dark:text-gray-400">SLA</p>
                         <SlaTimer deadline={ticket.slaDeadline} assignedAt={ticket.assignedAt} resolvedAt={ticket.resolvedAt} status={ticket.status} />
                     </div>
+                    {!!ticket.followUpCount && (
+                        <div className="col-span-2 text-xs text-gray-500 dark:text-gray-400">
+                            {ticket.followUpCount} follow-up{ticket.followUpCount === 1 ? '' : 's'} sent
+                            {ticket.lastFollowUpAt ? ` · Last ${new Date(ticket.lastFollowUpAt).toLocaleString()}` : ''}
+                        </div>
+                    )}
                 </div>
             </div>
-            <div className="bg-gray-50 dark:bg-gray-800/50 px-4 py-2">
-                <Button variant="secondary" size="sm" onClick={() => onViewTicket(ticket)} className="w-full">
+            <div className="bg-gray-50 dark:bg-gray-800/50 px-4 py-2 flex gap-2">
+                <Button variant="secondary" size="sm" onClick={() => onViewTicket(ticket)} className="flex-1">
                     {canManage ? 'Manage Ticket' : 'View Details'}
                 </Button>
+                {canFollowUp && onFollowUp && (
+                    <Button size="sm" onClick={() => onFollowUp(ticket)} disabled={followUpBusy} className="flex-1">
+                        {followUpBusy ? 'Sending…' : 'Follow Up'}
+                    </Button>
+                )}
             </div>
         </div>
     );
 };
 
 
-const TicketTable: React.FC<TicketTableProps> = ({ tickets, onViewTicket }) => {
+const TicketTable: React.FC<TicketTableProps> = ({ tickets, onViewTicket, currentUserId, onFollowUp, followUpBusyId }) => {
     const { can } = usePermissions();
     const canManage = can('Helpdesk', Permission.Manage);
 
@@ -98,7 +124,8 @@ const TicketTable: React.FC<TicketTableProps> = ({ tickets, onViewTicket }) => {
                     </thead>
                     <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                         {tickets.map(ticket => {
-                            const isOverdue = ticket.status === TicketStatus.New && ticket.slaDeadline && new Date() > new Date(ticket.slaDeadline);
+                            const isOverdue = isTicketOverdue(ticket);
+                            const canFollowUp = ticket.requesterId === currentUserId && ![TicketStatus.Resolved, TicketStatus.Closed].includes(ticket.status);
                             return (
                                 <tr key={ticket.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{ticket.id}</td>
@@ -111,13 +138,23 @@ const TicketTable: React.FC<TicketTableProps> = ({ tickets, onViewTicket }) => {
                                         <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${isOverdue ? 'bg-red-500 text-white animate-pulse' : statusColors[ticket.status]}`}>
                                             {isOverdue ? 'Overdue' : ticket.status}
                                         </span>
+                                        {!!ticket.followUpCount && (
+                                            <p className="mt-1 text-xs text-gray-400">{ticket.followUpCount} follow-up{ticket.followUpCount === 1 ? '' : 's'}</p>
+                                        )}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{ticket.assignedToName || 'Unassigned'}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm"><SlaTimer deadline={ticket.slaDeadline} assignedAt={ticket.assignedAt} resolvedAt={ticket.resolvedAt} status={ticket.status} /></td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                        <Button variant="secondary" size="sm" onClick={() => onViewTicket(ticket)}>
-                                            {canManage ? 'Manage' : 'View'}
-                                        </Button>
+                                        <div className="flex justify-end gap-2">
+                                            {canFollowUp && onFollowUp && (
+                                                <Button size="sm" onClick={() => onFollowUp(ticket)} disabled={followUpBusyId === ticket.id}>
+                                                    {followUpBusyId === ticket.id ? 'Sending…' : 'Follow Up'}
+                                                </Button>
+                                            )}
+                                            <Button variant="secondary" size="sm" onClick={() => onViewTicket(ticket)}>
+                                                {canManage ? 'Manage' : 'View'}
+                                            </Button>
+                                        </div>
                                     </td>
                                 </tr>
                             );
@@ -129,7 +166,15 @@ const TicketTable: React.FC<TicketTableProps> = ({ tickets, onViewTicket }) => {
             {/* Mobile Card View */}
             <div className="md:hidden space-y-4">
                  {tickets.map(ticket => (
-                    <TicketCard key={ticket.id} ticket={ticket} onViewTicket={onViewTicket} canManage={canManage} />
+                    <TicketCard
+                        key={ticket.id}
+                        ticket={ticket}
+                        onViewTicket={onViewTicket}
+                        canManage={canManage}
+                        canFollowUp={ticket.requesterId === currentUserId && ![TicketStatus.Resolved, TicketStatus.Closed].includes(ticket.status)}
+                        onFollowUp={onFollowUp}
+                        followUpBusy={followUpBusyId === ticket.id}
+                    />
                 ))}
             </div>
 

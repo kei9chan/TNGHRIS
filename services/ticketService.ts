@@ -19,6 +19,9 @@ type TicketRow = {
   attachments?: string[] | null;
   business_unit_id?: string | null;
   business_unit_name?: string | null;
+  follow_up_count?: number | null;
+  last_follow_up_at?: string | null;
+  follow_up_history?: any[] | null;
 };
 
 const mapRow = (row: TicketRow): Ticket => ({
@@ -39,6 +42,13 @@ const mapRow = (row: TicketRow): Ticket => ({
   attachments: row.attachments || undefined,
   businessUnitId: row.business_unit_id || undefined,
   businessUnitName: row.business_unit_name || undefined,
+  followUpCount: row.follow_up_count || 0,
+  lastFollowUpAt: row.last_follow_up_at ? new Date(row.last_follow_up_at) : undefined,
+  followUpHistory: (row.follow_up_history || []).map((entry: any) => ({
+    sentAt: entry?.sentAt ? new Date(entry.sentAt) : new Date(),
+    sentById: entry?.sentById || '',
+    sentByName: entry?.sentByName || 'Employee',
+  })),
 });
 
 const isUuid = (value?: string | null) =>
@@ -61,6 +71,13 @@ export const fetchTicketById = async (id: string): Promise<Ticket | null> => {
     .maybeSingle();
   if (error) throw new Error(error.message || 'Failed to load ticket');
   return data ? mapRow(data as TicketRow) : null;
+};
+
+export const followUpTicket = async (ticketId: string): Promise<Ticket> => {
+  const { data, error } = await supabase.rpc('follow_up_ticket', { p_ticket_id: ticketId });
+  if (error) throw new Error(error.message || 'Failed to send the ticket follow-up.');
+  if (!data) throw new Error('The updated ticket was not returned.');
+  return mapRow(data as TicketRow);
 };
 
 export const saveTicket = async (ticket: Partial<Ticket>): Promise<Ticket> => {

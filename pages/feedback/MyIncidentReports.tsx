@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import { IncidentReport } from '../../types';
-import { fetchIncidentReports } from '../../services/incidentReportService';
+import { IncidentReport, IRStatus } from '../../types';
+import { fetchIncidentReports, followUpIncidentReport } from '../../services/incidentReportService';
 import { fetchNTEs } from '../../services/nteService';
 import { fetchResolutions } from '../../services/resolutionService';
 import CaseListTable from '../../components/feedback/CaseListTable';
@@ -18,6 +18,7 @@ export default function MyIncidentReports() {
 
   const [selectedReport, setSelectedReport] = useState<IncidentReport | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [followUpBusyId, setFollowUpBusyId] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -54,6 +55,28 @@ export default function MyIncidentReports() {
     setIsModalOpen(true);
   };
 
+  const canFollowUp = (report: IncidentReport) =>
+    !!user &&
+    report.reportedBy === user.id &&
+    report.status !== IRStatus.Closed &&
+    report.status !== IRStatus.NoAction;
+
+  const handleFollowUp = async (report: IncidentReport) => {
+    if (!canFollowUp(report)) return;
+    if (!window.confirm('Send a follow-up reminder for this incident report?')) return;
+    setFollowUpBusyId(report.id);
+    try {
+      const updated = await followUpIncidentReport(report.id);
+      setReports(previous => previous.map(item => item.id === updated.id ? updated : item));
+      if (selectedReport?.id === updated.id) setSelectedReport(updated);
+      alert('Follow-up reminder sent successfully. The assigned handler has been notified.');
+    } catch (err: any) {
+      alert(err?.message || 'Failed to send the follow-up reminder.');
+    } finally {
+      setFollowUpBusyId(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -87,6 +110,9 @@ export default function MyIncidentReports() {
               ntes={ntes}
               resolutions={resolutions}
               onRowClick={handleRowClick}
+              onFollowUp={handleFollowUp}
+              canFollowUp={canFollowUp}
+              followUpBusyId={followUpBusyId}
             />
           </div>
         </Card>

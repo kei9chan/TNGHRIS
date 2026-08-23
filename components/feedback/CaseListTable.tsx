@@ -4,12 +4,16 @@ import React from 'react';
 import { IncidentReport, IRStatus, ResolutionStatus } from '../../types';
 import { formatIRDisplayId, formatNTEDisplayId } from '../../utils/formatCaseId';
 import Card from '../ui/Card';
+import Button from '../ui/Button';
 
 interface CaseListTableProps {
   reports: IncidentReport[];
   onRowClick: (report: IncidentReport) => void;
   ntes?: { id: string; incidentReportId?: string; status?: string; hearingDetails?: any }[];
   resolutions?: { id: string; incidentReportId?: string; status: string }[];
+  onFollowUp?: (report: IncidentReport) => void;
+  canFollowUp?: (report: IncidentReport) => boolean;
+  followUpBusyId?: string | null;
 }
 
 const getTag = (report: IncidentReport, resolutions: CaseListTableProps['resolutions'] = []) => {
@@ -17,6 +21,11 @@ const getTag = (report: IncidentReport, resolutions: CaseListTableProps['resolut
 
     if (resolution && resolution.status === ResolutionStatus.Rejected) {
         return { text: 'Rejected', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200' };
+    }
+
+    const isClosed = report.status === IRStatus.Closed || report.status === IRStatus.NoAction;
+    if (!isClosed && report.slaDeadline && new Date(report.slaDeadline).getTime() < Date.now()) {
+        return { text: 'Overdue', color: 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200' };
     }
 
     // Stage-specific overrides requested by user
@@ -50,7 +59,16 @@ const getTag = (report: IncidentReport, resolutions: CaseListTableProps['resolut
     return { text: report.status, color: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200' };
 };
 
-const CaseListTable: React.FC<CaseListTableProps> = ({ reports, onRowClick, ntes = [], resolutions = [] }) => {
+const CaseListTable: React.FC<CaseListTableProps> = ({
+    reports,
+    onRowClick,
+    ntes = [],
+    resolutions = [],
+    onFollowUp,
+    canFollowUp,
+    followUpBusyId,
+}) => {
+    const showActions = !!onFollowUp && !!canFollowUp;
     return (
         <Card>
             <div className="overflow-x-auto">
@@ -63,6 +81,7 @@ const CaseListTable: React.FC<CaseListTableProps> = ({ reports, onRowClick, ntes
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Handler</th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Date</th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
+                            {showActions && <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Follow-up</th>}
                         </tr>
                     </thead>
                     <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
@@ -85,13 +104,39 @@ const CaseListTable: React.FC<CaseListTableProps> = ({ reports, onRowClick, ntes
                                         <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${tag.color}`}>
                                             {tag.text}
                                         </span>
+                                        {!!report.followUpCount && (
+                                            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                                {report.followUpCount} reminder{report.followUpCount === 1 ? '' : 's'}
+                                            </p>
+                                        )}
                                     </td>
+                                    {showActions && (
+                                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                                            {canFollowUp?.(report) ? (
+                                                <div onClick={event => event.stopPropagation()}>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="secondary"
+                                                        disabled={followUpBusyId === report.id}
+                                                        onClick={() => onFollowUp?.(report)}
+                                                    >
+                                                        {followUpBusyId === report.id ? 'Sending…' : 'Follow Up'}
+                                                    </Button>
+                                                    {report.lastFollowUpAt && (
+                                                        <p className="mt-1 text-xs text-gray-400">
+                                                            Last: {new Date(report.lastFollowUpAt).toLocaleString()}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            ) : <span className="text-gray-400">—</span>}
+                                        </td>
+                                    )}
                                 </tr>
                             );
                         })}
                         {reports.length === 0 && (
                             <tr>
-                                <td colSpan={6} className="text-center py-10 text-gray-500 dark:text-gray-400">
+                                <td colSpan={showActions ? 7 : 6} className="text-center py-10 text-gray-500 dark:text-gray-400">
                                     No cases match the current filters.
                                 </td>
                             </tr>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Announcement, AnnouncementType } from '../../types';
 import Card from '../ui/Card';
 import Button from '../ui/Button';
@@ -10,17 +10,23 @@ interface AnnouncementCardProps {
     hasAcknowledged: boolean;
     canManage: boolean;
     onEdit: (announcement: Announcement) => void;
+    onRead: (id: string) => void;
+    hasRead: boolean;
+    onViewRecipients: (announcement: Announcement) => void;
+    selected?: boolean;
 }
 
 const DocumentArrowDownIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13l-3 3m0 0l-3-3m3 3V8" /></svg>);
 
-const AnnouncementCard: React.FC<AnnouncementCardProps> = ({ announcement, onAcknowledge, hasAcknowledged, canManage, onEdit }) => {
+const AnnouncementCard: React.FC<AnnouncementCardProps> = ({ announcement, onAcknowledge, hasAcknowledged, canManage, onEdit, onRead, hasRead, onViewRecipients, selected = false }) => {
     const isImage = (url?: string) => {
         if (!url) return false;
         return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(url.split('?')[0]);
     };
 
     const [signedUrl, setSignedUrl] = useState<string | null>(null);
+    const cardRef = useRef<HTMLDivElement>(null);
+    const readSentRef = useRef(false);
 
     useEffect(() => {
         let isMounted = true;
@@ -32,9 +38,22 @@ const AnnouncementCard: React.FC<AnnouncementCardProps> = ({ announcement, onAck
         return () => { isMounted = false; };
     }, [announcement.attachmentUrl]);
 
+    useEffect(() => {
+        if (hasRead || readSentRef.current || !cardRef.current) return;
+        const observer = new IntersectionObserver(entries => {
+            if (!entries.some(entry => entry.isIntersecting && entry.intersectionRatio >= 0.35)) return;
+            readSentRef.current = true;
+            window.setTimeout(() => onRead(announcement.id), 800);
+            observer.disconnect();
+        }, { threshold: [0.35] });
+        observer.observe(cardRef.current);
+        return () => observer.disconnect();
+    }, [announcement.id, hasRead, onRead]);
+
     const isPolicy = announcement.type === AnnouncementType.Policy;
 
     return (
+        <div ref={cardRef} data-announcement-id={announcement.id} className={selected ? 'rounded-xl ring-4 ring-indigo-300 ring-offset-2' : ''}>
         <Card>
             <div className="flex justify-between items-start">
                 <div>
@@ -47,11 +66,16 @@ const AnnouncementCard: React.FC<AnnouncementCardProps> = ({ announcement, onAck
                         <span>To: {announcement.targetGroup}</span>
                     </div>
                 </div>
+                <div className="flex items-center gap-2">
+                 {hasRead && (
+                    <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300">READ</span>
+                 )}
                  {isPolicy && (
                     <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300">
                         POLICY ALERT
                     </span>
                 )}
+                </div>
             </div>
             <p className="mt-4 text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{announcement.message}</p>
             
@@ -94,9 +118,10 @@ const AnnouncementCard: React.FC<AnnouncementCardProps> = ({ announcement, onAck
                 
                 <div className="mt-4 sm:mt-0 flex items-center space-x-4">
                     {canManage && (
-                         <Button variant="secondary" size="sm" onClick={() => onEdit(announcement)}>
-                            Edit
-                        </Button>
+                        <>
+                            <Button variant="secondary" size="sm" onClick={() => onViewRecipients(announcement)}>Recipient Status</Button>
+                            <Button variant="secondary" size="sm" onClick={() => onEdit(announcement)}>Edit</Button>
+                        </>
                     )}
                     {isPolicy && (
                         <Button 
@@ -118,6 +143,7 @@ const AnnouncementCard: React.FC<AnnouncementCardProps> = ({ announcement, onAck
                 </div>
             )}
         </Card>
+        </div>
     );
 };
 

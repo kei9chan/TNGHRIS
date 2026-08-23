@@ -1,22 +1,25 @@
 // Phase 2 Migration: mockBusinessUnits + mockAnnouncements removed — data fetched from Supabase
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Announcement, Permission, Role } from '../../types';
+import { useLocation } from 'react-router-dom';
+import { Announcement, AnnouncementRecipientStatus, Permission, Role } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import Button from '../../components/ui/Button';
 import AnnouncementCard from '../../components/helpdesk/AnnouncementCard';
 import AnnouncementModal from '../../components/helpdesk/AnnouncementModal';
+import AnnouncementRecipientStatusModal from '../../components/helpdesk/AnnouncementRecipientStatusModal';
 import { useSettings } from '../../context/SettingsContext';
 import RichTextEditor from '../../components/ui/RichTextEditor';
 import { logActivity } from '../../services/auditService';
-import { fetchAnnouncements, saveAnnouncement, acknowledgeAnnouncement } from '../../services/announcementService';
+import { acknowledgeAnnouncement, fetchAnnouncements, fetchMyAnnouncementRecipientStatuses, markAnnouncementRead, saveAnnouncement } from '../../services/announcementService';
 import { supabase } from '../../services/supabaseClient';
 
 const EditIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L15.232 5.232z" /></svg>;
 
 const Announcements: React.FC = () => {
     const { user } = useAuth();
+    const location = useLocation();
     const { can, getAnnouncementAccess } = usePermissions();
     const { settings, updateSettings } = useSettings();
     const [isEditingDesc, setIsEditingDesc] = useState(false);
@@ -25,6 +28,8 @@ const Announcements: React.FC = () => {
     const [announcements, setAnnouncements] = useState<Announcement[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedAnnouncement, setSelectedAnnouncement] = useState<Announcement | null>(null);
+    const [trackingAnnouncement, setTrackingAnnouncement] = useState<Announcement | null>(null);
+    const [myRecipientStatuses, setMyRecipientStatuses] = useState<Record<string, AnnouncementRecipientStatus>>({});
     const [businessUnits, setBusinessUnits] = useState<{ id: string; name: string; code?: string }[]>([]);
     
     const announcementAccess = getAnnouncementAccess();
@@ -53,6 +58,14 @@ const Announcements: React.FC = () => {
             } catch (err) {
                 console.error('Failed to load announcements', err);
             }
+            if (user?.id) {
+                try {
+                    const statuses = await fetchMyAnnouncementRecipientStatuses(user.id);
+                    setMyRecipientStatuses(Object.fromEntries(statuses.map(status => [status.announcementId, status])));
+                } catch (err) {
+                    console.warn('Failed to load personal announcement status', err);
+                }
+            }
             try {
                 const { data: buData, error: buErr } = await supabase.from('business_units').select('id, name, code');
                 if (!buErr && buData) {
@@ -63,7 +76,16 @@ const Announcements: React.FC = () => {
             }
         };
         loadData();
-    }, []);
+    }, [user?.id]);
+
+    const selectedAnnouncementId = useMemo(() => new URLSearchParams(location.search).get('announcementId'), [location.search]);
+
+    useEffect(() => {
+        if (!selectedAnnouncementId || announcements.length === 0) return;
+        window.setTimeout(() => {
+            document.querySelector(`[data-announcement-id="${selectedAnnouncementId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 50);
+    }, [selectedAnnouncementId, announcements]);
 
     const visibleAnnouncements = useMemo(() => {
         if (!user || !announcementAccess.canView) return [];
@@ -116,10 +138,34 @@ const Announcements: React.FC = () => {
         const target = announcements.find(a => a.id === announcementId);
         if (!target || target.acknowledgementIds.includes(user.id)) return;
         try {
-            await acknowledgeAnnouncement(announcementId, user.id, target.acknowledgementIds);
+            await acknowledgeAnnouncement(announcementId);
             setAnnouncements(prev => prev.map(a => a.id === announcementId ? { ...a, acknowledgementIds: [...a.acknowledgementIds, user.id] } : a));
+            setMyRecipientStatuses(previous => ({
+                ...previous,
+                [announcementId]: {
+                    ...(previous[announcementId] || { id: '', announcementId, userId: user.id, employeeName: user.name, reminderCount: 0 }),
+                    readAt: previous[announcementId]?.readAt || new Date(),
+                    acknowledgedAt: new Date(),
+                },
+            }));
         } catch (err: any) {
             alert(err?.message || 'Failed to acknowledge announcement.');
+        }
+    };
+
+    const handleRead = async (announcementId: string) => {
+        if (!user || myRecipientStatuses[announcementId]?.readAt) return;
+        try {
+            await markAnnouncementRead(announcementId);
+            setMyRecipientStatuses(previous => ({
+                ...previous,
+                [announcementId]: {
+                    ...(previous[announcementId] || { id: '', announcementId, userId: user.id, employeeName: user.name, reminderCount: 0 }),
+                    readAt: new Date(),
+                },
+            }));
+        } catch (err) {
+            console.warn('Failed to mark announcement as read', err);
         }
     };
 
@@ -166,6 +212,10 @@ const Announcements: React.FC = () => {
                             hasAcknowledged={user ? announcement.acknowledgementIds.includes(user.id) : false}
                             canManage={canManage}
                             onEdit={handleEditAnnouncement}
+                            onRead={handleRead}
+                            hasRead={!!myRecipientStatuses[announcement.id]?.readAt}
+                            onViewRecipients={setTrackingAnnouncement}
+                            selected={selectedAnnouncementId === announcement.id}
                         />
                     ))
                 ) : (
@@ -182,6 +232,13 @@ const Announcements: React.FC = () => {
                     announcement={selectedAnnouncement}
                     onSave={handleSave}
                     businessUnits={businessUnits}
+                />
+            )}
+
+            {trackingAnnouncement && canManage && (
+                <AnnouncementRecipientStatusModal
+                    announcement={trackingAnnouncement}
+                    onClose={() => setTrackingAnnouncement(null)}
                 />
             )}
         </div>

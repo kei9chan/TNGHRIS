@@ -30,6 +30,10 @@ type IncidentReportRow = {
   created_at?: string;
   updated_at?: string;
   case_number?: number;
+  sla_deadline?: string | null;
+  follow_up_count?: number | null;
+  last_follow_up_at?: string | null;
+  follow_up_history?: any[] | null;
 };
 
 const mapRow = (row: IncidentReportRow): IncidentReport => ({
@@ -58,6 +62,15 @@ const mapRow = (row: IncidentReportRow): IncidentReport => ({
   businessUnitId: row.business_unit_id || undefined,
   businessUnitName: row.business_unit_name || undefined,
   caseNumber: row.case_number || undefined,
+  createdAt: row.created_at ? new Date(row.created_at) : undefined,
+  slaDeadline: row.sla_deadline ? new Date(row.sla_deadline) : undefined,
+  followUpCount: row.follow_up_count || 0,
+  lastFollowUpAt: row.last_follow_up_at ? new Date(row.last_follow_up_at) : undefined,
+  followUpHistory: (row.follow_up_history || []).map((entry: any) => ({
+    sentAt: entry?.sentAt ? new Date(entry.sentAt) : new Date(),
+    sentById: entry?.sentById || '',
+    sentByName: entry?.sentByName || 'Employee',
+  })),
 });
 
 export const fetchIncidentReportById = async (id: string): Promise<IncidentReport | null> => {
@@ -77,6 +90,15 @@ export const fetchIncidentReports = async (): Promise<IncidentReport[]> => {
     .order('created_at', { ascending: false });
   if (error) throw new Error(error.message || 'Failed to load incident reports');
   return (data as IncidentReportRow[]).map(mapRow);
+};
+
+export const followUpIncidentReport = async (incidentReportId: string): Promise<IncidentReport> => {
+  const { data, error } = await supabase.rpc('follow_up_incident_report', {
+    p_incident_report_id: incidentReportId,
+  });
+  if (error) throw new Error(error.message || 'Failed to send the incident report follow-up.');
+  if (!data) throw new Error('The updated incident report was not returned.');
+  return mapRow(data as IncidentReportRow);
 };
 
 /**
