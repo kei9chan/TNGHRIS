@@ -452,7 +452,7 @@ export interface AccessScope {
   allowedBuIds?: string[]; // Only required if type is 'SPECIFIC'
 }
 
-export type EmploymentStatus = 'Regular' | 'Probationary' | 'Contractual';
+export type EmploymentStatus = 'Regular' | 'Probationary' | 'Contractual' | (string & {});
 
 export interface User {
   id: string;
@@ -466,9 +466,15 @@ export interface User {
   departmentId?: string;
   businessUnitId?: string;
   status: 'Active' | 'Inactive';
+  isDuplicate?: boolean;
+  accountLifecycleReason?: string;
+  accountInactivatedAt?: Date;
+  accountInactivatedBy?: string;
+  accountReactivatedAt?: Date;
+  accountReactivatedBy?: string;
   employmentStatus?: EmploymentStatus; // New Field
   isPhotoEnrolled: boolean;
-  dateHired: Date;
+  dateHired?: Date;
   birthDate?: Date;
   endDate?: Date;
   position: string;
@@ -2560,21 +2566,41 @@ export interface EmployeeAward {
 }
 
 export type UserDocumentType =
+  | 'Resume'
   | 'PSA Birth Certificate'
+  | 'Birth Certificate'
   | 'Diploma or Transcript of Records'
   | 'NBI Clearance'
+  | 'Medical Certificate'
   | 'Government ID (e.g., UMID, Driver\'s License)'
+  | 'SSS Document'
+  | 'PhilHealth Document'
+  | 'Pag-IBIG Document'
+  | 'TIN Document'
   | 'Proof of Bank Account'
+  | 'Bank Details'
   | 'BIR Form 2316 (from previous employer)'
+  | 'Signed Contract'
+  | 'Pre-Employment Requirement'
   | 'Others';
 
 export const USER_DOCUMENT_TYPES: UserDocumentType[] = [
+  'Resume',
   'PSA Birth Certificate',
+  'Birth Certificate',
   'Diploma or Transcript of Records',
   'NBI Clearance',
+  'Medical Certificate',
   'Government ID (e.g., UMID, Driver\'s License)',
+  'SSS Document',
+  'PhilHealth Document',
+  'Pag-IBIG Document',
+  'TIN Document',
   'Proof of Bank Account',
+  'Bank Details',
   'BIR Form 2316 (from previous employer)',
+  'Signed Contract',
+  'Pre-Employment Requirement',
   'Others'
 ];
 
@@ -2583,6 +2609,7 @@ export enum UserDocumentStatus {
   Pending = 'Pending',
   Approved = 'Approved',
   Rejected = 'Rejected',
+  Verified = 'Verified',
 }
 
 export interface UserDocument {
@@ -2597,6 +2624,16 @@ export interface UserDocument {
   reviewedBy?: string;
   reviewedAt?: Date;
   rejectionReason?: string;
+  title?: string;
+  notes?: string;
+  documentSource?: 'Employee' | 'HR';
+  uploadedBy?: string;
+  uploadedByName?: string;
+  storageBucket?: string;
+  storagePath?: string;
+  versionNumber?: number;
+  replacesDocumentId?: string;
+  archivedAt?: Date;
 }
 
 // =================================================================================

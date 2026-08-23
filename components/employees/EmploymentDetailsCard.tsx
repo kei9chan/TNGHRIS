@@ -4,12 +4,13 @@ import { User } from '../../types';
 import Card from '../ui/Card';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
+import { formatHrisDate } from '../../services/employeeProfile';
 
 // FIX: Inlined DetailItem component to remove dependency on a non-existent file.
 const DetailItem: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
     <div>
         <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">{label}</dt>
-        <dd className="mt-1 text-sm text-gray-900 dark:text-white">{value || 'N/A'}</dd>
+        <dd className="mt-1 text-sm text-gray-900 dark:text-white">{value || 'Not Assigned'}</dd>
     </div>
 );
 
@@ -49,14 +50,15 @@ const EmploymentDetailsCard: React.FC<EmploymentDetailsCardProps> = ({ user }) =
                 <DetailItem label="Employee ID" value={user.employeeId ? <span className="font-semibold text-indigo-600 dark:text-indigo-400">{user.employeeId}</span> : <span className="text-gray-400 italic">Not Assigned</span>} />
                 <DetailItem label="Business Unit" value={user.businessUnit} />
                 <DetailItem label="Department" value={user.department} />
+                <DetailItem label="Position" value={user.position || 'Not Assigned'} />
                 <DetailItem label="Role" value={user.role} />
-                <DetailItem label="Employment Status" value={user.employmentStatus || 'N/A'} />
+                <DetailItem label="Employment Status" value={user.employmentStatus || 'Not Assigned'} />
                 <DetailItem label="Status" value={<span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${user.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>{user.status}</span>} />
-                <DetailItem label="Date Hired" value={user.dateHired ? new Date(user.dateHired).toLocaleDateString() : 'N/A'} />
+                <DetailItem label="Date Hired" value={formatHrisDate(user.dateHired)} />
                 {user.status === 'Inactive' && (
                     <DetailItem label="End Date" value={(user as any).endDate ? new Date((user as any).endDate).toLocaleDateString() : 'N/A'} />
                 )}
-                <DetailItem label="Reports To" value={manager ? <Link to={`/employees/view/${manager.id}`} className="text-indigo-600 hover:underline">{manager.name}</Link> : 'N/A'} />
+                <DetailItem label="Reports To" value={manager ? <Link to={`/employees/view/${manager.id}`} className="text-indigo-600 hover:underline">{manager.name}</Link> : 'Not Assigned'} />
             </dl>
         </Card>
     );

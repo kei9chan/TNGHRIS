@@ -15,13 +15,15 @@ interface ProfileEditModalProps {
   draft: EmployeeDraft | null;
   isAdminEdit?: boolean;
   canEditEmployeeId?: boolean;
+  employmentFieldsOnly?: boolean;
 }
 
 type Tab = 'personal' | 'gov' | 'emergency' | 'banking' | 'compensation' | 'leave';
 
-const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, user, onSave, onSaveDraft, draft, isAdminEdit = false, canEditEmployeeId = false }) => {
+const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, user, onSave, onSaveDraft, draft, isAdminEdit = false, canEditEmployeeId = false, employmentFieldsOnly = false }) => {
   const [activeTab, setActiveTab] = useState<Tab>('personal');
   const [formData, setFormData] = useState<Partial<User>>({});
+  const [validationError, setValidationError] = useState('');
   const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
   const [reportsToOptions, setReportsToOptions] = useState<Array<{ id: string; label: string }>>([]);
   const [businessUnits, setBusinessUnits] = useState<{ id: string; name: string }[]>([]);
@@ -55,8 +57,9 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
         businessUnit: user.businessUnit,
         businessUnitId: user.businessUnitId,
         position: user.position,
+        dateHired: user.dateHired,
         reportsTo: user.reportsTo,
-        employmentStatus: user.employmentStatus || 'Probationary',
+        employmentStatus: user.employmentStatus,
         rateType: user.rateType || RateType.Monthly,
         rateAmount: user.rateAmount ?? user.salary?.basic ?? 0,
         taxStatus: user.taxStatus || TaxStatus.Single,
@@ -77,6 +80,7 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
         }
       };
       setFormData(initialData);
+      setValidationError('');
       setActiveTab('personal');
 
       const fetchReports = async () => {
@@ -232,7 +236,7 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    if (name === 'birthDate') {
+    if (name === 'birthDate' || name === 'dateHired') {
       // keep as plain YYYY-MM-DD string for reliable DB writes
       setFormData(prev => ({ ...prev, [name]: value }));
     } else if (name === 'endDate') {
@@ -339,10 +343,32 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
     return `px-4 py-2 text-sm font-medium rounded-md focus:outline-none transition-colors ${activeTab === tabName ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`;
   };
 
+  const submitForm = () => {
+    const dateHired = formData.dateHired;
+    if (dateHired) {
+      const raw = typeof dateHired === 'string'
+        ? dateHired
+        : `${dateHired.getFullYear()}-${String(dateHired.getMonth() + 1).padStart(2, '0')}-${String(dateHired.getDate()).padStart(2, '0')}`;
+      const parsed = new Date(`${raw}T00:00:00`);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (Number.isNaN(parsed.getTime())) {
+        setValidationError('Please select a valid Date Hired.');
+        return;
+      }
+      if (parsed > today) {
+        setValidationError('Date Hired cannot be in the future.');
+        return;
+      }
+    }
+    setValidationError('');
+    onSave(formData);
+  };
+
   const adminFooter = (
     <div className="flex justify-end w-full space-x-2">
       <Button variant="secondary" onClick={onClose}>Cancel</Button>
-      <Button onClick={() => onSave(formData)}>Save Changes</Button>
+      <Button onClick={submitForm}>Save Changes</Button>
     </div>
   );
 
@@ -366,24 +392,25 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
       <div className="border-b border-gray-200 dark:border-gray-700 mb-4">
         <nav className="flex space-x-1 sm:space-x-2 flex-wrap" aria-label="Tabs">
           <button className={getTabClass('personal')} onClick={() => setActiveTab('personal')}>Personal Info</button>
-          {isAdminEdit && <button className={getTabClass('compensation')} onClick={() => setActiveTab('compensation')}>Compensation</button>}
-          {isAdminEdit && <button className={getTabClass('leave')} onClick={() => setActiveTab('leave')}>Leave</button>}
-          <button className={getTabClass('gov')} onClick={() => setActiveTab('gov')}>Government IDs</button>
-          <button className={getTabClass('emergency')} onClick={() => setActiveTab('emergency')}>Emergency</button>
-          <button className={getTabClass('banking')} onClick={() => setActiveTab('banking')}>Banking</button>
+          {isAdminEdit && !employmentFieldsOnly && <button className={getTabClass('compensation')} onClick={() => setActiveTab('compensation')}>Compensation</button>}
+          {isAdminEdit && !employmentFieldsOnly && <button className={getTabClass('leave')} onClick={() => setActiveTab('leave')}>Leave</button>}
+          {!employmentFieldsOnly && <button className={getTabClass('gov')} onClick={() => setActiveTab('gov')}>Government IDs</button>}
+          {!employmentFieldsOnly && <button className={getTabClass('emergency')} onClick={() => setActiveTab('emergency')}>Emergency</button>}
+          {!employmentFieldsOnly && <button className={getTabClass('banking')} onClick={() => setActiveTab('banking')}>Banking</button>}
         </nav>
       </div>
 
       <div className="space-y-4">
+        {validationError && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">{validationError}</p>}
         {activeTab === 'personal' && (
           <div className="space-y-4">
-            {canEditEmployeeId && (
+            {canEditEmployeeId && !employmentFieldsOnly && (
               <Input label="Employee ID" name="employeeId" value={formData.employeeId || ''} onChange={handleChange} placeholder="e.g. TNG-0001" />
             )}
-            <Input label="Full Name" name="name" value={formData.name || ''} onChange={handleChange} />
-            <Input label="Email Address" name="email" type="email" value={formData.email || ''} onChange={handleChange} />
-            <Input label="Birth Date" name="birthDate" type="date" value={formData.birthDate ? (typeof formData.birthDate === 'string' ? formData.birthDate : new Date(formData.birthDate).toISOString().split('T')[0]) : ''} onChange={handleChange} />
-            {isAdminEdit ? (
+            {!employmentFieldsOnly && <Input label="Full Name" name="name" value={formData.name || ''} onChange={handleChange} />}
+            {!employmentFieldsOnly && <Input label="Email Address" name="email" type="email" value={formData.email || ''} onChange={handleChange} />}
+            {!employmentFieldsOnly && <Input label="Birth Date" name="birthDate" type="date" value={formData.birthDate ? (typeof formData.birthDate === 'string' ? formData.birthDate : new Date(formData.birthDate).toISOString().split('T')[0]) : ''} onChange={handleChange} />}
+            {isAdminEdit && !employmentFieldsOnly ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
@@ -418,16 +445,16 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
                   )}
                 </div>
               </div>
-            ) : (
+            ) : !employmentFieldsOnly ? (
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Department</label>
                 <p className="mt-1 py-2 px-3 bg-gray-100 dark:bg-slate-700 rounded-md text-sm text-gray-700 dark:text-gray-300">
                   {formData.department || <span className="italic text-gray-400">Not set</span>}
                 </p>
               </div>
-            )}
+            ) : null}
             <Input label="Position" name="position" value={formData.position || ''} onChange={handleChange} disabled={!isAdminEdit} />
-            {isAdminEdit && (
+            {isAdminEdit && !employmentFieldsOnly && (
               <div>
                 <label className="block text-sm font-medium">Reports To</label>
                 <select
@@ -451,14 +478,17 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
             {isAdminEdit && (
               <div>
                 <label className="block text-sm font-medium">Employment Status</label>
-                <select name="employmentStatus" value={formData.employmentStatus || 'Probationary'} onChange={handleChange} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white">
+                <select name="employmentStatus" value={formData.employmentStatus || ''} onChange={handleChange} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white">
+                  <option value="">Not Assigned</option>
+                  {formData.employmentStatus && !['Regular', 'Probationary', 'Contractual'].includes(formData.employmentStatus) && <option value={formData.employmentStatus}>{formData.employmentStatus}</option>}
                   <option value="Regular">Regular</option>
                   <option value="Probationary">Probationary</option>
                   <option value="Contractual">Contractual</option>
                 </select>
               </div>
             )}
-            <Input label="End Date (for inactive employees)" name="endDate" type="date" value={formData.endDate ? new Date(formData.endDate).toISOString().split('T')[0] : ''} onChange={handleChange} disabled={!isAdminEdit} />
+            {isAdminEdit && <Input label="Date Hired" name="dateHired" type="date" max={new Date().toISOString().split('T')[0]} value={formData.dateHired ? (typeof formData.dateHired === 'string' ? formData.dateHired : `${new Date(formData.dateHired).getFullYear()}-${String(new Date(formData.dateHired).getMonth() + 1).padStart(2, '0')}-${String(new Date(formData.dateHired).getDate()).padStart(2, '0')}`) : ''} onChange={handleChange} />}
+            {!employmentFieldsOnly && <Input label="End Date (for inactive employees)" name="endDate" type="date" value={formData.endDate ? new Date(formData.endDate).toISOString().split('T')[0] : ''} onChange={handleChange} disabled={!isAdminEdit} />}
           </div>
         )}
         {activeTab === 'compensation' && isAdminEdit && (

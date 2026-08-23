@@ -27,6 +27,7 @@ import { createNotification } from '../../services/notificationService';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { mergePanParticulars } from '../../services/panUtils';
+import { resolveEmployeePosition } from '../../services/employeeProfile';
 import COEQueue from './COEQueue';
 
 
@@ -880,7 +881,7 @@ const ManagerDashboard: React.FC = () => {
             employmentStatus: undefined,
             isPhotoEnrolled: false,
             dateHired: employeeRow.date_hired ? new Date(employeeRow.date_hired) : new Date(),
-            position: employeeRow.role || employeeRow.position || '',
+            position: resolveEmployeePosition(employeeRow.position, employeeRow.department),
             monthlySalary: undefined
         };
 

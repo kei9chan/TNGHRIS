@@ -4,12 +4,13 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
-import { Memo, MemoAcknowledgement, User, ChangeHistory, ChangeHistoryStatus, EmployeeDraft, EmployeeDraftStatus, Permission } from '../../types';
+import { Memo, MemoAcknowledgement, User, ChangeHistory, ChangeHistoryStatus, EmployeeDraft, EmployeeDraftStatus, Permission, Role } from '../../types';
 import { logActivity } from '../../services/auditService';
 import { F_SELF_SERVICE_ENABLED } from '../../constants';
 import { db } from '../../services/db';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
+import { formatDateOnly, resolveEmployeePosition } from '../../services/employeeProfile';
 
 import ProfileHeader from '../../components/employees/ProfileHeader';
 import PersonalInformationCard from '../../components/employees/PersonalInformationCard';
@@ -76,10 +77,10 @@ const EmployeeProfile: React.FC = () => {
             departmentId: row.department_id || undefined,
             businessUnitId: row.business_unit_id || undefined,
             status: (row.status as User['status']) || 'Active',
-            position: row.position || row.role || '',
+            position: resolveEmployeePosition(row.position, row.department || row.department_name),
             reportsTo: row.reports_to || undefined,
             birthDate: row.birth_date ? new Date(row.birth_date) : undefined,
-            dateHired: row.date_hired ? new Date(row.date_hired) : row.dateHired ? new Date(row.dateHired) : undefined,
+            dateHired: row.date_hired ? new Date(`${row.date_hired}T00:00:00`) : row.dateHired ? new Date(row.dateHired) : undefined,
             isPhotoEnrolled: !!row.is_photo_enrolled,
             signatureUrl: row.signature_url || undefined,
             profilePictureUrl: row.profile_picture_url || undefined,
@@ -267,8 +268,15 @@ const EmployeeProfile: React.FC = () => {
     }
     
     const isMyProfile = userToView.id === currentUser?.id;
-    const canEditProfile = (isMyProfile && F_SELF_SERVICE_ENABLED) || can('Employees', Permission.Edit);
+    const activeRoles = new Set(currentUser?.roles?.length ? currentUser.roles : currentUser ? [currentUser.role] : []);
+    const canEditEmploymentDetails = activeRoles.has(Role.HRManager)
+        || activeRoles.has(Role.HRStaff)
+        || (activeRoles.has(Role.Admin) && !activeRoles.has(Role.IT));
+    const canEditProfile = (isMyProfile && F_SELF_SERVICE_ENABLED)
+        || can('Employees', Permission.Edit)
+        || (!isMyProfile && canEditEmploymentDetails);
     const canAdminEdit = can('Employees', Permission.Edit);
+    const employmentFieldsOnly = !canAdminEdit && !isMyProfile && canEditEmploymentDetails;
 
     const handleSaveDraft = async (draftData: Partial<User>) => {
         if (!userToView || !currentUser) return;
@@ -418,6 +426,22 @@ const EmployeeProfile: React.FC = () => {
         if (!userToView || !currentUser) return;
         
         try {
+            if (employmentFieldsOnly) {
+                const { data, error } = await supabase.rpc('update_employee_employment_details', {
+                    p_target_user_id: userToView.id,
+                    p_position: updatedProfileData.position || null,
+                    p_date_hired: formatDateOnly(updatedProfileData.dateHired ?? null),
+                    p_employment_status: updatedProfileData.employmentStatus || null,
+                });
+                if (error) throw error;
+                if (data) {
+                    const mapped = mapHrisUser(data);
+                    setUsers(prev => [mapped, ...prev.filter(item => item.id !== mapped.id)]);
+                }
+                alert('Employment details updated successfully.');
+                setEditModalOpen(false);
+                return;
+            }
             const updated = await updateSupabaseUser(userToView.id, updatedProfileData);
             if (updated) {
                 setUsers(prev => {
@@ -531,11 +555,12 @@ const EmployeeProfile: React.FC = () => {
                     isOpen={isEditModalOpen}
                     onClose={() => setEditModalOpen(false)}
                     user={userToView}
-                    onSave={canAdminEdit && !isMyProfile ? handleAdminSave : handleSubmitForApproval}
+                    onSave={(canAdminEdit || employmentFieldsOnly) && !isMyProfile ? handleAdminSave : handleSubmitForApproval}
                     onSaveDraft={handleSaveDraft}
                     draft={userDraft}
-                    isAdminEdit={canAdminEdit && !isMyProfile}
+                    isAdminEdit={(canAdminEdit || employmentFieldsOnly) && !isMyProfile}
                     canEditEmployeeId={currentUser?.role === 'HR Manager' || currentUser?.role === 'HR Staff'}
+                    employmentFieldsOnly={employmentFieldsOnly}
                 />
             )}
 

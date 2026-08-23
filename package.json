@@ -14,7 +14,8 @@
     ,"test:rbac": "node tests/rbacRepairSmokeTest.mjs",
     "test:approvals": "node tests/approvalCenterSmokeTest.mjs",
     "test:incident-nte": "node tests/incidentToNteWorkflowSmokeTest.mjs",
-    "test:followups-comms": "node tests/followupsCommunicationsSmokeTest.mjs"
+    "test:followups-comms": "node tests/followupsCommunicationsSmokeTest.mjs",
+    "test:employee-management": "node tests/employeeManagementEnhancementSmokeTest.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.84.0",

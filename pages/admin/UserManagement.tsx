@@ -8,6 +8,7 @@ import Input from '../../components/ui/Input';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { usePermissionsContext } from '../../context/PermissionsContext';
+import AccountLifecycleModal from '../../components/admin/AccountLifecycleModal';
 
 const UserManagement: React.FC = () => {
     const { user: currentUser } = useAuth();
@@ -20,15 +21,19 @@ const UserManagement: React.FC = () => {
     const [roles, setRoles] = useState<string[]>([]);
     const [search, setSearch] = useState('');
     const [businessUnitFilter, setBusinessUnitFilter] = useState('');
+    const [accountFilter, setAccountFilter] = useState<'active' | 'inactive' | 'duplicate' | 'all'>('active');
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
+    const [lifecycleUser, setLifecycleUser] = useState<User | null>(null);
+    const currentRoles = useMemo(() => new Set(currentUser?.roles?.length ? currentUser.roles : currentUser ? [currentUser.role] : []), [currentUser]);
+    const canManageLifecycle = currentRoles.has(Role.Admin) || currentRoles.has(Role.HRManager);
 
     const loadData = async () => {
         setLoading(true); setError(null);
         const [userResult, buResult, roleResult, assignmentResult, featureResult, sensitiveResult, workflowResult] = await Promise.all([
-            supabase.from('hris_users').select('id,email,first_name,last_name,full_name,role,status,business_unit,department,business_unit_id,department_id,data_access_scope,dashboard_type,permission_updated_at,permission_updated_by'),
+            supabase.from('hris_users').select('id,email,first_name,last_name,full_name,role,status,is_duplicate,account_lifecycle_reason,account_inactivated_at,account_inactivated_by,account_reactivated_at,account_reactivated_by,business_unit,department,business_unit_id,department_id,data_access_scope,dashboard_type,permission_updated_at,permission_updated_by'),
             supabase.from('business_units').select('id,name').order('name'),
             supabase.from('roles').select('id').eq('is_active', true).order('display_name'),
             supabase.from('user_roles').select('user_id,role_id,is_primary,scope_type,allowed_business_unit_ids,dashboard_type,is_active').eq('is_active', true),
@@ -68,6 +73,12 @@ const UserManagement: React.FC = () => {
                 role: (primary?.role_id || row.role) as Role,
                 roles: roleIds,
                 status: row.status,
+                isDuplicate: Boolean(row.is_duplicate),
+                accountLifecycleReason: row.account_lifecycle_reason || undefined,
+                accountInactivatedAt: row.account_inactivated_at ? new Date(row.account_inactivated_at) : undefined,
+                accountInactivatedBy: row.account_inactivated_by || undefined,
+                accountReactivatedAt: row.account_reactivated_at ? new Date(row.account_reactivated_at) : undefined,
+                accountReactivatedBy: row.account_reactivated_by || undefined,
                 businessUnit: unitMap.get(row.business_unit_id) || row.business_unit || '',
                 businessUnitId: row.business_unit_id,
                 department: row.department || '',
@@ -90,9 +101,14 @@ const UserManagement: React.FC = () => {
 
     const filteredUsers = useMemo(() => users.filter(user => {
         const needle = search.trim().toLowerCase();
+        const accountMatches = accountFilter === 'all'
+            || (accountFilter === 'active' && user.status === 'Active' && !user.isDuplicate)
+            || (accountFilter === 'inactive' && user.status === 'Inactive')
+            || (accountFilter === 'duplicate' && user.isDuplicate);
         return (!needle || user.name.toLowerCase().includes(needle) || user.email.toLowerCase().includes(needle))
-            && (!businessUnitFilter || user.businessUnitId === businessUnitFilter);
-    }), [users, search, businessUnitFilter]);
+            && (!businessUnitFilter || user.businessUnitId === businessUnitFilter)
+            && accountMatches;
+    }), [users, search, businessUnitFilter, accountFilter]);
 
     const scopeSummary = (user: User) => {
         const scope = user.accessScope?.type || 'SELF';
@@ -124,6 +140,26 @@ const UserManagement: React.FC = () => {
         setSaving(false);
     };
 
+    const saveLifecycle = async (reason: string, markDuplicate: boolean) => {
+        if (!lifecycleUser) return;
+        setSaving(true); setError(null);
+        const action = lifecycleUser.status === 'Inactive' ? 'reactivate' : 'inactivate';
+        const { error: lifecycleError } = await supabase.rpc('admin_set_account_lifecycle', {
+            p_target_user_id: lifecycleUser.id,
+            p_action: action,
+            p_reason: reason,
+            p_mark_duplicate: markDuplicate,
+        });
+        if (lifecycleError) {
+            setError(lifecycleError.message);
+            setSaving(false);
+            return;
+        }
+        setLifecycleUser(null);
+        await loadData();
+        setSaving(false);
+    };
+
     if (!canView) return <div className="rounded-lg bg-white p-6 text-center">You do not have permission to view User Management.</div>;
 
     return (
@@ -133,37 +169,45 @@ const UserManagement: React.FC = () => {
                 <p className="mt-1 text-sm text-gray-500">Server-resolved roles, scope, sensitive access, workflow authority, and audit metadata.</p>
             </header>
             {error && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
-            <div className="rounded-lg border border-gray-200 bg-white shadow">
-                <div className="flex flex-col gap-3 border-b p-4 md:flex-row md:items-center md:justify-between">
+            <div className="rounded-lg border border-gray-200 bg-white shadow dark:border-slate-700 dark:bg-slate-800">
+                <div className="grid gap-3 border-b p-4 md:grid-cols-3">
                     <Input label="" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search name or email…" className="md:w-72" />
-                    <select value={businessUnitFilter} onChange={event => setBusinessUnitFilter(event.target.value)} className="rounded-md border-gray-300 p-2">
+                    <select value={businessUnitFilter} onChange={event => setBusinessUnitFilter(event.target.value)} className="rounded-md border-gray-300 p-2 dark:border-slate-600 dark:bg-slate-700 dark:text-white">
                         <option value="">All business units</option>
                         {businessUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
                     </select>
+                    <select aria-label="Account filter" value={accountFilter} onChange={event => setAccountFilter(event.target.value as typeof accountFilter)} className="rounded-md border-gray-300 p-2 dark:border-slate-600 dark:bg-slate-700 dark:text-white">
+                        <option value="active">Active accounts</option>
+                        <option value="inactive">Inactive accounts</option>
+                        <option value="duplicate">Duplicate accounts</option>
+                        <option value="all">All accounts</option>
+                    </select>
                 </div>
                 <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50 text-left text-xs uppercase text-gray-500"><tr>
-                            <th className="px-4 py-3">User</th><th className="px-4 py-3">Roles</th><th className="px-4 py-3">Dashboard</th>
+                    <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
+                        <thead className="bg-gray-50 text-left text-xs uppercase text-gray-500 dark:bg-slate-700 dark:text-slate-300"><tr>
+                            <th className="px-4 py-3">User</th><th className="px-4 py-3">Account</th><th className="px-4 py-3">Roles</th><th className="px-4 py-3">Dashboard</th>
                             <th className="px-4 py-3">Data scope</th><th className="px-4 py-3">Sensitive / workflows</th><th className="px-4 py-3">Last update</th><th className="px-4 py-3"></th>
                         </tr></thead>
-                        <tbody className="divide-y divide-gray-100">
+                        <tbody className="divide-y divide-gray-100 text-gray-900 dark:divide-slate-700 dark:text-white">
                             {filteredUsers.map(user => <tr key={user.id}>
                                 <td className="px-4 py-3"><p className="font-medium">{user.name}</p><p className="text-xs text-gray-500">{user.email}<br />{user.businessUnit} · {user.department}</p></td>
+                                <td className="px-4 py-3 text-sm"><span className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${user.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'}`}>{user.status}</span>{user.isDuplicate && <span className="ml-1 inline-flex rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">Duplicate</span>}{user.accountLifecycleReason && <p className="mt-1 max-w-48 text-xs text-gray-500" title={user.accountLifecycleReason}>{user.accountLifecycleReason}</p>}</td>
                                 <td className="px-4 py-3 text-sm">{(user.roles || [user.role]).map(role => <span key={role} className="mr-1 inline-flex rounded-full bg-indigo-50 px-2 py-1 text-xs text-indigo-700">{role === Role.GeneralManager ? 'General Manager' : role}</span>)}</td>
                                 <td className="px-4 py-3 text-sm">{user.dashboardType || 'employee'}</td>
                                 <td className="px-4 py-3 text-sm"><span className="font-medium">{user.accessScope?.type || 'SELF'}</span><br /><span className="text-xs text-gray-500">{scopeSummary(user)}</span></td>
                                 <td className="px-4 py-3 text-xs text-gray-600">{Object.keys(user.effectiveFeaturePermissions || {}).length} feature resources<br />{Object.keys(user.sensitivePermissions || {}).length} sensitive · {Object.keys(user.workflowPermissions || {}).length} workflows</td>
                                 <td className="px-4 py-3 text-xs text-gray-500">{user.permissionUpdatedAt?.toLocaleString() || 'Legacy assignment'}<br />{user.permissionUpdatedByName ? `by ${user.permissionUpdatedByName}` : user.permissionUpdatedBy ? `by ${user.permissionUpdatedBy}` : 'by system / legacy migration'}</td>
-                                <td className="px-4 py-3 text-right">{canManage && <Button size="sm" variant="secondary" disabled={saving || user.id === currentUser?.id} onClick={() => setSelectedUser(user)}>{user.id === currentUser?.id ? 'Self change blocked' : 'Edit access'}</Button>}</td>
+                                <td className="px-4 py-3 text-right"><div className="flex justify-end gap-2">{canManage && <Button size="sm" variant="secondary" disabled={saving || user.id === currentUser?.id} onClick={() => setSelectedUser(user)}>{user.id === currentUser?.id ? 'Self change blocked' : 'Edit access'}</Button>}{canManageLifecycle && user.id !== currentUser?.id && <Button size="sm" variant="secondary" disabled={saving} onClick={() => setLifecycleUser(user)}>{user.status === 'Inactive' ? 'Reactivate' : 'Inactivate'}</Button>}</div></td>
                             </tr>)}
-                            {!loading && filteredUsers.length === 0 && <tr><td colSpan={7} className="p-10 text-center text-gray-500">No users found.</td></tr>}
+                            {!loading && filteredUsers.length === 0 && <tr><td colSpan={8} className="p-10 text-center text-gray-500">No users found.</td></tr>}
                         </tbody>
                     </table>
                     {loading && <div className="p-10 text-center text-gray-500">Loading effective access…</div>}
                 </div>
             </div>
             {selectedUser && <UserRoleEditModal isOpen onClose={() => setSelectedUser(null)} user={selectedUser} businessUnits={businessUnits} roles={roles} onSave={saveAccess} />}
+            {lifecycleUser && <AccountLifecycleModal isOpen user={lifecycleUser} saving={saving} onClose={() => setLifecycleUser(null)} onConfirm={saveLifecycle} />}
         </div>
     );
 };

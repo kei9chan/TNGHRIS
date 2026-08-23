@@ -14,6 +14,7 @@ import EditableDescription from '../../components/ui/EditableDescription';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { useUsers, useBusinessUnits } from '../../hooks/useHRData';
+import { formatDateOnly as formatEmploymentDateOnly } from '../../services/employeeProfile';
 
 const EmployeeList: React.FC = () => {
   const navigate = useNavigate();
@@ -24,6 +25,7 @@ const EmployeeList: React.FC = () => {
   const [buFilter, setBuFilter] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<'Active' | 'Inactive' | ''>('');
+  const [employmentStatusFilter, setEmploymentStatusFilter] = useState('');
   
   const [isEditModalOpen, setEditModalOpen] = useState(false);
   const [userToEdit, setUserToEdit] = useState<User | null>(null);
@@ -51,6 +53,11 @@ const EmployeeList: React.FC = () => {
   const { users, loading: usersLoading, refetchUsers } = useUsers();
 
   const departments = useMemo(() => [...new Set(users.map(u => u.department))].sort(), [users]);
+  const employmentStatuses = useMemo(() => [...new Set(users.map(u => u.employmentStatus).filter(Boolean) as string[])].sort(), [users]);
+  const activeRoles = useMemo(() => new Set(currentUser?.roles?.length ? currentUser.roles : currentUser ? [currentUser.role] : []), [currentUser]);
+  const canEditEmploymentDetails = activeRoles.has(Role.HRManager)
+    || activeRoles.has(Role.HRStaff)
+    || (activeRoles.has(Role.Admin) && !activeRoles.has(Role.IT));
 
   const accessControl = useMemo(() => {
     const role = currentUser?.role;
@@ -75,6 +82,7 @@ const EmployeeList: React.FC = () => {
         return base; // Employee, Finance, IT, etc. -> no view
     }
   }, [currentUser]);
+  const canFullyEditEmployees = can('Employees', Permission.Edit) && accessControl.canEdit;
   
   const availableBusOptions = useMemo(() => {
     if (accessControl.scope === 'global' || accessControl.scope === 'logs') {
@@ -152,10 +160,11 @@ const EmployeeList: React.FC = () => {
         const buMatch = !buFilter || user.businessUnit === buFilter;
         const deptMatch = !departmentFilter || user.department === departmentFilter;
         const statusMatch = !statusFilter || user.status === statusFilter;
-        return nameMatch && buMatch && deptMatch && statusMatch;
+        const employmentStatusMatch = !employmentStatusFilter || user.employmentStatus === employmentStatusFilter;
+        return nameMatch && buMatch && deptMatch && statusMatch && employmentStatusMatch;
       })
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [searchTerm, buFilter, departmentFilter, statusFilter, accessibleBus, users, accessControl, currentUser]);
+  }, [searchTerm, buFilter, departmentFilter, statusFilter, employmentStatusFilter, accessibleBus, users, accessControl, currentUser]);
 
   const pendingReviewCount = useMemo(() => {
     const pendingUserRegistrations = users.filter(
@@ -182,7 +191,7 @@ const EmployeeList: React.FC = () => {
   };
 
   const handleEdit = (user: User) => {
-    if (can('Employees', Permission.Edit) && accessControl.canEdit) {
+    if (canFullyEditEmployees || canEditEmploymentDetails) {
         setUserToEdit(user);
         setEditModalOpen(true);
     } else {
@@ -197,6 +206,23 @@ const EmployeeList: React.FC = () => {
   
   const handleAdminSave = async (updatedProfileData: Partial<User>) => {
       if (!userToEdit) return;
+
+      if (!canFullyEditEmployees && canEditEmploymentDetails) {
+        const { error } = await supabase.rpc('update_employee_employment_details', {
+          p_target_user_id: userToEdit.id,
+          p_position: updatedProfileData.position || null,
+          p_date_hired: formatEmploymentDateOnly(updatedProfileData.dateHired ?? null),
+          p_employment_status: updatedProfileData.employmentStatus || null,
+        });
+        if (error) {
+          alert(error.message || 'Failed to update employment details.');
+          return;
+        }
+        await refetchUsers();
+        handleCloseModal();
+        alert(`Employment details for ${userToEdit.name} updated.`);
+        return;
+      }
 
       const formatDateOnly = (d?: Date | string | null) => {
         if (!d) return null;
@@ -320,7 +346,7 @@ const EmployeeList: React.FC = () => {
             <>
                 <EditableDescription descriptionKey="employeeListDesc" className="mt-1" />
                 <Card>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 p-4">
                         <Input label="Search by Name" id="search-name" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="e.g., John Doe" />
                         <div>
                             <label htmlFor="bu-filter" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
@@ -337,11 +363,18 @@ const EmployeeList: React.FC = () => {
                             </select>
                         </div>
                          <div>
-                            <label htmlFor="status-filter" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
+                            <label htmlFor="status-filter" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Account Status</label>
                             <select id="status-filter" value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
                                 <option value="">All</option>
                                 <option value="Active">Active</option>
                                 <option value="Inactive">Inactive</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label htmlFor="employment-status-filter" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Employment Status</label>
+                            <select id="employment-status-filter" value={employmentStatusFilter} onChange={e => setEmploymentStatusFilter(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                                <option value="">All</option>
+                                {employmentStatuses.map(status => <option key={status} value={status}>{status}</option>)}
                             </select>
                         </div>
                     </div>
@@ -366,6 +399,7 @@ const EmployeeList: React.FC = () => {
                 draft={null}
                 isAdminEdit={true}
                 canEditEmployeeId={currentUser?.role === Role.HRManager || currentUser?.role === Role.HRStaff}
+                employmentFieldsOnly={!canFullyEditEmployees && canEditEmploymentDetails}
             />
         )}
     </div>

@@ -10,6 +10,7 @@ import { useSettings } from '../../context/SettingsContext';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { mergePanParticulars } from '../../services/panUtils';
+import { resolveEmployeePosition } from '../../services/employeeProfile';
 import { JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, Role, NotificationType, ResignationStatus, Notification, TicketStatus, UserDocumentStatus, OnboardingTaskStatus, ChangeHistoryStatus, PANStatus, PANActionTaken, PANStepStatus, PAN, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, COERequestStatus, COETemplate, BenefitRequestStatus, IRStatus, IncidentReport, User, Evaluation, EvaluatorType, Memo, MemoAcknowledgement, OTRequest, OTStatus, BenefitRequest, EvaluationSubmission, JobRequisition, Resignation, LeaveRequest, LeaveRequestStatus, WFHRequest, WFHRequestStatus } from '../../types';
 import ActionItemCard from './ActionItemCard';
 import QuickAnalyticsPreview from './QuickAnalyticsPreview';
@@ -758,7 +759,7 @@ const HRDashboard: React.FC = () => {
             employmentStatus: undefined,
             isPhotoEnrolled: false,
             dateHired: employeeRow.date_hired ? new Date(employeeRow.date_hired) : new Date(),
-            position: employeeRow.role || employeeRow.position || '',
+            position: resolveEmployeePosition(employeeRow.position, employeeRow.department),
             monthlySalary: undefined
         };
 

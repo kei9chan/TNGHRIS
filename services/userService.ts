@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient';
 import { User, BusinessUnit, Department, Role, RateType, TaxStatus, AccessScope, EmploymentStatus } from '../types';
+import { resolveEmployeePosition } from './employeeProfile';
 
 // ---------------------------------------------------------------------------
 // Row Types
@@ -77,9 +78,9 @@ const mapUser = (row: HrisUserRow): User => ({
   status: row.status as 'Active' | 'Inactive',
   employmentStatus: (row.employment_status as EmploymentStatus) || undefined,
   isPhotoEnrolled: row.is_photo_enrolled,
-  dateHired: row.date_hired ? new Date(row.date_hired) : new Date(),
+  dateHired: row.date_hired ? new Date(`${row.date_hired}T00:00:00`) : undefined,
   birthDate: row.birth_date ? new Date(row.birth_date) : undefined,
-  position: row.position || '',
+  position: resolveEmployeePosition(row.position, row.department),
   reportsTo: row.reports_to || undefined,
   salary: row.salary_basic != null ? {
     basic: row.salary_basic || 0,

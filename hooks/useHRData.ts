@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { User } from '../types';
+import { resolveEmployeePosition } from '../services/employeeProfile';
 
 export function useUsers() {
   const [users, setUsers] = useState<User[]>([]);
@@ -25,8 +26,13 @@ export function useUsers() {
         department: u.department || '',
         businessUnit: u.business_unit || '',
         businessUnitId: u.business_unit_id,
+        departmentId: u.department_id,
         title: u.title || '',
         status: u.status || 'Active',
+        position: resolveEmployeePosition(u.position, u.department),
+        employmentStatus: u.employment_status || undefined,
+        dateHired: u.date_hired ? new Date(`${u.date_hired}T00:00:00`) : undefined,
+        reportsTo: u.reports_to || undefined,
         avatarUrl: u.avatar_url || '',
         hireDate: u.hire_date || '',
         address: u.address || '',
