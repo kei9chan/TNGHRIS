@@ -24,6 +24,16 @@ type PANRow = {
   pdf_hash?: string | null;
   preparer_name?: string | null;
   preparer_signature_url?: string | null;
+  created_by_user_id?: string | null;
+  workflow_version?: number | null;
+  approval_completed_at?: string | null;
+  rejection_reason?: string | null;
+  cancelled_at?: string | null;
+  cancelled_by?: string | null;
+  cancellation_reason?: string | null;
+  accepted_at?: string | null;
+  accepted_by?: string | null;
+  applied_at?: string | null;
 };
 
 type PANTemplateRow = {
@@ -63,6 +73,16 @@ const mapPAN = (row: PANRow): PAN => ({
   pdfHash: row.pdf_hash || undefined,
   preparerName: row.preparer_name || undefined,
   preparerSignatureUrl: row.preparer_signature_url || undefined,
+  createdByUserId: row.created_by_user_id || undefined,
+  workflowVersion: row.workflow_version ?? 1,
+  approvalCompletedAt: row.approval_completed_at ? new Date(row.approval_completed_at) : undefined,
+  rejectionReason: row.rejection_reason || undefined,
+  cancelledAt: row.cancelled_at ? new Date(row.cancelled_at) : undefined,
+  cancelledBy: row.cancelled_by || undefined,
+  cancellationReason: row.cancellation_reason || undefined,
+  acceptedAt: row.accepted_at ? new Date(row.accepted_at) : undefined,
+  acceptedBy: row.accepted_by || undefined,
+  appliedAt: row.applied_at ? new Date(row.applied_at) : undefined,
 });
 
 const mapPANTemplate = (row: PANTemplateRow): PANTemplate => ({

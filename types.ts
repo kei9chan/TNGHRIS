@@ -1454,6 +1454,8 @@ export enum PANStatus {
 }
 
 export interface PANParticulars {
+  businessUnit?: string;
+  businessUnitId?: string;
   employmentStatus?: string;
   position?: string;
   department?: string;
@@ -1473,13 +1475,16 @@ export enum PANRole {
   Recommender = 'Recommender',
   Endorser = 'Endorser',
   Approver = 'Approver',
+  BOD = 'Board of Director',
   Acknowledger = 'Acknowledger',
 }
 
 export enum PANStepStatus {
+  Waiting = 'Waiting',
   Pending = 'Pending',
   Approved = 'Approved',
   Declined = 'Declined',
+  Cancelled = 'Cancelled',
 }
 
 export interface PANRoutingStep {
@@ -1516,6 +1521,16 @@ export interface PAN {
   pdfHash?: string;
   preparerName?: string;
   preparerSignatureUrl?: string;
+  createdByUserId?: string;
+  workflowVersion?: number;
+  approvalCompletedAt?: Date;
+  rejectionReason?: string;
+  cancelledAt?: Date;
+  cancelledBy?: string;
+  cancellationReason?: string;
+  acceptedAt?: Date;
+  acceptedBy?: string;
+  appliedAt?: Date;
 }
 
 export interface PANTemplate {

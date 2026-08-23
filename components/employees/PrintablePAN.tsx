@@ -18,13 +18,23 @@ const DetailRow: React.FC<{ label: string; from: string | number; to: string | n
   </tr>
 );
 
+const displayFromValue = (value?: string) => value?.trim() || 'Not Applicable';
+
+const displayToValue = (from?: string, to?: string) => {
+    const normalizedFrom = from?.trim();
+    const normalizedTo = to?.trim();
+    if (!normalizedFrom && !normalizedTo) return 'Not Applicable';
+    if (!normalizedTo || normalizedTo === normalizedFrom) return 'Same';
+    return normalizedTo;
+};
+
 const PrintablePAN: React.FC<PrintablePANProps> = ({ pan, onClose, onRendered, isVisible = true }) => {
     const { settings } = useSettings();
     const { users } = useUsers();
     const employee = users.find(u => u.id === pan.employeeId);
     const printContentRef = useRef<HTMLDivElement>(null);
     
-    const approvers = useMemo(() => pan.routingSteps
+    const approvers = useMemo(() => [...pan.routingSteps]
         .filter(step => step.role !== PANRole.Acknowledger)
         .sort((a, b) => a.order - b.order)
         .map(step => {
@@ -73,6 +83,10 @@ const PrintablePAN: React.FC<PrintablePANProps> = ({ pan, onClose, onRendered, i
     const toSalary = pan.particulars.to.salary || { basic: 0, deminimis: 0, reimbursable: 0 };
     const fromTotal = fromSalary.basic + fromSalary.deminimis + fromSalary.reimbursable;
     const toTotal = toSalary.basic + toSalary.deminimis + toSalary.reimbursable;
+    const salaryIsSame = fromSalary.basic === toSalary.basic
+        && fromSalary.deminimis === toSalary.deminimis
+        && fromSalary.reimbursable === toSalary.reimbursable;
+    const salaryNotApplicable = fromTotal === 0 && toTotal === 0;
 
 
     return (
@@ -111,6 +125,7 @@ const PrintablePAN: React.FC<PrintablePANProps> = ({ pan, onClose, onRendered, i
                         )}
                         <h1 className="text-2xl font-bold">PERSONNEL ACTION NOTICE</h1>
                         <p className="text-sm">PAN ID: {pan.id}</p>
+                        <p className="text-sm">Status: {pan.status === 'Completed' ? 'Accepted' : pan.status === 'Declined' ? 'Rejected' : pan.status}</p>
                     </div>
 
                     <table className="w-full text-sm mb-6 border-collapse">
@@ -134,13 +149,22 @@ const PrintablePAN: React.FC<PrintablePANProps> = ({ pan, onClose, onRendered, i
                             <tr className="bg-gray-100"><th className="px-2 py-1 text-left">Particulars</th><th className="px-2 py-1 text-left">From</th><th className="px-2 py-1 text-left">To</th></tr>
                         </thead>
                         <tbody>
-                            <DetailRow label="Employment Status" from={pan.particulars.from.employmentStatus || 'N/A'} to={pan.particulars.to.employmentStatus || 'N/A'} />
-                            <DetailRow label="Position" from={pan.particulars.from.position || 'N/A'} to={pan.particulars.to.position || 'N/A'} />
-                            <DetailRow label="Department" from={pan.particulars.from.department || 'N/A'} to={pan.particulars.to.department || 'N/A'} />
-                            <tr className="border-t"><td className="px-2 py-1 font-semibold" rowSpan={4}>Salary</td><td className="px-2 py-1">Basic: {settings.currency} {fromSalary.basic.toLocaleString()}</td><td className="px-2 py-1">Basic: {settings.currency} {toSalary.basic.toLocaleString()}</td></tr>
-                            <tr><td className="px-2 py-1">Deminimis: {settings.currency} {fromSalary.deminimis.toLocaleString()}</td><td className="px-2 py-1">Deminimis: {settings.currency} {toSalary.deminimis.toLocaleString()}</td></tr>
-                            <tr><td className="px-2 py-1">Reimbursable: {settings.currency} {fromSalary.reimbursable.toLocaleString()}</td><td className="px-2 py-1">Reimbursable: {settings.currency} {toSalary.reimbursable.toLocaleString()}</td></tr>
-                            <tr className="font-bold bg-gray-50"><td className="px-2 py-1">Total: {settings.currency} {fromTotal.toLocaleString()}</td><td className="px-2 py-1">Total: {settings.currency} {toTotal.toLocaleString()}</td></tr>
+                            <DetailRow label="Business Unit / Company" from={displayFromValue(pan.particulars.from.businessUnit)} to={displayToValue(pan.particulars.from.businessUnit, pan.particulars.to.businessUnit)} />
+                            <DetailRow label="Department" from={displayFromValue(pan.particulars.from.department)} to={displayToValue(pan.particulars.from.department, pan.particulars.to.department)} />
+                            <DetailRow label="Position" from={displayFromValue(pan.particulars.from.position)} to={displayToValue(pan.particulars.from.position, pan.particulars.to.position)} />
+                            <DetailRow label="Employment Status" from={displayFromValue(pan.particulars.from.employmentStatus)} to={displayToValue(pan.particulars.from.employmentStatus, pan.particulars.to.employmentStatus)} />
+                            {salaryNotApplicable ? (
+                                <DetailRow label="Salary / Compensation" from="Not Applicable" to="Not Applicable" />
+                            ) : salaryIsSame ? (
+                                <tr className="border-t"><td className="px-2 py-1 font-semibold">Salary / Compensation</td><td className="px-2 py-1">Basic: {settings.currency} {fromSalary.basic.toLocaleString()}<br />Deminimis: {settings.currency} {fromSalary.deminimis.toLocaleString()}<br />Reimbursable: {settings.currency} {fromSalary.reimbursable.toLocaleString()}<br /><strong>Total: {settings.currency} {fromTotal.toLocaleString()}</strong></td><td className="px-2 py-1">Same</td></tr>
+                            ) : (
+                                <>
+                                    <tr className="border-t"><td className="px-2 py-1 font-semibold" rowSpan={4}>Salary / Compensation</td><td className="px-2 py-1">Basic: {settings.currency} {fromSalary.basic.toLocaleString()}</td><td className="px-2 py-1">Basic: {settings.currency} {toSalary.basic.toLocaleString()}</td></tr>
+                                    <tr><td className="px-2 py-1">Deminimis: {settings.currency} {fromSalary.deminimis.toLocaleString()}</td><td className="px-2 py-1">Deminimis: {settings.currency} {toSalary.deminimis.toLocaleString()}</td></tr>
+                                    <tr><td className="px-2 py-1">Reimbursable: {settings.currency} {fromSalary.reimbursable.toLocaleString()}</td><td className="px-2 py-1">Reimbursable: {settings.currency} {toSalary.reimbursable.toLocaleString()}</td></tr>
+                                    <tr className="font-bold bg-gray-50"><td className="px-2 py-1">Total: {settings.currency} {fromTotal.toLocaleString()}</td><td className="px-2 py-1">Total: {settings.currency} {toTotal.toLocaleString()}</td></tr>
+                                </>
+                            )}
                         </tbody>
                     </table>
                     

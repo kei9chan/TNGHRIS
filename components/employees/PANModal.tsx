@@ -6,9 +6,7 @@ import Textarea from '../ui/Textarea';
 import Input from '../ui/Input';
 import EmployeeMultiSelect from '../feedback/EmployeeMultiSelect';
 import { useAuth } from '../../hooks/useAuth';
-import { useSettings } from '../../context/SettingsContext';
 import SignaturePad, { SignaturePadRef } from '../ui/SignaturePad';
-import { logActivity } from '../../services/auditService';
 
 interface PANModalProps {
   isOpen: boolean;
@@ -16,12 +14,14 @@ interface PANModalProps {
   pan: PAN | null;
   templates: PANTemplate[];
   employees: User[];
+  businessUnits: Array<{ id: string; name: string }>;
   onSaveDraft: (pan: Partial<PAN>) => void;
   onSendForAcknowledgement: (pan: Partial<PAN>) => void;
   onAcknowledge: (panId: string, signatureDataUrl: string, signatureName: string) => void;
   onDownloadPdf: (pan: PAN) => void;
-  onApprove?: (panId: string) => void;
+  onApprove?: (pan: PAN) => void;
   onReject?: (pan: PAN) => void;
+  onCancel?: (pan: PAN) => void;
 }
 
 const calculateTenure = (dateHired?: Date): string => {
@@ -40,9 +40,8 @@ const calculateTenure = (dateHired?: Date): string => {
 const emptySalary: SalaryBreakdown = { basic: 0, deminimis: 0, reimbursable: 0 };
 const emptyActions: PANActionTaken = { changeOfStatus: false, promotion: false, transfer: false, salaryIncrease: false, changeOfJobTitle: false, others: '' };
 
-const PANModal: React.FC<PANModalProps> = ({ isOpen, onClose, pan, templates, employees, onSaveDraft, onSendForAcknowledgement, onAcknowledge, onDownloadPdf, onApprove, onReject }) => {
+const PANModal: React.FC<PANModalProps> = ({ isOpen, onClose, pan, templates, employees, businessUnits, onSaveDraft, onSendForAcknowledgement, onAcknowledge, onDownloadPdf, onApprove, onReject, onCancel }) => {
   const { user } = useAuth();
-  const { settings } = useSettings();
   const [current, setCurrent] = useState<Partial<PAN>>(pan || {});
   const [selectedEmployee, setSelectedEmployee] = useState<User | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
@@ -56,15 +55,6 @@ const PANModal: React.FC<PANModalProps> = ({ isOpen, onClose, pan, templates, em
   const [typedName, setTypedName] = useState('');
 
   const isNew = !pan;
-  const isDraft = pan?.status === PANStatus.Draft;
-  const isApproved = pan?.status === PANStatus.Completed;
-  
-  const canEdit = useMemo(() => {
-    if (isNew || isDraft) return true;
-    if (!pan || !user) return false;
-    const isHR = user.role === Role.Admin || user.role === Role.HRManager || user.role === Role.HRStaff;
-    return pan.status === PANStatus.Declined && isHR;
-  }, [pan, user, isNew, isDraft]);
 
   const resolvedUserId = useMemo(() => {
     if (!user) return null;
@@ -77,8 +67,6 @@ const PANModal: React.FC<PANModalProps> = ({ isOpen, onClose, pan, templates, em
     return user.id;
   }, [user, employees]);
 
-  const isSubjectOfPAN = useMemo(() => resolvedUserId === pan?.employeeId, [resolvedUserId, pan]);
-  
   const isForAcknowledgement = useMemo(() => {
     if (!pan || !resolvedUserId) return false;
     const isEmployee = pan.employeeId === resolvedUserId;
@@ -87,8 +75,31 @@ const PANModal: React.FC<PANModalProps> = ({ isOpen, onClose, pan, templates, em
 
 
   const approverPool = useMemo(() => {
-    return employees.filter(u => u.role !== Role.Employee && u.status === 'Active');
+    return employees.filter(u => u.status === 'Active' && (u.role !== Role.Employee || (u.roles || []).some(role => role !== Role.Employee)));
   }, [employees]);
+
+  const isAuthorizedHr = useMemo(() => {
+    const roles = new Set(user?.roles?.length ? user.roles : user ? [user.role] : []);
+    return roles.has(Role.Admin) || roles.has(Role.HRManager) || roles.has(Role.HRStaff);
+  }, [user]);
+
+  const canEdit = useMemo(() => {
+    if (isNew) return true;
+    if (!pan || !resolvedUserId) return false;
+    const editableStatus = [PANStatus.Draft, PANStatus.Declined, PANStatus.ReturnedForEdits].includes(pan.status);
+    return editableStatus && (pan.createdByUserId === resolvedUserId || isAuthorizedHr);
+  }, [pan, resolvedUserId, isAuthorizedHr, isNew]);
+
+  const canCancel = useMemo(() => {
+    if (!pan || !resolvedUserId) return false;
+    return [PANStatus.Draft, PANStatus.PendingApproval, PANStatus.PendingEmployee].includes(pan.status)
+      && (pan.createdByUserId === resolvedUserId || isAuthorizedHr);
+  }, [pan, resolvedUserId, isAuthorizedHr]);
+
+  const cancelledByName = useMemo(() => {
+    if (!pan?.cancelledBy) return null;
+    return employees.find(employee => employee.id === pan.cancelledBy)?.name || pan.cancelledBy;
+  }, [pan, employees]);
 
   const currentUserStep = useMemo(() => {
     if (!pan || !resolvedUserId) return null;
@@ -157,7 +168,9 @@ const PANModal: React.FC<PANModalProps> = ({ isOpen, onClose, pan, templates, em
     setEmployeeSearch(selectedEmployee.name);
     if (!isNew) return;
     const fromParticulars = {
-      employmentStatus: 'Regular',
+      businessUnit: selectedEmployee.businessUnit,
+      businessUnitId: selectedEmployee.businessUnitId,
+      employmentStatus: selectedEmployee.employmentStatus,
       position: selectedEmployee.position,
       department: selectedEmployee.department,
       salary: selectedEmployee.salary || { ...emptySalary },
@@ -213,7 +226,7 @@ const PANModal: React.FC<PANModalProps> = ({ isOpen, onClose, pan, templates, em
         id: `step-${u.id}-${idx}`,
         userId: u.id,
         name: u.name,
-        role: PANRole.Approver,
+        role: u.role === Role.BOD || u.roles?.includes(Role.BOD) ? PANRole.BOD : PANRole.Approver,
         status: PANStepStatus.Pending,
         order: idx,
     }));
@@ -236,7 +249,7 @@ const PANModal: React.FC<PANModalProps> = ({ isOpen, onClose, pan, templates, em
 
   const handleApproveClick = () => {
     if (pan && onApprove) {
-      onApprove(pan.id);
+      onApprove(pan);
       onClose();
     }
   };
@@ -248,15 +261,36 @@ const PANModal: React.FC<PANModalProps> = ({ isOpen, onClose, pan, templates, em
     }
   };
 
+  const handleBusinessUnitChange = (side: 'from' | 'to', businessUnitId: string) => {
+    const selected = businessUnits.find(unit => unit.id === businessUnitId);
+    setCurrent(prev => ({
+      ...prev,
+      particulars: {
+        ...prev.particulars,
+        [side]: {
+          ...(prev.particulars?.[side] || {}),
+          businessUnitId: selected?.id,
+          businessUnit: selected?.name || businessUnitId,
+        },
+      },
+    }));
+  };
+
+  const hasBodApprover = selectedApprovers.some(approver => approver.role === Role.BOD || approver.roles?.includes(Role.BOD));
+
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={pan ? `Editing PAN for ${pan.employeeName}` : 'Create New PAN'}
+      title={pan ? `${canEdit ? 'Edit' : 'PAN Details'} — ${pan.employeeName}` : 'Create New PAN'}
       size="lg"
       footer={
         <div className="flex justify-between items-center w-full">
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={onClose}>Close</Button>
+            {pan && <Button variant="secondary" onClick={() => onDownloadPdf(pan)}>Print / Download</Button>}
+            {canCancel && onCancel && <Button variant="danger" onClick={() => onCancel(pan!)}>Cancel PAN</Button>}
+          </div>
           <div className="flex space-x-2">
             {canEdit && (
               <>
@@ -278,6 +312,17 @@ const PANModal: React.FC<PANModalProps> = ({ isOpen, onClose, pan, templates, em
       }
     >
       <div className="space-y-4">
+        {pan && (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">PAN reference</p><p className="font-bold">PAN-{pan.id.slice(0, 8).toUpperCase()}</p></div>
+              <span className={`rounded-full px-3 py-1 text-sm font-semibold ${pan.status === PANStatus.Completed ? 'bg-emerald-100 text-emerald-800' : pan.status === PANStatus.Declined || pan.status === PANStatus.Cancelled ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>{pan.status === PANStatus.Completed ? 'Accepted' : pan.status === PANStatus.Declined ? 'Rejected' : pan.status}</span>
+            </div>
+            {rejectionInfo && <p className="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700"><strong>Rejected by {rejectionInfo.name}:</strong> {pan.rejectionReason || rejectionInfo.notes || 'No reason recorded.'}</p>}
+            {pan.status === PANStatus.Cancelled && <p className="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700"><strong>Cancelled{cancelledByName ? ` by ${cancelledByName}` : ''}:</strong> {pan.cancellationReason || 'No reason recorded.'}{pan.cancelledAt ? ` · ${pan.cancelledAt.toLocaleString()}` : ''}</p>}
+            {!!pan.routingSteps.length && <div className="mt-3 grid gap-2 sm:grid-cols-2">{[...pan.routingSteps].sort((a,b) => a.order-b.order).map(step => <div key={step.id} className="rounded-md border bg-white p-2 text-sm dark:border-slate-700 dark:bg-slate-900"><strong>{step.order + 1}. {step.name}</strong><div className="text-xs text-slate-500">{step.role} · {step.status}{step.timestamp ? ` · ${new Date(step.timestamp).toLocaleString()}` : ''}</div>{step.notes && <div className="mt-1 text-xs text-red-600">{step.notes}</div>}</div>)}</div>}
+          </div>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" ref={searchWrapperRef}>
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Employee</label>
@@ -286,6 +331,7 @@ const PANModal: React.FC<PANModalProps> = ({ isOpen, onClose, pan, templates, em
               onChange={e => { setEmployeeSearch(e.target.value); setIsEmployeeSearchOpen(true); }}
               onFocus={() => setIsEmployeeSearchOpen(true)}
               placeholder="Search employee"
+              disabled={!canEdit}
             />
             {isEmployeeSearchOpen && availableEmployees.length > 0 && (
               <div className="mt-1 border rounded shadow bg-white dark:bg-slate-700 max-h-48 overflow-y-auto">
@@ -307,6 +353,7 @@ const PANModal: React.FC<PANModalProps> = ({ isOpen, onClose, pan, templates, em
               type="date"
               value={current.effectiveDate ? new Date(current.effectiveDate).toISOString().split('T')[0] : ''}
               onChange={e => setCurrent(prev => ({ ...prev, effectiveDate: new Date(e.target.value) }))}
+              disabled={!canEdit}
             />
           </div>
         </div>
@@ -318,6 +365,7 @@ const PANModal: React.FC<PANModalProps> = ({ isOpen, onClose, pan, templates, em
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white"
               value={selectedTemplateId}
               onChange={handleTemplateSelect}
+              disabled={!canEdit}
             >
               <option value="">Select template</option>
               {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -329,7 +377,9 @@ const PANModal: React.FC<PANModalProps> = ({ isOpen, onClose, pan, templates, em
               allUsers={approverPool}
               selectedUsers={selectedApprovers}
               onSelectionChange={handleApproverSelect}
+              disabled={!canEdit}
             />
+            {canEdit && <p className={`mt-1 text-xs ${hasBodApprover ? 'text-emerald-600' : 'font-semibold text-amber-600'}`}>{hasBodApprover ? '✓ Board of Director approval included' : 'Required: add at least one Board of Director approver.'}</p>}
           </div>
         </div>
 
@@ -347,6 +397,7 @@ const PANModal: React.FC<PANModalProps> = ({ isOpen, onClose, pan, templates, em
             <Textarea
               value={current.notes || ''}
               onChange={e => setCurrent(prev => ({ ...prev, notes: e.target.value }))}
+              disabled={!canEdit}
             />
           </div>
         </div>
@@ -355,15 +406,29 @@ const PANModal: React.FC<PANModalProps> = ({ isOpen, onClose, pan, templates, em
           <div>
             <h4 className="font-semibold text-sm">From</h4>
             <div className="space-y-2">
-              <Input label="Position" value={current.particulars?.from?.position || ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, from: { ...(prev.particulars?.from || {}), position: e.target.value } } }))} />
-              <Input label="Department" value={current.particulars?.from?.department || ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, from: { ...(prev.particulars?.from || {}), department: e.target.value } } }))} />
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit / Company
+                <select className="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:border-slate-600 dark:bg-slate-700 dark:text-white" value={current.particulars?.from?.businessUnitId || ''} onChange={e => handleBusinessUnitChange('from', e.target.value)} disabled={!canEdit}>
+                  <option value="">{current.particulars?.from?.businessUnit || 'Not Applicable'}</option>
+                  {businessUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
+                </select>
+              </label>
+              <Input label="Department" value={current.particulars?.from?.department || ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, from: { ...(prev.particulars?.from || {}), department: e.target.value } } }))} disabled={!canEdit} />
+              <Input label="Position" value={current.particulars?.from?.position || ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, from: { ...(prev.particulars?.from || {}), position: e.target.value } } }))} disabled={!canEdit} />
+              <Input label="Employment Status" value={current.particulars?.from?.employmentStatus || ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, from: { ...(prev.particulars?.from || {}), employmentStatus: e.target.value } } }))} disabled={!canEdit} />
             </div>
           </div>
           <div>
             <h4 className="font-semibold text-sm">To</h4>
             <div className="space-y-2">
-              <Input label="Position" value={current.particulars?.to?.position || ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, to: { ...(prev.particulars?.to || {}), position: e.target.value } } }))} />
-              <Input label="Department" value={current.particulars?.to?.department || ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, to: { ...(prev.particulars?.to || {}), department: e.target.value } } }))} />
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit / Company
+                <select className="mt-1 block w-full rounded-md border-gray-300 shadow-sm dark:border-slate-600 dark:bg-slate-700 dark:text-white" value={current.particulars?.to?.businessUnitId || ''} onChange={e => handleBusinessUnitChange('to', e.target.value)} disabled={!canEdit}>
+                  <option value="">{current.particulars?.to?.businessUnit || 'Not Applicable'}</option>
+                  {businessUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
+                </select>
+              </label>
+              <Input label="Department" value={current.particulars?.to?.department || ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, to: { ...(prev.particulars?.to || {}), department: e.target.value } } }))} disabled={!canEdit} />
+              <Input label="Position" value={current.particulars?.to?.position || ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, to: { ...(prev.particulars?.to || {}), position: e.target.value } } }))} disabled={!canEdit} />
+              <Input label="Employment Status" value={current.particulars?.to?.employmentStatus || ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, to: { ...(prev.particulars?.to || {}), employmentStatus: e.target.value } } }))} disabled={!canEdit} />
             </div>
           </div>
         </div>
@@ -371,18 +436,18 @@ const PANModal: React.FC<PANModalProps> = ({ isOpen, onClose, pan, templates, em
         <div>
           <h4 className="font-semibold text-sm mb-2">Salary (From)</h4>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Input label="Basic" type="number" value={current.particulars?.from?.salary?.basic ?? ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, from: { ...(prev.particulars?.from || {}), salary: { ...(prev.particulars?.from?.salary || {}), basic: Number(e.target.value) || 0 } } } }))} />
-            <Input label="Deminimis" type="number" value={current.particulars?.from?.salary?.deminimis ?? ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, from: { ...(prev.particulars?.from || {}), salary: { ...(prev.particulars?.from?.salary || {}), deminimis: Number(e.target.value) || 0 } } } }))} />
-            <Input label="Reimbursable" type="number" value={current.particulars?.from?.salary?.reimbursable ?? ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, from: { ...(prev.particulars?.from || {}), salary: { ...(prev.particulars?.from?.salary || {}), reimbursable: Number(e.target.value) || 0 } } } }))} />
+            <Input label="Basic" type="number" value={current.particulars?.from?.salary?.basic ?? ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, from: { ...(prev.particulars?.from || {}), salary: { ...(prev.particulars?.from?.salary || {}), basic: Number(e.target.value) || 0 } } } }))} disabled={!canEdit} />
+            <Input label="Deminimis" type="number" value={current.particulars?.from?.salary?.deminimis ?? ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, from: { ...(prev.particulars?.from || {}), salary: { ...(prev.particulars?.from?.salary || {}), deminimis: Number(e.target.value) || 0 } } } }))} disabled={!canEdit} />
+            <Input label="Reimbursable" type="number" value={current.particulars?.from?.salary?.reimbursable ?? ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, from: { ...(prev.particulars?.from || {}), salary: { ...(prev.particulars?.from?.salary || {}), reimbursable: Number(e.target.value) || 0 } } } }))} disabled={!canEdit} />
           </div>
         </div>
 
         <div>
           <h4 className="font-semibold text-sm mb-2">Salary (To)</h4>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Input label="Basic" type="number" value={current.particulars?.to?.salary?.basic ?? ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, to: { ...(prev.particulars?.to || {}), salary: { ...(prev.particulars?.to?.salary || {}), basic: Number(e.target.value) || 0 } } } }))} />
-            <Input label="Deminimis" type="number" value={current.particulars?.to?.salary?.deminimis ?? ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, to: { ...(prev.particulars?.to || {}), salary: { ...(prev.particulars?.to?.salary || {}), deminimis: Number(e.target.value) || 0 } } } }))} />
-            <Input label="Reimbursable" type="number" value={current.particulars?.to?.salary?.reimbursable ?? ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, to: { ...(prev.particulars?.to || {}), salary: { ...(prev.particulars?.to?.salary || {}), reimbursable: Number(e.target.value) || 0 } } } }))} />
+            <Input label="Basic" type="number" value={current.particulars?.to?.salary?.basic ?? ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, to: { ...(prev.particulars?.to || {}), salary: { ...(prev.particulars?.to?.salary || {}), basic: Number(e.target.value) || 0 } } } }))} disabled={!canEdit} />
+            <Input label="Deminimis" type="number" value={current.particulars?.to?.salary?.deminimis ?? ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, to: { ...(prev.particulars?.to || {}), salary: { ...(prev.particulars?.to?.salary || {}), deminimis: Number(e.target.value) || 0 } } } }))} disabled={!canEdit} />
+            <Input label="Reimbursable" type="number" value={current.particulars?.to?.salary?.reimbursable ?? ''} onChange={e => setCurrent(prev => ({ ...prev, particulars: { ...prev.particulars, to: { ...(prev.particulars?.to || {}), salary: { ...(prev.particulars?.to?.salary || {}), reimbursable: Number(e.target.value) || 0 } } } }))} disabled={!canEdit} />
           </div>
         </div>
 

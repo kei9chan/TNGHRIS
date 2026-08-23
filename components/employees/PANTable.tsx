@@ -38,6 +38,12 @@ const getActionType = (action: PANActionTaken) => {
     return actions.join(', ') || 'Update';
 };
 
+const getStatusLabel = (status: PANStatus) => {
+    if (status === PANStatus.Completed) return 'Accepted';
+    if (status === PANStatus.Declined) return 'Rejected';
+    return status;
+};
+
 
 const PANTable: React.FC<PANTableProps> = ({ records, onEdit, isEmployeeView, isManagerView }) => {
     
@@ -63,12 +69,12 @@ const PANTable: React.FC<PANTableProps> = ({ records, onEdit, isEmployeeView, is
                 <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                     {records.map(record => (
                         <tr key={record.id}>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{record.employeeName}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white"><div>{record.employeeName}</div><div className="text-xs font-normal text-gray-500">PAN-{record.id.slice(0, 8).toUpperCase()}</div></td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{new Date(record.effectiveDate).toLocaleDateString()}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{getActionType(record.actionTaken)}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm">
                                 <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(record.status)}`}>
-                                    {record.status}
+                                    {getStatusLabel(record.status)}
                                 </span>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">

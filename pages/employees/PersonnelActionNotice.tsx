@@ -18,7 +18,6 @@ import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { mergePanParticulars } from '../../services/panUtils';
 import { logActivity } from '../../services/auditService';
-import { createNotification } from '../../services/notificationService';
 import {
   PAN,
   PANStatus,
@@ -27,11 +26,9 @@ import {
   Role,
   PANTemplate,
   PANActionTaken,
-  PANStepStatus,
-  PANRoutingStep,
-  PANRole,
-  NotificationType,
 } from '../../types';
+
+type BusinessUnitOption = { id: string; name: string };
 
 const emptyActions: PANActionTaken = {
   changeOfStatus: false,
@@ -58,6 +55,11 @@ const PersonnelActionNotice: React.FC = () => {
   const [panToPrint, setPanToPrint] = useState<PAN | null>(null);
   const [panForAction, setPanForAction] = useState<PAN | null>(null);
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
+  const [panForApproval, setPanForApproval] = useState<PAN | null>(null);
+  const [isApproveModalOpen, setIsApproveModalOpen] = useState(false);
+  const [panForCancellation, setPanForCancellation] = useState<PAN | null>(null);
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [businessUnits, setBusinessUnits] = useState<BusinessUnitOption[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [yearFilter, setYearFilter] = useState<string>('all');
   const [monthFilter, setMonthFilter] = useState<string>('all');
@@ -89,21 +91,39 @@ const PersonnelActionNotice: React.FC = () => {
       pdfHash: p.pdf_hash || undefined,
       preparerName: p.preparer_name || undefined,
       preparerSignatureUrl: p.preparer_signature_url || undefined,
+      createdByUserId: p.created_by_user_id || undefined,
+      workflowVersion: p.workflow_version ?? 1,
+      approvalCompletedAt: p.approval_completed_at ? new Date(p.approval_completed_at) : undefined,
+      rejectionReason: p.rejection_reason || undefined,
+      cancelledAt: p.cancelled_at ? new Date(p.cancelled_at) : undefined,
+      cancelledBy: p.cancelled_by || undefined,
+      cancellationReason: p.cancellation_reason || undefined,
+      acceptedAt: p.accepted_at ? new Date(p.accepted_at) : undefined,
+      acceptedBy: p.accepted_by || undefined,
+      appliedAt: p.applied_at ? new Date(p.applied_at) : undefined,
     };
   };
 
   useEffect(() => {
     const loadAll = async () => {
       try {
-        const [{ data: empRows }, { data: tplRows }, { data: panRows }] = await Promise.all([
+        const [{ data: empRows }, { data: tplRows }, { data: panRows }, { data: unitRows }, { data: roleRows }] = await Promise.all([
           supabase.from('hris_users').select(
-            'id, full_name, email, role, status, department, position, salary_basic, salary_deminimis, salary_reimbursable, date_hired'
+            'id, full_name, email, role, status, department, department_id, business_unit, business_unit_id, employment_status, position, salary_basic, salary_deminimis, salary_reimbursable, date_hired'
           ),
           supabase.from('pan_templates').select('*').order('updated_at', { ascending: false }),
           supabase.from('pans').select('*').order('updated_at', { ascending: false }),
+          supabase.from('business_units').select('id,name').order('name'),
+          supabase.from('user_roles').select('user_id,role_id').eq('is_active', true),
         ]);
 
         if (empRows) {
+          const rolesByUser = new Map<string, Role[]>();
+          (roleRows || []).forEach((assignment: any) => {
+            const roles = rolesByUser.get(assignment.user_id) || [];
+            if (!roles.includes(assignment.role_id as Role)) roles.push(assignment.role_id as Role);
+            rolesByUser.set(assignment.user_id, roles);
+          });
           setEmployees(
             empRows.map((u: any) => ({
               id: u.id,
@@ -112,17 +132,23 @@ const PersonnelActionNotice: React.FC = () => {
               role: u.role as Role,
               status: (u.status as any) || 'Active',
               department: u.department || '',
+              departmentId: u.department_id || undefined,
+              businessUnit: u.business_unit || '',
+              businessUnitId: u.business_unit_id || undefined,
+              employmentStatus: u.employment_status || undefined,
               position: u.position || '',
+              roles: rolesByUser.get(u.id) || [u.role as Role],
               salary: {
                 basic: u.salary_basic ?? 0,
                 deminimis: u.salary_deminimis ?? 0,
                 reimbursable: u.salary_reimbursable ?? 0,
               },
               dateHired: u.date_hired ? new Date(u.date_hired) : undefined,
-              businessUnit: '',
             }))
           );
         }
+
+        setBusinessUnits((unitRows || []).map((unit: any) => ({ id: unit.id, name: unit.name })));
 
         if (tplRows) {
           setTemplates(
@@ -182,11 +208,14 @@ const PersonnelActionNotice: React.FC = () => {
       preparer_name: recordToSave.preparerName || null,
       preparer_signature_url: recordToSave.preparerSignatureUrl || null,
       template_id: (recordToSave as any).templateId || null,
-      created_by_user_id: user.id,
       salary_from: recordToSave.particulars?.from?.salary || null,
       updated_at: new Date().toISOString(),
     };
-    if (recordToSave.id) payload.id = recordToSave.id;
+    if (recordToSave.id) {
+      payload.id = recordToSave.id;
+    } else {
+      payload.created_by_user_id = user.id;
+    }
     const { data, error } = await supabase.from('pans').upsert(payload).select('*').single();
     if (error) {
       console.error('Failed to save PAN', error);
@@ -218,95 +247,47 @@ const PersonnelActionNotice: React.FC = () => {
       alert('Please add at least one routing step/approver.');
       return;
     }
-    const saved = await upsertPan(panToSend, PANStatus.PendingApproval);
-    if (saved) {
-      setRecords(prev => [mapPanRow(saved), ...prev.filter(p => p.id !== saved.id)]);
-      setIsModalOpen(false);
-      await Promise.all(
-        (panToSend.routingSteps || []).map(async step => {
-          if (!step.userId) return;
-          await createNotification({
-            userId: step.userId,
-            type: NotificationType.PAN_APPROVAL_REQUEST as any,
-            title: 'PAN Approval Required',
-            message: `A PAN requires your review for ${panToSend.employeeName || 'an employee'}.`,
-            link: `/approvals?type=pan&item=${saved.id}`,
-            relatedEntityId: saved.id,
-            dedupeKey: `pan:${saved.id}:approval:${step.id || step.order || step.userId}`,
-          }).catch(console.error);
-        })
-      );
-      logActivity(user!, 'SUBMIT', 'PAN', saved.id, `Sent PAN for acknowledgement for ${panToSend.employeeName || ''}.`);
+    const draft = await upsertPan(panToSend, PANStatus.Draft);
+    if (!draft) return;
+    const { data, error } = await supabase.rpc('submit_pan', { p_pan_id: draft.id });
+    if (error || !data) {
+      alert(error?.message || 'Failed to submit PAN for approval.');
+      return;
     }
+    setRecords(prev => [mapPanRow(data), ...prev.filter(p => p.id !== data.id)]);
+    setIsModalOpen(false);
   };
 
   const handleAcknowledge = async (panId: string, signatureDataUrl: string, signatureName: string) => {
-    const updatedSteps = records.find(r => r.id === panId)?.routingSteps || [];
-    const { data, error } = await supabase
-      .from('pans')
-      .update({
-        status: PANStatus.Completed,
-        signed_at: new Date().toISOString(),
-        signature_data_url: signatureDataUrl,
-        signature_name: signatureName,
-        routing_steps: updatedSteps,
-      })
-      .eq('id', panId)
-      .select('*')
-      .single();
-    if (!error && data) {
-      setRecords(prev => prev.map(r => (r.id === panId ? mapPanRow(data) : r)));
+    const { data, error } = await supabase.rpc('accept_pan', {
+      p_pan_id: panId,
+      p_signature_data_url: signatureDataUrl,
+      p_signature_name: signatureName,
+    });
+    if (error || !data) {
+      alert(error?.message || 'Failed to acknowledge and accept this PAN.');
+      return;
     }
+    setRecords(prev => prev.map(r => (r.id === panId ? mapPanRow(data) : r)));
     setIsModalOpen(false);
     setSelectedRecord(null);
   };
 
-  const handleApprovePAN = async (panId: string) => {
-    const existing = records.find(r => r.id === panId);
-    if (!existing || !user) return;
-    const steps = existing.routingSteps.map(s =>
-      s.userId === user.id && s.status === PANStepStatus.Pending
-        ? { ...s, status: PANStepStatus.Approved, timestamp: new Date() }
-        : s
-    );
-    const allApproved = steps.every(s => s.status === PANStepStatus.Approved);
-    const newStatus = allApproved ? PANStatus.PendingEmployee : PANStatus.PendingApproval;
-    const { data, error } = await supabase
-      .from('pans')
-      .update({ routing_steps: steps, status: newStatus })
-      .eq('id', panId)
-      .select('*')
-      .single();
-    if (!error && data) {
-      setRecords(prev => prev.map(r => (r.id === panId ? mapPanRow(data) : r)));
-      if (newStatus === PANStatus.PendingEmployee) {
-        const createdAt = new Date();
-        const employeeId = data.employee_id || existing.employeeId;
-        const employeeName = data.employee_name || existing.employeeName || 'the employee';
-        const targets = new Set<string>();
-        if (employeeId) targets.add(employeeId);
+  const handleApprovePANRequest = (pan: PAN) => {
+    setPanForApproval(pan);
+    setIsApproveModalOpen(true);
+  };
 
-        const { data: empRow } = await supabase
-          .from('hris_users')
-          .select('id, email, auth_user_id')
-          .eq('id', employeeId)
-          .maybeSingle();
-        if (empRow?.auth_user_id) targets.add(empRow.auth_user_id);
-
-        await Promise.all(
-          Array.from(targets).map(targetId =>
-            createNotification({
-              userId: targetId,
-              type: NotificationType.PAN_UPDATE as any,
-              title: 'PAN for Acknowledgement',
-              message: `A PAN is ready for your acknowledgement (${employeeName}).`,
-              link: '/employees/pan',
-            }).catch(console.error)
-          )
-        );
-      }
+  const handleConfirmApprovePAN = async (comment: string) => {
+    if (!panForApproval) return;
+    const { data, error } = await supabase.rpc('approve_pan', { p_pan_id: panForApproval.id, p_comment: comment });
+    if (error || !data) {
+      alert(error?.message || 'Failed to approve this PAN.');
+      return;
     }
-    setIsModalOpen(false);
+    setRecords(prev => prev.map(r => (r.id === panForApproval.id ? mapPanRow(data) : r)));
+    setIsApproveModalOpen(false);
+    setPanForApproval(null);
     setSelectedRecord(null);
   };
 
@@ -317,22 +298,33 @@ const PersonnelActionNotice: React.FC = () => {
 
   const handleConfirmRejectPAN = async (reason: string) => {
     if (!panForAction || !user) return;
-    const steps = panForAction.routingSteps.map(s =>
-      s.userId === user.id && s.status === PANStepStatus.Pending
-        ? { ...s, status: PANStepStatus.Declined, timestamp: new Date(), notes: reason }
-        : s
-    );
-    const { data, error } = await supabase
-      .from('pans')
-      .update({ routing_steps: steps, status: PANStatus.Declined })
-      .eq('id', panForAction.id)
-      .select('*')
-      .single();
-    if (!error && data) {
-      setRecords(prev => prev.map(r => (r.id === panForAction.id ? mapPanRow(data) : r)));
+    const { data, error } = await supabase.rpc('reject_pan', { p_pan_id: panForAction.id, p_reason: reason });
+    if (error || !data) {
+      alert(error?.message || 'Failed to reject this PAN.');
+      return;
     }
+    setRecords(prev => prev.map(r => (r.id === panForAction.id ? mapPanRow(data) : r)));
     setIsRejectModalOpen(false);
     setPanForAction(null);
+    setIsModalOpen(false);
+    setSelectedRecord(null);
+  };
+
+  const handleCancelPANRequest = (pan: PAN) => {
+    setPanForCancellation(pan);
+    setIsCancelModalOpen(true);
+  };
+
+  const handleConfirmCancelPAN = async (reason: string) => {
+    if (!panForCancellation) return;
+    const { data, error } = await supabase.rpc('cancel_pan', { p_pan_id: panForCancellation.id, p_reason: reason });
+    if (error || !data) {
+      alert(error?.message || 'Failed to cancel this PAN.');
+      return;
+    }
+    setRecords(prev => prev.map(record => record.id === panForCancellation.id ? mapPanRow(data) : record));
+    setIsCancelModalOpen(false);
+    setPanForCancellation(null);
     setIsModalOpen(false);
     setSelectedRecord(null);
   };
@@ -431,7 +423,7 @@ const PersonnelActionNotice: React.FC = () => {
         getActionType(record.actionTaken).toLowerCase().includes(searchTerm.toLowerCase()) ||
         record.status.toLowerCase().includes(searchTerm.toLowerCase());
 
-      if (!canRespond && record.status !== PANStatus.Completed && record.status !== PANStatus.PendingEmployee) {
+      if (!canRespond && !routingMatch && record.status !== PANStatus.Completed && record.status !== PANStatus.PendingEmployee) {
         return false;
       }
 
@@ -493,10 +485,6 @@ const PersonnelActionNotice: React.FC = () => {
           <PANTable
             records={filteredRecords}
             onEdit={handleOpenModal}
-            onPrint={setPanToPrint}
-            onAcknowledge={handleAcknowledge}
-            onApprove={canRespond ? handleApprovePAN : undefined}
-            onReject={canRespond ? handleRejectPANRequest : undefined}
           />
         </>
       )}
@@ -517,12 +505,14 @@ const PersonnelActionNotice: React.FC = () => {
             pan={selectedRecord}
             templates={templates}
             employees={employees}
+            businessUnits={businessUnits}
             onSaveDraft={handleSaveDraft}
             onSendForAcknowledgement={handleSendForAcknowledgement}
             onAcknowledge={handleAcknowledge}
-            onDownloadPdf={() => { }}
-            onApprove={handleApprovePAN}
+            onDownloadPdf={setPanToPrint}
+            onApprove={handleApprovePANRequest}
             onReject={handleRejectPANRequest}
+            onCancel={handleCancelPANRequest}
           />,
           document.body
         )
@@ -547,6 +537,27 @@ const PersonnelActionNotice: React.FC = () => {
           onClose={() => setIsRejectModalOpen(false)}
           onSubmit={handleConfirmRejectPAN}
           prompt="Please provide a reason for rejecting this PAN. This will be visible to the creator."
+        />
+      )}
+
+      {isApproveModalOpen && panForApproval && (
+        <RejectReasonModal
+          isOpen={isApproveModalOpen}
+          onClose={() => { setIsApproveModalOpen(false); setPanForApproval(null); }}
+          onSubmit={handleConfirmApprovePAN}
+          title="Approve PAN"
+          prompt="Provide an approval comment or reason. It will be recorded in the PAN timeline and audit history."
+          submitText="Confirm Approval"
+          submitVariant="primary"
+        />
+      )}
+
+      {isCancelModalOpen && panForCancellation && (
+        <RejectReasonModal
+          isOpen={isCancelModalOpen}
+          onClose={() => { setIsCancelModalOpen(false); setPanForCancellation(null); }}
+          onSubmit={handleConfirmCancelPAN}
+          prompt="Are you sure you want to cancel this PAN request? Please provide the cancellation reason."
         />
       )}
     </div>

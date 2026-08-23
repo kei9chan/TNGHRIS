@@ -10,9 +10,10 @@ interface RejectReasonModalProps {
     title?: string;
     prompt?: string;
     submitText?: string;
+    submitVariant?: 'primary' | 'secondary' | 'danger' | 'success';
 }
 
-const RejectReasonModal: React.FC<RejectReasonModalProps> = ({ isOpen, onClose, onSubmit, title, prompt, submitText }) => {
+const RejectReasonModal: React.FC<RejectReasonModalProps> = ({ isOpen, onClose, onSubmit, title, prompt, submitText, submitVariant = 'danger' }) => {
     const [reason, setReason] = useState('');
 
     useEffect(() => {
@@ -35,7 +36,7 @@ const RejectReasonModal: React.FC<RejectReasonModalProps> = ({ isOpen, onClose, 
             footer={
                 <div className="flex w-full justify-end space-x-2">
                     <Button variant="secondary" onClick={onClose}>Cancel</Button>
-                    <Button variant="danger" onClick={handleSubmit} disabled={!reason.trim()}>{submitText || 'Confirm Rejection'}</Button>
+                    <Button variant={submitVariant} onClick={handleSubmit} disabled={!reason.trim()}>{submitText || 'Confirm Rejection'}</Button>
                 </div>
             }
         >
