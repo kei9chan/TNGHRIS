@@ -27,26 +27,67 @@ where is_active
 order by display_name;
 
 -- Sensitive-field matrix.
+with sensitive_fields(field_key) as (
+  values
+    ('salary_compensation'),
+    ('bank_information'),
+    ('sss'),
+    ('tin'),
+    ('pagibig'),
+    ('philhealth'),
+    ('employee_documents'),
+    ('benefits_medical'),
+    ('disciplinary_records'),
+    ('ntes'),
+    ('investigation_evidence'),
+    ('evaluation_results'),
+    ('payroll_staging'),
+    ('final_pay'),
+    ('security_pins'),
+    ('authentication_fields')
+)
 select
   r.id as role_id,
   r.display_name,
   sf.field_key,
   coalesce(rsp.permissions, array[]::text[]) as actions
 from public.roles r
-cross join public.sensitive_fields sf
+cross join sensitive_fields sf
 left join public.role_sensitive_permissions rsp
   on rsp.role_id = r.id and rsp.field_key = sf.field_key
 where r.is_active
 order by r.display_name, sf.field_key;
 
 -- Workflow-action matrix.
+with workflow_definitions(workflow_key) as (
+  values
+    ('Leave'),
+    ('Overtime'),
+    ('WFH'),
+    ('Manpower'),
+    ('JobRequisitions'),
+    ('PersonnelActionNotices'),
+    ('IncidentReports'),
+    ('NTEs'),
+    ('DisciplinaryDecisions'),
+    ('Benefits'),
+    ('COE'),
+    ('AssetRequests'),
+    ('PayrollPreparation'),
+    ('FinalPay'),
+    ('Evaluations'),
+    ('Awards'),
+    ('RecruitmentOffers'),
+    ('Resignation'),
+    ('Clearance')
+)
 select
   r.id as role_id,
   r.display_name,
   w.workflow_key,
   coalesce(rwp.actions, array[]::text[]) as actions
 from public.roles r
-cross join public.workflow_definitions w
+cross join workflow_definitions w
 left join public.role_workflow_permissions rwp
   on rwp.role_id = r.id and rwp.workflow_key = w.workflow_key
 where r.is_active
@@ -80,13 +121,21 @@ select
     filter (where ur.is_active) as active_roles,
   u.dashboard_type,
   u.data_access_scope,
-  array_agg(uba.business_unit_id order by uba.business_unit_id)
-    filter (where uba.business_unit_id is not null) as allowed_business_units,
+  coalesce(
+    jsonb_agg(
+      jsonb_build_object(
+        'role', ur.role_id,
+        'primary', ur.is_primary,
+        'scope', ur.scope_type,
+        'allowedBusinessUnitIds', ur.allowed_business_unit_ids,
+        'dashboardType', ur.dashboard_type
+      ) order by ur.is_primary desc, ur.role_id
+    ) filter (where ur.is_active),
+    '[]'::jsonb
+  ) as role_scope_assignments,
   u.permission_updated_at,
   u.permission_updated_by
 from public.hris_users u
 left join public.user_roles ur on ur.user_id = u.id
-left join public.user_business_unit_access uba on uba.user_id = u.id
 group by u.id
 order by lower(u.email);
-
