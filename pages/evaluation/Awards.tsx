@@ -292,7 +292,7 @@ const Awards: React.FC = () => {
 
     const filteredByScope = base.filter(ea => {
       if (!awardsAccess.canView) return false;
-      if (awardsAccess.scope === 'global' || awardsAccess.scope === 'logs') return true;
+      if (awardsAccess.scope === 'global') return true;
       if (awardsAccess.scope === 'self' && user) return ea.employeeId === user.id;
       return false;
     });

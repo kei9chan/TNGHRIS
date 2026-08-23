@@ -129,8 +129,7 @@ const mapDepartment = (row: DepartmentRow): Department => ({
 
 export const fetchUsers = async (): Promise<User[]> => {
   const { data, error } = await supabase
-    .from('hris_users')
-    .select('*')
+    .rpc('get_accessible_hris_users')
     .order('full_name', { ascending: true });
 
   if (error) throw new Error(error.message || 'Failed to fetch users');
@@ -139,9 +138,7 @@ export const fetchUsers = async (): Promise<User[]> => {
 
 export const fetchUserById = async (userId: string): Promise<User | null> => {
   const { data, error } = await supabase
-    .from('hris_users')
-    .select('*')
-    .eq('id', userId)
+    .rpc('get_hris_user_profile', { p_user_id: userId })
     .maybeSingle();
 
   if (error || !data) return null;
@@ -150,8 +147,7 @@ export const fetchUserById = async (userId: string): Promise<User | null> => {
 
 export const fetchUserByAuthId = async (authUserId: string): Promise<User | null> => {
   const { data, error } = await supabase
-    .from('hris_users')
-    .select('*')
+    .rpc('get_accessible_hris_users')
     .eq('auth_user_id', authUserId)
     .maybeSingle();
 
@@ -192,8 +188,7 @@ export const fetchDepartmentsByBusinessUnit = async (businessUnitId: string): Pr
 
 export const fetchUsersByBusinessUnit = async (businessUnitId: string): Promise<User[]> => {
   const { data, error } = await supabase
-    .from('hris_users')
-    .select('*')
+    .rpc('get_accessible_hris_users')
     .eq('business_unit_id', businessUnitId)
     .order('full_name', { ascending: true });
 

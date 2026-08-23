@@ -11,8 +11,7 @@ export function useUsers() {
     try {
       setLoading(true);
       const { data, error } = await supabase
-        .from('hris_users')
-        .select('*')
+        .rpc('get_accessible_hris_users')
         .order('full_name');
       
       if (error) throw error;

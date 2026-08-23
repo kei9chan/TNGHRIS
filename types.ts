@@ -9,8 +9,20 @@ export enum Permission {
   View = 'view',
   Create = 'create',
   Edit = 'edit',
+  Submit = 'submit',
+  Review = 'review',
   Approve = 'approve',
-  Manage = 'manage', // Includes all other permissions
+  Reject = 'reject',
+  Return = 'return',
+  Cancel = 'cancel',
+  Finalize = 'finalize',
+  Manage = 'manage',
+  Delete = 'delete',
+  Export = 'export',
+  Download = 'download',
+  Assign = 'assign',
+  Reassign = 'reassign',
+  Publish = 'publish',
 }
 
 export enum Role {
@@ -25,7 +37,6 @@ export enum Role {
   Employee = 'Employee',
   FinanceStaff = 'Finance Staff',
   Auditor = 'Auditor',
-  Recruiter = 'Recruiter',
   IT = 'IT',
 }
 
@@ -437,7 +448,7 @@ export enum TaxStatus {
 }
 
 export interface AccessScope {
-  type: 'GLOBAL' | 'SPECIFIC' | 'HOME_ONLY';
+  type: 'GLOBAL' | 'SPECIFIC' | 'HOME_ONLY' | 'SELF' | 'DIRECT_REPORTS' | 'DEPARTMENT';
   allowedBuIds?: string[]; // Only required if type is 'SPECIFIC'
 }
 
@@ -473,6 +484,13 @@ export interface User {
 
   // Access Control
   accessScope?: AccessScope;
+  roles?: Role[];
+  dashboardType?: 'executive' | 'hr' | 'admin' | 'admin_it' | 'manager' | 'employee' | string;
+  sensitivePermissions?: Record<string, Permission[]>;
+  workflowPermissions?: Record<string, Permission[]>;
+  authorizationDiagnostic?: string;
+  permissionUpdatedAt?: Date;
+  permissionUpdatedBy?: string;
 
   // PII
   sssNo?: string;

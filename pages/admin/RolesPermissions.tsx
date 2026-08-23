@@ -1,398 +1,277 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import Input from '../../components/ui/Input';
-import { Role, Permission, Resource, PermissionsMatrix, BusinessUnit } from '../../types';
+import { Role, Permission, Resource, PermissionsMatrix } from '../../types';
 import PermissionsMatrixTable from '../../components/admin/PermissionsMatrix';
 import { usePermissions } from '../../hooks/usePermissions';
-import { useAuth } from '../../hooks/useAuth';
-import BusinessUnitModal from '../../components/admin/BusinessUnitModal';
 import { supabase } from '../../services/supabaseClient';
 import { usePermissionsContext } from '../../context/PermissionsContext';
 
-
-const roleDescriptions: Record<Role, string> = {
-    [Role.Admin]: 'Full system access. Can manage all settings, users, and data.',
-    [Role.HRManager]: 'Manages all HR functions, employees, payroll, and feedback systems.',
-    [Role.HRStaff]: 'Assists with day-to-day HR tasks like employee data and incident reports.',
-    [Role.BOD]: 'Board of Directors. High-level, view-only access to key reports.',
-    [Role.GeneralManager]: 'Overall management view of key business and employee metrics.',
-    [Role.OperationsDirector]: 'Oversees operational departments, manages teams, and approves requests.',
-    [Role.BusinessUnitManager]: 'Manages a specific business unit, its employees, and related approvals.',
-    [Role.Manager]: 'Manages a team of direct reports, handles approvals for OT and exceptions.',
-    [Role.Employee]: 'Standard user. Can view their own data and submit requests.',
-    [Role.FinanceStaff]: 'Manages financial aspects of payroll, including staging and final pay.',
-    [Role.Auditor]: 'View-only access to sensitive logs and reports for auditing purposes.',
-    [Role.Recruiter]: 'Manages recruitment processes, including requisitions, job posts, and candidates.',
-    [Role.IT]: 'Manages IT systems, hardware, user accounts, and infrastructure.',
+type RoleRow = {
+    id: Role;
+    display_name?: string | null;
+    description?: string | null;
+    dashboard_type?: string | null;
+    default_data_scope?: string | null;
 };
 
+type AuthorityMatrix = Record<string, Record<string, Permission[]>>;
+
+const sensitiveFields = [
+    'salary_compensation','bank_information','sss','tin','pagibig','philhealth',
+    'employee_documents','benefits_medical','disciplinary_records','ntes',
+    'investigation_evidence','evaluation_results','payroll_staging','final_pay',
+    'security_pins','authentication_fields',
+];
+const workflowKeys = [
+    'Leave','Overtime','WFH','Manpower','JobRequisitions','PersonnelActionNotices',
+    'IncidentReports','NTEs','DisciplinaryDecisions','Benefits','COE','AssetRequests',
+    'PayrollPreparation','FinalPay','Evaluations','Awards','RecruitmentOffers','Resignation','Clearance',
+];
+const sensitiveActions = [Permission.View,Permission.Edit,Permission.Download,Permission.Export];
+const workflowActions = [Permission.Submit,Permission.Review,Permission.Approve,Permission.Reject,Permission.Return,Permission.Cancel,Permission.Finalize];
+
 const RolesPermissions: React.FC = () => {
-    const { user } = useAuth();
     const { refreshPermissions } = usePermissionsContext();
     const { can } = usePermissions();
     const canView = can('RolesPermissions', Permission.View);
     const canManage = can('RolesPermissions', Permission.Manage);
     const [permissions, setPermissions] = useState<PermissionsMatrix>({});
-    const [showSuccess, setShowSuccess] = useState(false);
-    const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
-    const [isBuModalOpen, setIsBuModalOpen] = useState(false);
-    const [selectedBu, setSelectedBu] = useState<BusinessUnit | null>(null);
-    const [roles, setRoles] = useState<{ id: string; description?: string | null }[]>([]);
-    const [resources, setResources] = useState<{ id: string; group_name?: string | null }[]>([]);
+    const [sensitiveMatrix, setSensitiveMatrix] = useState<AuthorityMatrix>({});
+    const [workflowMatrix, setWorkflowMatrix] = useState<AuthorityMatrix>({});
+    const [authorityRole, setAuthorityRole] = useState<Role>(Role.Admin);
+    const [auditRows, setAuditRows] = useState<any[]>([]);
+    const [roles, setRoles] = useState<RoleRow[]>([]);
+    const [resources, setResources] = useState<Array<{ id: Resource; group_name?: string | null }>>([]);
+    const [dirtyRoles, setDirtyRoles] = useState<Set<Role>>(new Set());
     const [error, setError] = useState<string | null>(null);
-    const [loading, setLoading] = useState<boolean>(false);
-    const [newRoleId, setNewRoleId] = useState('');
-    const [newRoleDescription, setNewRoleDescription] = useState('');
-    const [savingMatrix, setSavingMatrix] = useState<boolean>(false);
-    const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [saved, setSaved] = useState(false);
 
-    const allRoles = useMemo(() => roles.map(r => r.id), [roles]);
     const resourceGroups = useMemo(() => {
         const groups: Record<string, Resource[]> = {};
-        resources.forEach(r => {
-            const g = r.group_name || 'General';
-            if (!groups[g]) groups[g] = [];
-            groups[g].push(r.id as Resource);
+        resources.forEach(resource => {
+            const group = resource.group_name || 'General';
+            (groups[group] ||= []).push(resource.id);
         });
         return groups;
     }, [resources]);
-    const allResources = useMemo(() => resources.map(r => r.id as Resource), [resources]);
 
     const loadData = async () => {
         setLoading(true);
         setError(null);
-        const [{ data: roleRows, error: roleErr }, { data: resourceRows, error: resErr }, { data: permRows, error: permErr }, { data: buRows, error: buErr }] =
-            await Promise.all([
-                supabase.from('roles').select('id, description').order('id'),
-                supabase.from('resources').select('id, group_name').order('group_name'),
-                supabase.from('role_permissions').select('role_id, resource_id, permissions'),
-                supabase.from('business_units').select('id, name').order('name')
-            ]);
-        if (roleErr || resErr || permErr || buErr) {
-            setError(roleErr?.message || resErr?.message || permErr?.message || buErr?.message || 'Failed to load data.');
+        const [roleResult, resourceResult, permissionResult, sensitiveResult, workflowResult, auditResult] = await Promise.all([
+            supabase.from('roles')
+                .select('id, display_name, description, dashboard_type, default_data_scope')
+                .eq('is_active', true).order('display_name'),
+            supabase.from('resources').select('id, group_name').eq('is_active', true).order('group_name').order('id'),
+            supabase.from('role_permissions').select('role_id, resource_id, permissions'),
+            supabase.from('role_sensitive_permissions').select('role_id, field_key, permissions'),
+            supabase.from('role_workflow_permissions').select('role_id, workflow_key, actions'),
+            supabase.from('rbac_audit_log').select('id,action,entity_type,entity_id,created_at,actor_user_id').order('created_at',{ ascending:false }).limit(20),
+        ]);
+        const loadError = roleResult.error || resourceResult.error || permissionResult.error || sensitiveResult.error || workflowResult.error || auditResult.error;
+        if (loadError) {
+            setError(loadError.message);
             setLoading(false);
             return;
         }
-        setRoles(roleRows || []);
-        setResources(resourceRows || []);
-        setBusinessUnits((buRows || []).map((b: any) => ({ id: b.id, name: b.name } as BusinessUnit)));
-
+        setRoles((roleResult.data || []) as RoleRow[]);
+        setResources((resourceResult.data || []) as Array<{ id: Resource; group_name?: string | null }>);
         const matrix: PermissionsMatrix = {};
-        (permRows || []).forEach((row: any) => {
-            if (!matrix[row.role_id]) matrix[row.role_id] = {};
-            (matrix[row.role_id] as any)[row.resource_id] = row.permissions || [];
+        (permissionResult.data || []).forEach((row: any) => {
+            if (!matrix[row.role_id as Role]) matrix[row.role_id as Role] = {};
+            (matrix[row.role_id as Role] as any)[row.resource_id] = row.permissions || [];
         });
         setPermissions(matrix);
+        const nextSensitive: AuthorityMatrix = {};
+        (sensitiveResult.data || []).forEach((row: any) => { (nextSensitive[row.role_id] ||= {})[row.field_key] = row.permissions || []; });
+        const nextWorkflows: AuthorityMatrix = {};
+        (workflowResult.data || []).forEach((row: any) => { (nextWorkflows[row.role_id] ||= {})[row.workflow_key] = row.actions || []; });
+        setSensitiveMatrix(nextSensitive);
+        setWorkflowMatrix(nextWorkflows);
+        setAuditRows(auditResult.data || []);
+        setDirtyRoles(new Set());
         setLoading(false);
     };
 
+    useEffect(() => { loadData(); }, []);
+
     useEffect(() => {
-        loadData();
-    }, []);
+        if (dirtyRoles.size === 0) return;
+        const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+        window.addEventListener('beforeunload', warn);
+        return () => window.removeEventListener('beforeunload', warn);
+    }, [dirtyRoles.size]);
 
-    const isBuInUse = async (buId: string) => {
-        const { count, error: cntErr } = await supabase
-            .from('hris_users')
-            .select('id', { count: 'exact', head: true })
-            .eq('business_unit_id', buId);
-        if (cntErr) return false;
-        return (count || 0) > 0;
-    };
+    const markLinkedDirty = (role: Role) => setDirtyRoles(previous => {
+        const next = new Set(previous); next.add(role);
+        if (role === Role.BOD) next.add(Role.HRManager);
+        if (role === Role.HRManager) next.add(Role.BOD);
+        return next;
+    });
 
-    const handleOpenBuModal = (bu: BusinessUnit | null) => {
-        setSelectedBu(bu);
-        setIsBuModalOpen(true);
-    };
-
-    const handleCloseBuModal = () => {
-        setIsBuModalOpen(false);
-        setSelectedBu(null);
-    };
-
-    const handleSaveBu = async (buToSave: { id?: string; name: string }) => {
-        if (!buToSave.name.trim()) return;
-        if (buToSave.id) {
-            const { error: err } = await supabase.from('business_units').update({ name: buToSave.name }).eq('id', buToSave.id);
-            if (err) {
-                alert(err.message);
-                return;
-            }
-        } else {
-            const { data, error: err } = await supabase.from('business_units').insert({ name: buToSave.name }).select('id, name').single();
-            if (err) {
-                alert(err.message);
-                return;
-            }
-            if (data) {
-                setBusinessUnits(prev => [...prev, { id: data.id, name: data.name } as BusinessUnit]);
-            }
-        }
-        await loadData();
-        handleCloseBuModal();
-    };
-
-    const handleDeleteBu = async (buToDelete: BusinessUnit) => {
-        if (await isBuInUse(buToDelete.id)) {
-            alert(`Cannot delete "${buToDelete.name}" as it is currently assigned to one or more users.`);
-            return;
-        }
-        if (window.confirm(`Are you sure you want to delete the Business Unit "${buToDelete.name}"?`)) {
-            const { error: err } = await supabase.from('business_units').delete().eq('id', buToDelete.id);
-            if (err) {
-                alert(err.message);
-                return;
-            }
-            setBusinessUnits(prev => prev.filter(b => b.id !== buToDelete.id));
-        }
-    };
-
-    const handleSubmitRole = async () => {
-        const roleId = newRoleId.trim();
-        if (!roleId) return;
-
-        // Prevent duplicate ids
-        if (!editingRoleId && roles.some(r => r.id.toLowerCase() === roleId.toLowerCase())) {
-            alert('Role already exists.');
-            return;
-        }
-
-        if (editingRoleId) {
-            const isRename = editingRoleId !== roleId;
-            // Prepare updated matrix with rename if needed
-            const updatedMatrix: PermissionsMatrix = JSON.parse(JSON.stringify(permissions));
-            if (isRename) {
-                if (roles.some(r => r.id === roleId)) {
-                    alert('Another role already uses that id.');
-                    return;
-                }
-                (updatedMatrix as any)[roleId] = updatedMatrix[editingRoleId] || {};
-                delete (updatedMatrix as any)[editingRoleId];
-            }
-            // Upsert roles table
-            if (isRename) {
-                const { error: insErr } = await supabase.from('roles').insert({ id: roleId, description: newRoleDescription || null });
-                if (insErr) {
-                    alert(insErr.message);
-                    return;
-                }
-            } else {
-                const { error: updErr } = await supabase.from('roles').update({ description: newRoleDescription || null }).eq('id', roleId);
-                if (updErr) {
-                    alert(updErr.message);
-                    return;
-                }
-            }
-            // Persist permissions with new id mapping
-            await persistMatrix(updatedMatrix);
-            // Remove old role if renamed
-            if (isRename) {
-                await supabase.from('roles').delete().eq('id', editingRoleId);
-            }
-            setPermissions(updatedMatrix);
-            setRoles(prev => {
-                const filtered = prev.filter(r => r.id !== editingRoleId);
-                return [...filtered, { id: roleId, description: newRoleDescription || null }].sort((a, b) => a.id.localeCompare(b.id));
+    const toggleAuthority = (kind: 'sensitive'|'workflow', role: Role, key: string, action: Permission, checked: boolean) => {
+        const rolesToUpdate = role === Role.BOD || role === Role.HRManager ? [Role.BOD,Role.HRManager] : [role];
+        const setter = kind === 'sensitive' ? setSensitiveMatrix : setWorkflowMatrix;
+        setter(previous => {
+            const next: AuthorityMatrix = JSON.parse(JSON.stringify(previous));
+            rolesToUpdate.forEach(target => {
+                const current = next[target]?.[key] || [];
+                (next[target] ||= {})[key] = checked ? [...new Set([...current,action])] : current.filter(item => item !== action);
             });
-        } else {
-            const { data, error: err } = await supabase.from('roles').insert({ id: roleId, description: newRoleDescription || null }).select('id, description').single();
-            if (err) {
-                alert(err.message);
-                return;
-            }
-            setRoles(prev => [...prev, { id: data.id, description: data.description }]);
-        }
-
-        setNewRoleId('');
-        setNewRoleDescription('');
-        setEditingRoleId(null);
-    };
-
-    const handleEditRole = (roleId: string, description?: string | null) => {
-        setEditingRoleId(roleId);
-        setNewRoleId(roleId);
-        setNewRoleDescription(description || '');
-    };
-
-
-    const persistMatrix = async (matrix: PermissionsMatrix): Promise<boolean> => {
-        setSavingMatrix(true);
-        setError(null); // Clear previous errors
-        const rows: { role_id: string; resource_id: string; permissions: Permission[] }[] = [];
-        allRoles.forEach(role => {
-            allResources.forEach(resource => {
-                const perms = (matrix[role]?.[resource] as Permission[]) || [];
-                if (perms.length > 0) {
-                    rows.push({ role_id: role, resource_id: resource, permissions: perms });
-                }
-            });
+            return next;
         });
-        const { error: delErr } = await supabase.from('role_permissions').delete().neq('role_id', '');
-        if (delErr) {
-            console.error("Delete Error:", delErr);
-            setError(delErr.message);
-            setSavingMatrix(false);
-            return false;
-        }
-        if (rows.length > 0) {
-            const { error: insErr } = await supabase.from('role_permissions').insert(rows);
-            if (insErr) {
-                console.error("Insert Error:", insErr);
-                setError(insErr.message);
-                setSavingMatrix(false);
-                return false;
-            }
-        }
-        setSavingMatrix(false);
-        return true;
+        markLinkedDirty(role);
     };
 
     const handlePermissionChange = (role: Role, resource: Resource, permission: Permission, checked: boolean) => {
-        setPermissions(prev => {
-            const newMatrix: PermissionsMatrix = JSON.parse(JSON.stringify(prev));
-            const rolePermissions = (newMatrix[role] as Partial<Record<Resource, Permission[]>>)?.[resource] || [];
-
-            let updatedPermissions: Permission[];
-
-            if (checked) {
-                updatedPermissions = [...new Set([...rolePermissions, permission])];
-                if (permission === Permission.Manage) {
-                    updatedPermissions = Object.values(Permission);
-                }
-                if (permission !== Permission.View) {
-                    updatedPermissions.push(Permission.View);
-                    updatedPermissions = [...new Set(updatedPermissions)];
-                }
-            } else {
-                updatedPermissions = rolePermissions.filter((p: Permission) => p !== permission);
-                if (permission === Permission.Manage) {
-                    updatedPermissions = [];
-                }
-                if (permission === Permission.View) {
-                    updatedPermissions = updatedPermissions.filter(p => p === Permission.Manage);
-                }
-            }
-
-            if (!newMatrix[role]) {
-                newMatrix[role] = {};
-            }
-            (newMatrix[role] as Partial<Record<Resource, Permission[]>>)[resource] = updatedPermissions;
-            return newMatrix;
+        const linkedRoles = role === Role.BOD || role === Role.HRManager
+            ? [Role.BOD, Role.HRManager]
+            : [role];
+        setPermissions(previous => {
+            const next: PermissionsMatrix = JSON.parse(JSON.stringify(previous));
+            linkedRoles.forEach(targetRole => {
+                const current = (next[targetRole]?.[resource] || []) as Permission[];
+                let updated = checked
+                    ? [...new Set([...current, permission])]
+                    : current.filter(value => value !== permission);
+                if (checked && permission !== Permission.View) updated = [...new Set([...updated, Permission.View])];
+                if (!checked && permission === Permission.View) updated = [];
+                if (!next[targetRole]) next[targetRole] = {};
+                (next[targetRole] as Partial<Record<Resource, Permission[]>>)[resource] = updated;
+            });
+            return next;
+        });
+        setDirtyRoles(previous => {
+            const next = new Set(previous);
+            linkedRoles.forEach(roleId => next.add(roleId));
+            return next;
         });
     };
 
     const handleSave = async () => {
-        const success = await persistMatrix(permissions);
-        if (success) {
-            await refreshPermissions();
-            setShowSuccess(true);
-            setTimeout(() => setShowSuccess(false), 3000);
+        setSaving(true);
+        setSaved(false);
+        setError(null);
+        const rolesToSave = Array.from(dirtyRoles).filter(role =>
+            !(role === Role.HRManager && dirtyRoles.has(Role.BOD))
+        );
+        for (const role of rolesToSave) {
+            const { error: saveError } = await supabase.rpc('admin_replace_role_permissions', {
+                p_role: role,
+                p_matrix: permissions[role] || {},
+            });
+            if (saveError) {
+                setError(saveError.message);
+                setSaving(false);
+                return;
+            }
+            const { error: authorityError } = await supabase.rpc('admin_replace_role_authority', {
+                p_role: role,
+                p_sensitive_matrix: sensitiveMatrix[role] || {},
+                p_workflow_matrix: workflowMatrix[role] || {},
+            });
+            if (authorityError) {
+                setError(authorityError.message);
+                setSaving(false);
+                return;
+            }
         }
+        await refreshPermissions();
+        await loadData();
+        setSaving(false);
+        setSaved(true);
+        window.setTimeout(() => setSaved(false), 3000);
     };
 
-    if (!canView) {
-        return (
-            <Card>
-                <div className="p-6 text-center text-gray-600 dark:text-gray-300">
-                    You do not have permission to view Roles & Permissions.
-                </div>
-            </Card>
-        );
-    }
+    if (!canView) return <Card><div className="p-6 text-center">You do not have permission to view Roles &amp; Permissions.</div></Card>;
 
     return (
         <div className="space-y-6">
-            <div className="flex justify-between items-center">
-                <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Roles & Permissions</h1>
+            <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Roles &amp; Permissions</h1>
+                    <p className="mt-1 text-sm text-gray-500">Feature, scope, sensitive-data, workflow, and dashboard authority are resolved by Supabase.</p>
+                </div>
                 {canManage && (
-                    <Button onClick={handleSave} isLoading={showSuccess || savingMatrix} disabled={savingMatrix}>
-                        {savingMatrix ? 'Saving...' : showSuccess ? 'Saved Successfully!' : 'Save Changes'}
+                    <Button onClick={handleSave} isLoading={saving} disabled={saving || dirtyRoles.size === 0}>
+                        {saving ? 'Saving…' : saved ? 'Saved' : 'Save Changes'}
                     </Button>
                 )}
+            </header>
+
+            {error && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                Board of Director and HR Manager are linked authorities. Any feature change to either role is mirrored and parity-validated before commit.
             </div>
 
-            {error && (
-                <Card>
-                    <div className="p-4 text-sm text-red-600 dark:text-red-400">{error}</div>
-                </Card>
-            )}
-            {loading && (
-                <Card>
-                    <div className="p-4 text-sm text-gray-600 dark:text-gray-300">Loading roles and permissions...</div>
-                </Card>
-            )}
-
-            <Card title="Roles Catalog">
-                {canManage && (
-                    <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-end">
-                        <div className="flex-1">
-                            <Input label="Role ID" value={newRoleId} onChange={(e) => setNewRoleId(e.target.value)} placeholder="e.g., Compliance Officer" disabled={!!editingRoleId} />
-                        </div>
-                        <div className="flex-1">
-                            <Input label="Description" value={newRoleDescription} onChange={(e) => setNewRoleDescription(e.target.value)} placeholder="Short description" />
-                        </div>
-                        <Button onClick={handleSubmitRole} disabled={!newRoleId.trim()}>
-                            {editingRoleId ? 'Save Role' : 'Add Role'}
-                        </Button>
-                    </div>
-                )}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <Card title="Approved active roles">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                     {roles.map(role => (
-                        <div key={role.id} className="p-3 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg">
-                            <h3 className="font-semibold text-gray-900 dark:text-white">{role.id}</h3>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">{role.description || roleDescriptions[role.id as Role] || ''}</p>
-                            {canManage && (
-                                <div className="mt-2">
-                                    <Button size="sm" variant="secondary" onClick={() => handleEditRole(role.id, role.description || '')}>Edit</Button>
-                                </div>
-                            )}
+                        <div key={role.id} className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-slate-900/50">
+                            <h2 className="font-semibold text-gray-900 dark:text-white">{role.display_name || role.id}</h2>
+                            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{role.description}</p>
+                            <p className="mt-2 text-xs text-gray-500">Dashboard: {role.dashboard_type} · Default scope: {role.default_data_scope}</p>
                         </div>
                     ))}
                 </div>
             </Card>
 
-            <Card title="Business Units">
-                <div className="flex justify-end mb-4">
-                    {canManage && <Button onClick={() => handleOpenBuModal(null)}>Add New Business Unit</Button>}
+            <Card title="Feature permission matrix">
+                {loading ? <div className="p-8 text-center text-gray-500">Loading centralized permissions…</div> : (
+                    <PermissionsMatrixTable
+                        roles={roles.map(role => role.id)}
+                        resourceGroups={resourceGroups}
+                        permissionsMatrix={permissions}
+                        onPermissionChange={canManage ? handlePermissionChange : undefined}
+                    />
+                )}
+            </Card>
+
+            <Card title="Sensitive-data and workflow authority">
+                <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm text-gray-600">These controls are independent from feature visibility and data scope.</p>
+                    <select value={authorityRole} onChange={event => setAuthorityRole(event.target.value as Role)} className="rounded-md border-gray-300 p-2 text-sm">
+                        {roles.map(role => <option key={role.id} value={role.id}>{role.display_name || role.id}</option>)}
+                    </select>
                 </div>
-                <ul className="divide-y divide-gray-200 dark:divide-gray-700">
-                    {businessUnits.map(bu => (
-                        <li key={bu.id} className="py-3 flex justify-between items-center">
-                            <span className="text-gray-900 dark:text-white">{bu.name}</span>
-                            <div className="flex space-x-2">
-                                {canManage && (
-                                    <>
-                                        <Button size="sm" variant="secondary" onClick={() => handleOpenBuModal(bu)}>Edit</Button>
-                                        <Button
-                                            size="sm"
-                                            variant="danger"
-                                            onClick={() => handleDeleteBu(bu)}
-                                        >
-                                            Delete
-                                        </Button>
-                                    </>
-                                )}
-                            </div>
-                        </li>
-                    ))}
-                </ul>
+                <div className="grid gap-6 xl:grid-cols-2">
+                    <div>
+                        <h3 className="mb-2 font-semibold">Sensitive-field permissions</h3>
+                        <div className="max-h-[34rem] overflow-auto rounded-lg border">
+                            {sensitiveFields.map(field => <div key={field} className="flex flex-col gap-2 border-b p-3 last:border-b-0 sm:flex-row sm:items-center sm:justify-between">
+                                <span className="text-sm font-medium">{field.replaceAll('_',' ')}</span>
+                                <div className="flex flex-wrap gap-3">{sensitiveActions.map(action => <label key={action} className="flex items-center gap-1 text-xs"><input type="checkbox" disabled={!canManage} checked={sensitiveMatrix[authorityRole]?.[field]?.includes(action) || false} onChange={event => toggleAuthority('sensitive',authorityRole,field,action,event.target.checked)} />{action}</label>)}</div>
+                            </div>)}
+                        </div>
+                    </div>
+                    <div>
+                        <h3 className="mb-2 font-semibold">Workflow actions</h3>
+                        <div className="max-h-[34rem] overflow-auto rounded-lg border">
+                            {workflowKeys.map(workflow => <div key={workflow} className="flex flex-col gap-2 border-b p-3 last:border-b-0">
+                                <span className="text-sm font-medium">{workflow}</span>
+                                <div className="flex flex-wrap gap-3">{workflowActions.map(action => <label key={action} className="flex items-center gap-1 text-xs"><input type="checkbox" disabled={!canManage} checked={workflowMatrix[authorityRole]?.[workflow]?.includes(action) || false} onChange={event => toggleAuthority('workflow',authorityRole,workflow,action,event.target.checked)} />{action}</label>)}</div>
+                            </div>)}
+                        </div>
+                    </div>
+                </div>
             </Card>
 
-            <Card title="Permissions Matrix">
-                <PermissionsMatrixTable
-                    roles={allRoles}
-                    resourceGroups={resourceGroups}
-                    permissionsMatrix={permissions}
-                    onPermissionChange={canManage ? handlePermissionChange : undefined}
-                />
+            <div className="grid gap-4 lg:grid-cols-3">
+                <Card title="Data scope"><p className="text-sm text-gray-600">Supports Self, Direct Reports, Department, Home Business Unit, Selected Business Units, and Global scope. Per-user effective scope is shown in User Management.</p></Card>
+                <Card title="Sensitive data"><p className="text-sm text-gray-600">Salary, banking, government numbers, documents, medical, disciplinary, evaluation, payroll staging, and final pay are protected independently from feature access.</p></Card>
+                <Card title="Workflow authority"><p className="text-sm text-gray-600">Submit, Review, Approve, Reject, Return, Cancel, and Finalize are checked independently for each workflow.</p></Card>
+            </div>
+
+            <Card title="Test as this role (read-only)">
+                <p className="text-sm text-gray-600">{authorityRole} resolves to {Object.keys(permissions[authorityRole] || {}).length} feature resources, {Object.keys(sensitiveMatrix[authorityRole] || {}).length} sensitive categories, and {Object.keys(workflowMatrix[authorityRole] || {}).length} workflows. This preview never changes your session or bypasses RLS.</p>
             </Card>
 
-            <BusinessUnitModal
-                isOpen={isBuModalOpen}
-                onClose={handleCloseBuModal}
-                onSave={handleSaveBu}
-                bu={selectedBu}
-            />
+            <Card title="RBAC audit history">
+                <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead><tr className="border-b text-xs uppercase text-gray-500"><th className="p-2">Time</th><th className="p-2">Action</th><th className="p-2">Target</th><th className="p-2">Actor</th></tr></thead><tbody>{auditRows.map(row => <tr key={row.id} className="border-b"><td className="p-2">{new Date(row.created_at).toLocaleString()}</td><td className="p-2">{row.action}</td><td className="p-2">{row.entity_type}: {row.entity_id || '—'}</td><td className="p-2">{row.actor_user_id || 'System migration'}</td></tr>)}</tbody></table></div>
+            </Card>
         </div>
     );
 };

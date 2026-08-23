@@ -93,9 +93,7 @@ const PersonnelActionNotice: React.FC = () => {
     const loadAll = async () => {
       try {
         const [{ data: empRows }, { data: tplRows }, { data: panRows }] = await Promise.all([
-          supabase.from('hris_users').select(
-            'id, full_name, email, role, status, department, position, salary_basic, salary_deminimis, salary_reimbursable, date_hired'
-          ),
+          supabase.rpc('get_accessible_hris_users'),
           supabase.from('pan_templates').select('*').order('updated_at', { ascending: false }),
           supabase.from('pans').select('*').order('updated_at', { ascending: false }),
         ]);

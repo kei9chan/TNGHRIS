@@ -107,10 +107,27 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
                 const { data: deptData } = await supabase.from('departments').select('id, name, business_unit_id');
                 if (deptData) setDepartments(deptData.map((d: any) => ({ id: d.id, name: d.name, businessUnitId: d.business_unit_id })));
                 
-                const { data: usersData } = await supabase.from('hris_users').select('*').in('role', ['BOD', 'GeneralManager', 'HRManager']);
+                const { data: usersData } = await supabase
+                    .from('hris_users')
+                    .select('id,full_name,email,role,position,department,business_unit,business_unit_id,department_id')
+                    .in('role', ['Board of Director', 'GeneralManager', 'HR Manager']);
                 if (usersData) {
-                    setApproverPool(usersData.filter((u: any) => u.role === 'BOD' || u.role === 'GeneralManager') as User[]);
-                    setHrHead(usersData.find((u: any) => u.role === 'HRManager') as User || null);
+                    const mappedUsers = usersData.map((row: any) => ({
+                        id: row.id,
+                        name: row.full_name || row.email || 'Unknown',
+                        email: row.email || '',
+                        role: row.role as Role,
+                        position: row.position || '',
+                        department: row.department || '',
+                        departmentId: row.department_id || undefined,
+                        businessUnit: row.business_unit || '',
+                        businessUnitId: row.business_unit_id || undefined,
+                        status: 'Active' as const,
+                        isPhotoEnrolled: false,
+                        dateHired: new Date(),
+                    }));
+                    setApproverPool(mappedUsers.filter(user => user.role === Role.BOD || user.role === Role.GeneralManager));
+                    setHrHead(mappedUsers.find(user => user.role === Role.HRManager) || null);
                 }
             } catch (err) {
                 console.warn('Failed to load metadata for requisition', err);

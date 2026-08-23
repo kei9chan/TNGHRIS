@@ -85,56 +85,48 @@ const applyAuthUserId = (
 /**
  * Given a Supabase auth user, load their HRIS profile and build our app User.
  * Uses the hris_users table: id, full_name, role, status, auth_user_id.
- * If there is NO hris_users row yet, we fall back to a minimal user object
- * based only on Supabase info so Supabase-only accounts can still log in.
+ * Unknown, inactive, or missing role assignments fail closed. A Supabase
+ * account is not an HRIS account until it has an active approved assignment.
  */
 const buildAppUserFromSupabase = async (
   sbUser: SupabaseUser | null
 ): Promise<User | null> => {
   if (!sbUser) return null;
 
-  const { data, error } = await supabase
-    .from('hris_users')
-    .select(
-      'id, full_name, role, status, department, business_unit, position, date_hired, is_photo_enrolled, email, business_unit_id, department_id, reports_to'
-    )
-    .eq('auth_user_id', sbUser.id)
-    .maybeSingle();
+  const { data: bootstrapData, error } = await supabase.rpc('get_my_hris_bootstrap');
+  const data = bootstrapData as any;
 
   if (error) {
     console.error('AuthProvider: failed to load HRIS profile', error);
-    // still allow login with bare Supabase user
+    throw new SupabaseAuthError(`Unable to load your HRIS access profile: ${error.message}`, 'rbac_profile_error');
   }
 
   if (!data) {
-    console.warn(
-      'AuthProvider: no hris_users row found, falling back to bare Supabase user',
-      sbUser.id
-    );
-
-    const fallback: User = {
-      id: sbUser.id,
-      name: sbUser.email ?? 'User',
-      email: sbUser.email ?? '',
-      role: Role.Employee,
-      status: 'Active',
-      department: '',
-      businessUnit: '',
-      position: '',
-      dateHired: new Date(),
-      isPhotoEnrolled: false,
-    } as User;
-
-    return applyAuthUserId(sbUser, fallback);
+    console.warn('AuthProvider: no hris_users row found', sbUser.id);
+    return null;
   }
 
   const mappedRole = mapRoleFromDb(data.role);
+  if (!mappedRole) {
+    throw new SupabaseAuthError(`Unknown or inactive HRIS role: ${data.role || 'none'}`, 'invalid_role');
+  }
+
+  const { data: rbacData, error: rbacError } = await supabase.rpc('get_my_effective_rbac');
+  if (rbacError) {
+    throw new SupabaseAuthError(`Unable to resolve effective permissions: ${rbacError.message}`, 'rbac_resolver_error');
+  }
+  const effective = (rbacData || {}) as any;
+  if (!effective.authorized) {
+    throw new SupabaseAuthError(effective.diagnostic || 'No active approved role assignment was found.', 'inactive_role');
+  }
+  const effectiveRoles = (effective.roles || []).map((role: string) => mapRoleFromDb(role)).filter(Boolean) as Role[];
+  const primaryRole = mapRoleFromDb(effective.primaryRole) || mappedRole;
 
   const appUser: User = {
     id: data.id ?? sbUser.id,
     name: data.full_name ?? sbUser.email ?? 'User',
     email: data.email ?? (sbUser.email as string) ?? '',
-    role: mappedRole ?? Role.Employee,
+    role: primaryRole,
     status: data.status as 'Active' | 'Inactive',
     department: data.department ?? '',
     departmentId: (data as any)?.department_id ?? undefined,
@@ -145,6 +137,14 @@ const buildAppUserFromSupabase = async (
     dateHired: data.date_hired ? new Date(data.date_hired) : new Date(),
     isPhotoEnrolled: data.is_photo_enrolled ?? false,
     managerId: (data as any)?.reports_to ?? undefined,
+    roles: effectiveRoles,
+    dashboardType: effective.dashboardType || (data as any)?.dashboard_type || 'employee',
+    accessScope: effective.dataScope || (data as any)?.data_access_scope || { type: 'SELF' },
+    sensitivePermissions: effective.sensitive || {},
+    workflowPermissions: effective.workflows || {},
+    authorizationDiagnostic: (data as any)?.permission_diagnostic || undefined,
+    permissionUpdatedAt: (data as any)?.permission_updated_at ? new Date((data as any).permission_updated_at) : undefined,
+    permissionUpdatedBy: (data as any)?.permission_updated_by || undefined,
   } as User;
 
   return applyAuthUserId(sbUser, appUser);
@@ -204,25 +204,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
   }, []);
 
   /**
-   * Immediately set a minimal Supabase-backed user (merged with mock if present),
-   * then hydrate from hris_users in the background to avoid blocking login UI.
+   * Resolve the server-side RBAC profile before exposing a signed-in user to
+   * the application. Unknown or broken assignments never become Employee.
    */
   const hydrateSupabaseUser = async (sbUser: SupabaseUser, preserveExisting = false) => {
-    const minimal: User = applyAuthUserId(sbUser, {
-      id: sbUser.id,
-      name: sbUser.email ?? 'User',
-      email: sbUser.email ?? '',
-      role: Role.Employee,
-      status: 'Inactive',
-      department: '',
-      businessUnit: '',
-      position: '',
-      dateHired: new Date(),
-      isPhotoEnrolled: false,
-    } as User);
-
     if (!preserveExisting) {
-      setUser(minimal);
+      setUser(null);
     }
 
     try {

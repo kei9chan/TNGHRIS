@@ -46,12 +46,12 @@ const ManpowerPlanning: React.FC = () => {
     }, [role]);
 
     const canApprove = useMemo(() => {
-        return getDashboardRequestAccess().canApprove;
+        return getDashboardRequestAccess('Manpower').canApprove;
     }, [user]);
 
     const loadRequests = useCallback(async () => {
         if (!user) return;
-        const access = getDashboardRequestAccess();
+        const access = getDashboardRequestAccess('Manpower');
         let query = supabase.from('manpower_requests').select('*').order('created_at', { ascending: false });
 
         if (access.scope === 'global') {

@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import Card from '../ui/Card';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
-import { Role } from '../../types';
+import { Permission, Resource } from '../../types';
 
 // Icons
 const UserCircleIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
@@ -43,20 +43,6 @@ const QuickLinkCard: React.FC<QuickLinkCardProps> = ({ name, path, state, icon }
 );
 
 
-type AccessScope =
-  | 'full'
-  | 'view'
-  | 'approveBu'
-  | 'viewBu'
-  | 'ownBu'
-  | 'ownTeam'
-  | 'own'
-  | 'ownRequest'
-  | 'respond'
-  | 'viewRespond'
-  | 'logs'
-  | 'none';
-
 type QuickLinkId =
   | 'profile'
   | 'oncall'
@@ -71,225 +57,31 @@ type QuickLinkId =
   | 'announcements'
   | 'achievements';
 
-const accessMatrix: Record<Role, Record<QuickLinkId, AccessScope>> = {
-  [Role.Admin]: {
-    profile: 'full',
-    oncall: 'full',
-    wfh: 'full',
-    coe: 'full',
-    schedule: 'full',
-    leave: 'full',
-    overtime: 'full',
-    ticket: 'full',
-    ir: 'full',
-    jobreq: 'full',
-    announcements: 'full',
-    achievements: 'full',
-  },
-  [Role.HRManager]: {
-    profile: 'full',
-    oncall: 'full',
-    wfh: 'full',
-    coe: 'full',
-    schedule: 'full',
-    leave: 'full',
-    overtime: 'full',
-    ticket: 'full',
-    ir: 'full',
-    jobreq: 'full',
-    announcements: 'full',
-    achievements: 'full',
-  },
-  [Role.HRStaff]: {
-    profile: 'full',
-    oncall: 'full',
-    wfh: 'full',
-    coe: 'full',
-    schedule: 'full',
-    leave: 'full',
-    overtime: 'full',
-    ticket: 'full',
-    ir: 'full',
-    jobreq: 'full',
-    announcements: 'full',
-    achievements: 'full',
-  },
-  [Role.BOD]: {
-    profile: 'view',
-    oncall: 'view',
-    wfh: 'view',
-    coe: 'none',
-    schedule: 'view',
-    leave: 'view',
-    overtime: 'view',
-    ticket: 'view',
-    ir: 'none',
-    jobreq: 'viewBu',
-    announcements: 'view',
-    achievements: 'view',
-  },
-  [Role.GeneralManager]: {
-    profile: 'view',
-    oncall: 'viewBu',
-    wfh: 'viewBu',
-    coe: 'none',
-    schedule: 'viewBu',
-    leave: 'viewBu',
-    overtime: 'viewBu',
-    ticket: 'respond',
-    ir: 'none',
-    jobreq: 'viewBu',
-    announcements: 'viewBu',
-    achievements: 'none',
-  },
-  [Role.OperationsDirector]: {
-    profile: 'view',
-    oncall: 'approveBu',
-    wfh: 'approveBu',
-    coe: 'none',
-    schedule: 'approveBu',
-    leave: 'approveBu',
-    overtime: 'approveBu',
-    ticket: 'respond',
-    ir: 'none',
-    jobreq: 'viewBu',
-    announcements: 'viewBu',
-    achievements: 'none',
-  },
-  [Role.BusinessUnitManager]: {
-    profile: 'view',
-    oncall: 'ownBu',
-    wfh: 'ownBu',
-    coe: 'ownBu',
-    schedule: 'ownBu',
-    leave: 'ownBu',
-    overtime: 'ownBu',
-    ticket: 'respond',
-    ir: 'full',
-    jobreq: 'ownBu',
-    announcements: 'ownBu',
-    achievements: 'none',
-  },
-  [Role.Manager]: {
-    profile: 'view',
-    oncall: 'ownTeam',
-    wfh: 'ownTeam',
-    coe: 'ownTeam',
-    schedule: 'ownTeam',
-    leave: 'ownTeam',
-    overtime: 'ownTeam',
-    ticket: 'none',
-    ir: 'full',
-    jobreq: 'ownTeam',
-    announcements: 'ownTeam',
-    achievements: 'none',
-  },
-  [Role.Employee]: {
-    profile: 'view',
-    oncall: 'none',
-    wfh: 'own',
-    coe: 'own',
-    schedule: 'own',
-    leave: 'own',
-    overtime: 'own',
-    ticket: 'own',
-    ir: 'full',
-    jobreq: 'none',
-    announcements: 'ownBu',
-    achievements: 'own',
-  },
-  [Role.FinanceStaff]: {
-    profile: 'view',
-    oncall: 'logs',
-    wfh: 'none',
-    coe: 'none',
-    schedule: 'none',
-    leave: 'none',
-    overtime: 'none',
-    ticket: 'viewRespond',
-    ir: 'none',
-    jobreq: 'none',
-    announcements: 'none',
-    achievements: 'none',
-  },
-  [Role.Auditor]: {
-    profile: 'view',
-    oncall: 'logs',
-    wfh: 'logs',
-    coe: 'none',
-    schedule: 'logs',
-    leave: 'logs',
-    overtime: 'logs',
-    ticket: 'logs',
-    ir: 'none',
-    jobreq: 'logs',
-    announcements: 'logs',
-    achievements: 'logs',
-  },
-  [Role.Recruiter]: {
-    profile: 'none',
-    oncall: 'none',
-    wfh: 'none',
-    coe: 'none',
-    schedule: 'none',
-    leave: 'none',
-    overtime: 'none',
-    ticket: 'respond',
-    ir: 'none',
-    jobreq: 'full',
-    announcements: 'full',
-    achievements: 'none',
-  },
-  [Role.IT]: {
-    profile: 'none',
-    oncall: 'none',
-    wfh: 'none',
-    coe: 'none',
-    schedule: 'none',
-    leave: 'none',
-    overtime: 'none',
-    ticket: 'respond',
-    ir: 'none',
-    jobreq: 'none',
-    announcements: 'none',
-    achievements: 'none',
-  },
-};
-
 const QuickLinks: React.FC = () => {
     const { user } = useAuth();
-    const { getIrAccess } = usePermissions();
+    const { can, workflowCan, getIrAccess } = usePermissions();
     const irAccess = useMemo(() => getIrAccess(), [getIrAccess]);
 
     const visibleLinks = useMemo(() => {
-        const allQuickLinks: (QuickLinkCardProps & { id: QuickLinkId; scope: AccessScope })[] = [
-            { id: 'profile', name: 'My Profile', path: '/my-profile', icon: <UserCircleIcon />, scope: 'full' },
-            { id: 'oncall', name: 'Request On-Call', path: '/dashboard', state: { openManpowerModal: true }, icon: <UserGroupIcon />, scope: 'full' },
-            { id: 'wfh', name: 'Request WFH', path: '/payroll/wfh-requests', state: { openNewModal: true }, icon: <HomeIcon />, scope: 'full' },
-            { id: 'coe', name: 'Request COE', path: '/dashboard', state: { openRequestCOE: true }, icon: <DocumentDuplicateIcon />, scope: 'full' },
-            { id: 'schedule', name: 'View Schedule', path: '/payroll/timekeeping', icon: <CalendarDaysIcon />, scope: 'full' },
-            { id: 'leave', name: 'Request Leave', path: '/payroll/leave', icon: <CalendarIcon />, scope: 'full' },
-            { id: 'overtime', name: 'Request Overtime', path: '/payroll/overtime-requests', state: { openNewOTModal: true }, icon: <ClockIcon />, scope: 'full' },
-            { id: 'ticket', name: 'Submit a Ticket', path: '/helpdesk/tickets', state: { openNewTicketModal: true }, icon: <TicketIcon />, scope: 'full' },
-            { id: 'ir', name: 'File New IR', path: '/feedback/cases', state: { openNewIrModal: true }, icon: <ExclamationTriangleIcon />, scope: 'full' },
-            { id: 'jobreq', name: 'Job Requisition', path: '/recruitment/requisitions', state: { openNewReqModal: true }, icon: <UserPlusIcon />, scope: 'full' },
-            { id: 'announcements', name: 'View Announcements', path: '/helpdesk/announcements', icon: <MegaphoneIcon />, scope: 'full' },
-            { id: 'achievements', name: 'View Achievements', path: '/my-profile#achievements', icon: <StarIcon />, scope: 'full' },
+        const allQuickLinks: (QuickLinkCardProps & { id: QuickLinkId; allowed: boolean })[] = [
+            { id: 'profile', name: 'My Profile', path: '/my-profile', icon: <UserCircleIcon />, allowed: Boolean(user) },
+            { id: 'oncall', name: 'Request On-Call', path: '/dashboard', state: { openManpowerModal: true }, icon: <UserGroupIcon />, allowed: can('Manpower', Permission.Create) && workflowCan('Manpower', Permission.Submit) },
+            { id: 'wfh', name: 'Request WFH', path: '/payroll/wfh-requests', state: { openNewModal: true }, icon: <HomeIcon />, allowed: workflowCan('WFH', Permission.Submit) },
+            { id: 'coe', name: 'Request COE', path: '/dashboard', state: { openRequestCOE: true }, icon: <DocumentDuplicateIcon />, allowed: workflowCan('COE', Permission.Submit) },
+            { id: 'schedule', name: 'View Schedule', path: '/payroll/timekeeping', icon: <CalendarDaysIcon />, allowed: can('Timekeeping', Permission.View) },
+            { id: 'leave', name: 'Request Leave', path: '/payroll/leave', icon: <CalendarIcon />, allowed: workflowCan('Leave', Permission.Submit) },
+            { id: 'overtime', name: 'Request Overtime', path: '/payroll/overtime-requests', state: { openNewOTModal: true }, icon: <ClockIcon />, allowed: workflowCan('Overtime', Permission.Submit) },
+            { id: 'ticket', name: 'Submit a Ticket', path: '/helpdesk/tickets', state: { openNewTicketModal: true }, icon: <TicketIcon />, allowed: can('Helpdesk', Permission.Create) || can('Helpdesk', Permission.Submit) },
+            { id: 'ir', name: 'File New IR', path: '/feedback/cases', state: { openNewIrModal: true }, icon: <ExclamationTriangleIcon />, allowed: irAccess.canCreate },
+            { id: 'jobreq', name: 'Job Requisition', path: '/recruitment/requisitions', state: { openNewReqModal: true }, icon: <UserPlusIcon />, allowed: can('JobRequisitions' as Resource, Permission.View) && workflowCan('JobRequisitions', Permission.Submit) },
+            { id: 'announcements', name: 'View Announcements', path: '/helpdesk/announcements', icon: <MegaphoneIcon />, allowed: can('Announcements', Permission.View) },
+            { id: 'achievements', name: 'View Achievements', path: '/my-profile#achievements', icon: <StarIcon />, allowed: can('Awards' as Resource, Permission.View) },
         ];
 
-        if (!user || !user.role) return [];
-        const roleMap = accessMatrix[user.role as Role];
-        if (!roleMap) return [];
+        if (!user) return [];
+        return allQuickLinks.filter(link => link.allowed);
 
-        return allQuickLinks.filter(link => {
-          const scope = roleMap[link.id] || 'none';
-          if (link.id === 'ir') {
-            return irAccess.canCreate;
-          }
-          return scope !== 'none';
-        });
-
-    }, [user, irAccess, getIrAccess]);
+    }, [user, irAccess, can, workflowCan]);
 
     if (visibleLinks.length === 0) return null;
 

@@ -12,16 +12,40 @@ const permissionOrder: Permission[] = [
     Permission.View,
     Permission.Create,
     Permission.Edit,
+    Permission.Submit,
+    Permission.Review,
     Permission.Approve,
+    Permission.Reject,
+    Permission.Return,
+    Permission.Cancel,
+    Permission.Finalize,
     Permission.Manage,
+    Permission.Delete,
+    Permission.Export,
+    Permission.Download,
+    Permission.Assign,
+    Permission.Reassign,
+    Permission.Publish,
 ];
 
 const permissionLabels: Record<Permission, string> = {
     [Permission.View]: 'View',
     [Permission.Create]: 'Create',
     [Permission.Edit]: 'Edit',
+    [Permission.Submit]: 'Submit',
+    [Permission.Review]: 'Review',
     [Permission.Approve]: 'Approve',
+    [Permission.Reject]: 'Reject',
+    [Permission.Return]: 'Return',
+    [Permission.Cancel]: 'Cancel',
+    [Permission.Finalize]: 'Finalize',
     [Permission.Manage]: 'Manage',
+    [Permission.Delete]: 'Delete',
+    [Permission.Export]: 'Export',
+    [Permission.Download]: 'Download',
+    [Permission.Assign]: 'Assign',
+    [Permission.Reassign]: 'Reassign',
+    [Permission.Publish]: 'Publish',
 };
 
 /* ─── Toggle switch ────────────────────────────────────────────────────────── */
@@ -192,13 +216,13 @@ const PermissionsMatrixTable: React.FC<PermissionsMatrixProps> = ({
                                             {/* Resource name + permission toggles */}
                                             <div className="flex items-center justify-between gap-3">
                                                 <span className="text-sm text-gray-900 dark:text-gray-200 font-medium truncate">{resource}</span>
-                                                <div className="flex items-center gap-3 flex-shrink-0">
+                                                <div className="flex max-w-[34rem] flex-wrap items-center justify-end gap-2 flex-shrink-0">
                                                     {permissionOrder.map(permission => {
                                                         const has = permissionsMatrix[selectedRole]?.[resource]?.includes(permission) ?? false;
                                                         const tid = `${selectedRole}-${resource}-${permission}`;
                                                         return (
                                                             <div key={permission} className="flex flex-col items-center gap-1">
-                                                                <span className="text-[10px] text-gray-500 uppercase">{permissionLabels[permission].charAt(0)}</span>
+                                                                <span className="text-[9px] text-gray-500" title={permissionLabels[permission]}>{permissionLabels[permission]}</span>
                                                                 <Toggle
                                                                     id={tid}
                                                                     checked={has}

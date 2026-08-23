@@ -1,174 +1,107 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { User, Role, AccessScope, BusinessUnit } from '../../types';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 
-interface UserRoleEditModalProps {
+interface Props {
     isOpen: boolean;
     onClose: () => void;
     user: User;
     businessUnits: BusinessUnit[];
     roles: string[];
-    onSave: (userId: string, newRole: string, accessScope: AccessScope) => void;
+    onSave: (configuration: {
+        userId: string;
+        roleIds: string[];
+        primaryRole: string;
+        accessScope: AccessScope;
+        dashboardType: string;
+    }) => void;
 }
 
-const UserRoleEditModal: React.FC<UserRoleEditModalProps> = ({ isOpen, onClose, user, onSave, businessUnits, roles }) => {
-    const [newRole, setNewRole] = useState<string>(user.role);
-    const [scopeType, setScopeType] = useState<AccessScope['type']>('HOME_ONLY');
+const UserRoleEditModal: React.FC<Props> = ({ isOpen, onClose, user, onSave, businessUnits, roles }) => {
+    const [primaryRole, setPrimaryRole] = useState<string>(user.role);
+    const [additionalRole, setAdditionalRole] = useState('');
+    const [scopeType, setScopeType] = useState<AccessScope['type']>('SELF');
     const [selectedBuIds, setSelectedBuIds] = useState<string[]>([]);
+    const [dashboardType, setDashboardType] = useState(user.dashboardType || 'employee');
 
     useEffect(() => {
-        if (isOpen) {
-            setNewRole(user.role);
-            if (user.accessScope) {
-                setScopeType(user.accessScope.type);
-                setSelectedBuIds(user.accessScope.allowedBuIds || []);
-            } else {
-                setScopeType('HOME_ONLY');
-                setSelectedBuIds([]);
-            }
-        }
+        if (!isOpen) return;
+        setPrimaryRole(user.role);
+        setAdditionalRole(user.roles?.find(role => role !== user.role) || '');
+        setScopeType(user.accessScope?.type || 'SELF');
+        setSelectedBuIds(user.accessScope?.allowedBuIds || []);
+        setDashboardType(user.dashboardType || 'employee');
     }, [isOpen, user]);
 
-    const handleSave = () => {
-        const newScope: AccessScope = {
-            type: scopeType,
-            allowedBuIds: scopeType === 'SPECIFIC' ? selectedBuIds : undefined
-        };
-        onSave(user.id, newRole, newScope);
-    };
-
-    const handleBuToggle = (buId: string) => {
-        setSelectedBuIds(prev => 
-            prev.includes(buId) ? prev.filter(id => id !== buId) : [...prev, buId]
-        );
-    };
+    const roleIds = [...new Set([primaryRole, additionalRole].filter(Boolean))];
+    const toggleBusinessUnit = (id: string) => setSelectedBuIds(previous =>
+        previous.includes(id) ? previous.filter(value => value !== id) : [...previous, id]
+    );
 
     const footer = (
-        <div className="flex justify-end w-full space-x-2">
+        <div className="flex w-full justify-end gap-2">
             <Button variant="secondary" onClick={onClose}>Cancel</Button>
-            <Button onClick={handleSave}>Save Changes</Button>
+            <Button onClick={() => onSave({
+                userId: user.id,
+                roleIds,
+                primaryRole,
+                accessScope: { type: scopeType, allowedBuIds: scopeType === 'SPECIFIC' ? selectedBuIds : undefined },
+                dashboardType,
+            })}>Save audited change</Button>
         </div>
     );
 
     return (
-        <Modal
-            isOpen={isOpen}
-            onClose={onClose}
-            title={`Edit Permissions for ${user.name}`}
-            footer={footer}
-        >
+        <Modal isOpen={isOpen} onClose={onClose} title={`Access for ${user.name}`} footer={footer}>
             <div className="space-y-6">
-                {/* Role Section */}
-                <div>
-                    <label htmlFor="role-select" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        System Role
-                    </label>
-                    <select
-                        id="role-select"
-                        value={newRole}
-                        onChange={(e) => setNewRole(e.target.value as Role)}
-                        className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                    >
-                        {roles.map((role) => (
-                            <option key={role} value={role}>
-                                {role}
-                            </option>
-                        ))}
-                    </select>
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        Defines feature access and functional capabilities.
-                    </p>
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                    Role and scope changes are atomic, server-authorized, and recorded in the RBAC audit history. Self-promotion is blocked.
                 </div>
-
-                <hr className="border-gray-200 dark:border-gray-700" />
-
-                {/* Access Scope Section */}
-                <div>
-                    <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-3">Data Access Scope</h3>
-                    <div className="space-y-3">
-                        <div className="flex items-start">
-                            <div className="flex items-center h-5">
-                                <input
-                                    id="scope-home"
-                                    name="scope"
-                                    type="radio"
-                                    checked={scopeType === 'HOME_ONLY'}
-                                    onChange={() => setScopeType('HOME_ONLY')}
-                                    className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 dark:border-gray-600 dark:bg-slate-700"
-                                />
-                            </div>
-                            <div className="ml-3 text-sm">
-                                <label htmlFor="scope-home" className="font-medium text-gray-700 dark:text-gray-300">
-                                    Default (Home Unit Only)
-                                </label>
-                                <p className="text-gray-500 dark:text-gray-400">
-                                    User can only view and manage data for their assigned Business Unit ({user.businessUnit}).
-                                </p>
-                            </div>
-                        </div>
-
-                        <div className="flex items-start">
-                            <div className="flex items-center h-5">
-                                <input
-                                    id="scope-global"
-                                    name="scope"
-                                    type="radio"
-                                    checked={scopeType === 'GLOBAL'}
-                                    onChange={() => setScopeType('GLOBAL')}
-                                    className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 dark:border-gray-600 dark:bg-slate-700"
-                                />
-                            </div>
-                            <div className="ml-3 text-sm">
-                                <label htmlFor="scope-global" className="font-medium text-gray-700 dark:text-gray-300">
-                                    Global Access
-                                </label>
-                                <p className="text-gray-500 dark:text-gray-400">
-                                    User can view and manage data across ALL Business Units.
-                                </p>
-                            </div>
-                        </div>
-
-                        <div className="flex items-start">
-                            <div className="flex items-center h-5">
-                                <input
-                                    id="scope-specific"
-                                    name="scope"
-                                    type="radio"
-                                    checked={scopeType === 'SPECIFIC'}
-                                    onChange={() => setScopeType('SPECIFIC')}
-                                    className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 dark:border-gray-600 dark:bg-slate-700"
-                                />
-                            </div>
-                            <div className="ml-3 text-sm w-full">
-                                <label htmlFor="scope-specific" className="font-medium text-gray-700 dark:text-gray-300">
-                                    Specific Units
-                                </label>
-                                <p className="text-gray-500 dark:text-gray-400 mb-2">
-                                    Select specific Business Units this user can manage.
-                                </p>
-                                
-                                {scopeType === 'SPECIFIC' && (
-                                    <div className="mt-2 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50 dark:bg-slate-800 p-2 max-h-40 overflow-y-auto">
-                                        {businessUnits.map(bu => (
-                                            <div key={bu.id} className="flex items-center py-1">
-                                                <input
-                                                    id={`bu-${bu.id}`}
-                                                    type="checkbox"
-                                                    checked={selectedBuIds.includes(bu.id)}
-                                                    onChange={() => handleBuToggle(bu.id)}
-                                                    className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:bg-slate-700 dark:border-gray-600"
-                                                />
-                                                <label htmlFor={`bu-${bu.id}`} className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                                                    {bu.name}
-                                                </label>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="text-sm font-medium text-gray-700">Primary role
+                        <select value={primaryRole} onChange={event => setPrimaryRole(event.target.value)} className="mt-1 block w-full rounded-md border-gray-300 p-2">
+                            {roles.map(role => <option key={role} value={role}>{role === 'GeneralManager' ? 'General Manager' : role}</option>)}
+                        </select>
+                    </label>
+                    <label className="text-sm font-medium text-gray-700">Additional role
+                        <select value={additionalRole} onChange={event => setAdditionalRole(event.target.value)} className="mt-1 block w-full rounded-md border-gray-300 p-2">
+                            <option value="">None</option>
+                            {roles.filter(role => role !== primaryRole).map(role => <option key={role} value={role}>{role === 'GeneralManager' ? 'General Manager' : role}</option>)}
+                        </select>
+                        <span className="mt-1 block text-xs text-gray-500">The server permits a second role only for the two approved accounts.</span>
+                    </label>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="text-sm font-medium text-gray-700">Dashboard type
+                        <select value={dashboardType} onChange={event => setDashboardType(event.target.value)} className="mt-1 block w-full rounded-md border-gray-300 p-2">
+                            <option value="executive">Executive/BOD</option><option value="hr">Full HR</option>
+                            <option value="admin">Admin</option><option value="admin_it">Admin/IT</option>
+                            <option value="manager">Manager</option><option value="employee">Employee</option>
+                        </select>
+                    </label>
+                    <label className="text-sm font-medium text-gray-700">Data-access scope
+                        <select value={scopeType} onChange={event => setScopeType(event.target.value as AccessScope['type'])} className="mt-1 block w-full rounded-md border-gray-300 p-2">
+                            <option value="SELF">Self only</option><option value="DIRECT_REPORTS">Direct reports</option>
+                            <option value="DEPARTMENT">Department</option><option value="HOME_ONLY">Home business unit</option>
+                            <option value="SPECIFIC">Selected business units</option><option value="GLOBAL">Global/all business units</option>
+                        </select>
+                    </label>
+                </div>
+                {scopeType === 'SPECIFIC' && (
+                    <div className="max-h-44 overflow-y-auto rounded-lg border border-gray-200 p-3">
+                        {businessUnits.map(unit => (
+                            <label key={unit.id} className="flex items-center gap-2 py-1 text-sm">
+                                <input type="checkbox" checked={selectedBuIds.includes(unit.id)} onChange={() => toggleBusinessUnit(unit.id)} />
+                                {unit.name}
+                            </label>
+                        ))}
                     </div>
+                )}
+                <div className="grid gap-3 rounded-lg bg-gray-50 p-4 text-sm sm:grid-cols-3">
+                    <div><strong>Effective roles</strong><p>{roleIds.join(' + ')}</p></div>
+                    <div><strong>Sensitive-data summary</strong><p>{Object.keys(user.sensitivePermissions || {}).length} protected categories</p></div>
+                    <div><strong>Workflow summary</strong><p>{Object.keys(user.workflowPermissions || {}).length} workflows</p></div>
                 </div>
             </div>
         </Modal>

@@ -48,7 +48,7 @@ export const autoCelebrateBirthdays = async () => {
 
     // Fetch users whose birth_date matches today's month and day
     const { data: users, error } = await supabase
-        .from('hris_users')
+        .rpc('get_accessible_hris_users')
         .select('id, full_name, birth_date')
         .not('birth_date', 'is', null);
 
@@ -57,7 +57,7 @@ export const autoCelebrateBirthdays = async () => {
         return;
     }
 
-    const birthdayEmployees = users.filter(u => {
+    const birthdayEmployees = (Array.isArray(users) ? users : [users]).filter(u => {
         if (!u.birth_date) return false;
         const bd = new Date(u.birth_date);
         return bd.getMonth() + 1 === currentMonth && bd.getDate() === currentDay;

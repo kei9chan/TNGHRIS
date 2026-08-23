@@ -17,6 +17,7 @@ import {
     OTRequest,
     ManpowerRequest,
     OTStatus,
+    Role,
 } from '../../types';
 
 // ── Type badge colours ───────────────────────────────────────────────────────
@@ -62,7 +63,8 @@ function ApprovalRow({ type, name, subtitle, onReview }: ApprovalRowProps) {
 // ── Main widget ──────────────────────────────────────────────────────────────
 export default function ApprovalWidget() {
     const { user, profile } = useAuth();
-    const isHR = profile?.role === 'HR' || profile?.department === 'HR';
+    const assignedRoles = new Set([user?.role, ...(user?.roles || [])].filter(Boolean));
+    const isHR = assignedRoles.has(Role.HRStaff);
     const [reporteeIds, setReporteeIds] = useState<string[]>([]);
 
     // ── Active modal state ───────────────────────────────────────────────────
@@ -88,6 +90,7 @@ export default function ApprovalWidget() {
         pendingOtApprovals,
         pendingManpowerApprovals,
         leaveTypes,
+        approvalError,
         handleLeaveApproval,
         handleApproveWFH,
         handleRejectWFH,
@@ -102,7 +105,23 @@ export default function ApprovalWidget() {
         pendingOtApprovals.length +
         pendingManpowerApprovals.length;
 
-    if (!user || totalApprovals === 0) return null;
+    if (!user) return null;
+
+    if (approvalError) {
+        return (
+            <Card title="Pending Approvals">
+                <div role="alert" className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200">
+                    <p className="font-semibold">Approval data could not be loaded.</p>
+                    <p className="mt-1 break-words">{approvalError}</p>
+                    <Button size="small" variant="secondary" className="mt-3" onClick={() => window.location.reload()}>
+                        Retry
+                    </Button>
+                </div>
+            </Card>
+        );
+    }
+
+    if (totalApprovals === 0) return null;
 
     return (
         <>

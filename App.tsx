@@ -9,10 +9,13 @@
 
 
 import React, { useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { SettingsProvider } from './context/SettingsContext';
 import { useAuth } from './hooks/useAuth';
+import { usePermissions } from './hooks/usePermissions';
+import { usePermissionsContext } from './context/PermissionsContext';
+import { Permission, Resource } from './types';
 import Layout from './components/layout/Layout';
 const Login = React.lazy(() => import('./pages/Login'));
 const SignUp = React.lazy(() => import('./pages/SignUp'));
@@ -132,6 +135,9 @@ import { autoCelebrateBirthdays } from './services/workflows';
 
 const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }) => {
   const { user, loading } = useAuth();
+  const { can } = usePermissions();
+  const { loadingPermissions, authorizationError } = usePermissionsContext();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -143,6 +149,90 @@ const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (loadingPermissions) {
+    return (
+      <div className="flex items-center justify-center h-screen" aria-label="Loading authorization">
+        <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-indigo-500"></div>
+      </div>
+    );
+  }
+
+  if (authorizationError) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-6">
+        <div className="max-w-lg rounded-xl border border-red-200 bg-white p-6 shadow-lg">
+          <h1 className="text-xl font-bold text-red-700">Authorization unavailable</h1>
+          <p className="mt-2 text-gray-700">{authorizationError}</p>
+          <p className="mt-3 text-sm text-gray-500">Access is fail-closed. Contact an administrator and provide this message.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const routePermissions: Array<[string, Resource, Permission]> = [
+    ['/admin/roles', 'RolesPermissions' as Resource, Permission.View],
+    ['/admin/users', 'UserManagement' as Resource, Permission.View],
+    ['/admin/departments', 'Departments', Permission.View],
+    ['/admin/sites', 'Sites', Permission.View],
+    ['/admin/leave-policies', 'LeavePolicies', Permission.View],
+    ['/admin/holidays', 'Holidays', Permission.View],
+    ['/admin/audit-log', 'AuditLog', Permission.View],
+    ['/admin/settings', 'SystemSettings' as Resource, Permission.View],
+    ['/recruitment/requisitions', 'JobRequisitions' as Resource, Permission.View],
+    ['/recruitment/job-post-templates', 'JobPosts', Permission.Manage],
+    ['/recruitment/job-social-media-generator', 'JobPosts', Permission.Manage],
+    ['/recruitment/job-post', 'JobPosts', Permission.View],
+    ['/recruitment/application-pages', 'ApplicationPages', Permission.View],
+    ['/recruitment/applicants', 'Applicants', Permission.View],
+    ['/recruitment/candidates', 'Candidates', Permission.View],
+    ['/recruitment/interviews', 'Interviews', Permission.View],
+    ['/recruitment/offer', 'Offers', Permission.View],
+    ['/employees/list', 'EmployeeList' as Resource, Permission.View],
+    ['/employees/view', 'EmployeeProfile' as Resource, Permission.View],
+    ['/employees/pan', 'PersonnelActionNotices' as Resource, Permission.View],
+    ['/employees/onboarding', 'Onboarding' as Resource, Permission.View],
+    ['/employees/contracts', 'ContractsSigning' as Resource, Permission.View],
+    ['/employees/coe', 'CertificateEmployment' as Resource, Permission.View],
+    ['/employees/benefits', 'Benefits', Permission.View],
+    ['/employees/asset-management/asset-requests', 'AssetRequests', Permission.View],
+    ['/employees/asset-management', 'Assets', Permission.View],
+    ['/employees/analytics', 'EmployeeAnalytics' as Resource, Permission.View],
+    ['/feedback', 'Feedback', Permission.View],
+    ['/payroll/timekeeping', 'Timekeeping', Permission.View],
+    ['/payroll/daily-review', 'DailyTimeReview', Permission.View],
+    ['/payroll/clock-in-out', 'ClockInOut' as Resource, Permission.View],
+    ['/payroll/clock-log', 'ClockLogs' as Resource, Permission.View],
+    ['/payroll/overtime', 'Overtime' as Resource, Permission.View],
+    ['/payroll/wfh', 'WorkFromHome' as Resource, Permission.View],
+    ['/payroll/leave', 'Leave', Permission.View],
+    ['/payroll/manpower', 'ManpowerPlanning' as Resource, Permission.View],
+    ['/payroll/workforce-planning', 'WorkforcePlanning', Permission.View],
+    ['/payroll/exceptions', 'AttendanceExceptions' as Resource, Permission.View],
+    ['/payroll/payroll-prep', 'PayrollPreparation' as Resource, Permission.View],
+    ['/payroll/staging', 'PayrollStaging' as Resource, Permission.View],
+    ['/payroll/government-reports', 'GovernmentReports', Permission.View],
+    ['/payroll/payslips', 'Payslips', Permission.View],
+    ['/payroll/final-pay', 'FinalPay', Permission.View],
+    ['/payroll/configuration', 'PayrollConfiguration' as Resource, Permission.View],
+    ['/payroll/reports', 'PayrollReports' as Resource, Permission.View],
+    ['/payroll', 'Payroll', Permission.View],
+    ['/evaluation', 'Evaluation', Permission.View],
+    ['/helpdesk', 'Helpdesk', Permission.View],
+    ['/dashboard', 'Dashboard', Permission.View],
+  ];
+  const required = routePermissions.find(([prefix]) => location.pathname.startsWith(prefix));
+  if (required && !can(required[1], required[2])) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center p-6">
+        <div className="max-w-lg rounded-xl border border-amber-200 bg-white p-6 text-center shadow">
+          <h1 className="text-xl font-bold text-gray-900">Access denied</h1>
+          <p className="mt-2 text-gray-600">You do not have {required[2]} access to {required[1]}.</p>
+          <button className="mt-4 text-indigo-600 font-semibold" onClick={() => window.history.back()}>Go back</button>
+        </div>
+      </div>
+    );
   }
 
   return children;

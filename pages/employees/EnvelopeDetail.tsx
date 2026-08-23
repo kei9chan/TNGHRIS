@@ -193,16 +193,16 @@ const EnvelopeDetail: React.FC = () => {
             }
             try {
                 const { data, error } = await supabase
-                    .from('hris_users')
-                    .select('position, date_hired, salary_basic, rate_amount, email')
-                    .eq('id', envelope.employeeId)
-                    .single();
+                    .rpc('get_hris_user_profile', { p_user_id: envelope.employeeId })
+                    .maybeSingle();
                 if (error) throw error;
+                if (!data) throw new Error('Employee profile is not available for this account.');
+                const profile = data as any;
                 setEmployeeProfile({
-                    position: data.position || undefined,
-                    dateHired: data.date_hired ? new Date(data.date_hired) : undefined,
-                    monthlySalary: data.rate_amount ?? data.salary_basic ?? undefined,
-                    email: data.email || undefined,
+                    position: profile.position || undefined,
+                    dateHired: profile.date_hired ? new Date(profile.date_hired) : undefined,
+                    monthlySalary: profile.rate_amount ?? profile.salary_basic ?? undefined,
+                    email: profile.email || undefined,
                 });
             } catch (error) {
                 console.error('Failed to load employee profile for envelope', error);

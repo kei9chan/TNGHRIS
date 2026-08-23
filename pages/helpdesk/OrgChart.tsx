@@ -32,7 +32,7 @@ const OrgChart: React.FC = () => {
         setError(null);
         const [{ data: buData, error: buErr }, { data: userData, error: userErr }] = await Promise.all([
             supabase.from('business_units').select('id, name, color, code').order('name'),
-            supabase.from('hris_users').select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position, date_hired, birth_date'),
+            supabase.rpc('get_accessible_hris_users').select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position, date_hired, birth_date'),
         ]);
         if (buErr || userErr) {
             setError(buErr?.message || userErr?.message || 'Failed to load org chart data.');
@@ -47,7 +47,8 @@ const OrgChart: React.FC = () => {
             code: b.code,
         })));
 
-        setUsers((userData || []).map((u: any) => ({
+        const userRows = Array.isArray(userData) ? userData : userData ? [userData] : [];
+        setUsers(userRows.map((u: any) => ({
             id: u.id,
             name: formatEmployeeName(u.full_name || 'Unknown'),
             email: u.email || '',

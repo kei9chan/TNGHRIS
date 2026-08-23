@@ -59,7 +59,6 @@ const EmployeeList: React.FC = () => {
       case Role.Admin:
       case Role.HRManager:
       case Role.HRStaff:
-      case Role.Recruiter:
         return { canView: true, canEdit: true, scope: 'global' as const };
       case Role.BOD:
         return { canView: true, canEdit: false, scope: 'global' as const };
@@ -265,7 +264,7 @@ const EmployeeList: React.FC = () => {
         .from('hris_users')
         .update(payload)
         .eq('id', userToEdit.id)
-        .select('*');
+        .select('id');
 
       if (error) {
         console.error('Error updating user', error);

@@ -160,7 +160,7 @@ const EmployeeProfile: React.FC = () => {
             if (!targetId && !email) return;
 
             try {
-                let query = supabase.from('hris_users').select('*').limit(1);
+                let query = supabase.rpc('get_accessible_hris_users').limit(1);
                 if (targetId) {
                     query = query.eq('id', targetId);
                 } else if (email) {
@@ -339,10 +339,15 @@ const EmployeeProfile: React.FC = () => {
             .from('hris_users')
             .update(payload)
             .eq('id', userId)
-            .select()
+            .select('id')
             .single();
         if (error) throw error;
-        return updated ? mapHrisUser(updated) : null;
+        if (!updated) return null;
+        const { data: refreshed, error: refreshError } = await supabase
+            .rpc('get_hris_user_profile', { p_user_id: userId })
+            .maybeSingle();
+        if (refreshError) throw refreshError;
+        return refreshed ? mapHrisUser(refreshed) : null;
     };
     
     const handleSubmitForApproval = async (updatedProfileData: Partial<User>) => {

@@ -11,6 +11,7 @@
     "test:job-social-generator": "node tests/jobSocialMediaPostGeneratorSmokeTest.mjs",
     "test:interview-workflow": "node tests/interviewWorkflowSmokeTest.mjs",
     "test:offer-builder": "node tests/offerBuilderSmokeTest.mjs"
+    ,"test:rbac": "node tests/rbacRepairSmokeTest.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.84.0",

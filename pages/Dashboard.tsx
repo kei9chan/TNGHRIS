@@ -1,6 +1,5 @@
 import React from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { Role } from '../types';
 import HRDashboard from '../components/dashboard/HRDashboard';
 import ManagerDashboard from '../components/dashboard/ManagerDashboard';
 // FIX: Changed to a named import as the default export was not being resolved correctly, likely due to syntax errors in the imported file.
@@ -11,25 +10,18 @@ const Dashboard: React.FC = () => {
   const { user } = useAuth();
 
   const renderDashboard = () => {
-    switch (user?.role) {
-      case Role.Admin:
-      case Role.HRManager:
-      case Role.HRStaff:
+    switch (user?.dashboardType) {
+      case 'hr':
         return <HRDashboard />;
-      case Role.BOD:
-      case Role.GeneralManager:
-      case Role.BusinessUnitManager:
-      case Role.Manager:
-      case Role.OperationsDirector:
-      case Role.FinanceStaff:
-      case Role.Recruiter:
-      case Role.Auditor:
+      case 'executive':
+      case 'admin':
+      case 'admin_it':
+      case 'manager':
         return <ManagerDashboard />;
-      case Role.Employee:
+      case 'employee':
         return <EmployeeDashboard />;
-      default:
-        return <div>Welcome! Your dashboard is being prepared.</div>;
     }
+    return <div>Welcome! Your authorized dashboard configuration is being prepared.</div>;
   };
 
   return (

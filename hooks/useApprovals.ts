@@ -26,6 +26,7 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
     const [pendingOtApprovals, setPendingOtApprovals] = useState<OTRequest[]>([]);
     const [pendingManpowerApprovals, setPendingManpowerApprovals] = useState<ManpowerRequest[]>([]);
     const [leaveTypes, setLeaveTypes] = useState<{ id: string; name: string }[]>([]);
+    const [approvalError, setApprovalError] = useState<string | null>(null);
 
     useEffect(() => {
         const loadLeaveTypes = async () => {
@@ -46,8 +47,11 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
             setPendingWfhApprovals([]);
             setPendingOtApprovals([]);
             setPendingManpowerApprovals([]);
+            setApprovalError(null);
             return;
         }
+
+        setApprovalError(null);
 
         const normalizeLeaveStatus = (status: string | null | undefined): LeaveRequestStatus => {
             const key = (status || '').toString().trim().toLowerCase();
@@ -65,8 +69,10 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
         // ---------------------------------------------------------------
         // Determine if this user is a configured GM or BOD approver
         // ---------------------------------------------------------------
-        let isGM = user.role === Role.GeneralManager;
-        let isBOD = user.role === Role.BOD;
+        const assignedRoles = new Set([user.role, ...(user.roles || [])]);
+        const isGlobalHrAuthority = assignedRoles.has(Role.BOD) || assignedRoles.has(Role.HRManager);
+        let isGM = assignedRoles.has(Role.GeneralManager);
+        let isBOD = assignedRoles.has(Role.BOD);
         let configuredBodUserIds: string[] = [];
 
         // Also check the dynamic approver config table so that users
@@ -96,8 +102,22 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
             .select('id, business_unit_id, business_unit_name, department_id, requester_id, requester_name, date_needed, forecasted_pax, general_note, items, grand_total, status, created_at, approved_by, approved_at, rejection_reason')
             .eq('status', ManpowerRequestStatus.Pending);
 
-        if (isHR) {
-            leaveQuery = leaveQuery.eq('status', 'pending').order('start_date', { ascending: false });
+        if (isGlobalHrAuthority) {
+            // Board of Director and HR Manager intentionally share one global
+            // approval queue. Keep each workflow explicit: scope alone never
+            // implies approval authority, and a failed query must remain visible.
+            leaveQuery = leaveQuery
+                .in('status', [LeaveRequestStatus.Pending, LeaveRequestStatus.PendingGM, LeaveRequestStatus.PendingBOD])
+                .order('start_date', { ascending: false });
+            wfhQuery = wfhQuery
+                .in('status', [WFHRequestStatus.PendingDeptHead, WFHRequestStatus.PendingGM, WFHRequestStatus.PendingBOD])
+                .order('created_at', { ascending: false });
+            otQuery = otQuery
+                .in('status', [OTStatus.PendingGM, OTStatus.PendingBOD])
+                .order('submitted_at', { ascending: false });
+            manpowerQuery = manpowerQuery.order('created_at', { ascending: false });
+        } else if (isHR) {
+            leaveQuery = leaveQuery.eq('status', LeaveRequestStatus.Pending).order('start_date', { ascending: false });
             wfhQuery = wfhQuery.eq('status', WFHRequestStatus.ForTimekeeping).order('created_at', { ascending: false });
             manpowerQuery = manpowerQuery.eq('status', ManpowerRequestStatus.Pending).order('created_at', { ascending: false });
             if (reporteeIds.length > 0) {
@@ -154,6 +174,21 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
             skipManpower ? Promise.resolve(emptyResult) : manpowerQuery,
         ]);
 
+        const queryFailures = [
+            ['Leave', leaveRes.error],
+            ['WFH', wfhRes.error],
+            ['Overtime', otRes.error],
+            ['Manpower', manpowerRes.error],
+        ].filter(([, error]) => Boolean(error)) as Array<[string, { message?: string }]>;
+
+        if (queryFailures.length) {
+            const diagnostic = queryFailures
+                .map(([workflow, error]) => `${workflow}: ${error.message || 'query failed'}`)
+                .join(' | ');
+            console.error('Pending approvals could not be loaded:', diagnostic);
+            setApprovalError(`Pending approvals could not be loaded. ${diagnostic}`);
+        }
+
         if (!leaveRes.error && leaveRes.data) {
             const mapped = leaveRes.data.map((row: any) => ({
                 id: row.id,
@@ -179,8 +214,6 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
                 r.status === LeaveRequestStatus.PendingGM ||
                 r.status === LeaveRequestStatus.PendingBOD
             ));
-        } else {
-            setPendingLeaveApprovals([]);
         }
 
         if (!wfhRes.error && wfhRes.data) {
@@ -199,8 +232,6 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
                 createdAt: row.created_at ? new Date(row.created_at) : new Date(),
             }));
             setPendingWfhApprovals(mapped);
-        } else {
-            setPendingWfhApprovals([]);
         }
 
         if (!otRes.error && otRes.data) {
@@ -221,8 +252,6 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
                     attachmentUrl: row.attachment_url ?? undefined,
                 }))
             );
-        } else {
-            setPendingOtApprovals([]);
         }
 
         if (!manpowerRes.error && manpowerRes.data) {
@@ -246,8 +275,6 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
                     rejectionReason: row.rejection_reason || undefined,
                 }))
             );
-        } else {
-            setPendingManpowerApprovals([]);
         }
     }, [user, isHR, reporteeIds]);
 
@@ -611,6 +638,7 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
         pendingOtApprovals,
         pendingManpowerApprovals,
         leaveTypes,
+        approvalError,
         handleLeaveApproval,
         handleApproveWFH,
         handleRejectWFH,
@@ -620,4 +648,3 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
         refreshApprovals: fetchApprovals
     };
 }
-

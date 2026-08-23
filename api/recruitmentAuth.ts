@@ -5,7 +5,7 @@ const getEnv = (key: string) => {
   return value && value.trim().length > 0 ? value.trim() : null;
 };
 
-const recruitmentRoles = new Set(['Admin', 'HR Manager', 'HR Staff', 'Recruiter']);
+const recruitmentRoles = new Set(['HR Manager', 'HR Staff', 'Board of Director']);
 
 export const getBearerToken = (req: any) => {
   const header = req?.headers?.authorization || req?.headers?.Authorization || '';

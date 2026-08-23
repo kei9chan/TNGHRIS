@@ -37,11 +37,15 @@ class UserRepo {
             position: newUser.position || null,
         };
 
-        const { data, error } = await supabase.from('hris_users').insert(payload).select().single();
+        const { data, error } = await supabase.from('hris_users').insert(payload).select('id').single();
         if (error) { console.error('Create user failed:', error.message); return null; }
 
         await writeAuditLog(actor, 'CREATE', 'User', data.id, `Created new user: ${newUser.name} (${newUser.email})`);
-        return data as unknown as User;
+        const { data: created, error: readError } = await supabase
+            .rpc('get_hris_user_profile', { p_user_id: data.id })
+            .maybeSingle();
+        if (readError) { console.error('Read created user failed:', readError.message); return null; }
+        return created as unknown as User;
     }
 
     async update(actor: User, userId: string, updates: Partial<User>): Promise<boolean> {

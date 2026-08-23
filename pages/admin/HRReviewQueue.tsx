@@ -114,13 +114,14 @@ const HRReviewQueue: React.FC = () => {
         const loadPendingUsers = async () => {
             try {
                 const { data, error } = await supabase
-                    .from('hris_users')
+                    .rpc('get_accessible_hris_users')
                     .select('id, full_name, email, role, status, position, department, business_unit, birth_date')
                     .eq('status', 'Inactive');
                 if (error) throw error;
                 if (data) {
+                    const rows = Array.isArray(data) ? data : [data];
                     setPendingUsers(
-                        data.map((u: any) => ({
+                        rows.map((u: any) => ({
                             id: u.id,
                             name: formatEmployeeName(u.full_name || u.email || 'Unknown'),
                             email: u.email,

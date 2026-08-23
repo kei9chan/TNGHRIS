@@ -66,7 +66,7 @@ const Announcements: React.FC = () => {
     }, []);
 
     const visibleAnnouncements = useMemo(() => {
-        if (!user) return [];
+        if (!user || !announcementAccess.canView) return [];
 
         const userBuId = user.businessUnitId || businessUnits.find(bu => bu.name === user.businessUnit)?.id;
         const userDept = user.department;
@@ -77,23 +77,15 @@ const Announcements: React.FC = () => {
                 const groupMatch = a.targetGroup === 'All' || a.targetGroup === userDept;
 
                 // Scope-based BU/Dept checks
-                if (scope === 'global' || scope === 'logs') return groupMatch;
-                if (scope === 'buDept') {
-                    const buMatch = !a.businessUnitId || a.businessUnitId === userBuId;
-                    return groupMatch && buMatch;
-                }
-                if (scope === 'bu' || scope === 'ownBu') {
-                    return !a.businessUnitId || a.businessUnitId === userBuId;
-                }
-                if (scope === 'team') {
-                    // Reuse BU match; team granularity is minimal here
+                if (scope === 'global') return groupMatch;
+                if (scope === 'bu' || scope === 'dept' || scope === 'team' || scope === 'self') {
                     return !a.businessUnitId || a.businessUnitId === userBuId;
                 }
                 // none -> no access
                 return false;
             })
             .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    }, [announcements, user, businessUnits, scope]);
+    }, [announcements, user, businessUnits, scope, announcementAccess.canView]);
 
     const handleNewAnnouncement = () => {
         setSelectedAnnouncement(null);
