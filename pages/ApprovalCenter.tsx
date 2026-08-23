@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../services/supabaseClient';
 import { useAuth } from '../hooks/useAuth';
 import { useApprovals } from '../hooks/useApprovals';
@@ -26,6 +26,7 @@ const fmtDate = (d: Date) => d.toLocaleDateString('en-PH', { month: 'short', day
 const dayAge = (d: Date) => Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
 
 export default function ApprovalCenter() {
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const roles = new Set([user?.role, ...(user?.roles || [])].filter(Boolean));
   const isHR = roles.has(Role.HRStaff);
@@ -39,9 +40,17 @@ export default function ApprovalCenter() {
   const [confirmed, setConfirmed] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [filters, setFilters] = useState({ search: '', businessUnit: '', department: '', kind: '', exception: '', age: '', quick: 'all' });
+  const [filters, setFilters] = useState({ search: '', businessUnit: '', department: '', kind: '', exception: '', age: '', dateFrom: '', dateTo: '', quick: 'all' });
 
   const approvals = useApprovals({ user, isHR, reporteeIds });
+
+  useEffect(() => {
+    const requestedType = searchParams.get('type');
+    const requestedReview = searchParams.get('review');
+    const kind = requestedType === 'manpower' ? 'manpower' : requestedType === 'leave' || requestedType === 'wfh' || requestedType === 'overtime' || requestedType === 'requisition' ? requestedType : '';
+    const exception = requestedReview === 'exceptions' || requestedReview === 'eligible' ? requestedReview : '';
+    if (kind || exception) setFilters(current => ({ ...current, kind, exception }));
+  }, [searchParams]);
 
   useEffect(() => {
     if (!user) return;
@@ -105,6 +114,8 @@ export default function ApprovalCenter() {
     if(filters.kind && item.kind!==filters.kind) return false;
     if(filters.exception==='exceptions' && !item.exception) return false;
     if(filters.exception==='eligible' && item.exception) return false;
+    if(filters.dateFrom && item.start < new Date(`${filters.dateFrom}T00:00:00`)) return false;
+    if(filters.dateTo && item.start > new Date(`${filters.dateTo}T23:59:59`)) return false;
     if(filters.age==='today' && age!==0) return false;
     if(filters.age==='overdue' && age<3) return false;
     if(filters.quick==='eligible' && item.exception) return false;
@@ -137,6 +148,11 @@ export default function ApprovalCenter() {
       {[['Pending approvals',filtered.length,'bg-blue-50 text-blue-700'],['Exceptions requiring review',exceptionCount,'bg-amber-50 text-amber-700'],['Approval groups',groups.length,'bg-emerald-50 text-emerald-700']].map(([label,value,color])=><div key={String(label)} className="rounded-xl border bg-white p-5 shadow-sm dark:bg-slate-800"><div className={`inline-flex rounded-lg px-3 py-1 text-2xl font-bold ${color}`}>{value}</div><p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{label}</p></div>)}
     </div>
     <div className="rounded-xl border bg-white p-4 shadow-sm dark:bg-slate-800">
+      <div className="mb-3 grid gap-3 sm:grid-cols-3">
+        <label className="text-sm font-semibold text-slate-700">Date from<input type="date" aria-label="Date from" value={filters.dateFrom} onChange={e=>setFilters({...filters,dateFrom:e.target.value})} className="mt-1 block w-full rounded-lg border px-3 py-2 font-normal" /></label>
+        <label className="text-sm font-semibold text-slate-700">Date to<input type="date" aria-label="Date to" value={filters.dateTo} onChange={e=>setFilters({...filters,dateTo:e.target.value})} className="mt-1 block w-full rounded-lg border px-3 py-2 font-normal" /></label>
+        <label className="text-sm font-semibold text-slate-700">Approver scope<select aria-label="Approver scope" disabled className="mt-1 block w-full rounded-lg border bg-slate-50 px-3 py-2 font-normal"><option>My authorized scope</option></select></label>
+      </div>
       <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-7">
         <input aria-label="Employee search" value={filters.search} onChange={e=>setFilters({...filters,search:e.target.value})} placeholder="Search employee or ID" className="rounded-lg border px-3 py-2 md:col-span-2" />
         <select aria-label="Business unit" value={filters.businessUnit} onChange={e=>setFilters({...filters,businessUnit:e.target.value})} className="rounded-lg border px-3 py-2"><option value="">All business units</option>{businessUnits.map(([id,name])=><option key={id} value={id}>{name}</option>)}</select>
