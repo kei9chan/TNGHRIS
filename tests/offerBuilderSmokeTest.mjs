@@ -5,6 +5,10 @@ const builder = fs.readFileSync('components/recruitment/OfferCreationDrawer.tsx'
 const offers = fs.readFileSync('pages/recruitment/Offers.tsx', 'utf8');
 const publicOffer = fs.readFileSync('supabase/functions/public-offer/index.ts', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/20260822060000_offer_value_builder.sql', 'utf8');
+const acceptanceMigration = fs.readFileSync('supabase/migrations/20260823075607_complete_offer_acceptance_workflow.sql', 'utf8');
+const candidatePage = fs.readFileSync('pages/OfferResponse.tsx', 'utf8');
+const appearance = fs.readFileSync('components/recruitment/OfferAppearanceEditor.tsx', 'utf8');
+const document = fs.readFileSync('components/recruitment/OfferDocument.tsx', 'utf8');
 
 for (const label of ['Role & Job Details', 'Compensation', 'Schedule & Location', 'Benefits & Growth', 'Review & Send']) assert.match(builder, new RegExp(label.replace('&', '\\&')));
 for (const behavior of ['localStorage', 'beforeunload', 'Saving…', 'Draft saved just now', 'Unable to save. Retry', 'Save Draft', 'Preview Offer', 'Send Offer']) assert.ok(builder.includes(behavior), `Missing ${behavior}`);
@@ -17,6 +21,15 @@ assert.match(offers, /\/api\/recruitment-email/);
 assert.match(offers, /status: OfferStatus\.Sent/);
 assert.match(publicOffer, /\.eq\('secure_token', token\)/);
 assert.match(publicOffer, /\['accept', 'decline'\]/);
+for (const feature of ['Draw Signature', 'Type Signature', 'Submit Signature', 'electronic signature is legally binding', 'Confirm Decline', 'Download signed offer']) assert.ok(candidatePage.includes(feature), `Missing candidate feature: ${feature}`);
+for (const feature of ['Primary color', 'Accent color', 'Page background', 'Font family', 'Button style', 'Card style', 'Section layout']) assert.ok(appearance.includes(feature), `Missing appearance setting: ${feature}`);
+assert.match(document, /Page \{number\} of 3/);
+assert.match(publicOffer, /status: 'Accepted'/);
+assert.match(publicOffer, /status: 'Signed'/);
+assert.match(publicOffer, /signed-offers/);
+assert.match(publicOffer, /Offer declined/);
+assert.match(acceptanceMigration, /accepted_at timestamptz/);
+assert.match(acceptanceMigration, /signed_pdf_path text/);
 assert.match(migration, /offer_details jsonb/);
 assert.match(migration, /enable row level security/);
 assert.match(migration, /file_size_limit/);

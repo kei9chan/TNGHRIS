@@ -10,14 +10,17 @@ export interface EnrichedOffer extends Offer {
 interface OfferTableProps {
     offers: EnrichedOffer[];
     onViewDetails: (offer: EnrichedOffer) => void;
+    onEditDraft?: (offer: EnrichedOffer) => void;
 }
 
 const getStatusColor = (status: OfferStatus) => {
     switch (status) {
         case OfferStatus.Signed:
+        case OfferStatus.Accepted:
         case OfferStatus.Converted:
             return 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300';
         case OfferStatus.Sent: 
+        case OfferStatus.Viewed:
             return 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300';
         case OfferStatus.Declined:
         case OfferStatus.Expired: 
@@ -27,7 +30,7 @@ const getStatusColor = (status: OfferStatus) => {
     }
 };
 
-const OfferTable: React.FC<OfferTableProps> = ({ offers, onViewDetails }) => {
+const OfferTable: React.FC<OfferTableProps> = ({ offers, onViewDetails, onEditDraft }) => {
     return (
          <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -56,7 +59,7 @@ const OfferTable: React.FC<OfferTableProps> = ({ offers, onViewDetails }) => {
                                 </span>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                <Button size="sm" variant="secondary" onClick={() => onViewDetails(offer)}>View Details</Button>
+                                <div className="flex justify-end gap-2">{offer.status === OfferStatus.Draft && onEditDraft && <Button size="sm" onClick={() => onEditDraft(offer)}>Edit Draft</Button>}<Button size="sm" variant="secondary" onClick={() => onViewDetails(offer)}>View Details</Button></div>
                             </td>
                         </tr>
                     ))}

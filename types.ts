@@ -1835,6 +1835,8 @@ export interface InterviewFeedback {
 export enum OfferStatus {
   Draft = 'Draft',
   Sent = 'Sent',
+  Viewed = 'Viewed',
+  Accepted = 'Accepted',
   Signed = 'Signed',
   Declined = 'Declined',
   Expired = 'Expired',
@@ -1880,6 +1882,16 @@ export interface Offer {
   emailMessage?: string;
   secureToken?: string;
   revision?: number;
+  viewedAt?: Date;
+  acceptedAt?: Date;
+  signedAt?: Date;
+  declinedAt?: Date;
+  declineReason?: string;
+  signatureName?: string;
+  signatureType?: 'typed' | 'drawn';
+  signaturePath?: string;
+  signedPdfPath?: string;
+  requireSignature?: boolean;
 }
 
 export interface OfferListItem {
@@ -1947,6 +1959,25 @@ export interface OfferBuilderDetails {
   workScheduleHours?: string;
   welcomeMessage?: string;
   termsReviewed?: boolean;
+  requireSignature?: boolean;
+  appearance?: OfferAppearance;
+}
+
+export interface OfferAppearance {
+  preset?: string;
+  headerContent?: string;
+  offerTitle?: string;
+  footerContent?: string;
+  primaryColor?: string;
+  accentColor?: string;
+  textColor?: string;
+  pageBackgroundColor?: string;
+  backgroundImageUrl?: string;
+  backgroundImagePath?: string;
+  fontFamily?: 'Inter' | 'Georgia' | 'Arial' | 'Poppins';
+  buttonStyle?: 'Rounded' | 'Pill' | 'Square';
+  cardStyle?: 'Soft' | 'Outlined' | 'Flat';
+  sectionLayout?: 'Cards' | 'Classic' | 'Compact';
 }
 
 // Visual Job Post Template Types

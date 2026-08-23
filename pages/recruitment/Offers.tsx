@@ -30,6 +30,7 @@ const Offers: React.FC = () => {
   const [isCreationDrawerOpen, setIsCreationDrawerOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedOffer, setSelectedOffer] = useState<EnrichedOffer | null>(null);
+  const [editingOffer, setEditingOffer] = useState<EnrichedOffer | null>(null);
   const [successMessage, setSuccessMessage] = useState('');
 
   const canManage = can('Offers', Permission.Manage);
@@ -60,6 +61,16 @@ const Offers: React.FC = () => {
     emailMessage: row.email_message || undefined,
     secureToken: row.secure_token || undefined,
     revision: row.revision || 1,
+    viewedAt: row.viewed_at ? new Date(row.viewed_at) : undefined,
+    acceptedAt: row.accepted_at ? new Date(row.accepted_at) : undefined,
+    signedAt: row.signed_at ? new Date(row.signed_at) : undefined,
+    declinedAt: row.declined_at ? new Date(row.declined_at) : undefined,
+    declineReason: row.decline_reason || undefined,
+    signatureName: row.signature_name || undefined,
+    signatureType: row.signature_type || undefined,
+    signaturePath: row.signature_path || undefined,
+    signedPdfPath: row.signed_pdf_path || undefined,
+    requireSignature: row.require_signature !== false,
     // Optional fields not in table
     workScheduleDays: '',
     workScheduleHours: '',
@@ -174,6 +185,7 @@ const Offers: React.FC = () => {
       setIsDetailModalOpen(true);
     } else {
       setSelectedOffer(null);
+      setEditingOffer(null);
       setIsCreationDrawerOpen(true);
     }
   };
@@ -182,6 +194,7 @@ const Offers: React.FC = () => {
     setIsCreationDrawerOpen(false);
     setIsDetailModalOpen(false);
     setSelectedOffer(null);
+    setEditingOffer(null);
   };
 
   const handleSaveOffer = async (offerToSave: Offer): Promise<Offer> => {
@@ -207,6 +220,7 @@ const Offers: React.FC = () => {
       email_subject: offerToSave.emailSubject || null,
       email_message: offerToSave.emailMessage || null,
       created_by_user_id: user?.id || null,
+      require_signature: offerToSave.requireSignature !== false,
     };
     try {
       if (offerToSave.id) {
@@ -217,11 +231,13 @@ const Offers: React.FC = () => {
         logActivity(user, 'UPDATE', 'Offer', mapped.id, `Updated offer ${mapped.offerNumber}`);
         return mapped;
       } else {
-        const { data, error } = await supabase.from('job_offers').insert(payload).select().single();
+        const { data: existingDraft } = await supabase.from('job_offers').select('id').eq('application_id', offerToSave.applicationId).eq('status', OfferStatus.Draft).order('updated_at', { ascending: false }).limit(1).maybeSingle();
+        const request = existingDraft?.id ? supabase.from('job_offers').update(payload).eq('id', existingDraft.id) : supabase.from('job_offers').insert(payload);
+        const { data, error } = await request.select().single();
         if (error) throw error;
         const mapped = mapOffer(data);
-        setOffers(prev => [mapped, ...prev]);
-        logActivity(user, 'CREATE', 'Offer', mapped.id, `Created offer ${mapped.offerNumber}`);
+        setOffers(prev => existingDraft?.id ? prev.map(item => item.id === mapped.id ? mapped : item) : [mapped, ...prev]);
+        logActivity(user, existingDraft?.id ? 'UPDATE' : 'CREATE', 'Offer', mapped.id, `${existingDraft?.id ? 'Updated' : 'Created'} offer ${mapped.offerNumber}`);
         return mapped;
       }
     } catch (err) {
@@ -238,7 +254,7 @@ const Offers: React.FC = () => {
     const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
     if (sessionError || !sessionData.session?.access_token) throw new Error('Your session has expired. Please sign in again.');
     const secureLink = `${window.location.origin}/offer/${draft.secureToken}`;
-    const html = `${previewHtml}<p style="margin-top:24px"><a href="${secureLink}" style="background:#6d28d9;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600">Review Your Offer</a></p><p style="color:#64748b;font-size:12px">This is a private link intended for the named recipient.</p>`;
+    const html = `${previewHtml}<p style="margin-top:24px"><a href="${secureLink}" style="background:#6d28d9;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600">View and Respond to Offer</a></p><p style="color:#64748b;font-size:12px">This is a private link intended for the named recipient.</p>`;
     const response = await fetch('/api/recruitment-email', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionData.session.access_token}` },
@@ -249,7 +265,7 @@ const Offers: React.FC = () => {
       throw new Error(body?.error || 'The draft was saved, but the offer email could not be sent.');
     }
     const sentAt = new Date().toISOString();
-    const { data, error } = await supabase.from('job_offers').update({ status: OfferStatus.Sent, sent_at: sentAt, sent_by_user_id: user?.id || null, last_saved_at: sentAt, recipient_email: recipient, email_subject: subject.trim(), email_message: message.trim() }).eq('id', draft.id).select().single();
+    const { data, error } = await supabase.from('job_offers').update({ status: OfferStatus.Sent, sent_at: sentAt, sent_by_user_id: user?.id || null, last_saved_at: sentAt, recipient_email: recipient, email_subject: subject.trim(), email_message: message.trim(), require_signature: offerToSend.requireSignature !== false }).eq('id', draft.id).select().single();
     if (error) throw new Error(`The email was sent, but the offer status could not be updated: ${error.message}`);
     const mapped = mapOffer(data);
     setOffers(previous => previous.map(item => item.id === mapped.id ? mapped : item));
@@ -318,7 +334,7 @@ const Offers: React.FC = () => {
           )}
 
           <Card>
-            {isLoading ? <div className="p-6 text-gray-500">Loading offers...</div> : <OfferTable offers={enrichedOffers} onViewDetails={handleOpenModal} />}
+            {isLoading ? <div className="p-6 text-gray-500">Loading offers...</div> : <OfferTable offers={enrichedOffers} onViewDetails={handleOpenModal} onEditDraft={offer => { setEditingOffer(offer); setSelectedOffer(null); setIsDetailModalOpen(false); setIsCreationDrawerOpen(true); }} />}
           </Card>
 
           {isCreationDrawerOpen && (
@@ -333,6 +349,7 @@ const Offers: React.FC = () => {
               businessUnits={businessUnits}
               departments={departments}
               businessUnitLogos={businessUnitLogos}
+              initialOffer={editingOffer}
             />
           )}
 
@@ -343,6 +360,7 @@ const Offers: React.FC = () => {
               offer={selectedOffer}
               onStatusChange={handleStatusChange}
               onConvertToEmployee={handleConvertToEmployee}
+              onEdit={offer => { setEditingOffer(offer); setIsDetailModalOpen(false); setIsCreationDrawerOpen(true); }}
             />
           )}
         </>
