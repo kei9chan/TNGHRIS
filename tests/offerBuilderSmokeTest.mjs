@@ -13,6 +13,7 @@ const document = fs.readFileSync('components/recruitment/OfferDocument.tsx', 'ut
 const detailModal = fs.readFileSync('components/recruitment/OfferDetailModal.tsx', 'utf8');
 const pdf = fs.readFileSync('components/recruitment/offerPdf.ts', 'utf8');
 const stepSixMigration = fs.readFileSync('supabase/migrations/20260823103000_allow_offer_builder_step_six.sql', 'utf8');
+const atomicAcceptanceMigration = fs.readFileSync('supabase/migrations/20260823170000_atomic_signed_offer_acceptance.sql', 'utf8');
 const authContext = fs.readFileSync('context/AuthContext.tsx', 'utf8');
 
 for (const label of ['Role & Job Details', 'Compensation', 'Schedule & Location', 'Benefits & Growth', 'Review & Send']) assert.match(builder, new RegExp(label.replace('&', '\\&')));
@@ -37,13 +38,15 @@ assert.match(stepSixMigration, /between 1 and 6/);
 assert.doesNotMatch(authContext, /Connect Google is not implemented in Supabase yet/);
 assert.match(publicOffer, /\.eq\('secure_token', token\)/);
 assert.match(publicOffer, /\['accept', 'decline'\]/);
-for (const feature of ['Draw Signature', 'Type Signature', 'Submit Signature', 'electronic signature is legally binding', 'Confirm Decline', 'Download signed offer']) assert.ok(candidatePage.includes(feature), `Missing candidate feature: ${feature}`);
+for (const feature of ['Draw Signature', 'Type Signature', 'Submit Signature', 'electronic signature is legally binding', 'Confirm Decline', 'Download Signed Offer', 'page="continuous"', 'Offer accepted and signed', 'Contract Signing', 'Onboarding']) assert.ok(candidatePage.includes(feature), `Missing candidate feature: ${feature}`);
+assert.doesNotMatch(candidatePage, /Page \{page\} of 3|setPage\(/);
 for (const feature of ['Primary color', 'Accent color', 'Page background', 'Font family', 'Button style', 'Card style', 'Section layout']) assert.ok(appearance.includes(feature), `Missing appearance setting: ${feature}`);
 assert.match(branding, /isLegacyGenericTheme/);
 assert.match(appearance, /customized: true/);
 assert.match(document, /Page \{number\} of 3/);
-assert.match(publicOffer, /status: 'Accepted'/);
-assert.match(publicOffer, /status: 'Signed'/);
+assert.match(publicOffer, /accept_and_sign_job_offer/);
+assert.match(publicOffer, /status: 'Accepted and Signed'/);
+assert.match(publicOffer, /sendGoogleEmail/);
 assert.match(publicOffer, /signed-offers/);
 assert.match(publicOffer, /Offer declined/);
 assert.match(acceptanceMigration, /accepted_at timestamptz/);
@@ -53,5 +56,8 @@ assert.match(migration, /enable row level security/);
 assert.match(migration, /file_size_limit/);
 assert.match(migration, /false,\n\s+2097152/);
 assert.match(migration, /revoke all on function public\.capture_job_offer_history/);
+assert.match(atomicAcceptanceMigration, /'Accepted and Signed'/);
+assert.match(atomicAcceptanceMigration, /security invoker/);
+assert.match(atomicAcceptanceMigration, /revoke all on function public\.accept_and_sign_job_offer/);
 
 console.log('Offer builder smoke test passed.');

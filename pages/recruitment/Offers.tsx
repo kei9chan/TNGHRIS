@@ -8,7 +8,7 @@ import { usePermissions } from '../../hooks/usePermissions';
 import { useAuth } from '../../hooks/useAuth';
 import { useSettings } from '../../context/SettingsContext';
 import EditableDescription from '../../components/ui/EditableDescription';
-import OfferTable, { EnrichedOffer } from '../../components/recruitment/OfferTable';
+import OfferTable, { EnrichedOffer, offerStatusLabel } from '../../components/recruitment/OfferTable';
 import OfferCreationDrawer from '../../components/recruitment/OfferCreationDrawer';
 import OfferDetailModal from '../../components/recruitment/OfferDetailModal';
 import { logActivity } from '../../services/auditService';
@@ -40,6 +40,8 @@ const Offers: React.FC = () => {
   const [templates, setTemplates] = useState<OfferTemplate[]>([]);
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [initialTemplate, setInitialTemplate] = useState<OfferTemplate | null>(null);
+  const [businessUnitFilter, setBusinessUnitFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const canManage = can('Offers', Permission.Manage);
   const canView = can('Offers', Permission.View) || canManage;
@@ -181,6 +183,12 @@ const Offers: React.FC = () => {
   }, [loadData]);
 
   useEffect(() => {
+    if (!canView) return;
+    const channel = supabase.channel('recruitment-offer-statuses').on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'job_offers' }, () => { void loadData(); }).subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [canView, loadData]);
+
+  useEffect(() => {
     const templateId = searchParams.get('template');
     if (!templateId || !templates.length) return;
     const template = templates.find(item => item.id === templateId);
@@ -195,10 +203,22 @@ const Offers: React.FC = () => {
       return {
         ...offer,
         candidateName: candidate ? `${candidate.firstName} ${candidate.lastName}` : 'N/A',
+        candidateEmail: candidate?.email,
         jobTitle: requisition?.title || 'N/A',
+        businessUnitId: requisition?.businessUnitId,
+        businessUnitName: businessUnits.find(unit => unit.id === requisition?.businessUnitId)?.name || offer.offerDetails?.businessUnit || '—',
+        departmentName: departments.find(department => department.id === requisition?.departmentId)?.name || offer.offerDetails?.department || '—',
       };
     }).sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
-  }, [offers, applications, candidates, requisitions]);
+  }, [offers, applications, candidates, requisitions, businessUnits, departments]);
+
+  const filteredOffers = useMemo(() => enrichedOffers.filter(offer => {
+    const matchesUnit = businessUnitFilter === 'all' || offer.businessUnitId === businessUnitFilter;
+    const matchesStatus = statusFilter === 'all'
+      || (statusFilter === OfferStatus.AcceptedAndSigned && [OfferStatus.Signed, OfferStatus.AcceptedAndSigned].includes(offer.status))
+      || offer.status === statusFilter;
+    return matchesUnit && matchesStatus;
+  }), [enrichedOffers, businessUnitFilter, statusFilter]);
 
   const handleOpenModal = (offer: EnrichedOffer | null) => {
     if (offer) {
@@ -368,6 +388,8 @@ const Offers: React.FC = () => {
         <>
           <EditableDescription descriptionKey="recruitmentOffersDesc" />
 
+          <Card><div className="space-y-4 p-4 sm:p-5"><div><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Business unit</p><div className="mt-2 flex flex-wrap gap-2"><button onClick={() => setBusinessUnitFilter('all')} className={`rounded-full border px-4 py-2 text-sm font-semibold ${businessUnitFilter === 'all' ? 'border-violet-600 bg-violet-600 text-white' : 'bg-white text-slate-700'}`}>All Business Units</button>{businessUnits.map(unit => <button key={unit.id} onClick={() => setBusinessUnitFilter(unit.id)} className={`rounded-full border px-4 py-2 text-sm font-semibold ${businessUnitFilter === unit.id ? 'border-violet-600 bg-violet-600 text-white' : 'bg-white text-slate-700'}`}>{unit.name}</button>)}</div></div><div><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Offer status</p><div className="mt-2 flex flex-wrap gap-2">{['all', OfferStatus.Draft, OfferStatus.Sent, OfferStatus.Viewed, OfferStatus.AcceptedAndSigned, OfferStatus.Declined, OfferStatus.Expired].map(status => <button key={status} onClick={() => setStatusFilter(status)} className={`rounded-full border px-3 py-1.5 text-sm font-semibold ${statusFilter === status ? 'border-slate-900 bg-slate-900 text-white' : 'bg-white text-slate-700'}`}>{status === 'all' ? 'All Statuses' : offerStatusLabel(status)}</button>)}</div></div></div></Card>
+
           {successMessage && (
             <div className="p-4 rounded-md bg-green-50 dark:bg-green-900/40 border border-green-400 dark:border-green-800">
               <p className="text-sm text-green-700 dark:text-green-200">{successMessage}</p>
@@ -375,7 +397,7 @@ const Offers: React.FC = () => {
           )}
 
           <Card>
-            {isLoading ? <div className="p-6 text-gray-500">Loading offers...</div> : <OfferTable offers={enrichedOffers} onViewDetails={handleOpenModal} onEditDraft={offer => { setEditingOffer(offer); setSelectedOffer(null); setIsDetailModalOpen(false); setIsCreationDrawerOpen(true); }} />}
+            {isLoading ? <div className="p-6 text-gray-500">Loading offers...</div> : <OfferTable offers={filteredOffers} onViewDetails={handleOpenModal} onEditDraft={offer => { setEditingOffer(offer); setSelectedOffer(null); setIsDetailModalOpen(false); setIsCreationDrawerOpen(true); }} />}
           </Card>
 
           {isCreationDrawerOpen && (

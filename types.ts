@@ -1838,6 +1838,7 @@ export enum OfferStatus {
   Viewed = 'Viewed',
   Accepted = 'Accepted',
   Signed = 'Signed',
+  AcceptedAndSigned = 'Accepted and Signed',
   Declined = 'Declined',
   Expired = 'Expired',
   Converted = 'Converted to Employee',
@@ -1998,6 +1999,18 @@ export interface OfferBuilderDetails {
   requireSignature?: boolean;
   appearance?: OfferAppearance;
   sectionConfig?: OfferSectionConfig[];
+  welcomeEmail?: {
+    subject?: string;
+    message?: string;
+    status?: 'draft' | 'sending' | 'sent' | 'failed' | string;
+    recipient?: string;
+    senderName?: string;
+    senderEmail?: string;
+    sentAt?: string;
+    attemptedAt?: string;
+    error?: string;
+    provider?: string;
+  };
 }
 
 export interface OfferAppearance {

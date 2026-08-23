@@ -146,7 +146,7 @@ const RecruitmentAnalytics: React.FC = () => {
         });
         
         const sentOrBeyond = relevantOffers.filter(o => o.status !== OfferStatus.Draft);
-        const accepted = sentOrBeyond.filter(o => [OfferStatus.Signed, OfferStatus.Converted].includes(o.status)).length;
+        const accepted = sentOrBeyond.filter(o => [OfferStatus.Signed, OfferStatus.AcceptedAndSigned, OfferStatus.Converted].includes(o.status)).length;
         const declined = sentOrBeyond.filter(o => o.status === OfferStatus.Declined).length;
         
         const total = accepted + declined;

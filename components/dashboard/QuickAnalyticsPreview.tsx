@@ -131,7 +131,7 @@ const QuickAnalyticsPreview: React.FC = () => {
             return app && new Date(app.updatedAt) >= dateRange.start && new Date(app.updatedAt) <= dateRange.end;
         });
         const sentOffers = offersInPeriod.filter(o => o.status !== OfferStatus.Draft);
-        const acceptedCount = sentOffers.filter(o => [OfferStatus.Signed, OfferStatus.Converted].includes(o.status)).length;
+        const acceptedCount = sentOffers.filter(o => [OfferStatus.Signed, OfferStatus.AcceptedAndSigned, OfferStatus.Converted].includes(o.status)).length;
         const acceptanceRate = sentOffers.length > 0 ? (acceptedCount / sentOffers.length) * 100 : 0;
         return { timeToFill: `${timeToFill} days`, acceptanceRate: acceptanceRate.toFixed(1) + '%' };
     }, [applications, requisitions, offers, dateRange]);
