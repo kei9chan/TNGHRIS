@@ -1,41 +1,36 @@
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Award, User, BusinessUnit } from '../../types';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Textarea from '../ui/Textarea';
 import EmployeeMultiSelect from '../feedback/EmployeeMultiSelect';
 import CertificateRenderer from './CertificateRenderer';
-import html2canvas from 'html2canvas';
 import { fetchAwardTemplates } from '../../services/awardService';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
-import { useAuth } from '../../hooks/useAuth';
 
 interface AssignAwardModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onAssign: (employeeId: string, awardId: string, notes: string, businessUnitId: string, approvers: User[], certificateUrl: string) => void;
+    onAssign: (employeeId: string, awardId: string, notes: string, businessUnitId: string, departmentId: string, approvers: User[]) => Promise<void> | void;
     employees: User[];
     businessUnits: BusinessUnit[];
     awardTemplates: Award[];
 }
 
 const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, onAssign, employees, businessUnits, awardTemplates }) => {
-    const { user } = useAuth();
     const [step, setStep] = useState<'details' | 'preview'>('details');
     const [employeeId, setEmployeeId] = useState('');
     const [awardId, setAwardId] = useState('');
     const [notes, setNotes] = useState('');
     const [businessUnitId, setBusinessUnitId] = useState('');
+    const [departmentId, setDepartmentId] = useState('');
     const [selectedApprovers, setSelectedApprovers] = useState<User[]>([]);
     const [isGenerating, setIsGenerating] = useState(false);
     const [templates, setTemplates] = useState<Award[]>(awardTemplates);
     const [people, setPeople] = useState<User[]>(employees);
     const [bus, setBus] = useState<BusinessUnit[]>(businessUnits);
-
-    // Ref for the certificate container (on-screen preview and capture)
-    const certificateRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const loadData = async () => {
@@ -46,7 +41,7 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
             try {
                 const { data: userRows } = await supabase
                     .from('hris_users')
-                    .select('id, full_name, email, role, position, business_unit, business_unit_id, status');
+                    .select('id, full_name, email, role, position, business_unit, business_unit_id, department, department_id, status');
                 if (userRows) {
                     loadedPeople = userRows.map((u: any) => ({
                         id: u.id,
@@ -54,9 +49,9 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
                         name: formatEmployeeName(u.full_name || u.email || 'Unknown'),
                         email: u.email,
                         role: u.role,
-                        department: '',
+                        department: u.department || '',
                         businessUnit: u.business_unit || '',
-                        departmentId: undefined,
+                        departmentId: u.department_id || undefined,
                         businessUnitId: u.business_unit_id || undefined,
                         status: (u.status as 'Active' | 'Inactive') || 'Active',
                         isPhotoEnrolled: false,
@@ -110,6 +105,7 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
                     firstEmployee?.businessUnitId ||
                     '';
                 setBusinessUnitId(buId || '');
+                setDepartmentId(firstEmployee?.departmentId || '');
                 setNotes('');
                 setSelectedApprovers([]);
             });
@@ -117,14 +113,41 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen]);
 
-    // Update BU when employee changes
     useEffect(() => {
-        if (employeeId) {
-            const employee = people.find(u => u.id === employeeId) || employees.find(u => u.id === employeeId);
-            const bu = bus.find(b => b.id === employee?.businessUnitId) || bus.find(b => b.name === employee?.businessUnit);
-            if (bu && bu.id !== businessUnitId) setBusinessUnitId(bu.id);
-        }
-    }, [employeeId, people, employees, bus, businessUnitId]);
+        const selectedEmployeeRecord = people.find(candidate => candidate.id === employeeId) || employees.find(candidate => candidate.id === employeeId);
+        const templateBusinessUnitId = businessUnitId || selectedEmployeeRecord?.businessUnitId;
+        if (!templateBusinessUnitId) return;
+        const preferred = (templates.length ? templates : awardTemplates).find(
+            template => template.isActive && template.isDefault && template.businessUnitId === templateBusinessUnitId
+        );
+        if (preferred) setAwardId(preferred.id);
+    }, [businessUnitId, employeeId, people, employees, templates, awardTemplates]);
+
+    const filteredEmployees = useMemo(() => {
+        const selectedBu = bus.find(b => b.id === businessUnitId);
+        return (people.length ? people : employees)
+            .filter(employee => {
+                if (employee.status !== 'Active') return false;
+                const matchesBusinessUnit = !businessUnitId
+                    || employee.businessUnitId === businessUnitId
+                    || (!!selectedBu && employee.businessUnit === selectedBu.name);
+                const matchesDepartment = !departmentId || employee.departmentId === departmentId;
+                return matchesBusinessUnit && matchesDepartment;
+            })
+            .sort((a, b) => formatEmployeeName(a.name).localeCompare(formatEmployeeName(b.name), undefined, { sensitivity: 'base' }));
+    }, [people, employees, bus, businessUnitId, departmentId]);
+
+    const departmentOptions = useMemo(() => {
+        const selectedBu = bus.find(b => b.id === businessUnitId);
+        const entries = (people.length ? people : employees)
+            .filter(employee => !businessUnitId
+                || employee.businessUnitId === businessUnitId
+                || (!!selectedBu && employee.businessUnit === selectedBu.name))
+            .filter(employee => employee.departmentId && employee.department)
+            .map(employee => [employee.departmentId!, employee.department] as const);
+        return Array.from(new Map<string, string>(entries).entries())
+            .sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }));
+    }, [people, employees, bus, businessUnitId]);
 
     const selectedEmployee = useMemo(
         () => (people.find(u => u.id === employeeId) || employees.find(u => u.id === employeeId)),
@@ -136,94 +159,25 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
     );
 
     const handleNext = () => {
-        if (!employeeId || !awardId || !businessUnitId || selectedApprovers.length === 0) {
-            alert("Please select an employee, award, business unit, and at least one approver.");
+        if (!employeeId || !awardId || selectedApprovers.length === 0) {
+            alert("Please select an employee, award, and at least one approver.");
             return;
         }
         setStep('preview');
     };
 
     const handleGrant = async () => {
-        await new Promise(requestAnimationFrame); // allow preview to paint
-        const src = document.getElementById('certificate-preview') as HTMLElement | null;
-        if (!src) return;
         if (!selectedEmployee || !selectedAward) {
             alert('Please select an employee and award.');
             return;
         }
-        if (!selectedEmployee.email) {
-            alert('Selected employee has no email address.');
-            return;
-        }
-
-        // Clone the preview at full scale off-screen to avoid overlays/transform issues
-        const clone = src.cloneNode(true) as HTMLElement;
-        clone.style.position = 'absolute';
-        clone.style.left = '-12000px';
-        clone.style.top = '0';
-        clone.style.transform = 'none';
-        clone.style.width = '1000px';
-        clone.style.height = '700px';
-        clone.id = 'certificate-download-clone';
-        document.body.appendChild(clone);
-
         setIsGenerating(true);
         try {
-            const canvas = await html2canvas(clone, {
-                scale: 2,
-                useCORS: true,
-                backgroundColor: '#ffffff',
-            });
-            const certificateUrl = canvas.toDataURL('image/png');
-            await Promise.resolve(
-                onAssign(employeeId, awardId, notes, businessUnitId, selectedApprovers, certificateUrl)
-            );
-
-            const senderName =
-                (import.meta as any).env?.VITE_SMTP_FROM_NAME ||
-                user?.name ||
-                'HR Team';
-            const subject = `Award Certificate - ${selectedAward.title}`;
-            const message = `Dear ${selectedEmployee.name.split(' ')[0]},\n\nCongratulations on receiving the ${selectedAward.title} award. Your certificate is attached.\n\nBest regards,\n${senderName}`;
-            const html = `
-<p>Dear ${selectedEmployee.name.split(' ')[0]},</p>
-<p>Congratulations on receiving the <strong>${selectedAward.title}</strong> award. Your certificate is attached.</p>
-${notes ? `<p><strong>Citation:</strong> ${notes}</p>` : ''}
-<p>Best regards,<br />${senderName}</p>
-            `.trim();
-
-            const certificateBase64 = certificateUrl.split(',')[1] || '';
-            if (!certificateBase64) {
-                throw new Error('Unable to prepare certificate attachment.');
-            }
-
-            const response = await fetch('/api/send-email', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    to: selectedEmployee.email,
-                    subject,
-                    message,
-                    html,
-                    attachments: [
-                        {
-                            filename: `Award_Certificate_${selectedEmployee.name.replace(/\\s+/g, '_')}.png`,
-                            contentBase64: certificateBase64,
-                            contentType: 'image/png',
-                        },
-                    ],
-                }),
-            });
-
-            if (!response.ok) {
-                const data = await response.json().catch(() => ({}));
-                throw new Error(data?.error || 'Failed to send award email.');
-            }
+            await Promise.resolve(onAssign(employeeId, awardId, notes, businessUnitId, departmentId, selectedApprovers));
         } catch (error) {
-            console.error("Failed to generate certificate image", error);
-            alert((error as Error)?.message || "Failed to generate certificate image. Please try again.");
+            console.error('Failed to submit award nomination', error);
+            alert((error as Error)?.message || 'Failed to submit award nomination. Please try again.');
         } finally {
-            clone.remove();
             setIsGenerating(false);
         }
     };
@@ -238,9 +192,10 @@ ${notes ? `<p><strong>Citation:</strong> ${notes}</p>` : ''}
                     onChange={e => {
                         const newBuId = e.target.value;
                         setBusinessUnitId(newBuId);
+                        setDepartmentId('');
                         const selectedBu = bus.find(b => b.id === newBuId);
                         const buEmps = (people.length ? people : employees).filter(u => {
-                            return u.status === 'Active' && (u.businessUnitId === newBuId || (selectedBu && u.businessUnit === selectedBu.name));
+                            return u.status === 'Active' && (!newBuId || u.businessUnitId === newBuId || (selectedBu && u.businessUnit === selectedBu.name));
                         }).sort((a, b) => formatEmployeeName(a.name).toLowerCase().localeCompare(formatEmployeeName(b.name).toLowerCase()));
                         if (buEmps.length > 0) {
                             setEmployeeId(buEmps[0].id);
@@ -250,9 +205,32 @@ ${notes ? `<p><strong>Citation:</strong> ${notes}</p>` : ''}
                     }}
                     className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 >
-                    {(bus.length ? bus : businessUnits).map(bu => (
+                    <option value="">All Business Units</option>
+                    {[...(bus.length ? bus : businessUnits)].sort((a, b) => a.name.localeCompare(b.name)).map(bu => (
                         <option key={bu.id} value={bu.id}>{bu.name}</option>
                     ))}
+                </select>
+            </div>
+            <div>
+                <label htmlFor="departmentId" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Department</label>
+                <select
+                    id="departmentId"
+                    value={departmentId}
+                    onChange={event => {
+                        const nextDepartmentId = event.target.value;
+                        setDepartmentId(nextDepartmentId);
+                        const selectedBu = bus.find(b => b.id === businessUnitId);
+                        const nextEmployee = (people.length ? people : employees).find(employee =>
+                            employee.status === 'Active'
+                            && (!businessUnitId || employee.businessUnitId === businessUnitId || (!!selectedBu && employee.businessUnit === selectedBu.name))
+                            && (!nextDepartmentId || employee.departmentId === nextDepartmentId)
+                        );
+                        setEmployeeId(nextEmployee?.id || '');
+                    }}
+                    className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                >
+                    <option value="">All Departments</option>
+                    {departmentOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
                 </select>
             </div>
             <div>
@@ -263,19 +241,9 @@ ${notes ? `<p><strong>Citation:</strong> ${notes}</p>` : ''}
                     onChange={e => setEmployeeId(e.target.value)}
                     className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 >
-                    {(() => {
-                        const selectedBu = bus.find(b => b.id === businessUnitId);
-                        return (people.length ? people : employees)
-                            .filter(u => {
-                                if (u.status !== 'Active') return false;
-                                if (!businessUnitId) return true;
-                                return u.businessUnitId === businessUnitId || (selectedBu && u.businessUnit === selectedBu.name);
-                            })
-                            .sort((a, b) => formatEmployeeName(a.name).toLowerCase().localeCompare(formatEmployeeName(b.name).toLowerCase()))
-                            .map(user => (
-                                <option key={user.id} value={user.id}>{formatEmployeeName(user.name)}</option>
-                            ));
-                    })()}
+                    {filteredEmployees.map(employee => (
+                        <option key={employee.id} value={employee.id}>{formatEmployeeName(employee.name)}</option>
+                    ))}
                 </select>
             </div>
             <div>
@@ -286,7 +254,7 @@ ${notes ? `<p><strong>Citation:</strong> ${notes}</p>` : ''}
                     onChange={e => setAwardId(e.target.value)}
                     className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 >
-                    {(templates.length ? templates : awardTemplates).filter(a => a.isActive).map(award => (
+                    {(templates.length ? templates : awardTemplates).filter(a => a.isActive).sort((a, b) => a.title.localeCompare(b.title)).map(award => (
                         <option key={award.id} value={award.id}>{award.title}</option>
                     ))}
                 </select>
@@ -319,7 +287,6 @@ ${notes ? `<p><strong>Citation:</strong> ${notes}</p>` : ''}
                 style={{ maxWidth: '100%' }}
             >
                 <div
-                    ref={certificateRef}
                     className="w-full flex justify-center"
                     style={{ minHeight: '760px' }}
                 >
@@ -339,7 +306,11 @@ ${notes ? `<p><strong>Citation:</strong> ${notes}</p>` : ''}
                                         employeeName: selectedEmployee.name,
                                         date: new Date(),
                                         awardTitle: selectedAward.title,
-                                        citation: notes
+                                        citation: notes,
+                                        position: selectedEmployee.position,
+                                        department: selectedEmployee.department,
+                                        businessUnit: bus.find(unit => unit.id === businessUnitId)?.name || selectedEmployee.businessUnit,
+                                        awardValue: selectedAward.awardValueLabel,
                                     }}
                                 />
                             </div>
@@ -361,7 +332,7 @@ ${notes ? `<p><strong>Citation:</strong> ${notes}</p>` : ''}
             {step === 'details' ? (
                 <Button onClick={handleNext}>Preview Certificate</Button>
             ) : (
-                <Button onClick={handleGrant} isLoading={isGenerating}>Grant Award & Send Email</Button>
+                <Button onClick={handleGrant} isLoading={isGenerating}>Submit for Approval</Button>
             )}
         </div>
     );

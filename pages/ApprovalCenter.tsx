@@ -7,7 +7,7 @@ import { useAdditionalApprovals } from '../hooks/useAdditionalApprovals';
 import { Role } from '../types';
 import Button from '../components/ui/Button';
 
-type Kind = 'leave' | 'wfh' | 'overtime' | 'manpower' | 'requisition' | 'pan' | 'nte';
+type Kind = 'leave' | 'wfh' | 'overtime' | 'manpower' | 'requisition' | 'pan' | 'nte' | 'award';
 type EmployeeMeta = { employeeId?: string; businessUnitId?: string; businessUnit: string; departmentId?: string; department: string; active: boolean };
 type ApprovalItem = {
   id: string; canonicalKey: string; kind: Kind; reference: string; employeeId?: string; employee: string; employeeCode?: string;
@@ -24,9 +24,10 @@ const KIND_META: Record<Kind, { title: string; badge: string; rule: string }> = 
   overtime: { title: 'Overtime', badge: 'bg-orange-100 text-orange-800', rule: 'Submitted overtime requests requiring action in your approval scope.' },
   requisition: { title: 'Job Requisitions', badge: 'bg-indigo-100 text-indigo-800', rule: 'Requisitions awaiting your configured routing step.' },
   manpower: { title: 'Manpower', badge: 'bg-teal-100 text-teal-800', rule: 'Manpower requests within your permitted approval scope.' },
+  award: { title: 'Awards', badge: 'bg-amber-100 text-amber-800', rule: 'Award nominations awaiting your required approval before certificate issuance.' },
 };
 
-const GROUP_ORDER: Kind[] = ['nte', 'pan', 'wfh', 'leave', 'overtime', 'requisition', 'manpower'];
+const GROUP_ORDER: Kind[] = ['nte', 'pan', 'award', 'wfh', 'leave', 'overtime', 'requisition', 'manpower'];
 const BULK_KINDS = new Set<Kind>(['leave', 'wfh', 'overtime', 'manpower']);
 const fmtDate = (date: Date) => date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
 const dayAge = (date: Date) => Math.max(0, Math.floor((Date.now() - date.getTime()) / 86400000));
@@ -82,6 +83,7 @@ export default function ApprovalCenter() {
       ...approvals.pendingLeaveApprovals.map(row => row.employeeId), ...approvals.pendingWfhApprovals.map(row => row.employeeId),
       ...approvals.pendingOtApprovals.map(row => row.employeeId), ...approvals.pendingManpowerApprovals.map(row => row.requestedBy),
       ...additional.pendingNTEApprovals.map(row => row.employeeId), ...additional.pendingPANApprovals.map(row => row.employeeId),
+      ...additional.pendingAwardApprovals.map(row => row.employeeId),
     ].filter(Boolean))) as string[];
     if (!ids.length) return setEmployeeMeta({});
     supabase.from('hris_users').select('id,employee_id,business_unit_id,business_unit,department_id,department,status').in('id', ids).then(({ data, error }) => {
@@ -93,7 +95,7 @@ export default function ApprovalCenter() {
         active: String(row.status || 'active').toLowerCase() === 'active',
       }])));
     });
-  }, [approvals.pendingLeaveApprovals, approvals.pendingWfhApprovals, approvals.pendingOtApprovals, approvals.pendingManpowerApprovals, additional.pendingNTEApprovals, additional.pendingPANApprovals, businessUnitLabels, departmentLabels]);
+  }, [approvals.pendingLeaveApprovals, approvals.pendingWfhApprovals, approvals.pendingOtApprovals, approvals.pendingManpowerApprovals, additional.pendingNTEApprovals, additional.pendingPANApprovals, additional.pendingAwardApprovals, businessUnitLabels, departmentLabels]);
 
   const items = useMemo<ApprovalItem[]>(() => {
     const metaFor = (id?: string) => employeeMeta[id || ''] || { businessUnit: 'Not assigned', department: 'Not assigned', active: true };
@@ -127,8 +129,12 @@ export default function ApprovalCenter() {
       return { id: row.id, canonicalKey: row.canonicalKey, kind: 'pan', reference: row.reference, employeeId: row.employeeId, employee: row.employeeName, employeeCode: meta.employeeId, businessUnitId: meta.businessUnitId, businessUnit: meta.businessUnit, departmentId: meta.departmentId, department: meta.department, start: row.createdAt, end: row.effectiveDate, duration: `Effective ${fmtDate(row.effectiveDate)}`, status: row.status, currentStep: row.currentStep, details: row.action, bulkEligible: false, reviewUrl: `/employees/pan?item=${row.id}` };
     });
     const requisitions: ApprovalItem[] = additional.pendingRequisitionApprovals.map(row => ({ id: row.id, canonicalKey: row.canonicalKey, kind: 'requisition', reference: row.reference, employee: row.title, businessUnitId: row.businessUnitId, businessUnit: businessUnitLabels[row.businessUnitId || ''] || 'Not assigned', departmentId: row.departmentId, department: departmentLabels[row.departmentId || ''] || 'Not assigned', start: row.createdAt, end: row.createdAt, duration: 'Routing workflow', status: row.status, currentStep: row.currentStep, bulkEligible: false, reviewUrl: `/recruitment/requisitions?item=${row.id}` }));
+    const awardItems: ApprovalItem[] = additional.pendingAwardApprovals.map(row => {
+      const meta = metaFor(row.employeeId);
+      return { id: row.id, canonicalKey: row.canonicalKey, kind: 'award', reference: row.reference, employeeId: row.employeeId, employee: row.employeeName, employeeCode: meta.employeeId, businessUnitId: row.businessUnitId || meta.businessUnitId, businessUnit: businessUnitLabels[row.businessUnitId || ''] || meta.businessUnit, departmentId: row.departmentId || meta.departmentId, department: departmentLabels[row.departmentId || ''] || meta.department, start: row.createdAt, end: row.createdAt, duration: `${dayAge(row.createdAt)} day${dayAge(row.createdAt) === 1 ? '' : 's'} pending`, status: row.status, currentStep: row.currentStep, details: row.awardTitle, bulkEligible: false, reviewUrl: `/evaluation/awards?item=${row.id}` };
+    });
     const canonical = new Map<string, ApprovalItem>();
-    [...ntes, ...pans, ...wfh, ...leave, ...overtime, ...requisitions, ...manpower].forEach(item => { if (!canonical.has(item.canonicalKey)) canonical.set(item.canonicalKey, item); });
+    [...ntes, ...pans, ...awardItems, ...wfh, ...leave, ...overtime, ...requisitions, ...manpower].forEach(item => { if (!canonical.has(item.canonicalKey)) canonical.set(item.canonicalKey, item); });
     return Array.from(canonical.values());
   }, [approvals, additional, employeeMeta, businessUnitLabels, departmentLabels]);
 

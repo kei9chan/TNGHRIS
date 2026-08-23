@@ -456,7 +456,7 @@ const BODDashboard: React.FC = () => {
                 supabase.from('resolutions').select('*').order('decision_date', { ascending: false }),
                 supabase.from('ntes').select('*').order('issued_date', { ascending: false }),
                 supabase.from('job_requisitions').select('*').order('created_at', { ascending: false }),
-                supabase.from('employee_awards').select('*').order('date_awarded', { ascending: false }),
+                supabase.from('employee_awards').select('*, hris_users:employee_id(full_name)').order('submitted_at', { ascending: false }),
                 supabase.from('manpower_requests').select('*').order('created_at', { ascending: false }),
                 supabase.from('wfh_requests').select('*').eq('status', WFHRequestStatus.PendingBOD).order('created_at', { ascending: false }),
                 supabase.from('benefit_requests').select('*'),
@@ -470,7 +470,16 @@ const BODDashboard: React.FC = () => {
             if (!resRes.error && resRes.data) setResolutions(resRes.data.map((r: any) => ({ ...r, employeeId: r.employee_id, incidentReportId: r.incident_report_id, decisionDate: mapDate(r.decision_date), approverSteps: r.approver_steps || [] })));
             if (!nteRes.error && nteRes.data) setNTEs(nteRes.data.map((r: any) => ({ ...r, employeeId: r.employee_id, incidentReportId: r.incident_report_id, issuedDate: mapDate(r.issued_date), deadline: mapDate(r.deadline), approverSteps: r.approval_log || [], hearingDetails: r.hearing_details })));
             if (!reqRes.error && reqRes.data) setRequisitions(reqRes.data.map((r: any) => ({ ...r, createdAt: mapDate(r.created_at), routingSteps: r.routing_steps || [] })));
-            if (!awardRes.error && awardRes.data) setAwards(awardRes.data.map((r: any) => ({ ...r, employeeId: r.employee_id, awardId: r.award_id, dateAwarded: mapDate(r.date_awarded), approverSteps: r.approver_steps || [] })));
+            if (!awardRes.error && awardRes.data) setAwards(awardRes.data.map((r: any) => ({
+                ...r,
+                employeeId: r.employee_id,
+                employeeName: r.hris_users?.full_name || '',
+                awardId: r.award_template_id || r.award_id,
+                dateAwarded: mapDate(r.issued_at || r.decided_at || r.submitted_at || r.created_at),
+                status: ['PendingApproval', 'Pending Approval', 'Pending'].includes(String(r.status)) ? ResolutionStatus.PendingApproval : r.status,
+                approverSteps: r.approver_steps || [],
+                approverId: r.approver_id || undefined,
+            })));
             if (!manRes.error && manRes.data) setManpowerRequests(manRes.data.map((r: any) => ({ ...r, requestedBy: r.requested_by, businessUnitName: r.business_unit_name, date: mapDate(r.date), createdAt: mapDate(r.created_at), approvedAt: r.approved_at ? mapDate(r.approved_at) : undefined })));
             if (!wfhRes.error && wfhRes.data) setWfhRequests(wfhRes.data.map((r: any) => ({ ...r, employeeId: r.employee_id, employeeName: r.employee_name, date: mapDate(r.date), createdAt: mapDate(r.created_at) })));
             if (!benRes.error && benRes.data) setBenefitRequests(benRes.data.map((r: any) => ({ ...r, employeeId: r.employee_id, employeeName: r.employee_name, benefitTypeName: r.benefit_type_name || '', dateNeeded: mapDate(r.date_needed) })));
@@ -973,7 +982,7 @@ const BODDashboard: React.FC = () => {
 
         const awardsForApproval = awards.filter(award => 
             award.status === ResolutionStatus.PendingApproval &&
-            award.approverSteps.some(step => step.userId === user.id && step.status === ApproverStatus.Pending)
+            (award.approverId === user.id || award.approverSteps.some(step => step.userId === user.id && step.status === ApproverStatus.Pending))
         );
     
         awardsForApproval.forEach(award => {

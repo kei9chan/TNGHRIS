@@ -303,7 +303,7 @@ const EmployeeDashboard: React.FC = () => {
                 .from('employee_awards')
                 .select('id, award_template_id, employee_id, is_acknowledged_by_employee, award_templates(title)')
                 .eq('employee_id', user.id)
-                .eq('status', 'Approved')
+                .in('status', ['Approved', 'Issued'])
                 .eq('is_acknowledged_by_employee', false);
             if (!active || !data || data.length === 0) return;
             setShowConfetti(true);

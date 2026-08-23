@@ -145,7 +145,9 @@ const Leave: React.FC = () => {
 
   const myBalances = useMemo(() => {
     if (!user) return [];
-    return leaveTypes.map(lt => {
+    return leaveTypes
+      .filter(lt => lt.name.trim().toLowerCase() !== 'without pay')
+      .map(lt => {
       const isVacation = lt.name.toLowerCase().includes('vacation');
       const isSick = lt.name.toLowerCase().includes('sick');
       const isOffset = lt.name.toLowerCase().includes('offset');
@@ -165,7 +167,7 @@ const Leave: React.FC = () => {
         available: available,
         name: lt.name,
       };
-    });
+      });
   }, [leaveTypes, user, liveQuotas]);
 
   const myRequests = useMemo(() => {

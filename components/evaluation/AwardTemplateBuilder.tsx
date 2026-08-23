@@ -38,6 +38,10 @@ const AwardTemplateBuilder: React.FC<AwardTemplateBuilderProps> = ({ initialDesi
     const [uploadingField, setUploadingField] = useState<string | null>(null);
 
     useEffect(() => {
+        setDesign(initialDesign || defaultDesign);
+    }, [initialDesign]);
+
+    useEffect(() => {
         onChange(design);
     }, [design, onChange]);
 
@@ -158,7 +162,9 @@ const AwardTemplateBuilder: React.FC<AwardTemplateBuilderProps> = ({ initialDesi
                             <div>
                                 <label className="block text-sm font-medium mb-1">Body Text</label>
                                 <Textarea label="" value={design.bodyText} onChange={e => handleDesignChange('bodyText', e.target.value)} rows={6} />
-                                <p className="text-xs text-gray-500 mt-1">Use: {'{{employee_name}}'}, {'{{date}}'}, {'{{award_title}}'}</p>
+                                <p className="text-xs text-gray-500 mt-1">
+                                    Placeholders: {'{{employee_name}}'}, {'{{position}}'}, {'{{department}}'}, {'{{business_unit}}'}, {'{{award_title}}'}, {'{{award_reason}}'}, {'{{award_date}}'}, {'{{issuer_name}}'}, {'{{issuer_title}}'}, {'{{award_value}}'}
+                                </p>
                             </div>
                         </>
                     )}
@@ -195,7 +201,13 @@ const AwardTemplateBuilder: React.FC<AwardTemplateBuilderProps> = ({ initialDesi
                             employeeName: 'John Doe',
                             date: new Date(),
                             awardTitle: 'Award Title',
-                            citation: 'For exceptional dedication...'
+                            citation: 'For exceptional dedication...',
+                            position: 'Guest Experience Associate',
+                            department: 'Operations',
+                            businessUnit: 'Business Unit',
+                            issuerName: 'Authorized Signatory',
+                            issuerTitle: 'Management',
+                            awardValue: 'Special Recognition'
                         }}
                     />
                 </div>

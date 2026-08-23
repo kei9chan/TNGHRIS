@@ -9,6 +9,12 @@ interface CertificateRendererProps {
         date: Date;
         awardTitle: string;
         citation?: string;
+        position?: string;
+        department?: string;
+        businessUnit?: string;
+        issuerName?: string;
+        issuerTitle?: string;
+        awardValue?: string;
     };
     scale?: number; // no-op kept for backward compat
 }
@@ -40,7 +46,15 @@ const CertificateRenderer: React.FC<CertificateRendererProps> = ({ design, data 
             .replace(/{{date}}/g, data.date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }))
             .replace(/{{award_title}}/g, data.awardTitle)
             .replace(/{{citation}}/g, data.citation || '')
-            .replace(/{{reason}}/g, data.citation || '');
+            .replace(/{{reason}}/g, data.citation || '')
+            .replace(/{{award_reason}}/g, data.citation || '')
+            .replace(/{{award_date}}/g, data.date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }))
+            .replace(/{{position}}/g, data.position || '')
+            .replace(/{{department}}/g, data.department || '')
+            .replace(/{{business_unit}}/g, data.businessUnit || '')
+            .replace(/{{issuer_name}}/g, data.issuerName || '')
+            .replace(/{{issuer_title}}/g, data.issuerTitle || '')
+            .replace(/{{award_value}}/g, data.awardValue || '');
     };
 
     return (

@@ -70,7 +70,7 @@ const OnboardingChecklistPage: React.FC = () => {
           { data: checklistRows, error: checklistError },
           { data: resignationRows, error: resignationError },
         ] = await Promise.all([
-          supabase.from('onboarding_checklist_templates').select('id, name, target_role, template_type, tasks'),
+          supabase.from('onboarding_checklist_templates').select('id, name, target_role, template_type, tasks, is_active').eq('is_active', true),
           supabase.from('hris_users').select('id, full_name, role, status, business_unit'),
           supabase.from('onboarding_checklists').select('id, employee_id, template_id, status, created_at, start_date, tasks'),
           supabase.from('resignations').select('*'),
@@ -363,18 +363,29 @@ const OnboardingChecklistPage: React.FC = () => {
     setIsTemplateModalOpen(true);
   };
 
-  const handleDelete = (templateId: string) => {
-    if (!window.confirm('Are you sure you want to delete this template?')) return;
-    (async () => {
-      try {
-        const { error } = await supabase.from('onboarding_checklist_templates').delete().eq('id', templateId);
-        if (error) throw error;
-        setTemplates(prev => prev.filter(t => t.id !== templateId));
-      } catch (err) {
-        console.error('Failed to delete template', err);
-        alert('Failed to delete template. Please try again.');
-      }
-    })();
+  const handleDelete = async (templateId: string) => {
+    const template = templates.find(item => item.id === templateId);
+    if (!template) return;
+    const confirmed = window.confirm(
+      `Remove lifecycle template “${template.name}”?\n\nUnused templates will be deleted. Templates already used by an employee will be archived so historical checklists remain intact.`
+    );
+    if (!confirmed) return;
+    try {
+      const { data, error } = await supabase.rpc('remove_onboarding_checklist_template', {
+        p_template_id: templateId,
+      });
+      if (error) throw error;
+      setTemplates(prev => prev.filter(item => item.id !== templateId));
+      const result = data as { mode?: 'deleted' | 'archived'; linked_checklists?: number } | null;
+      alert(
+        result?.mode === 'archived'
+          ? `“${template.name}” was archived. ${result.linked_checklists || 0} linked employee checklist(s) were preserved.`
+          : `“${template.name}” was deleted successfully.`
+      );
+    } catch (err: any) {
+      console.error('Failed to remove template', err);
+      alert(err?.message || 'Failed to remove template. Please try again.');
+    }
   };
   
   const handleSave = async (templateData: OnboardingChecklistTemplate) => {

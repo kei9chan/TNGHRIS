@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { Award, BadgeLevel, ResolutionStatus } from '../types';
+import { ApproverStatus, Award, BadgeLevel, ResolutionStatus } from '../types';
 
 export type EmployeeAwardRecord = {
   id: string;
@@ -12,6 +12,7 @@ export type EmployeeAwardRecord = {
   status: ResolutionStatus;
   businessUnitId?: string;
   businessUnitName?: string;
+  departmentId?: string;
   certificateUrl?: string;
   createdByUserId?: string;
   dateAwarded?: Date;
@@ -21,6 +22,8 @@ export type EmployeeAwardRecord = {
   employeeName?: string;
   approverId?: string;
   approverName?: string;
+  approverSteps: Array<{ userId: string; userName: string; status: ApproverStatus; order?: number; timestamp?: Date; rejectionReason?: string }>;
+  issuedAt?: Date;
 };
 
 const mapAward = (row: any): Award => ({
@@ -30,6 +33,12 @@ const mapAward = (row: any): Award => ({
   badgeIconUrl: row.badge_icon_url || '',
   isActive: row.is_active,
   design: row.design,
+  businessUnitId: row.business_unit_id || undefined,
+  category: row.category || undefined,
+  awardValueLabel: row.award_value_label || undefined,
+  isDefault: !!row.is_default,
+  isPreset: !!row.is_preset,
+  presetKey: row.preset_key || undefined,
 });
 
 const mapEmployeeAward = (row: any): EmployeeAwardRecord => ({
@@ -46,21 +55,27 @@ const mapEmployeeAward = (row: any): EmployeeAwardRecord => ({
       : (row.status as ResolutionStatus) || ResolutionStatus.Draft,
   businessUnitId: row.business_unit_id || undefined,
   businessUnitName: row.business_units?.name || undefined,
+  departmentId: row.department_id || undefined,
   certificateUrl: row.certificate_snapshot_url || undefined,
   createdByUserId: row.created_by_user_id || undefined,
-  dateAwarded: row.decided_at ? new Date(row.decided_at) : row.submitted_at ? new Date(row.submitted_at) : undefined,
+  dateAwarded: row.issued_at ? new Date(row.issued_at) : row.decided_at ? new Date(row.decided_at) : row.submitted_at ? new Date(row.submitted_at) : undefined,
   submittedAt: row.submitted_at ? new Date(row.submitted_at) : undefined,
   decidedAt: row.decided_at ? new Date(row.decided_at) : undefined,
   rejectionReason: row.rejection_reason || undefined,
   employeeName: row.hris_users?.full_name || undefined,
   approverId: row.approver_id || undefined,
   approverName: row.approver?.full_name || undefined,
+  approverSteps: (Array.isArray(row.approver_steps) ? row.approver_steps : []).map((step: any) => ({
+    ...step,
+    timestamp: step.timestamp ? new Date(step.timestamp) : undefined,
+  })),
+  issuedAt: row.issued_at ? new Date(row.issued_at) : undefined,
 });
 
 const TEMPLATE_BUCKET = 'create_award_template_attachments';
 
 export const fetchAwardTemplates = async (): Promise<Award[]> => {
-  const { data, error } = await supabase.from('award_templates').select('*');
+  const { data, error } = await supabase.from('award_templates').select('*').order('title', { ascending: true });
   if (error || !data) throw new Error(error?.message || 'Failed to load award templates');
   return data.map(mapAward);
 };
@@ -73,7 +88,21 @@ export const saveAwardTemplate = async (template: {
   isActive?: boolean;
   design?: any;
   createdByUserId?: string;
+  businessUnitId?: string;
+  category?: string;
+  awardValueLabel?: string;
+  isDefault?: boolean;
+  isPreset?: boolean;
+  presetKey?: string;
 }): Promise<Award> => {
+  if (template.isDefault && template.businessUnitId) {
+    const { error: resetError } = await supabase
+      .from('award_templates')
+      .update({ is_default: false })
+      .eq('business_unit_id', template.businessUnitId)
+      .eq('is_default', true);
+    if (resetError) throw new Error(resetError.message || 'Failed to update the business-unit default template');
+  }
   const payload: any = {
     title: template.title,
     description: template.description || null,
@@ -81,6 +110,13 @@ export const saveAwardTemplate = async (template: {
     is_active: template.isActive ?? true,
     design: template.design || null,
     created_by_user_id: template.createdByUserId || null,
+    business_unit_id: template.businessUnitId || null,
+    category: template.category || null,
+    award_value_label: template.awardValueLabel || null,
+    is_default: template.isDefault ?? false,
+    is_preset: template.isPreset ?? false,
+    preset_key: template.presetKey || null,
+    updated_at: new Date().toISOString(),
   };
 
   const query = template.id
@@ -101,37 +137,31 @@ export const fetchEmployeeAwards = async (): Promise<EmployeeAwardRecord[]> => {
   return data.map(mapEmployeeAward);
 };
 
-const toDbStatus = (status: ResolutionStatus | string) =>
-  status === ResolutionStatus.PendingApproval || status === 'Pending Approval' ? 'PendingApproval' : status;
-
 export const createEmployeeAward = async (payload: {
   employeeId: string;
   awardTemplateId: string;
   notes?: string;
   businessUnitId?: string;
-  certificateUrl?: string;
+  departmentId?: string;
   createdByUserId?: string;
-  approverId?: string;
+  approverIds: string[];
 }): Promise<EmployeeAwardRecord> => {
-  const insertPayload: any = {
-    employee_id: payload.employeeId,
-    award_template_id: payload.awardTemplateId,
-    notes: payload.notes || null,
-    business_unit_id: payload.businessUnitId || null,
-    certificate_snapshot_url: payload.certificateUrl || null,
-    created_by_user_id: payload.createdByUserId || null,
-    status: 'PendingApproval',
-    submitted_at: new Date().toISOString(),
-    level: 'Bronze',
-    approver_id: payload.approverId || null,
-  };
-
-  const { data, error } = await supabase
+  const { data: rpcData, error } = await supabase.rpc('submit_employee_award', {
+    p_employee_id: payload.employeeId,
+    p_award_template_id: payload.awardTemplateId,
+    p_notes: payload.notes || '',
+    p_business_unit_id: payload.businessUnitId || null,
+    p_department_id: payload.departmentId || null,
+    p_approver_ids: payload.approverIds,
+  });
+  if (error || !rpcData) throw new Error(error?.message || 'Failed to save award');
+  const createdRow = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+  const { data, error: readError } = await supabase
     .from('employee_awards')
-    .insert(insertPayload)
-    .select('*, award_templates(title, badge_icon_url), hris_users:employee_id(full_name), business_units(name)')
+    .select('*, award_templates(title, badge_icon_url), hris_users:employee_id(full_name), approver:approver_id(full_name), business_units(name)')
+    .eq('id', createdRow.id)
     .single();
-  if (error || !data) throw new Error(error?.message || 'Failed to save award');
+  if (readError || !data) throw new Error(readError?.message || 'Award was submitted but could not be reloaded');
   return mapEmployeeAward(data);
 };
 
@@ -163,19 +193,39 @@ export const getSignedTemplateAssetUrl = async (path?: string): Promise<string |
   return data.signedUrl;
 };
 
-export const updateEmployeeAwardStatus = async (id: string, status: ResolutionStatus, rejectionReason?: string) => {
-  const updatePayload: any = {
-    status: toDbStatus(status),
-    decided_at: new Date().toISOString(),
-    rejection_reason: rejectionReason || null,
-  };
-
-  const { data, error } = await supabase
+export const processEmployeeAwardApproval = async (
+  id: string,
+  approved: boolean,
+  rejectionReason?: string
+): Promise<EmployeeAwardRecord> => {
+  const { data: rpcData, error } = await supabase.rpc('process_employee_award_approval', {
+    p_award_id: id,
+    p_approved: approved,
+    p_rejection_reason: rejectionReason || null,
+  });
+  if (error || !rpcData) throw new Error(error?.message || 'Failed to process award approval');
+  const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+  const { data, error: readError } = await supabase
     .from('employee_awards')
-    .update(updatePayload)
-    .eq('id', id)
-    .select('*, award_templates(title, badge_icon_url), hris_users:employee_id(full_name), business_units(name)')
+    .select('*, award_templates(title, badge_icon_url), hris_users:employee_id(full_name), approver:approver_id(full_name), business_units(name)')
+    .eq('id', row.id)
     .single();
-  if (error || !data) throw new Error(error?.message || 'Failed to update award');
+  if (readError || !data) throw new Error(readError?.message || 'Award approval was saved but could not be reloaded');
+  return mapEmployeeAward(data);
+};
+
+export const markEmployeeAwardIssued = async (id: string, certificateUrl: string): Promise<EmployeeAwardRecord> => {
+  const { data: rpcData, error } = await supabase.rpc('mark_employee_award_issued', {
+    p_award_id: id,
+    p_certificate_snapshot_url: certificateUrl,
+  });
+  if (error || !rpcData) throw new Error(error?.message || 'Failed to mark award as issued');
+  const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+  const { data, error: readError } = await supabase
+    .from('employee_awards')
+    .select('*, award_templates(title, badge_icon_url), hris_users:employee_id(full_name), approver:approver_id(full_name), business_units(name)')
+    .eq('id', row.id)
+    .single();
+  if (readError || !data) throw new Error(readError?.message || 'Issued award could not be reloaded');
   return mapEmployeeAward(data);
 };

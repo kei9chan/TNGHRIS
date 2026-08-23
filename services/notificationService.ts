@@ -32,6 +32,7 @@ const canonicalApprovalLink = (row: NotificationRow) => {
   if (title.includes('leave request pending') && title.includes('approval')) return `/approvals?type=leave${item}`;
   if (title.includes('manpower') && title.includes('approval')) return `/approvals?type=manpower${item}`;
   if (title.includes('requisition') && title.includes('approval')) return `/approvals?type=requisition${item}`;
+  if (title.includes('award') && title.includes('approval')) return `/approvals?type=award${item}`;
   return row.link || undefined;
 };
 

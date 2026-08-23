@@ -54,6 +54,20 @@ export type PendingRequisitionApproval = {
   canonicalKey: string;
 };
 
+export type PendingAwardApproval = {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  awardTitle: string;
+  reference: string;
+  businessUnitId?: string;
+  departmentId?: string;
+  status: string;
+  createdAt: Date;
+  currentStep: string;
+  canonicalKey: string;
+};
+
 const isPending = (status?: string) => String(status || '').trim().toLowerCase() === 'pending';
 
 const actionLabel = (action: Record<string, unknown> | null | undefined) => {
@@ -72,6 +86,7 @@ export function useAdditionalApprovals(user: User | null) {
   const [pendingNTEApprovals, setPendingNTEApprovals] = useState<PendingNTEApproval[]>([]);
   const [pendingPANApprovals, setPendingPANApprovals] = useState<PendingPANApproval[]>([]);
   const [pendingRequisitionApprovals, setPendingRequisitionApprovals] = useState<PendingRequisitionApproval[]>([]);
+  const [pendingAwardApprovals, setPendingAwardApprovals] = useState<PendingAwardApproval[]>([]);
   const [additionalApprovalError, setAdditionalApprovalError] = useState<string | null>(null);
 
   const refreshAdditionalApprovals = useCallback(async () => {
@@ -79,11 +94,12 @@ export function useAdditionalApprovals(user: User | null) {
       setPendingNTEApprovals([]);
       setPendingPANApprovals([]);
       setPendingRequisitionApprovals([]);
+      setPendingAwardApprovals([]);
       setAdditionalApprovalError(null);
       return;
     }
 
-    const [nteResult, panResult, requisitionResult] = await Promise.all([
+    const [nteResult, panResult, requisitionResult, awardResult] = await Promise.all([
       supabase
         .from('ntes')
         .select('id,incident_report_id,recipients,recipient_names,response_deadline,status,approval_log,created_at,updated_at,nte_number,nte_code')
@@ -99,9 +115,14 @@ export function useAdditionalApprovals(user: User | null) {
         .select('id,req_code,title,business_unit_id,department_id,status,created_at,routing_steps')
         .eq('status', 'PendingApproval')
         .order('created_at', { ascending: false }),
+      supabase
+        .from('employee_awards')
+        .select('id,employee_id,business_unit_id,department_id,status,submitted_at,approver_id,approver_steps,hris_users:employee_id(full_name),award_templates(title)')
+        .in('status', ['PendingApproval', 'Pending Approval', 'Pending'])
+        .order('submitted_at', { ascending: false }),
     ]);
 
-    const errors = [nteResult.error, panResult.error, requisitionResult.error].filter(Boolean);
+    const errors = [nteResult.error, panResult.error, requisitionResult.error, awardResult.error].filter(Boolean);
     setAdditionalApprovalError(errors.length ? errors.map(error => error!.message).join(' · ') : null);
 
     const nteRows = (nteResult.data || []).filter((row: any) =>
@@ -183,6 +204,27 @@ export function useAdditionalApprovals(user: User | null) {
         canonicalKey: `requisition:${row.id}:${step.order ?? stepIndex}`,
       }];
     }));
+
+    setPendingAwardApprovals((awardResult.data || []).flatMap((row: any) => {
+      const steps: PendingStep[] = Array.isArray(row.approver_steps) ? row.approver_steps : [];
+      const stepIndex = steps.findIndex(step => step.userId === user.id && isPending(step.status));
+      const isAssignedLegacyApprover = row.approver_id === user.id;
+      if (stepIndex < 0 && !isAssignedLegacyApprover) return [];
+      const step = stepIndex >= 0 ? steps[stepIndex] : undefined;
+      return [{
+        id: row.id,
+        employeeId: row.employee_id,
+        employeeName: row.hris_users?.full_name || 'Employee',
+        awardTitle: row.award_templates?.title || 'Award',
+        reference: `AWARD-${String(row.id).slice(0, 8).toUpperCase()}`,
+        businessUnitId: row.business_unit_id || undefined,
+        departmentId: row.department_id || undefined,
+        status: 'Pending Approval',
+        createdAt: new Date(row.submitted_at || Date.now()),
+        currentStep: step?.userName || step?.name || 'Award approval',
+        canonicalKey: `award:${row.id}:${step?.order ?? stepIndex ?? 0}`,
+      }];
+    }));
   }, [user?.id]);
 
   useEffect(() => {
@@ -195,6 +237,7 @@ export function useAdditionalApprovals(user: User | null) {
     pendingNTEApprovals,
     pendingPANApprovals,
     pendingRequisitionApprovals,
+    pendingAwardApprovals,
     additionalApprovalError,
     refreshAdditionalApprovals,
   };

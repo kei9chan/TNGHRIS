@@ -814,6 +814,7 @@ export enum ResolutionStatus {
   Draft = 'Draft',
   PendingApproval = 'Pending Approval',
   Approved = 'Approved',
+  Issued = 'Issued',
   PendingAcknowledgement = 'Pending Acknowledgement',
   Acknowledged = 'Acknowledged',
   Rejected = 'Rejected',
@@ -2545,6 +2546,7 @@ export interface AwardDesign {
   bodyText: string; // e.g. "This is awarded to {{employee_name}}..."
   signatories: AwardSignatory[];
   logoUrl?: string;
+  accentColor?: string;
 }
 
 export interface Award {
@@ -2554,6 +2556,12 @@ export interface Award {
   badgeIconUrl: string;
   isActive: boolean;
   design?: AwardDesign;
+  businessUnitId?: string;
+  category?: string;
+  awardValueLabel?: string;
+  isDefault?: boolean;
+  isPreset?: boolean;
+  presetKey?: string;
 }
 
 export enum BadgeLevel {
@@ -2571,6 +2579,7 @@ export interface EmployeeAward {
   createdByUserId: string;
   level: BadgeLevel;
   businessUnitId?: string;
+  departmentId?: string;
   status: ResolutionStatus;
   approverSteps: ApproverStep[];
   rejectionReason?: string;
@@ -2578,6 +2587,9 @@ export interface EmployeeAward {
   certificateSnapshotUrl?: string; // NEW: Stores the Base64 image of the certificate
   approverId?: string;
   approverName?: string;
+  submittedAt?: Date;
+  decidedAt?: Date;
+  issuedAt?: Date;
 }
 
 export type UserDocumentType =

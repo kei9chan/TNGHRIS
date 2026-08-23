@@ -17,7 +17,8 @@
     "test:followups-comms": "node tests/followupsCommunicationsSmokeTest.mjs",
     "test:employee-management": "node tests/employeeManagementEnhancementSmokeTest.mjs",
     "test:pan-workflow": "node tests/panWorkflowSmokeTest.mjs",
-    "test:evaluation-workflow": "node tests/evaluationWorkflowSmokeTest.mjs"
+    "test:evaluation-workflow": "node tests/evaluationWorkflowSmokeTest.mjs",
+    "test:lifecycle-awards": "node tests/offboardingLeaveAwardsSmokeTest.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.84.0",

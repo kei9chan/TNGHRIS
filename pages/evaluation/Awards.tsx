@@ -1,8 +1,9 @@
 
 import React from 'react';
+import { useSearchParams } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import { Award, EmployeeAward, User, Permission, NotificationType, BadgeLevel, BusinessUnit, Role, ResolutionStatus, ApproverStatus, ApproverStep } from '../../types';
+import { Award, EmployeeAward, User, Permission, BadgeLevel, BusinessUnit, Role, ResolutionStatus, ApproverStep } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import AwardTemplateModal from '../../components/evaluation/AwardTemplateModal';
@@ -10,16 +11,12 @@ import AssignAwardModal from '../../components/evaluation/AssignAwardModal';
 import Confetti from '../../components/ui/Confetti';
 import Toast from '../../components/ui/Toast';
 import Modal from '../../components/ui/Modal';
-import Textarea from '../../components/ui/Textarea';
-import EmployeeMultiSelect from '../../components/feedback/EmployeeMultiSelect';
 import RejectReasonModal from '../../components/feedback/RejectReasonModal';
-import { logActivity } from '../../services/auditService';
-import { fetchAwardTemplates, fetchEmployeeAwards, createEmployeeAward, updateEmployeeAwardStatus, saveAwardTemplate } from '../../services/awardService';
+import { fetchAwardTemplates, fetchEmployeeAwards, createEmployeeAward, processEmployeeAwardApproval, markEmployeeAwardIssued, saveAwardTemplate } from '../../services/awardService';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import CertificateRenderer from '../../components/evaluation/CertificateRenderer';
 import html2canvas from 'html2canvas';
-import { createNotification } from '../../services/notificationService';
 
 const FALLBACK_DESIGN = {
   backgroundColor: '#ffffff',
@@ -48,6 +45,7 @@ type EnrichedEmployeeAward = EmployeeAward & {
 
 
 const Awards: React.FC = () => {
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const { can, getAwardsAccess } = usePermissions();
   const canManage = can('Evaluation', Permission.Manage);
@@ -62,6 +60,7 @@ const Awards: React.FC = () => {
   
   const [isTemplateModalOpen, setIsTemplateModalOpen] = React.useState(false);
   const [selectedAward, setSelectedAward] = React.useState<Award | null>(null);
+  const [isDuplicatingTemplate, setIsDuplicatingTemplate] = React.useState(false);
 
   const [showConfetti, setShowConfetti] = React.useState(false);
   const [toastInfo, setToastInfo] = React.useState<{ show: boolean, title: string, message: string, icon?: React.ReactNode }>({ show: false, title: '', message: '' });
@@ -74,11 +73,7 @@ const Awards: React.FC = () => {
   const [reviewAward, setReviewAward] = React.useState<EnrichedEmployeeAward | null>(null);
   const [isRejectModalOpen, setIsRejectModalOpen] = React.useState(false);
   const [awardToReject, setAwardToReject] = React.useState<EnrichedEmployeeAward | null>(null);
-  const [downloadTarget, setDownloadTarget] = React.useState<EnrichedEmployeeAward | null>(null);
-  const downloadRef = React.useRef<HTMLDivElement>(null);
-
-  const approverPool = React.useMemo(() => 
-    users.filter(u => [Role.GeneralManager, Role.BOD].includes(u.role)), [users]);
+  const reviewCertificateRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     const load = async () => {
@@ -99,12 +94,16 @@ const Awards: React.FC = () => {
           createdByUserId: a.createdByUserId || '',
           level: a.level || BadgeLevel.Bronze,
           businessUnitId: a.businessUnitId,
+          departmentId: a.departmentId,
           status: a.status,
-          approverSteps: [],
+          approverSteps: a.approverSteps as ApproverStep[],
           rejectionReason: a.rejectionReason,
           certificateSnapshotUrl: a.certificateUrl,
           approverId: a.approverId,
           approverName: a.approverName,
+          submittedAt: a.submittedAt,
+          decidedAt: a.decidedAt,
+          issuedAt: a.issuedAt,
         }));
         setEmployeeAwards(mapped);
       } catch {
@@ -162,8 +161,8 @@ const Awards: React.FC = () => {
       awardId: string, 
       notes: string, 
       businessUnitId: string, 
-      approvers: User[], 
-      certificateUrl: string
+      departmentId: string,
+      approvers: User[]
   ) => {
     if (!user) return;
     try {
@@ -172,9 +171,9 @@ const Awards: React.FC = () => {
         awardTemplateId: awardId,
         notes,
         businessUnitId,
-        certificateUrl,
+        departmentId: departmentId || undefined,
         createdByUserId: user.id,
-        approverId: approvers[0]?.id,
+        approverIds: approvers.map(approver => approver.id),
       });
       const mapped: EmployeeAward = {
         id: created.id,
@@ -185,33 +184,23 @@ const Awards: React.FC = () => {
         createdByUserId: user.id,
         level: created.level || BadgeLevel.Bronze,
         businessUnitId,
+        departmentId: departmentId || undefined,
         status: created.status,
-        approverSteps: [],
+        approverSteps: created.approverSteps as ApproverStep[],
         rejectionReason: created.rejectionReason,
-        certificateSnapshotUrl: created.certificateUrl,
+        certificateSnapshotUrl: undefined,
+        approverId: created.approverId,
+        approverName: created.approverName,
+        submittedAt: created.submittedAt,
       };
       setEmployeeAwards(prev => [mapped, ...prev]);
       setIsAssignModalOpen(false);
-      const employee = users.find(u => u.id === employeeId);
-      const awardTemplate = awards.find(a => a.id === awardId);
-      logActivity(user, 'CREATE', 'EmployeeAward', mapped.id, `Nominated ${employee?.name || employeeId} for award.`);
       setToastInfo({
         show: true,
         title: 'Award Submitted',
         message: 'Award nomination submitted.',
       });
 
-      // Notify each selected approver about the pending nomination
-      for (const approver of approvers) {
-        createNotification({
-          userId: approver.id,
-          type: NotificationType.AWARD_APPROVAL_REQUEST,
-          title: 'Award Approval Needed',
-          message: `${user.name || 'An HR staff'} nominated ${employee?.name || 'an employee'} for "${awardTemplate?.title || 'an award'}". Please review.`,
-          link: '/evaluation/awards',
-          relatedEntityId: mapped.id,
-        }).catch(e => console.warn('Failed to send award approval notification to approver', e));
-      }
     } catch (err: any) {
       alert(err?.message || 'Failed to submit award.');
     }
@@ -227,51 +216,36 @@ const Awards: React.FC = () => {
         isActive: award.isActive,
         design: award.design,
         createdByUserId: user?.id,
+        businessUnitId: award.businessUnitId,
+        category: award.category,
+        awardValueLabel: award.awardValueLabel,
+        isDefault: award.isDefault,
+        isPreset: award.isPreset,
+        presetKey: award.presetKey,
       });
         setAwards(prev => {
           const exists = prev.find(a => a.id === saved.id);
           return exists ? prev.map(a => a.id === saved.id ? saved : a) : [saved, ...prev];
         });
         setIsTemplateModalOpen(false);
+        setIsDuplicatingTemplate(false);
       } catch (err: any) {
         alert(err?.message || 'Failed to save template.');
       }
   };
 
-  // Download a clean certificate image for a given award row
-  React.useEffect(() => {
-    const runDownload = async () => {
-      if (!downloadTarget) return;
-      const node = downloadRef.current;
-      const tpl = awards.find(a => a.id === downloadTarget.awardId);
-      if (!node || !tpl) {
-        setDownloadTarget(null);
-        return;
-      }
-      // Allow render cycle to paint hidden renderer
-      await new Promise(requestAnimationFrame);
-      try {
-        const canvas = await html2canvas(node, {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-        });
-        const url = canvas.toDataURL('image/png');
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `Certificate_${downloadTarget.employeeName || 'Employee'}.png`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-      } catch (err) {
-        console.error('Failed to download certificate', err);
-        alert('Failed to download certificate.');
-      } finally {
-        setDownloadTarget(null);
-      }
-    };
-    runDownload();
-  }, [downloadTarget, awards]);
+  const downloadIssuedCertificate = (award: EnrichedEmployeeAward) => {
+    if (award.status !== ResolutionStatus.Issued || !award.certificateSnapshotUrl) {
+      alert('The final certificate is available only after approval and issuance.');
+      return;
+    }
+    const link = document.createElement('a');
+    link.href = award.certificateSnapshotUrl;
+    link.download = `Certificate_${award.employeeName || 'Employee'}.png`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
   
   const enrichedEmployeeAwards = React.useMemo(() => {
     const base = employeeAwards.map(ea => {
@@ -316,40 +290,102 @@ const Awards: React.FC = () => {
     });
   }, [enrichedEmployeeAwards, buFilter, monthFilter, yearFilter, statusFilter]);
 
+  React.useEffect(() => {
+    const requestedAwardId = searchParams.get('item');
+    if (!requestedAwardId || !user) return;
+    const requestedAward = enrichedEmployeeAwards.find(award => award.id === requestedAwardId);
+    if (!requestedAward) return;
+    const assignedToUser = requestedAward.approverId === user.id
+      || requestedAward.approverSteps.some(step => step.userId === user.id);
+    if (
+      (requestedAward.status === ResolutionStatus.PendingApproval && assignedToUser)
+      || (requestedAward.status === ResolutionStatus.Approved && (assignedToUser || canManage))
+    ) {
+      setReviewAward(requestedAward);
+    }
+  }, [searchParams, enrichedEmployeeAwards, user, canManage]);
+
+    const captureFinalCertificate = async () => {
+        const source = reviewCertificateRef.current;
+        if (!source) throw new Error('Certificate preview is not ready. Please reopen the award and try again.');
+        const clone = source.cloneNode(true) as HTMLElement;
+        clone.style.position = 'absolute';
+        clone.style.left = '-12000px';
+        clone.style.top = '0';
+        clone.style.width = '1000px';
+        clone.style.height = '700px';
+        clone.style.transform = 'none';
+        document.body.appendChild(clone);
+        try {
+          const canvas = await html2canvas(clone, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+          return canvas.toDataURL('image/png');
+        } finally {
+          clone.remove();
+        }
+    };
+
+    const issueApprovedAward = async (award: EnrichedEmployeeAward) => {
+        const employee = users.find(candidate => candidate.id === award.employeeId);
+        if (!employee?.email) throw new Error('The employee has no email address. Add one before issuing the award.');
+        const certificateUrl = await captureFinalCertificate();
+        const certificateBase64 = certificateUrl.split(',')[1] || '';
+        const firstName = employee.name.includes(',')
+          ? employee.name.split(',')[1]?.trim().split(' ')[0]
+          : employee.name.split(' ')[0];
+        const senderName = (import.meta as any).env?.VITE_SMTP_FROM_NAME || user?.name || 'HR Team';
+        const response = await fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: employee.email,
+            subject: `Award Certificate - ${award.awardTitle}`,
+            message: `Dear ${firstName},\n\nCongratulations on receiving the ${award.awardTitle} award. Your approved certificate is attached.\n\nBest regards,\n${senderName}`,
+            html: `<p>Dear ${firstName},</p><p>Congratulations on receiving the <strong>${award.awardTitle}</strong> award. Your approved certificate is attached.</p>${award.notes ? `<p><strong>Citation:</strong> ${award.notes}</p>` : ''}<p>Best regards,<br />${senderName}</p>`,
+            attachments: [{
+              filename: `Award_Certificate_${employee.name.replace(/\s+/g, '_')}.png`,
+              contentBase64: certificateBase64,
+              contentType: 'image/png',
+            }],
+          }),
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body?.error || 'Approval was saved, but the award email could not be sent. Use Issue Certificate to retry.');
+        }
+        const issued = await markEmployeeAwardIssued(award.id, certificateUrl);
+        setEmployeeAwards(previous => previous.map(item => item.id === award.id ? {
+          ...item,
+          status: ResolutionStatus.Issued,
+          certificateSnapshotUrl: issued.certificateUrl,
+          issuedAt: issued.issuedAt,
+          dateAwarded: issued.issuedAt || issued.decidedAt || new Date(),
+        } : item));
+        setShowConfetti(true);
+        setTimeout(() => setShowConfetti(false), 4000);
+        setToastInfo({ show: true, title: 'Award issued', message: `${award.employeeName} was emailed the approved certificate.` });
+    };
+
     const handleApproveAward = async (award: EnrichedEmployeeAward) => {
         if (!user) return;
         try {
-            const updated = await updateEmployeeAwardStatus(award.id, ResolutionStatus.Approved);
-            setEmployeeAwards(prev => prev.map(a => a.id === award.id ? { ...a, status: ResolutionStatus.Approved, dateAwarded: updated.dateAwarded || new Date() } : a));
-            setShowConfetti(true);
-            setToastInfo({
-                show: true,
-                title: "Award Approved!",
-                message: `${award.employeeName || 'Employee'} has officially received the ${award.awardTitle || 'Award'}! 🌟`,
-            });
-            setTimeout(() => setShowConfetti(false), 4000);
-
-            // Notify the award recipient
-            createNotification({
-                userId: award.employeeId,
-                type: NotificationType.AWARD_ISSUED,
-                title: 'Award Approved! 🏆',
-                message: `Congratulations! Your nomination for "${award.awardTitle}" has been approved.`,
-                link: '/evaluation/awards',
-            }).catch(e => console.warn('Failed to send award approval notification to recipient', e));
-
-            // Also notify the nominator if different
-            if (award.createdByUserId && award.createdByUserId !== award.employeeId) {
-                createNotification({
-                    userId: award.createdByUserId,
-                    type: NotificationType.AWARD_ISSUED,
-                    title: 'Nomination Approved',
-                    message: `Your nomination of ${award.employeeName || 'the employee'} for "${award.awardTitle}" has been approved.`,
-                    link: '/evaluation/awards',
-                }).catch(e => console.warn('Failed to send award approval notification to nominator', e));
+            const updated = await processEmployeeAwardApproval(award.id, true);
+            const nextStatus = updated.status;
+            setEmployeeAwards(previous => previous.map(item => item.id === award.id ? {
+              ...item,
+              status: nextStatus,
+              approverSteps: updated.approverSteps as ApproverStep[],
+              approverId: updated.approverId,
+              approverName: updated.approverName,
+              decidedAt: updated.decidedAt,
+              dateAwarded: updated.decidedAt || item.dateAwarded,
+            } : item));
+            if (nextStatus === ResolutionStatus.Approved) {
+              await issueApprovedAward({ ...award, status: ResolutionStatus.Approved, approverSteps: updated.approverSteps as ApproverStep[] });
+            } else {
+              setToastInfo({ show: true, title: 'Approval recorded', message: 'The award remains pending until all required approvers approve it.' });
             }
         } catch (err: any) {
-            alert(err?.message || 'Failed to approve award.');
+            alert(err?.message || 'Failed to approve or issue award.');
         }
         setReviewAward(null);
     };
@@ -363,7 +399,7 @@ const Awards: React.FC = () => {
     const handleConfirmReject = async (reason: string) => {
         if (!user || !awardToReject) return;
         try {
-            const updated = await updateEmployeeAwardStatus(awardToReject.id, ResolutionStatus.Rejected, reason);
+            const updated = await processEmployeeAwardApproval(awardToReject.id, false, reason);
             setEmployeeAwards(prev =>
                 prev.map(a =>
                     a.id === awardToReject.id
@@ -377,25 +413,6 @@ const Awards: React.FC = () => {
                 message: `${awardToReject.employeeName || 'Employee'} nomination was rejected.`,
             });
 
-            // Notify the award recipient of the rejection
-            createNotification({
-                userId: awardToReject.employeeId,
-                type: NotificationType.AWARD_ISSUED,
-                title: 'Award Nomination Rejected',
-                message: `Your nomination for "${awardToReject.awardTitle}" was not approved${reason ? `: ${reason}` : '.'}`,
-                link: '/evaluation/awards',
-            }).catch(e => console.warn('Failed to send award rejection notification to recipient', e));
-
-            // Also notify the nominator if different
-            if (awardToReject.createdByUserId && awardToReject.createdByUserId !== awardToReject.employeeId) {
-                createNotification({
-                    userId: awardToReject.createdByUserId,
-                    type: NotificationType.AWARD_ISSUED,
-                    title: 'Nomination Rejected',
-                    message: `Your nomination of ${awardToReject.employeeName || 'the employee'} for "${awardToReject.awardTitle}" was rejected${reason ? `: ${reason}` : '.'}`,
-                    link: '/evaluation/awards',
-                }).catch(e => console.warn('Failed to send award rejection notification to nominator', e));
-            }
         } catch (err: any) {
             alert(err?.message || 'Failed to reject award.');
         }
@@ -409,14 +426,18 @@ const Awards: React.FC = () => {
         const isApprover =
           (award.approverId && award.approverId === user.id) ||
           award.approverSteps.some(step => step.userId === user.id);
-        if (isApprover && award.status === ResolutionStatus.PendingApproval) {
+        if (
+          (isApprover && award.status === ResolutionStatus.PendingApproval)
+          || (award.status === ResolutionStatus.Approved && (isApprover || canManage))
+        ) {
             setReviewAward(award);
         }
     };
     
     const getStatusColor = (status: ResolutionStatus) => {
         switch(status) {
-            case ResolutionStatus.Approved: return 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300';
+            case ResolutionStatus.Approved:
+            case ResolutionStatus.Issued: return 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300';
             case ResolutionStatus.PendingApproval: return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300';
             case ResolutionStatus.Rejected: return 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300';
             default: return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
@@ -438,8 +459,21 @@ const Awards: React.FC = () => {
                 title={`Review Award for ${reviewAward.employeeName}`}
                 footer={
                     <div className="flex justify-end w-full space-x-2">
-                        <Button variant="danger" onClick={() => handleRejectAward(reviewAward)}>Reject</Button>
-                        <Button onClick={() => handleApproveAward(reviewAward)}>Approve</Button>
+                        {reviewAward.status === ResolutionStatus.PendingApproval ? (
+                          <>
+                            <Button variant="danger" onClick={() => handleRejectAward(reviewAward)}>Reject</Button>
+                            <Button onClick={() => handleApproveAward(reviewAward)}>Approve</Button>
+                          </>
+                        ) : (
+                          <Button onClick={async () => {
+                            try {
+                              await issueApprovedAward(reviewAward);
+                              setReviewAward(null);
+                            } catch (error: any) {
+                              alert(error?.message || 'Failed to issue certificate.');
+                            }
+                          }}>Issue Certificate & Email</Button>
+                        )}
                     </div>
                 }
             >
@@ -449,6 +483,7 @@ const Awards: React.FC = () => {
                         <div className="border p-2 bg-gray-100 rounded flex justify-center min-h-[320px] overflow-auto">
                             <div className="flex justify-center w-full">
                                 <div
+                                  ref={reviewCertificateRef}
                                   style={{
                                     width: '1000px',
                                     height: '700px',
@@ -465,6 +500,12 @@ const Awards: React.FC = () => {
                                         date: reviewAward.dateAwarded || new Date(),
                                         awardTitle: previewTitle,
                                         citation: reviewAward.notes || '',
+                                        position: users.find(candidate => candidate.id === reviewAward.employeeId)?.position,
+                                        department: users.find(candidate => candidate.id === reviewAward.employeeId)?.department,
+                                        businessUnit: reviewAward.businessUnitName,
+                                        issuerName: user?.name,
+                                        issuerTitle: user?.role,
+                                        awardValue: reviewTemplate?.awardValueLabel,
                                       }}
                                     />
                                 </div>
@@ -475,6 +516,12 @@ const Awards: React.FC = () => {
                     <p><strong>Business Unit:</strong> {reviewAward.businessUnitName}</p>
                     <p><strong>Reason:</strong> {reviewAward.notes}</p>
                     <p><strong>Submitted by:</strong> {reviewAward.createdByName}</p>
+                    <div>
+                      <strong>Required approvals:</strong>
+                      <ul className="mt-1 list-disc pl-5 text-sm text-gray-600 dark:text-gray-300">
+                        {reviewAward.approverSteps.map(step => <li key={step.userId}>{step.userName}: {step.status}</li>)}
+                      </ul>
+                    </div>
                 </div>
             </Modal>
         );
@@ -495,7 +542,7 @@ const Awards: React.FC = () => {
         {canManage && (
             <div className="flex space-x-2">
                 {awardsAccess.canAssign && (
-                  <Button variant="secondary" onClick={() => { setSelectedAward(null); setIsTemplateModalOpen(true); }}>Create Award</Button>
+                  <Button variant="secondary" onClick={() => { setSelectedAward(null); setIsDuplicatingTemplate(false); setIsTemplateModalOpen(true); }}>Create Award</Button>
                 )}
                 {awardsAccess.canAssign && (
                   <Button onClick={() => setIsAssignModalOpen(true)}>Assign Award</Button>
@@ -512,12 +559,21 @@ const Awards: React.FC = () => {
 
       <Card title="Award Templates">
          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {awards.filter(a => a.isActive).map(award => (
-                <div key={award.id} className="p-4 border rounded-lg dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex items-center space-x-4">
-                    <img src={award.badgeIconUrl} alt={award.title} className="w-12 h-12" />
-                    <div>
+            {awards.filter(a => a.isActive).sort((a, b) => a.title.localeCompare(b.title)).map(award => (
+                <div key={award.id} className="p-4 border rounded-lg dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex items-start space-x-4">
+                    {award.badgeIconUrl ? <img src={award.badgeIconUrl} alt={award.title} className="w-12 h-12 object-contain" /> : <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-amber-100 text-2xl">🏆</div>}
+                    <div className="min-w-0 flex-1">
                         <h4 className="font-bold text-gray-900 dark:text-white">{award.title}</h4>
                         <p className="text-xs text-gray-500 dark:text-gray-400">{award.description}</p>
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                          {award.isPreset && <span className="rounded bg-indigo-100 px-2 py-1 text-indigo-700">BU preset</span>}
+                          {award.isDefault && <span className="rounded bg-emerald-100 px-2 py-1 text-emerald-700">Default</span>}
+                          {award.category && <span className="rounded bg-gray-100 px-2 py-1 text-gray-700">{award.category}</span>}
+                        </div>
+                        {awardsAccess.canAssign && <div className="mt-3 flex gap-3 text-sm">
+                          <button className="font-semibold text-indigo-600" onClick={() => { setSelectedAward(award); setIsDuplicatingTemplate(false); setIsTemplateModalOpen(true); }}>Edit</button>
+                          <button className="font-semibold text-indigo-600" onClick={() => { setSelectedAward({ ...award, title: `${award.title} (Copy)`, isDefault: false }); setIsDuplicatingTemplate(true); setIsTemplateModalOpen(true); }}>Duplicate</button>
+                        </div>}
                     </div>
                 </div>
             ))}
@@ -531,7 +587,7 @@ const Awards: React.FC = () => {
                 <label htmlFor="buFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
                 <select id="buFilter" value={buFilter} onChange={e => setBuFilter(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 dark:border-gray-600 dark:bg-gray-700 rounded-md">
                     <option value="">All Business Units</option>
-                    {businessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
+                    {[...businessUnits].sort((a, b) => a.name.localeCompare(b.name)).map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
                 </select>
             </div>
             <div>
@@ -565,7 +621,7 @@ const Awards: React.FC = () => {
                     <tr>
                         <th className="px-4 py-3 text-left text-xs font-medium uppercase">Employee</th>
                         <th className="px-4 py-3 text-left text-xs font-medium uppercase">Award</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium uppercase">Date Awarded</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium uppercase">Submitted / Awarded</th>
                         <th className="px-4 py-3 text-left text-xs font-medium uppercase">Status</th>
                         <th className="px-4 py-3 text-left text-xs font-medium uppercase">Notes</th>
                         <th className="px-4 py-3 text-left text-xs font-medium uppercase">Awarded By</th>
@@ -575,7 +631,7 @@ const Awards: React.FC = () => {
                 </thead>
                 <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                     {filteredEmployeeAwards.map(ea => (
-                        <tr key={ea.id} onClick={() => handleRowClick(ea)} className={ea.status === ResolutionStatus.PendingApproval ? "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50" : ""}>
+                        <tr key={ea.id} onClick={() => handleRowClick(ea)} className={[ResolutionStatus.PendingApproval, ResolutionStatus.Approved].includes(ea.status) ? "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50" : ""}>
                             <td className="px-4 py-4 whitespace-nowrap font-medium text-gray-900 dark:text-white">{ea.employeeName}</td>
                             <td className="px-4 py-4 whitespace-nowrap flex items-center">
                                 {ea.badgeIconUrl && <img src={ea.badgeIconUrl} alt={ea.awardTitle} className="w-6 h-6 mr-2" />}
@@ -587,15 +643,17 @@ const Awards: React.FC = () => {
                             <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{ea.createdByName}</td>
                             <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{ea.businessUnitName}</td>
                              <td className="px-4 py-4 whitespace-nowrap text-sm">
-                                {awardsAccess.canView ? (
+                                {ea.status === ResolutionStatus.Issued && ea.certificateSnapshotUrl ? (
                                   <button
-                                    onClick={(e) => { e.stopPropagation(); setDownloadTarget(ea); }}
+                                    onClick={(e) => { e.stopPropagation(); downloadIssuedCertificate(ea); }}
                                     className="text-indigo-600 hover:underline"
                                   >
                                     Download
                                   </button>
+                                ) : ea.status === ResolutionStatus.Approved && (canManage || ea.approverId === user?.id) ? (
+                                  <button onClick={(event) => { event.stopPropagation(); setReviewAward(ea); }} className="text-indigo-600 hover:underline">Issue</button>
                                 ) : (
-                                  <span className="text-gray-400">-</span>
+                                  <span className="text-gray-400">Awaiting approval</span>
                                 )}
                             </td>
                         </tr>
@@ -611,32 +669,6 @@ const Awards: React.FC = () => {
             </table>
         </div>
       </Card>
-      )}
-      
-      {/* Hidden renderer for clean certificate download */}
-      {downloadTarget && (
-        <div
-          style={{
-            position: 'absolute',
-            left: '-12000px',
-            top: 0,
-            width: '1000px',
-            height: '700px',
-            background: '#fff',
-            pointerEvents: 'none',
-          }}
-          ref={downloadRef}
-        >
-          <CertificateRenderer
-            design={(awards.find(a => a.id === downloadTarget.awardId)?.design as any) || FALLBACK_DESIGN}
-            data={{
-              employeeName: downloadTarget.employeeName,
-              date: downloadTarget.dateAwarded || new Date(),
-              awardTitle: awards.find(a => a.id === downloadTarget.awardId)?.title || downloadTarget.awardTitle,
-              citation: downloadTarget.notes || '',
-            }}
-          />
-        </div>
       )}
       
       <AssignAwardModal 
@@ -663,6 +695,8 @@ const Awards: React.FC = () => {
         onClose={() => setIsTemplateModalOpen(false)}
         onSave={handleSaveAwardTemplate}
         award={selectedAward}
+        businessUnits={businessUnits}
+        isDuplicate={isDuplicatingTemplate}
       />
     </div>
   );
