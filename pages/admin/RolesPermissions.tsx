@@ -16,6 +16,7 @@ type RoleRow = {
 };
 
 type AuthorityMatrix = Record<string, Record<string, Permission[]>>;
+const dataScopes = ['SELF','DIRECT_REPORTS','DEPARTMENT','HOME_ONLY','SPECIFIC','GLOBAL'];
 
 const sensitiveFields = [
     'salary_compensation','bank_information','sss','tin','pagibig','philhealth',
@@ -112,6 +113,12 @@ const RolesPermissions: React.FC = () => {
         return next;
     });
 
+    const updateDefaultScope = (role: Role, scope: string) => {
+        const linked = role === Role.BOD || role === Role.HRManager ? [Role.BOD, Role.HRManager] : [role];
+        setRoles(previous => previous.map(item => linked.includes(item.id) ? { ...item, default_data_scope: scope } : item));
+        markLinkedDirty(role);
+    };
+
     const toggleAuthority = (kind: 'sensitive'|'workflow', role: Role, key: string, action: Permission, checked: boolean) => {
         const rolesToUpdate = role === Role.BOD || role === Role.HRManager ? [Role.BOD,Role.HRManager] : [role];
         const setter = kind === 'sensitive' ? setSensitiveMatrix : setWorkflowMatrix;
@@ -178,6 +185,15 @@ const RolesPermissions: React.FC = () => {
                 setSaving(false);
                 return;
             }
+            const { error: configurationError } = await supabase.rpc('admin_update_role_default_scope', {
+                p_role: role,
+                p_default_data_scope: roles.find(item => item.id === role)?.default_data_scope || 'SELF',
+            });
+            if (configurationError) {
+                setError(configurationError.message);
+                setSaving(false);
+                return;
+            }
         }
         await refreshPermissions();
         await loadData();
@@ -213,7 +229,12 @@ const RolesPermissions: React.FC = () => {
                         <div key={role.id} className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-slate-900/50">
                             <h2 className="font-semibold text-gray-900 dark:text-white">{role.display_name || role.id}</h2>
                             <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{role.description}</p>
-                            <p className="mt-2 text-xs text-gray-500">Dashboard: {role.dashboard_type} · Default scope: {role.default_data_scope}</p>
+                            <p className="mt-2 text-xs text-gray-500">Dashboard: {role.dashboard_type}</p>
+                            <label className="mt-3 block text-xs font-medium text-gray-600">Default data scope
+                                <select value={role.default_data_scope || 'SELF'} disabled={!canManage} onChange={event => updateDefaultScope(role.id, event.target.value)} className="mt-1 block w-full rounded-md border-gray-300 bg-white p-2 text-sm disabled:bg-gray-100">
+                                    {dataScopes.map(scope => <option key={scope} value={scope}>{scope.replaceAll('_',' ')}</option>)}
+                                </select>
+                            </label>
                         </div>
                     ))}
                 </div>

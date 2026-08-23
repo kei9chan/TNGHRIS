@@ -488,9 +488,11 @@ export interface User {
   dashboardType?: 'executive' | 'hr' | 'admin' | 'admin_it' | 'manager' | 'employee' | string;
   sensitivePermissions?: Record<string, Permission[]>;
   workflowPermissions?: Record<string, Permission[]>;
+  effectiveFeaturePermissions?: Record<string, Permission[]>;
   authorizationDiagnostic?: string;
   permissionUpdatedAt?: Date;
   permissionUpdatedBy?: string;
+  permissionUpdatedByName?: string;
 
   // PII
   sssNo?: string;

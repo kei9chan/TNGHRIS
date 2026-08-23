@@ -98,8 +98,9 @@ const UserRoleEditModal: React.FC<Props> = ({ isOpen, onClose, user, onSave, bus
                         ))}
                     </div>
                 )}
-                <div className="grid gap-3 rounded-lg bg-gray-50 p-4 text-sm sm:grid-cols-3">
+                <div className="grid gap-3 rounded-lg bg-gray-50 p-4 text-sm sm:grid-cols-4">
                     <div><strong>Effective roles</strong><p>{roleIds.join(' + ')}</p></div>
+                    <div><strong>Feature access</strong><p>{Object.keys(user.effectiveFeaturePermissions || {}).length} resources</p></div>
                     <div><strong>Sensitive-data summary</strong><p>{Object.keys(user.sensitivePermissions || {}).length} protected categories</p></div>
                     <div><strong>Workflow summary</strong><p>{Object.keys(user.workflowPermissions || {}).length} workflows</p></div>
                 </div>

@@ -27,28 +27,38 @@ const UserManagement: React.FC = () => {
 
     const loadData = async () => {
         setLoading(true); setError(null);
-        const [userResult, buResult, roleResult, assignmentResult, sensitiveResult, workflowResult] = await Promise.all([
+        const [userResult, buResult, roleResult, assignmentResult, featureResult, sensitiveResult, workflowResult] = await Promise.all([
             supabase.from('hris_users').select('id,email,first_name,last_name,full_name,role,status,business_unit,department,business_unit_id,department_id,data_access_scope,dashboard_type,permission_updated_at,permission_updated_by'),
             supabase.from('business_units').select('id,name').order('name'),
             supabase.from('roles').select('id').eq('is_active', true).order('display_name'),
             supabase.from('user_roles').select('user_id,role_id,is_primary,scope_type,allowed_business_unit_ids,dashboard_type,is_active').eq('is_active', true),
+            supabase.from('role_permissions').select('role_id,resource_id,permissions'),
             supabase.from('role_sensitive_permissions').select('role_id,field_key,permissions'),
             supabase.from('role_workflow_permissions').select('role_id,workflow_key,actions'),
         ]);
-        const loadError = userResult.error || buResult.error || roleResult.error || assignmentResult.error || sensitiveResult.error || workflowResult.error;
+        const loadError = userResult.error || buResult.error || roleResult.error || assignmentResult.error || featureResult.error || sensitiveResult.error || workflowResult.error;
         if (loadError) { setError(loadError.message); setLoading(false); return; }
         const units = (buResult.data || []).map((row: any) => ({ id: row.id, name: row.name } as BusinessUnit));
         setBusinessUnits(units); setRoles((roleResult.data || []).map((row: any) => row.id));
         const unitMap = new Map(units.map(unit => [unit.id, unit.name]));
         const assignments = assignmentResult.data || [];
+        const featureRows = featureResult.data || [];
         const sensitiveRows = sensitiveResult.data || [];
         const workflowRows = workflowResult.data || [];
+        const actorNames = new Map((userResult.data || []).map((row: any) => [
+            row.id,
+            formatEmployeeName(row.full_name || `${row.first_name || ''} ${row.last_name || ''}`.trim()) || row.email || row.id,
+        ]));
         setUsers((userResult.data || []).map((row: any) => {
             const assigned = assignments.filter((assignment: any) => assignment.user_id === row.id);
             const primary = assigned.find((assignment: any) => assignment.is_primary) || assigned[0];
             const roleIds = assigned.map((assignment: any) => assignment.role_id as Role);
             const sensitive: Record<string, Permission[]> = {};
             const workflows: Record<string, Permission[]> = {};
+            const features: Record<string, Permission[]> = {};
+            featureRows.filter((item: any) => roleIds.includes(item.role_id)).forEach((item: any) => {
+                features[item.resource_id] = [...new Set([...(features[item.resource_id] || []), ...(item.permissions || [])])];
+            });
             sensitiveRows.filter((item: any) => roleIds.includes(item.role_id)).forEach((item: any) => { sensitive[item.field_key] = item.permissions; });
             workflowRows.filter((item: any) => roleIds.includes(item.role_id)).forEach((item: any) => { workflows[item.workflow_key] = item.actions; });
             return {
@@ -66,8 +76,10 @@ const UserManagement: React.FC = () => {
                 dashboardType: primary?.dashboard_type || row.dashboard_type,
                 sensitivePermissions: sensitive,
                 workflowPermissions: workflows,
+                effectiveFeaturePermissions: features,
                 permissionUpdatedAt: row.permission_updated_at ? new Date(row.permission_updated_at) : undefined,
                 permissionUpdatedBy: row.permission_updated_by,
+                permissionUpdatedByName: row.permission_updated_by ? actorNames.get(row.permission_updated_by) : undefined,
                 dateHired: new Date(), isPhotoEnrolled: false,
             } as User;
         }));
@@ -81,6 +93,16 @@ const UserManagement: React.FC = () => {
         return (!needle || user.name.toLowerCase().includes(needle) || user.email.toLowerCase().includes(needle))
             && (!businessUnitFilter || user.businessUnitId === businessUnitFilter);
     }), [users, search, businessUnitFilter]);
+
+    const scopeSummary = (user: User) => {
+        const scope = user.accessScope?.type || 'SELF';
+        if (scope === 'GLOBAL') return 'All business units';
+        if (scope === 'HOME_ONLY') return user.businessUnit || 'Home business unit';
+        if (scope !== 'SPECIFIC') return scope.replaceAll('_', ' ');
+        const allowed = new Set(user.accessScope?.allowedBuIds || []);
+        const names = businessUnits.filter(unit => allowed.has(unit.id)).map(unit => unit.name);
+        return names.length ? names.join(', ') : 'No business units selected';
+    };
 
     const saveAccess = async (configuration: {
         userId: string; roleIds: string[]; primaryRole: string;
@@ -130,9 +152,9 @@ const UserManagement: React.FC = () => {
                                 <td className="px-4 py-3"><p className="font-medium">{user.name}</p><p className="text-xs text-gray-500">{user.email}<br />{user.businessUnit} · {user.department}</p></td>
                                 <td className="px-4 py-3 text-sm">{(user.roles || [user.role]).map(role => <span key={role} className="mr-1 inline-flex rounded-full bg-indigo-50 px-2 py-1 text-xs text-indigo-700">{role === Role.GeneralManager ? 'General Manager' : role}</span>)}</td>
                                 <td className="px-4 py-3 text-sm">{user.dashboardType || 'employee'}</td>
-                                <td className="px-4 py-3 text-sm">{user.accessScope?.type || 'SELF'}{user.accessScope?.allowedBuIds?.length ? ` (${user.accessScope.allowedBuIds.length})` : ''}</td>
-                                <td className="px-4 py-3 text-xs text-gray-600">{Object.keys(user.sensitivePermissions || {}).length} sensitive<br />{Object.keys(user.workflowPermissions || {}).length} workflows</td>
-                                <td className="px-4 py-3 text-xs text-gray-500">{user.permissionUpdatedAt?.toLocaleString() || 'Legacy assignment'}</td>
+                                <td className="px-4 py-3 text-sm"><span className="font-medium">{user.accessScope?.type || 'SELF'}</span><br /><span className="text-xs text-gray-500">{scopeSummary(user)}</span></td>
+                                <td className="px-4 py-3 text-xs text-gray-600">{Object.keys(user.effectiveFeaturePermissions || {}).length} feature resources<br />{Object.keys(user.sensitivePermissions || {}).length} sensitive · {Object.keys(user.workflowPermissions || {}).length} workflows</td>
+                                <td className="px-4 py-3 text-xs text-gray-500">{user.permissionUpdatedAt?.toLocaleString() || 'Legacy assignment'}<br />{user.permissionUpdatedByName ? `by ${user.permissionUpdatedByName}` : user.permissionUpdatedBy ? `by ${user.permissionUpdatedBy}` : 'by system / legacy migration'}</td>
                                 <td className="px-4 py-3 text-right">{canManage && <Button size="sm" variant="secondary" disabled={saving || user.id === currentUser?.id} onClick={() => setSelectedUser(user)}>{user.id === currentUser?.id ? 'Self change blocked' : 'Edit access'}</Button>}</td>
                             </tr>)}
                             {!loading && filteredUsers.length === 0 && <tr><td colSpan={7} className="p-10 text-center text-gray-500">No users found.</td></tr>}

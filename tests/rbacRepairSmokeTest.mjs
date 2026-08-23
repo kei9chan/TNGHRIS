@@ -12,6 +12,9 @@ const approvals = read('hooks/useApprovals.ts');
 const app = read('App.tsx');
 const signUp = read('pages/SignUp.tsx');
 const selfRegistrationMigration = read('supabase/migrations/20260823213000_secure_self_registration_rbac.sql');
+const scopeControlsMigration = read('supabase/migrations/20260823222000_complete_rbac_admin_scope_controls.sql');
+const rolesPermissionsPage = read('pages/admin/RolesPermissions.tsx');
+const userManagementPage = read('pages/admin/UserManagement.tsx');
 
 const approvedRoles = [
   'Admin','Auditor','Board of Director','Business Unit Manager','Employee','Finance Staff',
@@ -19,6 +22,8 @@ const approvedRoles = [
 ];
 for (const role of approvedRoles) assert.match(types, new RegExp(`['=]\\s*['\"]${role.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['\"]`), `missing role ${role}`);
 assert.doesNotMatch(types, /Recruiter\s*=/, 'Recruiter must not remain an active frontend role');
+assert.match(types, /Manager\s*=\s*['"]Manager['"]/, 'Manager must remain an approved frontend role');
+assert.doesNotMatch(types, /Team Leader/, 'Manager must not be renamed to Team Leader');
 
 const sourceExtensions = new Set(['.ts','.tsx','.js','.jsx']);
 const walk = dir => readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
@@ -77,5 +82,15 @@ assert.match(migration, /pending approval baseline changed/);
 assert.doesNotMatch(migration, /\btruncate\b/i, 'RBAC repair must not truncate production data');
 assert.doesNotMatch(migration, /drop\s+table/i, 'RBAC repair must not drop production tables');
 assert.doesNotMatch(migration, /delete\s+from\s+public\.(leave_requests|wfh_requests|ot_requests|manpower_requests|hris_users)/i, 'RBAC repair must not delete business data');
+
+assert.match(scopeControlsMigration, /admin_update_role_default_scope/);
+assert.match(scopeControlsMigration, /Manager must remain active/);
+assert.match(scopeControlsMigration, /Team Leader must not replace Manager/);
+assert.match(scopeControlsMigration, /UPDATE_ROLE_DEFAULT_SCOPE/);
+assert.match(scopeControlsMigration, /revoke all on function public\.admin_update_role_default_scope\(text,text\) from public, anon/);
+assert.match(rolesPermissionsPage, /Default data scope/);
+assert.match(rolesPermissionsPage, /admin_update_role_default_scope/);
+assert.match(userManagementPage, /effectiveFeaturePermissions/);
+assert.match(userManagementPage, /permissionUpdatedByName/);
 
 console.log('RBAC repair static smoke test passed.');
