@@ -14,6 +14,7 @@ const document = fs.readFileSync('components/recruitment/OfferDocument.tsx', 'ut
 for (const label of ['Role & Job Details', 'Compensation', 'Schedule & Location', 'Benefits & Growth', 'Review & Send']) assert.match(builder, new RegExp(label.replace('&', '\\&')));
 for (const behavior of ['localStorage', 'beforeunload', 'Saving…', 'Draft saved just now', 'Unable to save. Retry', 'Save Draft', 'Preview Offer', 'Send Offer']) assert.ok(builder.includes(behavior), `Missing ${behavior}`);
 assert.match(builder, /z-\[100\]/);
+assert.match(builder, /createPortal/);
 for (const feature of ['Role Purpose', 'Key Responsibilities', 'What Success Looks Like', 'First 90 Days', 'grossAnnualizedSalary', 'Career Growth Journey', 'Candidate signature', 'Download PDF']) assert.ok(builder.includes(feature), `Missing ${feature}`);
 assert.match(builder, /amount \* 12/);
 assert.match(builder, /file\.size > 2 \* 1024 \* 1024/);
