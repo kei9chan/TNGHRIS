@@ -22,7 +22,29 @@ type TemplateStyle = {
     textColor: string;
     accentColor: string;
     secondaryAccent: string;
+    headlineColor: string;
+    titleColor: string;
+    subjectColor: string;
+    ctaColor: string;
+    fontFamily: 'Arial' | 'Georgia' | 'Trebuchet MS' | 'Verdana';
     decoration: 'tropical' | 'minimal' | 'corporate' | 'playful';
+};
+
+type SocialMediaTemplateRow = {
+    id: string;
+    name: string;
+    business_unit_id: string | null;
+    style: Partial<TemplateStyle> | null;
+    headline: string;
+    cta_line: string;
+    subject_line: string;
+    logo_url: string | null;
+    background_url: string | null;
+    background_fit: 'cover' | 'contain' | 'fill';
+    overlay_opacity: number;
+    contrast_helper: boolean;
+    status: 'Active' | 'Archived';
+    updated_at: string;
 };
 
 type BrandPageAsset = {
@@ -53,6 +75,11 @@ const TEMPLATE_STYLES: TemplateStyle[] = [
         textColor: '#083B4C',
         accentColor: '#0BA7A5',
         secondaryAccent: '#F34D91',
+        headlineColor: '#0BA7A5',
+        titleColor: '#083B4C',
+        subjectColor: '#0BA7A5',
+        ctaColor: '#083B4C',
+        fontFamily: 'Arial',
         decoration: 'tropical',
     },
     {
@@ -63,6 +90,11 @@ const TEMPLATE_STYLES: TemplateStyle[] = [
         textColor: '#12233F',
         accentColor: '#1677A8',
         secondaryAccent: '#56B7A9',
+        headlineColor: '#1677A8',
+        titleColor: '#12233F',
+        subjectColor: '#1677A8',
+        ctaColor: '#12233F',
+        fontFamily: 'Arial',
         decoration: 'minimal',
     },
     {
@@ -73,6 +105,11 @@ const TEMPLATE_STYLES: TemplateStyle[] = [
         textColor: '#FFFFFF',
         accentColor: '#72E0D0',
         secondaryAccent: '#F7C45E',
+        headlineColor: '#72E0D0',
+        titleColor: '#FFFFFF',
+        subjectColor: '#72E0D0',
+        ctaColor: '#FFFFFF',
+        fontFamily: 'Arial',
         decoration: 'corporate',
     },
     {
@@ -83,6 +120,11 @@ const TEMPLATE_STYLES: TemplateStyle[] = [
         textColor: '#3B175E',
         accentColor: '#F22574',
         secondaryAccent: '#7B46D8',
+        headlineColor: '#F22574',
+        titleColor: '#3B175E',
+        subjectColor: '#F22574',
+        ctaColor: '#3B175E',
+        fontFamily: 'Arial',
         decoration: 'playful',
     },
 ];
@@ -92,6 +134,21 @@ const DEFAULT_POSITIONS = ['', '', '', '', '', '', '', '', '', ''];
 const getRandomId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 const normalizeName = (value: unknown) => String(value || '').trim().toLowerCase();
+
+const HEX_COLOR_PATTERN = /^#[0-9A-F]{6}$/i;
+
+const normalizeTemplateStyle = (value: Partial<TemplateStyle> | null | undefined, fallback: TemplateStyle): TemplateStyle => ({
+    ...fallback,
+    ...value,
+    backgroundColor: HEX_COLOR_PATTERN.test(String(value?.backgroundColor || '')) ? String(value?.backgroundColor).toUpperCase() : fallback.backgroundColor,
+    textColor: HEX_COLOR_PATTERN.test(String(value?.textColor || '')) ? String(value?.textColor).toUpperCase() : fallback.textColor,
+    accentColor: HEX_COLOR_PATTERN.test(String(value?.accentColor || '')) ? String(value?.accentColor).toUpperCase() : fallback.accentColor,
+    secondaryAccent: HEX_COLOR_PATTERN.test(String(value?.secondaryAccent || '')) ? String(value?.secondaryAccent).toUpperCase() : fallback.secondaryAccent,
+    headlineColor: HEX_COLOR_PATTERN.test(String(value?.headlineColor || '')) ? String(value?.headlineColor).toUpperCase() : fallback.headlineColor,
+    titleColor: HEX_COLOR_PATTERN.test(String(value?.titleColor || '')) ? String(value?.titleColor).toUpperCase() : fallback.titleColor,
+    subjectColor: HEX_COLOR_PATTERN.test(String(value?.subjectColor || '')) ? String(value?.subjectColor).toUpperCase() : fallback.subjectColor,
+    ctaColor: HEX_COLOR_PATTERN.test(String(value?.ctaColor || '')) ? String(value?.ctaColor).toUpperCase() : fallback.ctaColor,
+});
 
 const validateImageFile = (file: File): string => {
     const extensionAllowed = IMAGE_EXTENSIONS.some(extension => file.name.toLowerCase().endsWith(extension));
@@ -294,7 +351,10 @@ const renderSocialPost = async ({
 
     const isLightBackground = style.decoration !== 'corporate';
     const textColor = contrastHelper && !isLightBackground ? '#FFFFFF' : style.textColor;
+    const titleColor = contrastHelper && !isLightBackground ? '#FFFFFF' : style.titleColor;
+    const ctaColor = contrastHelper && !isLightBackground ? '#FFFFFF' : style.ctaColor;
     const accentColor = style.accentColor;
+    const fontFamily = `"${style.fontFamily}", Arial, sans-serif`;
 
     if (logoImage) {
         const maxWidth = 330;
@@ -304,23 +364,23 @@ const renderSocialPost = async ({
         const height = logoImage.height * scale;
         ctx.drawImage(logoImage, (OUTPUT_SIZE - width) / 2, 58, width, height);
     } else {
-        drawCenteredText(ctx, brandWordmark.toUpperCase(), OUTPUT_SIZE / 2, 82, 800, '800 42px Arial, sans-serif', textColor, 50, 2);
+        drawCenteredText(ctx, brandWordmark.toUpperCase(), OUTPUT_SIZE / 2, 82, 800, `800 42px ${fontFamily}`, textColor, 50, 2);
     }
 
     const headlineY = logoImage ? 260 : 220;
-    drawCenteredText(ctx, headline.toUpperCase() || 'WE ARE HIRING', OUTPUT_SIZE / 2, headlineY, 880, '800 54px Arial, sans-serif', accentColor, 68, 2);
+    drawCenteredText(ctx, headline.toUpperCase() || 'WE ARE HIRING', OUTPUT_SIZE / 2, headlineY, 880, `800 54px ${fontFamily}`, style.headlineColor, 68, 2);
 
     const title = position.toUpperCase();
-    ctx.font = '900 128px Arial, sans-serif';
+    ctx.font = `900 128px ${fontFamily}`;
     let titleFontSize = 128;
     let titleLines = wrapText(ctx, title, 900);
     while (titleLines.length > 3 && titleFontSize > 58) {
         titleFontSize -= 6;
-        ctx.font = `900 ${titleFontSize}px Arial, sans-serif`;
+        ctx.font = `900 ${titleFontSize}px ${fontFamily}`;
         titleLines = wrapText(ctx, title, 900);
     }
     const titleY = headlineY + 145;
-    drawCenteredText(ctx, title, OUTPUT_SIZE / 2, titleY, 900, `900 ${titleFontSize}px Arial, sans-serif`, textColor, Math.max(70, titleFontSize * 0.9), 4);
+    drawCenteredText(ctx, title, OUTPUT_SIZE / 2, titleY, 900, `900 ${titleFontSize}px ${fontFamily}`, titleColor, Math.max(70, titleFontSize * 0.9), 4);
 
     ctx.strokeStyle = accentColor;
     ctx.lineWidth = 8;
@@ -331,7 +391,7 @@ const renderSocialPost = async ({
 
     const resolvedSubject = subjectLine.replace(/\[POSITION\]/gi, position.toUpperCase());
     if (resolvedSubject.trim()) {
-        drawCenteredText(ctx, resolvedSubject.toUpperCase(), OUTPUT_SIZE / 2, 748, 850, `800 28px Arial, sans-serif`, accentColor, 38, 2);
+        drawCenteredText(ctx, resolvedSubject.toUpperCase(), OUTPUT_SIZE / 2, 748, 850, `800 28px ${fontFamily}`, style.subjectColor, 38, 2);
     }
 
     const normalizedCta = ctaLine.trim();
@@ -339,10 +399,10 @@ const renderSocialPost = async ({
     if (normalizedCta) {
         const looksLikeEmailOnly = normalizedCta.includes('@') && !/(send|email|contact|apply|cv|resume)/i.test(normalizedCta);
         if (looksLikeEmailOnly) {
-            drawCenteredText(ctx, 'SEND YOUR CV TO:', OUTPUT_SIZE / 2, ctaStart, 850, '800 30px Arial, sans-serif', accentColor, 38, 1);
-            drawCenteredText(ctx, normalizedCta, OUTPUT_SIZE / 2, ctaStart + 44, 900, '700 34px Arial, sans-serif', textColor, 42, 2);
+            drawCenteredText(ctx, 'SEND YOUR CV TO:', OUTPUT_SIZE / 2, ctaStart, 850, `800 30px ${fontFamily}`, style.subjectColor, 38, 1);
+            drawCenteredText(ctx, normalizedCta, OUTPUT_SIZE / 2, ctaStart + 44, 900, `700 34px ${fontFamily}`, ctaColor, 42, 2);
         } else {
-            drawCenteredText(ctx, normalizedCta.toUpperCase(), OUTPUT_SIZE / 2, ctaStart, 900, '700 32px Arial, sans-serif', textColor, 44, 3);
+            drawCenteredText(ctx, normalizedCta.toUpperCase(), OUTPUT_SIZE / 2, ctaStart, 900, `700 32px ${fontFamily}`, ctaColor, 44, 3);
         }
     }
 
@@ -359,6 +419,16 @@ const readBackgroundHistory = (): BackgroundAsset[] => {
     }
 };
 
+const ColorControl: React.FC<{ label: string; value: string; onChange: (value: string) => void }> = ({ label, value, onChange }) => (
+    <label className="block rounded-lg border border-gray-200 bg-white p-2.5 dark:border-slate-700 dark:bg-slate-900">
+        <span className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{label}</span>
+        <span className="mt-2 flex items-center gap-2">
+            <input type="color" value={value} onChange={event => onChange(event.target.value.toUpperCase())} className="h-9 w-11 cursor-pointer rounded border border-gray-300 bg-white p-1 dark:border-slate-600 dark:bg-slate-800" aria-label={`${label} color`} />
+            <span className="font-mono text-xs font-semibold text-gray-700 dark:text-gray-200">{value.toUpperCase()}</span>
+        </span>
+    </label>
+);
+
 const JobSocialMediaPostGenerator: React.FC = () => {
     const { can, getAccessibleBusinessUnits } = usePermissions();
     const { user } = useAuth();
@@ -366,10 +436,15 @@ const JobSocialMediaPostGenerator: React.FC = () => {
     const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
     const [brandAssets, setBrandAssets] = useState<BrandPageAsset[]>([]);
     const [savedTemplateRows, setSavedTemplateRows] = useState<any[]>([]);
+    const [socialTemplateRows, setSocialTemplateRows] = useState<SocialMediaTemplateRow[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [loadError, setLoadError] = useState('');
     const [businessUnitId, setBusinessUnitId] = useState('');
     const [templateId, setTemplateId] = useState(TEMPLATE_STYLES[0].id);
+    const [editableStyle, setEditableStyle] = useState<TemplateStyle>(TEMPLATE_STYLES[0]);
+    const [templateName, setTemplateName] = useState(`${TEMPLATE_STYLES[0].name} Custom`);
+    const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+    const [templateSaveStatus, setTemplateSaveStatus] = useState('');
     const [logoUrl, setLogoUrl] = useState('');
     const [logoSource, setLogoSource] = useState<'auto' | 'custom'>('auto');
     const [backgroundSelection, setBackgroundSelection] = useState('template');
@@ -400,9 +475,10 @@ const JobSocialMediaPostGenerator: React.FC = () => {
         () => accessibleBusinessUnits.find(unit => unit.id === businessUnitId),
         [accessibleBusinessUnits, businessUnitId]
     );
-    const selectedStyle = useMemo(
-        () => TEMPLATE_STYLES.find(style => style.id === templateId) || TEMPLATE_STYLES[0],
-        [templateId]
+    const selectedStyle = editableStyle;
+    const selectedSavedTemplate = useMemo(
+        () => socialTemplateRows.find(template => `saved:${template.id}` === templateId),
+        [socialTemplateRows, templateId]
     );
     const selectedBrandAsset = useMemo(() => {
         const current = brandAssets.find(asset => asset.businessUnitId === businessUnitId);
@@ -431,10 +507,11 @@ const JobSocialMediaPostGenerator: React.FC = () => {
         setIsLoading(true);
         setLoadError('');
         try {
-            const [buResult, pageResult, templateResult] = await Promise.all([
+            const [buResult, pageResult, templateResult, socialTemplateResult] = await Promise.all([
                 supabase.from('business_units').select('id,name,code,color').order('name'),
                 supabase.from('applicant_page_themes').select('business_unit_id,logo_url,hero_image_url').order('updated_at', { ascending: false }),
                 supabase.from('job_post_templates').select('business_unit,background_image,logo_image').order('updated_at', { ascending: false }),
+                supabase.from('job_social_media_templates').select('*').eq('status', 'Active').order('updated_at', { ascending: false }),
             ]);
             if (buResult.error) throw buResult.error;
             setBusinessUnits((buResult.data || []) as BusinessUnit[]);
@@ -448,6 +525,12 @@ const JobSocialMediaPostGenerator: React.FC = () => {
                 setSavedTemplateRows([]);
             } else {
                 setSavedTemplateRows(templateResult.data || []);
+            }
+            if (socialTemplateResult.error) {
+                console.warn('Reusable social media templates could not be loaded', socialTemplateResult.error);
+                setSocialTemplateRows([]);
+            } else {
+                setSocialTemplateRows((socialTemplateResult.data || []) as SocialMediaTemplateRow[]);
             }
         } catch (error: any) {
             console.error('Failed to load job social post generator assets', error);
@@ -479,6 +562,89 @@ const JobSocialMediaPostGenerator: React.FC = () => {
         if (name.includes('inflatable island')) setCtaLine('careers.inflatableisland@gmail.com');
         else setCtaLine('recruitment@thenextperience.com');
     }, [selectedBusinessUnit]);
+
+    const applyTemplateSelection = (nextTemplateId: string) => {
+        setTemplateId(nextTemplateId);
+        setTemplateSaveStatus('');
+        const builtIn = TEMPLATE_STYLES.find(style => style.id === nextTemplateId);
+        if (builtIn) {
+            setEditableStyle({ ...builtIn });
+            setTemplateName(`${builtIn.name} Custom`);
+            return;
+        }
+        const saved = socialTemplateRows.find(template => `saved:${template.id}` === nextTemplateId);
+        if (!saved) return;
+        const fallback = TEMPLATE_STYLES.find(style => style.id === saved.style?.id) || TEMPLATE_STYLES[0];
+        setEditableStyle(normalizeTemplateStyle(saved.style, fallback));
+        setTemplateName(saved.name);
+        setBusinessUnitId(saved.business_unit_id || businessUnitId);
+        setHeadline(saved.headline || 'WE ARE HIRING');
+        setCtaLine(saved.cta_line || '');
+        ctaEditedRef.current = true;
+        setSubjectLine(saved.subject_line || '');
+        setLogoUrl(saved.logo_url || '');
+        setLogoSource(saved.logo_url ? 'custom' : 'auto');
+        setBackgroundSelection(saved.background_url || 'template');
+        setBackgroundFit(saved.background_fit || 'cover');
+        setOverlayOpacity(Number(saved.overlay_opacity ?? 0.08));
+        setContrastHelper(Boolean(saved.contrast_helper));
+        setGenerationNotice(`Loaded editable template “${saved.name}”.`);
+    };
+
+    const updateStyle = <K extends keyof TemplateStyle>(key: K, value: TemplateStyle[K]) => {
+        setEditableStyle(previous => ({ ...previous, [key]: value }));
+        setTemplateSaveStatus('Unsaved template changes');
+    };
+
+    const saveReusableTemplate = async (saveAsCopy = false) => {
+        const trimmedName = templateName.trim();
+        if (!trimmedName) {
+            setGenerationError('Enter a template name before saving.');
+            return;
+        }
+        if (!businessUnitId) {
+            setGenerationError('Select a business unit before saving the template.');
+            return;
+        }
+        setIsSavingTemplate(true);
+        setGenerationError('');
+        setTemplateSaveStatus('Saving template…');
+        const payload = {
+            name: trimmedName,
+            business_unit_id: businessUnitId,
+            style: editableStyle,
+            headline,
+            cta_line: ctaLine,
+            subject_line: subjectLine,
+            logo_url: logoSource === 'custom' ? logoUrl || null : null,
+            background_url: backgroundSelection === 'template' ? null : backgroundSelection,
+            background_fit: backgroundFit,
+            overlay_opacity: overlayOpacity,
+            contrast_helper: contrastHelper,
+            status: 'Active',
+            created_by_user_id: user?.id || null,
+        };
+        try {
+            const shouldUpdate = selectedSavedTemplate && !saveAsCopy;
+            const request = shouldUpdate
+                ? supabase.from('job_social_media_templates').update(payload).eq('id', selectedSavedTemplate.id).select('*').single()
+                : supabase.from('job_social_media_templates').insert(payload).select('*').single();
+            const { data, error } = await request;
+            if (error) throw error;
+            const saved = data as SocialMediaTemplateRow;
+            setSocialTemplateRows(previous => [saved, ...previous.filter(item => item.id !== saved.id)]);
+            setTemplateId(`saved:${saved.id}`);
+            setTemplateName(saved.name);
+            setTemplateSaveStatus('Template saved just now');
+            setGenerationNotice(`Reusable template “${saved.name}” saved.`);
+        } catch (error: any) {
+            console.error('Failed to save social media template', error);
+            setTemplateSaveStatus('Unable to save template');
+            setGenerationError(error?.message || 'The template could not be saved. Please try again.');
+        } finally {
+            setIsSavingTemplate(false);
+        }
+    };
 
     const uploadAsset = async (file: File, kind: 'logo' | 'background') => {
         const validationError = validateImageFile(file);
@@ -583,7 +749,8 @@ const JobSocialMediaPostGenerator: React.FC = () => {
         backgroundFit,
         overlayOpacity,
         contrastHelper,
-    }), [activeBackgroundUrl, backgroundFit, businessUnitId, contrastHelper, ctaLine, headline, logoUrl, overlayOpacity, positions, subjectLine, templateId]);
+        selectedStyle,
+    }), [activeBackgroundUrl, backgroundFit, businessUnitId, contrastHelper, ctaLine, headline, logoUrl, overlayOpacity, positions, selectedStyle, subjectLine, templateId]);
 
     useEffect(() => {
         if (!filledCount) {
@@ -656,11 +823,50 @@ const JobSocialMediaPostGenerator: React.FC = () => {
                             </label>
                             <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200">
                                 Template
-                                <select value={templateId} onChange={event => setTemplateId(event.target.value)} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 font-normal text-gray-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200 dark:border-slate-600 dark:bg-slate-900 dark:text-white">
-                                    {TEMPLATE_STYLES.map(style => <option key={style.id} value={style.id}>{style.name}</option>)}
+                                <select value={templateId} onChange={event => applyTemplateSelection(event.target.value)} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 font-normal text-gray-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200 dark:border-slate-600 dark:bg-slate-900 dark:text-white">
+                                    <optgroup label="Built-in starting points">
+                                        {TEMPLATE_STYLES.map(style => <option key={style.id} value={style.id}>{style.name}</option>)}
+                                    </optgroup>
+                                    {socialTemplateRows.length > 0 && <optgroup label="Saved editable templates">
+                                        {socialTemplateRows.map(template => <option key={template.id} value={`saved:${template.id}`}>{template.name}{template.business_unit_id && template.business_unit_id !== businessUnitId ? ' · Other business unit' : ''}</option>)}
+                                    </optgroup>}
                                 </select>
                                 <span className="mt-1 block text-xs font-normal text-gray-500 dark:text-gray-400">{selectedStyle.description}</span>
                             </label>
+                        </div>
+
+                        <div className="rounded-xl border border-teal-200 bg-teal-50/40 p-4 dark:border-teal-900/60 dark:bg-teal-950/10">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                    <p className="text-sm font-bold text-gray-900 dark:text-white">Edit template & text colors</p>
+                                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Changes update the preview immediately. Save a reusable copy when you want to use the design again.</p>
+                                </div>
+                                {templateSaveStatus && <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${templateSaveStatus.includes('Unable') ? 'bg-red-100 text-red-700' : templateSaveStatus.includes('Unsaved') ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>{templateSaveStatus}</span>}
+                            </div>
+                            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                <ColorControl label="Background" value={selectedStyle.backgroundColor} onChange={value => updateStyle('backgroundColor', value)} />
+                                <ColorControl label="Brand wordmark text" value={selectedStyle.textColor} onChange={value => updateStyle('textColor', value)} />
+                                <ColorControl label="Job title text" value={selectedStyle.titleColor} onChange={value => updateStyle('titleColor', value)} />
+                                <ColorControl label="Headline text" value={selectedStyle.headlineColor} onChange={value => updateStyle('headlineColor', value)} />
+                                <ColorControl label="Subject text" value={selectedStyle.subjectColor} onChange={value => updateStyle('subjectColor', value)} />
+                                <ColorControl label="Contact / CTA text" value={selectedStyle.ctaColor} onChange={value => updateStyle('ctaColor', value)} />
+                                <ColorControl label="Lines & accents" value={selectedStyle.accentColor} onChange={value => updateStyle('accentColor', value)} />
+                                <ColorControl label="Decorative accent" value={selectedStyle.secondaryAccent} onChange={value => updateStyle('secondaryAccent', value)} />
+                                <label className="block rounded-lg border border-gray-200 bg-white p-2.5 text-xs font-semibold text-gray-600 dark:border-slate-700 dark:bg-slate-900 dark:text-gray-300">
+                                    Font family
+                                    <select value={selectedStyle.fontFamily} onChange={event => updateStyle('fontFamily', event.target.value as TemplateStyle['fontFamily'])} className="mt-2 w-full rounded-md border border-gray-300 bg-white px-2.5 py-2 text-sm font-normal text-gray-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white">
+                                        <option value="Arial">Arial</option>
+                                        <option value="Georgia">Georgia</option>
+                                        <option value="Trebuchet MS">Trebuchet</option>
+                                        <option value="Verdana">Verdana</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-end">
+                                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">Template name<input value={templateName} onChange={event => { setTemplateName(event.target.value); setTemplateSaveStatus('Unsaved template changes'); }} placeholder={`${selectedStyle.name} Custom`} maxLength={120} className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm font-normal text-gray-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200 dark:border-slate-600 dark:bg-slate-900 dark:text-white" /></label>
+                                <Button type="button" onClick={() => saveReusableTemplate(false)} disabled={isSavingTemplate} isLoading={isSavingTemplate}>{selectedSavedTemplate ? 'Update Template' : 'Save Template'}</Button>
+                                {selectedSavedTemplate && <Button type="button" variant="secondary" onClick={() => saveReusableTemplate(true)} disabled={isSavingTemplate}>Save Copy</Button>}
+                            </div>
                         </div>
 
                         <div className="rounded-xl border border-gray-200 p-4 dark:border-slate-700">
