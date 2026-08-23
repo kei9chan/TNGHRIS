@@ -2503,6 +2503,7 @@ export interface Notification {
   isRead: boolean;
   createdAt: Date;
   relatedEntityId?: string;
+  dedupeKey?: string;
 }
 
 export interface AwardSignatory {

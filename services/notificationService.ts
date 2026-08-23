@@ -13,12 +13,27 @@ type NotificationRow = {
   is_read: boolean;
   link?: string | null;
   related_entity_id?: string | null;
+  dedupe_key?: string | null;
   created_at: string;
 };
 
 // ---------------------------------------------------------------------------
 // Mapper
 // ---------------------------------------------------------------------------
+const canonicalApprovalLink = (row: NotificationRow) => {
+  if (row.link?.startsWith('/approvals')) return row.link;
+  const title = String(row.title || '').toLowerCase();
+  const item = row.related_entity_id ? `&item=${encodeURIComponent(row.related_entity_id)}` : '';
+  if (title.includes('nte approval')) return `/approvals?type=nte${item}`;
+  if (title.includes('pan approval')) return `/approvals?type=pan${item}`;
+  if (title.includes('ot request pending') && title.includes('approval')) return `/approvals?type=overtime${item}`;
+  if (title.includes('wfh request pending') && title.includes('approval')) return `/approvals?type=wfh${item}`;
+  if (title.includes('leave request pending') && title.includes('approval')) return `/approvals?type=leave${item}`;
+  if (title.includes('manpower') && title.includes('approval')) return `/approvals?type=manpower${item}`;
+  if (title.includes('requisition') && title.includes('approval')) return `/approvals?type=requisition${item}`;
+  return row.link || undefined;
+};
+
 const mapNotification = (row: NotificationRow): Notification => ({
   id: row.id,
   userId: row.user_id,
@@ -26,8 +41,9 @@ const mapNotification = (row: NotificationRow): Notification => ({
   message: row.message,
   type: row.type as Notification['type'],
   isRead: row.is_read,
-  link: row.link || undefined,
+  link: canonicalApprovalLink(row) || '',
   relatedEntityId: row.related_entity_id || undefined,
+  dedupeKey: row.dedupe_key || undefined,
   createdAt: new Date(row.created_at),
 });
 
@@ -69,6 +85,7 @@ export const createNotification = async (notif: Partial<Notification>): Promise<
     type: notif.type || 'info',
     is_read: false,
     link: notif.link || null,
+    dedupe_key: notif.dedupeKey || null,
   };
 
   // Persist related entity id when provided (used for deep-linking from notification center)
@@ -76,8 +93,15 @@ export const createNotification = async (notif: Partial<Notification>): Promise<
     payload.related_entity_id = notif.relatedEntityId;
   }
 
-  const { error } = await supabase.from('notifications').insert(payload);
-  if (error) throw new Error(error.message || 'Failed to create notification');
+  let { error } = await supabase.from('notifications').insert(payload);
+  // Keep deployments safe if the frontend reaches production shortly before
+  // the additive dedupe migration. The notification still sends once the
+  // legacy payload is accepted; the migration enables retry protection.
+  if (error && notif.dedupeKey && (error.code === 'PGRST204' || error.code === '42703')) {
+    delete payload.dedupe_key;
+    ({ error } = await supabase.from('notifications').insert(payload));
+  }
+  if (error && !(notif.dedupeKey && error.code === '23505')) throw new Error(error.message || 'Failed to create notification');
   // Return a synthetic notification object — we can't .select() back because
   // the SELECT RLS policy restricts reading to the notification's owner.
   return {
@@ -89,6 +113,7 @@ export const createNotification = async (notif: Partial<Notification>): Promise<
     isRead: false,
     link: payload.link ? String(payload.link) : undefined,
     relatedEntityId: payload.related_entity_id ? String(payload.related_entity_id) : undefined,
+    dedupeKey: payload.dedupe_key ? String(payload.dedupe_key) : undefined,
     createdAt: new Date(),
   };
 };

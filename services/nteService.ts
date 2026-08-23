@@ -22,9 +22,6 @@ type NTERow = {
   created_at?: string;
   updated_at?: string;
   nte_number?: number | string;
-  nte_code?: string | null;
-  memo_ids?: string[] | null;
-  discipline_code_ids?: string[] | null;
   body?: string | null;
   employee_response?: string | null;
   employee_response_evidence_url?: string | null;
@@ -49,12 +46,12 @@ const mapRow = (row: NTERow): NTE => {
     employeeResponseEvidenceUrl: row.employee_response_evidence_url || undefined,
     employeeResponseSignatureUrl: row.employee_response_signature_url || undefined,
     responseDate: row.response_date ? new Date(row.response_date) : undefined,
-    memoIds: row.memo_ids || [],
-    disciplineCodeIds: row.discipline_code_ids || [],
+    memoIds: [],
+    disciplineCodeIds: [],
     evidenceUrl: row.evidence_link || undefined,
     issuedByUserId: row.issued_by_user_id || '',
     approverSteps: (row.approval_log as ApproverStep[]) || [],
-    nteNumber: row.nte_code || row.nte_number || undefined,
+    nteNumber: row.nte_number || undefined,
   };
 };
 
@@ -74,8 +71,6 @@ export const saveNTEs = async (ntes: Partial<NTE>[], user: User): Promise<NTE[]>
     approver_ids: n.approverSteps?.map(a => a.userId) || [],
     approver_names: n.approverSteps?.map(a => a.userName) || [],
     approval_log: n.approverSteps || [],
-    memo_ids: (n.memoIds || []).filter(Boolean),
-    discipline_code_ids: (n.disciplineCodeIds || []).filter(Boolean),
     ...(n.nteNumber ? { nte_number: n.nteNumber } : {}),
     body: n.body || null,
   }));
@@ -99,7 +94,9 @@ export const saveNTEs = async (ntes: Partial<NTE>[], user: User): Promise<NTE[]>
           message: `You have been requested to approve ${formatNTEDisplayId(nte.nteNumber) || 'an NTE'} for ${nte.employeeName}.`,
           type: NotificationType.NTE_ISSUED,
           isRead: false,
-          link: `/feedback/nte/${nte.id}`,
+          link: `/approvals?type=nte&item=${nte.id}`,
+          relatedEntityId: nte.id,
+          dedupeKey: `nte:${nte.id}:approval:${step.userId}`,
         }).catch(err => console.warn('Failed to send notification:', err));
       }
     }
@@ -116,8 +113,6 @@ export const updateNTE = async (nte: Partial<NTE>): Promise<NTE> => {
     evidence_link: nte.evidenceUrl,
     status: nte.status as NTEStatus,
     approval_log: nte.approverSteps || [],
-    memo_ids: nte.memoIds?.filter(Boolean),
-    discipline_code_ids: nte.disciplineCodeIds?.filter(Boolean),
     approver_ids: nte.approverSteps?.map(a => a.userId),
     approver_names: nte.approverSteps?.map(a => a.userName),
     employee_response: nte.employeeResponse || undefined,
@@ -158,3 +153,4 @@ export const fetchNTEsByIncidentReportId = async (incidentReportId: string): Pro
   if (error) throw new Error(error.message || 'Failed to fetch NTEs');
   return (data as NTERow[]).map(mapRow);
 };
+

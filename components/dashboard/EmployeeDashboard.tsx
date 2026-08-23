@@ -59,6 +59,7 @@ import { usePermissions } from '../../hooks/usePermissions';
 import { supabase } from '../../services/supabaseClient';
 import { mergePanParticulars } from '../../services/panUtils';
 import ApprovalWidget from './ApprovalWidget';
+import { isCentralizedApprovalActionItem } from '../../utils/approvalCenterRouting';
 
 
 // --- ICONS ---
@@ -1757,7 +1758,7 @@ const EmployeeDashboard: React.FC = () => {
             return { ...item, sortDate, date: sortDate ? sortDate.toLocaleString() : '—' };
         });
 
-        return normalizedItems.sort((a, b) => {
+        return normalizedItems.filter(item => !isCentralizedApprovalActionItem(item)).sort((a, b) => {
             const aTime = a.sortDate ? a.sortDate.getTime() : 0;
             const bTime = b.sortDate ? b.sortDate.getTime() : 0;
             return bTime - aTime;

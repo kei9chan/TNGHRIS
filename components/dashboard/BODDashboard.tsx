@@ -11,6 +11,7 @@ import QuickAnalyticsPreview from './QuickAnalyticsPreview';
 import ActionItemCard from './ActionItemCard';
 import UpcomingEventsWidget from './UpcomingEventsWidget';
 import QuickLinks from './QuickLinks';
+import { isCentralizedApprovalActionItem } from '../../utils/approvalCenterRouting';
 import ManpowerReviewModal from '../payroll/ManpowerReviewModal';
 import WFHReviewModal from '../payroll/WFHReviewModal';
 import RequestCOEModal from '../employees/RequestCOEModal';
@@ -1299,7 +1300,7 @@ const BODDashboard: React.FC = () => {
             return { ...item, sortDate, date: sortDate ? sortDate.toLocaleString() : '—' };
         });
 
-        return normalizedItems.sort((a, b) => {
+        return normalizedItems.filter(item => !isCentralizedApprovalActionItem(item)).sort((a, b) => {
             const aTime = a.sortDate ? a.sortDate.getTime() : 0;
             const bTime = b.sortDate ? b.sortDate.getTime() : 0;
             if (bTime !== aTime) return bTime - aTime;

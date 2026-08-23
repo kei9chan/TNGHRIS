@@ -1,5 +1,6 @@
 // Phase E: mockDataCompat removed from PersonnelActionNotice
 import React, { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -43,6 +44,7 @@ const emptyActions: PANActionTaken = {
 
 const PersonnelActionNotice: React.FC = () => {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   const { can, getPanAccess } = usePermissions();
 
   const [records, setRecords] = useState<PAN[]>([]);
@@ -59,6 +61,7 @@ const PersonnelActionNotice: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [yearFilter, setYearFilter] = useState<string>('all');
   const [monthFilter, setMonthFilter] = useState<string>('all');
+  const [openedQueryItem, setOpenedQueryItem] = useState<string | null>(null);
 
   const panAccess = getPanAccess();
   const canCreatePAN = panAccess.canCreate;
@@ -93,7 +96,9 @@ const PersonnelActionNotice: React.FC = () => {
     const loadAll = async () => {
       try {
         const [{ data: empRows }, { data: tplRows }, { data: panRows }] = await Promise.all([
-          supabase.rpc('get_accessible_hris_users'),
+          supabase.from('hris_users').select(
+            'id, full_name, email, role, status, department, position, salary_basic, salary_deminimis, salary_reimbursable, date_hired'
+          ),
           supabase.from('pan_templates').select('*').order('updated_at', { ascending: false }),
           supabase.from('pans').select('*').order('updated_at', { ascending: false }),
         ]);
@@ -146,6 +151,16 @@ const PersonnelActionNotice: React.FC = () => {
     };
     loadAll();
   }, []);
+
+  useEffect(() => {
+    const requestedPanId = searchParams.get('item');
+    if (!requestedPanId || requestedPanId === openedQueryItem || !records.length) return;
+    const requestedPan = records.find(record => record.id === requestedPanId);
+    if (!requestedPan) return;
+    setSelectedRecord(requestedPan);
+    setIsModalOpen(true);
+    setOpenedQueryItem(requestedPanId);
+  }, [searchParams, records, openedQueryItem]);
 
   const upsertPan = async (recordToSave: Partial<PAN>, status: PANStatus) => {
     if (!user || !recordToSave.employeeId) return null;
@@ -207,37 +222,18 @@ const PersonnelActionNotice: React.FC = () => {
     if (saved) {
       setRecords(prev => [mapPanRow(saved), ...prev.filter(p => p.id !== saved.id)]);
       setIsModalOpen(false);
-      const createdAt = new Date();
-      const stepIds = (panToSend.routingSteps || []).map(step => step.userId).filter(Boolean);
-      const stepUserRows = stepIds.length
-        ? (await supabase
-          .from('hris_users')
-          .select('id, email, auth_user_id')
-          .in('id', stepIds)).data
-        : [];
-      const stepUserMap = new Map(
-        (stepUserRows || []).map((row: any) => [row.id, row])
-      );
-
       await Promise.all(
         (panToSend.routingSteps || []).map(async step => {
-          const targets = new Set<string>();
-          if (step.userId) targets.add(step.userId);
-
-          const row = stepUserMap.get(step.userId);
-          if (row?.auth_user_id) targets.add(row.auth_user_id);
-
-          await Promise.all(
-            Array.from(targets).map(targetId =>
-              createNotification({
-                userId: targetId,
-                type: NotificationType.PAN_APPROVAL_REQUEST as any,
-                title: 'PAN Approval Required',
-                message: `A PAN requires your review for ${panToSend.employeeName || 'an employee'}.`,
-                link: '/employees/pan',
-              }).catch(console.error)
-            )
-          );
+          if (!step.userId) return;
+          await createNotification({
+            userId: step.userId,
+            type: NotificationType.PAN_APPROVAL_REQUEST as any,
+            title: 'PAN Approval Required',
+            message: `A PAN requires your review for ${panToSend.employeeName || 'an employee'}.`,
+            link: `/approvals?type=pan&item=${saved.id}`,
+            relatedEntityId: saved.id,
+            dedupeKey: `pan:${saved.id}:approval:${step.id || step.order || step.userId}`,
+          }).catch(console.error);
         })
       );
       logActivity(user!, 'SUBMIT', 'PAN', saved.id, `Sent PAN for acknowledgement for ${panToSend.employeeName || ''}.`);

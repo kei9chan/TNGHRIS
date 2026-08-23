@@ -224,4 +224,3 @@ $$;
 revoke all on function public.bulk_approve_requests(text,uuid[],uuid,boolean) from public, anon;
 grant execute on function public.bulk_approve_requests(text,uuid[],uuid,boolean) to authenticated;
 grant select on public.approval_bulk_actions to authenticated;
-
