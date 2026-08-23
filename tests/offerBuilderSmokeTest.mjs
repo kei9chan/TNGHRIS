@@ -20,7 +20,7 @@ assert.match(builder, /amount \* 12/);
 assert.match(builder, /file\.size > 2 \* 1024 \* 1024/);
 assert.match(builder, /image\/svg\+xml/);
 assert.match(offers, /status: OfferStatus\.Draft/);
-assert.match(offers, /\/api\/recruitment-email/);
+assert.match(offers, /send-recruitment-email/);
 assert.match(offers, /status: OfferStatus\.Sent/);
 assert.match(publicOffer, /\.eq\('secure_token', token\)/);
 assert.match(publicOffer, /\['accept', 'decline'\]/);

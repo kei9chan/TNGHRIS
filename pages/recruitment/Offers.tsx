@@ -279,14 +279,15 @@ const Offers: React.FC = () => {
     if (sessionError || !sessionData.session?.access_token) throw new Error('Your session has expired. Please sign in again.');
     const secureLink = `${window.location.origin}/offer/${draft.secureToken}`;
     const html = `${previewHtml}<p style="margin-top:24px"><a href="${secureLink}" style="background:#6d28d9;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600">View and Respond to Offer</a></p><p style="color:#64748b;font-size:12px">This is a private link intended for the named recipient.</p>`;
-    const response = await fetch('/api/recruitment-email', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionData.session.access_token}` },
-      body: JSON.stringify({ to: recipient, subject: subject.trim(), message: `${message.trim()}\n\nReview your offer: ${secureLink}`, html, category: 'job-offer' }),
+    const { data: emailResult, error: emailError } = await supabase.functions.invoke('send-recruitment-email', {
+      body: { to: recipient, subject: subject.trim(), message: `${message.trim()}\n\nReview your offer: ${secureLink}`, html, category: 'job-offer' },
     });
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      throw new Error(body?.error || 'The draft was saved, but the offer email could not be sent.');
+    if (emailError || !emailResult?.ok) {
+      let functionMessage = emailResult?.error;
+      if (!functionMessage) {
+        try { functionMessage = (await emailError?.context?.json?.())?.error; } catch { /* response body unavailable */ }
+      }
+      throw new Error(functionMessage || emailError?.message || 'The draft was saved, but the offer email could not be sent.');
     }
     const sentAt = new Date().toISOString();
     const { data, error } = await supabase.from('job_offers').update({ status: OfferStatus.Sent, sent_at: sentAt, sent_by_user_id: user?.id || null, last_saved_at: sentAt, recipient_email: recipient, email_subject: subject.trim(), email_message: message.trim(), require_signature: offerToSend.requireSignature !== false }).eq('id', draft.id).select().single();
