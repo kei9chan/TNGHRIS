@@ -2,13 +2,14 @@ import { fetchBusinessUnits } from '../../services/userService';
 import { fetchCodeOfDiscipline } from '../../services/disciplineService';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { IncidentReport, IRStatus, User, Role, BusinessUnit, CodeOfDiscipline } from '../../types';
+import { IncidentReport, IRStatus, User, Role, BusinessUnit, CodeOfDiscipline, Permission } from '../../types';
 import { formatIRDisplayId } from '../../utils/formatCaseId';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
 import Button from '../ui/Button';
 import { useAuth } from '../../hooks/useAuth';
+import { usePermissions } from '../../hooks/usePermissions';
 import EmployeeMultiSelect from './EmployeeMultiSelect';
 import SignaturePad, { SignaturePadRef } from '../ui/SignaturePad';
 import { supabase } from '../../services/supabaseClient';
@@ -19,9 +20,9 @@ interface IncidentReportModalProps {
   isOpen: boolean;
   onClose: () => void;
   report: IncidentReport | null;
-  onSave: (report: Partial<IncidentReport>) => void;
+  onSave: (report: Partial<IncidentReport>) => Promise<IncidentReport | void> | void;
   onSendMessage: (reportId: string, text: string) => void;
-  onGenerateNTE: (report: IncidentReport) => void;
+  onGenerateNTE: (report: Partial<IncidentReport>) => Promise<void> | void;
   onMarkNoAction: (reportId: string) => void;
   onConvertToCoaching?: (report: IncidentReport) => void;
   onDownloadPdf: (report: IncidentReport) => void;
@@ -51,6 +52,7 @@ const DetailItem: React.FC<{ label: string; children: React.ReactNode }> = ({ la
 
 const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClose, report, onSave, onGenerateNTE, onMarkNoAction, onConvertToCoaching, onDownloadPdf, isEmployeeView = false }) => {
   const { user } = useAuth();
+  const { can } = usePermissions();
   const [currentReport, setCurrentReport] = useState<Partial<IncidentReport>>({});
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [involvedEmployees, setInvolvedEmployees] = useState<User[]>([]);
@@ -60,6 +62,8 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [uploadingSignature, setUploadingSignature] = useState(false);
   const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
+  const [assignmentState, setAssignmentState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [assignmentMessage, setAssignmentMessage] = useState('');
   const signaturePathRef = useRef<string | null>(null);
   const signatureCacheRef = useRef<Map<string, string>>(new Map());
 
@@ -115,7 +119,11 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
   }, [disciplineEntries]);
 
   const potentialHandlers = useMemo(() => {
-    return allUsers.filter(u => [Role.HRManager, Role.HRStaff, Role.Admin].includes(u.role) && u.status === 'Active');
+    const handlerRoles = new Set([Role.HRManager, Role.HRStaff, Role.BOD]);
+    return allUsers.filter(u =>
+      u.status === 'Active' &&
+      [u.role, ...(u.roles || [])].some(role => handlerRoles.has(role))
+    );
   }, [allUsers]);
 
   const availableEmployees = useMemo(() => {
@@ -137,7 +145,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
     });
   }, [allUsers, currentReport.businessUnitId, businessUnits]);
 
-  const canAssign = user?.role === Role.Admin || user?.role === Role.HRManager;
+  const canAssign = can('IncidentReports', Permission.Assign) || can('IncidentReports', Permission.Manage);
 
   // Load users from Supabase for selectors
   useEffect(() => {
@@ -274,6 +282,8 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
     } else if (name === 'assignedToId') {
       const handler = potentialHandlers.find(u => u.id === value);
       setCurrentReport(prev => ({ ...prev, assignedToId: value, assignedToName: handler?.name }));
+      setAssignmentState('idle');
+      setAssignmentMessage(value ? 'Assignment selected. It will be saved before NTE approval.' : '');
     } else {
       setCurrentReport(prev => ({ ...prev, [name]: value }));
     }
@@ -578,7 +588,21 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
             <Button variant="secondary" onClick={() => onDownloadPdf(report)}>Download as PDF</Button>
             {/* If HR Manager/Admin, they can save reassignment changes */}
             {!isEmployeeView && canAssign && (
-              <Button onClick={() => onSave(currentReport)}>Save Changes</Button>
+              <Button
+                isLoading={assignmentState === 'saving'}
+                onClick={async () => {
+                  setAssignmentState('saving');
+                  setAssignmentMessage('Saving case handler assignment…');
+                  try {
+                    await onSave(currentReport);
+                    setAssignmentState('saved');
+                    setAssignmentMessage('Assignment saved. Handler routing and notification are up to date.');
+                  } catch (error: any) {
+                    setAssignmentState('error');
+                    setAssignmentMessage(error?.message || 'Assignment could not be saved.');
+                  }
+                }}
+              >Save Changes</Button>
             )}
           </div>
 
@@ -586,7 +610,20 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
             <div className="flex space-x-2">
               <Button variant="secondary" onClick={() => onMarkNoAction(report.id)}>Mark as "No Action"</Button>
               {onConvertToCoaching && <Button variant="secondary" onClick={() => onConvertToCoaching(report)}>Convert to Coaching</Button>}
-              <Button onClick={() => onGenerateNTE(report)}>Issue NTE</Button>
+              <Button
+                isLoading={assignmentState === 'saving'}
+                onClick={async () => {
+                  setAssignmentState('saving');
+                  setAssignmentMessage('Saving assignment and validating NTE transition…');
+                  try {
+                    await onGenerateNTE(currentReport);
+                    setAssignmentState('saved');
+                  } catch (error: any) {
+                    setAssignmentState('error');
+                    setAssignmentMessage(error?.message || 'The NTE transition could not be completed.');
+                  }
+                }}
+              >Issue NTE</Button>
             </div>
           )}
           {!isEmployeeView && isClosed && (
@@ -596,7 +633,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
       );
     }
     return (
-      <div className="flex justify-end w-full space-x-2">
+        <div className="flex justify-end w-full space-x-2">
         <Button variant="secondary" onClick={onClose}>Cancel</Button>
         <Button onClick={handleCreateReport}>Create Report</Button>
       </div>
@@ -611,6 +648,14 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
       footer={renderFooter()}
     >
       {renderModalContent()}
+      {report && assignmentMessage && (
+        <p
+          role={assignmentState === 'error' ? 'alert' : 'status'}
+          className={`mt-4 rounded-md px-3 py-2 text-sm ${assignmentState === 'error' ? 'bg-red-50 text-red-700' : assignmentState === 'saved' ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'}`}
+        >
+          {assignmentMessage}
+        </p>
+      )}
     </Modal>
   );
 };

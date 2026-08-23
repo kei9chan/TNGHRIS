@@ -58,7 +58,7 @@ const AssignedCasesWidget: React.FC<AssignedCasesWidgetProps> = ({ userId }) => 
                         involvedNames: ir.involvedEmployeeNames.join(', '),
                         stageLabel: getStageLabel(ir.pipelineStage),
                         dateTime: new Date(ir.dateTime),
-                        link: '/feedback/cases',
+                        link: `/feedback/cases?action=view_case&caseId=${ir.id}`,
                         colorClass: 'border-red-500'
                     });
                 });

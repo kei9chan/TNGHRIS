@@ -79,6 +79,29 @@ export const fetchIncidentReports = async (): Promise<IncidentReport[]> => {
   return (data as IncidentReportRow[]).map(mapRow);
 };
 
+/**
+ * Canonically assigns an active HR user to a case. The database function locks
+ * the case, validates RBAC, de-duplicates assignment notifications and can move
+ * the same persisted row to NTE approval in one transaction.
+ */
+export const assignIncidentCaseHandler = async (
+  incidentReportId: string,
+  handlerUserId: string,
+  moveToNte = false
+): Promise<IncidentReport> => {
+  const { data, error } = await supabase.rpc('assign_incident_case_handler', {
+    p_incident_report_id: incidentReportId,
+    p_handler_user_id: handlerUserId,
+    p_move_to_nte: moveToNte,
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Failed to save the case handler assignment.');
+  }
+  if (!data) throw new Error('The case handler assignment was not returned after saving.');
+  return mapRow(data as IncidentReportRow);
+};
+
 export const saveIncidentReport = async (
   report: Partial<IncidentReport>,
   user: User

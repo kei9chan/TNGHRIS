@@ -47,7 +47,7 @@ export type Resource =
   | 'Announcements' | 'Recruitment' | 'Requisitions' | 'JobPosts' | 'Applicants' | 'Candidates'
   | 'Interviews' | 'Offers' | 'Offboarding' | 'Analytics' | 'Departments' | 'Loans' | 'User' | 'Sites' | 'Assets' | 'AssetRequests' | 'WorkforcePlanning' | 'Lifecycle' | 'Payroll' | 'Manpower' | 'COE' | 'Benefits' | 'PulseSurvey' | 'Coaching' | 'WFH' | 'CodeOfDiscipline' | 'FeedbackTemplates' | 'Pipeline' | 'WorkforcePlanningAdmin'
   | 'Calendar' | 'OrgChart' | 'DailyTimeReview' | 'MemoLibrary' | 'Employee Correspondence' | 'RolesPermissions' | 'UserManagement' | 'SiteManagement' | 'LeavePolicies' | 'Holidays' | 'AuditLog'
-  | 'ApplicationPages';
+  | 'ApplicationPages' | 'IncidentReports';
 
 export type PermissionsMatrix = {
   [key in Role]?: Partial<Record<Resource, Permission[]>>;

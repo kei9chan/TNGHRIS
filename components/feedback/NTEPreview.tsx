@@ -13,9 +13,14 @@ interface NTEPreviewProps {
     evidenceUrl?: string;
     employeePosition?: string;
     employeeDepartment?: string;
+    ccRecipients?: string[];
+    issuedDate?: Date;
+    incidentDate?: Date;
+    incidentLocation?: string;
+    incidentCategory?: string;
 }
 
-const NTEPreview: React.FC<NTEPreviewProps> = ({ template, employeeName, employeePosition, employeeDepartment, nteNumber, allegations, deadline, citedMemos, citedDiscipline, evidenceUrl }) => {
+const NTEPreview: React.FC<NTEPreviewProps> = ({ template, employeeName, employeePosition, employeeDepartment, nteNumber, allegations, deadline, citedMemos, citedDiscipline, evidenceUrl, ccRecipients = [], issuedDate = new Date(), incidentDate, incidentLocation, incidentCategory }) => {
 
     const renderOffenses = () => {
         const hasExplicitAllegations = template.body.includes('{{allegations}}');
@@ -31,7 +36,7 @@ const NTEPreview: React.FC<NTEPreviewProps> = ({ template, employeeName, employe
                     </div>
                 )}
 
-                {(citedMemos.length > 0 || citedDiscipline.length > 0) ? (
+                {(citedMemos.length > 0 || citedDiscipline.length > 0) && (
                     <div className="relative border border-slate-400 rounded-md p-5 pt-6 mt-8">
                          <div className="absolute -top-3 left-4 bg-slate-900 text-white text-[10px] font-bold px-3 py-1 rounded uppercase tracking-wider">
                             CITED OFFENSES
@@ -48,13 +53,6 @@ const NTEPreview: React.FC<NTEPreviewProps> = ({ template, employeeName, employe
                                 <p className="text-gray-700">{entry.description}</p>
                             </div>
                         ))}
-                    </div>
-                ) : (
-                    <div className="relative border border-slate-400 rounded-md p-5 pt-6 mt-8">
-                        <div className="absolute -top-3 left-4 bg-slate-900 text-white text-[10px] font-bold px-3 py-1 rounded uppercase tracking-wider">
-                            DETAILED ALLEGATIONS
-                        </div>
-                        <p className="italic text-gray-400 text-sm">[No offenses cited]</p>
                     </div>
                 )}
             </div>
@@ -99,7 +97,7 @@ const NTEPreview: React.FC<NTEPreviewProps> = ({ template, employeeName, employe
 
 
             {/* Header Area */}
-            <div className="relative z-10 flex items-center justify-between pt-8 px-10 pb-6">
+            <div className="relative z-10 flex items-center justify-between pt-8 px-10 pb-6" style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}>
                 <div className="flex items-center gap-6">
                     <div className="relative flex items-center justify-center w-16 h-20 bg-[#1e293b] text-white" 
                          style={{ clipPath: 'polygon(0 0, 100% 0, 100% 75%, 50% 100%, 0 75%)' }}>
@@ -110,10 +108,6 @@ const NTEPreview: React.FC<NTEPreviewProps> = ({ template, employeeName, employe
                     <h1 className="text-3xl font-extrabold tracking-tight text-[#1e293b]">NOTICE TO EXPLAIN</h1>
                 </div>
                 
-                <div className="bg-gray-100 rounded-md px-4 py-2 text-right border border-gray-200">
-                    <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">NTE CODE</div>
-                    <div className="font-bold text-slate-800">{nteNumber}</div>
-                </div>
             </div>
 
             <div className="px-10 z-10">
@@ -123,7 +117,7 @@ const NTEPreview: React.FC<NTEPreviewProps> = ({ template, employeeName, employe
             {/* Main Content */}
             <div className="px-10 z-10 flex-grow">
                 
-                <div className="flex justify-between items-start gap-8">
+                <div className="flex justify-between items-start gap-8" style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}>
                     <div className="w-2/3">
                         {/* Employee Info */}
                         <table className="w-full mb-4 text-[13px]">
@@ -131,7 +125,7 @@ const NTEPreview: React.FC<NTEPreviewProps> = ({ template, employeeName, employe
                                 <tr>
                                     <td className="uppercase w-32 py-1 font-semibold text-[#1e293b]">TO</td>
                                     <td className="w-4 py-1 text-gray-500">:</td>
-                                    <td className="font-bold py-1 text-slate-800">{employeeName || '[Employee Name]'}</td>
+                                    <td className="font-bold py-1 text-slate-800">{employeeName ? employeeName.toUpperCase() : '[EMPLOYEE NAME]'}</td>
                                 </tr>
                                 <tr>
                                     <td className="uppercase py-1 font-semibold text-[#1e293b]">POSITION</td>
@@ -154,18 +148,23 @@ const NTEPreview: React.FC<NTEPreviewProps> = ({ template, employeeName, employe
                                 <tr>
                                     <td className="uppercase w-32 py-1 font-semibold text-[#1e293b]">FROM</td>
                                     <td className="w-4 py-1 text-gray-500">:</td>
-                                    <td className="font-bold py-1 text-slate-800">{template.from}</td>
+                                    <td className="font-bold py-1 text-slate-800">OFFICE OF HUMAN RESOURCES</td>
                                 </tr>
                                 <tr>
                                     <td className="uppercase py-1 font-semibold text-[#1e293b]">DATE ISSUED</td>
                                     <td className="py-1 text-gray-500">:</td>
-                                    <td className="font-bold py-1 text-slate-800">{new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</td>
+                                    <td className="font-bold py-1 text-slate-800">{issuedDate.toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })}</td>
                                 </tr>
                                 <tr>
+                                    <td className="uppercase py-1 font-semibold text-[#1e293b]">NTE CODE</td>
+                                    <td className="py-1 text-gray-500">:</td>
+                                    <td className="font-bold py-1 text-slate-800">{nteNumber}</td>
+                                </tr>
+                                {(ccRecipients.length > 0 || template.cc?.trim()) && <tr>
                                     <td className="uppercase py-1 font-semibold text-[#1e293b]">CC</td>
                                     <td className="py-1 text-gray-500">:</td>
-                                    <td className="font-bold py-1 text-slate-800">{template.cc}</td>
-                                </tr>
+                                    <td className="font-bold py-1 text-slate-800">{ccRecipients.length > 0 ? ccRecipients.join(', ') : template.cc}</td>
+                                </tr>}
                             </tbody>
                         </table>
                     </div>
@@ -186,8 +185,18 @@ const NTEPreview: React.FC<NTEPreviewProps> = ({ template, employeeName, employe
                 <div className="bg-gray-100 border-l-4 border-[#1e293b] flex items-center px-4 py-2 mb-8">
                     <div className="w-28 uppercase font-bold text-[#1e293b] text-[13px]">SUBJECT</div>
                     <div className="w-4 text-gray-500 text-[13px]">:</div>
-                    <div className="font-extrabold uppercase text-[#1e293b] text-[13px]">{template.subject}</div>
+                    <div className="font-extrabold uppercase text-[#1e293b] text-[13px]">NOTICE TO EXPLAIN</div>
                 </div>
+
+                {(incidentDate || incidentLocation || incidentCategory) && (
+                    <div className="mb-8 rounded-md border border-slate-200 bg-slate-50 p-4 text-[13px]" style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}>
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                            {incidentDate && <div><span className="font-semibold text-slate-600">Incident date &amp; time</span><br />{incidentDate.toLocaleString('en-PH')}</div>}
+                            {incidentLocation && <div><span className="font-semibold text-slate-600">Location</span><br />{incidentLocation}</div>}
+                            {incidentCategory && <div><span className="font-semibold text-slate-600">Category</span><br />{incidentCategory}</div>}
+                        </div>
+                    </div>
+                )}
 
                 {/* Body Text */}
                 <div className="space-y-4 text-[13px] leading-relaxed">

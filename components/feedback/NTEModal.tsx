@@ -197,6 +197,18 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
     });
   }, [disciplineCodeIds, disciplineEntries]);
 
+  const previewBusinessUnitCode = useMemo(() => {
+    const incidentBu = businessUnits.find(b => b.id === incidentReport.businessUnitId);
+    const firstRecipient = recipientList.find(u => selectedEmployeeIds.includes(u.id));
+    const employeeBu = businessUnits.find(b => b.name === firstRecipient?.businessUnit);
+    return (incidentBu?.code || employeeBu?.code || 'GEN').toUpperCase();
+  }, [businessUnits, incidentReport.businessUnitId, recipientList, selectedEmployeeIds]);
+
+  const previewNteCode = useMemo(() => {
+    if (manualNteNumber.trim()) return formatNTEDisplayId(manualNteNumber.trim()) || manualNteNumber.trim();
+    return `NTE-${new Date().getFullYear()}-${previewBusinessUnitCode}-XXX`;
+  }, [manualNteNumber, previewBusinessUnitCode]);
+
   const handleSelectEmployee = (employeeId: string) => {
     setSelectedEmployeeIds(prev =>
       prev.includes(employeeId)
@@ -246,9 +258,10 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
     const newNTEs: Partial<NTE>[] = selectedEmployeeIds.map((employeeId, index) => {
       const employee = recipientList.find(u => u.id === employeeId)!;
       const employeeBu = businessUnits.find(b => b.name === employee.businessUnit);
-      const buCode = irBu?.code || employeeBu?.code || 'GEN';
-
-      const nteDisplayNum = manualNteNumber ? formatNTEDisplayId(manualNteNumber) || `NTE-${new Date().getFullYear()}-XXX-XXX` : `NTE-${new Date().getFullYear()}-XXX-XXX`;
+      const buCode = (irBu?.code || employeeBu?.code || 'GEN').toUpperCase();
+      const nteDisplayNum = manualNteNumber.trim()
+        ? formatNTEDisplayId(manualNteNumber.trim()) || manualNteNumber.trim()
+        : `NTE-${new Date().getFullYear()}-${buCode}-XXX`;
       
       let generatedBody = "Template missing";
       if (selectedTemplate) {
@@ -264,6 +277,10 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
             citedMemos={citedMemos}
             citedDiscipline={citedDiscipline}
             evidenceUrl={evidenceUrl}
+            ccRecipients={selectedApprovers.map(approver => `${approver.name} (${approver.role})`)}
+            incidentDate={incidentReport.dateTime}
+            incidentLocation={incidentReport.location}
+            incidentCategory={incidentReport.category}
           />
         );
       }
@@ -451,7 +468,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
             />
             {memos.length > 0 ? (
               <SearchableMultiSelect
-                label="Cite Memos"
+                label="Cite Memos (Optional)"
                 placeholder="Search for policy titles..."
                 items={memoItems}
                 selectedItemIds={memoIds}
@@ -460,10 +477,10 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
               />
             ) : (
               <Textarea
-                label="Cite Memos"
-                placeholder="Enter memo references manually..."
+                label="Cite Memos (Optional)"
+                placeholder="Leave blank when no memo applies."
                 value={memoIds.join('\n')}
-                onChange={e => setMemoIds([e.target.value])}
+                onChange={e => setMemoIds(e.target.value.trim() ? [e.target.value] : [])}
                 rows={3}
               />
             )}
@@ -496,12 +513,16 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
                 employeeName={previewEmployee.name}
                 employeePosition={previewEmployee.position}
                 employeeDepartment={previewEmployee.department}
-                nteNumber={manualNteNumber ? formatNTEDisplayId(manualNteNumber) || `NTE-${new Date().getFullYear()}-XXX-XXX` : `NTE-${new Date().getFullYear()}-XXX-XXX`}
+                nteNumber={previewNteCode}
                 allegations={allegations}
                 deadline={new Date(deadline || Date.now())}
                 citedMemos={citedMemos}
                 citedDiscipline={citedDiscipline}
                 evidenceUrl={evidenceUrl}
+                ccRecipients={selectedApprovers.map(approver => `${approver.name} (${approver.role})`)}
+                incidentDate={incidentReport.dateTime}
+                incidentLocation={incidentReport.location}
+                incidentCategory={incidentReport.category}
               />
             )}
             {!previewEmployee && (

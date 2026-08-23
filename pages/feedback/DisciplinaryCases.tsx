@@ -17,7 +17,7 @@ import Card from '../../components/ui/Card';
 import PrintableIncidentReport from '../../components/feedback/PrintableIncidentReport';
 import CaseListTable from '../../components/feedback/CaseListTable';
 import { logActivity } from '../../services/auditService';
-import { fetchIncidentReports, saveIncidentReport, addIncidentReportMessage, fetchPipelineStages } from '../../services/incidentReportService';
+import { assignIncidentCaseHandler, fetchIncidentReports, saveIncidentReport, addIncidentReportMessage, fetchPipelineStages } from '../../services/incidentReportService';
 import { saveNTEs, updateNTE, fetchNTEs } from '../../services/nteService';
 import { fetchResolutions, createResolution, updateResolution } from '../../services/resolutionService';
 import { formatIRDisplayId } from '../../utils/formatCaseId';
@@ -127,10 +127,11 @@ const DisciplinaryCases: React.FC = () => {
       if (!irAccess.canView) return [];
       if (irAccess.scope === 'global') return reports;
       if (irAccess.scope === 'self') {
-        return reports.filter(r => r.reportedBy === userRef.id);
+        return reports.filter(r => r.reportedBy === userRef.id || r.assignedToId === userRef.id);
       }
       if (irAccess.scope === 'bu') {
         return reports.filter(r => {
+          if (r.assignedToId === userRef.id) return true;
           const matchesId = r.businessUnitId && userRef.businessUnitId && r.businessUnitId === userRef.businessUnitId;
           const matchesName = r.businessUnitName && userRef.businessUnit && r.businessUnitName === userRef.businessUnit;
           return matchesId || matchesName;
@@ -493,7 +494,7 @@ const DisciplinaryCases: React.FC = () => {
     setSelectedReport(null);
   };
 
-  const handleSaveReport = async (reportToSave: Partial<IncidentReport>) => {
+  const handleSaveReport = async (reportToSave: Partial<IncidentReport>): Promise<IncidentReport | void> => {
     if (!user) return;
     if (!reportToSave.id && !irAccess.canCreate) {
       alert('You do not have permission to file a new incident report.');
@@ -504,38 +505,24 @@ const DisciplinaryCases: React.FC = () => {
       return;
     }
 
-    const current = reportToSave.id ? allReports.find(r => r.id === reportToSave.id) : null;
-    const currentStage = current?.pipelineStage || reportToSave.pipelineStage || 'ir-review';
-    const hasHandler = !!reportToSave.assignedToId;
-    const handlerChanged = hasHandler && (!current || current.assignedToId !== reportToSave.assignedToId);
-    if (hasHandler && (currentStage === 'ir-review' || currentStage === 'hr-review-response')) {
-      reportToSave.pipelineStage = 'nte-for-approval';
-      reportToSave.status = IRStatus.Converted;
-    } else if (handlerChanged && currentStage === 'nte-for-approval') {
-      // keep it in approval if already there
-      reportToSave.pipelineStage = 'nte-for-approval';
-    }
-
     try {
-      const saved = await saveIncidentReport(reportToSave, user);
-      if (handlerChanged && saved.assignedToId) {
-        createNotification({
-          userId: saved.assignedToId,
-          type: NotificationType.CASE_ASSIGNED,
-          title: 'New Case Assigned',
-          message: `You have been assigned as case handler for Incident Report ${formatIRDisplayId(saved.caseNumber) || saved.id}.`,
-          link: '/feedback/cases',
-          relatedEntityId: saved.id,
-        }).catch(err => console.error('Failed to create notification:', err));
+      const { assignedToId, assignedToName: _assignedToName, ...reportFields } = reportToSave;
+      let saved = await saveIncidentReport(reportFields, user);
+
+      if (saved.id && assignedToId) {
+        saved = await assignIncidentCaseHandler(saved.id, assignedToId, false);
       }
       setAllReports(prev => {
         const rest = prev.filter(r => r.id !== saved.id);
         return filterByIrAccess([saved, ...rest]);
       });
+      setSelectedReport(saved);
+      if (!reportToSave.id) handleCloseModals();
+      return saved;
     } catch (err: any) {
-      alert(err?.message || 'Failed to save incident report');
+      if (!reportToSave.id) alert(err?.message || 'Failed to save incident report');
+      throw err;
     }
-    handleCloseModals();
   };
 
   const handleSaveNTE = async (data: NTE | NTE[]) => {
@@ -774,33 +761,31 @@ const DisciplinaryCases: React.FC = () => {
     setSelectedReport(null);
   };
 
-  const handleGenerateNTE = (report: IncidentReport) => {
-    if (!user) return;
+  const handleGenerateNTE = async (report: Partial<IncidentReport>): Promise<void> => {
+    if (!user) throw new Error('Your session is no longer available. Please sign in again.');
+    if (!report.id) throw new Error('The incident report must be saved before an NTE can be issued.');
     if (!report.assignedToId) {
-      alert('Assign a case handler before moving to NTE approval.');
-      return;
+      throw new Error('Select an authorized case handler before moving to NTE approval.');
     }
 
-    const needsUpdate = report.pipelineStage !== 'nte-for-approval';
-    const doUpdate = needsUpdate
-      ? saveIncidentReport({ ...report, pipelineStage: 'nte-for-approval', status: IRStatus.Converted }, user)
-      : Promise.resolve(report);
-
-    doUpdate
-      .then(saved => {
-        if (needsUpdate) {
-          setAllReports(prev => {
-            const rest = prev.filter(r => r.id !== saved.id);
-            return filterByIrAccess([saved, ...rest]);
-          });
-        }
-        setSelectedReport(saved);
-        setReportModalOpen(false);
-        setNTEModalOpen(true);
-      })
-      .catch(err => {
-        alert(err?.message || 'Failed to move IR to NTE approval stage.');
+    try {
+      // The server locks and revalidates the case, saves the canonical handler ID,
+      // creates one assignment notification, and changes the stage atomically.
+      const saved = await assignIncidentCaseHandler(report.id, report.assignedToId, true);
+      if (!saved.assignedToId) {
+        throw new Error('The case handler assignment was not persisted. NTE approval was not started.');
+      }
+      setAllReports(prev => {
+        const rest = prev.filter(r => r.id !== saved.id);
+        return filterByIrAccess([saved, ...rest]);
       });
+      setSelectedReport(saved);
+      setReportModalOpen(false);
+      setNTEModalOpen(true);
+    } catch (err: any) {
+      const message = err?.message || 'Failed to save the assignment and move the IR to NTE approval.';
+      throw new Error(message);
+    }
   };
 
   const handleConvertToCoaching = (report: IncidentReport) => {
