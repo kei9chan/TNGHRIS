@@ -43,7 +43,6 @@ const SignUp: React.FC = () => {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [hasCompletedStep1, setHasCompletedStep1] = useState(false);
   const [submitIntent, setSubmitIntent] = useState(false); // ensures submit only fires from the final button
-  const roleOptions = Object.values(Role);
 
   // Fetch business units from Supabase on mount
   const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
@@ -100,7 +99,7 @@ const SignUp: React.FC = () => {
       !confirmPassword ||
       !formData.businessUnit ||
       !formData.department ||
-      !formData.role
+      !formData.position
     ) {
       errors.general = 'Please fill in all required fields to proceed.';
     }
@@ -141,8 +140,8 @@ const SignUp: React.FC = () => {
     } else if (departmentOptions.length && !departmentOptions.includes(formData.department)) {
       errors.department = 'Choose a valid department.';
     }
-    if (!formData.role) {
-      errors.role = 'Role is required.';
+    if (!formData.position?.trim()) {
+      errors.position = 'Position or job title is required.';
     }
 
     setFieldErrors(errors);
@@ -334,8 +333,10 @@ const SignUp: React.FC = () => {
         p_first_name:     firstName.trim(),
         p_last_name:      lastName.trim(),
         p_full_name:      fullName,
-        p_role:           formData.role || Role.Employee,
-        p_status:         formData.status || 'Inactive',
+        // Self-registration never chooses authorization. The database enforces
+        // these same safe defaults and HR activates/assigns access separately.
+        p_role:           Role.Employee,
+        p_status:         'Inactive',
         p_is_photo_enrolled: formData.isPhotoEnrolled ?? false,
         p_business_unit:    formData.businessUnit || null,
         p_business_unit_id: businessUnitId,
@@ -731,21 +732,18 @@ const SignUp: React.FC = () => {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Role / Position / Job Title</label>
-                    <select
-                      name="role"
-                      value={formData.role || Role.Employee}
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Position / Job Title</label>
+                    <input
+                      name="position"
+                      value={formData.position || ''}
                       onChange={handleChange}
                       required
-                      className="glass-input w-full px-4 py-3 rounded-xl text-gray-900 appearance-none cursor-pointer"
-                    >
-                      {roleOptions.map(r => (
-                        <option key={r} value={r}>
-                          {r}
-                        </option>
-                      ))}
-                    </select>
-                    {fieldErrors.role && <p className="mt-1 text-xs text-red-600">{fieldErrors.role}</p>}
+                      placeholder="e.g. Guest Experience Associate"
+                      className="glass-input w-full px-4 py-3 rounded-xl text-gray-900"
+                      aria-invalid={!!fieldErrors.position}
+                    />
+                    <p className="mt-1 text-xs text-gray-500">Access is assigned by HR after registration.</p>
+                    {fieldErrors.position && <p className="mt-1 text-xs text-red-600">{fieldErrors.position}</p>}
                   </div>
                 </div>
               </div>

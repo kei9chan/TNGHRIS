@@ -29,6 +29,7 @@ readable by `anon` or `authenticated`.
 | Workflow actions | Visibility or row ownership could imply final approval | Status-transition triggers require the applicable workflow action independently of row visibility |
 | Errors | Some approval queries could appear as empty queues | Query failures remain errors with retry UI and are never converted to a valid empty result |
 | Role changes | Frontend-driven role mutation | Atomic audited role/scope/dashboard updates with self-promotion and permission-ceiling checks |
+| Public signup | Anonymous RPC accepted caller-provided role and status values | Signup collects a job title only; the guarded RPC verifies the Auth identity and organization references, forces Employee + Inactive + SELF scope, and audits requested versus assigned values |
 
 ## Production assignments
 
@@ -94,6 +95,11 @@ Use [`matrix-queries.sql`](./matrix-queries.sql) to export the complete live mat
 - All centralized `SECURITY DEFINER` functions revoke anonymous/PUBLIC execution;
   authenticated resolver/RPC entry points are explicitly allowlisted, and trigger
   functions cannot be called directly through PostgREST.
+- The one intentional anonymous `SECURITY DEFINER` entry point is
+  `register_user_profile`, required before email confirmation creates a session. It
+  cannot assign authorization: role, status, scope, and dashboard are fixed by the
+  server, Auth email/ID and business-unit/department relationships are validated,
+  and every registration is recorded in `rbac_audit_log`.
 
 ## Tests and validation
 
@@ -104,6 +110,8 @@ Use [`matrix-queries.sql`](./matrix-queries.sql) to export the complete live mat
 - IT technical authority and HR/sensitive denial boundary: passed.
 - Jed global HR authority and Admin ceiling: passed.
 - Former Recruiter recruitment access: passed.
+- Public self-registration role escalation: blocked; caller role/status ignored and
+  the signup UI no longer exposes role selection.
 - Approval before/after comparison: passed.
 - TypeScript `tsc --noEmit`: passed.
 - Vite production build: passed.

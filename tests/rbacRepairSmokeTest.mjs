@@ -10,6 +10,8 @@ const auth = read('context/AuthContext.tsx');
 const permissions = read('context/PermissionsContext.tsx');
 const approvals = read('hooks/useApprovals.ts');
 const app = read('App.tsx');
+const signUp = read('pages/SignUp.tsx');
+const selfRegistrationMigration = read('supabase/migrations/20260823213000_secure_self_registration_rbac.sql');
 
 const approvedRoles = [
   'Admin','Auditor','Board of Director','Business Unit Manager','Employee','Finance Staff',
@@ -38,6 +40,22 @@ assert.match(app, /Authorization unavailable/);
 assert.match(app, /routePermissions/);
 assert.match(approvals, /approvalError/);
 assert.match(approvals, /isGlobalHrAuthority/);
+
+assert.doesNotMatch(signUp, /roleOptions\.map|name=["']role["']/, 'public signup must not expose authorization roles');
+assert.match(signUp, /p_role:\s+Role\.Employee/);
+assert.match(signUp, /p_status:\s+['"]Inactive['"]/);
+assert.match(signUp, /name=["']position["']/);
+
+assert.match(selfRegistrationMigration, /auth\.users/);
+assert.match(selfRegistrationMigration, /'Employee',\s*\n\s*'Inactive'/);
+assert.match(selfRegistrationMigration, /jsonb_build_object\('type', 'SELF'\)/);
+assert.match(selfRegistrationMigration, /'SELF_REGISTRATION'/);
+assert.match(selfRegistrationMigration, /'requestedRole', p_role/);
+assert.match(selfRegistrationMigration, /revoke all on function public\.register_user_profile/);
+assert.match(selfRegistrationMigration, /grant execute on function public\.register_user_profile[\s\S]*to anon/);
+const profileInsert = selfRegistrationMigration.match(/insert into public\.hris_users[\s\S]*?returning id into new_hris_user_id;/i)?.[0] || '';
+assert.ok(profileInsert, 'guarded hris_users insert is missing');
+assert.doesNotMatch(profileInsert, /\bp_role\b|\bp_status\b/, 'caller role/status must not be persisted');
 
 assert.match(migration, /private\.rbac_migration_snapshots/);
 assert.match(migration, /pre-rbac-20260823-fde428f/);
