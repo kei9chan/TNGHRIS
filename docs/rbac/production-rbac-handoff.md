@@ -91,6 +91,9 @@ Use [`matrix-queries.sql`](./matrix-queries.sql) to export the complete live mat
 - `hris_users.role`, scope, dashboard type, and auth link cannot be modified outside
   the audited RBAC function.
 - Workflow status transitions are protected by server-side triggers.
+- All centralized `SECURITY DEFINER` functions revoke anonymous/PUBLIC execution;
+  authenticated resolver/RPC entry points are explicitly allowlisted, and trigger
+  functions cannot be called directly through PostgREST.
 
 ## Tests and validation
 
@@ -121,4 +124,3 @@ If a release-blocking regression is found:
    role permissions, assignments, and policies under supervised database access.
 4. Do not delete business records. The RBAC migrations are additive and do not
    truncate or recreate HRIS workflow tables.
-
