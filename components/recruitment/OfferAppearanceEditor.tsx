@@ -20,12 +20,12 @@ const ColorField: React.FC<{ label: string; value: string; onChange: (value: str
 
 const OfferAppearanceEditor: React.FC<Props> = ({ businessUnit, businessUnits, appearance, logoUrl, backgroundBusy, onBusinessUnitChange, onChange, onBackgroundUpload, onRemoveBackground }) => {
   const value = mergeAppearance(businessUnit, appearance);
-  const patch = (changes: Partial<OfferAppearance>) => onChange({ ...value, ...changes });
+  const patch = (changes: Partial<OfferAppearance>) => onChange({ ...value, ...changes, customized: true });
   return <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
     <div className="mb-5"><h3 className="text-lg font-bold">Appearance & Branding</h3><p className="mt-1 text-sm text-slate-500">Start with the business-unit theme, then customize every visual setting.</p></div>
     <div className="grid gap-5 lg:grid-cols-2">
       <label className="text-sm font-semibold">Business Unit / Brand<select className={inputClass} value={businessUnit} onChange={event => { const name = event.target.value; onBusinessUnitChange(name, appearanceForBusinessUnit(name)); }}><option value="">Select business unit</option>{businessUnits.map(unit => <option key={unit.id}>{unit.name}</option>)}</select></label>
-      <label className="text-sm font-semibold">Theme preset<select className={inputClass} value={value.preset || 'TNG'} onChange={event => patch(appearanceForBusinessUnit(event.target.value))}><option>TNG</option><option>Inflatable Island</option><option>The Dessert Museum</option><option>Gootopia</option><option>Bakebe</option><option>The Fun Roof</option></select></label>
+      <label className="text-sm font-semibold">Theme preset<select className={inputClass} value={value.preset || 'TNG'} onChange={event => onChange({ ...appearanceForBusinessUnit(event.target.value), customized: true })}><option>TNG</option><option>Inflatable Island</option><option>The Dessert Museum</option><option>Gootopia</option><option>Bakebe</option><option>The Fun Roof</option></select></label>
       <label className="text-sm font-semibold">Offer title<input className={inputClass} value={value.offerTitle || ''} onChange={event => patch({ offerTitle: event.target.value })}/></label>
       <label className="text-sm font-semibold">Header content<input className={inputClass} value={value.headerContent || ''} onChange={event => patch({ headerContent: event.target.value })}/></label>
       <label className="text-sm font-semibold lg:col-span-2">Footer content<textarea className={`${inputClass} min-h-[72px] resize-y`} value={value.footerContent || ''} onChange={event => patch({ footerContent: event.target.value })}/></label>

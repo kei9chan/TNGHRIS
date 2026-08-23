@@ -1964,6 +1964,7 @@ export interface OfferBuilderDetails {
 }
 
 export interface OfferAppearance {
+  customized?: boolean;
   preset?: string;
   headerContent?: string;
   offerTitle?: string;

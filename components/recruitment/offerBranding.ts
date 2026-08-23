@@ -1,6 +1,7 @@
 import { OfferAppearance } from '../../types';
 
 export const DEFAULT_APPEARANCE: OfferAppearance = {
+  customized: false,
   preset: 'TNG',
   headerContent: 'A clear package. No surprises.',
   offerTitle: 'Your Total Opportunity',
@@ -28,8 +29,19 @@ export const appearanceForBusinessUnit = (businessUnit?: string): OfferAppearanc
   ...(PRESETS.find(item => item.match.test(businessUnit || ''))?.values || {}),
 });
 
-export const mergeAppearance = (businessUnit?: string, appearance?: OfferAppearance): OfferAppearance => ({
-  ...appearanceForBusinessUnit(businessUnit),
-  ...(appearance || {}),
-});
-
+export const mergeAppearance = (businessUnit?: string, appearance?: OfferAppearance): OfferAppearance => {
+  const businessUnitDefault = appearanceForBusinessUnit(businessUnit);
+  if (!appearance) return businessUnitDefault;
+  const isLegacyGenericTheme = appearance.customized !== true && appearance.preset === 'TNG' && businessUnitDefault.preset !== 'TNG';
+  if (isLegacyGenericTheme) return {
+    ...appearance,
+    customized: false,
+    preset: businessUnitDefault.preset,
+    primaryColor: businessUnitDefault.primaryColor,
+    accentColor: businessUnitDefault.accentColor,
+    textColor: businessUnitDefault.textColor,
+    pageBackgroundColor: businessUnitDefault.pageBackgroundColor,
+    headerContent: businessUnitDefault.headerContent,
+  };
+  return { ...businessUnitDefault, ...appearance };
+};

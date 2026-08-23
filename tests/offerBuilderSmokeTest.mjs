@@ -8,6 +8,7 @@ const migration = fs.readFileSync('supabase/migrations/20260822060000_offer_valu
 const acceptanceMigration = fs.readFileSync('supabase/migrations/20260823075607_complete_offer_acceptance_workflow.sql', 'utf8');
 const candidatePage = fs.readFileSync('pages/OfferResponse.tsx', 'utf8');
 const appearance = fs.readFileSync('components/recruitment/OfferAppearanceEditor.tsx', 'utf8');
+const branding = fs.readFileSync('components/recruitment/offerBranding.ts', 'utf8');
 const document = fs.readFileSync('components/recruitment/OfferDocument.tsx', 'utf8');
 
 for (const label of ['Role & Job Details', 'Compensation', 'Schedule & Location', 'Benefits & Growth', 'Review & Send']) assert.match(builder, new RegExp(label.replace('&', '\\&')));
@@ -23,6 +24,8 @@ assert.match(publicOffer, /\.eq\('secure_token', token\)/);
 assert.match(publicOffer, /\['accept', 'decline'\]/);
 for (const feature of ['Draw Signature', 'Type Signature', 'Submit Signature', 'electronic signature is legally binding', 'Confirm Decline', 'Download signed offer']) assert.ok(candidatePage.includes(feature), `Missing candidate feature: ${feature}`);
 for (const feature of ['Primary color', 'Accent color', 'Page background', 'Font family', 'Button style', 'Card style', 'Section layout']) assert.ok(appearance.includes(feature), `Missing appearance setting: ${feature}`);
+assert.match(branding, /isLegacyGenericTheme/);
+assert.match(appearance, /customized: true/);
 assert.match(document, /Page \{number\} of 3/);
 assert.match(publicOffer, /status: 'Accepted'/);
 assert.match(publicOffer, /status: 'Signed'/);
