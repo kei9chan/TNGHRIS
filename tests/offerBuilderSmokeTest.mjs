@@ -13,6 +13,7 @@ const document = fs.readFileSync('components/recruitment/OfferDocument.tsx', 'ut
 const detailModal = fs.readFileSync('components/recruitment/OfferDetailModal.tsx', 'utf8');
 const pdf = fs.readFileSync('components/recruitment/offerPdf.ts', 'utf8');
 const stepSixMigration = fs.readFileSync('supabase/migrations/20260823103000_allow_offer_builder_step_six.sql', 'utf8');
+const authContext = fs.readFileSync('context/AuthContext.tsx', 'utf8');
 
 for (const label of ['Role & Job Details', 'Compensation', 'Schedule & Location', 'Benefits & Growth', 'Review & Send']) assert.match(builder, new RegExp(label.replace('&', '\\&')));
 for (const behavior of ['localStorage', 'beforeunload', 'Saving…', 'Draft saved just now', 'Unable to save. Retry', 'Save Draft', 'Preview Offer', 'Send Offer']) assert.ok(builder.includes(behavior), `Missing ${behavior}`);
@@ -33,6 +34,7 @@ assert.match(detailModal, /Send Offer/);
 assert.match(pdf, /buildOfferPdf/);
 assert.match(pdf, /Page \$\{page\} of \$\{totalPages\}/);
 assert.match(stepSixMigration, /between 1 and 6/);
+assert.doesNotMatch(authContext, /Connect Google is not implemented in Supabase yet/);
 assert.match(publicOffer, /\.eq\('secure_token', token\)/);
 assert.match(publicOffer, /\['accept', 'decline'\]/);
 for (const feature of ['Draw Signature', 'Type Signature', 'Submit Signature', 'electronic signature is legally binding', 'Confirm Decline', 'Download signed offer']) assert.ok(candidatePage.includes(feature), `Missing candidate feature: ${feature}`);

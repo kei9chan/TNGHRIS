@@ -340,7 +340,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
   };
 
   const connectGoogle = () => {
-    alert('Connect Google is not implemented in Supabase yet.');
+    alert('Google Calendar and recruitment email are managed securely by the TNG HRIS server. No personal Google connection is required.');
   };
 
   return (
