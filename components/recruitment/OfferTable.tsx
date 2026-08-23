@@ -1,6 +1,7 @@
 import React from 'react';
 import { OfferStatus, Offer } from '../../types';
 import Button from '../ui/Button';
+import { formatPHP, offerMonthlyPay } from './offerCurrency';
 
 export interface EnrichedOffer extends Offer {
   candidateName: string;
@@ -42,6 +43,7 @@ const OfferTable: React.FC<OfferTableProps> = ({ offers, onViewDetails, onEditDr
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Start Date</th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Base Pay</th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Template</th>
                         <th scope="col" className="relative px-6 py-3"><span className="sr-only">Actions</span></th>
                     </tr>
                 </thead>
@@ -52,12 +54,13 @@ const OfferTable: React.FC<OfferTableProps> = ({ offers, onViewDetails, onEditDr
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{offer.candidateName}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{offer.jobTitle}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{new Date(offer.startDate).toLocaleDateString()}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">${offer.basePay.toLocaleString()}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{(() => { const pay = offerMonthlyPay(offer, offer.offerDetails); return formatPHP(pay.value, pay.specified); })()}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm">
                                 <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(offer.status)}`}>
                                     {offer.status}
                                 </span>
                             </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{offer.offerTemplateName || '—'}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                 <div className="flex justify-end gap-2">{offer.status === OfferStatus.Draft && onEditDraft && <Button size="sm" onClick={() => onEditDraft(offer)}>Edit Draft</Button>}<Button size="sm" variant="secondary" onClick={() => onViewDetails(offer)}>View Details</Button></div>
                             </td>
@@ -65,7 +68,7 @@ const OfferTable: React.FC<OfferTableProps> = ({ offers, onViewDetails, onEditDr
                     ))}
                     {offers.length === 0 && (
                         <tr>
-                            <td colSpan={7} className="text-center py-10 text-gray-500 dark:text-gray-400">No offers found.</td>
+                            <td colSpan={8} className="text-center py-10 text-gray-500 dark:text-gray-400">No offers found.</td>
                         </tr>
                     )}
                 </tbody>

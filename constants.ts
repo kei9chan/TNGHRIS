@@ -149,7 +149,10 @@ export const NAV_LINKS: NavLink[] = [
             { name: 'Applicants', path: '/recruitment/applicants', requiredPermission: { resource: 'Applicants', permission: Permission.View } },
             { name: 'Candidates', path: '/recruitment/candidates', requiredPermission: { resource: 'Candidates', permission: Permission.View } },
             { name: 'Interviews', path: '/recruitment/interviews', requiredPermission: { resource: 'Interviews', permission: Permission.View } },
-            { name: 'Offers', path: '/recruitment/offers', requiredPermission: { resource: 'Offers', permission: Permission.View } },
+            { name: 'Offers', path: '/recruitment/offers', requiredPermission: { resource: 'Offers', permission: Permission.View }, children: [
+                { name: 'Job Offers', path: '/recruitment/offers', requiredPermission: { resource: 'Offers', permission: Permission.View } },
+                { name: 'Offer Templates', path: '/recruitment/offer-templates', requiredPermission: { resource: 'Offers', permission: Permission.View } },
+            ] },
         ]
     },
     {

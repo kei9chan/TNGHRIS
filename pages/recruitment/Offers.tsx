@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Offer, Permission, OfferStatus, Application, User, Role, ApplicationStage, Candidate, JobRequisition, BusinessUnit, Department } from '../../types';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Offer, Permission, OfferStatus, Application, User, Role, ApplicationStage, Candidate, JobRequisition, BusinessUnit, Department, OfferTemplate } from '../../types';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -12,12 +13,16 @@ import OfferCreationDrawer from '../../components/recruitment/OfferCreationDrawe
 import OfferDetailModal from '../../components/recruitment/OfferDetailModal';
 import { logActivity } from '../../services/auditService';
 import { supabase } from '../../services/supabaseClient';
+import OfferTemplatePicker from '../../components/recruitment/OfferTemplatePicker';
+import { mapOfferTemplate } from './OfferTemplates';
 
 
 const Offers: React.FC = () => {
   const { can } = usePermissions();
   const { user } = useAuth();
   const { settings } = useSettings();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [offers, setOffers] = useState<Offer[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
@@ -32,6 +37,9 @@ const Offers: React.FC = () => {
   const [selectedOffer, setSelectedOffer] = useState<EnrichedOffer | null>(null);
   const [editingOffer, setEditingOffer] = useState<EnrichedOffer | null>(null);
   const [successMessage, setSuccessMessage] = useState('');
+  const [templates, setTemplates] = useState<OfferTemplate[]>([]);
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const [initialTemplate, setInitialTemplate] = useState<OfferTemplate | null>(null);
 
   const canManage = can('Offers', Permission.Manage);
   const canView = can('Offers', Permission.View) || canManage;
@@ -41,6 +49,7 @@ const Offers: React.FC = () => {
     applicationId: row.application_id,
     offerNumber: row.offer_number,
     basePay: Number(row.base_pay),
+    basePaySpecified: row.offer_details?.compensationEntered === true || Number(row.base_pay) > 0,
     allowanceJSON: JSON.stringify(row.allowance_json || {}),
     startDate: row.start_date ? new Date(row.start_date) : new Date(),
     probationMonths: row.probation_months ?? 0,
@@ -71,6 +80,9 @@ const Offers: React.FC = () => {
     signaturePath: row.signature_path || undefined,
     signedPdfPath: row.signed_pdf_path || undefined,
     requireSignature: row.require_signature !== false,
+    offerTemplateId: row.offer_template_id || undefined,
+    offerTemplateName: row.offer_template_name || undefined,
+    offerTemplateSnapshot: row.offer_template_snapshot || undefined,
     // Optional fields not in table
     workScheduleDays: '',
     workScheduleHours: '',
@@ -86,7 +98,7 @@ const Offers: React.FC = () => {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [offRes, appRes, candRes, reqRes, deptRes, buRes, themeRes] = await Promise.all([
+      const [offRes, appRes, candRes, reqRes, deptRes, buRes, themeRes, templateRes] = await Promise.all([
         supabase.from('job_offers').select('*').order('created_at', { ascending: false }),
         supabase.from('job_applications').select('*'),
         supabase.from('job_candidates').select('*'),
@@ -94,6 +106,7 @@ const Offers: React.FC = () => {
         supabase.from('departments').select('id,name,business_unit_id'),
         supabase.from('business_units').select('id,name'),
         supabase.from('applicant_page_themes').select('business_unit_id,logo_url').not('business_unit_id', 'is', null).order('updated_at', { ascending: false }),
+        supabase.from('job_offer_templates').select('*').neq('status', 'Archived').order('updated_at', { ascending: false }),
       ]);
       if (offRes.error) throw offRes.error;
       if (appRes.error) throw appRes.error;
@@ -154,6 +167,7 @@ const Offers: React.FC = () => {
           return logos;
         }, {}));
       }
+      if (!templateRes.error) setTemplates((templateRes.data || []).map(mapOfferTemplate));
     } catch (err) {
       console.error('Failed to load offers', err);
       alert('Failed to load offers.');
@@ -165,6 +179,13 @@ const Offers: React.FC = () => {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    const templateId = searchParams.get('template');
+    if (!templateId || !templates.length) return;
+    const template = templates.find(item => item.id === templateId);
+    if (template) { setInitialTemplate(template); setTemplatePickerOpen(true); }
+  }, [searchParams, templates]);
 
   const enrichedOffers: EnrichedOffer[] = useMemo(() => {
     return offers.map(offer => {
@@ -221,6 +242,9 @@ const Offers: React.FC = () => {
       email_message: offerToSave.emailMessage || null,
       created_by_user_id: user?.id || null,
       require_signature: offerToSave.requireSignature !== false,
+      offer_template_id: offerToSave.offerTemplateId || null,
+      offer_template_name: offerToSave.offerTemplateName || null,
+      offer_template_snapshot: offerToSave.offerTemplateSnapshot || {},
     };
     try {
       if (offerToSave.id) {
@@ -317,7 +341,7 @@ const Offers: React.FC = () => {
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Job Offers</h1>
         {canManage && (
-          <Button onClick={() => handleOpenModal(null)}>Create Offer</Button>
+          <div className="flex gap-2"><Button variant="secondary" onClick={() => navigate('/recruitment/offer-templates')}>Offer Templates</Button><Button onClick={() => { setInitialTemplate(null); setTemplatePickerOpen(true); }}>Create Offer</Button></div>
         )}
       </div>
       {!canView && (
@@ -350,8 +374,10 @@ const Offers: React.FC = () => {
               departments={departments}
               businessUnitLogos={businessUnitLogos}
               initialOffer={editingOffer}
+              initialTemplate={initialTemplate}
             />
           )}
+          <OfferTemplatePicker open={templatePickerOpen} templates={templates} onClose={() => { setTemplatePickerOpen(false); setSearchParams({}); }} onContinue={template => { setInitialTemplate(template); setEditingOffer(null); setSelectedOffer(null); setTemplatePickerOpen(false); setSearchParams({}); setIsCreationDrawerOpen(true); }}/>
 
           {isDetailModalOpen && selectedOffer && (
             <OfferDetailModal

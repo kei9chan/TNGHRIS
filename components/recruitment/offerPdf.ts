@@ -1,7 +1,8 @@
 import { Offer, OfferBuilderDetails } from '../../types';
 import { mergeAppearance } from './offerBranding';
+import { formatPHP } from './offerCurrency';
 
-const peso = (value = 0) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 }).format(Number(value) || 0);
+const peso = (value?: number) => formatPHP(value, value !== undefined);
 const date = (value?: Date | string) => value ? new Date(value).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' }) : '—';
 const hex = (value: string) => { const clean = value.replace('#', ''); return [Number.parseInt(clean.slice(0,2),16), Number.parseInt(clean.slice(2,4),16), Number.parseInt(clean.slice(4,6),16)] as [number,number,number]; };
 

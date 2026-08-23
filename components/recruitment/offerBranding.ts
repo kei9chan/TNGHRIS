@@ -22,6 +22,7 @@ const PRESETS: Array<{ match: RegExp; values: OfferAppearance }> = [
   { match: /gootopia/i, values: { preset: 'Gootopia', primaryColor: '#6D28D9', accentColor: '#A78BFA', textColor: '#251447', pageBackgroundColor: '#FAF7FF', headerContent: 'Build, play, and grow with us.' } },
   { match: /bakebe/i, values: { preset: 'Bakebe', primaryColor: '#7A3E2C', accentColor: '#D97757', textColor: '#332018', pageBackgroundColor: '#FFF9EF', headerContent: 'Create something wonderful with us.' } },
   { match: /fun roof/i, values: { preset: 'The Fun Roof', primaryColor: '#171117', accentColor: '#F00083', textColor: '#211827', pageBackgroundColor: '#FFF7FC', headerContent: 'Take your career to the roof.' } },
+  { match: /sprinkle/i, values: { preset: 'The Sprinkle Saloon', primaryColor: '#9D174D', accentColor: '#F9A8D4', textColor: '#3F1026', pageBackgroundColor: '#FFF7FB', headerContent: 'Add your spark to the team.' } },
 ];
 
 export const appearanceForBusinessUnit = (businessUnit?: string): OfferAppearance => ({

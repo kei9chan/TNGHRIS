@@ -1,8 +1,9 @@
 import React from 'react';
 import { Offer, OfferBuilderDetails } from '../../types';
 import { mergeAppearance } from './offerBranding';
+import { formatPHP } from './offerCurrency';
 
-const peso = (value = 0) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 }).format(Number(value) || 0);
+const peso = (value?: number) => formatPHP(value);
 const formatDate = (value?: Date | string) => value ? new Date(value).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' }) : '—';
 
 interface Props {

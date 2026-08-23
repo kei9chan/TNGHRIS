@@ -28,6 +28,8 @@ const iconMap: { [key: string]: React.FC<{className?: string}> } = {
     'Candidates': IdentificationIcon,
     'Interviews': CalendarIcon,
     'Offers': DocumentCheckIcon,
+    'Job Offers': DocumentCheckIcon,
+    'Offer Templates': DocumentDuplicateIcon,
 };
 
 
@@ -59,8 +61,7 @@ const RecruitmentSubNav: React.FC = () => {
         return null;
     }
     
-    const jobPostsLink = subLinks.find(link => link.name === 'Job Posts');
-    const isJobPostsSectionActive = location.pathname.startsWith('/recruitment/job-post') && !location.pathname.includes('application-pages');
+    const activeParent = subLinks.find(link => link.children?.some(child => location.pathname === child.path || location.pathname.startsWith(`${child.path}/`)));
 
     const baseClasses = 'flex items-center py-4 px-2 md:px-3 border-b-2 text-sm font-medium transition-colors duration-150 ease-in-out';
     const activeClasses = 'border-indigo-500 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400';
@@ -79,7 +80,7 @@ const RecruitmentSubNav: React.FC = () => {
                     <div className="flex space-x-2 sm:space-x-4 md:space-x-8 overflow-x-auto">
                         {subLinks.map(link => {
                             const Icon = iconMap[link.name];
-                            const isParentActive = link.name === 'Job Posts' && isJobPostsSectionActive;
+                            const isParentActive = activeParent?.name === link.name;
                             const destinationPath = link.children ? link.children[0].path : link.path;
 
                             return (
@@ -98,12 +99,12 @@ const RecruitmentSubNav: React.FC = () => {
                 </nav>
             </div>
 
-            {/* Level 3 Sub-SubNav for Job Posts */}
-            {isJobPostsSectionActive && jobPostsLink && jobPostsLink.children && (
+            {/* Level 3 navigation for grouped Recruitment modules */}
+            {activeParent?.children && (
                  <div className="bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700">
                     <nav className="max-w-screen-2xl mx-auto px-4 sm:px-6 xl:px-10">
                         <div className="flex space-x-8 overflow-x-auto">
-                            {jobPostsLink.children.map(childLink => {
+                            {activeParent.children.map(childLink => {
                                 const Icon = iconMap[childLink.name];
                                 return (
                                     <NavLink

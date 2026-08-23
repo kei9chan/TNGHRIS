@@ -1848,6 +1848,7 @@ export interface Offer {
   applicationId: string;
   offerNumber: string;
   basePay: number;
+  basePaySpecified?: boolean;
   allowanceJSON: string;
   startDate: Date;
   probationMonths: number;
@@ -1892,6 +1893,40 @@ export interface Offer {
   signaturePath?: string;
   signedPdfPath?: string;
   requireSignature?: boolean;
+  offerTemplateId?: string;
+  offerTemplateName?: string;
+  offerTemplateSnapshot?: Record<string, unknown>;
+}
+
+export type OfferTemplateStatus = 'Draft' | 'Active' | 'Archived';
+
+export interface OfferSectionConfig {
+  id: string;
+  label: string;
+  visible: boolean;
+  order: number;
+}
+
+export interface OfferTemplate {
+  id: string;
+  name: string;
+  businessUnitId?: string;
+  businessUnit: string;
+  description: string;
+  category: string;
+  status: OfferTemplateStatus;
+  templateKey?: string;
+  isStarter?: boolean;
+  templateData: OfferBuilderDetails;
+  logoUrl?: string;
+  logoPath?: string;
+  headerImageUrl?: string;
+  headerImagePath?: string;
+  createdByUserId?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  archivedAt?: Date;
+  persisted?: boolean;
 }
 
 export interface OfferListItem {
@@ -1945,6 +1980,7 @@ export interface OfferBuilderDetails {
   currency?: string;
   payFrequency?: string;
   grossMonthlySalary?: number;
+  compensationEntered?: boolean;
   grossAnnualizedSalary?: number;
   payrollSchedule?: string;
   probationarySalary?: number;
@@ -1961,6 +1997,7 @@ export interface OfferBuilderDetails {
   termsReviewed?: boolean;
   requireSignature?: boolean;
   appearance?: OfferAppearance;
+  sectionConfig?: OfferSectionConfig[];
 }
 
 export interface OfferAppearance {
@@ -1975,10 +2012,13 @@ export interface OfferAppearance {
   pageBackgroundColor?: string;
   backgroundImageUrl?: string;
   backgroundImagePath?: string;
+  headerImageUrl?: string;
+  headerImagePath?: string;
   fontFamily?: 'Inter' | 'Georgia' | 'Arial' | 'Poppins';
   buttonStyle?: 'Rounded' | 'Pill' | 'Square';
   cardStyle?: 'Soft' | 'Outlined' | 'Flat';
   sectionLayout?: 'Cards' | 'Classic' | 'Compact';
+  headerLayout?: 'Split' | 'Centered' | 'Minimal';
 }
 
 // Visual Job Post Template Types
