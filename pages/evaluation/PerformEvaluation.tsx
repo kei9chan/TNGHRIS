@@ -10,6 +10,7 @@ import Textarea from '../../components/ui/Textarea';
 import { logActivity } from '../../services/auditService';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
+import { resolveCurrentHrisUserId } from '../../services/evaluationService';
 
 // Icons
 const ArrowLeftIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>;
@@ -28,6 +29,8 @@ const PerformEvaluation: React.FC = () => {
     const [submissions, setSubmissions] = useState<EvaluationSubmission[]>([]);
     const [raterProfileId, setRaterProfileId] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
     const [scores, setScores] = useState<Record<string, number | string>>({});
 
@@ -35,25 +38,14 @@ const PerformEvaluation: React.FC = () => {
         if (!user) return;
         let active = true;
         const resolveRaterProfileId = async () => {
-            let resolvedId: string | null = null;
-            if (user.authUserId) {
-                const { data } = await supabase
-                    .from('hris_users')
-                    .select('id')
-                    .eq('auth_user_id', user.authUserId)
-                    .maybeSingle();
-                resolvedId = data?.id ?? null;
-            }
-            if (!resolvedId && user.email) {
-                const { data } = await supabase
-                    .from('hris_users')
-                    .select('id')
-                    .eq('email', user.email)
-                    .maybeSingle();
-                resolvedId = data?.id ?? null;
-            }
-            if (active) {
-                setRaterProfileId(resolvedId || user.id || null);
+            try {
+                const resolvedId = await resolveCurrentHrisUserId(user.id);
+                if (active) setRaterProfileId(resolvedId);
+            } catch (profileError: any) {
+                if (active) {
+                    setRaterProfileId(user.id || null);
+                    setLoadError(profileError?.message || 'Unable to resolve your HRIS account.');
+                }
             }
         };
         resolveRaterProfileId();
@@ -67,14 +59,25 @@ const PerformEvaluation: React.FC = () => {
         let active = true;
         const loadEvaluation = async () => {
             setIsLoading(true);
+            setLoadError(null);
             try {
                 const [{ data: evalRow, error: evalErr }, { data: evalers, error: evalerErr }] = await Promise.all([
-                    supabase.from('evaluations').select('*').eq('id', evaluationId).maybeSingle(),
-                    supabase.from('evaluation_evaluators').select('*').eq('evaluation_id', evaluationId),
+                    supabase
+                        .from('evaluations')
+                        .select('id, name, timeline_id, target_business_unit_ids, target_employee_ids, question_set_ids, status, created_at, due_date, is_employee_visible, acknowledged_by')
+                        .eq('id', evaluationId)
+                        .maybeSingle(),
+                    supabase
+                        .from('evaluation_evaluators')
+                        .select('id, evaluation_id, type, user_id, weight, business_unit_id, department_id, is_anonymous, exclude_subject')
+                        .eq('evaluation_id', evaluationId),
                 ]);
                 if (evalErr) throw evalErr;
                 if (!evalRow) {
-                    if (active) setEvaluation(null);
+                    if (active) {
+                        setEvaluation(null);
+                        setLoadError('This evaluation is unavailable or is not assigned to your account.');
+                    }
                     return;
                 }
                 if (evalerErr) throw evalerErr;
@@ -168,7 +171,10 @@ const PerformEvaluation: React.FC = () => {
                 setTargetUsers(mappedEmployees);
             } catch (err) {
                 console.error('Failed to load evaluation', err);
-                if (active) setEvaluation(null);
+                if (active) {
+                    setEvaluation(null);
+                    setLoadError((err as any)?.message || 'Failed to load this evaluation.');
+                }
             } finally {
                 if (active) setIsLoading(false);
             }
@@ -255,15 +261,34 @@ const PerformEvaluation: React.FC = () => {
     
     const isDeadlinePassed = useMemo(() => {
         if (!evaluation?.dueDate) return false;
-        return new Date() > new Date(evaluation.dueDate);
+        const deadline = new Date(evaluation.dueDate);
+        deadline.setHours(23, 59, 59, 999);
+        return new Date() > deadline;
     }, [evaluation]);
 
     if (isLoading) {
-        return <div>Loading evaluation...</div>;
+        return (
+            <div className="flex min-h-64 items-center justify-center">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-200 border-b-indigo-600" />
+            </div>
+        );
     }
 
     if (!evaluation || !user) {
-        return <div>Loading or evaluation not found...</div>;
+        return (
+            <div className="space-y-6">
+                <Link to="/evaluation/reviews" className="flex items-center text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                    <ArrowLeftIcon /> Back to Evaluations
+                </Link>
+                <Card>
+                    <div className="py-12 text-center">
+                        <p className="font-medium text-gray-700 dark:text-gray-200">
+                            {loadError || 'This evaluation is unavailable or is not assigned to your account.'}
+                        </p>
+                    </div>
+                </Card>
+            </div>
+        );
     }
     
     if (eligibleTargets.length === 0) {
@@ -281,6 +306,31 @@ const PerformEvaluation: React.FC = () => {
         );
     }
 
+    if (evaluation.status !== 'InProgress') {
+        return (
+            <div className="space-y-6">
+                <Link to="/evaluation/reviews" className="flex items-center text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 mb-2">
+                    <ArrowLeftIcon /> Back to Evaluations
+                </Link>
+                <Card>
+                    <div className="py-12 text-center">
+                        <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                            This evaluation is {evaluation.status}.
+                        </h2>
+                        <p className="mt-2 text-gray-600 dark:text-gray-400">
+                            It can no longer be completed or changed from this form.
+                        </p>
+                        {submissions.length > 0 && (
+                            <Link to={`/evaluation/report/${evaluation.id}`} className="mt-4 inline-block">
+                                <Button variant="secondary">View Submitted Evaluation</Button>
+                            </Link>
+                        )}
+                    </div>
+                </Card>
+            </div>
+        );
+    }
+
     const handleAnswerChange = (questionId: string, answer: number | string) => {
         setScores(prev => ({ ...prev, [questionId]: answer }));
     };
@@ -290,51 +340,55 @@ const PerformEvaluation: React.FC = () => {
             alert('Please answer all questions before submitting.');
             return;
         }
-        
-        const raterId = raterProfileId || user.id;
-        const existingIndex = submissions.findIndex(s => s.subjectEmployeeId === selectedEmployeeId && s.raterId === raterId);
-        
-        const formattedScores = questions.map(q => {
-            const answer = scores[q.id];
-            if (q.questionType === 'paragraph') {
-                return { questionId: q.id, answer: String(answer || '') };
-            }
-            return { questionId: q.id, score: Number(answer || 0) };
-        });
+        if (isSubmitting) return;
 
-        if (existingIndex > -1) {
-            const existing = submissions[existingIndex];
-            const { data, error } = await supabase
-                .from('evaluation_submissions')
-                .update({
-                    scores: formattedScores,
-                    submitted_at: new Date().toISOString(),
-                    rater_group: selectedEmployeeId === raterId ? RaterGroup.Self : RaterGroup.DirectSupervisor,
-                })
-                .eq('id', existing.id)
-                .select('*')
-                .single();
-            if (error) {
-                alert(error.message || 'Failed to update evaluation.');
+        setIsSubmitting(true);
+        try {
+            const raterId = raterProfileId || user.id;
+            const existingIndex = submissions.findIndex(
+                submission => submission.subjectEmployeeId === selectedEmployeeId && submission.raterId === raterId
+            );
+
+            const formattedScores = questions.map(question => {
+                const answer = scores[question.id];
+                if (question.questionType === 'paragraph') {
+                    return { questionId: question.id, answer: String(answer || '') };
+                }
+                return { questionId: question.id, score: Number(answer || 0) };
+            });
+
+            if (existingIndex > -1) {
+                const existing = submissions[existingIndex];
+                const { data, error } = await supabase
+                    .from('evaluation_submissions')
+                    .update({
+                        scores: formattedScores,
+                        submitted_at: new Date().toISOString(),
+                        rater_group: selectedEmployeeId === raterId ? RaterGroup.Self : RaterGroup.DirectSupervisor,
+                    })
+                    .eq('id', existing.id)
+                    .select('id, evaluation_id, subject_employee_id, rater_id, rater_group, scores, submitted_at')
+                    .single();
+                if (error) throw error;
+
+                const updatedSubmission: EvaluationSubmission = {
+                    id: data.id,
+                    evaluationId: data.evaluation_id,
+                    subjectEmployeeId: data.subject_employee_id,
+                    raterId: data.rater_id,
+                    raterGroup: (data.rater_group as RaterGroup) || RaterGroup.DirectSupervisor,
+                    scores: data.scores || [],
+                    submittedAt: data.submitted_at ? new Date(data.submitted_at) : new Date(),
+                };
+                const nextSubmissions = [...submissions];
+                nextSubmissions[existingIndex] = updatedSubmission;
+                setSubmissions(nextSubmissions);
+
+                await logActivity(user, 'UPDATE', 'EvaluationSubmission', updatedSubmission.id, `Updated evaluation for ${selectedEmployee?.name}`);
+                alert('Evaluation updated successfully.');
                 return;
             }
-            const updatedSubmission: EvaluationSubmission = {
-                id: data.id,
-                evaluationId: data.evaluation_id,
-                subjectEmployeeId: data.subject_employee_id,
-                raterId: data.rater_id,
-                raterGroup: (data.rater_group as RaterGroup) || RaterGroup.DirectSupervisor,
-                scores: data.scores || [],
-                submittedAt: data.submitted_at ? new Date(data.submitted_at) : new Date(),
-            };
-            const newSubmissions = [...submissions];
-            newSubmissions[existingIndex] = updatedSubmission;
-            setSubmissions(newSubmissions);
 
-            logActivity(user, 'UPDATE', 'EvaluationSubmission', updatedSubmission.id, `Updated evaluation for ${selectedEmployee?.name}`);
-            alert("Evaluation updated successfully.");
-
-        } else {
             const { data, error } = await supabase
                 .from('evaluation_submissions')
                 .insert({
@@ -345,12 +399,10 @@ const PerformEvaluation: React.FC = () => {
                     scores: formattedScores,
                     submitted_at: new Date().toISOString(),
                 })
-                .select('*')
+                .select('id, evaluation_id, subject_employee_id, rater_id, rater_group, scores, submitted_at')
                 .single();
-            if (error) {
-                alert(error.message || 'Failed to submit evaluation.');
-                return;
-            }
+            if (error) throw error;
+
             const newSubmission: EvaluationSubmission = {
                 id: data.id,
                 evaluationId: data.evaluation_id,
@@ -360,26 +412,26 @@ const PerformEvaluation: React.FC = () => {
                 scores: data.scores || [],
                 submittedAt: data.submitted_at ? new Date(data.submitted_at) : new Date(),
             };
-            setSubmissions(prev => [...prev, newSubmission]);
-            
-            logActivity(user, 'CREATE', 'EvaluationSubmission', newSubmission.id, `Submitted evaluation for ${selectedEmployee?.name}`);
-            
-            // Auto-navigate to the next user only on NEW submission
-            const currentIndex = eligibleTargets.findIndex(u => u.id === selectedEmployeeId);
-            const nextUser = eligibleTargets.find((u, index) => index > currentIndex && !submittedEmployeeIds.has(u.id));
-            
-            if (nextUser) {
-                setSelectedEmployeeId(nextUser.id);
-                setScores({}); // Clear scores for the next user
-            } else {
-                // If no next user, stay or check unfinished
-                const firstUnevaluated = eligibleTargets.find(u => !submittedEmployeeIds.has(u.id) && u.id !== selectedEmployeeId);
-                 if(firstUnevaluated) {
-                    setSelectedEmployeeId(firstUnevaluated.id);
-                    setScores({});
-                 }
+            setSubmissions(previous => [...previous, newSubmission]);
+            await logActivity(user, 'CREATE', 'EvaluationSubmission', newSubmission.id, `Submitted evaluation for ${selectedEmployee?.name}`);
+
+            const currentIndex = eligibleTargets.findIndex(target => target.id === selectedEmployeeId);
+            const nextUser = eligibleTargets.find(
+                (target, index) => index > currentIndex && !submittedEmployeeIds.has(target.id)
+            );
+            const firstUnevaluated = eligibleTargets.find(
+                target => !submittedEmployeeIds.has(target.id) && target.id !== selectedEmployeeId
+            );
+            const nextTarget = nextUser || firstUnevaluated;
+            if (nextTarget) {
+                setSelectedEmployeeId(nextTarget.id);
+                setScores({});
             }
-            alert("Evaluation submitted successfully.");
+            alert('Evaluation submitted successfully.');
+        } catch (submitError: any) {
+            alert(submitError?.message || 'Failed to submit evaluation.');
+        } finally {
+            setIsSubmitting(false);
         }
     };
     
@@ -476,9 +528,11 @@ const PerformEvaluation: React.FC = () => {
                                     {!isDeadlinePassed && (
                                         <Button 
                                             onClick={handleSubmit} 
-                                            disabled={Object.keys(scores).length !== questions.length}
+                                            disabled={isSubmitting || Object.keys(scores).length !== questions.length}
                                         >
-                                            {isEditing ? 'Update Submission' : `Submit for ${selectedEmployee.name}`}
+                                            {isSubmitting
+                                                ? 'Submitting…'
+                                                : (isEditing ? 'Update Submission' : `Submit for ${selectedEmployee.name}`)}
                                         </Button>
                                     )}
                                 </div>

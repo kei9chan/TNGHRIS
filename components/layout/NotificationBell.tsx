@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import { fetchNotifications, markNotificationRead, markAllNotificationsRead } from '../../services/notificationService';
+import { fetchNotifications, markNotificationRead, markAllNotificationsRead, resolveNotificationDestination } from '../../services/notificationService';
 import { Notification } from '../../types';
 
 // ---------------------------------------------------------------------------
@@ -121,16 +121,18 @@ const NotificationBell: React.FC = () => {
 
     const handleNotificationClick = async (notification: Notification) => {
         try {
+            const destination = await resolveNotificationDestination(notification);
+            setIsOpen(false);
+            navigate(destination);
             if (!notification.isRead) {
                 await markNotificationRead(notification.id);
                 setNotifications(prev => prev.map(n =>
                     n.id === notification.id ? { ...n, isRead: true } : n
                 ));
             }
-            setIsOpen(false);
-            if (notification.link) navigate(notification.link);
         } catch (error) {
-            console.error('Failed to mark notification as read', error);
+            console.error('Failed to open notification', error);
+            alert((error as any)?.message || 'This notification could not be opened.');
         }
     };
 

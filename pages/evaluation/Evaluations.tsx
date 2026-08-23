@@ -3,19 +3,22 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import { Evaluation, Role, EvaluatorType, User, Permission, EvaluatorConfig } from '../../types';
+import { Evaluation, EvaluatorType, User, Permission, EvaluatorConfig } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import ComplianceModal from '../../components/evaluation/ComplianceModal';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
+import { resolveCurrentHrisUserId } from '../../services/evaluationService';
+import { useEvaluationAssignmentAccess } from '../../hooks/useEvaluationAssignmentAccess';
 
 const Evaluations: React.FC = () => {
     const { user } = useAuth();
     const navigate = useNavigate();
-    const { getVisibleEmployeeIds, getAccessibleBusinessUnits, isUserEligibleEvaluator, can } = usePermissions();
+    const { getAccessibleBusinessUnits, isUserEligibleEvaluator, can } = usePermissions();
     const canView = can('Evaluation', Permission.View);
     const canManage = can('Evaluation', Permission.Manage);
+    const { hasAssignment, loading: assignmentAccessLoading } = useEvaluationAssignmentAccess(!canView);
     
     const [yearFilter, setYearFilter] = useState<string>('all');
     const [monthFilter, setMonthFilter] = useState<string>('all');
@@ -26,6 +29,7 @@ const Evaluations: React.FC = () => {
     const [submissionsByEval, setSubmissionsByEval] = useState<Record<string, Set<string>>>({});
     const [error, setError] = useState<string | null>(null);
     const [employeeProfileId, setEmployeeProfileId] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
 
     // Compliance Modal State
     const [isComplianceModalOpen, setIsComplianceModalOpen] = useState(false);
@@ -36,68 +40,100 @@ const Evaluations: React.FC = () => {
     const accessibleBus = useMemo(() => getAccessibleBusinessUnits(businessUnits), [getAccessibleBusinessUnits, businessUnits]);
 
     useEffect(() => {
+        let active = true;
         const loadData = async () => {
             setError(null);
-            const [{ data: buData, error: buErr }, { data: evalData, error: evalErr }, { data: evalersData, error: evErr }, { data: submissionsData, error: subErr }] = await Promise.all([
-                supabase.from('business_units').select('id, name').order('name'),
-                supabase.from('evaluations').select('*').order('created_at', { ascending: false }),
-                supabase.from('evaluation_evaluators').select('evaluation_id, type, user_id, weight, business_unit_id, department_id, is_anonymous, exclude_subject'),
-                supabase.from('evaluation_submissions').select('evaluation_id, rater_id, subject_employee_id'),
-            ]);
-            if (buErr || evalErr || evErr || subErr) {
-                setError(buErr?.message || evalErr?.message || evErr?.message || subErr?.message || 'Failed to load evaluations.');
+            setIsLoading(true);
+            try {
+                const [{ data: buData, error: buErr }, { data: evalData, error: evalErr }] = await Promise.all([
+                    supabase.from('business_units').select('id, name').order('name'),
+                    supabase
+                        .from('evaluations')
+                        .select('id, name, timeline_id, target_business_unit_ids, target_employee_ids, question_set_ids, status, created_at, due_date, is_employee_visible, acknowledged_by')
+                        .order('created_at', { ascending: false }),
+                ]);
+                if (buErr || evalErr) throw buErr || evalErr;
+
+                const evaluationRows = evalData || [];
+                const evaluationIds = evaluationRows.map((evaluation: any) => evaluation.id);
+                const [{ data: evalersData, error: evErr }, { data: submissionsData, error: subErr }] = evaluationIds.length > 0
+                    ? await Promise.all([
+                        supabase
+                            .from('evaluation_evaluators')
+                            .select('id, evaluation_id, type, user_id, weight, business_unit_id, department_id, is_anonymous, exclude_subject')
+                            .in('evaluation_id', evaluationIds),
+                        supabase
+                            .from('evaluation_submissions')
+                            .select('evaluation_id, rater_id, subject_employee_id')
+                            .in('evaluation_id', evaluationIds),
+                    ])
+                    : [
+                        { data: [], error: null },
+                        { data: [], error: null },
+                    ];
+
+                if (evErr || subErr) throw evErr || subErr;
+                if (!active) return;
+
+                setBusinessUnits((buData || []).map((b:any)=>({id:b.id,name:b.name||'Unknown BU'})));
+
+                const evalerMap: Record<string, EvaluatorConfig[]> = {};
+                (evalersData || []).forEach((row:any) => {
+                    if (!evalerMap[row.evaluation_id]) evalerMap[row.evaluation_id] = [];
+                    const normalizedType = String(row.type || '').toLowerCase();
+                    evalerMap[row.evaluation_id].push({
+                        id: row.id || `${row.evaluation_id}-${row.user_id || 'group'}-${row.type || 'unknown'}`,
+                        type: normalizedType === 'group' ? EvaluatorType.Group : EvaluatorType.Individual,
+                        weight: row.weight || 0,
+                        userId: row.user_id || undefined,
+                        groupFilter: row.business_unit_id || row.department_id ? {
+                            businessUnitId: row.business_unit_id || undefined,
+                            departmentId: row.department_id || undefined,
+                        } : undefined,
+                        isAnonymous: !!row.is_anonymous,
+                        excludeSubject: row.exclude_subject ?? true,
+                    });
+                });
+                setEvaluatorsByEval(evalerMap);
+
+                const submissionMap: Record<string, Set<string>> = {};
+                (submissionsData || []).forEach((row: any) => {
+                    if (!submissionMap[row.evaluation_id]) {
+                        submissionMap[row.evaluation_id] = new Set<string>();
+                    }
+                    submissionMap[row.evaluation_id].add(`${row.rater_id}:${row.subject_employee_id}`);
+                });
+                setSubmissionsByEval(submissionMap);
+
+                setEvaluations(evaluationRows.map((e:any)=>({
+                    id: e.id,
+                    name: e.name,
+                    timelineId: e.timeline_id || '',
+                    targetBusinessUnitIds: e.target_business_unit_ids || [],
+                    targetEmployeeIds: e.target_employee_ids || [],
+                    questionSetIds: e.question_set_ids || [],
+                    evaluators: evalerMap[e.id] || [],
+                    status: e.status || 'InProgress',
+                    createdAt: e.created_at ? new Date(e.created_at) : new Date(),
+                    dueDate: e.due_date ? new Date(e.due_date) : undefined,
+                    isEmployeeVisible: e.is_employee_visible || false,
+                    acknowledgedBy: e.acknowledged_by || [],
+                } as Evaluation)));
+            } catch (loadError: any) {
+                if (!active) return;
+                setError(loadError?.message || 'Failed to load evaluations.');
                 setBusinessUnits([]);
                 setEvaluations([]);
                 setEvaluatorsByEval({});
                 setSubmissionsByEval({});
-                return;
+            } finally {
+                if (active) setIsLoading(false);
             }
-            setBusinessUnits((buData || []).map((b:any)=>({id:b.id,name:b.name||'Unknown BU'})));
-
-            const evalerMap: Record<string, EvaluatorConfig[]> = {};
-            (evalersData || []).forEach((row:any) => {
-                if (!evalerMap[row.evaluation_id]) evalerMap[row.evaluation_id] = [];
-                const normalizedType = String(row.type || '').toLowerCase();
-                evalerMap[row.evaluation_id].push({
-                    id: `${row.evaluation_id}-${row.user_id || 'group'}-${row.type || 'unknown'}`,
-                    type: normalizedType === 'group' ? EvaluatorType.Group : EvaluatorType.Individual,
-                    weight: row.weight || 0,
-                    userId: row.user_id || undefined,
-                    groupFilter: row.business_unit_id || row.department_id ? {
-                        businessUnitId: row.business_unit_id || undefined,
-                        departmentId: row.department_id || undefined,
-                    } : undefined,
-                    isAnonymous: !!row.is_anonymous,
-                    excludeSubject: row.exclude_subject ?? true,
-                });
-            });
-            setEvaluatorsByEval(evalerMap);
-
-            const submissionMap: Record<string, Set<string>> = {};
-            (submissionsData || []).forEach((row: any) => {
-                if (!submissionMap[row.evaluation_id]) {
-                    submissionMap[row.evaluation_id] = new Set<string>();
-                }
-                submissionMap[row.evaluation_id].add(`${row.rater_id}:${row.subject_employee_id}`);
-            });
-            setSubmissionsByEval(submissionMap);
-
-            setEvaluations((evalData || []).map((e:any)=>({
-                id: e.id,
-                name: e.name,
-                timelineId: e.timeline_id || '',
-                targetBusinessUnitIds: e.target_business_unit_ids || [],
-                targetEmployeeIds: e.target_employee_ids || [],
-                questionSetIds: e.question_set_ids || [],
-                evaluators: evalerMap[e.id] || [],
-                status: e.status || 'InProgress',
-                createdAt: e.created_at ? new Date(e.created_at) : new Date(),
-                dueDate: e.due_date ? new Date(e.due_date) : undefined,
-                isEmployeeVisible: e.is_employee_visible || false,
-                acknowledgedBy: e.acknowledged_by || [],
-            } as Evaluation)));
         };
         loadData();
+        return () => {
+            active = false;
+        };
     }, []);
 
     useEffect(() => {
@@ -107,24 +143,12 @@ const Evaluations: React.FC = () => {
         }
         let active = true;
         const resolveProfileId = async () => {
-            let resolvedId: string | null = null;
-            if (user.authUserId) {
-                const { data } = await supabase
-                    .from('hris_users')
-                    .select('id')
-                    .eq('auth_user_id', user.authUserId)
-                    .maybeSingle();
-                resolvedId = data?.id ?? null;
+            try {
+                const resolvedId = await resolveCurrentHrisUserId(user.id);
+                if (active) setEmployeeProfileId(resolvedId);
+            } catch {
+                if (active) setEmployeeProfileId(user.id || null);
             }
-            if (!resolvedId && user.email) {
-                const { data } = await supabase
-                    .from('hris_users')
-                    .select('id')
-                    .eq('email', user.email)
-                    .maybeSingle();
-                resolvedId = data?.id ?? null;
-            }
-            if (active) setEmployeeProfileId(resolvedId || user.id || null);
         };
         resolveProfileId();
         return () => {
@@ -151,49 +175,37 @@ const Evaluations: React.FC = () => {
 
     const calculateProgress = (evaluation: Evaluation) => {
         const evalers = evaluatorsByEval[evaluation.id] || [];
-        const totalSubmissions = evaluation.targetEmployeeIds.length * Math.max(evalers.length || 0, 1);
+        const totalSubmissions = evaluation.targetEmployeeIds.length * evalers.length;
         const completedSubmissions = submissionsByEval[evaluation.id]?.size || 0;
         const percentage = totalSubmissions ? (completedSubmissions / totalSubmissions) * 100 : 0;
-        return { completed: completedSubmissions, total: totalSubmissions, percentage };
+        return {
+            completed: completedSubmissions,
+            total: totalSubmissions,
+            percentage: Math.min(percentage, 100),
+            configurationIncomplete: evalers.length === 0,
+        };
     };
 
     const viewableEvaluations = React.useMemo(() => {
-        if (!user || !canView) return [];
+        if (!user) return [];
         const evaluatorUser = { ...user, id: employeeProfileId || user.id };
 
-        const accessibleBuIds = new Set(accessibleBus.map(b => b.id));
-
-        let filteredByDateAndBU = evaluations.filter(evaluation => {
+        const filteredByDateAndBU = evaluations.filter(evaluation => {
             const evalDate = evaluation.createdAt ? new Date(evaluation.createdAt) : null;
             const yearMatch = yearFilter === 'all' || (evalDate && evalDate.getFullYear().toString() === yearFilter);
             const monthMatch = monthFilter === 'all' || (evalDate && (evalDate.getMonth() + 1).toString() === monthFilter);
-            const hasBuTargets = (evaluation.targetBusinessUnitIds || []).length > 0;
             const buMatch =
               buFilter === 'all'
                 ? true
                 : evaluation.targetBusinessUnitIds.includes(buFilter);
-            // If no BU targets specified, treat as all-accessible
-            const accessibleMatch =
-              accessibleBuIds.size === 0 ||
-              !hasBuTargets ||
-              evaluation.targetBusinessUnitIds.some(id => accessibleBuIds.has(id));
-            
-            return yearMatch && monthMatch && buMatch && accessibleMatch;
+            return yearMatch && monthMatch && buMatch;
         });
 
-        const isAdminOrHR = [Role.Admin, Role.HRManager, Role.HRStaff].includes(user.role);
-        
-        if (isAdminOrHR) {
+        if (canManage) {
             return filteredByDateAndBU;
         }
 
-        const visibleIds = new Set(getVisibleEmployeeIds());
-
-        return evaluations.filter(evaluation => {
-            const evalDate = evaluation.createdAt ? new Date(evaluation.createdAt) : null;
-            if (yearFilter !== 'all' && (!evalDate || evalDate.getFullYear().toString() !== yearFilter)) return false;
-            if (monthFilter !== 'all' && (!evalDate || (evalDate.getMonth() + 1).toString() !== monthFilter)) return false;
-
+        return filteredByDateAndBU.filter(evaluation => {
             if (evaluation.status === 'InProgress') {
                 const canEvaluateSomeone = evaluation.targetEmployeeIds.some(targetId => 
                     isUserEligibleEvaluator(evaluatorUser, evaluation, targetId)
@@ -208,7 +220,7 @@ const Evaluations: React.FC = () => {
 
             return false;
         });
-    }, [user, employeeProfileId, getVisibleEmployeeIds, yearFilter, monthFilter, buFilter, accessibleBus, isUserEligibleEvaluator]);
+    }, [user, employeeProfileId, evaluations, yearFilter, monthFilter, buFilter, canManage, isUserEligibleEvaluator]);
 
     const handleViewCompliance = async (evaluation: Evaluation) => {
         setSelectedEvaluationForCompliance(evaluation);
@@ -332,19 +344,18 @@ const Evaluations: React.FC = () => {
     };
 
     const selectClasses = "block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white";
-    const isAdminView = [Role.Admin, Role.HRManager, Role.HRStaff].includes(user?.role as Role);
+    const isAdminView = canManage;
+    const filterBusinessUnits = canManage ? accessibleBus : businessUnits;
 
-    if (!canView) {
+    if (isLoading || (!canView && assignmentAccessLoading)) {
         return (
-            <div className="p-6">
-                <Card>
-                    <div className="p-6 text-center text-gray-600 dark:text-gray-300">
-                        You do not have permission to view evaluations.
-                    </div>
-                </Card>
+            <div className="flex min-h-64 items-center justify-center">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-200 border-b-indigo-600" />
             </div>
         );
     }
+
+    const hasWorkspaceAccess = canView || hasAssignment || evaluations.length > 0;
 
     return (
         <div className="space-y-6">
@@ -353,10 +364,18 @@ const Evaluations: React.FC = () => {
                     <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Evaluations</h1>
                     <p className="text-gray-600 dark:text-gray-400 mt-1">View ongoing and completed performance reviews across all business units — track progress and access results in real time.</p>
                 </div>
-                 <Link to="/evaluation/new">
-                    <Button>Create New Evaluation</Button>
-                </Link>
+                {canManage && (
+                    <Link to="/evaluation/new">
+                        <Button>Create New Evaluation</Button>
+                    </Link>
+                )}
             </div>
+
+            {error && (
+                <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
+                    {error}
+                </div>
+            )}
             
             <Card>
                 <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -378,7 +397,7 @@ const Evaluations: React.FC = () => {
                         <label htmlFor="bu-filter" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
                         <select id="bu-filter" value={buFilter} onChange={e => setBuFilter(e.target.value)} className={selectClasses}>
                             <option value="all">All Accessible BUs</option>
-                            {accessibleBus.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
+                            {filterBusinessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
                         </select>
                     </div>
                 </div>
@@ -387,15 +406,16 @@ const Evaluations: React.FC = () => {
             {viewableEvaluations.length > 0 ? (
                 <div className="space-y-4">
                     {viewableEvaluations.map(evaluation => {
-                        const { completed, total, percentage } = calculateProgress(evaluation);
+                        const { completed, total, percentage, configurationIncomplete } = calculateProgress(evaluation);
                         const isOverdue = evaluation.dueDate && new Date() > new Date(evaluation.dueDate) && percentage < 100;
+                        const canOpenEvaluation = evaluation.status === 'InProgress' && !configurationIncomplete;
                         
                         const cardContent = (
                             <Card key={evaluation.id}>
                                 <div 
-                                    className={`flex flex-col md:flex-row justify-between md:items-center ${evaluation.status === 'InProgress' ? 'cursor-pointer' : ''}`}
+                                    className={`flex flex-col md:flex-row justify-between md:items-center ${canOpenEvaluation ? 'cursor-pointer' : ''}`}
                                     onClick={() => {
-                                        if (evaluation.status === 'InProgress') {
+                                        if (canOpenEvaluation) {
                                             navigate(`/evaluation/perform/${evaluation.id}`);
                                         }
                                     }}
@@ -404,6 +424,11 @@ const Evaluations: React.FC = () => {
                                         <div className="flex items-center gap-2">
                                             <h2 className="text-xl font-bold text-gray-900 dark:text-white">{evaluation.name}</h2>
                                             {isOverdue && <span className="text-xs bg-red-100 text-red-800 px-2 py-0.5 rounded-full font-bold">Overdue</span>}
+                                            {configurationIncomplete && (
+                                                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800">
+                                                    No evaluators assigned
+                                                </span>
+                                            )}
                                         </div>
                                         <p className="text-sm text-gray-500 dark:text-gray-400">Status: {evaluation.status} | Created: {new Date(evaluation.createdAt).toLocaleDateString()}</p>
                                     </div>
@@ -412,7 +437,7 @@ const Evaluations: React.FC = () => {
                                         onClick={(e) => e.stopPropagation()}
                                     >
                                         <span className="text-sm font-semibold text-gray-700 dark:text-gray-300 mr-2">{completed} / {total} Completed</span>
-                                        {isAdminView && evaluation.status === 'InProgress' && (
+                                        {isAdminView && evaluation.status === 'InProgress' && !configurationIncomplete && (
                                             <Button size="sm" variant="secondary" onClick={(e) => { e.preventDefault(); handleViewCompliance(evaluation); }}>
                                                 Compliance Report
                                             </Button>
@@ -433,13 +458,17 @@ const Evaluations: React.FC = () => {
                             </Card>
                         );
 
-                        return <div key={evaluation.id} className={`mb-4 ${evaluation.status === 'InProgress' ? 'hover:shadow-lg transition-shadow rounded-lg' : ''}`}>{cardContent}</div>;
+                        return <div key={evaluation.id} className={`mb-4 ${canOpenEvaluation ? 'hover:shadow-lg transition-shadow rounded-lg' : ''}`}>{cardContent}</div>;
                     })}
                 </div>
             ) : (
                 <Card>
                     <div className="text-center py-12">
-                        <h3 className="text-lg font-medium text-gray-900 dark:text-white">No evaluations found for the selected filters.</h3>
+                        <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                            {hasWorkspaceAccess
+                                ? 'No evaluations found for the selected filters.'
+                                : 'No evaluations are currently assigned to you.'}
+                        </h3>
                          <Link to="/dashboard" className="mt-4 inline-block">
                             <Button>Return to Dashboard</Button>
                         </Link>

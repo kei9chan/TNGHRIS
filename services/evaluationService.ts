@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { Evaluation, EvaluationSubmission, EvaluationTimeline, QuestionSet, EvaluationQuestion, EvaluatorConfig } from '../types';
+import { Evaluation, EvaluationSubmission, EvaluationTimeline, QuestionSet, EvaluationQuestion, EvaluatorConfig, EvaluatorType } from '../types';
 
 // ---------------------------------------------------------------------------
 // Row Types
@@ -118,6 +118,74 @@ const mapEvaluationQuestion = (row: EvaluationQuestionRow): EvaluationQuestion =
 // ---------------------------------------------------------------------------
 // Service Methods
 // ---------------------------------------------------------------------------
+
+export type CreateEvaluationCycleInput = {
+  name: string;
+  timelineId?: string | null;
+  targetBusinessUnitIds: string[];
+  targetEmployeeIds: string[];
+  questionSetIds: string[];
+  dueDate: Date | string;
+  evaluators: EvaluatorConfig[];
+};
+
+/**
+ * Resolve the canonical HRIS profile id from the authenticated session.
+ * Assignment and submission rows always use hris_users.id, never auth.users.id
+ * or an email string.
+ */
+export const resolveCurrentHrisUserId = async (fallbackId?: string | null): Promise<string> => {
+  const { data, error } = await supabase.rpc('current_hris_user_id');
+  if (!error && data) return String(data);
+  if (fallbackId) return fallbackId;
+  throw new Error(error?.message || 'Unable to resolve the active HRIS account.');
+};
+
+/**
+ * Small RLS-scoped lookup used to expose the Evaluation workspace to a user
+ * who has an assignment even when their role does not grant module-wide view.
+ */
+export const hasCurrentUserEvaluationAssignment = async (): Promise<boolean> => {
+  const { data, error } = await supabase
+    .from('evaluation_evaluators')
+    .select('evaluation_id')
+    .limit(1);
+  if (error) throw new Error(error.message || 'Failed to check evaluation assignments.');
+  return (data || []).length > 0;
+};
+
+/**
+ * Creates the cycle, evaluator rows, and evaluator notifications in one
+ * database transaction. A failed assignment can no longer leave an orphaned
+ * evaluation behind.
+ */
+export const createEvaluationCycle = async (input: CreateEvaluationCycleInput): Promise<string> => {
+  const dueDate = input.dueDate instanceof Date
+    ? input.dueDate.toISOString().slice(0, 10)
+    : String(input.dueDate).slice(0, 10);
+
+  const { data, error } = await supabase.rpc('create_evaluation_cycle', {
+    p_name: input.name.trim(),
+    p_timeline_id: input.timelineId || null,
+    p_target_business_unit_ids: input.targetBusinessUnitIds,
+    p_target_employee_ids: input.targetEmployeeIds,
+    p_question_set_ids: input.questionSetIds,
+    p_due_date: dueDate,
+    p_evaluators: input.evaluators.map(evaluator => ({
+      type: evaluator.type === EvaluatorType.Individual ? 'INDIVIDUAL' : 'GROUP',
+      weight: evaluator.weight || 0,
+      user_id: evaluator.userId || null,
+      business_unit_id: evaluator.groupFilter?.businessUnitId || null,
+      department_id: evaluator.groupFilter?.departmentId || null,
+      is_anonymous: !!evaluator.isAnonymous,
+      exclude_subject: evaluator.excludeSubject ?? true,
+    })),
+  });
+
+  if (error) throw new Error(error.message || 'Failed to create evaluation.');
+  if (!data) throw new Error('The evaluation was not created.');
+  return String(data);
+};
 
 export const fetchEvaluations = async (): Promise<Evaluation[]> => {
   const { data, error } = await supabase.from('evaluations').select('*').order('created_at', { ascending: false });

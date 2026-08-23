@@ -3,12 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-import { User, Evaluation, EvaluatorConfig, EvaluatorType, EvaluatorGroupFilter, Permission, NotificationType } from '../../types';
+import { User, EvaluatorConfig, EvaluatorType, EvaluatorGroupFilter, Permission } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
 import { logActivity } from '../../services/auditService';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
+import { createEvaluationCycle } from '../../services/evaluationService';
 
 // Icons
 const UserIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg>;
@@ -17,8 +18,7 @@ const UsersIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w
 const NewEvaluation: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { getAccessibleBusinessUnits, can } = usePermissions();
-  const canView = can('Evaluation', Permission.View);
+  const { can } = usePermissions();
   const canManage = can('Evaluation', Permission.Manage);
   const [evaluationName, setEvaluationName] = useState('');
   const [dueDate, setDueDate] = useState(new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
@@ -36,6 +36,7 @@ const NewEvaluation: React.FC = () => {
   const [timelines, setTimelines] = useState<any[]>([]);
   const [questionSets, setQuestionSets] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Show all business units for targeting (not scoped to user access)
   const accessibleBus = businessUnits;
@@ -204,6 +205,10 @@ const NewEvaluation: React.FC = () => {
       alert('Please provide a name for this evaluation.');
       return;
     }
+    if (evaluators.length === 0) {
+      alert('Please assign at least one evaluator.');
+      return;
+    }
     if (evaluators.length > 0 && totalWeight !== 100) {
       alert('Total weight for evaluators must be exactly 100.');
       return;
@@ -231,84 +236,33 @@ const NewEvaluation: React.FC = () => {
       }
     }
 
-    const newEvaluation: Evaluation = {
-      id: `EVAL-${Date.now()}`,
-      name: evaluationName,
-      timelineId: timelineToUse,
-      targetBusinessUnitIds: selectedBuIds,
-      targetEmployeeIds,
-      questionSetIds: selectedQuestionSets,
-      evaluators,
-      status: 'InProgress',
-      createdAt: new Date(),
-      dueDate: new Date(dueDate),
-      isEmployeeVisible: false,
-      acknowledgedBy: [],
-    };
+    setIsSaving(true);
+    setError(null);
+    try {
+      const evaluationId = await createEvaluationCycle({
+        name: evaluationName,
+        timelineId: timelineToUse || null,
+        targetBusinessUnitIds: selectedBuIds,
+        targetEmployeeIds,
+        questionSetIds: selectedQuestionSets,
+        evaluators,
+        dueDate,
+      });
 
-    // Persist evaluation and evaluators
-    const { data: createdEval, error: evalErr } = await supabase.from('evaluations').insert({
-      name: newEvaluation.name,
-      timeline_id: timelineToUse || null,
-      target_business_unit_ids: newEvaluation.targetBusinessUnitIds,
-      target_employee_ids: newEvaluation.targetEmployeeIds,
-      question_set_ids: newEvaluation.questionSetIds,
-      status: newEvaluation.status,
-      due_date: newEvaluation.dueDate.toISOString(),
-      is_employee_visible: newEvaluation.isEmployeeVisible,
-      acknowledged_by: [],
-      created_by: user?.id || null,
-    }).select('id').single();
-    if (evalErr) {
-      setError(evalErr.message);
-      return;
+      await logActivity(
+        user,
+        'CREATE',
+        'Evaluation',
+        evaluationId,
+        `Created new evaluation cycle: ${evaluationName} targeting ${targetEmployeeIds.length} employees.`
+      );
+      alert('Evaluation created successfully!');
+      navigate('/evaluation/reviews');
+    } catch (createError: any) {
+      setError(createError?.message || 'Failed to create evaluation.');
+    } finally {
+      setIsSaving(false);
     }
-    if (createdEval?.id && evaluators.length > 0) {
-      const rows = evaluators.map(ev => ({
-        evaluation_id: createdEval.id,
-        type: ev.type === EvaluatorType.Individual ? 'Individual' : 'Group',
-        weight: ev.weight || 0,
-        user_id: ev.userId || null,
-        business_unit_id: ev.groupFilter?.businessUnitId || null,
-        department_id: ev.groupFilter?.departmentId || null,
-        is_anonymous: ev.isAnonymous || false,
-        exclude_subject: ev.excludeSubject ?? true,
-      }));
-      const { error: evErr } = await supabase.from('evaluation_evaluators').insert(rows);
-      if (evErr) {
-        setError(evErr.message);
-        return;
-      }
-    }
-
-    const evaluationId = createdEval?.id || newEvaluation.id;
-    const createdAt = new Date();
-    const employeeLookup = new Map<string, User>(employees.map(emp => [emp.id, emp]));
-
-    // Build notification rows for all target employees
-    const notifRows = targetEmployeeIds.flatMap(empId => {
-      const emp = employeeLookup.get(empId);
-      const targets = new Set<string>();
-      if (empId) targets.add(empId);
-      if (emp?.authUserId) targets.add(emp.authUserId);
-      return Array.from(targets).map(targetId => ({
-        user_id: targetId,
-        type: NotificationType.EVALUATION_ASSIGNED,
-        title: 'Evaluation Assigned',
-        message: `${newEvaluation.name} is now scheduled for you.`,
-        link: '/evaluation',
-        is_read: false,
-        created_at: createdAt.toISOString(),
-        related_entity_id: evaluationId,
-      }));
-    });
-    if (notifRows.length > 0) {
-      await supabase.from('notifications').insert(notifRows);
-    }
-
-    logActivity(user, 'CREATE', 'Evaluation', evaluationId, `Created new evaluation cycle: ${newEvaluation.name} targeting ${newEvaluation.targetEmployeeIds.length} employees.`);
-    alert('Evaluation created successfully!');
-    navigate('/evaluation/reviews');
   };
 
   const availableEvaluators = useMemo(() => {
@@ -332,16 +286,22 @@ const NewEvaluation: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {!canView && (
+      {!canManage && (
         <Card>
           <div className="p-6 text-center text-gray-600 dark:text-gray-300">
             You do not have permission to create or view evaluations.
           </div>
         </Card>
       )}
-      {canView && (
+      {canManage && (
         <>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Create New Evaluation</h1>
+
+          {error && (
+            <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
+              {error}
+            </div>
+          )}
 
           <Card>
             <div className="space-y-6">
@@ -662,7 +622,9 @@ const NewEvaluation: React.FC = () => {
 
               <div className="flex justify-end space-x-2 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <Button variant="secondary" onClick={() => navigate('/evaluation/reviews')}>Cancel</Button>
-                <Button onClick={createEvaluation} disabled={evaluators.length > 0 && totalWeight !== 100}>Create Evaluation</Button>
+                <Button onClick={createEvaluation} disabled={isSaving || evaluators.length === 0 || totalWeight !== 100}>
+                  {isSaving ? 'Creating…' : 'Create Evaluation'}
+                </Button>
               </div>
             </div>
           </Card>

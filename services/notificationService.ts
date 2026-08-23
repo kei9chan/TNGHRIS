@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient';
-import { Notification } from '../types';
+import { Notification, NotificationType } from '../types';
+import { resolveCurrentHrisUserId } from './evaluationService';
 
 // ---------------------------------------------------------------------------
 // Row Type
@@ -75,6 +76,69 @@ export const markAllNotificationsRead = async (userId: string): Promise<void> =>
     .eq('user_id', userId)
     .eq('is_read', false);
   if (error) throw new Error(error.message || 'Failed to mark all notifications as read');
+};
+
+/**
+ * Resolve workflow notifications before marking them read. Evaluation links
+ * are checked against the live record and the current user's saved evaluator
+ * assignment so a stale or inaccessible target never becomes a read dead-end.
+ */
+export const resolveNotificationDestination = async (notification: Notification): Promise<string> => {
+  if (notification.type !== NotificationType.EVALUATION_ASSIGNED) {
+    return notification.link || '/notifications';
+  }
+
+  const evaluationId = notification.relatedEntityId
+    || notification.link?.match(/\/evaluation\/(?:perform|report)\/([^/?#]+)/)?.[1];
+  if (!evaluationId) return '/evaluation/reviews';
+
+  const currentUserId = await resolveCurrentHrisUserId(notification.userId);
+  const [evaluationResult, assignmentResult, profileResult] = await Promise.all([
+    supabase
+      .from('evaluations')
+      .select('id, status, is_employee_visible')
+      .eq('id', evaluationId)
+      .maybeSingle(),
+    supabase
+      .from('evaluation_evaluators')
+      .select('type, user_id, business_unit_id, department_id')
+      .eq('evaluation_id', evaluationId),
+    supabase
+      .from('hris_users')
+      .select('id, business_unit_id, department_id')
+      .eq('id', currentUserId)
+      .maybeSingle(),
+  ]);
+
+  if (evaluationResult.error) throw new Error(evaluationResult.error.message);
+  if (assignmentResult.error) throw new Error(assignmentResult.error.message);
+  if (profileResult.error) throw new Error(profileResult.error.message);
+  if (!evaluationResult.data) {
+    throw new Error('This evaluation is no longer available or is not assigned to your account.');
+  }
+
+  const profile = profileResult.data;
+  const isAssignedEvaluator = (assignmentResult.data || []).some((assignment: any) => {
+    if (String(assignment.type || '').toLowerCase() === 'individual') {
+      return assignment.user_id === currentUserId;
+    }
+    if (String(assignment.type || '').toLowerCase() !== 'group' || !profile) return false;
+    const matchesBusinessUnit = !assignment.business_unit_id
+      || assignment.business_unit_id === profile.business_unit_id;
+    const matchesDepartment = !assignment.department_id
+      || assignment.department_id === profile.department_id;
+    return matchesBusinessUnit && matchesDepartment;
+  });
+
+  const status = String(evaluationResult.data.status || '').toLowerCase();
+  if (status === 'completed' && (isAssignedEvaluator || evaluationResult.data.is_employee_visible)) {
+    return `/evaluation/report/${evaluationId}`;
+  }
+  if (status !== 'inprogress') {
+    throw new Error(`This evaluation is ${evaluationResult.data.status || 'unavailable'} and can no longer be completed.`);
+  }
+  if (isAssignedEvaluator) return `/evaluation/perform/${evaluationId}`;
+  return '/evaluation/reviews';
 };
 
 export const createNotification = async (notif: Partial<Notification>): Promise<Notification> => {

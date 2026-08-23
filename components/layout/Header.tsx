@@ -4,9 +4,10 @@ import { NavLink as RouterNavLink, useNavigate, useLocation, Link } from 'react-
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { NAV_LINKS } from '../../constants';
-import type { NavLink } from '../../types';
+import { Permission, type NavLink } from '../../types';
 import { useSettings } from '../../context/SettingsContext';
 import NotificationBell from './NotificationBell';
+import { useEvaluationAssignmentAccess } from '../../hooks/useEvaluationAssignmentAccess';
 
 const UserIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -20,7 +21,7 @@ const LogoutIcon = () => (
     </svg>
 );
 
-const NavItem: React.FC<{ link: NavLink }> = ({ link }) => {
+const NavItem: React.FC<{ link: NavLink; hasEvaluationAccess: boolean }> = ({ link, hasEvaluationAccess }) => {
     const { user } = useAuth();
     const { can } = usePermissions();
     const location = useLocation();
@@ -29,8 +30,9 @@ const NavItem: React.FC<{ link: NavLink }> = ({ link }) => {
         child => child.requiredPermission && can(child.requiredPermission.resource, child.requiredPermission.permission)
     ) || [];
 
+    const assignmentOnlyEvaluation = link.name === 'Evaluation' && hasEvaluationAccess && filteredChildren.length === 0;
     const hasVisibleChildren = filteredChildren.length > 0;
-    const isVisible = hasVisibleChildren || (link.requiredPermission && can(link.requiredPermission.resource, link.requiredPermission.permission));
+    const isVisible = assignmentOnlyEvaluation || hasVisibleChildren || (link.requiredPermission && can(link.requiredPermission.resource, link.requiredPermission.permission));
 
     if (!user || !isVisible) {
         return null;
@@ -52,8 +54,12 @@ const NavItem: React.FC<{ link: NavLink }> = ({ link }) => {
 
 const Header: React.FC = () => {
     const { user, logout } = useAuth();
+    const { can } = usePermissions();
     const { settings } = useSettings();
     const navigate = useNavigate();
+    const canViewEvaluation = can('Evaluation', Permission.View);
+    const { hasAssignment: hasAssignedEvaluation } = useEvaluationAssignmentAccess(!canViewEvaluation);
+    const hasEvaluationAccess = canViewEvaluation || hasAssignedEvaluation;
     const [isProfileMenuOpen, setProfileMenuOpen] = React.useState(false);
     const profileMenuRef = React.useRef<HTMLDivElement>(null);
 
@@ -86,7 +92,7 @@ const Header: React.FC = () => {
                         <div className="flex-1 min-w-0">
                             <div className="flex items-baseline space-x-4 overflow-x-auto scrollbar-hide">
                                 {NAV_LINKS.map((link) => (
-                                    <NavItem key={link.name} link={link} />
+                                    <NavItem key={link.name} link={link} hasEvaluationAccess={hasEvaluationAccess} />
                                 ))}
                             </div>
                         </div>
