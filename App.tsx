@@ -23,6 +23,7 @@ const RegistrationSuccess = React.lazy(() => import('./pages/RegistrationSuccess
 const ForgotPassword = React.lazy(() => import('./pages/ForgotPassword'));
 const ResetPassword = React.lazy(() => import('./pages/ResetPassword'));
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
+const ApprovalCenter = React.lazy(() => import('./pages/ApprovalCenter'));
 const NotFound = React.lazy(() => import('./pages/NotFound'));
 const Notifications = React.lazy(() => import('./pages/Notifications'));
 
@@ -221,6 +222,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }
     ['/evaluation', 'Evaluation', Permission.View],
     ['/helpdesk', 'Helpdesk', Permission.View],
     ['/dashboard', 'Dashboard', Permission.View],
+    ['/approvals', 'Dashboard', Permission.View],
   ];
   const required = routePermissions.find(([prefix]) => location.pathname.startsWith(prefix));
   if (required && !can(required[1], required[2])) {
@@ -268,6 +270,7 @@ const AppRoutes: React.FC = () => {
       >
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
+        <Route path="approvals" element={<ProtectedRoute><ApprovalCenter /></ProtectedRoute>} />
         <Route path="my-profile" element={<ProtectedRoute><EmployeeProfile/></ProtectedRoute>} />
         <Route path="notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
         <Route path="users/:userId" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />

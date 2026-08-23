@@ -1,253 +1,35 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../hooks/useAuth';
 import { useApprovals } from '../../hooks/useApprovals';
-import Card from '../ui/Card';
-import Button from '../ui/Button';
+import { Role } from '../../types';
 
-// Modals — opened directly in the dashboard, no page navigation needed
-import LeaveRequestModal from '../payroll/LeaveRequestModal';
-import WFHReviewModal from '../payroll/WFHReviewModal';
-import OTRequestModal from '../payroll/OTRequestModal';
-import ManpowerReviewModal from '../payroll/ManpowerReviewModal';
+const ageDays = (value: Date | string | undefined) => value ? Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 86400000)) : 0;
 
-import {
-    LeaveRequest,
-    WFHRequest,
-    OTRequest,
-    ManpowerRequest,
-    OTStatus,
-    Role,
-} from '../../types';
-
-// ── Type badge colours ───────────────────────────────────────────────────────
-const BADGE: Record<string, string> = {
-    Leave:     'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300',
-    WFH:       'bg-blue-100   text-blue-800   dark:bg-blue-900/40   dark:text-blue-300',
-    Overtime:  'bg-amber-100  text-amber-800  dark:bg-amber-900/40  dark:text-amber-300',
-    Manpower:  'bg-teal-100   text-teal-800   dark:bg-teal-900/40   dark:text-teal-300',
-};
-
-function fmtDate(d: Date | string | null | undefined): string {
-    if (!d) return '—';
-    return new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-// ── Single row component ─────────────────────────────────────────────────────
-interface ApprovalRowProps {
-    type: string;
-    name: string;
-    subtitle: string;
-    onReview: () => void;
-}
-
-function ApprovalRow({ type, name, subtitle, onReview }: ApprovalRowProps) {
-    return (
-        <div className="flex items-center justify-between gap-4 p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-            <div className="flex items-center gap-3 min-w-0">
-                <span className={`shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full ${BADGE[type] ?? 'bg-gray-100 text-gray-700'}`}>
-                    {type}
-                </span>
-                <div className="min-w-0">
-                    <p className="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">{name}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{subtitle}</p>
-                </div>
-            </div>
-            <Button size="small" variant="secondary" onClick={onReview} className="shrink-0">
-                Review
-            </Button>
-        </div>
-    );
-}
-
-// ── Main widget ──────────────────────────────────────────────────────────────
 export default function ApprovalWidget() {
-    const { user, profile } = useAuth();
-    const assignedRoles = new Set([user?.role, ...(user?.roles || [])].filter(Boolean));
-    const isHR = assignedRoles.has(Role.HRStaff);
-    const [reporteeIds, setReporteeIds] = useState<string[]>([]);
-
-    // ── Active modal state ───────────────────────────────────────────────────
-    const [leaveModal,    setLeaveModal]    = useState<LeaveRequest    | null>(null);
-    const [wfhModal,      setWfhModal]      = useState<WFHRequest      | null>(null);
-    const [otModal,       setOtModal]       = useState<OTRequest       | null>(null);
-    const [manpowerModal, setManpowerModal] = useState<ManpowerRequest | null>(null);
-
-    useEffect(() => {
-        if (!user) return;
-        supabase
-            .from('hris_users')
-            .select('id')
-            .eq('reports_to', user.id)
-            .then(({ data }) => {
-                if (data) setReporteeIds(data.map(d => d.id).filter(Boolean));
-            });
-    }, [user]);
-
-    const {
-        pendingLeaveApprovals,
-        pendingWfhApprovals,
-        pendingOtApprovals,
-        pendingManpowerApprovals,
-        leaveTypes,
-        approvalError,
-        handleLeaveApproval,
-        handleApproveWFH,
-        handleRejectWFH,
-        handleApproveRejectOT,
-        handleApproveManpower,
-        handleRejectManpower,
-    } = useApprovals({ user, isHR, reporteeIds });
-
-    const totalApprovals =
-        pendingLeaveApprovals.length +
-        pendingWfhApprovals.length +
-        pendingOtApprovals.length +
-        pendingManpowerApprovals.length;
-
-    if (!user) return null;
-
-    if (approvalError) {
-        return (
-            <Card title="Pending Approvals">
-                <div role="alert" className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200">
-                    <p className="font-semibold">Approval data could not be loaded.</p>
-                    <p className="mt-1 break-words">{approvalError}</p>
-                    <Button size="small" variant="secondary" className="mt-3" onClick={() => window.location.reload()}>
-                        Retry
-                    </Button>
-                </div>
-            </Card>
-        );
-    }
-
-    if (totalApprovals === 0) return null;
-
-    return (
-        <>
-            <Card title={`Pending Approvals (${totalApprovals})`}>
-                <div className="flex flex-col gap-2">
-
-                    {/* ── Leave ─────────────────────────────────────────── */}
-                    {pendingLeaveApprovals.map(req => (
-                        <React.Fragment key={`leave-${req.id}`}>
-                            <ApprovalRow
-                                type="Leave"
-                                name={req.employeeName ?? '—'}
-                                subtitle={`${fmtDate(req.startDate)} → ${fmtDate(req.endDate)}`}
-                                onReview={() => setLeaveModal(req)}
-                            />
-                        </React.Fragment>
-                    ))}
-
-                    {/* ── WFH ───────────────────────────────────────────── */}
-                    {pendingWfhApprovals.map(req => {
-                        const from = fmtDate(req.date);
-                        const until = req.endDate ? fmtDate(req.endDate) : null;
-                        const dateLabel = until && until !== from ? `${from} → ${until}` : from;
-                        return (
-                            <React.Fragment key={`wfh-${req.id}`}>
-                                <ApprovalRow
-                                    type="WFH"
-                                    name={req.employeeName ?? '—'}
-                                    subtitle={dateLabel}
-                                    onReview={() => setWfhModal(req)}
-                                />
-                            </React.Fragment>
-                        );
-                    })}
-
-                    {/* ── Overtime ──────────────────────────────────────── */}
-                    {pendingOtApprovals.map(req => (
-                        <React.Fragment key={`ot-${req.id}`}>
-                            <ApprovalRow
-                                type="Overtime"
-                                name={req.employeeName ?? '—'}
-                                subtitle={`${fmtDate(req.date)}  ${req.startTime ?? ''} – ${req.endTime ?? ''}`}
-                                onReview={() => setOtModal(req)}
-                            />
-                        </React.Fragment>
-                    ))}
-
-                    {/* ── Manpower ──────────────────────────────────────── */}
-                    {pendingManpowerApprovals.map(req => (
-                        <React.Fragment key={`manpower-${req.id}`}>
-                            <ApprovalRow
-                                type="Manpower"
-                                name={req.requesterName ?? '—'}
-                                subtitle={req.businessUnitName ?? '—'}
-                                onReview={() => setManpowerModal(req)}
-                            />
-                        </React.Fragment>
-                    ))}
-                </div>
-            </Card>
-
-            {/* ══ Modals — rendered at widget level, no navigation ══════════ */}
-
-            {/* Leave modal */}
-            <LeaveRequestModal
-                isOpen={!!leaveModal}
-                onClose={() => setLeaveModal(null)}
-                request={leaveModal}
-                leaveTypes={leaveTypes}
-                onSave={() => {/* read-only in review mode */}}
-                onApprove={async (req, approved, notes) => {
-                    await handleLeaveApproval(req, approved, notes);
-                    setLeaveModal(null);
-                }}
-            />
-
-            {/* WFH modal */}
-            <WFHReviewModal
-                isOpen={!!wfhModal}
-                onClose={() => setWfhModal(null)}
-                request={wfhModal}
-                onApprove={async (id) => {
-                    await handleApproveWFH(id);
-                    setWfhModal(null);
-                }}
-                onReject={async (id, reason) => {
-                    await handleRejectWFH(id, reason);
-                    setWfhModal(null);
-                }}
-            />
-
-            {/* OT modal */}
-            <OTRequestModal
-                isOpen={!!otModal}
-                onClose={() => setOtModal(null)}
-                requestToEdit={otModal}
-                onSave={() => {/* read-only in review mode */}}
-                onApproveOrReject={async (req, status, details) => {
-                    await handleApproveRejectOT(
-                        req,
-                        status as OTStatus.Approved | OTStatus.Rejected,
-                        details
-                    );
-                    setOtModal(null);
-                }}
-                canApproveOverride={otModal ? reporteeIds.includes(otModal.employeeId) : false}
-                attendanceRecords={[]}
-                shiftAssignments={[]}
-                shiftTemplates={[]}
-            />
-
-            {/* Manpower modal */}
-            <ManpowerReviewModal
-                isOpen={!!manpowerModal}
-                onClose={() => setManpowerModal(null)}
-                request={manpowerModal}
-                onApprove={async (id) => {
-                    await handleApproveManpower(id);
-                    setManpowerModal(null);
-                }}
-                onReject={async (id, reason) => {
-                    await handleRejectManpower(id, reason);
-                    setManpowerModal(null);
-                }}
-                canApprove={true}
-            />
-        </>
-    );
+  const { user } = useAuth();
+  const roles = new Set([user?.role, ...(user?.roles || [])].filter(Boolean));
+  const [reporteeIds,setReporteeIds]=useState<string[]>([]);
+  const approvals=useApprovals({user,isHR:roles.has(Role.HRStaff),reporteeIds});
+  useEffect(()=>{if(!user)return;supabase.from('hris_users').select('id').eq('reports_to',user.id).then(({data,error})=>{if(error)console.error('Approval scope load failed:',error.message);else setReporteeIds((data||[]).map((r:any)=>r.id));});},[user]);
+  const queues=useMemo(()=>[
+    {name:'Leave',count:approvals.pendingLeaveApprovals.length,ages:approvals.pendingLeaveApprovals.map(r=>ageDays(r.startDate)),tone:'bg-yellow-100 text-yellow-800'},
+    {name:'WFH',count:approvals.pendingWfhApprovals.length,ages:approvals.pendingWfhApprovals.map(r=>ageDays(r.createdAt)),tone:'bg-blue-100 text-blue-800'},
+    {name:'Overtime',count:approvals.pendingOtApprovals.length,ages:approvals.pendingOtApprovals.map(r=>ageDays(r.submittedAt||r.date)),tone:'bg-orange-100 text-orange-800'},
+    {name:'Manpower',count:approvals.pendingManpowerApprovals.length,ages:approvals.pendingManpowerApprovals.map(r=>ageDays(r.createdAt)),tone:'bg-teal-100 text-teal-800'},
+  ],[approvals.pendingLeaveApprovals,approvals.pendingWfhApprovals,approvals.pendingOtApprovals,approvals.pendingManpowerApprovals]);
+  const ages=queues.flatMap(q=>q.ages), total=queues.reduce((s,q)=>s+q.count,0), due=ages.filter(a=>a===0).length, overdue=ages.filter(a=>a>=3).length;
+  const buckets=[ages.filter(a=>a===0).length,ages.filter(a=>a>=1&&a<=6).length,ages.filter(a=>a>=7&&a<=29).length,ages.filter(a=>a>=30).length];
+  const recommended=queues.filter(q=>q.count).sort((a,b)=>b.count-a.count)[0];
+  if(!user||(!total&&!approvals.approvalError))return null;
+  if(approvals.approvalError)return <section className="rounded-xl border border-red-200 bg-red-50 p-5 text-red-800"><h2 className="font-bold">Approval workload could not be loaded</h2><p className="mt-1 text-sm">{approvals.approvalError}</p><button className="mt-3 font-semibold underline" onClick={()=>approvals.refreshApprovals()}>Retry</button></section>;
+  return <section className="space-y-4">
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[['Pending approvals',total,'text-indigo-700'],['Due today',due,'text-orange-600'],['Overdue',overdue,'text-red-600'],['Queues',queues.filter(q=>q.count).length,'text-amber-600']].map(([label,value,color])=><div key={String(label)} className="rounded-xl border bg-white p-5 shadow-sm dark:bg-slate-800"><div className={`text-3xl font-bold ${color}`}>{value}</div><div className="mt-1 text-sm text-slate-600 dark:text-slate-300">{label}</div></div>)}</div>
+    {recommended&&<div className="flex flex-wrap items-center gap-4 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-white p-5"><div className="grid h-12 w-12 place-items-center rounded-full bg-indigo-600 text-2xl text-white">✦</div><div className="flex-1"><h2 className="font-bold text-slate-900">Start with {recommended.count} {recommended.name} requests</h2><p className="text-sm text-slate-600">Largest current queue · Reduce the backlog while exceptions stay protected</p></div><Link to={`/approvals?type=${recommended.name.toLowerCase()}`} className="rounded-lg bg-indigo-600 px-5 py-2.5 font-semibold text-white">Start now →</Link></div>}
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="rounded-xl border bg-white p-5 shadow-sm dark:bg-slate-800"><div className="flex items-center justify-between"><div><h2 className="text-lg font-bold">Approval workload</h2><p className="text-sm text-slate-500">Real-time overview of your current approval scope</p></div><Link to="/approvals" className="font-semibold text-indigo-600">Open Approval Center →</Link></div><div className="mt-6 grid grid-cols-4 items-end gap-4 border-b pb-2">{buckets.map((n,i)=>{const max=Math.max(...buckets,1);return <div key={i} className="text-center"><span className="text-sm font-bold">{n}</span><div style={{height:`${Math.max(8,n/max*100)}px`}} className={`mx-auto mt-2 w-10 rounded-t ${['bg-red-400','bg-orange-400','bg-yellow-400','bg-blue-400'][i]}`}/><div className="mt-2 text-xs text-slate-500">{['Today','1–6 days','7–29 days','30+ days'][i]}</div></div>})}</div><h3 className="mt-6 font-bold">Approval queues</h3><div className="mt-2 divide-y">{queues.map(q=><div key={q.name} className="flex items-center gap-3 py-3"><span className={`rounded-lg px-3 py-2 font-bold ${q.tone}`}>{q.name}</span><b>{q.count} pending</b><span className="ml-auto text-sm text-slate-500">Oldest {Math.max(...q.ages,0)} days</span><Link to={`/approvals?type=${q.name.toLowerCase()}`} className="font-semibold text-indigo-600">Open queue</Link></div>)}</div></div>
+      <div className="space-y-4"><div className="rounded-xl border bg-white p-5 shadow-sm dark:bg-slate-800"><h2 className="text-lg font-bold">Auto-routing & delegation</h2><div className="mt-4 space-y-4 text-sm"><div><b>Reviewer coverage</b><p className="text-slate-500">Requests follow existing reporting lines, configured approvers, and RBAC scope.</p></div><div><b>Backup approver</b><p className="text-slate-500">Managed in System Settings.</p></div><label className="flex items-center justify-between"><span><b>Auto-remind approvers</b><p className="text-slate-500">Uses existing notification settings.</p></span><input type="checkbox" aria-label="Auto-remind approvers" disabled title="Configure in System Settings"/></label></div></div><div className="rounded-xl border bg-white p-5 shadow-sm dark:bg-slate-800"><h2 className="text-lg font-bold">Bulk actions log</h2><p className="mt-2 text-sm text-slate-500">Successful group actions record the actor, workflow, counts, and per-request audit entries.</p><Link to="/approvals" className="mt-4 inline-block font-semibold text-indigo-600">View Approval Center →</Link></div></div>
+    </div>
+  </section>;
 }
