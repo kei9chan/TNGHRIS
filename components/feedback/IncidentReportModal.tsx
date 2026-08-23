@@ -413,7 +413,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
                 >
                   <option value="">-- Select HR Staff --</option>
                   {potentialHandlers.map(u => (
-                    <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                    <option key={u.id} value={u.id}>{u.name} ({u.role}) · {u.email}</option>
                   ))}
                 </select>
                 <p className="text-xs text-gray-500 mt-1">Assigning will move this case to the handler's dashboard.</p>
