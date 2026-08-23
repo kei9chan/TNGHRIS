@@ -278,24 +278,40 @@ const Offers: React.FC = () => {
     const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
     if (sessionError || !sessionData.session?.access_token) throw new Error('Your session has expired. Please sign in again.');
     const secureLink = `${window.location.origin}/offer/${draft.secureToken}`;
+    const activatedAt = new Date().toISOString();
+    const sendingDetails = { ...(draft.offerDetails || {}), emailDelivery: { status: 'sending', attemptedAt: activatedAt } };
+    const { data: activatedRow, error: activationError } = await supabase.from('job_offers').update({ status: OfferStatus.Sent, sent_at: activatedAt, sent_by_user_id: user?.id || null, last_saved_at: activatedAt, recipient_email: recipient, email_subject: subject.trim(), email_message: message.trim(), require_signature: offerToSend.requireSignature !== false, offer_details: sendingDetails }).eq('id', draft.id).select().single();
+    if (activationError || !activatedRow) throw new Error(`Unable to activate the secure offer link: ${activationError?.message || 'Unknown error'}`);
+    const activatedOffer = mapOffer(activatedRow);
+    setOffers(previous => previous.map(item => item.id === activatedOffer.id ? activatedOffer : item));
     const html = `${previewHtml}<p style="margin-top:24px"><a href="${secureLink}" style="background:#6d28d9;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600">View and Respond to Offer</a></p><p style="color:#64748b;font-size:12px">This is a private link intended for the named recipient.</p>`;
     const { data: emailResult, error: emailError } = await supabase.functions.invoke('send-recruitment-email', {
       body: { to: recipient, subject: subject.trim(), message: `${message.trim()}\n\nReview your offer: ${secureLink}`, html, category: 'job-offer' },
     });
-    if (emailError || !emailResult?.ok) {
-      let functionMessage = emailResult?.error;
-      if (!functionMessage) {
-        try { functionMessage = (await emailError?.context?.json?.())?.error; } catch { /* response body unavailable */ }
+    let provider = emailResult?.ok ? 'google-gmail' : '';
+    let deliveryError = '';
+    if (!provider) {
+      let googleMessage = emailResult?.error;
+      if (!googleMessage) {
+        try { googleMessage = (await emailError?.context?.json?.())?.error; } catch { /* response body unavailable */ }
       }
-      throw new Error(functionMessage || emailError?.message || 'The draft was saved, but the offer email could not be sent.');
+      try {
+        const smtpResponse = await fetch('/api/recruitment-email', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionData.session.access_token}` }, body: JSON.stringify({ to: recipient, subject: subject.trim(), message: `${message.trim()}\n\nReview your offer: ${secureLink}`, html }) });
+        const smtpBody = await smtpResponse.json().catch(() => ({}));
+        if (!smtpResponse.ok) throw new Error(smtpBody?.error || `Email service returned HTTP ${smtpResponse.status}.`);
+        provider = 'existing-email-service';
+      } catch (smtpError: any) {
+        deliveryError = [googleMessage || emailError?.message, smtpError?.message].filter(Boolean).join(' Existing email service fallback: ');
+      }
     }
     const sentAt = new Date().toISOString();
-    const { data, error } = await supabase.from('job_offers').update({ status: OfferStatus.Sent, sent_at: sentAt, sent_by_user_id: user?.id || null, last_saved_at: sentAt, recipient_email: recipient, email_subject: subject.trim(), email_message: message.trim(), require_signature: offerToSend.requireSignature !== false }).eq('id', draft.id).select().single();
-    if (error) throw new Error(`The email was sent, but the offer status could not be updated: ${error.message}`);
+    const deliveryDetails = { ...(activatedOffer.offerDetails || {}), emailDelivery: provider ? { status: 'sent', provider, attemptedAt: activatedAt, sentAt } : { status: 'failed', attemptedAt: activatedAt, error: deliveryError || 'Email delivery failed.' } };
+    const { data, error } = await supabase.from('job_offers').update({ last_saved_at: sentAt, offer_details: deliveryDetails }).eq('id', draft.id).select().single();
+    if (error) throw new Error(`The secure link is live, but delivery status could not be recorded: ${error.message}`);
     const mapped = mapOffer(data);
     setOffers(previous => previous.map(item => item.id === mapped.id ? mapped : item));
-    await logActivity(user, 'UPDATE', 'Offer', mapped.id, `Sent offer ${mapped.offerNumber} to ${recipient}`);
-    setSuccessMessage(`Offer sent successfully to ${recipient}.`);
+    await logActivity(user, 'UPDATE', 'Offer', mapped.id, provider ? `Sent offer ${mapped.offerNumber} to ${recipient} through ${provider}` : `Activated secure link for ${mapped.offerNumber}; email delivery failed`);
+    setSuccessMessage(provider ? `Offer sent successfully to ${recipient}.` : 'The secure offer link is live, but the email could not be delivered. Copy the link from View Details and retry sending after the Google email connection is updated.');
     setTimeout(() => setSuccessMessage(''), 5000);
     return mapped;
   };
@@ -388,6 +404,7 @@ const Offers: React.FC = () => {
               onStatusChange={handleStatusChange}
               onConvertToEmployee={handleConvertToEmployee}
               onEdit={offer => { setEditingOffer(offer); setIsDetailModalOpen(false); setIsCreationDrawerOpen(true); }}
+              onSend={offer => { setEditingOffer(offer); setIsDetailModalOpen(false); setIsCreationDrawerOpen(true); }}
             />
           )}
         </>

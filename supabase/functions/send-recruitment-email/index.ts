@@ -95,7 +95,11 @@ Deno.serve(async (request: Request) => {
         grant_type: 'refresh_token',
       }),
     });
-    if (!tokenResponse.ok) return json({ error: await googleError(tokenResponse) }, 502);
+    if (!tokenResponse.ok) {
+      const error = await googleError(tokenResponse);
+      console.error('Google OAuth token exchange failed:', error);
+      return json({ error }, 502);
+    }
     const tokenPayload = await tokenResponse.json();
     if (!tokenPayload?.access_token) return json({ error: 'Google did not return an access token.' }, 502);
 
@@ -131,7 +135,11 @@ Deno.serve(async (request: Request) => {
       headers: { Authorization: `Bearer ${tokenPayload.access_token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ raw: encodeBase64Url(mime) }),
     });
-    if (!gmailResponse.ok) return json({ error: await googleError(gmailResponse) }, 502);
+    if (!gmailResponse.ok) {
+      const error = await googleError(gmailResponse);
+      console.error('Google Gmail send failed:', error);
+      return json({ error }, 502);
+    }
     const sent = await gmailResponse.json();
     return json({ ok: true, provider: 'google-gmail', messageId: sent.id, threadId: sent.threadId });
   } catch (error) {
