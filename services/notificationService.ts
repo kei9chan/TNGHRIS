@@ -1,6 +1,7 @@
 import { supabase } from './supabaseClient';
 import { Notification, NotificationType } from '../types';
 import { resolveCurrentHrisUserId } from './evaluationService';
+import { ApprovalRequestKind, getApprovalReviewUrl } from './approvalDeepLinks';
 
 // ---------------------------------------------------------------------------
 // Row Type
@@ -22,17 +23,21 @@ type NotificationRow = {
 // Mapper
 // ---------------------------------------------------------------------------
 const canonicalApprovalLink = (row: NotificationRow) => {
-  if (row.link?.startsWith('/approvals')) return row.link;
   const title = String(row.title || '').toLowerCase();
-  const item = row.related_entity_id ? `&item=${encodeURIComponent(row.related_entity_id)}` : '';
-  if (title.includes('nte approval')) return `/approvals?type=nte${item}`;
-  if (title.includes('pan approval')) return `/approvals?type=pan${item}`;
-  if (title.includes('ot request pending') && title.includes('approval')) return `/approvals?type=overtime${item}`;
-  if (title.includes('wfh request pending') && title.includes('approval')) return `/approvals?type=wfh${item}`;
-  if (title.includes('leave request pending') && title.includes('approval')) return `/approvals?type=leave${item}`;
-  if (title.includes('manpower') && title.includes('approval')) return `/approvals?type=manpower${item}`;
-  if (title.includes('requisition') && title.includes('approval')) return `/approvals?type=requisition${item}`;
-  if (title.includes('award') && title.includes('approval')) return `/approvals?type=award${item}`;
+  const linkedType = row.link?.match(/[?&]type=([^&#]+)/)?.[1]?.toLowerCase();
+  let kind: ApprovalRequestKind | undefined;
+  if (linkedType === 'nte' || title.includes('nte approval')) kind = 'nte';
+  else if (linkedType === 'pan' || title.includes('pan approval')) kind = 'pan';
+  else if (linkedType === 'overtime' || (title.includes('ot request pending') && title.includes('approval'))) kind = 'overtime';
+  else if (linkedType === 'wfh' || (title.includes('wfh request pending') && title.includes('approval'))) kind = 'wfh';
+  else if (linkedType === 'leave' || (title.includes('leave request pending') && title.includes('approval'))) kind = 'leave';
+  else if (linkedType === 'manpower' || (title.includes('manpower') && title.includes('approval'))) kind = 'manpower';
+  else if (linkedType === 'requisition' || (title.includes('requisition') && title.includes('approval'))) kind = 'requisition';
+  else if (linkedType === 'award' || (title.includes('award') && title.includes('approval'))) kind = 'award';
+
+  const linkedItem = row.link?.match(/[?&]item=([^&#]+)/)?.[1];
+  const requestId = row.related_entity_id || (linkedItem ? decodeURIComponent(linkedItem) : undefined);
+  if (kind && requestId) return getApprovalReviewUrl(kind, requestId);
   return row.link || undefined;
 };
 

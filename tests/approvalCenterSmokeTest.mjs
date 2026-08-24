@@ -10,6 +10,12 @@ const consolidationMigration = read('supabase/migrations/20260824030000_consolid
 const additionalApprovals = read('hooks/useAdditionalApprovals.ts');
 const notifications = read('services/notificationService.ts');
 const routing = read('utils/approvalCenterRouting.ts');
+const deepLinks = read('services/approvalDeepLinks.ts');
+const leave = read('pages/payroll/Leave.tsx');
+const wfh = read('pages/payroll/WFHRequests.tsx');
+const overtime = read('pages/payroll/OvertimeRequests.tsx');
+const manpower = read('pages/payroll/ManpowerPlanning.tsx');
+const requisitions = read('pages/recruitment/Requisitions.tsx');
 
 const checks = [
   [page.includes('Approval Center'), 'Approval Center heading'],
@@ -36,7 +42,13 @@ const checks = [
   [bulkRepair.includes('public.process_time_request_approval') && bulkRepair.includes('private.is_direct_reporting_manager'), 'canonical conditional bulk authorization'],
   [page.includes('Requests that changed, are no longer assigned to you') && page.includes('skippedItems'), 'clear bulk skip feedback'],
   [consolidationMigration.includes('notifications_user_dedupe_key_unique'), 'notification idempotency constraint'],
-  [notifications.includes('canonicalApprovalLink') && notifications.includes('/approvals?type=nte'), 'notification Approval Center routing'],
+  [notifications.includes('canonicalApprovalLink') && notifications.includes('getApprovalReviewUrl(kind, requestId)'), 'notification direct-review routing'],
+  [deepLinks.includes("params.get('review') || params.get('item') || params.get('requestId')"), 'backward-compatible review parameters'],
+  [leave.includes("setActiveView(request.employeeId === user?.id ? 'my_requests' : 'team_requests')") && leave.includes('setIsModalOpen(true)'), 'leave opens exact staff review'],
+  [wfh.includes('setSelectedReviewRequest(request)') && wfh.includes('setIsReviewModalOpen(true)'), 'WFH opens exact staff review'],
+  [overtime.includes("setActiveTab('team_approvals')") && overtime.includes('setSelectedRequest(request)'), 'overtime opens exact team review'],
+  [manpower.includes('getApprovalRequestId(location.search)') && manpower.includes('setIsReviewModalOpen(true)'), 'manpower opens exact review'],
+  [requisitions.includes('getApprovalRequestId(location.search)') && requisitions.includes('handleOpenModal(requested)'), 'requisition opens exact review'],
   [notifications.includes("error.code === '23505'"), 'duplicate notification retry protection'],
 ];
 

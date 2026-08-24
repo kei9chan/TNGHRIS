@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { LeaveRequest, LeaveRequestStatus, Role, Permission } from '../../types';
@@ -14,6 +15,7 @@ import RejectReasonModal from '../../components/feedback/RejectReasonModal';
 import Toast from '../../components/ui/Toast';
 import LeaveCalendar from '../../components/payroll/LeaveCalendar';
 import { processTimeRequestApproval, sendConditionalApprovalEmails } from '../../services/approverConfigService';
+import { getApprovalRequestId } from '../../services/approvalDeepLinks';
 
 type ActiveView = 'my_requests' | 'team_requests' | 'schedule';
 
@@ -21,6 +23,7 @@ const Leave: React.FC = () => {
   const { user } = useAuth();
   const { can, hasDirectReports, getDashboardRequestAccess } = usePermissions();
   const access = getDashboardRequestAccess();
+  const location = useLocation();
 
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [leaveTypes, setLeaveTypes] = useState<{ id: string; name: string }[]>([]);
@@ -29,6 +32,7 @@ const Leave: React.FC = () => {
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [requestToReject, setRequestToReject] = useState<LeaveRequest | null>(null);
   const [activeView, setActiveView] = useState<ActiveView>('my_requests');
+  const [openedReviewId, setOpenedReviewId] = useState<string | null>(null);
   const [toastInfo, setToastInfo] = useState<{ show: boolean; title: string; message: string; icon?: React.ReactNode }>({
     show: false,
     title: '',
@@ -185,6 +189,18 @@ const Leave: React.FC = () => {
     }
     return [];
   }, [leaveRequests, user, access.scope]);
+
+  // Open the exact employee request from Approval Center and notification links.
+  useEffect(() => {
+    const reviewId = getApprovalRequestId(location.search);
+    if (!reviewId || reviewId === openedReviewId || leaveRequests.length === 0) return;
+    const request = leaveRequests.find(candidate => candidate.id === reviewId);
+    if (!request) return;
+    setActiveView(request.employeeId === user?.id ? 'my_requests' : 'team_requests');
+    setSelectedRequest(request);
+    setIsModalOpen(true);
+    setOpenedReviewId(reviewId);
+  }, [location.search, leaveRequests, openedReviewId, user?.id]);
 
   const visibleRequests = useMemo(() => {
     if (!user) return [];

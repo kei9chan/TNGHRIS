@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { getApprovalRequestId } from '../../services/approvalDeepLinks';
 import { useSearchParams } from 'react-router-dom';
 import Button from '../../components/ui/Button';
 import { Award, EmployeeAward, User, Permission, BadgeLevel, BusinessUnit, Role, ResolutionStatus, ApproverStep } from '../../types';
@@ -274,7 +275,7 @@ const Awards: React.FC = () => {
   }, [employeeAwards, awards, users, businessUnits, awardsAccess, user]);
 
   React.useEffect(() => {
-    const requestedAwardId = searchParams.get('item');
+    const requestedAwardId = getApprovalRequestId(searchParams);
     if (!requestedAwardId || !user) return;
     const requestedAward = enrichedEmployeeAwards.find(award => award.id === requestedAwardId);
     if (!requestedAward) return;

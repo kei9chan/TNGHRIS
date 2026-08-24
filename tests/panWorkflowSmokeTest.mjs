@@ -34,6 +34,6 @@ assert.match(modal, /Cancellation reason|Cancelled/);
 assert.match(printable, /Business Unit \/ Company/);
 assert.match(printable, /displayToValue/);
 assert.match(printable, /Not Applicable/);
-assert.match(notifications, /title\.includes\('pan approval'\).*\/approvals\?type=pan/s);
+assert.match(notifications, /title\.includes\('pan approval'\).*kind = 'pan'.*getApprovalReviewUrl\(kind, requestId\)/s);
 
 console.log('PAN workflow smoke tests passed.');

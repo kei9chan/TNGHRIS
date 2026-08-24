@@ -15,6 +15,7 @@ import RejectReasonModal from '../../components/feedback/RejectReasonModal';
 import { logActivity } from '../../services/auditService';
 import { fetchJobRequisitions, saveJobRequisition, processJobRequisitionApproval } from '../../services/jobRequisitionService';
 import { supabase } from '../../services/supabaseClient';
+import { getApprovalRequestId } from '../../services/approvalDeepLinks';
 
 const Requisitions: React.FC = () => {
     const { user } = useAuth();
@@ -102,6 +103,13 @@ const Requisitions: React.FC = () => {
             navigate(location.pathname, { replace: true, state: {} });
         }
     }, [location.state, navigate, handleOpenModal]);
+
+    useEffect(() => {
+        const reviewId = getApprovalRequestId(location.search);
+        if (!reviewId || requisitions.length === 0) return;
+        const requested = requisitions.find(requisition => requisition.id === reviewId);
+        if (requested) handleOpenModal(requested);
+    }, [location.search, requisitions, handleOpenModal]);
 
 
     const departmentsForBU = useMemo(() => {

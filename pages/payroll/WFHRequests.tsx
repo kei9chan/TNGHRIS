@@ -20,6 +20,7 @@ import {
   updateWfhRequestDetails, 
   submitWfhRequest
 } from '../../services/wfhService';
+import { getApprovalRequestId } from '../../services/approvalDeepLinks';
 
 
 const WFH_STATUS_LABELS: Record<WFHRequestStatus, string> = {
@@ -62,7 +63,6 @@ const WFHRequests: React.FC = () => {
   const canCreate = can('WFH', Permission.Create) || can('WFH', Permission.Manage) || [Role.Manager, Role.BusinessUnitManager, Role.Employee, Role.HRManager, Role.HRStaff, Role.Admin].includes(user?.role as Role);
   const [reporteeIds, setReporteeIds] = useState<string[]>([]);
   const [reporteeIdsLoaded, setReporteeIdsLoaded] = useState(false);
-  const canManage = can('WFH', Permission.Manage) || can('WFH', Permission.Approve) || reporteeIds.length > 0;
   const navigate = useNavigate();
   const location = useLocation();
   const { approverConfigs } = useSettings();
@@ -73,6 +73,7 @@ const WFHRequests: React.FC = () => {
       const bodIds: string[] = approverConfigs?.conditionalTimeApprovals?.user_ids || [];
       return bodIds.includes(user.id);
   }, [user, approverConfigs]);
+  const canManage = can('WFH', Permission.Manage) || can('WFH', Permission.Approve) || reporteeIds.length > 0 || isConfiguredBOD;
 
   const [requests, setRequests] = useState<WFHRequest[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -80,6 +81,7 @@ const WFHRequests: React.FC = () => {
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [selectedReviewRequest, setSelectedReviewRequest] = useState<WFHRequest | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [openedReviewId, setOpenedReviewId] = useState<string | null>(null);
 
   const loadRequests = async () => {
     if (!user || !canView) return;
@@ -165,6 +167,21 @@ const WFHRequests: React.FC = () => {
         navigate(location.pathname, { replace: true, state: {} });
     }
   }, [location.state, navigate]);
+
+  useEffect(() => {
+    const reviewId = getApprovalRequestId(location.search);
+    if (!reviewId || reviewId === openedReviewId || requests.length === 0) return;
+    const request = requests.find(candidate => candidate.id === reviewId);
+    if (!request) return;
+    if (request.employeeId !== user?.id && canManage) {
+      setSelectedReviewRequest(request);
+      setIsReviewModalOpen(true);
+    } else {
+      setSelectedRequest(request);
+      setIsModalOpen(true);
+    }
+    setOpenedReviewId(reviewId);
+  }, [location.search, requests, openedReviewId, user?.id, canManage]);
 
   const myRequests = useMemo(() => {
       if (!user) return [];

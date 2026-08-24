@@ -11,6 +11,7 @@ import ManpowerRequestModal from '../../components/payroll/ManpowerRequestModal'
 import ManpowerReviewModal from '../../components/payroll/ManpowerReviewModal';
 import { logActivity } from '../../services/auditService';
 import { supabase } from '../../services/supabaseClient';
+import { getApprovalRequestId } from '../../services/approvalDeepLinks';
 
 const getStatusColor = (status: ManpowerRequestStatus) => {
     switch (status) {
@@ -128,8 +129,7 @@ const ManpowerPlanning: React.FC = () => {
     };
 
     useEffect(() => {
-        const params = new URLSearchParams(location.search);
-        const requestId = params.get('requestId');
+        const requestId = getApprovalRequestId(location.search);
         if (!requestId || requests.length === 0) return;
         const match = requests.find(r => r.id === requestId);
         if (match) {

@@ -19,6 +19,7 @@ import { fetchOtRequests, saveOtRequest, deleteOtRequest, withdrawOtRequest, ver
 import { createNotification } from '../../services/notificationService';
 import { processTimeRequestApproval, sendConditionalApprovalEmails } from '../../services/approverConfigService';
 import { supabase } from '../../services/supabaseClient';
+import { getApprovalRequestId } from '../../services/approvalDeepLinks';
 
 type Tab = 'my_ot' | 'team_approvals' | 'hr_verification' | 'calendar' | 'ledger';
 
@@ -55,6 +56,7 @@ const OvertimeRequests: React.FC = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedRequest, setSelectedRequest] = useState<OTRequest | null>(null);
     const [showSuccessToast, setShowSuccessToast] = useState(false);
+    const [openedReviewId, setOpenedReviewId] = useState<string | null>(null);
 
     const { users: hrUsers } = useUsers();
     const { businessUnits: hrBusinessUnits } = useBusinessUnits();
@@ -219,6 +221,18 @@ const OvertimeRequests: React.FC = () => {
         const uniqueRequests = Array.from(new Map(visibleRequests.map(r => [r.id, r])).values());
         return uniqueRequests;
     }, [requests, reporteeIds, user, canApprove, isConfiguredBOD]);
+
+    // A Review link must open the exact staff request, not merely the OT landing page.
+    useEffect(() => {
+        const reviewId = getApprovalRequestId(location.search);
+        if (!reviewId || reviewId === openedReviewId || requests.length === 0) return;
+        const request = requests.find(candidate => candidate.id === reviewId);
+        if (!request) return;
+        setActiveTab('team_approvals');
+        setSelectedRequest(request);
+        setIsModalOpen(true);
+        setOpenedReviewId(reviewId);
+    }, [location.search, requests, openedReviewId]);
 
     // 3. Calendar Data Source
     const calendarRequests = useMemo(() => {
@@ -544,7 +558,10 @@ const OvertimeRequests: React.FC = () => {
                 onSave={handleSaveRequest}
                 onApproveOrReject={handleApprovalAction}
                 requestToEdit={selectedRequest}
-                canApproveOverride={!!selectedRequest && reporteeIds.includes(selectedRequest.employeeId)}
+                canApproveOverride={!!selectedRequest && (
+                    reporteeIds.includes(selectedRequest.employeeId)
+                    || (isConfiguredBOD && selectedRequest.status === OTStatus.PendingBOD)
+                )}
                 attendanceRecords={hrAttendanceRecords}
                 shiftAssignments={relevantShifts} // Pass shifts for context awareness
                 shiftTemplates={hrShiftTemplates} // Pass templates for context awareness

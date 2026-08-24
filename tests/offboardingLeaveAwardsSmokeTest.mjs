@@ -50,6 +50,6 @@ assert.match(awardsPage, /isDuplicatingTemplate/);
 assert.match(additionalApprovals, /pendingAwardApprovals/);
 assert.match(approvalCenter, /kind: 'award'/);
 assert.match(approvalCenter, /\/evaluation\/awards\?item=/);
-assert.match(notifications, /type=award/);
+assert.match(notifications, /linkedType === 'award'.*getApprovalReviewUrl\(kind, requestId\)/s);
 
 console.log('Offboarding, unpaid leave, and awards workflow smoke tests passed.');

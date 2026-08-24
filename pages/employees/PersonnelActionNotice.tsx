@@ -1,5 +1,6 @@
 // Phase E: mockDataCompat removed from PersonnelActionNotice
 import React, { useEffect, useMemo, useState } from 'react';
+import { getApprovalRequestId } from '../../services/approvalDeepLinks';
 import { useSearchParams } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import Card from '../../components/ui/Card';
@@ -210,7 +211,7 @@ const PersonnelActionNotice: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const requestedPanId = searchParams.get('item');
+    const requestedPanId = getApprovalRequestId(searchParams);
     if (!requestedPanId || requestedPanId === openedQueryItem || !records.length) return;
     const requestedPan = records.find(record => record.id === requestedPanId);
     if (!requestedPan) return;
