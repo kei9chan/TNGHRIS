@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Award, User, BusinessUnit } from '../../types';
+import { Award, User, BusinessUnit, Role } from '../../types';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Textarea from '../ui/Textarea';
@@ -32,6 +32,11 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
     const [templates, setTemplates] = useState<Award[]>(awardTemplates);
     const [people, setPeople] = useState<User[]>(employees);
     const [bus, setBus] = useState<BusinessUnit[]>(businessUnits);
+    const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+    const [templateError, setTemplateError] = useState('');
+
+    const userHasRole = (candidate: User, role: Role) => candidate.role === role || candidate.roles?.includes(role);
+    const allowedApproverRoles = [Role.BOD, Role.GeneralManager, Role.Manager, Role.BusinessUnitManager];
 
     useEffect(() => {
         const loadData = async () => {
@@ -40,10 +45,17 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
             let loadedBus = bus.length ? bus : businessUnits;
 
             try {
-                const { data: userRows } = await supabase
-                    .from('hris_users')
-                    .select('id, full_name, email, role, position, business_unit, business_unit_id, department, department_id, status');
+                const [{ data: userRows }, { data: roleRows }] = await Promise.all([
+                    supabase.from('hris_users').select('id, full_name, email, role, position, business_unit, business_unit_id, department, department_id, status'),
+                    supabase.from('user_roles').select('user_id, role_id').eq('is_active', true),
+                ]);
                 if (userRows) {
+                    const rolesByUser = new Map<string, Role[]>();
+                    (roleRows || []).forEach((assignment: any) => {
+                        const roles = rolesByUser.get(assignment.user_id) || [];
+                        if (!roles.includes(assignment.role_id as Role)) roles.push(assignment.role_id as Role);
+                        rolesByUser.set(assignment.user_id, roles);
+                    });
                     loadedPeople = userRows.map((u: any) => ({
                         id: u.id,
                         authUserId: undefined,
@@ -54,7 +66,8 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
                         businessUnit: u.business_unit || '',
                         departmentId: u.department_id || undefined,
                         businessUnitId: u.business_unit_id || undefined,
-                        status: (u.status as 'Active' | 'Inactive') || 'Active',
+                        status: String(u.status || 'Active').toLowerCase() === 'active' ? 'Active' : 'Inactive',
+                        roles: rolesByUser.get(u.id) || [u.role as Role],
                         isPhotoEnrolled: false,
                         dateHired: new Date(),
                         position: u.position || '',
@@ -66,12 +79,17 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
                 setPeople(loadedPeople);
             }
 
+            setIsLoadingTemplates(true);
+            setTemplateError('');
             try {
                 loadedTemplates = await fetchAwardTemplates();
                 setTemplates(loadedTemplates);
-            } catch {
+            } catch (error: any) {
                 loadedTemplates = awardTemplates;
                 setTemplates(awardTemplates);
+                setTemplateError(error?.message || 'Award templates could not be loaded.');
+            } finally {
+                setIsLoadingTemplates(false);
             }
 
             try {
@@ -158,10 +176,38 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
         () => templates.find(a => a.id === awardId) || awardTemplates.find(a => a.id === awardId),
         [awardId, templates, awardTemplates]
     );
+    const filteredTemplates = useMemo(() => {
+        return (templates.length ? templates : awardTemplates)
+            .filter(template => template.isActive && template.status !== 'draft' && template.status !== 'archived')
+            .filter(template => !template.businessUnitId || !businessUnitId || template.businessUnitId === businessUnitId)
+            .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || a.title.localeCompare(b.title));
+    }, [templates, awardTemplates, businessUnitId]);
+    const eligibleApprovers = useMemo(() => (people.length ? people : employees).filter(candidate =>
+        candidate.status === 'Active' && allowedApproverRoles.some(role => userHasRole(candidate, role))
+    ), [people, employees]);
+    const hasBodApprover = selectedApprovers.some(candidate => userHasRole(candidate, Role.BOD));
+    const hasAvailableBod = eligibleApprovers.some(candidate => userHasRole(candidate, Role.BOD));
+
+    useEffect(() => {
+        if (!awardId || filteredTemplates.some(template => template.id === awardId)) return;
+        setAwardId(filteredTemplates.find(template => template.isDefault)?.id || filteredTemplates[0]?.id || '');
+    }, [filteredTemplates, awardId]);
 
     const handleNext = () => {
-        if (!employeeId || !awardId || selectedApprovers.length === 0) {
-            alert("Please select an employee, award, and at least one approver.");
+        if (!employeeId) {
+            alert('Please select an employee.');
+            return;
+        }
+        if (!awardId || !selectedAward) {
+            alert(templateError || 'Please select an available published award template.');
+            return;
+        }
+        if (!hasAvailableBod) {
+            alert('No active Board of Director approver is configured. Ask an administrator to update roles and approval settings.');
+            return;
+        }
+        if (!hasBodApprover) {
+            alert('At least one active Board of Director approver is required.');
             return;
         }
         setStep('preview');
@@ -170,6 +216,10 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
     const handleGrant = async () => {
         if (!selectedEmployee || !selectedAward) {
             alert('Please select an employee and award.');
+            return;
+        }
+        if (!hasBodApprover) {
+            alert('At least one active Board of Director approver is required.');
             return;
         }
         setIsGenerating(true);
@@ -253,12 +303,15 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
                     id="awardId"
                     value={awardId}
                     onChange={e => setAwardId(e.target.value)}
-                    className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    disabled={isLoadingTemplates || !!templateError || !employeeId || !businessUnitId}
+                    className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                    {(templates.length ? templates : awardTemplates).filter(a => a.isActive).sort((a, b) => a.title.localeCompare(b.title)).map(award => (
+                    <option value="">{isLoadingTemplates ? 'Loading award templates…' : filteredTemplates.length ? 'Select an award template' : 'No published templates available'}</option>
+                    {filteredTemplates.map(award => (
                         <option key={award.id} value={award.id}>{award.title}</option>
                     ))}
                 </select>
+                {templateError && <p className="mt-1 text-sm text-red-600">Award templates failed to load: {templateError}</p>}
             </div>
             <Textarea
                 label="Notes / Reason for Award"
@@ -268,11 +321,14 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
                 placeholder="e.g., For demonstrating exceptional leadership during the project..."
             />
             <EmployeeMultiSelect
-                label="Request Approval From"
-                allUsers={(people.length ? people : employees).filter(u => u.role !== 'Employee')}
+                label="Request Approval From (at least one BOD required)"
+                allUsers={eligibleApprovers}
                 selectedUsers={selectedApprovers}
                 onSelectionChange={setSelectedApprovers}
             />
+            {!hasAvailableBod && <p className="text-sm font-semibold text-red-600">No active Board of Director approver is configured. Submission is blocked.</p>}
+            {hasAvailableBod && !hasBodApprover && <p className="text-sm font-semibold text-amber-600">At least one active Board of Director approver is required. GM, Manager, and Business Unit Manager approvers are optional.</p>}
+            {hasBodApprover && <p className="text-sm font-semibold text-emerald-600">✓ Mandatory Board of Director approval included.</p>}
         </div>
     );
 

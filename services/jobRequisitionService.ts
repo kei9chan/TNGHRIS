@@ -104,3 +104,17 @@ export const saveJobRequisition = async (req: Partial<JobRequisition>): Promise<
   if (error) throw new Error(error.message || 'Failed to save requisition');
   return mapRow(data as JobRequisitionRow);
 };
+
+export const processJobRequisitionApproval = async (
+  requisitionId: string,
+  decision: 'approve' | 'reject',
+  reason?: string,
+): Promise<JobRequisition> => {
+  const { data, error } = await supabase.rpc('process_job_requisition_approval', {
+    p_requisition_id: requisitionId,
+    p_decision: decision,
+    p_reason: reason || null,
+  });
+  if (error || !data) throw new Error(error?.message || 'Failed to process requisition approval');
+  return mapRow((Array.isArray(data) ? data[0] : data) as JobRequisitionRow);
+};

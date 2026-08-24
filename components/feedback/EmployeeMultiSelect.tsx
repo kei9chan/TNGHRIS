@@ -100,7 +100,7 @@ const EmployeeMultiSelect: React.FC<EmployeeMultiSelectProps> = ({ label, allUse
                           {formatEmployeeName(user.name)}
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
-                          {[user.role || 'Employee', user.position, user.businessUnit, user.email].filter(Boolean).join(' • ')}
+                          {[(user.roles?.length ? user.roles.join(', ') : user.role || 'Employee'), user.position, user.businessUnit, user.email].filter(Boolean).join(' • ')}
                         </p>
                     </div>
                 </div>
@@ -121,7 +121,7 @@ const EmployeeMultiSelect: React.FC<EmployeeMultiSelectProps> = ({ label, allUse
                       {formatEmployeeName(user.name)}
                     </p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {user.role || 'Employee'}{user.position ? ` • ${user.position}` : ''}
+                      {user.roles?.length ? user.roles.join(', ') : user.role || 'Employee'}{user.position ? ` • ${user.position}` : ''}{user.businessUnit ? ` • ${user.businessUnit}` : ''}
                     </p>
                 </div>
             </div>

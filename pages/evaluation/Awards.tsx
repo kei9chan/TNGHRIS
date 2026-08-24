@@ -98,10 +98,17 @@ const Awards: React.FC = () => {
       }
       // load users & business units
       try {
-        const { data: userRows } = await supabase
-          .from('hris_users')
-          .select('id, full_name, email, role, position, business_unit, business_unit_id, department, department_id, status');
+        const [{ data: userRows }, { data: roleRows }] = await Promise.all([
+          supabase.from('hris_users').select('id, full_name, email, role, position, business_unit, business_unit_id, department, department_id, status'),
+          supabase.from('user_roles').select('user_id, role_id').eq('is_active', true),
+        ]);
         if (userRows) {
+          const rolesByUser = new Map<string, Role[]>();
+          (roleRows || []).forEach((assignment: any) => {
+            const roles = rolesByUser.get(assignment.user_id) || [];
+            if (!roles.includes(assignment.role_id as Role)) roles.push(assignment.role_id as Role);
+            rolesByUser.set(assignment.user_id, roles);
+          });
           setUsers(userRows.map((u: any) => ({
             id: u.id,
             authUserId: undefined,
@@ -112,7 +119,8 @@ const Awards: React.FC = () => {
             businessUnit: u.business_unit || '',
             departmentId: u.department_id || undefined,
             businessUnitId: u.business_unit_id || undefined,
-            status: (u.status as 'Active' | 'Inactive') || 'Active',
+            status: String(u.status || 'Active').toLowerCase() === 'active' ? 'Active' : 'Inactive',
+            roles: rolesByUser.get(u.id) || [(u.role as Role) || Role.Employee],
             isPhotoEnrolled: false,
             dateHired: new Date(),
             position: u.position || '',

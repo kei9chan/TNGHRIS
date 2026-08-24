@@ -80,9 +80,17 @@ const mapEmployeeAward = (row: any): EmployeeAwardRecord => ({
 const TEMPLATE_BUCKET = 'create_award_template_attachments';
 
 export const fetchAwardTemplates = async (): Promise<Award[]> => {
-  const { data, error } = await supabase.from('award_templates').select('*').order('sort_order', { ascending: true }).order('title', { ascending: true });
-  if (error || !data) throw new Error(error?.message || 'Failed to load award templates');
-  return data.map(mapAward);
+  const ordered = await supabase.from('award_templates').select('*').order('sort_order', { ascending: true }).order('title', { ascending: true });
+  if (!ordered.error && ordered.data) return ordered.data.map(mapAward);
+
+  // Backward-compatible recovery while the additive sort_order migration is
+  // rolling out. This does not hide other query/RLS failures.
+  if (ordered.error?.code === '42703' && ordered.error.message.includes('sort_order')) {
+    const fallback = await supabase.from('award_templates').select('*').order('title', { ascending: true });
+    if (!fallback.error && fallback.data) return fallback.data.map(mapAward);
+    throw new Error(fallback.error?.message || 'Failed to load award templates');
+  }
+  throw new Error(ordered.error?.message || 'Failed to load award templates');
 };
 
 export const saveAwardTemplate = async (template: {

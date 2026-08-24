@@ -13,7 +13,7 @@ import RequisitionTable from '../../components/recruitment/RequisitionTable';
 import RequisitionModal from '../../components/recruitment/RequisitionModal';
 import RejectReasonModal from '../../components/feedback/RejectReasonModal';
 import { logActivity } from '../../services/auditService';
-import { fetchJobRequisitions, saveJobRequisition } from '../../services/jobRequisitionService';
+import { fetchJobRequisitions, saveJobRequisition, processJobRequisitionApproval } from '../../services/jobRequisitionService';
 import { supabase } from '../../services/supabaseClient';
 
 const Requisitions: React.FC = () => {
@@ -196,30 +196,9 @@ const Requisitions: React.FC = () => {
         const existing = requisitions.find(r => r.id === requisitionId);
         if (!existing) return;
 
-        const updatedReq = { ...existing };
-        const userStepIndex = updatedReq.routingSteps.findIndex(s => s.userId === user.id && s.status === JobRequisitionStepStatus.Pending);
-        const isHrApprover = user.role === Role.HRManager || user.role === Role.HRStaff || user.role === Role.Admin;
-
-        if (userStepIndex > -1) {
-            updatedReq.routingSteps[userStepIndex].status = JobRequisitionStepStatus.Approved;
-            updatedReq.routingSteps[userStepIndex].timestamp = new Date();
-            logActivity(user, 'APPROVE', 'JobRequisition', requisitionId, `Approved requisition step.`);
-        } else if (isHrApprover) {
-            updatedReq.status = JobRequisitionStatus.Approved;
-            logActivity(user, 'APPROVE', 'JobRequisition', requisitionId, `Job Requisition approved.`);
-        }
-        
-        if (updatedReq.routingSteps.length > 0) {
-            const allStepsApproved = updatedReq.routingSteps.every(s => s.status === JobRequisitionStepStatus.Approved);
-            const hasFinalApprovers = updatedReq.routingSteps.some(s => s.role === JobRequisitionRole.Final);
-            if (allStepsApproved && hasFinalApprovers) {
-                updatedReq.status = JobRequisitionStatus.Approved;
-                logActivity(user, 'APPROVE', 'JobRequisition', requisitionId, `Job Requisition fully approved and opened.`);
-            }
-        }
-        
         try {
-            const saved = await saveJobRequisition(updatedReq);
+            const saved = await processJobRequisitionApproval(requisitionId, 'approve');
+            logActivity(user, 'APPROVE', 'JobRequisition', requisitionId, `Approved assigned requisition step.`);
             setRequisitions(prev => {
                 const rest = prev.filter(r => r.id !== saved.id);
                 return [saved, ...rest];
@@ -244,20 +223,9 @@ const Requisitions: React.FC = () => {
         const existing = requisitions.find(r => r.id === selectedRequisition.id);
         if (!existing) return;
 
-        const updatedReq = { ...existing };
-        const userStepIndex = updatedReq.routingSteps.findIndex(s => s.userId === user.id && s.status === JobRequisitionStepStatus.Pending);
-
-        if (userStepIndex > -1) {
-            updatedReq.routingSteps[userStepIndex].status = JobRequisitionStepStatus.Rejected;
-            updatedReq.routingSteps[userStepIndex].timestamp = new Date();
-            updatedReq.routingSteps[userStepIndex].notes = reason;
-        }
-        
-        updatedReq.status = JobRequisitionStatus.Rejected;
-        logActivity(user, 'REJECT', 'JobRequisition', selectedRequisition.id, `Rejected requisition. Reason: ${reason}`);
-        
         try {
-            const saved = await saveJobRequisition(updatedReq);
+            const saved = await processJobRequisitionApproval(selectedRequisition.id, 'reject', reason);
+            logActivity(user, 'REJECT', 'JobRequisition', selectedRequisition.id, `Rejected assigned requisition step. Reason: ${reason}`);
             setRequisitions(prev => {
                 const rest = prev.filter(r => r.id !== saved.id);
                 return [saved, ...rest];

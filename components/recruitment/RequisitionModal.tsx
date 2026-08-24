@@ -107,11 +107,17 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
                 const { data: deptData } = await supabase.from('departments').select('id, name, business_unit_id');
                 if (deptData) setDepartments(deptData.map((d: any) => ({ id: d.id, name: d.name, businessUnitId: d.business_unit_id })));
                 
-                const { data: usersData } = await supabase
-                    .from('hris_users')
-                    .select('id,full_name,email,role,position,department,business_unit,business_unit_id,department_id')
-                    .in('role', ['Board of Director', 'GeneralManager', 'HR Manager']);
+                const [{ data: usersData }, { data: roleRows }] = await Promise.all([
+                    supabase.from('hris_users').select('id,full_name,email,role,position,department,business_unit,business_unit_id,department_id,status'),
+                    supabase.from('user_roles').select('user_id,role_id').eq('is_active', true),
+                ]);
                 if (usersData) {
+                    const rolesByUser = new Map<string, Role[]>();
+                    (roleRows || []).forEach((assignment: any) => {
+                        const roles = rolesByUser.get(assignment.user_id) || [];
+                        if (!roles.includes(assignment.role_id as Role)) roles.push(assignment.role_id as Role);
+                        rolesByUser.set(assignment.user_id, roles);
+                    });
                     const mappedUsers = usersData.map((row: any) => ({
                         id: row.id,
                         name: row.full_name || row.email || 'Unknown',
@@ -122,12 +128,14 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
                         departmentId: row.department_id || undefined,
                         businessUnit: row.business_unit || '',
                         businessUnitId: row.business_unit_id || undefined,
-                        status: 'Active' as const,
+                        status: (String(row.status || 'Active').toLowerCase() === 'active' ? 'Active' : 'Inactive') as 'Active' | 'Inactive',
+                        roles: rolesByUser.get(row.id) || [row.role as Role],
                         isPhotoEnrolled: false,
                         dateHired: new Date(),
                     }));
-                    setApproverPool(mappedUsers.filter(user => user.role === Role.BOD || user.role === Role.GeneralManager));
-                    setHrHead(mappedUsers.find(user => user.role === Role.HRManager) || null);
+                    const hasRole = (candidate: User, role: Role) => candidate.role === role || candidate.roles?.includes(role);
+                    setApproverPool(mappedUsers.filter(user => user.status === 'Active' && (hasRole(user, Role.BOD) || hasRole(user, Role.GeneralManager))));
+                    setHrHead(mappedUsers.find(user => user.status === 'Active' && hasRole(user, Role.HRManager)) || null);
                 }
             } catch (err) {
                 console.warn('Failed to load metadata for requisition', err);
@@ -155,9 +163,9 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
             businessUnitId: !requisition && buOptions.length > 0 ? buOptions[0].id : undefined
         };
         setCurrent(initialData);
-        setFinalApprovers([]);
+        setFinalApprovers((initialData.routingSteps || []).map(step => approverPool.find(candidate => candidate.id === step.userId)).filter((candidate): candidate is User => !!candidate && (candidate.role === Role.BOD || candidate.roles?.includes(Role.BOD))));
         initializedRef.current = true;
-    }, [requisition, isOpen, user, buOptions.length]);
+    }, [requisition, isOpen, user, buOptions.length, approverPool]);
 
     // If no BU is selected and we have loaded options, set a default
     useEffect(() => {
@@ -225,17 +233,38 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
             payload.reqCode = generateReqCode();
         }
 
-        if (status === JobRequisitionStatus.PendingApproval && (!payload.routingSteps || payload.routingSteps.length === 0)) {
-            if (hrHead) {
-                payload.routingSteps = [{
+        if (status === JobRequisitionStatus.PendingApproval) {
+            const selectedBods = finalApprovers.filter(candidate => candidate.role === Role.BOD || candidate.roles?.includes(Role.BOD));
+            if (selectedBods.length === 0) {
+                alert('At least one active Board of Director approver is required.');
+                return;
+            }
+            const route = [] as JobRequisition['routingSteps'];
+            if (hrHead && !selectedBods.some(candidate => candidate.id === hrHead.id)) {
+                route.push({
                     id: `req-step-${payload.id || Date.now()}-1`,
                     userId: hrHead.id,
                     name: hrHead.name,
                     role: JobRequisitionRole.HR,
                     status: JobRequisitionStepStatus.Pending,
-                    order: 1
-                }];
+                    order: 1,
+                    roleSnapshot: Role.HRManager,
+                    isBod: false,
+                    isRequired: true,
+                });
             }
+            selectedBods.forEach((approver, index) => route.push({
+                id: `req-step-${payload.id || Date.now()}-bod-${index}`,
+                userId: approver.id,
+                name: approver.name,
+                role: JobRequisitionRole.BOD,
+                status: JobRequisitionStepStatus.Pending,
+                order: route.length + 1,
+                roleSnapshot: Role.BOD,
+                isBod: true,
+                isRequired: true,
+            }));
+            payload.routingSteps = route;
         }
         
         onSave(payload as JobRequisition);
@@ -248,12 +277,12 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
 
     const currentUserStep = requisition?.routingSteps.find(s => s.userId === user?.id && s.status === JobRequisitionStepStatus.Pending);
     const isHrApprover = user?.role === Role.HRManager || user?.role === Role.HRStaff || user?.role === Role.Admin;
-    const canApprove = !!currentUserStep || (isHrApprover && requisition?.status === JobRequisitionStatus.PendingApproval);
+    const canApprove = !!currentUserStep;
     
     const allHrApproved = !!requisition?.routingSteps.filter(s => s.role === JobRequisitionRole.HR).every(s => s.status === JobRequisitionStepStatus.Approved);
     const hasFinalApprovers = !!requisition?.routingSteps.some(s => s.role === JobRequisitionRole.Final);
     const hasHrSteps = !!requisition?.routingSteps.some(s => s.role === JobRequisitionRole.HR);
-    const showFinalApproverSelection = hasHrSteps && allHrApproved && !hasFinalApprovers && requisition?.status === JobRequisitionStatus.PendingApproval && (user?.role === Role.HRManager || user?.role === Role.Admin);
+    const showFinalApproverSelection = false;
 
     const footer = () => {
         if (showFinalApproverSelection) {
@@ -367,6 +396,20 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
                  </div>
                  <Textarea label="Justification" name="justification" value={current.justification || ''} onChange={handleChange} disabled={isReadOnly} rows={4} required/>
 
+                 {isDraft && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
+                        <EmployeeMultiSelect
+                            label="Board of Director Approval (required)"
+                            allUsers={approverPool.filter(candidate => candidate.role === Role.BOD || candidate.roles?.includes(Role.BOD))}
+                            selectedUsers={finalApprovers}
+                            onSelectionChange={setFinalApprovers}
+                        />
+                        {approverPool.some(candidate => candidate.role === Role.BOD || candidate.roles?.includes(Role.BOD))
+                            ? <p className="mt-2 text-xs font-semibold text-amber-700 dark:text-amber-300">The requisition cannot become Approved until a selected BOD completes this required step.</p>
+                            : <p className="mt-2 text-sm font-semibold text-red-600">No active Board of Director approver is configured. Submission is blocked.</p>}
+                    </div>
+                 )}
+
                  {isSubmitted && current.routingSteps && (
                     <div className="pt-4 border-t dark:border-gray-700">
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Approval Routing</label>
@@ -378,7 +421,7 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
                                         step.status === JobRequisitionStepStatus.Rejected ? 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300' :
                                         'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300'
                                     }`}>{step.status}</span>
-                                    <span className="text-gray-800 dark:text-gray-200">by <strong>{step.name}</strong> ({step.role})</span>
+                                    <span className="text-gray-800 dark:text-gray-200">by <strong>{step.name}</strong> ({step.roleSnapshot || step.role}){(step.isBod || step.role === JobRequisitionRole.BOD) ? ' · BOD approval required' : ''}</span>
                                 </li>
                             ))}
                         </ul>

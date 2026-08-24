@@ -1903,10 +1903,12 @@ export enum JobRequisitionStatus {
 
 export enum JobRequisitionRole {
   HR = 'HR',
+  BOD = 'Board of Director',
   Final = 'Final',
 }
 
 export enum JobRequisitionStepStatus {
+  Waiting = 'Waiting',
   Pending = 'Pending',
   Approved = 'Approved',
   Rejected = 'Rejected',
@@ -1935,6 +1937,9 @@ export interface JobRequisition {
     userId: string;
     name: string;
     role: JobRequisitionRole;
+    roleSnapshot?: string;
+    isBod?: boolean;
+    isRequired?: boolean;
     status: JobRequisitionStepStatus;
     order: number;
     timestamp?: Date;
