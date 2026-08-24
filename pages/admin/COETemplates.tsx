@@ -6,17 +6,19 @@ import Button from '../../components/ui/Button';
 import COETemplateModal from '../../components/admin/COETemplateModal';
 import { usePermissions } from '../../hooks/usePermissions';
 import { supabase } from '../../services/supabaseClient';
-import { useAuth } from '../../hooks/useAuth';
+import { archiveCoeTemplate, fetchAllCoeTemplates, saveCoeTemplate } from '../../services/coeService';
 
 const COETemplates: React.FC = () => {
     const { can, getAccessibleBusinessUnits } = usePermissions();
-    const { user } = useAuth();
     const canManage = can('COE', Permission.Manage);
 
     const [templates, setTemplates] = useState<COETemplate[]>([]);
     const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedTemplate, setSelectedTemplate] = useState<COETemplate | null>(null);
+    const [businessUnitFilter, setBusinessUnitFilter] = useState('all');
+    const [statusFilter, setStatusFilter] = useState<'all' | 'Draft' | 'Published' | 'Archived'>('all');
+    const [pageError, setPageError] = useState<string | null>(null);
 
     const accessibleBus = useMemo(() => getAccessibleBusinessUnits(businessUnits), [getAccessibleBusinessUnits, businessUnits]);
     const accessibleBuIds = useMemo(() => new Set(accessibleBus.map(b => b.id)), [accessibleBus]);
@@ -25,25 +27,12 @@ const COETemplates: React.FC = () => {
         let active = true;
         const loadTemplates = async () => {
             try {
-                const { data, error } = await supabase
-                    .from('coe_templates')
-                    .select('*')
-                    .order('updated_at', { ascending: false });
-                if (error) throw error;
-                const mapped = (data || []).map((row: any) => ({
-                    id: row.id,
-                    businessUnitId: row.business_unit_id,
-                    logoUrl: row.logo_url || undefined,
-                    address: row.address || '',
-                    body: row.body,
-                    signatoryName: row.signatory_name,
-                    signatoryPosition: row.signatory_position,
-                    isActive: !!row.is_active,
-                })) as COETemplate[];
-                if (active) setTemplates(mapped);
+                const rows = await fetchAllCoeTemplates();
+                if (active) setTemplates(rows);
             } catch (err) {
                 console.error('Failed to load COE templates', err);
                 if (active) setTemplates([]);
+                if (active) setPageError((err as Error)?.message || 'COE templates could not be loaded.');
             }
         };
         loadTemplates();
@@ -77,9 +66,13 @@ const COETemplates: React.FC = () => {
     }, []);
 
     const filteredTemplates = useMemo(() => {
-        if (accessibleBuIds.size === 0) return templates;
-        return templates.filter(t => accessibleBuIds.has(t.businessUnitId));
-    }, [templates, accessibleBuIds]);
+        return templates.filter(template => {
+            if (accessibleBuIds.size > 0 && !accessibleBuIds.has(template.businessUnitId)) return false;
+            if (businessUnitFilter !== 'all' && template.businessUnitId !== businessUnitFilter) return false;
+            if (statusFilter !== 'all' && template.status !== statusFilter) return false;
+            return true;
+        });
+    }, [templates, accessibleBuIds, businessUnitFilter, statusFilter]);
 
     const handleOpenModal = (template: COETemplate | null) => {
         setSelectedTemplate(template);
@@ -88,83 +81,49 @@ const COETemplates: React.FC = () => {
 
     const handleSave = async (template: COETemplate) => {
         try {
-            if (template.id) {
-                const { data, error } = await supabase
-                    .from('coe_templates')
-                    .update({
-                        business_unit_id: template.businessUnitId,
-                        logo_url: template.logoUrl || null,
-                        address: template.address || null,
-                        body: template.body,
-                        signatory_name: template.signatoryName,
-                        signatory_position: template.signatoryPosition,
-                        is_active: template.isActive,
-                        updated_at: new Date().toISOString(),
-                    })
-                    .eq('id', template.id)
-                    .select('*')
-                    .maybeSingle();
-                if (error) throw error;
-                const updated = data
-                    ? {
-                          id: data.id,
-                          businessUnitId: data.business_unit_id,
-                          logoUrl: data.logo_url || undefined,
-                          address: data.address || '',
-                          body: data.body,
-                          signatoryName: data.signatory_name,
-                          signatoryPosition: data.signatory_position,
-                          isActive: !!data.is_active,
-                      }
-                    : template;
-                setTemplates(prev => prev.map(t => (t.id === template.id ? updated : t)));
-            } else {
-                const { data, error } = await supabase
-                    .from('coe_templates')
-                    .insert({
-                        business_unit_id: template.businessUnitId,
-                        logo_url: template.logoUrl || null,
-                        address: template.address || null,
-                        body: template.body,
-                        signatory_name: template.signatoryName,
-                        signatory_position: template.signatoryPosition,
-                        is_active: template.isActive ?? true,
-                        created_by: user?.id || null,
-                    })
-                    .select('*')
-                    .maybeSingle();
-                if (error) throw error;
-                const created = data
-                    ? {
-                          id: data.id,
-                          businessUnitId: data.business_unit_id,
-                          logoUrl: data.logo_url || undefined,
-                          address: data.address || '',
-                          body: data.body,
-                          signatoryName: data.signatory_name,
-                          signatoryPosition: data.signatory_position,
-                          isActive: !!data.is_active,
-                      }
-                    : template;
-                setTemplates(prev => [created, ...prev]);
-            }
+            const saved = await saveCoeTemplate(template);
+            setTemplates(previous => {
+                const exists = previous.some(item => item.id === saved.id);
+                const next = exists
+                    ? previous.map(item => item.id === saved.id ? saved : item)
+                    : [saved, ...previous];
+                return next.map(item => item.businessUnitId === saved.businessUnitId && item.id !== saved.id && saved.isActive
+                    ? { ...item, isActive: false }
+                    : item);
+            });
+            setPageError(null);
             setIsModalOpen(false);
         } catch (err) {
             console.error('Failed to save COE template', err);
-            alert('Failed to save COE template. Please try again.');
+            setPageError((err as Error)?.message || 'Failed to save COE template.');
         }
     };
 
-    const handleDelete = async (id: string) => {
-        if (!window.confirm("Are you sure you want to delete this template?")) return;
+    const handleArchive = async (template: COETemplate) => {
+        if (!window.confirm(`Archive “${template.name || 'this template'}”? Historical COEs will remain unchanged.`)) return;
         try {
-            const { error } = await supabase.from('coe_templates').delete().eq('id', id);
-            if (error) throw error;
-            setTemplates(prev => prev.filter(t => t.id !== id));
+            const archived = await archiveCoeTemplate(template.id);
+            setTemplates(previous => previous.map(item => item.id === archived.id ? archived : item));
+            setPageError(null);
         } catch (err) {
-            console.error('Failed to delete COE template', err);
-            alert('Failed to delete COE template. Please try again.');
+            console.error('Failed to archive COE template', err);
+            setPageError((err as Error)?.message || 'Failed to archive COE template.');
         }
+    };
+
+    const handleDuplicate = (template: COETemplate) => {
+        handleOpenModal({
+            ...template,
+            id: '',
+            name: `${template.name || 'COE Template'} Copy`,
+            description: `Duplicated from ${template.name || 'an existing template'}.`,
+            status: 'Draft',
+            isActive: false,
+            isPreset: false,
+            presetKey: undefined,
+            createdFromTemplateId: template.id,
+            version: 1,
+        });
     };
 
     const getBuName = (buId: string) => businessUnits.find(b => b.id === buId)?.name || 'Unknown BU';
@@ -183,6 +142,33 @@ const COETemplates: React.FC = () => {
                 <Button onClick={() => handleOpenModal(null)}>Create Template</Button>
             </div>
 
+            {pageError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200" role="alert">
+                    <div className="flex justify-between gap-4"><span>{pageError}</span><button className="font-semibold underline" onClick={() => setPageError(null)}>Dismiss</button></div>
+                </div>
+            )}
+
+            <Card>
+                <div className="grid gap-4 p-4 sm:grid-cols-2">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
+                        <select value={businessUnitFilter} onChange={event => setBusinessUnitFilter(event.target.value)} className="mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-8 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-white">
+                            <option value="all">All accessible business units</option>
+                            {accessibleBus.map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
+                        <select value={statusFilter} onChange={event => setStatusFilter(event.target.value as typeof statusFilter)} className="mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-8 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-white">
+                            <option value="all">All statuses</option>
+                            <option value="Published">Published</option>
+                            <option value="Draft">Draft</option>
+                            <option value="Archived">Archived</option>
+                        </select>
+                    </div>
+                </div>
+            </Card>
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredTemplates.map(template => (
                     <Card key={template.id} className="flex flex-col h-full">
@@ -192,20 +178,29 @@ const COETemplates: React.FC = () => {
                                     {getBuName(template.businessUnitId)}
                                 </span>
                                 <h3 className="text-lg font-bold text-gray-900 dark:text-white mt-1">
-                                    {template.isActive ? 'Active Template' : 'Inactive Template'}
+                                    {template.name || 'Certificate of Employment'}
                                 </h3>
                             </div>
                             {template.logoUrl && <img src={template.logoUrl} alt="Logo" className="h-10 object-contain" />}
                         </div>
                         
                         <div className="flex-grow text-sm text-gray-600 dark:text-gray-400 space-y-2">
+                            <div className="flex flex-wrap gap-2">
+                                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${template.isActive ? 'bg-green-100 text-green-800' : template.status === 'Archived' ? 'bg-slate-200 text-slate-700' : 'bg-amber-100 text-amber-800'}`}>
+                                    {template.isActive ? 'Active' : template.status || 'Draft'}
+                                </span>
+                                <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">{template.styleKey?.replace(/-/g, ' ') || 'classic'}</span>
+                                {template.isPreset && <span className="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-700">Preset</span>}
+                            </div>
                             <p><strong>Signatory:</strong> {template.signatoryName} ({template.signatoryPosition})</p>
                             <p className="truncate"><strong>Address:</strong> {template.address}</p>
+                            <p><strong>Version:</strong> {template.version || 1}</p>
                         </div>
 
-                        <div className="mt-6 pt-4 border-t dark:border-gray-700 flex justify-end space-x-2">
-                            <Button variant="secondary" size="sm" onClick={() => handleOpenModal(template)}>Edit</Button>
-                            <Button variant="danger" size="sm" onClick={() => handleDelete(template.id)}>Delete</Button>
+                        <div className="mt-6 flex flex-wrap justify-end gap-2 border-t pt-4 dark:border-gray-700">
+                            <Button variant="secondary" size="sm" onClick={() => handleDuplicate(template)}>Duplicate</Button>
+                            {template.status !== 'Archived' && <Button variant="secondary" size="sm" onClick={() => handleOpenModal(template)}>Edit / Preview</Button>}
+                            {template.status !== 'Archived' && <Button variant="danger" size="sm" onClick={() => handleArchive(template)}>Archive</Button>}
                         </div>
                     </Card>
                 ))}
@@ -222,6 +217,7 @@ const COETemplates: React.FC = () => {
                 onSave={handleSave}
                 template={selectedTemplate}
                 businessUnits={accessibleBus}
+                brandTemplates={templates}
             />
         </div>
     );

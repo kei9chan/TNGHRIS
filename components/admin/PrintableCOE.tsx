@@ -1,267 +1,196 @@
-
-import React, { useState, useMemo, useRef } from 'react';
-import { COETemplate, COERequest, User } from '../../types';
-import { useSettings } from '../../context/SettingsContext';
-import Button from '../ui/Button';
-import Modal from '../ui/Modal';
-import Input from '../ui/Input';
-import { useAuth } from '../../hooks/useAuth';
-import { logActivity } from '../../services/auditService';
+import React, { useMemo, useRef, useState } from 'react';
 import jsPDF from 'jspdf';
+import { COEDocumentData } from '../../types';
+import { useSettings } from '../../context/SettingsContext';
+import { renderCoeBody } from '../../services/coeDocument';
+import { recordCoeDocumentEvent } from '../../services/coeService';
+import Button from '../ui/Button';
+import Input from '../ui/Input';
+import Modal from '../ui/Modal';
+import COEDocumentPreview from './COEDocumentPreview';
 
 interface PrintableCOEProps {
-    template: COETemplate;
-    request: COERequest;
-    employee: User;
-    onClose: () => void;
+  documentData: COEDocumentData;
+  onClose: () => void;
 }
 
-const PrintableCOE: React.FC<PrintableCOEProps> = ({ template, request, employee, onClose }) => {
-    const { settings } = useSettings();
-    const { user } = useAuth();
-    
-    const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
-    const [isSending, setIsSending] = useState(false);
-    const [emailRecipient, setEmailRecipient] = useState(employee.email);
-    const pdfRef = useRef<HTMLDivElement | null>(null);
+const safeFilePart = (value: string) => value
+  .normalize('NFKD')
+  .replace(/[^a-zA-Z0-9]+/g, '_')
+  .replace(/^_+|_+$/g, '')
+  .slice(0, 80);
 
-    const processedBody = useMemo(() => {
-        let text = template.body;
-        
-        const replacements: Record<string, string> = {
-            '{{employee_name}}': employee.name,
-            '{{position}}': employee.position,
-            '{{date_hired}}': new Date(employee.dateHired).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
-            '{{salary}}': `${settings.currency} ${(employee.monthlySalary || 0).toLocaleString()}`,
-            '{{purpose}}': request.purpose === 'OTHERS' ? (request.otherPurposeDetail || 'personal matters') : request.purpose.replace(/_/g, ' ').toLowerCase(),
-            '{{date_today}}': new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
-        };
+const PrintableCOE: React.FC<PrintableCOEProps> = ({ documentData, onClose }) => {
+  const { settings } = useSettings();
+  const { request, template, employee, meta } = documentData;
+  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [emailRecipient, setEmailRecipient] = useState(employee.email || '');
+  const pdfRef = useRef<HTMLDivElement | null>(null);
+  const currency = /^[A-Z]{3}$/.test(settings.currency || '') ? settings.currency : 'PHP';
 
-        Object.entries(replacements).forEach(([key, value]) => {
-            // Use a regex with 'g' flag to replace all occurrences
-            text = text.replace(new RegExp(key, 'g'), value);
-        });
+  const renderedBody = useMemo(
+    () => renderCoeBody(template, request, employee, currency),
+    [template, request, employee, currency],
+  );
 
-        return text;
-    }, [template, employee, request, settings]);
+  const generatePdf = async () => {
+    if (!pdfRef.current) throw new Error('The COE preview is not ready yet.');
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+    await pdf.html(pdfRef.current, {
+      x: 0,
+      y: 0,
+      width: 595.28,
+      windowWidth: 794,
+      autoPaging: 'text',
+      html2canvas: { scale: 0.75, useCORS: true, backgroundColor: '#ffffff' },
+    });
+    return pdf;
+  };
 
-    const handlePrint = () => {
-        window.print();
-    };
+  const handlePrint = async () => {
+    await recordCoeDocumentEvent(request.id, 'PRINT');
+    window.print();
+  };
 
-    const handleSendEmail = async () => {
-        if (!emailRecipient || !emailRecipient.includes('@')) {
-            alert('Please enter a valid email address.');
-            return;
+  const handleDownload = async () => {
+    setIsGenerating(true);
+    try {
+      const pdf = await generatePdf();
+      pdf.save(`Certificate_of_Employment_${safeFilePart(employee.name)}_${request.id.slice(0, 8)}.pdf`);
+      await recordCoeDocumentEvent(request.id, 'DOWNLOAD');
+    } catch (error: any) {
+      alert(error?.message || 'Unable to download the COE PDF.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleSendEmail = async () => {
+    if (!emailRecipient || !emailRecipient.includes('@')) {
+      alert('Please enter a valid email address.');
+      return;
+    }
+
+    setIsSending(true);
+    try {
+      const pdf = await generatePdf();
+      const pdfBase64 = String(pdf.output('datauristring')).split(',')[1] || '';
+      if (!pdfBase64) throw new Error('Unable to generate the COE PDF.');
+
+      const response = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: emailRecipient,
+          subject: `Certificate of Employment - ${employee.name}`,
+          message: `Your Certificate of Employment has been issued. Request ID: ${request.id}`,
+          html: `<p>Dear ${employee.name.split(' ')[0]},</p><p>Your Certificate of Employment has been issued.</p><hr />${renderedBody}<p>Request ID: ${request.id}</p>`,
+          attachments: [{
+            filename: `Certificate_of_Employment_${safeFilePart(employee.name)}.pdf`,
+            contentBase64: pdfBase64,
+            contentType: 'application/pdf',
+          }],
+        }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.error || 'Failed to send email.');
+      }
+      await recordCoeDocumentEvent(request.id, 'EMAIL');
+      alert(`Certificate successfully emailed to ${emailRecipient}.`);
+      setIsEmailModalOpen(false);
+    } catch (error: any) {
+      alert(error?.message || 'Failed to send email.');
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  return (
+    <div className="print-overlay">
+      <style>{`
+        @media screen {
+          .print-overlay { position: fixed; inset: 0; z-index: 2000; display: flex; flex-direction: column; background: #323639; }
+          .print-toolbar { z-index: 2010; flex-shrink: 0; background: white; padding: 0.85rem 1.25rem; box-shadow: 0 2px 6px rgba(0,0,0,.2); }
+          .print-scroll-container { flex: 1; overflow: auto; padding: 2rem; }
+          .print-page-container { width: max-content; min-width: 210mm; margin: 0 auto; box-shadow: 0 0 16px rgba(0,0,0,.55); }
         }
-
-        const purposeText =
-            request.purpose === 'OTHERS'
-                ? (request.otherPurposeDetail || 'personal matters')
-                : request.purpose.replace(/_/g, ' ').toLowerCase();
-        const senderName =
-            (import.meta as any).env?.VITE_SMTP_FROM_NAME ||
-            user?.name ||
-            'HR Team';
-        const subject = `Certificate of Employment - ${employee.name}`;
-        const message = `Dear ${employee.name.split(' ')[0]},\n\nYour Certificate of Employment has been issued for ${purposeText}. A copy is included below.\n\nRequest ID: ${request.id}\n\nBest regards,\n${senderName}`;
-        const html = `
-<p>Dear ${employee.name.split(' ')[0]},</p>
-<p>Your Certificate of Employment has been issued for ${purposeText}. A copy is included below.</p>
-<p><strong>Request ID:</strong> ${request.id}</p>
-<hr />
-${processedBody}
-<p>Best regards,<br />${senderName}</p>
-        `.trim();
-
-        setIsSending(true);
-        try {
-            if (!pdfRef.current) {
-                throw new Error('Unable to generate COE PDF.');
-            }
-
-            const pdf = new jsPDF('p', 'pt', 'a4');
-            await pdf.html(pdfRef.current, {
-                x: 20,
-                y: 20,
-                width: 555,
-                windowWidth: pdfRef.current.scrollWidth,
-            });
-
-            const pdfDataUri = pdf.output('datauristring');
-            const pdfBase64 = pdfDataUri.split(',')[1] || '';
-            if (!pdfBase64) {
-                throw new Error('Unable to generate COE PDF.');
-            }
-
-            const response = await fetch('/api/send-email', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    to: emailRecipient,
-                    subject,
-                    message,
-                    html,
-                    attachments: [
-                        {
-                            filename: `Certificate_of_Employment_${employee.name.replace(/\s+/g, '_')}.pdf`,
-                            contentBase64: pdfBase64,
-                            contentType: 'application/pdf',
-                        },
-                    ],
-                }),
-            });
-
-            if (!response.ok) {
-                const data = await response.json().catch(() => ({}));
-                throw new Error(data?.error || 'Failed to send email.');
-            }
-
-            alert(`Certificate successfully emailed to ${emailRecipient}.`);
-            if (user) {
-                logActivity(user, 'EXPORT', 'COE', request.id, `Emailed COE to ${emailRecipient}`);
-            }
-            setIsEmailModalOpen(false);
-        } catch (error: any) {
-            alert(error?.message || 'Failed to send email.');
-        } finally {
-            setIsSending(false);
+        @media print {
+          @page { size: A4 portrait; margin: 0; }
+          body > *:not(.print-overlay) { display: none !important; }
+          .print-overlay { position: static; width: 210mm; height: auto; background: white; }
+          .print-toolbar, .no-print { display: none !important; }
+          .print-scroll-container { display: block; padding: 0; overflow: visible; }
+          .print-page-container { width: 210mm; min-width: 210mm; margin: 0; box-shadow: none; }
+          [data-coe-document] { break-after: page; }
         }
-    };
+      `}</style>
 
-    return (
-        <div className="print-overlay">
-            <style>
-                {`
-                @media screen {
-                    .print-overlay { 
-                        position: fixed; 
-                        top: 0; 
-                        left: 0; 
-                        width: 100%; 
-                        height: 100%; 
-                        background-color: #323639; /* Dark background like PDF viewers */
-                        z-index: 2000; 
-                        display: flex; 
-                        flex-direction: column; 
-                    }
-                    .print-toolbar { 
-                        flex-shrink: 0; 
-                        background: white; 
-                        padding: 1rem 1.5rem; 
-                        display: flex; 
-                        justify-content: space-between; 
-                        align-items: center; 
-                        box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
-                        z-index: 2010; 
-                    }
-                    .print-scroll-container { 
-                        flex-grow: 1; 
-                        overflow-y: auto; 
-                        display: flex; 
-                        justify-content: center; 
-                        padding: 2rem; 
-                    }
-                    .print-content-wrapper { 
-                        background-color: white; 
-                        width: 210mm; 
-                        min-height: 297mm; 
-                        box-shadow: 0 0 15px rgba(0,0,0,0.5); 
-                    }
-                }
-                @media print {
-                    @page { size: A4; margin: 20mm; }
-                    body > *:not(.print-overlay) { display: none !important; }
-                    .print-overlay { position: absolute; top: 0; left: 0; width: 100%; height: auto; }
-                    .print-toolbar, .no-print { display: none !important; }
-                    .print-scroll-container { display: block; padding: 0; margin: 0; }
-                    .print-content-wrapper { box-shadow: none; width: 100%; min-height: auto; }
-                }
-                .print-content { font-family: 'Times New Roman', serif; font-size: 12pt; color: black; line-height: 1.6; }
-                .print-content h1 { font-size: 16pt; font-weight: bold; text-align: center; text-transform: uppercase; margin-bottom: 2rem; }
-                `}
-            </style>
-
-            {/* Toolbar */}
-            <div className="print-toolbar no-print">
-                <div>
-                    <h3 className="font-semibold text-gray-800">Certificate Preview</h3>
-                    <p className="text-xs text-gray-500">Request ID: {request.id}</p>
-                </div>
-                <div className="flex space-x-3">
-                     <Button variant="secondary" onClick={() => setIsEmailModalOpen(true)}>
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 00-2-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-                        Email
-                     </Button>
-                     <Button variant="secondary" onClick={handlePrint}>
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
-                        Print / Save PDF
-                     </Button>
-                     <Button variant="danger" onClick={onClose}>Close</Button>
-                </div>
-            </div>
-
-            {/* Document View */}
-            <div className="print-scroll-container">
-                <div className="print-content-wrapper" ref={pdfRef}>
-                    <div className="print-content p-12 relative h-full">
-                        {/* Header / Logo */}
-                        <div className="text-center mb-8">
-                            {template.logoUrl && (
-                                <img src={template.logoUrl} alt="Logo" className="h-24 mx-auto mb-4 object-contain" />
-                            )}
-                            {template.address && (
-                                <p className="text-xs text-gray-500">{template.address}</p>
-                            )}
-                        </div>
-
-                        <h1 className="text-center font-bold text-xl mb-8 uppercase">Certificate of Employment</h1>
-
-                        <div className="mb-8 text-justify" dangerouslySetInnerHTML={{ __html: processedBody }} />
-
-                        <div className="mt-16">
-                            <p>Sincerely,</p>
-                            <div className="mt-12">
-                                <p className="font-bold uppercase">{template.signatoryName}</p>
-                                <p>{template.signatoryPosition}</p>
-                            </div>
-                        </div>
-                        
-                        <div className="absolute bottom-12 left-12 right-12 text-center text-xs text-gray-400 border-t pt-2">
-                            Generated by TNG HRIS on {new Date().toLocaleString()} | Request ID: {request.id}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-             <Modal
-                isOpen={isEmailModalOpen}
-                onClose={() => setIsEmailModalOpen(false)}
-                title="Email Certificate"
-                footer={
-                    <div className="flex justify-end w-full space-x-2">
-                        <Button variant="secondary" onClick={() => setIsEmailModalOpen(false)}>Cancel</Button>
-                        <Button onClick={handleSendEmail} disabled={isSending}>
-                            {isSending ? 'Sending...' : 'Send Email'}
-                        </Button>
-                    </div>
-                }
-            >
-                <div className="space-y-4">
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                        The Certificate of Employment PDF will be sent to the email address below.
-                    </p>
-                    <Input 
-                        label="Recipient Email Address" 
-                        type="email" 
-                        value={emailRecipient} 
-                        onChange={e => setEmailRecipient(e.target.value)} 
-                        required
-                    />
-                </div>
-            </Modal>
+      <div className="print-toolbar no-print">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h3 className="font-semibold text-gray-900">Certificate Preview</h3>
+            <p className="text-xs text-gray-500">Immutable document v{meta.documentVersion} · Request {request.id}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => setIsEmailModalOpen(true)}>Email</Button>
+            <Button variant="secondary" onClick={handleDownload} disabled={isGenerating}>
+              {isGenerating ? 'Preparing PDF…' : 'Download PDF'}
+            </Button>
+            <Button variant="secondary" onClick={handlePrint}>Print</Button>
+            <Button variant="danger" onClick={onClose}>Close</Button>
+          </div>
         </div>
-    );
+        {meta.generationSource === 'fallback' && (
+          <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            A protected same-business-unit fallback was used. {meta.fallbackReason}
+          </div>
+        )}
+        {meta.salaryRedacted && (
+          <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+            Salary is hidden for your current access level.
+          </div>
+        )}
+      </div>
+
+      <div className="print-scroll-container">
+        <div className="print-page-container">
+          <COEDocumentPreview
+            ref={pdfRef}
+            template={template}
+            request={request}
+            employee={employee}
+            currency={currency}
+          />
+        </div>
+      </div>
+
+      <Modal
+        isOpen={isEmailModalOpen}
+        onClose={() => setIsEmailModalOpen(false)}
+        title="Email Certificate"
+        footer={(
+          <div className="flex w-full justify-end space-x-2">
+            <Button variant="secondary" onClick={() => setIsEmailModalOpen(false)}>Cancel</Button>
+            <Button onClick={handleSendEmail} disabled={isSending}>{isSending ? 'Sending…' : 'Send Email'}</Button>
+          </div>
+        )}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600 dark:text-gray-400">The exact approved COE PDF shown in the preview will be attached.</p>
+          <Input
+            label="Recipient Email Address"
+            type="email"
+            value={emailRecipient}
+            onChange={event => setEmailRecipient(event.target.value)}
+            required
+          />
+        </div>
+      </Modal>
+    </div>
+  );
 };
 
 export default PrintableCOE;

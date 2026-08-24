@@ -30,6 +30,7 @@ const isImageFile = (file?: File | null, url?: string): boolean => {
         return file.type.startsWith('image/');
     }
     if (url) {
+        if (url.toLowerCase().startsWith('data:image/')) return true;
         // Strip query params before checking extension
         const pathOnly = url.split('?')[0].toLowerCase();
         return pathOnly.endsWith('.jpg') || pathOnly.endsWith('.jpeg') || pathOnly.endsWith('.png') || pathOnly.endsWith('.gif') || pathOnly.endsWith('.webp') || pathOnly.endsWith('.svg');

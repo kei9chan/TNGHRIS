@@ -283,15 +283,81 @@ export enum COERequestStatus {
   Rejected = 'Rejected',
 }
 
+export type COETemplateStatus = 'Draft' | 'Published' | 'Archived';
+
+export type COETemplateStyle =
+  | 'classic-corporate'
+  | 'modern-minimal'
+  | 'branded-accent'
+  | 'business-unit-signature';
+
+export interface COELayoutSettings {
+  marginTopMm: number;
+  marginRightMm: number;
+  marginBottomMm: number;
+  marginLeftMm: number;
+  lineHeight: number;
+  textAlignment: 'left' | 'center' | 'right' | 'justify';
+  logoAlignment: 'left' | 'center' | 'right';
+  logoHeightMm: number;
+}
+
 export interface COETemplate {
   id: string;
   businessUnitId: string;
+  businessUnitName?: string;
+  name?: string;
+  description?: string;
+  documentTitle?: string;
   logoUrl?: string;
   address: string;
   body: string; // HTML content with placeholders like {{employee_name}}, {{date_hired}}, etc.
   signatoryName: string;
   signatoryPosition: string;
+  signatureUrl?: string;
+  footerText?: string;
+  styleKey?: COETemplateStyle;
+  primaryColor?: string;
+  accentColor?: string;
+  fontFamily?: string;
+  layoutSettings?: COELayoutSettings;
+  status?: COETemplateStatus;
+  version?: number;
+  isPreset?: boolean;
+  presetKey?: string;
+  createdFromTemplateId?: string;
   isActive: boolean;
+}
+
+export interface COEEmployeeSnapshot {
+  id: string;
+  name: string;
+  email?: string;
+  position: string;
+  department: string;
+  departmentId?: string;
+  businessUnit: string;
+  businessUnitId: string;
+  dateHired?: string;
+  endDate?: string;
+  employmentStatus?: string;
+  salary?: number;
+  purpose: string;
+  issueDate: string;
+  requestDate?: string;
+}
+
+export interface COEDocumentData {
+  request: COERequest;
+  template: COETemplate;
+  employee: COEEmployeeSnapshot;
+  meta: {
+    generationSource: 'template' | 'fallback' | 'historical_snapshot';
+    fallbackReason?: string;
+    snapshotCreatedAt?: string;
+    documentVersion: number;
+    salaryRedacted?: boolean;
+  };
 }
 
 export interface COERequest {
@@ -307,6 +373,11 @@ export interface COERequest {
   status: COERequestStatus;
   rejectionReason?: string;
   generatedDocumentUrl?: string; // Placeholder for generated PDF
+  templateId?: string;
+  snapshotCreatedAt?: Date;
+  generationSource?: 'template' | 'fallback' | 'historical_snapshot';
+  fallbackReason?: string;
+  documentVersion?: number;
   approvedBy?: string;
   approvedAt?: Date;
 }
@@ -921,8 +992,57 @@ export interface DisciplineEntry {
   description: string;
   severityLevel: SeverityLevel;
   sanctions: SanctionStep[];
+  businessUnitId?: string;
+  isActive?: boolean;
+  archivedAt?: Date;
   lastModifiedAt: Date;
   lastModifiedByUserId: string;
+}
+
+export interface DisciplineCategory {
+  name: string;
+  originalName?: string;
+  description?: string;
+  displayOrder: number;
+  isActive: boolean;
+  archivedAt?: Date;
+  entryCount: number;
+}
+
+export type DisciplineImportMode = 'add_only' | 'update_only' | 'add_update';
+
+export interface DisciplineImportRow {
+  rowNumber: number;
+  code: string;
+  category: string;
+  severity_level: string;
+  description: string;
+  sanction_1?: string;
+  sanction_2?: string;
+  sanction_3?: string;
+  sanction_4?: string;
+  sanction_5?: string;
+  business_unit?: string;
+  status?: string;
+  [key: string]: unknown;
+}
+
+export interface DisciplineImportError {
+  rowNumber: number;
+  code: string;
+  field: string;
+  reason: string;
+  suggestion: string;
+}
+
+export interface DisciplineImportResult {
+  importId: string;
+  total: number;
+  imported: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  errors: DisciplineImportError[];
 }
 
 export interface CodeOfDiscipline {

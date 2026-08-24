@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { DisciplineEntry, SeverityLevel, SanctionStep } from '../../types';
+import { BusinessUnit, DisciplineEntry, SeverityLevel } from '../../types';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
@@ -15,9 +15,10 @@ interface DisciplineEntryModalProps {
   onSave: (entry: DisciplineEntry) => void;
   categories: string[];
   defaultCategory?: string | null;
+  businessUnits?: BusinessUnit[];
 }
 
-const DisciplineEntryModal: React.FC<DisciplineEntryModalProps> = ({ isOpen, onClose, entry, onSave, categories, defaultCategory }) => {
+const DisciplineEntryModal: React.FC<DisciplineEntryModalProps> = ({ isOpen, onClose, entry, onSave, categories, defaultCategory, businessUnits = [] }) => {
   const [currentEntry, setCurrentEntry] = useState<Partial<DisciplineEntry>>(entry || {});
 
   useEffect(() => {
@@ -26,6 +27,7 @@ const DisciplineEntryModal: React.FC<DisciplineEntryModalProps> = ({ isOpen, onC
             category: defaultCategory || (categories.length > 0 ? categories[0] : ''),
             severityLevel: SeverityLevel.Low,
             sanctions: [{ offense: 1, action: '' }],
+            isActive: true,
         });
     }
   }, [entry, isOpen, categories, defaultCategory]);
@@ -64,12 +66,23 @@ const DisciplineEntryModal: React.FC<DisciplineEntryModalProps> = ({ isOpen, onC
     setCurrentEntry(prev => ({ ...prev, sanctions: newSanctions }));
   };
 
+  const handleMoveSanction = (index: number, direction: -1 | 1) => {
+    const sanctions = [...(currentEntry.sanctions || [])];
+    const destination = index + direction;
+    if (destination < 0 || destination >= sanctions.length) return;
+    [sanctions[index], sanctions[destination]] = [sanctions[destination], sanctions[index]];
+    setCurrentEntry(previous => ({
+      ...previous,
+      sanctions: sanctions.map((sanction, sanctionIndex) => ({ ...sanction, offense: sanctionIndex + 1 })),
+    }));
+  };
+
   const handleSave = () => {
-    if (currentEntry.code && currentEntry.description) {
+    if (currentEntry.code?.trim() && currentEntry.description?.trim() && currentEntry.category && currentEntry.severityLevel) {
       const finalSanctions = (currentEntry.sanctions || []).filter(s => s.action.trim() !== '');
       onSave({ ...currentEntry, sanctions: finalSanctions } as DisciplineEntry);
     } else {
-        alert("Code and Description are required.");
+        alert("Code, category, severity, and description are required.");
     }
   };
 
@@ -107,6 +120,33 @@ const DisciplineEntryModal: React.FC<DisciplineEntryModalProps> = ({ isOpen, onC
           </select>
         </div>
         <Textarea label="Description" id="description" name="description" value={currentEntry.description || ''} onChange={handleChange} rows={4} required />
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label htmlFor="businessUnitId" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business-Unit Scope</label>
+            <select
+              id="businessUnitId"
+              name="businessUnitId"
+              value={currentEntry.businessUnitId || ''}
+              onChange={handleChange}
+              className="mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+            >
+              <option value="">Company-wide</option>
+              {businessUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
+            </select>
+          </div>
+          <div className="flex items-end pb-2">
+            <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+              <input
+                type="checkbox"
+                checked={currentEntry.isActive !== false}
+                onChange={event => setCurrentEntry(previous => ({ ...previous, isActive: event.target.checked }))}
+                className="rounded border-gray-300 text-violet-600"
+              />
+              Active entry
+            </label>
+          </div>
+        </div>
         
         <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Progressive Sanctions</label>
@@ -122,6 +162,10 @@ const DisciplineEntryModal: React.FC<DisciplineEntryModalProps> = ({ isOpen, onC
                             className="flex-grow"
                             placeholder="e.g., Verbal Warning"
                         />
+                        <div className="flex flex-col gap-1">
+                          <button type="button" onClick={() => handleMoveSanction(index, -1)} disabled={index === 0} className="rounded border border-slate-300 px-2 py-0.5 text-xs disabled:opacity-30" title="Move up">↑</button>
+                          <button type="button" onClick={() => handleMoveSanction(index, 1)} disabled={index === (currentEntry.sanctions || []).length - 1} className="rounded border border-slate-300 px-2 py-0.5 text-xs disabled:opacity-30" title="Move down">↓</button>
+                        </div>
                         <Button
                             type="button"
                             variant="danger"

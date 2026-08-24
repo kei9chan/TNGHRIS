@@ -69,6 +69,7 @@ export type PendingAwardApproval = {
 };
 
 const isPending = (status?: string) => String(status || '').trim().toLowerCase() === 'pending';
+const AWARD_PENDING_STATUSES = ['PendingApproval', 'Pending Approval'] as const;
 
 const actionLabel = (action: Record<string, unknown> | null | undefined) => {
   if (!action) return 'Personnel action';
@@ -118,7 +119,7 @@ export function useAdditionalApprovals(user: User | null) {
       supabase
         .from('employee_awards')
         .select('id,employee_id,business_unit_id,department_id,status,submitted_at,approver_id,approver_steps,hris_users:employee_id(full_name),award_templates(title)')
-        .in('status', ['PendingApproval', 'Pending Approval', 'Pending'])
+        .in('status', [...AWARD_PENDING_STATUSES])
         .order('submitted_at', { ascending: false }),
     ]);
 

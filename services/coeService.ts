@@ -1,5 +1,17 @@
 import { supabase } from './supabaseClient';
-import { COERequest, COERequestStatus, COEPurpose, COETemplate, User, Role, NotificationType } from '../types';
+import {
+  COEDocumentData,
+  COEEmployeeSnapshot,
+  COERequest,
+  COERequestStatus,
+  COEPurpose,
+  COETemplate,
+  COETemplateStyle,
+  COETemplateStatus,
+  NotificationType,
+  Role,
+  User,
+} from '../types';
 
 type CoeRequestRow = {
   id: string;
@@ -14,6 +26,11 @@ type CoeRequestRow = {
   status: COERequestStatus;
   rejection_reason?: string | null;
   generated_document_url?: string | null;
+  template_id?: string | null;
+  snapshot_created_at?: string | null;
+  generation_source?: 'template' | 'fallback' | 'historical_snapshot' | null;
+  fallback_reason?: string | null;
+  document_version?: number | null;
   approved_by?: string | null;
   approved_at?: string | null;
   requested_by?: string | null;
@@ -27,6 +44,7 @@ const mapCoeRequest = (row: CoeRequestRow): COERequest => ({
   id: row.id,
   employeeId: row.employee_id,
   employeeName: row.employee_name,
+  employeePosition: row.employee_position || undefined,
   businessUnitId: row.employee_business_unit_id || '',
   employeeDepartmentId: row.employee_department_id || undefined,
   purpose: row.purpose as COEPurpose,
@@ -35,6 +53,11 @@ const mapCoeRequest = (row: CoeRequestRow): COERequest => ({
   status: row.status as COERequestStatus,
   rejectionReason: row.rejection_reason || undefined,
   generatedDocumentUrl: row.generated_document_url || undefined,
+  templateId: row.template_id || undefined,
+  snapshotCreatedAt: row.snapshot_created_at ? new Date(row.snapshot_created_at) : undefined,
+  generationSource: row.generation_source || undefined,
+  fallbackReason: row.fallback_reason || undefined,
+  documentVersion: row.document_version || 1,
   approvedBy: row.approved_by || undefined,
   approvedAt: row.approved_at ? new Date(row.approved_at) : undefined,
 });
@@ -106,40 +129,43 @@ export const createCoeRequest = async (request: Partial<COERequest>, user: User)
   return mapCoeRequest(data as CoeRequestRow);
 };
 
-export const approveCoeRequest = async (requestId: string, approverId: string, generatedDocumentUrl?: string): Promise<COERequest> => {
-  const updates = {
-    status: COERequestStatus.Approved,
-    approved_by: approverId,
-    approved_at: new Date().toISOString(),
-    generated_document_url: generatedDocumentUrl || null,
-    rejection_reason: null,
-  };
-
-  const { data, error } = await supabase.from('coe_requests').update(updates).eq('id', requestId).select().single();
+export const approveCoeRequest = async (
+  requestId: string,
+  _approverId?: string,
+  _generatedDocumentUrl?: string,
+): Promise<COERequest> => {
+  const { data, error } = await supabase.rpc('approve_coe_request_with_snapshot', {
+    p_request_id: requestId,
+  });
   if (error) {
     throw new Error(error.message || 'Failed to approve COE request');
+  }
+
+  const requestRow = (data as any)?.request as CoeRequestRow | undefined;
+  if (!requestRow) {
+    throw new Error('The approved COE document could not be prepared.');
   }
   
   // Notify employee
   try {
-      if (data.employee_id) {
+      if (requestRow.employee_id) {
           await supabase.from('notifications').insert({
-              id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${data.employee_id}`,
-              user_id: data.employee_id,
+              id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${requestRow.employee_id}`,
+              user_id: requestRow.employee_id,
               type: NotificationType.COE_UPDATE,
               title: 'COE Request Approved',
               message: `Your Certificate of Employment request has been approved.`,
-              link: `/employees/coe/requests?requestId=${data.id}`,
+              link: `/employees/coe/requests?requestId=${requestRow.id}`,
               is_read: false,
               created_at: new Date().toISOString(),
-              related_entity_id: data.id
+              related_entity_id: requestRow.id
           });
       }
   } catch (notifyErr) {
       console.warn('Failed to notify employee about approved COE request', notifyErr);
   }
 
-  return mapCoeRequest(data as CoeRequestRow);
+  return mapCoeRequest(requestRow);
 };
 
 export const rejectCoeRequest = async (requestId: string, approverId: string, reason: string): Promise<COERequest> => {
@@ -214,7 +240,49 @@ type CoeTemplateRow = {
   signatory_name: string;
   signatory_position: string;
   is_active: boolean;
+  name?: string | null;
+  description?: string | null;
+  document_title?: string | null;
+  signature_url?: string | null;
+  footer_text?: string | null;
+  style_key?: string | null;
+  primary_color?: string | null;
+  accent_color?: string | null;
+  font_family?: string | null;
+  layout_settings?: Record<string, unknown> | null;
+  status?: string | null;
+  version?: number | null;
+  is_preset?: boolean | null;
+  preset_key?: string | null;
+  created_from_template_id?: string | null;
 };
+
+export const mapCoeTemplate = (row: any): COETemplate => ({
+  id: row.id || '',
+  businessUnitId: row.businessUnitId || row.business_unit_id || '',
+  businessUnitName: row.businessUnitName || row.business_unit_name || undefined,
+  name: row.name || 'Certificate of Employment',
+  description: row.description || undefined,
+  documentTitle: row.documentTitle || row.document_title || 'Certificate of Employment',
+  logoUrl: row.logoUrl || row.logo_url || undefined,
+  address: row.address || '',
+  body: row.body || '',
+  signatoryName: row.signatoryName || row.signatory_name || '',
+  signatoryPosition: row.signatoryPosition || row.signatory_position || '',
+  signatureUrl: row.signatureUrl || row.signature_url || undefined,
+  footerText: row.footerText || row.footer_text || undefined,
+  styleKey: (row.styleKey || row.style_key || 'classic-corporate') as COETemplateStyle,
+  primaryColor: row.primaryColor || row.primary_color || '#1e3a8a',
+  accentColor: row.accentColor || row.accent_color || '#64748b',
+  fontFamily: row.fontFamily || row.font_family || 'Times New Roman',
+  layoutSettings: row.layoutSettings || row.layout_settings || undefined,
+  status: (row.status || (row.is_active ? 'Published' : 'Draft')) as COETemplateStatus,
+  version: Number(row.version || 1),
+  isPreset: Boolean(row.isPreset ?? row.is_preset),
+  presetKey: row.presetKey || row.preset_key || undefined,
+  createdFromTemplateId: row.createdFromTemplateId || row.created_from_template_id || undefined,
+  isActive: Boolean(row.isActive ?? row.is_active),
+});
 
 export const fetchActiveCoeTemplates = async (): Promise<COETemplate[]> => {
   const { data, error } = await supabase
@@ -227,14 +295,87 @@ export const fetchActiveCoeTemplates = async (): Promise<COETemplate[]> => {
     throw new Error(error.message || 'Failed to load COE templates');
   }
 
-  return (data as CoeTemplateRow[]).map((row) => ({
-    id: row.id,
-    businessUnitId: row.business_unit_id,
-    logoUrl: row.logo_url || undefined,
-    address: row.address || '',
-    body: row.body,
-    signatoryName: row.signatory_name,
-    signatoryPosition: row.signatory_position,
-    isActive: row.is_active,
-  }));
+  return (data as CoeTemplateRow[]).map(mapCoeTemplate);
+};
+
+export const fetchAllCoeTemplates = async (): Promise<COETemplate[]> => {
+  const { data, error } = await supabase
+    .from('coe_templates')
+    .select('*')
+    .order('updated_at', { ascending: false });
+  if (error) throw new Error(error.message || 'Failed to load COE templates');
+  return (data || []).map(mapCoeTemplate);
+};
+
+const mapEmployeeSnapshot = (value: Record<string, any>): COEEmployeeSnapshot => ({
+  id: value.id || '',
+  name: value.name || 'Employee',
+  email: value.email || undefined,
+  position: value.position || '',
+  department: value.department || '',
+  departmentId: value.departmentId || value.department_id || undefined,
+  businessUnit: value.businessUnit || value.business_unit || '',
+  businessUnitId: value.businessUnitId || value.business_unit_id || '',
+  dateHired: value.dateHired || value.date_hired || undefined,
+  endDate: value.endDate || value.end_date || undefined,
+  employmentStatus: value.employmentStatus || value.employment_status || undefined,
+  salary: value.salary == null ? undefined : Number(value.salary),
+  purpose: value.purpose || '',
+  issueDate: value.issueDate || value.issue_date || new Date().toISOString(),
+  requestDate: value.requestDate || value.request_date || undefined,
+});
+
+const mapCoeDocument = (data: any): COEDocumentData => {
+  if (!data?.request || !data?.template || !data?.employee) {
+    throw new Error('The COE document response is incomplete.');
+  }
+  return {
+    request: mapCoeRequest(data.request as CoeRequestRow),
+    template: mapCoeTemplate(data.template),
+    employee: mapEmployeeSnapshot(data.employee),
+    meta: {
+      generationSource: data.meta?.generationSource || data.meta?.generation_source || 'historical_snapshot',
+      fallbackReason: data.meta?.fallbackReason || data.meta?.fallback_reason || undefined,
+      snapshotCreatedAt: data.meta?.snapshotCreatedAt || data.meta?.snapshot_created_at || undefined,
+      documentVersion: Number(data.meta?.documentVersion || data.meta?.document_version || 1),
+      salaryRedacted: Boolean(data.meta?.salaryRedacted ?? data.meta?.salary_redacted),
+    },
+  };
+};
+
+export const fetchCoeDocument = async (requestId: string): Promise<COEDocumentData> => {
+  const { data, error } = await supabase.rpc('get_coe_document', { p_request_id: requestId });
+  if (error) throw new Error(error.message || 'Failed to load the COE document');
+  return mapCoeDocument(data);
+};
+
+export const approveAndFetchCoeDocument = async (requestId: string): Promise<COEDocumentData> => {
+  const { data, error } = await supabase.rpc('approve_coe_request_with_snapshot', {
+    p_request_id: requestId,
+  });
+  if (error) throw new Error(error.message || 'Failed to approve the COE request');
+  return mapCoeDocument(data);
+};
+
+export const saveCoeTemplate = async (template: COETemplate): Promise<COETemplate> => {
+  const { data, error } = await supabase.rpc('save_coe_template', { p_template: template });
+  if (error) throw new Error(error.message || 'Failed to save COE template');
+  return mapCoeTemplate(data);
+};
+
+export const archiveCoeTemplate = async (templateId: string): Promise<COETemplate> => {
+  const { data, error } = await supabase.rpc('archive_coe_template', { p_template_id: templateId });
+  if (error) throw new Error(error.message || 'Failed to archive COE template');
+  return mapCoeTemplate(data);
+};
+
+export const recordCoeDocumentEvent = async (
+  requestId: string,
+  action: 'PRINT' | 'DOWNLOAD' | 'EMAIL',
+): Promise<void> => {
+  const { error } = await supabase.rpc('record_coe_document_event', {
+    p_request_id: requestId,
+    p_action: action,
+  });
+  if (error) console.warn(`Failed to record COE ${action.toLowerCase()} event`, error.message);
 };

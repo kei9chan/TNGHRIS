@@ -6,7 +6,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Card from '../ui/Card';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
-import { ResolutionStatus, ApproverStatus, PANStatus, PANStepStatus, JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, NotificationType, TicketStatus, OnboardingTaskStatus, PANActionTaken, NTEStatus, PAN, Resolution, NTE, JobRequisition, EmployeeAward, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, BenefitRequestStatus, Envelope, EnvelopeStatus, RoutingStepStatus, WFHRequest, WFHRequestStatus, COETemplate, User, Role, Evaluation, EvaluatorType, Memo, MemoAcknowledgement } from '../../types';
+import { ResolutionStatus, ApproverStatus, PANStatus, PANStepStatus, JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, NotificationType, TicketStatus, OnboardingTaskStatus, PANActionTaken, NTEStatus, PAN, Resolution, NTE, JobRequisition, EmployeeAward, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COEDocumentData, COERequest, BenefitRequestStatus, Envelope, EnvelopeStatus, RoutingStepStatus, WFHRequest, WFHRequestStatus, COETemplate, User, Role, Evaluation, EvaluatorType, Memo, MemoAcknowledgement } from '../../types';
 import QuickAnalyticsPreview from './QuickAnalyticsPreview';
 import ActionItemCard from './ActionItemCard';
 import UpcomingEventsWidget from './UpcomingEventsWidget';
@@ -18,7 +18,7 @@ import RequestCOEModal from '../employees/RequestCOEModal';
 import { logActivity } from '../../services/auditService';
 import { bodApproveWfhRequest, rejectWfhRequest } from '../../services/wfhService';
 import { createNotification } from '../../services/notificationService';
-import { createCoeRequest, fetchCoeRequests, approveCoeRequest, rejectCoeRequest, fetchActiveCoeTemplates } from '../../services/coeService';
+import { createCoeRequest, fetchCoeDocument, fetchCoeRequests, approveCoeRequest, rejectCoeRequest, fetchActiveCoeTemplates } from '../../services/coeService';
 import COEQueue from './COEQueue';
 import PrintableCOE from '../admin/PrintableCOE';
 import MemoViewModal from '../feedback/MemoViewModal';
@@ -160,7 +160,7 @@ const BODDashboard: React.FC = () => {
     const [supabaseNotifications, setSupabaseNotifications] = useState<any[]>([]);
     const [coeRequests, setCoeRequests] = useState<COERequest[]>([]);
     const [coeTemplates, setCoeTemplates] = useState<COETemplate[]>([]);
-    const [coeToPrint, setCoeToPrint] = useState<{ template: COETemplate, request: COERequest, employee: User } | null>(null);
+    const [coeToPrint, setCoeToPrint] = useState<COEDocumentData | null>(null);
     const [isLoadingCoe, setIsLoadingCoe] = useState(false);
     const [memos, setMemos] = useState<Memo[]>([]);
     const [selectedMemo, setSelectedMemo] = useState<Memo | null>(null);
@@ -599,62 +599,11 @@ const BODDashboard: React.FC = () => {
             alert('You do not have permission to approve this request.');
             return;
         }
-        const { data: employeeRow, error: employeeError } = await supabase
-            .from('hris_users')
-            .select('id,full_name,first_name,last_name,email,position,role,business_unit,business_unit_id,department,department_id,date_hired')
-            .eq('id', request.employeeId)
-            .single();
-        if (employeeError || !employeeRow) {
-            alert("Employee record not found.");
-            return;
-        }
-
-        const employee: User = {
-            id: employeeRow.id,
-            name: formatEmployeeName(
-              employeeRow.full_name ||
-                `${employeeRow.first_name || ''} ${employeeRow.last_name || ''}`.trim() ||
-                'Employee'
-            ),
-            email: employeeRow.email,
-            role: employeeRow.role || Role.Employee,
-            department: employeeRow.department || '',
-            businessUnit: employeeRow.business_unit || '',
-            departmentId: employeeRow.department_id || undefined,
-            businessUnitId: employeeRow.business_unit_id || undefined,
-            status: 'Active',
-            employmentStatus: undefined,
-            isPhotoEnrolled: false,
-            dateHired: employeeRow.date_hired ? new Date(employeeRow.date_hired) : new Date(),
-            position: resolveEmployeePosition(employeeRow.position, employeeRow.department),
-            monthlySalary: undefined
-        };
-
-        const buId = request.businessUnitId || employee.businessUnitId || '';
-        const template = coeTemplates.find(t => t.businessUnitId === buId && t.isActive) || coeTemplates[0];
-        if (!template) {
-            alert("No active COE template found for this Business Unit. Please create one in Admin > COE Templates.");
-            return;
-        }
-
-        const generatedUrl = `generated_coe_${request.id}.pdf`;
-
         try {
-            const updated = await approveCoeRequest(request.id, user.id, generatedUrl);
+            const updated = await approveCoeRequest(request.id, user.id);
             setCoeRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
             logActivity(user, 'APPROVE', 'COERequest', request.id, `Approved COE request for ${request.employeeName}`);
-
-            // Notify the requester their COE was approved
-            createNotification({
-                userId: request.employeeId,
-                title: '✅ COE Request Approved',
-                message: `Your Certificate of Employment request has been approved by ${user.name}. You may now download your COE.`,
-                type: NotificationType.COE_UPDATE,
-                link: '/my-profile?tab=documents',
-                relatedEntityId: request.id,
-            }).catch((e: any) => console.error('Failed to send BOD COE approval notification', e));
-
-            setCoeToPrint({ template, request: updated, employee });
+            setCoeToPrint(await fetchCoeDocument(request.id));
         } catch (error: any) {
             alert(error?.message || 'Failed to approve COE request.');
         }
@@ -1416,9 +1365,7 @@ const BODDashboard: React.FC = () => {
             />
             {coeToPrint && createPortal(
                 <PrintableCOE 
-                    template={coeToPrint.template}
-                    request={coeToPrint.request}
-                    employee={coeToPrint.employee}
+                    documentData={coeToPrint}
                     onClose={() => setCoeToPrint(null)}
                 />,
                 document.body

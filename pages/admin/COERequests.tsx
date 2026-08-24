@@ -7,10 +7,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
-import { COERequest, COERequestStatus, COETemplate, NotificationType, Permission, Role, User } from '../../types';
-import { createCoeRequest, approveCoeRequest, fetchActiveCoeTemplates, fetchCoeRequestById, fetchCoeRequests, rejectCoeRequest } from '../../services/coeService';
+import { BusinessUnit, COEDocumentData, COERequest, COERequestStatus, Permission } from '../../types';
+import { approveCoeRequest, createCoeRequest, fetchCoeDocument, fetchCoeRequestById, fetchCoeRequests, rejectCoeRequest } from '../../services/coeService';
 import { supabase } from '../../services/supabaseClient';
-import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import Card from '../../components/ui/Card';
@@ -31,9 +30,8 @@ const COERequests: React.FC = () => {
     const canRequest = can('COE', Permission.Create);
 
     const [requests, setRequests] = useState<COERequest[]>([]);
-    const [coeTemplates, setCoeTemplates] = useState<COETemplate[]>([]);
-    const [businessUnits, setBusinessUnits] = useState([]);
-    const [templatesLoaded, setTemplatesLoaded] = useState(false);
+    const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
+    const [dataLoaded, setDataLoaded] = useState(false);
     const [statusFilter, setStatusFilter] = useState<string>('all');
     const [searchTerm, setSearchTerm] = useState('');
     
@@ -41,8 +39,10 @@ const COERequests: React.FC = () => {
     const [requestToReject, setRequestToReject] = useState<COERequest | null>(null);
     const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
     const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
-    const [printData, setPrintData] = useState<{ template: COETemplate, request: COERequest, employee: any } | null>(null);
+    const [printData, setPrintData] = useState<COEDocumentData | null>(null);
     const [autoOpenedRequestId, setAutoOpenedRequestId] = useState<string | null>(null);
+    const [documentError, setDocumentError] = useState<string | null>(null);
+    const [loadingDocumentId, setLoadingDocumentId] = useState<string | null>(null);
 
     const accessibleBus = useMemo(() => getAccessibleBusinessUnits(businessUnits), [getAccessibleBusinessUnits, businessUnits]);
     const accessibleBuIds = useMemo(() => new Set(accessibleBus.map(b => b.id)), [accessibleBus]);
@@ -52,9 +52,8 @@ const COERequests: React.FC = () => {
 
         const loadCOEData = async () => {
             try {
-                const [reqs, templates, buRows] = await Promise.all([
+                const [reqs, buRows] = await Promise.all([
                     fetchCoeRequests(),
-                    fetchActiveCoeTemplates(),
                     supabase.from('business_units').select('id, name')
                 ]);
                 if (!isMounted) return;
@@ -74,19 +73,18 @@ const COERequests: React.FC = () => {
                     }
                 }
                 setRequests(hydratedRequests);
-                setCoeTemplates(templates);
                 if (!buRows.error && buRows.data) {
                     setBusinessUnits(buRows.data.map((row: any) => ({ id: row.id, name: row.name })));
                 } else {
                     setBusinessUnits([]);
                 }
-                setTemplatesLoaded(true);
+                setDataLoaded(true);
             } catch (error) {
                 if (!isMounted) return;
                 setRequests([]);
-                setCoeTemplates([]);
                 setBusinessUnits([]);
-                setTemplatesLoaded(true);
+                setDataLoaded(true);
+                setDocumentError((error as Error)?.message || 'COE requests could not be loaded.');
             }
         };
 
@@ -120,59 +118,13 @@ const COERequests: React.FC = () => {
         }).sort((a, b) => new Date(b.dateRequested).getTime() - new Date(a.dateRequested).getTime());
     }, [requests, accessibleBuIds, statusFilter, searchTerm, canManage, user]);
 
-    const resolveEmployee = async (employeeId: string): Promise<User | null> => {
-        if (user?.id === employeeId) {
-            return user;
-        }
-
-        const { data, error } = await supabase
-            .from('hris_users')
-            .select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position, date_hired')
-            .eq('id', employeeId)
-            .maybeSingle();
-
-        if (error || !data) {
-            return null;
-        }
-
-        const roleValue = Object.values(Role).includes(data.role as Role)
-            ? (data.role as Role)
-            : (user?.role || Role.Employee);
-
-        return {
-            id: data.id,
-            name: formatEmployeeName(data.full_name || 'Unknown'),
-            email: data.email || '',
-            role: roleValue,
-            department: data.department || '',
-            businessUnit: data.business_unit || '',
-            departmentId: data.department_id || undefined,
-            businessUnitId: data.business_unit_id || undefined,
-            status: data.status === 'Inactive' ? 'Inactive' : 'Active',
-            isPhotoEnrolled: false,
-            dateHired: data.date_hired ? new Date(data.date_hired) : new Date(),
-            position: data.position || '',
-            monthlySalary: undefined
-        };
-    };
-
-    const resolveTemplate = (businessUnitId: string): COETemplate | null => {
-        const activeTemplates = coeTemplates.filter(t => t.isActive);
-        return (
-            activeTemplates.find(t => t.businessUnitId === businessUnitId)
-            || activeTemplates[0]
-            || coeTemplates[0]
-            || null
-        );
-    };
-
     const requestId = useMemo(() => {
         const params = new URLSearchParams(location.search);
         return params.get('requestId');
     }, [location.search]);
 
     useEffect(() => {
-        if (!requestId || autoOpenedRequestId === requestId || !templatesLoaded) return;
+        if (!requestId || autoOpenedRequestId === requestId || !dataLoaded) return;
 
         const openPreview = async () => {
             let target = requests.find(req => req.id === requestId) || null;
@@ -199,7 +151,7 @@ const COERequests: React.FC = () => {
                 : target.employeeId === user?.id;
 
             if (!hasAccess) {
-                alert('You do not have access to this COE request.');
+                setDocumentError('You do not have access to this COE request.');
                 setAutoOpenedRequestId(requestId);
                 return;
             }
@@ -214,26 +166,26 @@ const COERequests: React.FC = () => {
                 }
             }
             if (!isApproved) {
-                alert('This COE request is not approved yet.');
+                setDocumentError('This COE request is not approved yet. It will be available after approval.');
                 setAutoOpenedRequestId(requestId);
                 return;
             }
 
-            const template = resolveTemplate(target.businessUnitId);
-
-            const employee = await resolveEmployee(target.employeeId);
-
-            if (template && employee) {
-                setPrintData({ template, request: target, employee });
-            } else {
-                alert('Cannot view document: Template or Employee data missing.');
+            setLoadingDocumentId(target.id);
+            setDocumentError(null);
+            try {
+                setPrintData(await fetchCoeDocument(target.id));
+            } catch (error: any) {
+                setDocumentError(error?.message || 'The approved COE could not be loaded. Please retry or contact HR.');
+            } finally {
+                setLoadingDocumentId(null);
             }
 
             setAutoOpenedRequestId(requestId);
         };
 
         void openPreview();
-    }, [requestId, autoOpenedRequestId, requests, canManage, accessibleBuIds, user, coeTemplates, templatesLoaded]);
+    }, [requestId, autoOpenedRequestId, requests, canManage, accessibleBuIds, user, dataLoaded]);
 
     const getBuName = (id: string) => businessUnits.find(b => b.id === id)?.name || 'Unknown BU';
 
@@ -255,38 +207,17 @@ const COERequests: React.FC = () => {
 
     const handleApprove = async (request: COERequest) => {
         if (!user) return;
-
-        const template = coeTemplates.find(t => t.businessUnitId === request.businessUnitId && t.isActive);
-        if (!template) {
-            alert(`No active COE Template found for ${getBuName(request.businessUnitId)}. Please create one in Employee > COE > Templates.`);
-            return;
-        }
-
-        const generatedUrl = `generated_coe_${request.id}.pdf`;
+        setLoadingDocumentId(request.id);
+        setDocumentError(null);
         try {
-            const updated = await approveCoeRequest(request.id, user.id, generatedUrl);
+            const updated = await approveCoeRequest(request.id, user.id);
             setRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
-
-            // Notify
-            await supabase.from('notifications').insert({
-                user_id: request.employeeId,
-                type: NotificationType.COE_UPDATE,
-                title: 'COE Request Approved',
-                message: `Your request for a Certificate of Employment has been approved.`,
-                link: `/employees/coe/requests?requestId=${request.id}`,
-                is_read: false,
-                related_entity_id: request.id
-            });
-
             logActivity(user, 'APPROVE', 'COERequest', request.id, `Approved COE for ${request.employeeName}`);
-            
-            // Auto-open print view
-            const employee = await resolveEmployee(request.employeeId);
-            if (employee) {
-                setPrintData({ template, request: updated, employee });
-            }
+            setPrintData(await fetchCoeDocument(request.id));
         } catch (error: any) {
-            alert(error?.message || 'Failed to approve COE request.');
+            setDocumentError(error?.message || 'Failed to approve and generate the COE document.');
+        } finally {
+            setLoadingDocumentId(null);
         }
     };
 
@@ -301,17 +232,6 @@ const COERequests: React.FC = () => {
         try {
             const updated = await rejectCoeRequest(requestToReject.id, user.id, reason);
             setRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
-            // Notify
-            await supabase.from('notifications').insert({
-                user_id: requestToReject.employeeId,
-                type: NotificationType.COE_UPDATE,
-                title: 'COE Request Rejected',
-                message: `Your COE request was rejected: ${reason}`,
-                link: `/employees/coe/requests?requestId=${requestToReject.id}`,
-                is_read: false,
-                related_entity_id: requestToReject.id
-            });
-
             logActivity(user, 'REJECT', 'COERequest', requestToReject.id, `Rejected COE. Reason: ${reason}`);
         } catch (error: any) {
             alert(error?.message || 'Failed to reject COE request.');
@@ -322,13 +242,14 @@ const COERequests: React.FC = () => {
     };
 
     const handleViewDocument = async (request: COERequest) => {
-        const template = resolveTemplate(request.businessUnitId);
-        const employee = await resolveEmployee(request.employeeId);
-        
-        if (template && employee) {
-            setPrintData({ template, request, employee });
-        } else {
-            alert("Cannot view document: Template or Employee data missing.");
+        setLoadingDocumentId(request.id);
+        setDocumentError(null);
+        try {
+            setPrintData(await fetchCoeDocument(request.id));
+        } catch (error: any) {
+            setDocumentError(error?.message || 'The approved COE document could not be loaded. Verify the request record and try again.');
+        } finally {
+            setLoadingDocumentId(null);
         }
     };
 
@@ -355,6 +276,17 @@ const COERequests: React.FC = () => {
             </div>
 
             <Card>
+                {documentError && (
+                    <div className="m-4 rounded-lg border border-red-200 bg-red-50 p-4 text-red-900 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200" role="alert">
+                        <div className="flex items-start justify-between gap-4">
+                            <div>
+                                <p className="font-semibold">COE document could not be prepared</p>
+                                <p className="mt-1 text-sm">{documentError}</p>
+                            </div>
+                            <button type="button" className="text-sm font-semibold underline" onClick={() => setDocumentError(null)}>Dismiss</button>
+                        </div>
+                    </div>
+                )}
                 <div className="p-4 flex flex-col md:flex-row gap-4">
                     <div className="flex-grow">
                          <Input 
@@ -401,10 +333,14 @@ const COERequests: React.FC = () => {
                                         {canManage && req.status === COERequestStatus.Pending ? (
                                             <div className="flex justify-end space-x-2">
                                                 <Button size="sm" variant="danger" onClick={() => handleRejectClick(req)}>Reject</Button>
-                                                <Button size="sm" variant="success" onClick={() => handleApprove(req)}>Approve</Button>
+                                                <Button size="sm" variant="success" onClick={() => handleApprove(req)} disabled={loadingDocumentId === req.id}>
+                                                    {loadingDocumentId === req.id ? 'Preparing…' : 'Approve'}
+                                                </Button>
                                             </div>
                                         ) : req.status === COERequestStatus.Approved ? (
-                                            <Button size="sm" variant="secondary" onClick={() => handleViewDocument(req)}>View/Print</Button>
+                                            <Button size="sm" variant="secondary" onClick={() => handleViewDocument(req)} disabled={loadingDocumentId === req.id}>
+                                                {loadingDocumentId === req.id ? 'Loading…' : 'View / Print'}
+                                            </Button>
                                         ) : (
                                             <span className="text-gray-400">-</span>
                                         )}
@@ -436,9 +372,7 @@ const COERequests: React.FC = () => {
 
             {printData && createPortal(
                 <PrintableCOE
-                    template={printData.template}
-                    request={printData.request}
-                    employee={printData.employee}
+                    documentData={printData}
                     onClose={() => setPrintData(null)}
                 />,
                 document.body
