@@ -9,11 +9,14 @@
 
 
 import React, { useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { SettingsProvider } from './context/SettingsContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { useAuth } from './hooks/useAuth';
+import { usePermissions } from './hooks/usePermissions';
+import { usePermissionsContext } from './context/PermissionsContext';
+import { NavLink, Permission, Resource } from './types';
 import Layout from './components/layout/Layout';
 const Login = React.lazy(() => import('./pages/Login'));
 const SignUp = React.lazy(() => import('./pages/SignUp'));
@@ -36,7 +39,7 @@ const OnboardingSignPage = React.lazy(() => import('./pages/employees/Onboarding
 const OnboardingViewPage = React.lazy(() => import('./pages/employees/OnboardingViewPage'));
 const Contracts = React.lazy(() => import('./pages/employees/Contracts'));
 const Benefits = React.lazy(() => import('./pages/employees/Benefits'));
-import { F_CLOCK_ADMIN_AUDIT_UI } from './constants';
+import { F_CLOCK_ADMIN_AUDIT_UI, NAV_LINKS } from './constants';
 const DisciplinaryCases = React.lazy(() => import('./pages/feedback/DisciplinaryCases'));
 const NTEDetail = React.lazy(() => import('./pages/feedback/NTEDetail'));
 const CoachingLog = React.lazy(() => import('./pages/feedback/CoachingLog'));
@@ -129,9 +132,25 @@ const DisciplineAnalytics = React.lazy(() => import('./pages/analytics/Disciplin
 // Workflows
 import { autoCelebrateBirthdays } from './services/workflows';
 
+const flattenRoutePermissions = (links: NavLink[]): Array<[string, Resource, Permission]> =>
+  links.flatMap(link => [
+    [link.path, link.requiredPermission.resource, link.requiredPermission.permission] as [string, Resource, Permission],
+    ...(link.children ? flattenRoutePermissions(link.children) : []),
+  ]);
+
+// Keep route enforcement sourced from the same permission map used to render
+// navigation. Longest paths are checked first so a specific child wins over a
+// broader parent route.
+const routePermissions: Array<[string, Resource, Permission]> = [
+  ...flattenRoutePermissions(NAV_LINKS),
+  ['/approvals', 'Dashboard', Permission.View] as [string, Resource, Permission],
+].sort(([leftPath], [rightPath]) => rightPath.length - leftPath.length);
 
 const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }) => {
   const { user, loading } = useAuth();
+  const { can } = usePermissions();
+  const { effectiveRbac, loadingPermissions, authorizationError } = usePermissionsContext();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -143,6 +162,51 @@ const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (loadingPermissions) {
+    return (
+      <div className="flex h-screen items-center justify-center" aria-label="Loading authorization">
+        <div className="h-16 w-16 animate-spin rounded-full border-b-2 border-t-2 border-indigo-500"></div>
+      </div>
+    );
+  }
+
+  if (authorizationError || !effectiveRbac?.authorized) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-100 p-6 dark:bg-slate-950">
+        <div className="max-w-lg rounded-xl border border-red-200 bg-white p-6 shadow-lg dark:border-red-900 dark:bg-slate-900">
+          <h1 className="text-xl font-bold text-red-700 dark:text-red-300">Authorization unavailable</h1>
+          <p className="mt-2 text-gray-700 dark:text-slate-200">
+            {authorizationError || effectiveRbac?.diagnostic || 'No active approved role assignment was found.'}
+          </p>
+          <p className="mt-3 text-sm text-gray-500 dark:text-slate-400">
+            Access is fail-closed. Contact an administrator and provide this message.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const required = routePermissions.find(([prefix]) => location.pathname.startsWith(prefix));
+  if (required && !can(required[1], required[2])) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center p-6">
+        <div className="max-w-lg rounded-xl border border-amber-200 bg-white p-6 text-center shadow dark:border-amber-900 dark:bg-slate-900">
+          <h1 className="text-xl font-bold text-gray-900 dark:text-white">Access denied</h1>
+          <p className="mt-2 text-gray-600 dark:text-slate-300">
+            You do not have {required[2]} access to {required[1]}.
+          </p>
+          <button
+            type="button"
+            className="mt-4 font-semibold text-indigo-600 dark:text-indigo-300"
+            onClick={() => window.history.back()}
+          >
+            Go back
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return children;
