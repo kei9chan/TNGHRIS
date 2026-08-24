@@ -906,6 +906,21 @@ export interface NTE {
   decisionMakerSignatureUrl?: string;
   hearingDetails?: HearingDetails;
   nteNumber?: number | string;
+  revisionNote?: string;
+  revisionRequestedAt?: Date;
+  revisionRequestedBy?: string;
+  closureReason?: string;
+  closedAt?: Date;
+  closedBy?: string;
+  workflowHistory?: NTEWorkflowEvent[];
+}
+
+export interface NTEWorkflowEvent {
+  action: 'RETURN_FOR_REVISION' | 'RESUBMITTED' | 'CLOSE' | string;
+  note?: string;
+  actorId: string;
+  actorName: string;
+  timestamp: Date | string;
 }
 
 export enum ResolutionStatus {

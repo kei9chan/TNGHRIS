@@ -25,6 +25,7 @@ interface NTEModalProps {
   incidentReport: IncidentReport;
   nte: NTE | undefined;
   onSave: (data: NTE | NTE[]) => void;
+  onResubmitRevision?: (data: NTE) => void;
 }
 
 const XCircleIcon: React.FC = () => (
@@ -34,7 +35,7 @@ const XCircleIcon: React.FC = () => (
 );
 
 
-const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nte, onSave }) => {
+const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nte, onSave, onResubmitRevision }) => {
   const { user } = useAuth();
   const { approverConfigs } = useSettings();
   const isNewNTE = !nte;
@@ -550,6 +551,15 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
   const isEmployeeResponding = user?.id === nte.employeeId && nte.status === NTEStatus.Issued;
   const isManagerOrHR = user?.id !== nte.employeeId;
   const isPendingApproval = nte.status === NTEStatus.PendingApproval;
+  const isRevisionDraft = nte.status === NTEStatus.Draft && !!nte.revisionRequestedAt;
+
+  const handleResubmitRevision = () => {
+    if (!currentNTE.details?.trim()) {
+      alert('Please complete the revised allegations/details before resubmitting.');
+      return;
+    }
+    onResubmitRevision?.(currentNTE as NTE);
+  };
 
   // Existing NTE View
   return (
@@ -561,7 +571,9 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
       footer={
         <div className="flex justify-end w-full space-x-2">
           <Button variant="secondary" onClick={onClose}>{isPendingApproval ? 'Close' : 'Cancel'}</Button>
-          {!isPendingApproval && (
+          {isRevisionDraft ? (
+            <Button onClick={handleResubmitRevision}>Resubmit for BOD Approval</Button>
+          ) : !isPendingApproval && (
             <Button onClick={handleUpdateNTE} disabled={!isEmployeeResponding && !isManagerOrHR}>
               {isEmployeeResponding ? "Submit Response" : "Save Changes"}
             </Button>
@@ -578,6 +590,13 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
             <span className="text-sm font-medium">This NTE is awaiting BOD approval and cannot be edited.</span>
           </div>
         )}
+        {isRevisionDraft && (
+          <div className="p-3 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700">
+            <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">Returned for revision by BOD</p>
+            <p className="mt-1 text-sm text-amber-800 dark:text-amber-300 whitespace-pre-wrap">{nte.revisionNote}</p>
+            <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">Revise the NTE below, then resubmit it to the existing approval route.</p>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-4">
           <div><strong>Employee:</strong> {nte.employeeName}</div>
           <div><strong>Status:</strong> {nte.status}</div>
@@ -592,6 +611,15 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
           rows={4}
           disabled={isPendingApproval || !isManagerOrHR || nte.status === NTEStatus.Closed}
         />
+
+        {isRevisionDraft && (
+          <Textarea
+            label="Notice to Explain Document"
+            value={currentNTE.body || ''}
+            onChange={e => setCurrentNTE(prev => ({ ...prev, body: e.target.value }))}
+            rows={10}
+          />
+        )}
 
         {isEmployeeResponding && (
           <Textarea

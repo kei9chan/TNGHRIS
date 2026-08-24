@@ -23,6 +23,13 @@ type NTERow = {
   updated_at?: string;
   nte_number?: number | string;
   body?: string | null;
+  revision_note?: string | null;
+  revision_requested_at?: string | null;
+  revision_requested_by?: string | null;
+  closure_reason?: string | null;
+  closed_at?: string | null;
+  closed_by?: string | null;
+  workflow_history?: any[] | null;
   employee_response?: string | null;
   employee_response_evidence_url?: string | null;
   employee_response_signature_url?: string | null;
@@ -52,7 +59,41 @@ const mapRow = (row: NTERow): NTE => {
     issuedByUserId: row.issued_by_user_id || '',
     approverSteps: (row.approval_log as ApproverStep[]) || [],
     nteNumber: row.nte_number || undefined,
+    revisionNote: row.revision_note || undefined,
+    revisionRequestedAt: row.revision_requested_at ? new Date(row.revision_requested_at) : undefined,
+    revisionRequestedBy: row.revision_requested_by || undefined,
+    closureReason: row.closure_reason || undefined,
+    closedAt: row.closed_at ? new Date(row.closed_at) : undefined,
+    closedBy: row.closed_by || undefined,
+    workflowHistory: row.workflow_history || [],
   };
+};
+
+export type NTEBodOutcome = 'revision' | 'closure';
+
+export const processNTEBodOutcome = async (nteId: string, outcome: NTEBodOutcome, note: string): Promise<NTE> => {
+  const { data, error } = await supabase.rpc('process_nte_bod_outcome', {
+    p_nte_id: nteId,
+    p_outcome: outcome,
+    p_note: note,
+  });
+  if (error) throw new Error(error.message || 'Failed to process BOD decision');
+  if (!data) throw new Error('The updated NTE was not returned');
+  return mapRow(data as NTERow);
+};
+
+export const resubmitNTERevision = async (nte: Partial<NTE>): Promise<NTE> => {
+  if (!nte.id) throw new Error('NTE id is required');
+  const { data, error } = await supabase.rpc('resubmit_nte_revision', {
+    p_nte_id: nte.id,
+    p_details: nte.details || '',
+    p_body: nte.body || null,
+    p_response_deadline: nte.deadline ? nte.deadline.toISOString() : null,
+    p_evidence_link: nte.evidenceUrl || null,
+  });
+  if (error) throw new Error(error.message || 'Failed to resubmit revised NTE');
+  if (!data) throw new Error('The resubmitted NTE was not returned');
+  return mapRow(data as NTERow);
 };
 
 export const saveNTEs = async (ntes: Partial<NTE>[], user: User): Promise<NTE[]> => {
@@ -153,4 +194,3 @@ export const fetchNTEsByIncidentReportId = async (incidentReportId: string): Pro
   if (error) throw new Error(error.message || 'Failed to fetch NTEs');
   return (data as NTERow[]).map(mapRow);
 };
-

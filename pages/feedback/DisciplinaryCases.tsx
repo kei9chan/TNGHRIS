@@ -18,7 +18,7 @@ import PrintableIncidentReport from '../../components/feedback/PrintableIncident
 import CaseListTable from '../../components/feedback/CaseListTable';
 import { logActivity } from '../../services/auditService';
 import { assignIncidentCaseHandler, fetchIncidentReports, saveIncidentReport, addIncidentReportMessage, fetchPipelineStages } from '../../services/incidentReportService';
-import { saveNTEs, updateNTE, fetchNTEs } from '../../services/nteService';
+import { saveNTEs, updateNTE, fetchNTEs, resubmitNTERevision } from '../../services/nteService';
 import { fetchResolutions, createResolution, updateResolution } from '../../services/resolutionService';
 import { formatIRDisplayId } from '../../utils/formatCaseId';
 
@@ -73,8 +73,9 @@ const getDerivedPipelineStage = (nte: NTE, allResolutions: Resolution[], report:
     case NTEStatus.HearingScheduled:
       return 'scheduled-hearing';
     case NTEStatus.Closed:
-      // If NTE is closed, it implies it has moved to resolution phase
-      return 'resolution';
+      return 'closed';
+    case NTEStatus.Draft:
+      return 'ir-review';
     case NTEStatus.PendingApproval:
       return 'nte-for-approval';
     case NTEStatus.Issued:
@@ -459,7 +460,11 @@ const DisciplinaryCases: React.FC = () => {
     } else if (report.pipelineStage === 'ir-review' || report.pipelineStage === 'hr-review-response') {
       const nteForThisEmployee = ntes.find(n => n.incidentReportId === originalReportId && n.employeeId === report.involvedEmployeeIds[0]);
       if (nteForThisEmployee) {
-        navigate(`/feedback/nte/${nteForThisEmployee.id}`);
+        if (nteForThisEmployee.status === NTEStatus.Draft && nteForThisEmployee.revisionRequestedAt) {
+          setNTEModalOpen(true);
+        } else {
+          navigate(`/feedback/nte/${nteForThisEmployee.id}`);
+        }
       } else {
         setReportModalOpen(true);
       }
@@ -533,7 +538,7 @@ const DisciplinaryCases: React.FC = () => {
         setNTEs(prev => [...saved, ...prev]);
         const incidentReportId = saved[0]?.incidentReportId;
         if (incidentReportId) {
-          // Move IR to NTE sent once NTE is issued and associate the NTE IDs
+          // Keep the case in approval until every required NTE approver has acted.
           const existingIr = allReports.find(r => r.id === incidentReportId);
           const currentNteIds = existingIr?.nteIds || [];
           const newNteIds = saved.map(n => n.id);
@@ -541,7 +546,7 @@ const DisciplinaryCases: React.FC = () => {
 
           const irUpdate: Partial<IncidentReport> = { 
             id: incidentReportId, 
-            pipelineStage: 'nte-sent', 
+            pipelineStage: 'nte-for-approval',
             status: IRStatus.Converted,
             nteIds: mergedNteIds,
           };
@@ -557,6 +562,21 @@ const DisciplinaryCases: React.FC = () => {
       alert(err?.message || 'Failed to save NTE.');
     }
     handleCloseNteModal();
+  };
+
+  const handleResubmitNTERevision = async (data: NTE) => {
+    if (!user) return;
+    try {
+      const saved = await resubmitNTERevision(data);
+      setNTEs(prev => prev.map(n => n.id === saved.id ? saved : n));
+      setAllReports(prev => prev.map(report => report.id === saved.incidentReportId
+        ? { ...report, status: IRStatus.Converted, pipelineStage: 'nte-for-approval' }
+        : report));
+      handleCloseNteModal();
+      alert('Revised NTE resubmitted for BOD approval.');
+    } catch (err: any) {
+      alert(err?.message || 'Failed to resubmit revised NTE.');
+    }
   };
 
   const handleSaveResolution = async (
@@ -1016,6 +1036,7 @@ const DisciplinaryCases: React.FC = () => {
           incidentReport={selectedReport}
           nte={selectedNTE}
           onSave={handleSaveNTE}
+          onResubmitRevision={handleResubmitNTERevision}
         />
       )}
 
