@@ -1,4 +1,5 @@
 import React, { useState, useRef, useImperativeHandle, forwardRef, useEffect, useCallback } from 'react';
+import { useTheme } from '../../context/ThemeContext';
 
 type SignatureMode = 'type' | 'draw';
 
@@ -13,6 +14,7 @@ interface SignaturePadProps {
 }
 
 const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(({ onEnd }, ref) => {
+  const { theme } = useTheme();
   const [mode, setMode] = useState<SignatureMode>('type');
   const [typedSignature, setTypedSignature] = useState('');
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -48,7 +50,7 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(({ onEnd }, 
         return isCanvasEmpty;
     },
     getSignatureDataUrl: () => {
-        const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const isDarkMode = theme === 'dark';
         const bgColor = isDarkMode ? '#1f2937' : '#f9fafb';
         const fgColor = isDarkMode ? '#f3f4f6' : '#111827';
 
@@ -117,7 +119,7 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(({ onEnd }, 
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.scale(ratio, ratio);
 
-      const isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const isDarkMode = theme === 'dark';
       ctx.strokeStyle = isDarkMode ? '#f3f4f6' : '#111827';
       ctx.lineWidth = 2;
       ctx.lineCap = 'round';
@@ -136,14 +138,6 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(({ onEnd }, 
       clearCanvas();
     }
 
-    const darkModeMatcher = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleThemeChange = () => {
-        if (canvas.getContext('2d')) {
-            const isDarkMode = darkModeMatcher.matches;
-            canvas.getContext('2d')!.strokeStyle = isDarkMode ? '#f3f4f6' : '#111827';
-        }
-    };
-    
     const resizeObserver = new ResizeObserver(() => {
       setCanvasDimensionsAndStyles();
       if (lastSignatureRef.current) {
@@ -157,13 +151,11 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(({ onEnd }, 
     });
     
     resizeObserver.observe(canvas);
-    darkModeMatcher.addEventListener('change', handleThemeChange);
 
     return () => {
       resizeObserver.disconnect();
-      darkModeMatcher.removeEventListener('change', handleThemeChange);
     };
-  }, [mode, clearCanvas]);
+  }, [mode, clearCanvas, theme]);
 
   const getCoords = (event: React.PointerEvent<HTMLCanvasElement>): {x: number, y: number} => {
     const canvas = canvasRef.current!;

@@ -12,6 +12,7 @@ import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { SettingsProvider } from './context/SettingsContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { useAuth } from './hooks/useAuth';
 import Layout from './components/layout/Layout';
 const Login = React.lazy(() => import('./pages/Login'));
@@ -327,15 +328,17 @@ import { PermissionsProvider } from './context/PermissionsContext';
 
 const App: React.FC = () => {
   return (
-    <AuthProvider>
-      <SettingsProvider>
-        <PermissionsProvider>
-          <BrowserRouter>
-            <AppRoutes />
-          </BrowserRouter>
-        </PermissionsProvider>
-      </SettingsProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <SettingsProvider>
+          <PermissionsProvider>
+            <BrowserRouter>
+              <AppRoutes />
+            </BrowserRouter>
+          </PermissionsProvider>
+        </SettingsProvider>
+      </AuthProvider>
+    </ThemeProvider>
   );
 };
 

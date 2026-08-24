@@ -8,6 +8,7 @@ import { Permission, type NavLink } from '../../types';
 import { useSettings } from '../../context/SettingsContext';
 import NotificationBell from './NotificationBell';
 import { useEvaluationAssignmentAccess } from '../../hooks/useEvaluationAssignmentAccess';
+import { useTheme } from '../../context/ThemeContext';
 
 const UserIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -18,6 +19,18 @@ const UserIcon = () => (
 const LogoutIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+    </svg>
+);
+
+const SunIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364-.707-.707M6.343 6.343l-.707-.707m12.728 0-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+    </svg>
+);
+
+const MoonIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646a9.003 9.003 0 1011.708 11.708z" />
     </svg>
 );
 
@@ -56,6 +69,7 @@ const Header: React.FC = () => {
     const { user, logout } = useAuth();
     const { can } = usePermissions();
     const { settings } = useSettings();
+    const { theme, toggleTheme } = useTheme();
     const navigate = useNavigate();
     const canViewEvaluation = can('Evaluation', Permission.View);
     const { hasAssignment: hasAssignedEvaluation } = useEvaluationAssignmentAccess(!canViewEvaluation);
@@ -97,7 +111,17 @@ const Header: React.FC = () => {
                             </div>
                         </div>
                     </div>
-                    <div className="flex items-center pl-4">
+                    <div className="flex items-center gap-2 pl-2 sm:pl-4">
+                        <button
+                            type="button"
+                            onClick={toggleTheme}
+                            aria-label={`Switch to ${theme === 'dark' ? 'day' : 'night'} mode`}
+                            title={`Switch to ${theme === 'dark' ? 'day' : 'night'} mode`}
+                            className="inline-flex h-10 items-center gap-1.5 rounded-full border border-slate-600 bg-slate-800 px-2.5 text-xs font-semibold text-white transition-colors hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-slate-900 sm:px-3 sm:text-sm"
+                        >
+                            {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
+                            <span>{theme === 'dark' ? 'Day' : 'Night'}</span>
+                        </button>
                         <NotificationBell />
                         <div className="relative" ref={profileMenuRef}>
                             <div>

@@ -5,7 +5,24 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TNG HRIS</title>
+    <script>
+      // The HRIS owns its theme. A device-level dark preference must not switch
+      // the application to night mode unless the user chose it here.
+      (() => {
+        let theme = 'light';
+        try {
+          theme = localStorage.getItem('tng-hris-theme') === 'dark' ? 'dark' : 'light';
+        } catch (_) {
+          theme = 'light';
+        }
+        document.documentElement.classList.toggle('dark', theme === 'dark');
+        document.documentElement.style.colorScheme = theme;
+      })();
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = { darkMode: 'class' };
+    </script>
     <!-- Quill Text Editor -->
     <link href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.js"></script>
