@@ -7,6 +7,7 @@ import MemoModal from '../../components/feedback/MemoModal';
 import Input from '../../components/ui/Input';
 import { usePermissions } from '../../hooks/usePermissions';
 import MemoViewModal from '../../components/feedback/MemoViewModal';
+import BatchMemoUploadModal from '../../components/feedback/BatchMemoUploadModal';
 import { supabase } from '../../services/supabaseClient';
 
 const getStatusColor = (status: 'Published' | 'Draft' | 'Archived') => {
@@ -31,6 +32,8 @@ const MemoLibrary: React.FC = () => {
     const [monthFilter, setMonthFilter] = useState('');
     const [buFilter, setBuFilter] = useState('');
     const [dbBus, setDbBus] = useState<{ id: string; name: string; code?: string }[]>([]);
+    const [isBatchMemoUploadOpen, setIsBatchMemoUploadOpen] = useState(false);
+    const [reloadKey, setReloadKey] = useState(0);
 
 
     const { can, getAccessibleBusinessUnits } = usePermissions();
@@ -109,6 +112,11 @@ const MemoLibrary: React.FC = () => {
                 effectiveDate: row.effective_date ? new Date(row.effective_date) : new Date(),
                 targetDepartments: row.target_departments || [],
                 targetBusinessUnits: row.target_business_units || [],
+                targetEmployeeIds: row.target_employee_ids || [],
+                memoNumber: row.memo_number || undefined,
+                memoType: row.memo_type || undefined,
+                publicationDate: row.publication_date ? new Date(row.publication_date) : undefined,
+                notes: row.notes || undefined,
                 acknowledgementRequired: row.acknowledgement_required ?? false,
                 tags: row.tags || [],
                 attachments: row.attachments || [],
@@ -127,7 +135,7 @@ const MemoLibrary: React.FC = () => {
 
     useEffect(() => {
         loadMemos();
-    }, []);
+    }, [reloadKey]);
 
     const allTags = useMemo(() => {
         const tags = new Set<string>();
@@ -184,6 +192,11 @@ const MemoLibrary: React.FC = () => {
                     effectiveDate: data.effective_date ? new Date(data.effective_date) : new Date(),
                     targetDepartments: data.target_departments || [],
                     targetBusinessUnits: data.target_business_units || [],
+                    targetEmployeeIds: data.target_employee_ids || [],
+                    memoNumber: data.memo_number || undefined,
+                    memoType: data.memo_type || undefined,
+                    publicationDate: data.publication_date ? new Date(data.publication_date) : undefined,
+                    notes: data.notes || undefined,
                     acknowledgementRequired: data.acknowledgement_required ?? false,
                     tags: data.tags || [],
                     attachments: data.attachments || [],
@@ -224,6 +237,11 @@ const MemoLibrary: React.FC = () => {
             effective_date: memoToSave.effectiveDate instanceof Date ? memoToSave.effectiveDate.toISOString() : new Date(memoToSave.effectiveDate).toISOString(),
             target_departments: memoToSave.targetDepartments || [],
             target_business_units: memoToSave.targetBusinessUnits || [],
+            target_employee_ids: memoToSave.targetEmployeeIds || [],
+            memo_number: memoToSave.memoNumber || null,
+            memo_type: memoToSave.memoType || null,
+            publication_date: memoToSave.publicationDate ? new Date(memoToSave.publicationDate).toISOString().split('T')[0] : null,
+            notes: memoToSave.notes || null,
             acknowledgement_required: memoToSave.acknowledgementRequired ?? false,
             tags: memoToSave.tags || [],
             attachments: memoToSave.attachments || [],
@@ -260,6 +278,11 @@ const MemoLibrary: React.FC = () => {
                 effectiveDate: saved.effective_date ? new Date(saved.effective_date) : new Date(),
                 targetDepartments: saved.target_departments || [],
                 targetBusinessUnits: saved.target_business_units || [],
+                targetEmployeeIds: saved.target_employee_ids || [],
+                memoNumber: saved.memo_number || undefined,
+                memoType: saved.memo_type || undefined,
+                publicationDate: saved.publication_date ? new Date(saved.publication_date) : undefined,
+                notes: saved.notes || undefined,
                 acknowledgementRequired: saved.acknowledgement_required ?? false,
                 tags: saved.tags || [],
                 attachments: saved.attachments || [],
@@ -288,7 +311,12 @@ const MemoLibrary: React.FC = () => {
         <div className="space-y-6">
             <div className="flex justify-between items-center">
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Memo Library</h1>
-                {canManageMemos && <Button onClick={() => handleOpenEditModal(null)}>New Memo</Button>}
+                {canManageMemos && (
+                    <div className="flex gap-2">
+                        <Button variant="secondary" onClick={() => setIsBatchMemoUploadOpen(true)}>Batch Upload Memos</Button>
+                        <Button onClick={() => handleOpenEditModal(null)}>New Memo</Button>
+                    </div>
+                )}
             </div>
             <p className="text-gray-600 dark:text-gray-400 -mt-4">Central hub for all company memos — create, publish, and track official announcements and policy updates.</p>
             <Card>
@@ -407,6 +435,14 @@ const MemoLibrary: React.FC = () => {
                 onClose={handleCloseModals}
                 memo={selectedMemo}
             />
+
+            {canManageMemos && (
+                <BatchMemoUploadModal
+                    isOpen={isBatchMemoUploadOpen}
+                    onClose={() => setIsBatchMemoUploadOpen(false)}
+                    onImported={() => setReloadKey(key => key + 1)}
+                />
+            )}
         </div>
     );
 };

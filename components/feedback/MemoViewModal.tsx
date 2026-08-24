@@ -3,6 +3,7 @@ import { Memo, MemoAcknowledgement, User } from '../../types';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import SignaturePad, { SignaturePadRef } from '../ui/SignaturePad';
+import { supabase } from '../../services/supabaseClient';
 
 interface MemoViewModalProps {
   isOpen: boolean;
@@ -13,14 +14,35 @@ interface MemoViewModalProps {
 }
 
 const MemoViewModal: React.FC<MemoViewModalProps> = ({ isOpen, onClose, memo, onAcknowledge, user }) => {
-  if (!memo) return null;
   const signaturePadRef = useRef<SignaturePadRef>(null);
   const [signatureError, setSignatureError] = useState('');
+  const [attachmentLinks, setAttachmentLinks] = useState<Array<{ name: string; url?: string }>>([]);
 
   useEffect(() => {
       if (!isOpen) return;
       setSignatureError('');
   }, [memo?.id, isOpen]);
+
+  useEffect(() => {
+      let active = true;
+      const resolveAttachments = async () => {
+          if (!memo?.attachments?.length) {
+              if (active) setAttachmentLinks([]);
+              return;
+          }
+          const links = await Promise.all(memo.attachments.map(async attachment => {
+              const name = attachment.split('/').pop() || attachment;
+              if (/^(https?:|data:|blob:)/i.test(attachment)) return { name, url: attachment };
+              const { data } = await supabase.storage.from('memo_attachments').createSignedUrl(attachment, 3600);
+              return { name, url: data?.signedUrl };
+          }));
+          if (active) setAttachmentLinks(links);
+      };
+      resolveAttachments().catch(() => active && setAttachmentLinks([]));
+      return () => { active = false; };
+  }, [memo?.id, memo?.attachments, isOpen]);
+
+  if (!memo) return null;
 
   const hasAcknowledged = (userId: string) => {
       const tracker = memo.acknowledgementTracker || [];
@@ -102,6 +124,18 @@ const MemoViewModal: React.FC<MemoViewModalProps> = ({ isOpen, onClose, memo, on
                 ))}
             </div>
         </div>
+        {attachmentLinks.length > 0 && (
+          <div>
+            <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Attachments</p>
+            <ul className="mt-1 space-y-1">
+                {attachmentLinks.map(attachment => (
+                    <li key={`${attachment.name}-${attachment.url || 'unavailable'}`}>
+                        {attachment.url ? <a href={attachment.url} target="_blank" rel="noreferrer" className="text-sm text-indigo-600 hover:underline">{attachment.name}</a> : <span className="text-sm text-gray-500">{attachment.name} (unavailable)</span>}
+                    </li>
+                ))}
+            </ul>
+          </div>
+        )}
       </div>
     </Modal>
   );

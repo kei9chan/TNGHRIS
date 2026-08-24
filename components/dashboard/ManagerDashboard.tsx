@@ -134,6 +134,11 @@ const mapMemoRow = (row: any): Memo => ({
     effectiveDate: row.effective_date ? new Date(row.effective_date) : new Date(),
     targetDepartments: row.target_departments || [],
     targetBusinessUnits: row.target_business_units || [],
+    targetEmployeeIds: row.target_employee_ids || [],
+    memoNumber: row.memo_number || undefined,
+    memoType: row.memo_type || undefined,
+    publicationDate: row.publication_date ? new Date(row.publication_date) : undefined,
+    notes: row.notes || undefined,
     acknowledgementRequired: row.acknowledgement_required ?? false,
     tags: row.tags || [],
     attachments: row.attachments || [],
@@ -1044,9 +1049,11 @@ const ManagerDashboard: React.FC = () => {
         const isMemoTargeted = (memo: Memo) => {
             const buTargets = memo.targetBusinessUnits || [];
             const deptTargets = memo.targetDepartments || [];
+            const employeeTargets = memo.targetEmployeeIds || [];
             const buOk = buTargets.length === 0 || buTargets.includes('All') || (user.businessUnit && buTargets.includes(user.businessUnit));
             const deptOk = deptTargets.length === 0 || deptTargets.includes('All') || (user.department && deptTargets.includes(user.department));
-            return buOk && deptOk;
+            const employeeOk = employeeTargets.length === 0 || employeeTargets.includes(user.id) || (!!employeeProfileId && employeeTargets.includes(employeeProfileId));
+            return buOk && deptOk && employeeOk;
         };
 
         const pendingMemos = memos.filter(

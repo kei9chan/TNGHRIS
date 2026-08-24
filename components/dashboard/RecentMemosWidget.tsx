@@ -30,7 +30,16 @@ const RecentMemosWidget: React.FC<RecentMemosWidgetProps> = ({ onViewMemo }) => 
         if (!user) return { recentMemos: [], actionRequiredCount: 0 };
 
         const publishedMemos = memos
-            .filter(memo => memo.status === 'Published')
+            .filter(memo => {
+                if (memo.status !== 'Published') return false;
+                const buTargets = memo.targetBusinessUnits || [];
+                const deptTargets = memo.targetDepartments || [];
+                const employeeTargets = memo.targetEmployeeIds || [];
+                const buOk = buTargets.length === 0 || buTargets.includes('All') || (!!user.businessUnit && buTargets.includes(user.businessUnit));
+                const deptOk = deptTargets.length === 0 || deptTargets.includes('All') || (!!user.department && deptTargets.includes(user.department));
+                const employeeOk = employeeTargets.length === 0 || employeeTargets.includes(user.id);
+                return buOk && deptOk && employeeOk;
+            })
             .sort((a, b) => new Date(b.effectiveDate).getTime() - new Date(a.effectiveDate).getTime());
 
         const memosForDisplay = publishedMemos.slice(0, 3).map(memo => ({

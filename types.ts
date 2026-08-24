@@ -663,6 +663,11 @@ export interface Asset {
   value: number;
   status: AssetStatus;
   notes?: string;
+  brand?: string;
+  model?: string;
+  description?: string;
+  condition?: string;
+  warrantyExpiry?: Date;
 }
 
 export interface AssetAssignment {
@@ -974,6 +979,11 @@ export interface Memo {
   acknowledgementTracker: string[];
   acknowledgementSignatures?: MemoAcknowledgement[];
   status: 'Published' | 'Draft' | 'Archived';
+  memoNumber?: string;
+  memoType?: string;
+  targetEmployeeIds?: string[];
+  publicationDate?: Date;
+  notes?: string;
 }
 
 export interface MemoAcknowledgement {

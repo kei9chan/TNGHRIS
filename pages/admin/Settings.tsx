@@ -10,7 +10,6 @@ import {
     GMApproverConfig,
     BODApproverConfig,
     ConditionalTimeApprovalConfig,
-    Role,
 } from '../../types';
 import FileUploader from '../../components/ui/FileUploader';
 import { useSettings } from '../../context/SettingsContext';
@@ -27,6 +26,15 @@ interface UserOption {
     businessUnit: string;
 }
 
+const normaliseRole = (value: unknown) => String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ');
+
+const isBodUser = (user: Pick<UserOption, 'role' | 'roles'>) => [user.role, ...user.roles]
+    .some(role => ['board of director', 'board of directors', 'bod'].includes(normaliseRole(role)));
+
 const Settings: React.FC = () => {
     const {
         settings, updateSettings, isRbacEnabled, setIsRbacEnabled,
@@ -42,6 +50,7 @@ const Settings: React.FC = () => {
 
     // Approver config local state
     const [allUsers, setAllUsers] = useState<UserOption[]>([]);
+    const [usersLoaded, setUsersLoaded] = useState(false);
     const [selectedGM, setSelectedGM] = useState<string>('');
     const [selectedBODs, setSelectedBODs] = useState<string[]>([]);
     const [approverSaving, setApproverSaving] = useState(false);
@@ -61,23 +70,27 @@ const Settings: React.FC = () => {
     // Load all users for the dropdowns
     useEffect(() => {
         const loadUsers = async () => {
-            const [{ data, error }, { data: roleRows }] = await Promise.all([
-              supabase
-                .from('hris_users')
-                .select('id, full_name, email, role, business_unit')
-                .eq('status', 'Active')
-                .order('full_name'),
-              supabase.from('user_roles').select('user_id, role_id, is_active').eq('is_active', true),
-            ]);
-            if (!error && data) {
-                setAllUsers(data.map((u: any) => ({
-                    id: u.id,
-                    name: u.full_name || 'Unnamed',
-                    email: u.email,
-                    role: u.role,
-                    roles: Array.from(new Set([u.role, ...(roleRows || []).filter((r: any) => r.user_id === u.id).map((r: any) => r.role_id)])),
-                    businessUnit: u.business_unit || 'All business units',
-                })));
+            try {
+                const [{ data, error }, { data: roleRows }] = await Promise.all([
+                  supabase
+                    .from('hris_users')
+                    .select('id, full_name, email, role, business_unit')
+                    .eq('status', 'Active')
+                    .order('full_name'),
+                  supabase.from('user_roles').select('user_id, role_id, is_active').eq('is_active', true),
+                ]);
+                if (!error && data) {
+                    setAllUsers(data.map((u: any) => ({
+                        id: u.id,
+                        name: u.full_name || 'Unnamed',
+                        email: u.email || '',
+                        role: u.role || '',
+                        roles: Array.from(new Set([u.role, ...(roleRows || []).filter((r: any) => r.user_id === u.id).map((r: any) => r.role_id)])),
+                        businessUnit: u.business_unit || 'All business units',
+                    })));
+                }
+            } finally {
+                setUsersLoaded(true);
             }
         };
         loadUsers();
@@ -190,7 +203,7 @@ const Settings: React.FC = () => {
 
     const handleSaveConditionalRouting = async () => {
         setConditionalMsg('');
-        const requiredBods = allUsers.filter(u => requiredConditionalApprovers.includes(u.id) && u.roles.includes(Role.BOD));
+        const requiredBods = allUsers.filter(u => requiredConditionalApprovers.includes(u.id) && isBodUser(u));
         if (!conditionalApprovers.length || !requiredBods.length) {
             setConditionalMsg('Error: Select at least one active BOD and mark that BOD as required.');
             return;
@@ -356,7 +369,7 @@ const Settings: React.FC = () => {
                     <p className="mt-1">Applies only to Leave, WFH, and Overtime requests that exceed the configured thresholds. Routine requests stop with the employee’s direct reporting manager.</p>
                 </div>
 
-                {!approverConfigs.conditionalTimeApprovals.valid && (
+                {usersLoaded && !approverConfigs.conditionalTimeApprovals.valid && (
                     <div role="alert" className="mb-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
                         <strong>Main BOD Approver configuration is invalid.</strong>
                         <p>{approverConfigs.conditionalTimeApprovals.invalid_reason || 'Select at least one active BOD approver.'}</p>
@@ -370,7 +383,7 @@ const Settings: React.FC = () => {
                         {allUsers.map(option => {
                             const selected = conditionalApprovers.includes(option.id);
                             const required = requiredConditionalApprovers.includes(option.id);
-                            const isBod = option.roles.includes(Role.BOD);
+                            const isBod = isBodUser(option);
                             return (
                                 <div key={option.id} className="flex flex-wrap items-center gap-3 border-b p-3 last:border-b-0 dark:border-gray-700">
                                     <input aria-label={`Select ${option.name}`} type="checkbox" checked={selected} onChange={() => toggleConditionalApprover(option.id)} />
@@ -381,8 +394,8 @@ const Settings: React.FC = () => {
                                     <label className={`flex items-center gap-2 text-xs ${selected ? 'text-gray-700' : 'text-gray-400'}`}>
                                         <input
                                             type="checkbox"
-                                            disabled={!selected}
-                                            checked={required}
+                                            disabled={!selected || !isBod}
+                                            checked={required && isBod}
                                             onChange={event => setRequiredConditionalApprovers(prev => event.target.checked ? [...new Set([...prev, option.id])] : prev.filter(id => id !== option.id))}
                                         />
                                         Required approval

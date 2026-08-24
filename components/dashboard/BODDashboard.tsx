@@ -1,11 +1,11 @@
 // Migration complete: mockDataCompat removed from BODDashboard
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import Card from '../ui/Card';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
-import { ResolutionStatus, ApproverStatus, PANStatus, PANStepStatus, JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, NotificationType, TicketStatus, OnboardingTaskStatus, PANActionTaken, NTEStatus, PAN, Resolution, NTE, JobRequisition, EmployeeAward, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, BenefitRequestStatus, Envelope, EnvelopeStatus, RoutingStepStatus, WFHRequest, WFHRequestStatus, User, Role, Evaluation, EvaluatorType, Memo, MemoAcknowledgement } from '../../types';
+import { ResolutionStatus, ApproverStatus, PANStatus, PANStepStatus, JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, NotificationType, TicketStatus, OnboardingTaskStatus, PANActionTaken, NTEStatus, PAN, Resolution, NTE, JobRequisition, EmployeeAward, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, BenefitRequestStatus, Envelope, EnvelopeStatus, RoutingStepStatus, WFHRequest, WFHRequestStatus, User, Role, Evaluation, EvaluatorType, Memo, MemoAcknowledgement } from '../../types';
 import QuickAnalyticsPreview from './QuickAnalyticsPreview';
 import ActionItemCard from './ActionItemCard';
 import UpcomingEventsWidget from './UpcomingEventsWidget';
@@ -13,11 +13,9 @@ import QuickLinks from './QuickLinks';
 import { isCentralizedApprovalActionItem } from '../../utils/approvalCenterRouting';
 import ManpowerReviewModal from '../payroll/ManpowerReviewModal';
 import WFHReviewModal from '../payroll/WFHReviewModal';
-import RequestCOEModal from '../employees/RequestCOEModal';
 import { logActivity } from '../../services/auditService';
 import { bodApproveWfhRequest, rejectWfhRequest } from '../../services/wfhService';
 import { createNotification } from '../../services/notificationService';
-import { createCoeRequest } from '../../services/coeService';
 import MemoViewModal from '../feedback/MemoViewModal';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
@@ -123,6 +121,11 @@ const mapMemoRow = (row: any): Memo => ({
     effectiveDate: row.effective_date ? new Date(row.effective_date) : new Date(),
     targetDepartments: row.target_departments || [],
     targetBusinessUnits: row.target_business_units || [],
+    targetEmployeeIds: row.target_employee_ids || [],
+    memoNumber: row.memo_number || undefined,
+    memoType: row.memo_type || undefined,
+    publicationDate: row.publication_date ? new Date(row.publication_date) : undefined,
+    notes: row.notes || undefined,
     acknowledgementRequired: row.acknowledgement_required ?? false,
     tags: row.tags || [],
     attachments: row.attachments || [],
@@ -134,9 +137,7 @@ const mapMemoRow = (row: any): Memo => ({
 
 const BODDashboard: React.FC = () => {
     const { user } = useAuth();
-    const { isUserEligibleEvaluator, getCoeAccess } = usePermissions(); // Hook to check if user should evaluate
-    const location = useLocation();
-    const navigate = useNavigate();
+    const { isUserEligibleEvaluator } = usePermissions(); // Hook to check if user should evaluate
     
     const [pans, setPans] = useState<PAN[]>([]);
     const [panApproverId, setPanApproverId] = useState<string | null>(null);
@@ -166,18 +167,8 @@ const BODDashboard: React.FC = () => {
     const [isWFHReviewModalOpen, setIsWFHReviewModalOpen] = useState(false);
     const [selectedWFHRequest, setSelectedWFHRequest] = useState<WFHRequest | null>(null);
 
-    const [isRequestCOEModalOpen, setIsRequestCOEModalOpen] = useState(false);
-
-    const coeAccess = getCoeAccess();
     const legacyUserId = useMemo(() => user?.id ?? null, [user?.id]);
     const employeeProfileId = useMemo(() => panApproverId || user?.id || null, [panApproverId, user?.id]);
-
-    useEffect(() => {
-        if (location.state?.openRequestCOE) {
-            setIsRequestCOEModalOpen(true);
-            navigate(location.pathname, { replace: true, state: {} });
-        }
-    }, [location.state, navigate]);
 
     useEffect(() => {
         let active = true;
@@ -544,27 +535,6 @@ const BODDashboard: React.FC = () => {
         setIsWFHReviewModalOpen(true);
     };
 
-    const handleSaveCOERequest = async (request: Partial<COERequest>) => {
-        if (!coeAccess.canRequest) {
-            alert('You do not have permission to request a COE.');
-            return;
-        }
-        if (!user) {
-            alert('You must be signed in to submit a request.');
-            return;
-        }
-        try {
-            const saved = await createCoeRequest(request, user);
-            // saved persisted in Supabase via createCoeRequest
-            logActivity(user, 'CREATE', 'COERequest', saved.id, `Requested COE for ${saved.purpose}`);
-            alert("Certificate of Employment request submitted.");
-        } catch (error: any) {
-            alert(error?.message || 'Failed to submit COE request.');
-        } finally {
-            setIsRequestCOEModalOpen(false);
-        }
-    };
-
     const handleViewMemo = (memo: Memo) => {
         setSelectedMemo(memo);
         setIsMemoViewOpen(true);
@@ -679,9 +649,11 @@ const BODDashboard: React.FC = () => {
         const isMemoTargeted = (memo: Memo) => {
             const buTargets = memo.targetBusinessUnits || [];
             const deptTargets = memo.targetDepartments || [];
+            const employeeTargets = memo.targetEmployeeIds || [];
             const buOk = buTargets.length === 0 || buTargets.includes('All') || (user.businessUnit && buTargets.includes(user.businessUnit));
             const deptOk = deptTargets.length === 0 || deptTargets.includes('All') || (user.department && deptTargets.includes(user.department));
-            return buOk && deptOk;
+            const employeeOk = employeeTargets.length === 0 || employeeTargets.includes(user.id) || (!!employeeProfileId && employeeTargets.includes(employeeProfileId));
+            return buOk && deptOk && employeeOk;
         };
 
         const pendingMemos = memos.filter(
@@ -1200,7 +1172,7 @@ const BODDashboard: React.FC = () => {
 
     return (
         <div className="space-y-6">
-            <QuickLinks />
+            <QuickLinks hideCOE />
             <UpcomingEventsWidget />
 
             {actionItems.length > 0 ? (
@@ -1277,11 +1249,6 @@ const BODDashboard: React.FC = () => {
                 onReject={handleRejectWFH}
             />
 
-            <RequestCOEModal
-                isOpen={isRequestCOEModalOpen}
-                onClose={() => setIsRequestCOEModalOpen(false)}
-                onSave={handleSaveCOERequest}
-            />
         </div>
     );
 };

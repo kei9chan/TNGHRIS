@@ -17,6 +17,7 @@ import AssetModal from '../../components/employees/AssetModal';
 import AssetHistoryModal from '../../components/employees/AssetHistoryModal';
 import AssetReturnRequestModal from '../../components/employees/AssetReturnRequestModal';
 import AssetAssignmentModal from '../../components/employees/AssetAssignmentModal';
+import BatchAssetUploadModal from '../../components/employees/BatchAssetUploadModal';
 
 const getStatusColor = (status: AssetStatus) => {
     switch (status) {
@@ -46,6 +47,11 @@ type AssetRow = {
     value?: number | null;
     status: AssetStatus | string;
     notes?: string | null;
+    brand?: string | null;
+    model?: string | null;
+    description?: string | null;
+    condition?: string | null;
+    warranty_expiry?: string | null;
 };
 
 type AssignmentRow = {
@@ -74,6 +80,11 @@ const mapAssetRow = (row: AssetRow): Asset => ({
     value: row.value ?? 0,
     status: row.status as AssetStatus,
     notes: row.notes || undefined,
+    brand: row.brand || undefined,
+    model: row.model || undefined,
+    description: row.description || undefined,
+    condition: row.condition || undefined,
+    warrantyExpiry: row.warranty_expiry ? new Date(row.warranty_expiry) : undefined,
 });
 
 const mapAssignmentRow = (row: AssignmentRow): AssetAssignment => ({
@@ -107,8 +118,10 @@ const AssetManagement: React.FC = () => {
     const [isAssignmentModalOpen, setIsAssignmentModalOpen] = useState(false);
     const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
     const [isReturnRequestModalOpen, setIsReturnRequestModalOpen] = useState(false);
+    const [isBatchAssetUploadOpen, setIsBatchAssetUploadOpen] = useState(false);
     const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
     const [selectedAssetForHistory, setSelectedAssetForHistory] = useState<EnrichedAsset | null>(null);
+    const [reloadKey, setReloadKey] = useState(0);
 
     // Filters
     const [filters, setFilters] = useState({
@@ -152,14 +165,19 @@ const AssetManagement: React.FC = () => {
             try {
                 const { data, error } = await supabase
                     .from('hris_users')
-                    .select('id, full_name, role, status, position');
+                    .select('id, employee_id, full_name, email, role, status, position, business_unit, business_unit_id, department, department_id');
                 if (error) throw error;
                 const mapped =
                     data?.map((u: any) => ({
                         id: u.id,
+                        employeeId: u.employee_id || undefined,
                         name: formatEmployeeName(u.full_name || ''),
-                        email: '',
+                        email: u.email || '',
                         role: u.role,
+                        department: u.department || '',
+                        businessUnit: u.business_unit || '',
+                        businessUnitId: u.business_unit_id || undefined,
+                        departmentId: u.department_id || undefined,
                         status: u.status,
                         position: (u as any)?.position,
                     })) || [];
@@ -181,7 +199,7 @@ const AssetManagement: React.FC = () => {
         loadAssignments();
         loadEmployees();
         loadBusinessUnits();
-    }, []);
+    }, [reloadKey]);
 
     const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         setFilters(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -473,6 +491,7 @@ const AssetManagement: React.FC = () => {
                     {canRequest && <Button variant="secondary" onClick={handleReturnAsset}>Return Asset</Button>}
                     {canManage && (
                         <>
+                            <Button variant="secondary" onClick={() => setIsBatchAssetUploadOpen(true)}>Batch Upload Assets</Button>
                             <Button variant="secondary" onClick={() => setIsAssignmentModalOpen(true)}>Assign Asset</Button>
                             <Button onClick={() => handleOpenModal(null)}>Add New Asset</Button>
                         </>
@@ -584,6 +603,17 @@ const AssetManagement: React.FC = () => {
                 asset={selectedAssetForHistory}
                 assignments={assignments}
             />
+
+            {canManage && (
+                <BatchAssetUploadModal
+                    isOpen={isBatchAssetUploadOpen}
+                    onClose={() => setIsBatchAssetUploadOpen(false)}
+                    employees={employees}
+                    businessUnits={businessUnits}
+                    existingAssets={assets}
+                    onImported={() => setReloadKey(key => key + 1)}
+                />
+            )}
 
         </div>
     );

@@ -17,6 +17,11 @@ type MemoRow = {
   acknowledgement_tracker: any;
   acknowledgement_signatures?: any;
   status: string;
+  memo_number?: string | null;
+  memo_type?: string | null;
+  target_employee_ids?: any;
+  publication_date?: string | null;
+  notes?: string | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -35,6 +40,11 @@ const mapMemo = (row: MemoRow): Memo => ({
   acknowledgementTracker: Array.isArray(row.acknowledgement_tracker) ? row.acknowledgement_tracker : [],
   acknowledgementSignatures: Array.isArray(row.acknowledgement_signatures) ? (row.acknowledgement_signatures as MemoAcknowledgement[]) : [],
   status: row.status as Memo['status'],
+  memoNumber: row.memo_number || undefined,
+  memoType: row.memo_type || undefined,
+  targetEmployeeIds: Array.isArray(row.target_employee_ids) ? row.target_employee_ids : [],
+  publicationDate: row.publication_date ? new Date(row.publication_date) : undefined,
+  notes: row.notes || undefined,
 });
 
 // ---------------------------------------------------------------------------
@@ -54,6 +64,11 @@ export const saveMemo = async (memo: Partial<Memo>): Promise<Memo> => {
     effective_date: memo.effectiveDate ? new Date(memo.effectiveDate).toISOString().split('T')[0] : null,
     target_departments: memo.targetDepartments || [],
     target_business_units: memo.targetBusinessUnits || [],
+    target_employee_ids: memo.targetEmployeeIds || [],
+    memo_number: memo.memoNumber || null,
+    memo_type: memo.memoType || null,
+    publication_date: memo.publicationDate ? new Date(memo.publicationDate).toISOString().split('T')[0] : null,
+    notes: memo.notes || null,
     acknowledgement_required: memo.acknowledgementRequired ?? false,
     tags: memo.tags || [],
     attachments: memo.attachments || [],

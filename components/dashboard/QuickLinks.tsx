@@ -57,7 +57,11 @@ type QuickLinkId =
   | 'announcements'
   | 'achievements';
 
-const QuickLinks: React.FC = () => {
+interface QuickLinksProps {
+    hideCOE?: boolean;
+}
+
+const QuickLinks: React.FC<QuickLinksProps> = ({ hideCOE = false }) => {
     const { user } = useAuth();
     const { can, workflowCan, getIrAccess } = usePermissions();
     const irAccess = useMemo(() => getIrAccess(), [getIrAccess]);
@@ -67,7 +71,7 @@ const QuickLinks: React.FC = () => {
             { id: 'profile', name: 'My Profile', path: '/my-profile', icon: <UserCircleIcon />, allowed: Boolean(user) },
             { id: 'oncall', name: 'Request On-Call', path: '/dashboard', state: { openManpowerModal: true }, icon: <UserGroupIcon />, allowed: can('Manpower', Permission.Create) && workflowCan('Manpower', Permission.Submit) },
             { id: 'wfh', name: 'Request WFH', path: '/payroll/wfh-requests', state: { openNewModal: true }, icon: <HomeIcon />, allowed: workflowCan('WFH', Permission.Submit) },
-            { id: 'coe', name: 'Request COE', path: '/dashboard', state: { openRequestCOE: true }, icon: <DocumentDuplicateIcon />, allowed: workflowCan('COE', Permission.Submit) },
+            { id: 'coe', name: 'Request COE', path: '/dashboard', state: { openRequestCOE: true }, icon: <DocumentDuplicateIcon />, allowed: !hideCOE && workflowCan('COE', Permission.Submit) },
             { id: 'schedule', name: 'View Schedule', path: '/payroll/timekeeping', icon: <CalendarDaysIcon />, allowed: can('Timekeeping', Permission.View) },
             { id: 'leave', name: 'Request Leave', path: '/payroll/leave', icon: <CalendarIcon />, allowed: workflowCan('Leave', Permission.Submit) },
             { id: 'overtime', name: 'Request Overtime', path: '/payroll/overtime-requests', state: { openNewOTModal: true }, icon: <ClockIcon />, allowed: workflowCan('Overtime', Permission.Submit) },
@@ -81,7 +85,7 @@ const QuickLinks: React.FC = () => {
         if (!user) return [];
         return allQuickLinks.filter(link => link.allowed);
 
-    }, [user, irAccess, can, workflowCan]);
+    }, [user, irAccess, can, workflowCan, hideCOE]);
 
     if (visibleLinks.length === 0) return null;
 
