@@ -39,6 +39,11 @@ const mapAward = (row: any): Award => ({
   isDefault: !!row.is_default,
   isPreset: !!row.is_preset,
   presetKey: row.preset_key || undefined,
+  badgeKey: row.badge_key || row.design?.badgeKey || undefined,
+  status: row.template_status || (row.is_active ? 'published' : 'archived'),
+  sortOrder: Number(row.sort_order || 0),
+  isSystem: !!row.is_system,
+  updatedAt: row.updated_at ? new Date(row.updated_at) : undefined,
 });
 
 const mapEmployeeAward = (row: any): EmployeeAwardRecord => ({
@@ -75,7 +80,7 @@ const mapEmployeeAward = (row: any): EmployeeAwardRecord => ({
 const TEMPLATE_BUCKET = 'create_award_template_attachments';
 
 export const fetchAwardTemplates = async (): Promise<Award[]> => {
-  const { data, error } = await supabase.from('award_templates').select('*').order('title', { ascending: true });
+  const { data, error } = await supabase.from('award_templates').select('*').order('sort_order', { ascending: true }).order('title', { ascending: true });
   if (error || !data) throw new Error(error?.message || 'Failed to load award templates');
   return data.map(mapAward);
 };
@@ -94,6 +99,10 @@ export const saveAwardTemplate = async (template: {
   isDefault?: boolean;
   isPreset?: boolean;
   presetKey?: string;
+  badgeKey?: string;
+  status?: 'draft' | 'published' | 'archived';
+  sortOrder?: number;
+  isSystem?: boolean;
 }): Promise<Award> => {
   if (template.isDefault && template.businessUnitId) {
     const { error: resetError } = await supabase
@@ -116,6 +125,10 @@ export const saveAwardTemplate = async (template: {
     is_default: template.isDefault ?? false,
     is_preset: template.isPreset ?? false,
     preset_key: template.presetKey || null,
+    badge_key: template.badgeKey || template.design?.badgeKey || null,
+    template_status: template.status || (template.isActive === false ? 'archived' : 'published'),
+    sort_order: template.sortOrder ?? 0,
+    is_system: template.isSystem ?? false,
     updated_at: new Date().toISOString(),
   };
 

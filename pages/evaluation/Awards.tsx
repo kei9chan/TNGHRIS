@@ -1,13 +1,13 @@
 
 import React from 'react';
 import { useSearchParams } from 'react-router-dom';
-import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { Award, EmployeeAward, User, Permission, BadgeLevel, BusinessUnit, Role, ResolutionStatus, ApproverStep } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
-import AwardTemplateModal from '../../components/evaluation/AwardTemplateModal';
 import AssignAwardModal from '../../components/evaluation/AssignAwardModal';
+import AwardPresetBuilderPage from '../../components/evaluation/AwardPresetBuilderPage';
+import AwardsStudioDashboard from '../../components/evaluation/AwardsStudioDashboard';
 import Confetti from '../../components/ui/Confetti';
 import Toast from '../../components/ui/Toast';
 import Modal from '../../components/ui/Modal';
@@ -16,24 +16,10 @@ import { fetchAwardTemplates, fetchEmployeeAwards, createEmployeeAward, processE
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import CertificateRenderer from '../../components/evaluation/CertificateRenderer';
-import html2canvas from 'html2canvas';
+import { createModernAwardDesign } from '../../components/evaluation/AwardVisualSystem';
+import { captureCertificatePng, downloadCertificatePdf, printCertificateImage } from '../../services/awardCertificateExport';
 
-const FALLBACK_DESIGN = {
-  backgroundColor: '#ffffff',
-  backgroundImageUrl: '',
-  borderWidth: 8,
-  borderColor: '#1f2937',
-  fontFamily: '"Times New Roman", serif',
-  titleColor: '#1f2937',
-  textColor: '#111827',
-  headerText: 'CERTIFICATE OF ACHIEVEMENT',
-  bodyText: 'This certificate is proudly presented to\n\n{{employee_name}}\n\nfor: {{citation}}\n\nAwarded on {{date}}.',
-  signatories: [
-    { name: 'HR Manager', title: 'HR Manager' },
-    { name: 'CEO', title: 'Chief Executive Officer' },
-  ],
-  logoUrl: '',
-};
+const FALLBACK_DESIGN = createModernAwardDesign('TNG HRIS', 'Certificate of Recognition');
 
 type EnrichedEmployeeAward = EmployeeAward & { 
     employeeName: string, 
@@ -55,8 +41,11 @@ const Awards: React.FC = () => {
   const [employeeAwards, setEmployeeAwards] = React.useState<EmployeeAward[]>([]);
   const [users, setUsers] = React.useState<User[]>([]);
   const [businessUnits, setBusinessUnits] = React.useState<BusinessUnit[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [loadError, setLoadError] = React.useState('');
   
   const [isAssignModalOpen, setIsAssignModalOpen] = React.useState(false);
+  const [initialAwardId, setInitialAwardId] = React.useState<string>();
   
   const [isTemplateModalOpen, setIsTemplateModalOpen] = React.useState(false);
   const [selectedAward, setSelectedAward] = React.useState<Award | null>(null);
@@ -65,11 +54,6 @@ const Awards: React.FC = () => {
   const [showConfetti, setShowConfetti] = React.useState(false);
   const [toastInfo, setToastInfo] = React.useState<{ show: boolean, title: string, message: string, icon?: React.ReactNode }>({ show: false, title: '', message: '' });
 
-  const [buFilter, setBuFilter] = React.useState('');
-  const [monthFilter, setMonthFilter] = React.useState('');
-  const [yearFilter, setYearFilter] = React.useState('');
-  const [statusFilter, setStatusFilter] = React.useState('');
-  
   const [reviewAward, setReviewAward] = React.useState<EnrichedEmployeeAward | null>(null);
   const [isRejectModalOpen, setIsRejectModalOpen] = React.useState(false);
   const [awardToReject, setAwardToReject] = React.useState<EnrichedEmployeeAward | null>(null);
@@ -77,11 +61,14 @@ const Awards: React.FC = () => {
 
   React.useEffect(() => {
     const load = async () => {
+      setIsLoading(true);
+      setLoadError('');
       try {
         const tpl = await fetchAwardTemplates();
         setAwards(tpl);
-      } catch {
+      } catch (error: any) {
         setAwards([]);
+        setLoadError(error?.message || 'Awards Studio could not be loaded.');
       }
       try {
         const ea = await fetchEmployeeAwards();
@@ -152,6 +139,7 @@ const Awards: React.FC = () => {
       } catch {
         setBusinessUnits([]);
       }
+      setIsLoading(false);
     };
     load();
   }, []);
@@ -208,6 +196,8 @@ const Awards: React.FC = () => {
 
   const handleSaveAwardTemplate = async (award: Award) => {
     try {
+      const previousDefault = awards.find(item => item.businessUnitId === award.businessUnitId && item.isDefault && item.id !== award.id);
+      if (award.isDefault && previousDefault && !window.confirm(`Replace “${previousDefault.title}” as the default preset for this business unit? Existing awards will not change.`)) return;
       const saved = await saveAwardTemplate({
         id: award.id,
         title: award.title,
@@ -222,6 +212,10 @@ const Awards: React.FC = () => {
         isDefault: award.isDefault,
         isPreset: award.isPreset,
         presetKey: award.presetKey,
+        badgeKey: award.badgeKey,
+        status: award.status,
+        sortOrder: award.sortOrder,
+        isSystem: award.isSystem,
       });
         setAwards(prev => {
           const exists = prev.find(a => a.id === saved.id);
@@ -229,6 +223,7 @@ const Awards: React.FC = () => {
         });
         setIsTemplateModalOpen(false);
         setIsDuplicatingTemplate(false);
+        setToastInfo({ show: true, title: award.status === 'published' ? 'Preset published' : 'Draft saved', message: `${saved.title} is ready in the preset library.` });
       } catch (err: any) {
         alert(err?.message || 'Failed to save template.');
       }
@@ -239,12 +234,8 @@ const Awards: React.FC = () => {
       alert('The final certificate is available only after approval and issuance.');
       return;
     }
-    const link = document.createElement('a');
-    link.href = award.certificateSnapshotUrl;
-    link.download = `Certificate_${award.employeeName || 'Employee'}.png`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    const template = awards.find(item => item.id === award.awardId);
+    downloadCertificatePdf(award.certificateSnapshotUrl, `Certificate_${award.employeeName || 'Employee'}`, template?.design?.orientation || 'portrait');
   };
   
   const enrichedEmployeeAwards = React.useMemo(() => {
@@ -274,22 +265,6 @@ const Awards: React.FC = () => {
     return filteredByScope.sort((a, b) => new Date(b.dateAwarded).getTime() - new Date(a.dateAwarded).getTime());
   }, [employeeAwards, awards, users, businessUnits, awardsAccess, user]);
 
-  const availableYears = React.useMemo(() => {
-    const years = new Set(enrichedEmployeeAwards.map(ea => new Date(ea.dateAwarded).getFullYear()));
-    return Array.from(years).sort((a: number, b: number) => b - a);
-  }, [enrichedEmployeeAwards]);
-
-  const filteredEmployeeAwards = React.useMemo(() => {
-    return enrichedEmployeeAwards.filter(ea => {
-        const awardDate = new Date(ea.dateAwarded);
-        const buMatch = !buFilter || ea.businessUnitId === buFilter;
-        const monthMatch = !monthFilter || (awardDate.getMonth() + 1).toString() === monthFilter;
-        const yearMatch = !yearFilter || awardDate.getFullYear().toString() === yearFilter;
-        const statusMatch = !statusFilter || ea.status === statusFilter;
-        return buMatch && monthMatch && yearMatch && statusMatch;
-    });
-  }, [enrichedEmployeeAwards, buFilter, monthFilter, yearFilter, statusFilter]);
-
   React.useEffect(() => {
     const requestedAwardId = searchParams.get('item');
     if (!requestedAwardId || !user) return;
@@ -308,20 +283,7 @@ const Awards: React.FC = () => {
     const captureFinalCertificate = async () => {
         const source = reviewCertificateRef.current;
         if (!source) throw new Error('Certificate preview is not ready. Please reopen the award and try again.');
-        const clone = source.cloneNode(true) as HTMLElement;
-        clone.style.position = 'absolute';
-        clone.style.left = '-12000px';
-        clone.style.top = '0';
-        clone.style.width = '1000px';
-        clone.style.height = '700px';
-        clone.style.transform = 'none';
-        document.body.appendChild(clone);
-        try {
-          const canvas = await html2canvas(clone, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-          return canvas.toDataURL('image/png');
-        } finally {
-          clone.remove();
-        }
+        return captureCertificatePng(source);
     };
 
     const issueApprovedAward = async (award: EnrichedEmployeeAward) => {
@@ -434,16 +396,6 @@ const Awards: React.FC = () => {
         }
     };
     
-    const getStatusColor = (status: ResolutionStatus) => {
-        switch(status) {
-            case ResolutionStatus.Approved:
-            case ResolutionStatus.Issued: return 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300';
-            case ResolutionStatus.PendingApproval: return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300';
-            case ResolutionStatus.Rejected: return 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300';
-            default: return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
-        }
-    };
-
     const renderReviewModal = () => {
         if (!reviewAward) return null;
         const reviewTemplate = awards.find(a => a.id === reviewAward.awardId);
@@ -458,7 +410,19 @@ const Awards: React.FC = () => {
                 onClose={() => setReviewAward(null)}
                 title={`Review Award for ${reviewAward.employeeName}`}
                 footer={
-                    <div className="flex justify-end w-full space-x-2">
+                    <div className="flex flex-wrap justify-end w-full gap-2">
+                        <Button variant="secondary" onClick={async () => {
+                          try {
+                            const image = await captureFinalCertificate();
+                            downloadCertificatePdf(image, `Certificate_${reviewAward.employeeName}`, (previewDesign.orientation || 'portrait') as 'portrait' | 'landscape');
+                          } catch (error: any) { alert(error?.message || 'Could not download the certificate.'); }
+                        }}>Download PDF</Button>
+                        <Button variant="secondary" onClick={async () => {
+                          try {
+                            const image = await captureFinalCertificate();
+                            printCertificateImage(image, (previewDesign.orientation || 'portrait') as 'portrait' | 'landscape');
+                          } catch (error: any) { alert(error?.message || 'Could not print the certificate.'); }
+                        }}>Print</Button>
                         {reviewAward.status === ResolutionStatus.PendingApproval ? (
                           <>
                             <Button variant="danger" onClick={() => handleRejectAward(reviewAward)}>Reject</Button>
@@ -482,17 +446,7 @@ const Awards: React.FC = () => {
                         <p className="font-bold mb-2">Certificate Preview</p>
                         <div className="border p-2 bg-gray-100 rounded flex justify-center min-h-[320px] overflow-auto">
                             <div className="flex justify-center w-full">
-                                <div
-                                  ref={reviewCertificateRef}
-                                  style={{
-                                    width: '1000px',
-                                    height: '700px',
-                                    transform: 'scale(0.6)',
-                                    transformOrigin: 'top center',
-                                    border: '1px solid #e5e7eb',
-                                    background: '#fff',
-                                  }}
-                                >
+                                <div ref={reviewCertificateRef} className="origin-top scale-[.5] sm:scale-[.6]">
                                     <CertificateRenderer
                                       design={previewDesign as any}
                                       data={{
@@ -527,179 +481,47 @@ const Awards: React.FC = () => {
         );
     };
 
+  if (isTemplateModalOpen) {
+    return <AwardPresetBuilderPage
+      award={selectedAward}
+      businessUnits={businessUnits}
+      currentUserId={user?.id}
+      isDuplicate={isDuplicatingTemplate}
+      onBack={() => { setIsTemplateModalOpen(false); setIsDuplicatingTemplate(false); }}
+      onSave={handleSaveAwardTemplate}
+    />;
+  }
+
+  if (isLoading) return <div className="grid min-h-[420px] place-items-center"><div className="text-center"><div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-indigo-100 border-t-indigo-600" /><p className="mt-4 text-sm text-gray-500">Loading Awards Studio…</p></div></div>;
+
   return (
     <div className="space-y-6">
       {showConfetti && <Confetti />}
-      <Toast 
-        show={toastInfo.show} 
-        onClose={() => setToastInfo(prev => ({ ...prev, show: false }))} 
-        title={toastInfo.title}
-        message={toastInfo.message}
-        icon={toastInfo.icon}
-      />
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Awards & Recognition</h1>
-        {canManage && (
-            <div className="flex space-x-2">
-                {awardsAccess.canAssign && (
-                  <Button variant="secondary" onClick={() => { setSelectedAward(null); setIsDuplicatingTemplate(false); setIsTemplateModalOpen(true); }}>Create Award</Button>
-                )}
-                {awardsAccess.canAssign && (
-                  <Button onClick={() => setIsAssignModalOpen(true)}>Assign Award</Button>
-                )}
-            </div>
-        )}
-      </div>
-      {!awardsAccess.canView ? (
-        <p className="text-red-600 dark:text-red-400">You do not have permission to view awards.</p>
-      ) : null}
-      <p className="text-gray-600 dark:text-gray-400">
-        Create and manage company awards, and recognize employees for their achievements.
-      </p>
-
-      <Card title="Award Templates">
-         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {awards.filter(a => a.isActive).sort((a, b) => a.title.localeCompare(b.title)).map(award => (
-                <div key={award.id} className="p-4 border rounded-lg dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex items-start space-x-4">
-                    {award.badgeIconUrl ? <img src={award.badgeIconUrl} alt={award.title} className="w-12 h-12 object-contain" /> : <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-amber-100 text-2xl">🏆</div>}
-                    <div className="min-w-0 flex-1">
-                        <h4 className="font-bold text-gray-900 dark:text-white">{award.title}</h4>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">{award.description}</p>
-                        <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                          {award.isPreset && <span className="rounded bg-indigo-100 px-2 py-1 text-indigo-700">BU preset</span>}
-                          {award.isDefault && <span className="rounded bg-emerald-100 px-2 py-1 text-emerald-700">Default</span>}
-                          {award.category && <span className="rounded bg-gray-100 px-2 py-1 text-gray-700">{award.category}</span>}
-                        </div>
-                        {awardsAccess.canAssign && <div className="mt-3 flex gap-3 text-sm">
-                          <button className="font-semibold text-indigo-600" onClick={() => { setSelectedAward(award); setIsDuplicatingTemplate(false); setIsTemplateModalOpen(true); }}>Edit</button>
-                          <button className="font-semibold text-indigo-600" onClick={() => { setSelectedAward({ ...award, title: `${award.title} (Copy)`, isDefault: false }); setIsDuplicatingTemplate(true); setIsTemplateModalOpen(true); }}>Duplicate</button>
-                        </div>}
-                    </div>
-                </div>
-            ))}
-         </div>
-      </Card>
-      
-      {awardsAccess.canView && (
-      <Card title="Recognition Wall">
-        <div className="p-4 border-b dark:border-gray-700 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div>
-                <label htmlFor="buFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
-                <select id="buFilter" value={buFilter} onChange={e => setBuFilter(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 dark:border-gray-600 dark:bg-gray-700 rounded-md">
-                    <option value="">All Business Units</option>
-                    {[...businessUnits].sort((a, b) => a.name.localeCompare(b.name)).map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
-                </select>
-            </div>
-            <div>
-                <label htmlFor="monthFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Month</label>
-                <select id="monthFilter" value={monthFilter} onChange={e => setMonthFilter(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 dark:border-gray-600 dark:bg-gray-700 rounded-md">
-                    <option value="">All Months</option>
-                    {Array.from({length: 12}, (_, i) => i + 1).map(month => (
-                        <option key={month} value={month}>{new Date(0, month-1).toLocaleString('default', { month: 'long' })}</option>
-                    ))}
-                </select>
-            </div>
-            <div>
-                <label htmlFor="yearFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Year</label>
-                <select id="yearFilter" value={yearFilter} onChange={e => setYearFilter(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 dark:border-gray-600 dark:bg-gray-700 rounded-md">
-                    <option value="">All Years</option>
-                    {availableYears.map(year => <option key={year} value={year}>{year}</option>)}
-                </select>
-            </div>
-            <div>
-                <label htmlFor="statusFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
-                <select id="statusFilter" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 dark:border-gray-600 dark:bg-gray-700 rounded-md">
-                    <option value="">All Statuses</option>
-                    {Object.values(ResolutionStatus).map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-            </div>
-        </div>
-
-        <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-gray-700">
-                    <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium uppercase">Employee</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium uppercase">Award</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium uppercase">Submitted / Awarded</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium uppercase">Status</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium uppercase">Notes</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium uppercase">Awarded By</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium uppercase">Business Unit</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium uppercase">Cert</th>
-                    </tr>
-                </thead>
-                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                    {filteredEmployeeAwards.map(ea => (
-                        <tr key={ea.id} onClick={() => handleRowClick(ea)} className={[ResolutionStatus.PendingApproval, ResolutionStatus.Approved].includes(ea.status) ? "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50" : ""}>
-                            <td className="px-4 py-4 whitespace-nowrap font-medium text-gray-900 dark:text-white">{ea.employeeName}</td>
-                            <td className="px-4 py-4 whitespace-nowrap flex items-center">
-                                {ea.badgeIconUrl && <img src={ea.badgeIconUrl} alt={ea.awardTitle} className="w-6 h-6 mr-2" />}
-                                {ea.awardTitle}
-                            </td>
-                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{ea.dateAwarded.toLocaleDateString()}</td>
-                            <td className="px-4 py-4 whitespace-nowrap text-sm"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(ea.status)}`}>{ea.status}</span></td>
-                            <td className="px-4 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate" title={ea.notes}>{ea.notes}</td>
-                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{ea.createdByName}</td>
-                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{ea.businessUnitName}</td>
-                             <td className="px-4 py-4 whitespace-nowrap text-sm">
-                                {ea.status === ResolutionStatus.Issued && ea.certificateSnapshotUrl ? (
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); downloadIssuedCertificate(ea); }}
-                                    className="text-indigo-600 hover:underline"
-                                  >
-                                    Download
-                                  </button>
-                                ) : ea.status === ResolutionStatus.Approved && (canManage || ea.approverId === user?.id) ? (
-                                  <button onClick={(event) => { event.stopPropagation(); setReviewAward(ea); }} className="text-indigo-600 hover:underline">Issue</button>
-                                ) : (
-                                  <span className="text-gray-400">Awaiting approval</span>
-                                )}
-                            </td>
-                        </tr>
-                    ))}
-                     {filteredEmployeeAwards.length === 0 && (
-                        <tr>
-                            <td colSpan={8} className="text-center py-10 text-gray-500 dark:text-gray-400">
-                                No awards found for the selected filters.
-                            </td>
-                        </tr>
-                    )}
-                </tbody>
-            </table>
-        </div>
-      </Card>
-      )}
-      
-      <AssignAwardModal 
-        isOpen={isAssignModalOpen} 
-        onClose={() => setIsAssignModalOpen(false)} 
-        onAssign={submitAwardForApproval} 
-        employees={users}
+      <Toast show={toastInfo.show} onClose={() => setToastInfo(previous => ({ ...previous, show: false }))} title={toastInfo.title} message={toastInfo.message} icon={toastInfo.icon} />
+      {loadError && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800" role="alert">{loadError} Some award data may be unavailable. Refresh to try again.</div>}
+      {!awardsAccess.canView ? <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">You do not have permission to view awards.</div> : <AwardsStudioDashboard
+        awards={awards}
+        employeeAwards={enrichedEmployeeAwards}
         businessUnits={businessUnits}
-        awardTemplates={awards}
-      />
-      
+        canManage={canManage}
+        canAssign={awardsAccess.canAssign}
+        onNewPreset={() => { setSelectedAward(null); setIsDuplicatingTemplate(false); setIsTemplateModalOpen(true); }}
+        onEditPreset={award => { setSelectedAward(award); setIsDuplicatingTemplate(false); setIsTemplateModalOpen(true); }}
+        onDuplicatePreset={award => { setSelectedAward(award); setIsDuplicatingTemplate(true); setIsTemplateModalOpen(true); }}
+        onArchivePreset={async award => {
+          if (!window.confirm(`Archive “${award.title}”? Historical awards and certificates will remain unchanged.`)) return;
+          await handleSaveAwardTemplate({ ...award, status: 'archived', isActive: false, isDefault: false });
+        }}
+        onUseAward={award => { setInitialAwardId(award.id); setIsAssignModalOpen(true); }}
+        onReviewAward={handleRowClick}
+        onDownloadCertificate={downloadIssuedCertificate}
+      />}
+      <AssignAwardModal isOpen={isAssignModalOpen} onClose={() => { setIsAssignModalOpen(false); setInitialAwardId(undefined); }} onAssign={submitAwardForApproval} employees={users} businessUnits={businessUnits} awardTemplates={awards} initialAwardId={initialAwardId} />
       {renderReviewModal()}
-      
-      <RejectReasonModal
-        isOpen={isRejectModalOpen}
-        onClose={() => setIsRejectModalOpen(false)}
-        onSubmit={handleConfirmReject}
-        title="Reason for Rejection"
-        prompt="Please provide a reason for rejecting this award. This will be visible to the submitter."
-      />
-
-      <AwardTemplateModal
-        isOpen={isTemplateModalOpen}
-        onClose={() => setIsTemplateModalOpen(false)}
-        onSave={handleSaveAwardTemplate}
-        award={selectedAward}
-        businessUnits={businessUnits}
-        isDuplicate={isDuplicatingTemplate}
-      />
+      <RejectReasonModal isOpen={isRejectModalOpen} onClose={() => setIsRejectModalOpen(false)} onSubmit={handleConfirmReject} title="Reason for Rejection" prompt="Please provide a reason for rejecting this award. This will be visible to the submitter." />
     </div>
   );
+
 };
 
 export default Awards;

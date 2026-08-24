@@ -17,9 +17,10 @@ interface AssignAwardModalProps {
     employees: User[];
     businessUnits: BusinessUnit[];
     awardTemplates: Award[];
+    initialAwardId?: string;
 }
 
-const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, onAssign, employees, businessUnits, awardTemplates }) => {
+const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, onAssign, employees, businessUnits, awardTemplates, initialAwardId }) => {
     const [step, setStep] = useState<'details' | 'preview'>('details');
     const [employeeId, setEmployeeId] = useState('');
     const [awardId, setAwardId] = useState('');
@@ -98,7 +99,7 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
                 const firstEmployee = (activeEmployees.find(u => u.status === 'Active') || activeEmployees[0]);
                 setEmployeeId(firstEmployee?.id || '');
                 const activeTemplates = loadedTemplates.length ? loadedTemplates : awardTemplates;
-                setAwardId(activeTemplates.find(a => a.isActive)?.id || activeTemplates[0]?.id || '');
+                setAwardId(activeTemplates.find(a => a.id === initialAwardId && a.isActive)?.id || activeTemplates.find(a => a.isActive)?.id || activeTemplates[0]?.id || '');
                 const buId =
                     loadedBus.find(b => b.id === firstEmployee?.businessUnitId)?.id ||
                     loadedBus.find(b => b.name === firstEmployee?.businessUnit)?.id ||
@@ -116,12 +117,12 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
     useEffect(() => {
         const selectedEmployeeRecord = people.find(candidate => candidate.id === employeeId) || employees.find(candidate => candidate.id === employeeId);
         const templateBusinessUnitId = businessUnitId || selectedEmployeeRecord?.businessUnitId;
-        if (!templateBusinessUnitId) return;
+        if (initialAwardId || !templateBusinessUnitId) return;
         const preferred = (templates.length ? templates : awardTemplates).find(
             template => template.isActive && template.isDefault && template.businessUnitId === templateBusinessUnitId
         );
         if (preferred) setAwardId(preferred.id);
-    }, [businessUnitId, employeeId, people, employees, templates, awardTemplates]);
+    }, [businessUnitId, employeeId, people, employees, templates, awardTemplates, initialAwardId]);
 
     const filteredEmployees = useMemo(() => {
         const selectedBu = bus.find(b => b.id === businessUnitId);

@@ -2802,6 +2802,13 @@ export interface AwardDesign {
   signatories: AwardSignatory[];
   logoUrl?: string;
   accentColor?: string;
+  secondaryAccentColor?: string;
+  orientation?: 'portrait' | 'landscape';
+  badgeStyle?: 'outline' | 'filled' | 'minimal';
+  badgeKey?: string;
+  layoutVersion?: 'legacy' | 'modern-v2';
+  brandName?: string;
+  wordmarkText?: string;
 }
 
 export interface Award {
@@ -2817,6 +2824,11 @@ export interface Award {
   isDefault?: boolean;
   isPreset?: boolean;
   presetKey?: string;
+  badgeKey?: string;
+  status?: 'draft' | 'published' | 'archived';
+  sortOrder?: number;
+  isSystem?: boolean;
+  updatedAt?: Date;
 }
 
 export enum BadgeLevel {
