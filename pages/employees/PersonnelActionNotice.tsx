@@ -47,6 +47,8 @@ const PersonnelActionNotice: React.FC = () => {
   const [records, setRecords] = useState<PAN[]>([]);
   const [templates, setTemplates] = useState<PANTemplate[]>([]);
   const [employees, setEmployees] = useState<User[]>([]);
+  const [approvers, setApprovers] = useState<User[]>([]);
+  const [directoryError, setDirectoryError] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<PAN | null>(null);
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
@@ -110,53 +112,58 @@ const PersonnelActionNotice: React.FC = () => {
     };
   };
 
+  const mapDirectoryUser = (u: any): User => ({
+    id: u.id,
+    employeeId: u.employee_id || undefined,
+    name: formatEmployeeName(u.full_name || u.email || 'Unknown'),
+    email: u.email,
+    role: u.role as Role,
+    status: String(u.status || 'Active').toLowerCase() === 'active' ? 'Active' : 'Inactive',
+    department: u.department || '',
+    departmentId: u.department_id || undefined,
+    businessUnit: u.business_unit || '',
+    businessUnitId: u.business_unit_id || undefined,
+    employmentStatus: u.employment_status || undefined,
+    position: u.position || '',
+    roles: Array.isArray(u.roles) && u.roles.length ? u.roles as Role[] : [u.role as Role],
+    salary: {
+      basic: u.salary_basic ?? 0,
+      deminimis: u.salary_deminimis ?? 0,
+      reimbursable: u.salary_reimbursable ?? 0,
+    },
+    dateHired: u.date_hired ? new Date(u.date_hired) : undefined,
+  });
+
   useEffect(() => {
     const loadAll = async () => {
       try {
-        const [{ data: empRows }, { data: tplRows }, { data: panRows }, { data: unitRows }, { data: roleRows }] = await Promise.all([
-          supabase.from('hris_users').select(
-            'id, employee_id, full_name, email, role, status, department, department_id, business_unit, business_unit_id, employment_status, position, salary_basic, salary_deminimis, salary_reimbursable, date_hired'
-          ),
+        const [directoryResult, templateResult, panResult, unitResult] = await Promise.all([
+          supabase.rpc('get_pan_directory'),
           supabase.from('pan_templates').select('*').order('updated_at', { ascending: false }),
           supabase.from('pans').select('*').order('updated_at', { ascending: false }),
           supabase.from('business_units').select('id,name').order('name'),
-          supabase.from('user_roles').select('user_id,role_id').eq('is_active', true),
         ]);
 
-        if (empRows) {
-          const rolesByUser = new Map<string, Role[]>();
-          (roleRows || []).forEach((assignment: any) => {
-            const roles = rolesByUser.get(assignment.user_id) || [];
-            if (!roles.includes(assignment.role_id as Role)) roles.push(assignment.role_id as Role);
-            rolesByUser.set(assignment.user_id, roles);
-          });
-          setEmployees(
-            empRows.map((u: any) => ({
-              id: u.id,
-              employeeId: u.employee_id || undefined,
-              name: formatEmployeeName(u.full_name || u.email || 'Unknown'),
-              email: u.email,
-              role: u.role as Role,
-              status: String(u.status || 'Active').toLowerCase() === 'active' ? 'Active' : 'Inactive',
-              department: u.department || '',
-              departmentId: u.department_id || undefined,
-              businessUnit: u.business_unit || '',
-              businessUnitId: u.business_unit_id || undefined,
-              employmentStatus: u.employment_status || undefined,
-              position: u.position || '',
-              roles: rolesByUser.get(u.id) || [u.role as Role],
-              salary: {
-                basic: u.salary_basic ?? 0,
-                deminimis: u.salary_deminimis ?? 0,
-                reimbursable: u.salary_reimbursable ?? 0,
-              },
-              dateHired: u.date_hired ? new Date(u.date_hired) : undefined,
-            }))
-          );
+        const { data: tplRows, error: templateError } = templateResult;
+        const { data: panRows, error: panError } = panResult;
+        const { data: unitRows, error: unitError } = unitResult;
+
+        if (directoryResult.error) {
+          console.error('Failed to load PAN employee directory', directoryResult.error);
+          setEmployees([]);
+          setApprovers([]);
+          setDirectoryError(directoryResult.error.message || 'The PAN employee directory could not be loaded.');
+        } else {
+          const directory = (directoryResult.data || {}) as { employees?: any[]; approvers?: any[] };
+          setEmployees((directory.employees || []).map(mapDirectoryUser));
+          setApprovers((directory.approvers || []).map(mapDirectoryUser));
+          setDirectoryError('');
         }
 
+        if (unitError) console.error('Failed to load PAN business units', unitError);
         setBusinessUnits((unitRows || []).map((unit: any) => ({ id: unit.id, name: unit.name })));
 
+        if (templateError) console.error('Failed to load PAN templates', templateError);
         if (tplRows) {
           setTemplates(
             tplRows.map((t: any) => ({
@@ -191,6 +198,7 @@ const PersonnelActionNotice: React.FC = () => {
           );
         }
 
+        if (panError) console.error('Failed to load PAN records', panError);
         if (panRows) {
           setRecords(panRows.map(mapPanRow));
         }
@@ -582,6 +590,8 @@ const PersonnelActionNotice: React.FC = () => {
             pan={selectedRecord}
             templates={templates}
             employees={employees}
+            approvers={approvers}
+            directoryError={directoryError}
             businessUnits={businessUnits}
             onSaveDraft={handleSaveDraft}
             onSendForAcknowledgement={handleSendForAcknowledgement}
