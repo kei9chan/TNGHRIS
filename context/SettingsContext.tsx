@@ -1,6 +1,6 @@
 import React, { createContext, useState, ReactNode, useContext, useCallback, useEffect } from 'react';
-import { Settings, ApproverConfigs, GMApproverConfig, BODApproverConfig } from '../types';
-import { fetchApproverConfigs, saveGMApprover, saveBODApprovers } from '../services/approverConfigService';
+import { Settings, ApproverConfigs, GMApproverConfig, BODApproverConfig, ConditionalTimeApprovalConfig } from '../types';
+import { fetchApproverConfigs, saveGMApprover, saveBODApprovers, saveConditionalTimeApprovals, DEFAULT_CONDITIONAL_TIME_APPROVALS } from '../services/approverConfigService';
 
 const defaultAppSettings: Settings = {
   appName: 'TNG HRIS',
@@ -16,6 +16,7 @@ const defaultAppSettings: Settings = {
 const DEFAULT_APPROVER_CONFIGS: ApproverConfigs = {
   gmApprover: { user_id: null, user_name: null },
   bodApprovers: { user_ids: [], user_names: [] },
+  conditionalTimeApprovals: DEFAULT_CONDITIONAL_TIME_APPROVALS,
 };
 
 interface SettingsContextType {
@@ -26,6 +27,7 @@ interface SettingsContextType {
   approverConfigs: ApproverConfigs;
   updateGMApprover: (config: GMApproverConfig) => Promise<void>;
   updateBODApprovers: (config: BODApproverConfig) => Promise<void>;
+  updateConditionalTimeApprovals: (config: ConditionalTimeApprovalConfig, changeNote: string) => Promise<void>;
   refreshApproverConfigs: () => Promise<void>;
 }
 
@@ -64,10 +66,15 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
     setApproverConfigs(prev => ({ ...prev, bodApprovers: config }));
   }, []);
 
+  const updateConditionalTimeApprovals = useCallback(async (config: ConditionalTimeApprovalConfig, changeNote: string) => {
+    const saved = await saveConditionalTimeApprovals(config, changeNote);
+    setApproverConfigs(prev => ({ ...prev, conditionalTimeApprovals: saved }));
+  }, []);
+
   return (
     <SettingsContext.Provider value={{
       settings, updateSettings, isRbacEnabled, setIsRbacEnabled,
-      approverConfigs, updateGMApprover, updateBODApprovers, refreshApproverConfigs,
+      approverConfigs, updateGMApprover, updateBODApprovers, updateConditionalTimeApprovals, refreshApproverConfigs,
     }}>
       {children}
     </SettingsContext.Provider>

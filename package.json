@@ -20,7 +20,8 @@
     "test:evaluation-workflow": "node tests/evaluationWorkflowSmokeTest.mjs",
     "test:lifecycle-awards": "node tests/offboardingLeaveAwardsSmokeTest.mjs",
     "test:focused-repairs": "node tests/hrisFocusedRepairSmokeTest.mjs",
-    "test:coe-discipline": "node tests/coeDisciplineBulkRepairSmokeTest.mjs"
+    "test:coe-discipline": "node tests/coeDisciplineBulkRepairSmokeTest.mjs",
+    "test:conditional-approvals": "node tests/conditionalTimeApprovalsSmokeTest.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.84.0",

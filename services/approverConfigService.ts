@@ -1,11 +1,22 @@
 import { supabase } from './supabaseClient';
-import { ApproverConfigs, GMApproverConfig, BODApproverConfig } from '../types';
+import { ApproverConfigs, GMApproverConfig, BODApproverConfig, ConditionalTimeApprovalConfig } from '../types';
 
 // ---------------------------------------------------------------------------
 // Default Configs
 // ---------------------------------------------------------------------------
 const DEFAULT_GM: GMApproverConfig = { user_id: null, user_name: null };
 const DEFAULT_BOD: BODApproverConfig = { user_ids: [], user_names: [] };
+export const DEFAULT_CONDITIONAL_TIME_APPROVALS: ConditionalTimeApprovalConfig = {
+  user_ids: [],
+  user_names: [],
+  required_user_ids: [],
+  required_bod_approvals: 1,
+  leave_days_per_remaining_month: 1,
+  wfh_days_per_month: 4,
+  weekly_total_hours: 50,
+  valid: false,
+  invalid_reason: 'At least one active BOD approver must be configured.',
+};
 
 // ---------------------------------------------------------------------------
 // Fetch all approver configs
@@ -17,21 +28,26 @@ export const fetchApproverConfigs = async (): Promise<ApproverConfigs> => {
 
   if (error || !data) {
     console.warn('Failed to load approver configs, using defaults', error);
-    return { gmApprover: DEFAULT_GM, bodApprovers: DEFAULT_BOD };
+    return { gmApprover: DEFAULT_GM, bodApprovers: DEFAULT_BOD, conditionalTimeApprovals: DEFAULT_CONDITIONAL_TIME_APPROVALS };
   }
 
   let gmApprover = DEFAULT_GM;
   let bodApprovers = DEFAULT_BOD;
+  let conditionalTimeApprovals = DEFAULT_CONDITIONAL_TIME_APPROVALS;
 
   for (const row of data) {
     if (row.config_key === 'gm_approver') {
       gmApprover = row.config_value as GMApproverConfig;
     } else if (row.config_key === 'bod_approvers') {
       bodApprovers = row.config_value as BODApproverConfig;
+    } else if (row.config_key === 'conditional_time_approvals') {
+      conditionalTimeApprovals = { ...DEFAULT_CONDITIONAL_TIME_APPROVALS, ...(row.config_value as ConditionalTimeApprovalConfig) };
     }
   }
 
-  return { gmApprover, bodApprovers };
+  const { data: validated } = await supabase.rpc('get_conditional_time_approval_config');
+  if (validated) conditionalTimeApprovals = { ...conditionalTimeApprovals, ...(validated as ConditionalTimeApprovalConfig) };
+  return { gmApprover, bodApprovers, conditionalTimeApprovals };
 };
 
 // ---------------------------------------------------------------------------
@@ -62,4 +78,62 @@ export const saveBODApprovers = async (config: BODApproverConfig): Promise<void>
     }, { onConflict: 'config_key' });
 
   if (error) throw new Error(error.message || 'Failed to save BOD approvers config');
+};
+
+export const saveConditionalTimeApprovals = async (
+  config: ConditionalTimeApprovalConfig,
+  changeNote: string,
+): Promise<ConditionalTimeApprovalConfig> => {
+  const { data, error } = await supabase.rpc('save_conditional_time_approval_config', {
+    p_config: config,
+    p_change_note: changeNote,
+  });
+  if (error) throw new Error(error.message || 'Failed to save conditional approval routing');
+  return { ...DEFAULT_CONDITIONAL_TIME_APPROVALS, ...(data as ConditionalTimeApprovalConfig) };
+};
+
+export const processTimeRequestApproval = async (
+  requestType: 'leave' | 'wfh' | 'overtime',
+  requestId: string,
+  decision: 'approve' | 'reject' | 'return',
+  note?: string,
+) => {
+  const { data, error } = await supabase.rpc('process_time_request_approval', {
+    p_request_type: requestType,
+    p_request_id: requestId,
+    p_decision: decision,
+    p_note: note || null,
+  });
+  if (error) throw new Error(error.message || 'Failed to process approval');
+  return data;
+};
+
+export const sendConditionalApprovalEmails = async (
+  requestType: 'leave' | 'wfh' | 'overtime',
+  requestId: string,
+) => {
+  const { data, error } = await supabase.rpc('get_time_approval_email_payload', {
+    p_request_type: requestType,
+    p_request_id: requestId,
+  });
+  if (error) throw new Error(error.message || 'Could not prepare approval email');
+  const payload = data as any;
+  const openUrl = `${window.location.origin}${payload.link}`;
+  const escapeHtml = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char] || char));
+  const managerStage = ['Pending', 'PendingGM', 'WFH_PENDING_DEPT_HEAD_APPROVAL', 'WFH_PENDING_GM_APPROVAL', 'Submitted'].includes(payload.status);
+  await Promise.all((payload.recipients || []).map(async (recipient: any) => {
+    const threshold = payload.context?.reason || 'Configured threshold exceeded';
+    const message = `${payload.employeeName} submitted a ${payload.requestLabel} requiring your approval. ${threshold} Open: ${openUrl}`;
+    const response = await fetch('/api/send-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: recipient.email,
+        subject: `[TNG HRIS] ${payload.requestLabel} requires your approval`,
+        message,
+        html: `<div style="font-family:Arial,sans-serif;line-height:1.5"><h2>Approval required</h2><p><b>Employee:</b> ${escapeHtml(payload.employeeName)}</p><p><b>Request:</b> ${escapeHtml(payload.requestLabel)}</p><p><b>Dates / duration:</b> ${escapeHtml(payload.requestDates)}</p><p><b>Business unit / department:</b> ${escapeHtml(payload.businessUnit)} / ${escapeHtml(payload.department)}</p><p><b>Threshold calculation:</b> ${escapeHtml(threshold)}</p>${managerStage ? '' : '<p><b>Manager recommendation:</b> Approved — proceed to final review</p>'}<p><b>Status:</b> ${managerStage ? 'Pending Direct Manager Review' : 'Pending BOD Final Approval'}</p><p><a href="${escapeHtml(openUrl)}" style="display:inline-block;background:#4f46e5;color:white;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">Open Request</a></p></div>`,
+      }),
+    });
+    if (!response.ok) throw new Error(`Approval email failed for ${recipient.email}`);
+  }));
 };

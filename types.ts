@@ -122,6 +122,9 @@ export interface WFHRequest {
   approvedAt?: Date;
   rejectionReason?: string;
   createdAt: Date;
+  approvalRoute?: 'MANAGER_ONLY' | 'BOD_REQUIRED';
+  approvalReason?: string;
+  approvalContext?: Record<string, unknown>;
 }
 
 // =================================================================================
@@ -1228,6 +1231,9 @@ export interface OTRequest {
   managerNote?: string;
   historyLog: OTRequestHistory[];
   attachmentUrl?: string;
+  approvalRoute?: 'MANAGER_ONLY' | 'BOD_REQUIRED';
+  approvalReason?: string;
+  approvalContext?: Record<string, unknown>;
 }
 
 export enum ExceptionType {
@@ -1417,6 +1423,9 @@ export interface LeaveRequest {
   historyLog: { userId: string; userName: string; timestamp: Date; action: string; details?: string }[];
   attachmentUrl?: string;
   approverId?: string;
+  approvalRoute?: 'MANAGER_ONLY' | 'BOD_REQUIRED';
+  approvalReason?: string;
+  approvalContext?: Record<string, unknown>;
 }
 
 export enum LeaveLedgerEntryType {
@@ -2811,9 +2820,22 @@ export interface BODApproverConfig {
   user_names: string[];
 }
 
+export interface ConditionalTimeApprovalConfig {
+  user_ids: string[];
+  user_names: string[];
+  required_user_ids: string[];
+  required_bod_approvals: number;
+  leave_days_per_remaining_month: number;
+  wfh_days_per_month: number;
+  weekly_total_hours: number;
+  valid?: boolean;
+  invalid_reason?: string | null;
+}
+
 export interface ApproverConfigs {
   gmApprover: GMApproverConfig;
   bodApprovers: BODApproverConfig;
+  conditionalTimeApprovals: ConditionalTimeApprovalConfig;
 }
 
 /** Roles that trigger hierarchical (GM → BOD) approval flow */

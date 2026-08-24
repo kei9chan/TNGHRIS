@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
-import { Settings as SettingsType, Permission, GMApproverConfig, BODApproverConfig } from '../../types';
+import { Settings as SettingsType, Permission, GMApproverConfig, BODApproverConfig, ConditionalTimeApprovalConfig, Role } from '../../types';
 import FileUploader from '../../components/ui/FileUploader';
 import { useSettings } from '../../context/SettingsContext';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -12,13 +12,16 @@ import { supabase } from '../../services/supabaseClient';
 interface UserOption {
     id: string;
     name: string;
+    email: string;
     role: string;
+    roles: string[];
+    businessUnit: string;
 }
 
 const Settings: React.FC = () => {
     const {
         settings, updateSettings, isRbacEnabled, setIsRbacEnabled,
-        approverConfigs, updateGMApprover, updateBODApprovers,
+        approverConfigs, updateGMApprover, updateBODApprovers, updateConditionalTimeApprovals,
     } = useSettings();
     const [localSettings, setLocalSettings] = React.useState<SettingsType>(settings);
     const [isLoading, setIsLoading] = React.useState(false);
@@ -30,16 +33,35 @@ const Settings: React.FC = () => {
     const [selectedBODs, setSelectedBODs] = useState<string[]>([]);
     const [approverSaving, setApproverSaving] = useState(false);
     const [approverMsg, setApproverMsg] = useState('');
+    const [conditionalApprovers, setConditionalApprovers] = useState<string[]>([]);
+    const [requiredConditionalApprovers, setRequiredConditionalApprovers] = useState<string[]>([]);
+    const [leaveThreshold, setLeaveThreshold] = useState(1);
+    const [wfhThreshold, setWfhThreshold] = useState(4);
+    const [weeklyHoursThreshold, setWeeklyHoursThreshold] = useState(50);
+    const [conditionalChangeNote, setConditionalChangeNote] = useState('');
+    const [conditionalMsg, setConditionalMsg] = useState('');
+    const [conditionalSaving, setConditionalSaving] = useState(false);
 
     // Load all users for the dropdowns
     useEffect(() => {
         const loadUsers = async () => {
-            const { data, error } = await supabase
+            const [{ data, error }, { data: roleRows }] = await Promise.all([
+              supabase
                 .from('hris_users')
-                .select('id, full_name, role')
-                .order('full_name');
+                .select('id, full_name, email, role, business_unit')
+                .eq('status', 'Active')
+                .order('full_name'),
+              supabase.from('user_roles').select('user_id, role_id, is_active').eq('is_active', true),
+            ]);
             if (!error && data) {
-                setAllUsers(data.map((u: any) => ({ id: u.id, name: u.full_name || 'Unnamed', role: u.role })));
+                setAllUsers(data.map((u: any) => ({
+                    id: u.id,
+                    name: u.full_name || 'Unnamed',
+                    email: u.email,
+                    role: u.role,
+                    roles: Array.from(new Set([u.role, ...(roleRows || []).filter((r: any) => r.user_id === u.id).map((r: any) => r.role_id)])),
+                    businessUnit: u.business_unit || 'All business units',
+                })));
             }
         };
         loadUsers();
@@ -49,6 +71,12 @@ const Settings: React.FC = () => {
     useEffect(() => {
         setSelectedGM(approverConfigs.gmApprover.user_id || '');
         setSelectedBODs(approverConfigs.bodApprovers.user_ids || []);
+        const conditional = approverConfigs.conditionalTimeApprovals;
+        setConditionalApprovers(conditional.user_ids || []);
+        setRequiredConditionalApprovers(conditional.required_user_ids || []);
+        setLeaveThreshold(conditional.leave_days_per_remaining_month ?? 1);
+        setWfhThreshold(conditional.wfh_days_per_month ?? 4);
+        setWeeklyHoursThreshold(conditional.weekly_total_hours ?? 50);
     }, [approverConfigs]);
 
     useEffect(() => {
@@ -118,6 +146,48 @@ const Settings: React.FC = () => {
                 ? prev.filter(id => id !== userId)
                 : [...prev, userId]
         );
+    };
+
+    const toggleConditionalApprover = (userId: string) => {
+        setConditionalApprovers(prev => {
+            if (prev.includes(userId)) {
+                setRequiredConditionalApprovers(required => required.filter(id => id !== userId));
+                return prev.filter(id => id !== userId);
+            }
+            return [...prev, userId];
+        });
+    };
+
+    const handleSaveConditionalRouting = async () => {
+        setConditionalMsg('');
+        const requiredBods = allUsers.filter(u => requiredConditionalApprovers.includes(u.id) && u.roles.includes(Role.BOD));
+        if (!conditionalApprovers.length || !requiredBods.length) {
+            setConditionalMsg('Error: Select at least one active BOD and mark that BOD as required.');
+            return;
+        }
+        if (!conditionalChangeNote.trim()) {
+            setConditionalMsg('Error: Add a reason or change note for the audit log.');
+            return;
+        }
+        setConditionalSaving(true);
+        try {
+            const config: ConditionalTimeApprovalConfig = {
+                user_ids: conditionalApprovers,
+                user_names: conditionalApprovers.map(id => allUsers.find(u => u.id === id)?.name || 'Unknown'),
+                required_user_ids: requiredConditionalApprovers,
+                required_bod_approvals: 1,
+                leave_days_per_remaining_month: leaveThreshold,
+                wfh_days_per_month: wfhThreshold,
+                weekly_total_hours: weeklyHoursThreshold,
+            };
+            await updateConditionalTimeApprovals(config, conditionalChangeNote.trim());
+            setConditionalChangeNote('');
+            setConditionalMsg('Conditional routing saved. New escalations will use this approver group.');
+        } catch (error: any) {
+            setConditionalMsg(`Error: ${error.message || 'Failed to save conditional routing'}`);
+        } finally {
+            setConditionalSaving(false);
+        }
     };
 
 
@@ -212,6 +282,68 @@ const Settings: React.FC = () => {
                 {can('Settings', Permission.Manage) && (
                     <Button onClick={handleSaveApproverConfig} isLoading={approverSaving} variant="secondary">
                         Save Approver Configuration
+                    </Button>
+                )}
+            </Card>
+
+            <Card title="Conditional Approval Routing">
+                <div className="mb-5 rounded-lg border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-900">
+                    <strong>Admin → Approval Settings → Conditional Approval Routing</strong>
+                    <p className="mt-1">Applies only to Leave, WFH, and Overtime requests that exceed the configured thresholds. Routine requests stop with the employee’s direct reporting manager.</p>
+                </div>
+
+                {!approverConfigs.conditionalTimeApprovals.valid && (
+                    <div role="alert" className="mb-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                        <strong>Main BOD Approver configuration is invalid.</strong>
+                        <p>{approverConfigs.conditionalTimeApprovals.invalid_reason || 'Select at least one active BOD approver.'}</p>
+                    </div>
+                )}
+
+                <div className="mb-6">
+                    <h3 className="font-semibold text-gray-900 dark:text-white">Main BOD Approver group</h3>
+                    <p className="mt-1 text-xs text-gray-500">Select one or more active people, including a GM if needed. At least one selected active BOD must be marked required.</p>
+                    <div className="mt-3 max-h-72 overflow-y-auto rounded-lg border border-gray-300 dark:border-gray-600">
+                        {allUsers.map(option => {
+                            const selected = conditionalApprovers.includes(option.id);
+                            const required = requiredConditionalApprovers.includes(option.id);
+                            const isBod = option.roles.includes(Role.BOD);
+                            return (
+                                <div key={option.id} className="flex flex-wrap items-center gap-3 border-b p-3 last:border-b-0 dark:border-gray-700">
+                                    <input aria-label={`Select ${option.name}`} type="checkbox" checked={selected} onChange={() => toggleConditionalApprover(option.id)} />
+                                    <div className="min-w-[240px] flex-1">
+                                        <div className="font-medium text-gray-900 dark:text-white">{option.name} {isBod && <span className="ml-1 rounded bg-indigo-100 px-2 py-0.5 text-xs text-indigo-700">BOD</span>}</div>
+                                        <div className="text-xs text-gray-500">{option.email} · {option.businessUnit} · {option.role}</div>
+                                    </div>
+                                    <label className={`flex items-center gap-2 text-xs ${selected ? 'text-gray-700' : 'text-gray-400'}`}>
+                                        <input
+                                            type="checkbox"
+                                            disabled={!selected}
+                                            checked={required}
+                                            onChange={event => setRequiredConditionalApprovers(prev => event.target.checked ? [...new Set([...prev, option.id])] : prev.filter(id => id !== option.id))}
+                                        />
+                                        Required approval
+                                    </label>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-3">
+                    <Input label="Leave days per month remaining" id="leave-routing-threshold" type="number" min="0.1" step="0.1" value={leaveThreshold} onChange={event => setLeaveThreshold(Number(event.target.value))} />
+                    <Input label="WFH days per calendar month" id="wfh-routing-threshold" type="number" min="0" step="1" value={wfhThreshold} onChange={event => setWfhThreshold(Number(event.target.value))} />
+                    <Input label="Weekly total-hours threshold" id="ot-routing-threshold" type="number" min="1" step="0.5" value={weeklyHoursThreshold} onChange={event => setWeeklyHoursThreshold(Number(event.target.value))} />
+                </div>
+
+                <label className="mt-5 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Reason / change note
+                    <textarea value={conditionalChangeNote} onChange={event => setConditionalChangeNote(event.target.value)} rows={3} className="mt-1 block w-full rounded-md border border-gray-300 p-3 dark:border-gray-600 dark:bg-gray-700" placeholder="Required for the audit log" />
+                </label>
+
+                {conditionalMsg && <p className={`mt-3 text-sm ${conditionalMsg.startsWith('Error') ? 'text-red-600' : 'text-green-600'}`}>{conditionalMsg}</p>}
+                {can('Settings', Permission.Manage) && (
+                    <Button className="mt-4" onClick={handleSaveConditionalRouting} isLoading={conditionalSaving}>
+                        Save Conditional Routing
                     </Button>
                 )}
             </Card>

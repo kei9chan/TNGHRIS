@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
-import { useSettings } from '../../context/SettingsContext';
 import { LeaveRequest, LeaveRequestStatus, Role, Permission } from '../../types';
 import { NotificationType } from '../../types';
 import { supabase } from '../../services/supabaseClient';
@@ -14,12 +13,12 @@ import LeaveRequestModal from '../../components/payroll/LeaveRequestModal';
 import RejectReasonModal from '../../components/feedback/RejectReasonModal';
 import Toast from '../../components/ui/Toast';
 import LeaveCalendar from '../../components/payroll/LeaveCalendar';
+import { processTimeRequestApproval, sendConditionalApprovalEmails } from '../../services/approverConfigService';
 
 type ActiveView = 'my_requests' | 'team_requests' | 'schedule';
 
 const Leave: React.FC = () => {
   const { user } = useAuth();
-  const { approverConfigs } = useSettings();
   const { can, hasDirectReports, getDashboardRequestAccess } = usePermissions();
   const access = getDashboardRequestAccess();
 
@@ -208,32 +207,10 @@ const Leave: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const [managerIsBOD, setManagerIsBOD] = useState(false);
-
-  useEffect(() => {
-    if (user?.reportsTo) {
-      const loadManager = async () => {
-        const { data } = await supabase.from('hris_users').select('role').eq('id', user.reportsTo).single();
-        if (data?.role === Role.BOD) {
-          setManagerIsBOD(true);
-        } else {
-          const bodIds: string[] = approverConfigs?.bodApprovers?.user_ids || [];
-          if (bodIds.includes(user.reportsTo!)) {
-            setManagerIsBOD(true);
-          }
-        }
-      }
-      loadManager();
-    }
-  }, [user, approverConfigs]);
-
   const handleSave = async (requestToSave: Partial<LeaveRequest>, status: LeaveRequestStatus) => {
     if (!user) return;
 
-    let finalStatus = status;
-    if (status === LeaveRequestStatus.Pending && managerIsBOD) {
-        finalStatus = LeaveRequestStatus.PendingBOD;
-    }
+    const finalStatus = status;
 
     let attachmentUrl: string | undefined = requestToSave.attachmentUrl;
 
@@ -276,10 +253,14 @@ const Leave: React.FC = () => {
       department_id: user.departmentId || null,
     };
 
+    let savedId = requestToSave.id;
     if (requestToSave.id) {
-      await supabase.from('leave_requests').update(payload).eq('id', requestToSave.id);
+      const { error } = await supabase.from('leave_requests').update(payload).eq('id', requestToSave.id);
+      if (error) throw error;
     } else {
-      await supabase.from('leave_requests').insert(payload);
+      const { data: inserted, error } = await supabase.from('leave_requests').insert(payload).select('id').single();
+      if (error) throw error;
+      savedId = inserted.id;
     }
 
     // Notify the approver (manager) when a leave request is submitted as Pending
@@ -291,8 +272,9 @@ const Leave: React.FC = () => {
           title: '📋 Leave Request Pending Approval',
           message: `${user.name} submitted a ${leaveTypeName} request (${requestToSave.durationDays || 1} day${(requestToSave.durationDays || 1) !== 1 ? 's' : ''}) for your approval.`,
           type: NotificationType.LEAVE_REQUEST,
-          link: '/payroll/leave',
+          link: `/approvals?type=leave&item=${savedId}`,
         });
+        if (savedId) sendConditionalApprovalEmails('leave', savedId).catch(error => console.error('Manager approval email failed', error));
       } catch (e) {
         console.error('Failed to send leave submission notification', e);
       }
@@ -305,25 +287,17 @@ const Leave: React.FC = () => {
 
   const handleApproval = async (request: LeaveRequest, approved: boolean, notes: string) => {
     if (!user) return;
-    const historyEntry = {
-      userId: user.id,
-      userName: user.name,
-      timestamp: new Date().toISOString(),
-      action: approved ? 'Approved' : 'Rejected',
-      details: notes ? `Manager notes: ${notes}` : undefined,
-    };
-    const newStatus = approved ? LeaveRequestStatus.Approved : LeaveRequestStatus.Rejected;
-    const { error } = await supabase
-      .from('leave_requests')
-      .update({
-        status: newStatus,
-        approver_id: user.id,
-        history_log: [...(request.historyLog || []), historyEntry],
-      })
-      .eq('id', request.id);
+    let result: any;
+    let error: any = null;
+    try {
+      result = await processTimeRequestApproval('leave', request.id, approved ? 'approve' : 'reject', notes);
+      if (result?.notifyEscalation) sendConditionalApprovalEmails('leave', request.id).catch(console.error);
+    } catch (caught) {
+      error = caught;
+    }
 
     if (!error && request.employeeId) {
-      if (approved) {
+      if (approved && result?.status === LeaveRequestStatus.Approved) {
         // Deduct from leave quota
         const leaveType = leaveTypes.find(lt => lt.id === request.leaveTypeId);
         if (leaveType) {
@@ -358,14 +332,18 @@ const Leave: React.FC = () => {
         userId: request.employeeId,
         title: approved ? '✅ Leave Request Approved' : '❌ Leave Request Rejected',
         message: approved
-          ? `Your leave request (${request.durationDays} day${request.durationDays !== 1 ? 's' : ''}) has been approved by ${user.name}.`
+          ? (result?.route === 'BOD_REQUIRED' ? `Your leave request was recommended by ${user.name} and is pending final approval. ${result?.context?.reason || ''}` : `Your leave request (${request.durationDays} day${request.durationDays !== 1 ? 's' : ''}) has been approved by ${user.name}.`)
           : `Your leave request has been rejected by ${user.name}${notes ? `: "${notes}"` : '.'}`,
         type: NotificationType.LEAVE_DECISION,
-        link: '/payroll/leave',
+        link: `/approvals?type=leave&item=${request.id}`,
       }).catch(console.error);
     }
 
-    setToastInfo({ show: true, title: 'Success', message: `Request ${approved ? 'approved' : 'rejected'}.` });
+    if (error) {
+      setToastInfo({ show: true, title: 'Approval failed', message: error.message || 'The request could not be processed.' });
+      return;
+    }
+    setToastInfo({ show: true, title: 'Success', message: result?.route === 'BOD_REQUIRED' && approved ? 'Manager approved; request routed for BOD final approval.' : `Request ${approved ? 'approved' : 'rejected'}.` });
     setIsModalOpen(false);
     setSelectedRequest(null);
     setIsRejectModalOpen(false);

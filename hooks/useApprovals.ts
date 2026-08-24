@@ -1,9 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { approveRejectOtRequest, bodApproveOtRequest, managerApproveOtRequest } from '../services/otService';
 import { createNotification } from '../services/notificationService';
-import { fetchApproverConfigs } from '../services/approverConfigService';
-import { gmApproveLeaveRequest, bodApproveLeaveRequest } from '../services/leaveService';
+import { processTimeRequestApproval, sendConditionalApprovalEmails } from '../services/approverConfigService';
 import {
     LeaveRequest, LeaveRequestStatus,
     WFHRequest, WFHRequestStatus,
@@ -12,7 +10,6 @@ import {
     NotificationType,
     User, Role
 } from '../types';
-import { deptHeadApproveWfhRequest, gmApproveWfhRequest, bodApproveWfhRequest, rejectWfhRequest } from '../services/wfhService';
 
 interface UseApprovalsOptions {
     user: User | null;
@@ -66,110 +63,84 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
             }
         };
 
-        // ---------------------------------------------------------------
-        // Determine if this user is a configured GM or BOD approver
-        // ---------------------------------------------------------------
+        // Leave/WFH/OT are scoped to direct reports plus explicit escalation
+        // assignments. A broad BOD or HR role no longer creates a global queue.
         const assignedRoles = new Set([user.role, ...(user.roles || [])]);
         const isGlobalHrAuthority = assignedRoles.has(Role.BOD) || assignedRoles.has(Role.HRManager);
-        let isGM = assignedRoles.has(Role.GeneralManager);
-        let isBOD = assignedRoles.has(Role.BOD);
-        let configuredBodUserIds: string[] = [];
+        const { data: assignmentRows, error: assignmentError } = await supabase
+            .from('time_request_approval_assignments')
+            .select('request_type, request_id')
+            .eq('approver_user_id', user.id)
+            .eq('status', 'Pending');
+        if (assignmentError) {
+            setApprovalError(`Conditional approval assignments could not be loaded. ${assignmentError.message}`);
+        }
+        const assignedIds = (kind: string) => (assignmentRows || [])
+            .filter((row: any) => row.request_type === kind)
+            .map((row: any) => row.request_id as string);
+        const assignedLeaveIds = assignedIds('leave');
+        const assignedWfhIds = assignedIds('wfh');
+        const assignedOtIds = assignedIds('overtime');
 
-        // Also check the dynamic approver config table so that users
-        // designated as BOD approvers in System Settings (regardless of role)
-        // are treated correctly.
-        try {
-            const configs = await fetchApproverConfigs();
-            if (configs.gmApprover.user_id === user.id) isGM = true;
-            configuredBodUserIds = configs.bodApprovers.user_ids || [];
-            if (configuredBodUserIds.includes(user.id)) isBOD = true;
-        } catch { /* fallback to role-only check */ }
-
+        let skipLeave = false;
+        let skipWfh = false;
         let skipOt = false;
         let skipManpower = false;
 
         let leaveQuery = supabase
             .from('leave_requests')
-            .select('id, employee_id, employee_name, leave_type_id, start_date, end_date, start_time, end_time, duration_days, reason, status, history_log, attachment_url, approver_id, business_unit_id, department_id');
+            .select('id, employee_id, employee_name, leave_type_id, start_date, end_date, start_time, end_time, duration_days, reason, status, history_log, attachment_url, approver_id, business_unit_id, department_id, approval_route, approval_reason, approval_context');
         let wfhQuery = supabase
             .from('wfh_requests')
-            .select('id, employee_id, employee_name, date, end_date, reason, status, report_link, approved_by, approved_at, rejection_reason, created_at');
+            .select('id, employee_id, employee_name, date, end_date, reason, status, report_link, approved_by, approved_at, rejection_reason, created_at, approval_route, approval_reason, approval_context');
         let otQuery = supabase
             .from('ot_requests')
-            .select('id, employee_id, employee_name, date, start_time, end_time, reason, status, submitted_at, approved_hours, manager_note, history_log, attachment_url');
+            .select('id, employee_id, employee_name, date, start_time, end_time, reason, status, submitted_at, approved_hours, manager_note, history_log, attachment_url, approval_route, approval_reason, approval_context');
         let manpowerQuery = supabase
             .from('manpower_requests')
             .select('id, business_unit_id, business_unit_name, department_id, requester_id, requester_name, date_needed, forecasted_pax, general_note, items, grand_total, status, created_at, approved_by, approved_at, rejection_reason')
             .eq('status', ManpowerRequestStatus.Pending);
 
+        const reporteeList = `(${reporteeIds.join(',')})`;
+        const assignedList = (ids: string[]) => `(${ids.join(',')})`;
+        if (reporteeIds.length && assignedLeaveIds.length) {
+            leaveQuery = leaveQuery.or(`and(employee_id.in.${reporteeList},status.in.(Pending,PendingGM)),and(id.in.${assignedList(assignedLeaveIds)},status.eq.PendingBOD)`);
+        } else if (reporteeIds.length) {
+            leaveQuery = leaveQuery.in('employee_id', reporteeIds).in('status', [LeaveRequestStatus.Pending, LeaveRequestStatus.PendingGM]);
+        } else if (assignedLeaveIds.length) {
+            leaveQuery = leaveQuery.in('id', assignedLeaveIds).eq('status', LeaveRequestStatus.PendingBOD);
+        } else skipLeave = true;
+
+        if (reporteeIds.length && assignedWfhIds.length) {
+            wfhQuery = wfhQuery.or(`and(employee_id.in.${reporteeList},status.in.(${WFHRequestStatus.PendingDeptHead},${WFHRequestStatus.PendingGM})),and(id.in.${assignedList(assignedWfhIds)},status.eq.${WFHRequestStatus.PendingBOD})`);
+        } else if (reporteeIds.length) {
+            wfhQuery = wfhQuery.in('employee_id', reporteeIds).in('status', [WFHRequestStatus.PendingDeptHead, WFHRequestStatus.PendingGM]);
+        } else if (assignedWfhIds.length) {
+            wfhQuery = wfhQuery.in('id', assignedWfhIds).eq('status', WFHRequestStatus.PendingBOD);
+        } else skipWfh = true;
+
+        if (reporteeIds.length && assignedOtIds.length) {
+            otQuery = otQuery.or(`and(employee_id.in.${reporteeList},status.in.(${OTStatus.Submitted},${OTStatus.PendingGM})),and(id.in.${assignedList(assignedOtIds)},status.eq.${OTStatus.PendingBOD})`);
+        } else if (reporteeIds.length) {
+            otQuery = otQuery.in('employee_id', reporteeIds).in('status', [OTStatus.Submitted, OTStatus.PendingGM]);
+        } else if (assignedOtIds.length) {
+            otQuery = otQuery.in('id', assignedOtIds).eq('status', OTStatus.PendingBOD);
+        } else skipOt = true;
+
+        leaveQuery = leaveQuery.order('start_date', { ascending: false });
+        wfhQuery = wfhQuery.order('created_at', { ascending: false });
+        otQuery = otQuery.order('submitted_at', { ascending: false });
+
         if (isGlobalHrAuthority) {
-            // Board of Director and HR Manager intentionally share one global
-            // approval queue. Keep each workflow explicit: scope alone never
-            // implies approval authority, and a failed query must remain visible.
-            leaveQuery = leaveQuery
-                .in('status', [LeaveRequestStatus.Pending, LeaveRequestStatus.PendingGM, LeaveRequestStatus.PendingBOD])
-                .order('start_date', { ascending: false });
-            wfhQuery = wfhQuery
-                .in('status', [WFHRequestStatus.PendingDeptHead, WFHRequestStatus.PendingGM, WFHRequestStatus.PendingBOD])
-                .order('created_at', { ascending: false });
-            otQuery = otQuery
-                .in('status', [OTStatus.PendingGM, OTStatus.PendingBOD])
-                .order('submitted_at', { ascending: false });
             manpowerQuery = manpowerQuery.order('created_at', { ascending: false });
-        } else if (isHR) {
-            leaveQuery = leaveQuery.eq('status', LeaveRequestStatus.Pending).order('start_date', { ascending: false });
-            wfhQuery = wfhQuery.eq('status', WFHRequestStatus.ForTimekeeping).order('created_at', { ascending: false });
-            manpowerQuery = manpowerQuery.eq('status', ManpowerRequestStatus.Pending).order('created_at', { ascending: false });
-            if (reporteeIds.length > 0) {
-                otQuery = otQuery.in('employee_id', reporteeIds).eq('status', OTStatus.Submitted).order('submitted_at', { ascending: false });
-            } else {
-                skipOt = true;
-            }
-        } else if (isGM) {
-            if (reporteeIds.length > 0) {
-                const reporteesStr = `(${reporteeIds.join(',')})`;
-                leaveQuery = leaveQuery.or(`status.eq.${LeaveRequestStatus.PendingGM},and(employee_id.in.${reporteesStr},status.eq.Pending)`).order('start_date', { ascending: false });
-                wfhQuery = wfhQuery.or(`status.eq.${WFHRequestStatus.PendingGM},and(employee_id.in.${reporteesStr},status.eq.${WFHRequestStatus.PendingDeptHead})`).order('created_at', { ascending: false });
-                otQuery = otQuery.or(`status.eq.${OTStatus.PendingGM},and(employee_id.in.${reporteesStr},status.eq.${OTStatus.Submitted})`).order('submitted_at', { ascending: false });
-                manpowerQuery = manpowerQuery.in('requester_id', reporteeIds);
-            } else {
-                leaveQuery = leaveQuery.eq('status', LeaveRequestStatus.PendingGM).order('start_date', { ascending: false });
-                wfhQuery = wfhQuery.eq('status', WFHRequestStatus.PendingGM).order('created_at', { ascending: false });
-                otQuery = otQuery.eq('status', OTStatus.PendingGM).order('submitted_at', { ascending: false });
-                skipManpower = true;
-            }
-        } else if (isBOD) {
-            if (reporteeIds.length > 0) {
-                const reporteesStr = `(${reporteeIds.join(',')})`;
-                leaveQuery = leaveQuery.or(`status.eq.${LeaveRequestStatus.PendingBOD},and(employee_id.in.${reporteesStr},status.eq.Pending)`).order('start_date', { ascending: false });
-                wfhQuery = wfhQuery.or(`status.eq.${WFHRequestStatus.PendingBOD},and(employee_id.in.${reporteesStr},status.eq.${WFHRequestStatus.PendingDeptHead})`).order('created_at', { ascending: false });
-                otQuery = otQuery.or(`status.eq.${OTStatus.PendingBOD},and(employee_id.in.${reporteesStr},status.eq.${OTStatus.Submitted})`).order('submitted_at', { ascending: false });
-                manpowerQuery = manpowerQuery.in('requester_id', reporteeIds);
-            } else {
-                leaveQuery = leaveQuery.eq('status', LeaveRequestStatus.PendingBOD).order('start_date', { ascending: false });
-                wfhQuery = wfhQuery.eq('status', WFHRequestStatus.PendingBOD).order('created_at', { ascending: false });
-                otQuery = otQuery.eq('status', OTStatus.PendingBOD).order('submitted_at', { ascending: false });
-                skipManpower = true;
-            }
-        } else {
-            // Regular manager sees submitted requests from direct reports
-            if (reporteeIds.length === 0) {
-                setPendingLeaveApprovals([]);
-                setPendingWfhApprovals([]);
-                setPendingOtApprovals([]);
-                setPendingManpowerApprovals([]);
-                return;
-            }
-            leaveQuery = leaveQuery.in('employee_id', reporteeIds).eq('status', 'Pending');
-            wfhQuery = wfhQuery.eq('status', WFHRequestStatus.PendingDeptHead).in('employee_id', reporteeIds);
-            otQuery = otQuery.in('employee_id', reporteeIds).eq('status', OTStatus.Submitted);
+        } else if (reporteeIds.length) {
             manpowerQuery = manpowerQuery.in('requester_id', reporteeIds);
-        }
+        } else skipManpower = true;
 
         const emptyResult = { data: [] as unknown[], error: null };
         const [leaveRes, wfhRes, otRes, manpowerRes] = await Promise.all([
-            leaveQuery,
-            wfhQuery,
+            skipLeave    ? Promise.resolve(emptyResult) : leaveQuery,
+            skipWfh      ? Promise.resolve(emptyResult) : wfhQuery,
             skipOt       ? Promise.resolve(emptyResult) : otQuery,
             skipManpower ? Promise.resolve(emptyResult) : manpowerQuery,
         ]);
@@ -207,6 +178,9 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
                 approverId: row.approver_id || undefined,
                 businessUnitId: row.business_unit_id || undefined,
                 departmentId: row.department_id || undefined,
+                approvalRoute: row.approval_route || undefined,
+                approvalReason: row.approval_reason || undefined,
+                approvalContext: row.approval_context || undefined,
             }));
             // Include Pending (normal flow), PendingGM (for GM), PendingBOD (for BOD)
             setPendingLeaveApprovals(mapped.filter(r =>
@@ -230,6 +204,9 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
                 approvedAt: row.approved_at ? new Date(row.approved_at) : undefined,
                 rejectionReason: row.rejection_reason || undefined,
                 createdAt: row.created_at ? new Date(row.created_at) : new Date(),
+                approvalRoute: row.approval_route || undefined,
+                approvalReason: row.approval_reason || undefined,
+                approvalContext: row.approval_context || undefined,
             }));
             setPendingWfhApprovals(mapped);
         }
@@ -250,6 +227,9 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
                     managerNote: row.manager_note ?? undefined,
                     historyLog: row.history_log || [],
                     attachmentUrl: row.attachment_url ?? undefined,
+                    approvalRoute: row.approval_route || undefined,
+                    approvalReason: row.approval_reason || undefined,
+                    approvalContext: row.approval_context || undefined,
                 }))
             );
         }
@@ -304,77 +284,15 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
 
     const handleLeaveApproval = async (request: Partial<LeaveRequest>, approved: boolean, notes?: string) => {
         if (!user || !request.id) return;
-        const historyEntry = {
-            action: approved ? 'Approved' : 'Rejected',
-            by: user.id,
-            date: new Date().toISOString(),
-            note: notes || 'Processed via Dashboard'
-        };
-
-        // Determine if this is a GM or BOD approval stage
-        const isPendingGM = request.status === LeaveRequestStatus.PendingGM;
-        const isPendingBOD = request.status === LeaveRequestStatus.PendingBOD;
-
-        if (isPendingGM && approved) {
-            // GM approves → advance to PendingBOD
-            await gmApproveLeaveRequest(request.id, user.id);
-
-            // Notify BOD users
-            supabase.from('hris_users').select('id').eq('role', Role.BOD)
-                .then(({ data: bodUsers }) => {
-                    bodUsers?.forEach(bod => {
-                        createNotification({
-                            userId: bod.id,
-                            title: '📋 Leave Request Pending BOD Approval',
-                            message: `${request.employeeName}'s leave request has been approved by GM and requires your final approval.`,
-                            type: NotificationType.LEAVE_PENDING_BOD,
-                            link: '/payroll/leave-requests',
-                        }).catch(e => console.error('Failed to send BOD leave notification', e));
-                    });
-                });
-
-            // Notify requester
-            if (request.employeeId) {
-                createNotification({
-                    userId: request.employeeId,
-                    title: '🔄 Leave Request Forwarded to BOD',
-                    message: `Your leave request has been approved by the GM and is now pending BOD approval.`,
-                    type: NotificationType.LEAVE_PENDING_BOD,
-                    link: '/payroll/leave-requests',
-                }).catch(e => console.error('Failed to send leave GM forwarded notification', e));
-            }
-
-        } else if (isPendingBOD && approved) {
-            // BOD gives final approval
-            await bodApproveLeaveRequest(request.id, user.id);
-
-            if (request.employeeId) {
-                createNotification({
-                    userId: request.employeeId,
-                    title: '✅ Leave Request Approved',
-                    message: `Your leave request has been fully approved by BOD.`,
-                    type: NotificationType.LEAVE_APPROVED,
-                    link: '/payroll/leave-requests',
-                }).catch(e => console.error('Failed to send BOD leave approved notification', e));
-            }
-
-        } else {
-            // Standard flow (regular employee → manager) or rejection at any stage
-            const newStatus = approved ? LeaveRequestStatus.Approved : LeaveRequestStatus.Rejected;
-            const { error } = await supabase
-                .from('leave_requests')
-                .update({
-                    status: newStatus,
-                    approver_id: user.id,
-                    history_log: [...(request.historyLog || []), historyEntry],
-                })
-                .eq('id', request.id);
-            if (error) { 
-                alert(error.message || 'Failed to update leave request.'); 
-                throw error; 
-            }
-        }
-
+        const result: any = await processTimeRequestApproval('leave', request.id, approved ? 'approve' : 'reject', notes);
+        if (result?.notifyEscalation) sendConditionalApprovalEmails('leave', request.id).catch(error => console.error('Approval email failed', error));
+        if (request.employeeId) createNotification({
+            userId: request.employeeId,
+            title: approved ? (result?.route === 'BOD_REQUIRED' ? '🔄 Leave Request Forwarded for Final Approval' : '✅ Leave Request Approved') : '❌ Leave Request Rejected',
+            message: result?.context?.reason || `Your leave request was ${approved ? 'approved' : 'rejected'}.`,
+            type: approved ? NotificationType.LEAVE_APPROVED : NotificationType.LEAVE_DECISION,
+            link: `/approvals?type=leave&item=${request.id}`,
+        }).catch(error => console.error('Leave notification failed', error));
         setPendingLeaveApprovals(prev => prev.filter(r => r.id !== request.id));
     };
 
@@ -384,94 +302,15 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
         if (!request) return;
         
         try {
-            if (request.status === WFHRequestStatus.PendingDeptHead) {
-                await deptHeadApproveWfhRequest(requestId, user.id);
-
-                // Notify the requester that their request moved forward
-                if (request.employeeId) {
-                    createNotification({
-                        userId: request.employeeId,
-                        title: '🔄 WFH Request Forwarded',
-                        message: `Your WFH request for ${new Date(request.date).toLocaleDateString()} has been approved by your department head and is now pending BOD approval.`,
-                        type: NotificationType.WFH_SUBMITTED,
-                        link: '/payroll/wfh-requests',
-                    }).catch(e => console.error('Failed to send dept head WFH forwarded notification', e));
-                }
-
-                // Notify all BOD users
-                supabase
-                    .from('hris_users')
-                    .select('id')
-                    .eq('role', Role.BOD)
-                    .then(({ data: bodUsers }) => {
-                        if (bodUsers) {
-                            bodUsers.forEach(bod => {
-                                createNotification({
-                                    userId: bod.id,
-                                    title: '📋 WFH Request Pending BOD Approval',
-                                    message: `${request.employeeName}'s WFH request for ${new Date(request.date).toLocaleDateString()} has been approved by the department head and requires your final approval.`,
-                                    type: NotificationType.WFH_SUBMITTED,
-                                    link: '/payroll/wfh-requests',
-                                }).catch(e => console.error('Failed to send BOD WFH notification', e));
-                            });
-                        }
-                    });
-
-            } else if (request.status === WFHRequestStatus.PendingGM) {
-                // GM approves → advance to PendingBOD
-                await gmApproveWfhRequest(requestId, user.id);
-
-                // Notify the requester
-                if (request.employeeId) {
-                    createNotification({
-                        userId: request.employeeId,
-                        title: '🔄 WFH Request Forwarded to BOD',
-                        message: `Your WFH request for ${new Date(request.date).toLocaleDateString()} has been approved by the GM and is now pending BOD approval.`,
-                        type: NotificationType.WFH_PENDING_GM,
-                        link: '/payroll/wfh-requests',
-                    }).catch(e => console.error('Failed to send GM WFH forwarded notification', e));
-                }
-
-                // Notify all BOD users
-                supabase
-                    .from('hris_users')
-                    .select('id')
-                    .eq('role', Role.BOD)
-                    .then(({ data: bodUsers }) => {
-                        if (bodUsers) {
-                            bodUsers.forEach(bod => {
-                                createNotification({
-                                    userId: bod.id,
-                                    title: '📋 WFH Request Pending BOD Approval',
-                                    message: `${request.employeeName}'s WFH request for ${new Date(request.date).toLocaleDateString()} has been approved by the GM and requires your final approval.`,
-                                    type: NotificationType.WFH_SUBMITTED,
-                                    link: '/payroll/wfh-requests',
-                                }).catch(e => console.error('Failed to send BOD WFH notification', e));
-                            });
-                        }
-                    });
-
-            } else if (request.status === WFHRequestStatus.PendingBOD) {
-                await bodApproveWfhRequest(requestId, user.id);
-
-                // Notify the requester of final approval
-                if (request.employeeId) {
-                    createNotification({
-                        userId: request.employeeId,
-                        title: '✅ WFH Request Approved',
-                        message: `Your WFH request for ${new Date(request.date).toLocaleDateString()} has been fully approved by BOD.`,
-                        type: NotificationType.WFH_APPROVED,
-                        link: '/payroll/wfh-requests',
-                    }).catch(e => console.error('Failed to send BOD WFH approved notification', e));
-                }
-            } else {
-                // Fallback for any other state if needed
-                const { error } = await supabase
-                    .from('wfh_requests')
-                    .update({ status: WFHRequestStatus.ForTimekeeping, approved_by: user.id, approved_at: new Date().toISOString() })
-                    .eq('id', requestId);
-                if (error) throw error;
-            }
+            const result: any = await processTimeRequestApproval('wfh', requestId, 'approve');
+            if (result?.notifyEscalation) sendConditionalApprovalEmails('wfh', requestId).catch(error => console.error('Approval email failed', error));
+            if (request.employeeId) createNotification({
+                userId: request.employeeId,
+                title: result?.route === 'BOD_REQUIRED' ? '🔄 WFH Request Forwarded for Final Approval' : '✅ WFH Request Approved',
+                message: result?.context?.reason || 'Your WFH request was approved.',
+                type: NotificationType.WFH_APPROVED,
+                link: `/approvals?type=wfh&item=${requestId}`,
+            }).catch(error => console.error('WFH notification failed', error));
             setPendingWfhApprovals(prev => prev.filter(r => r.id !== requestId));
         } catch (error: any) {
             alert(error.message || 'Failed to approve WFH request.');
@@ -483,7 +322,7 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
         if (!user) return;
         const request = pendingWfhApprovals.find(r => r.id === requestId);
         try {
-            await rejectWfhRequest(requestId, user.id, reason);
+            await processTimeRequestApproval('wfh', requestId, 'reject', reason);
 
             // Notify the requester of rejection
             if (request?.employeeId) {
@@ -510,92 +349,15 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
     ) => {
         if (!request.id) return;
         try {
-            const isSubmitted = request.status === OTStatus.Submitted;
-            const isPendingBOD = request.status === OTStatus.PendingBOD;
-
-            if (isSubmitted && newStatus === OTStatus.Approved) {
-                // Step 2: Reporting Manager approves → advance to PendingBOD for BOD final approval
-                await managerApproveOtRequest(request.id, details);
-
-                // Notify configured BOD approvers of pending final approval.
-                // We combine role-based BOD users AND users configured in approver_configs
-                // so that admins/other roles set as BOD approvers also receive the notification.
-                try {
-                    const configs = await fetchApproverConfigs();
-                    const configuredIds: string[] = configs.bodApprovers.user_ids || [];
-
-                    // Also fetch role-based BOD users to avoid missing anyone
-                    const { data: roleBodUsers } = await supabase
-                        .from('hris_users')
-                        .select('id')
-                        .eq('role', Role.BOD);
-                    const roleIds: string[] = (roleBodUsers || []).map((u: any) => u.id);
-
-                    // Deduplicate
-                    const allBodIds = Array.from(new Set([...configuredIds, ...roleIds]));
-
-                    allBodIds.forEach(bodId => {
-                        createNotification({
-                            userId: bodId,
-                            title: '📋 OT Request Pending BOD Approval',
-                            message: `${request.employeeName}'s OT request has been approved by their Reporting Manager and requires your final approval.`,
-                            type: NotificationType.OT_PENDING_BOD,
-                            link: '/payroll/overtime-requests',
-                        }).catch(e => console.error('Failed to send BOD OT notification', e));
-                    });
-                } catch (e) {
-                    console.error('Failed to fetch BOD approvers for OT notification', e);
-                }
-
-                // Notify the employee their request is now pending BOD
-                if (request.employeeId) {
-                    createNotification({
-                        userId: request.employeeId,
-                        title: '🔄 OT Request Forwarded to BOD',
-                        message: `Your OT request has been approved by your Reporting Manager and is now pending BOD final approval.`,
-                        type: NotificationType.OT_PENDING_BOD,
-                        link: '/payroll/overtime-requests',
-                    }).catch(e => console.error('Failed to send OT manager-forwarded notification', e));
-                }
-            } else if (isPendingBOD && newStatus === OTStatus.Approved) {
-                // Step 3: BOD gives final approval
-                await bodApproveOtRequest(request.id, details);
-
-                if (request.employeeId) {
-                    createNotification({
-                        userId: request.employeeId,
-                        title: '✅ OT Request Fully Approved',
-                        message: `Your OT request has been fully approved by the BOD.`,
-                        type: NotificationType.OT_APPROVED,
-                        link: '/payroll/overtime-requests',
-                    }).catch(e => console.error('Failed to send BOD OT approved notification', e));
-                }
-
-                // Notify HR/Timekeeping about the final approval
-                try {
-                    const { data: hrUsersData } = await supabase
-                        .from('hris_users')
-                        .select('id')
-                        .in('role', [Role.HRManager, Role.HRStaff, Role.Admin]);
-                    
-                    if (hrUsersData) {
-                        hrUsersData.forEach(hr => {
-                            createNotification({
-                                userId: hr.id,
-                                title: '✅ OT Request Approved (BOD)',
-                                message: `${request.employeeName}'s OT request has been fully approved by the BOD and is ready for timekeeping.`,
-                                type: NotificationType.OT_APPROVED,
-                                link: '/payroll/overtime-requests?tab=hr_verification',
-                            }).catch(e => console.error('Failed to send HR OT approved notification', e));
-                        });
-                    }
-                } catch (e) {
-                    console.error('Failed to notify HR of OT approval', e);
-                }
-            } else {
-                // Rejection at any stage — finalize with Rejected status
-                await approveRejectOtRequest(request.id, newStatus, details);
-            }
+            const result: any = await processTimeRequestApproval('overtime', request.id, newStatus === OTStatus.Approved ? 'approve' : 'reject', details.managerNote);
+            if (result?.notifyEscalation) sendConditionalApprovalEmails('overtime', request.id).catch(error => console.error('Approval email failed', error));
+            if (request.employeeId) createNotification({
+                userId: request.employeeId,
+                title: newStatus === OTStatus.Rejected ? '❌ OT Request Rejected' : (result?.route === 'BOD_REQUIRED' ? '🔄 OT Request Forwarded for Final Approval' : '✅ OT Request Approved'),
+                message: result?.context?.reason || `Your overtime request was ${newStatus === OTStatus.Approved ? 'approved' : 'rejected'}.`,
+                type: newStatus === OTStatus.Approved ? NotificationType.OT_APPROVED : NotificationType.OT_REJECTED,
+                link: `/approvals?type=overtime&item=${request.id}`,
+            }).catch(error => console.error('OT notification failed', error));
 
             setPendingOtApprovals(prev => prev.filter(r => r.id !== request.id));
         } catch (error: any) {

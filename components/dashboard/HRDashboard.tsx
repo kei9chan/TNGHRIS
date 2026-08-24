@@ -6,7 +6,6 @@ import { createPortal } from 'react-dom';
 import Card from '../ui/Card';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions'; // Import added
-import { useSettings } from '../../context/SettingsContext';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { mergePanParticulars } from '../../services/panUtils';
@@ -144,16 +143,14 @@ const mapMemoRow = (row: any): Memo => ({
 const HRDashboard: React.FC = () => {
     const { user } = useAuth();
     const { isUserEligibleEvaluator, getCoeAccess } = usePermissions(); // Added hook
-    const { approverConfigs } = useSettings();
     const isHR = user && [Role.Admin, Role.HRManager, Role.HRStaff].includes(user.role);
     
     // Check if the current user is a configured BOD approver
     const isConfiguredBOD = useMemo(() => {
-        if (!user) return false;
-        if (user.role === Role.BOD) return true;
-        const bodIds: string[] = approverConfigs?.bodApprovers?.user_ids || [];
-        return bodIds.includes(user.id);
-    }, [user, approverConfigs]);
+        // Conditional time approvals are shown only through explicit
+        // Approval Center assignments, never through an HR/BOD role fallback.
+        return false;
+    }, []);
 
     const [assignments, setAssignments] = useState<AssetAssignment[]>([]);
     const [useSupabaseAssignments, setUseSupabaseAssignments] = useState(false);
@@ -348,17 +345,10 @@ const HRDashboard: React.FC = () => {
                 }
             };
 
+            const emptyResult = { data: [], error: null };
             const [leaveRes, wfhRes, manpowerRes] = await Promise.all([
-                supabase
-                    .from('leave_requests')
-                    .select('id, employee_id, employee_name, leave_type_id, start_date, end_date, start_time, end_time, duration_days, reason, status, history_log, attachment_url, approver_id, business_unit_id, department_id')
-                    .eq('status', 'pending')
-                    .order('start_date', { ascending: false }),
-                supabase
-                    .from('wfh_requests')
-                    .select('id, employee_id, employee_name, date, reason, status, report_link, approved_by, approved_at, rejection_reason, created_at')
-                    .in('status', [WFHRequestStatus.PendingDeptHead, WFHRequestStatus.PendingBOD])
-                    .order('created_at', { ascending: false }),
+                Promise.resolve(emptyResult),
+                Promise.resolve(emptyResult),
                 supabase
                     .from('manpower_requests')
                     .select('id, business_unit_id, business_unit_name, department_id, requester_id, requester_name, date_needed, forecasted_pax, general_note, items, grand_total, status, created_at, approved_by, approved_at, rejection_reason')

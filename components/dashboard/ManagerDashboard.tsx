@@ -6,7 +6,6 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Card from '../ui/Card';
 import { OTStatus, Role, ResolutionStatus, ApproverStatus, PANStatus, PANStepStatus, JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, NotificationType, TicketStatus, OnboardingTaskStatus, PANActionTaken, AssetRequest, AssetRequestStatus, NTEStatus, PAN, Resolution, NTE, JobRequisition, OTRequest, AttendanceExceptionRecord, EmployeeAward, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COEDocumentData, COERequest, Envelope, EnvelopeStatus, RoutingStepStatus, BenefitRequest, BenefitRequestStatus, CoachingStatus, COETemplate, User, LeaveRequest, LeaveRequestStatus, WFHRequest, WFHRequestStatus, AttendanceRecord, ShiftAssignment, ShiftTemplate, Evaluation, EvaluatorType, Memo, MemoAcknowledgement, CoachingSession, EvaluationSubmission, EvaluationTimeline } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
-import { useSettings } from '../../context/SettingsContext';
 import { useAuth } from '../../hooks/useAuth';
 import ActionItemCard from './ActionItemCard';
 import QuickAnalyticsPreview from './QuickAnalyticsPreview';
@@ -147,17 +146,14 @@ const mapMemoRow = (row: any): Memo => ({
 const ManagerDashboard: React.FC = () => {
     const { user } = useAuth();
     const { getVisibleEmployeeIds, isUserEligibleEvaluator, getCoeAccess } = usePermissions();
-    const { approverConfigs } = useSettings();
     const location = useLocation();
     const navigate = useNavigate();
 
-    // Check if the current user is a configured BOD approver
+    // Escalated Leave/WFH/OT is rendered by ApprovalWidget from explicit
+    // assignment rows. Keep this legacy team panel scoped to direct reports.
     const isConfiguredBOD = useMemo(() => {
-        if (!user) return false;
-        if (user.role === Role.BOD) return true;
-        const bodIds: string[] = approverConfigs?.bodApprovers?.user_ids || [];
-        return bodIds.includes(user.id);
-    }, [user, approverConfigs]);
+        return false;
+    }, []);
 
     // Local state — all initialized empty; populated by Supabase useEffect hooks
     const [requests, setRequests] = useState<AssetRequest[]>([]);
