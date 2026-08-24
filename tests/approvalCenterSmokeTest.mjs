@@ -5,6 +5,7 @@ const page = read('pages/ApprovalCenter.tsx');
 const widget = read('components/dashboard/ApprovalWidget.tsx');
 const app = read('App.tsx');
 const migration = read('supabase/migrations/20260823233000_approval_center_bulk_workflow.sql');
+const bulkRepair = read('supabase/migrations/20260824130000_repair_conditional_bulk_approvals.sql');
 const consolidationMigration = read('supabase/migrations/20260824030000_consolidate_approval_notifications.sql');
 const additionalApprovals = read('hooks/useAdditionalApprovals.ts');
 const notifications = read('services/notificationService.ts');
@@ -32,6 +33,8 @@ const checks = [
   [migration.includes('idempotency_key uuid not null unique'), 'duplicate submission protection'],
   [migration.includes('insert into public.audit_logs') && migration.includes('insert into public.notifications'), 'audit and notification integration'],
   [migration.includes('revoke all on function public.bulk_approve_requests'), 'RPC execution lockdown'],
+  [bulkRepair.includes('public.process_time_request_approval') && bulkRepair.includes('private.is_direct_reporting_manager'), 'canonical conditional bulk authorization'],
+  [page.includes('Requests that changed, are no longer assigned to you') && page.includes('skippedItems'), 'clear bulk skip feedback'],
   [consolidationMigration.includes('notifications_user_dedupe_key_unique'), 'notification idempotency constraint'],
   [notifications.includes('canonicalApprovalLink') && notifications.includes('/approvals?type=nte'), 'notification Approval Center routing'],
   [notifications.includes("error.code === '23505'"), 'duplicate notification retry protection'],
