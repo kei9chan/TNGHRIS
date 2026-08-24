@@ -101,6 +101,8 @@ const PersonnelActionNotice: React.FC = () => {
       acceptedAt: p.accepted_at ? new Date(p.accepted_at) : undefined,
       acceptedBy: p.accepted_by || undefined,
       appliedAt: p.applied_at ? new Date(p.applied_at) : undefined,
+      templateId: p.template_id || undefined,
+      businessUnitId: p.business_unit_id || undefined,
     };
   };
 
@@ -164,6 +166,8 @@ const PersonnelActionNotice: React.FC = () => {
               createdAt: t.created_at ? new Date(t.created_at) : new Date(),
               updatedAt: t.updated_at ? new Date(t.updated_at) : new Date(),
               isDefault: t.is_default || false,
+              businessUnitId: t.business_unit_id || undefined,
+              businessUnitName: (unitRows || []).find((unit: any) => unit.id === t.business_unit_id)?.name,
             }))
           );
         }
@@ -208,6 +212,7 @@ const PersonnelActionNotice: React.FC = () => {
       preparer_name: recordToSave.preparerName || null,
       preparer_signature_url: recordToSave.preparerSignatureUrl || null,
       template_id: (recordToSave as any).templateId || null,
+      business_unit_id: recordToSave.businessUnitId || recordToSave.particulars?.from?.businessUnitId || null,
       salary_from: recordToSave.particulars?.from?.salary || null,
       updated_at: new Date().toISOString(),
     };
@@ -350,6 +355,8 @@ const PersonnelActionNotice: React.FC = () => {
           createdAt: t.created_at ? new Date(t.created_at) : new Date(),
           updatedAt: t.updated_at ? new Date(t.updated_at) : new Date(),
           isDefault: t.is_default || false,
+          businessUnitId: t.business_unit_id || undefined,
+          businessUnitName: businessUnits.find(unit => unit.id === t.business_unit_id)?.name,
         }))
       );
     }
@@ -364,6 +371,7 @@ const PersonnelActionNotice: React.FC = () => {
       logo_url: templateToSave.logoUrl || null,
       preparer_name: templateToSave.preparerName || null,
       preparer_signature_url: templateToSave.preparerSignatureUrl || null,
+      business_unit_id: templateToSave.businessUnitId || null,
       is_default: templateToSave.isDefault || false,
       created_by_user_id: templateToSave.createdByUserId || user?.id || null,
       updated_at: new Date().toISOString(),
@@ -443,7 +451,7 @@ const PersonnelActionNotice: React.FC = () => {
           <div className="space-x-2">
             <Button onClick={() => handleOpenModal(null)}>Create New PAN</Button>
             {canViewTemplatesTab && (
-              <Button variant="secondary" onClick={() => setIsTemplateModalOpen(true)}>Create PAN Template</Button>
+              <Button variant="secondary" onClick={() => handleOpenTemplateModal(null)}>Create PAN Template</Button>
             )}
           </div>
         )}
@@ -485,6 +493,7 @@ const PersonnelActionNotice: React.FC = () => {
           <PANTable
             records={filteredRecords}
             onEdit={handleOpenModal}
+            onPrint={setPanToPrint}
           />
         </>
       )}
@@ -523,6 +532,7 @@ const PersonnelActionNotice: React.FC = () => {
           isOpen={isTemplateModalOpen}
           onClose={() => setIsTemplateModalOpen(false)}
           template={selectedTemplate}
+          businessUnits={businessUnits}
           onSave={handleSaveTemplate}
         />
       )}
