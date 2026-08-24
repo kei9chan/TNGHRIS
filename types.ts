@@ -1661,11 +1661,15 @@ export interface PAN {
   acceptedAt?: Date;
   acceptedBy?: string;
   appliedAt?: Date;
+  templateId?: string;
+  businessUnitId?: string;
 }
 
 export interface PANTemplate {
   id: string;
   name: string;
+  businessUnitId?: string;
+  businessUnitName?: string;
   actionTaken: Partial<PANActionTaken>;
   notes: string;
   logoUrl?: string;
