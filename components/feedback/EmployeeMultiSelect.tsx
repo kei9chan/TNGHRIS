@@ -8,6 +8,8 @@ interface EmployeeMultiSelectProps {
   selectedUsers: User[];
   onSelectionChange: (users: User[]) => void;
   disabled?: boolean;
+  showDetails?: boolean;
+  searchPlaceholder?: string;
 }
 
 const XCircleIcon = () => (
@@ -22,7 +24,15 @@ const UserAvatar: React.FC = () => (
     </div>
 );
 
-const EmployeeMultiSelect: React.FC<EmployeeMultiSelectProps> = ({ label, allUsers, selectedUsers, onSelectionChange, disabled = false }) => {
+const EmployeeMultiSelect: React.FC<EmployeeMultiSelectProps> = ({
+  label,
+  allUsers,
+  selectedUsers,
+  onSelectionChange,
+  disabled = false,
+  showDetails = true,
+  searchPlaceholder = 'Search for employees...',
+}) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isDropdownOpen, setDropdownOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -81,7 +91,7 @@ const EmployeeMultiSelect: React.FC<EmployeeMultiSelectProps> = ({ label, allUse
           value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)}
           onFocus={() => !disabled && setDropdownOpen(true)}
-          placeholder="Search for employees..."
+          placeholder={searchPlaceholder}
           className="w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed"
           disabled={disabled}
         />
@@ -99,9 +109,11 @@ const EmployeeMultiSelect: React.FC<EmployeeMultiSelectProps> = ({ label, allUse
                         <p className="text-sm font-medium text-gray-900 dark:text-white">
                           {formatEmployeeName(user.name)}
                         </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          {[(user.roles?.length ? user.roles.join(', ') : user.role || 'Employee'), user.position, user.businessUnit, user.email].filter(Boolean).join(' • ')}
-                        </p>
+                        {showDetails && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {[(user.roles?.length ? user.roles.join(', ') : user.role || 'Employee'), user.position, user.businessUnit, user.email].filter(Boolean).join(' • ')}
+                          </p>
+                        )}
                     </div>
                 </div>
               ))
@@ -120,9 +132,11 @@ const EmployeeMultiSelect: React.FC<EmployeeMultiSelectProps> = ({ label, allUse
                     <p className="text-sm font-semibold text-gray-900 dark:text-white">
                       {formatEmployeeName(user.name)}
                     </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {user.roles?.length ? user.roles.join(', ') : user.role || 'Employee'}{user.position ? ` • ${user.position}` : ''}{user.businessUnit ? ` • ${user.businessUnit}` : ''}
-                    </p>
+                    {showDetails && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {user.roles?.length ? user.roles.join(', ') : user.role || 'Employee'}{user.position ? ` • ${user.position}` : ''}{user.businessUnit ? ` • ${user.businessUnit}` : ''}
+                      </p>
+                    )}
                 </div>
             </div>
             <button type="button" onClick={() => handleRemoveUser(user.id)} className="text-gray-400 hover:text-red-500 disabled:cursor-not-allowed disabled:hover:text-gray-400" disabled={disabled}>

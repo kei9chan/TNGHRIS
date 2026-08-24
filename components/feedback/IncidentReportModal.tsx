@@ -13,8 +13,8 @@ import { usePermissions } from '../../hooks/usePermissions';
 import EmployeeMultiSelect from './EmployeeMultiSelect';
 import SignaturePad, { SignaturePadRef } from '../ui/SignaturePad';
 import { supabase } from '../../services/supabaseClient';
-import { formatEmployeeName } from '../../services/formatEmployeeName';
 import FileUploader from '../ui/FileUploader';
+import { fetchIncidentReportUserDirectory } from '../../services/incidentReportService';
 
 interface IncidentReportModalProps {
   isOpen: boolean;
@@ -55,6 +55,8 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
   const { can } = usePermissions();
   const [currentReport, setCurrentReport] = useState<Partial<IncidentReport>>({});
   const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [directoryLoading, setDirectoryLoading] = useState(false);
+  const [directoryError, setDirectoryError] = useState('');
   const [involvedEmployees, setInvolvedEmployees] = useState<User[]>([]);
   const [witnesses, setWitnesses] = useState<User[]>([]);
   const signaturePadRef = useRef<SignaturePadRef>(null);
@@ -127,23 +129,8 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
   }, [allUsers]);
 
   const availableEmployees = useMemo(() => {
-    if (!currentReport.businessUnitId) {
-      return allUsers.filter(u => !u.status || u.status.toLowerCase() === 'active');
-    }
-    const selectedBu = businessUnits.find(b => b.id === currentReport.businessUnitId);
-    const selectedBuName = selectedBu?.name?.trim().toLowerCase();
-
-    return allUsers.filter(u => {
-      const isActive = !u.status || u.status.toLowerCase() === 'active';
-      if (!isActive) return false;
-
-      const userBuName = u.businessUnit?.trim().toLowerCase();
-      return (
-        u.businessUnitId === currentReport.businessUnitId ||
-        (selectedBuName && userBuName === selectedBuName)
-      );
-    });
-  }, [allUsers, currentReport.businessUnitId, businessUnits]);
+    return allUsers.filter(u => !u.status || u.status.toLowerCase() === 'active');
+  }, [allUsers]);
 
   const canAssign = can('IncidentReports', Permission.Assign) || can('IncidentReports', Permission.Manage);
 
@@ -166,36 +153,17 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
     fetchData();
 
     const fetchUsers = async () => {
+      setDirectoryLoading(true);
+      setDirectoryError('');
       try {
-        const { data, error } = await supabase
-          .from('hris_users')
-          .select('id, full_name, email, role, department, business_unit, business_unit_id, department_id, position, status')
-          .order('full_name', { ascending: true });
-
-        if (error) {
-          console.warn('Failed to load users for IR modal', error);
-          return;
-        }
-        if (data) {
-          console.log('[IRModal] Loaded users count:', data.length, data);
-          const mapped = data.map((u: any) => ({
-            id: u.id,
-            name: formatEmployeeName(u.full_name || 'User'),
-            email: u.email || '',
-            role: u.role,
-            department: u.department || '',
-            businessUnit: u.business_unit || '',
-            businessUnitId: u.business_unit_id || undefined,
-            departmentId: u.department_id || undefined,
-            status: u.status || 'Active',
-            isPhotoEnrolled: false,
-            dateHired: new Date(),
-            position: u.position || '',
-          })) as User[];
-          setAllUsers(mapped);
-        }
-      } catch (err) {
+        const directory = await fetchIncidentReportUserDirectory();
+        setAllUsers(directory);
+      } catch (err: any) {
         console.warn('IR modal user fetch error', err);
+        setAllUsers([]);
+        setDirectoryError(err?.message || 'The employee directory could not be loaded. Please refresh and try again.');
+      } finally {
+        setDirectoryLoading(false);
       }
     };
     fetchUsers();
@@ -269,16 +237,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
       setCurrentReport(prev => ({ ...prev, dateTime: new Date(value) }));
     } else if (name === 'businessUnitId') {
       const bu = businessUnits.find(b => b.id === value);
-      const buName = bu?.name?.trim().toLowerCase();
       setCurrentReport(prev => ({ ...prev, businessUnitId: value, businessUnitName: bu?.name }));
-      if (value) {
-        setInvolvedEmployees(prev => prev.filter(u => 
-          u.businessUnitId === value || (buName && u.businessUnit?.trim().toLowerCase() === buName)
-        ));
-        setWitnesses(prev => prev.filter(u => 
-          u.businessUnitId === value || (buName && u.businessUnit?.trim().toLowerCase() === buName)
-        ));
-      }
     } else if (name === 'assignedToId') {
       const handler = potentialHandlers.find(u => u.id === value);
       setCurrentReport(prev => ({ ...prev, assignedToId: value, assignedToName: handler?.name }));
@@ -525,11 +484,24 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
 
         {/* Row 3: Involved Employees */}
         <div className="md:col-span-2">
+          {directoryError && (
+            <p role="alert" className="mb-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+              {directoryError}
+            </p>
+          )}
+          {!directoryError && (
+            <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
+              {directoryLoading ? 'Loading active employees…' : `${availableEmployees.length} active users available across all business units.`}
+            </p>
+          )}
           <EmployeeMultiSelect
             label="Involved Employees*"
             allUsers={availableEmployees}
             selectedUsers={involvedEmployees}
             onSelectionChange={setInvolvedEmployees}
+            disabled={directoryLoading || !!directoryError}
+            showDetails={false}
+            searchPlaceholder="Search for employees or users..."
           />
         </div>
 
@@ -540,6 +512,9 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
             allUsers={availableEmployees}
             selectedUsers={witnesses}
             onSelectionChange={setWitnesses}
+            disabled={directoryLoading || !!directoryError}
+            showDetails={false}
+            searchPlaceholder="Search for employees or users..."
           />
         </div>
 

@@ -1,6 +1,7 @@
 import { supabase } from './supabaseClient';
 import { IncidentReport, IRStatus, ChatMessage, User, PipelineStage, Role, NotificationType } from '../types';
 import { createNotification } from './notificationService';
+import { formatEmployeeName } from './formatEmployeeName';
 
 const isUuid = (value?: string | null) =>
   !!value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -72,6 +73,23 @@ const mapRow = (row: IncidentReportRow): IncidentReport => ({
     sentByName: entry?.sentByName || 'Employee',
   })),
 });
+
+export const fetchIncidentReportUserDirectory = async (): Promise<User[]> => {
+  const { data, error } = await supabase.rpc('get_incident_report_user_directory');
+  if (error) throw new Error(error.message || 'Failed to load the incident-report user directory.');
+
+  return (data || []).map((row: any) => ({
+    id: row.id,
+    name: formatEmployeeName(row.full_name || 'User'),
+    email: '',
+    role: Role.Employee,
+    department: '',
+    businessUnit: '',
+    status: 'Active',
+    isPhotoEnrolled: false,
+    position: '',
+  })) as User[];
+};
 
 export const fetchIncidentReportById = async (id: string): Promise<IncidentReport | null> => {
   const { data, error } = await supabase
@@ -247,30 +265,8 @@ export const saveIncidentReport = async (
   
   const mappedRow = mapRow(data as IncidentReportRow);
 
-  // If this is a new incident report, notify HR Manager and HR Staff
-  if (!report.id) {
-    try {
-      const { data: hrUsers } = await supabase
-        .from('hris_users')
-        .select('id')
-        .in('role', [Role.HRManager, Role.HRStaff]);
-
-      if (hrUsers && hrUsers.length > 0) {
-        const notifications = hrUsers.map((hr) =>
-          createNotification({
-            userId: hr.id,
-            title: 'New Incident Report Filed',
-            message: `A new Incident Report (${mappedRow.caseNumber ? `TNGIR-${String(mappedRow.caseNumber).padStart(5, '0')}` : 'Draft'}) has been submitted by ${user.name || 'an employee'}.`,
-            type: NotificationType.CASE_ASSIGNED,
-            link: '/feedback',
-          })
-        );
-        await Promise.all(notifications);
-      }
-    } catch (err) {
-      console.error('Failed to notify HR about new IR:', err);
-    }
-  }
+  // New-report notifications are created by the database trigger so employee
+  // reporters do not need access to HR user rows and delivery is reliable.
 
   // If assignment changed or was newly set, notify the handler
   if (report.assignedToId && report.assignedToId !== previousAssignedToId) {
