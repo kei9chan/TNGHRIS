@@ -81,6 +81,7 @@ const EmployeeProfile: React.FC = () => {
             reportsTo: row.reports_to || undefined,
             birthDate: row.birth_date ? new Date(row.birth_date) : undefined,
             dateHired: row.date_hired ? new Date(`${row.date_hired}T00:00:00`) : row.dateHired ? new Date(row.dateHired) : undefined,
+            endDate: row.end_date ? new Date(`${row.end_date}T00:00:00`) : row.endDate ? new Date(row.endDate) : undefined,
             isPhotoEnrolled: !!row.is_photo_enrolled,
             signatureUrl: row.signature_url || undefined,
             profilePictureUrl: row.profile_picture_url || undefined,
@@ -343,14 +344,11 @@ const EmployeeProfile: React.FC = () => {
             bank_account_type: data.bankingDetails?.accountType,
             date_hired: formatDateOnly(data.dateHired ?? userToView.dateHired ?? null),
         };
-        const { data: updated, error } = await supabase
+        const { error } = await supabase
             .from('hris_users')
             .update(payload)
-            .eq('id', userId)
-            .select('id')
-            .single();
+            .eq('id', userId);
         if (error) throw error;
-        if (!updated) return null;
         const { data: refreshed, error: refreshError } = await supabase
             .rpc('get_hris_user_profile', { p_user_id: userId })
             .maybeSingle();
@@ -422,8 +420,23 @@ const EmployeeProfile: React.FC = () => {
         setEditModalOpen(false);
     };
 
-    const handleAdminSave = async (updatedProfileData: Partial<User>) => {
+    const handleAdminSave = async (updatedProfileData: Partial<User>, options?: { endDateReason?: string }) => {
         if (!userToView || !currentUser) return;
+
+        const previousEndDate = formatDateOnly(userToView.endDate ?? null);
+        const nextEndDate = formatDateOnly(updatedProfileData.endDate ?? null);
+        const endDateChanged = previousEndDate !== nextEndDate;
+
+        const persistEndDateChange = async () => {
+            if (!endDateChanged) return null;
+            const { data, error } = await supabase.rpc('set_employee_end_date', {
+                p_target_user_id: userToView.id,
+                p_end_date: nextEndDate,
+                p_reason: options?.endDateReason || '',
+            });
+            if (error) throw error;
+            return data ? mapHrisUser(data) : null;
+        };
         
         try {
             if (employmentFieldsOnly) {
@@ -438,15 +451,21 @@ const EmployeeProfile: React.FC = () => {
                     const mapped = mapHrisUser(data);
                     setUsers(prev => [mapped, ...prev.filter(item => item.id !== mapped.id)]);
                 }
+                const lifecycleUser = await persistEndDateChange();
+                if (lifecycleUser) {
+                    setUsers(prev => [lifecycleUser, ...prev.filter(item => item.id !== lifecycleUser.id)]);
+                }
                 alert('Employment details updated successfully.');
                 setEditModalOpen(false);
                 return;
             }
             const updated = await updateSupabaseUser(userToView.id, updatedProfileData);
-            if (updated) {
+            const lifecycleUser = await persistEndDateChange();
+            const finalUser = lifecycleUser || updated;
+            if (finalUser) {
                 setUsers(prev => {
-                    const rest = prev.filter(u => u.id !== updated.id);
-                    return [updated, ...rest];
+                    const rest = prev.filter(u => u.id !== finalUser.id);
+                    return [finalUser, ...rest];
                 });
             }
             alert('Profile updated successfully.');
@@ -559,6 +578,7 @@ const EmployeeProfile: React.FC = () => {
                     onSaveDraft={handleSaveDraft}
                     draft={userDraft}
                     isAdminEdit={(canAdminEdit || employmentFieldsOnly) && !isMyProfile}
+                    canManageEndDate={!isMyProfile && (activeRoles.has(Role.Admin) || activeRoles.has(Role.HRManager) || activeRoles.has(Role.HRStaff))}
                     canEditEmployeeId={currentUser?.role === 'HR Manager' || currentUser?.role === 'HR Staff'}
                     employmentFieldsOnly={employmentFieldsOnly}
                 />

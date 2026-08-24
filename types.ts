@@ -2348,6 +2348,19 @@ export interface ContractTemplateSection {
   body: string;
 }
 
+export interface ContractDocumentSettings {
+  pageSize: 'A4' | 'Letter';
+  marginTopMm: number;
+  marginRightMm: number;
+  marginBottomMm: number;
+  marginLeftMm: number;
+  fontFamily: string;
+  fontSizePt: number;
+  lineHeight: number;
+  showPageNumbers: boolean;
+  showFooter: boolean;
+}
+
 export interface ContractTemplate {
   id: string;
   title: string;
@@ -2357,6 +2370,7 @@ export interface ContractTemplate {
   logoUrl?: string;
   logoPosition?: 'left' | 'center' | 'right';
   logoMaxWidth?: number;
+  documentSettings?: ContractDocumentSettings;
   body: string; // HTML content with placeholders
   sections: ContractTemplateSection[];
   footer: string;

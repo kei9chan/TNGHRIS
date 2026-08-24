@@ -23,6 +23,7 @@ type ContractTemplateRow = {
   logo_url?: string | null;
   logo_position?: string | null;
   logo_max_width?: number | null;
+  document_settings?: any | null;
   body: string;
   sections: any[] | null;
   footer?: string | null;
@@ -77,7 +78,7 @@ const Contracts: React.FC = () => {
   React.useEffect(() => {
     const loadEmployees = async () => {
       try {
-        const { data, error } = await supabase.from('hris_users').select('id, full_name, email, role, status, reports_to, position, business_unit');
+        const { data, error } = await supabase.rpc('get_accessible_hris_users');
         if (error) throw error;
         if (data) {
           const mapped = data.map((u: any) => ({
@@ -197,6 +198,7 @@ const Contracts: React.FC = () => {
     logoUrl: row.logo_url || undefined,
     logoPosition: (row.logo_position as any) || 'left',
     logoMaxWidth: row.logo_max_width || undefined,
+    documentSettings: row.document_settings || undefined,
     body: row.body || '',
     sections: Array.isArray(row.sections) ? row.sections : [],
     footer: row.footer || '',
@@ -277,6 +279,7 @@ const Contracts: React.FC = () => {
         logo_url: templateData.logoUrl || null,
         logo_position: templateData.logoPosition || 'left',
         logo_max_width: templateData.logoMaxWidth || null,
+        document_settings: templateData.documentSettings || {},
         body: templateData.body || '',
         sections: templateData.sections || [],
         footer: templateData.footer || '',
@@ -424,11 +427,10 @@ const Contracts: React.FC = () => {
           );
 
           const recipientRows = await supabase
-            .from('hris_users')
-            .select('id, email, auth_user_id')
+            .rpc('get_accessible_hris_users')
             .in('id', [newEnvelope.employeeId, ...Array.from(approvalIds)]);
           const idToRow = new Map(
-            (recipientRows.data || []).map((row: any) => [row.id, row])
+            ((recipientRows.data || []) as any[]).map((row: any) => [row.id, row])
           );
           const notificationRows: any[] = [];
           const pushNotificationFor = (

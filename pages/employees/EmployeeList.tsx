@@ -204,8 +204,22 @@ const EmployeeList: React.FC = () => {
       setUserToEdit(null);
   };
   
-  const handleAdminSave = async (updatedProfileData: Partial<User>) => {
+  const handleAdminSave = async (updatedProfileData: Partial<User>, options?: { endDateReason?: string }) => {
       if (!userToEdit) return;
+
+      const previousEndDate = formatEmploymentDateOnly(userToEdit.endDate ?? null);
+      const nextEndDate = formatEmploymentDateOnly(updatedProfileData.endDate ?? null);
+      const endDateChanged = previousEndDate !== nextEndDate;
+
+      const persistEndDateChange = async () => {
+        if (!endDateChanged) return;
+        const { error } = await supabase.rpc('set_employee_end_date', {
+          p_target_user_id: userToEdit.id,
+          p_end_date: nextEndDate,
+          p_reason: options?.endDateReason || '',
+        });
+        if (error) throw error;
+      };
 
       if (!canFullyEditEmployees && canEditEmploymentDetails) {
         const { error } = await supabase.rpc('update_employee_employment_details', {
@@ -216,6 +230,12 @@ const EmployeeList: React.FC = () => {
         });
         if (error) {
           alert(error.message || 'Failed to update employment details.');
+          return;
+        }
+        try {
+          await persistEndDateChange();
+        } catch (lifecycleError: any) {
+          alert(lifecycleError?.message || 'Failed to confirm the end-date change.');
           return;
         }
         await refetchUsers();
@@ -286,19 +306,21 @@ const EmployeeList: React.FC = () => {
         if (payload[key] === undefined) delete payload[key];
       });
 
-      const { error, data: updatedRows } = await supabase
+      const { error } = await supabase
         .from('hris_users')
         .update(payload)
-        .eq('id', userToEdit.id)
-        .select('id');
+        .eq('id', userToEdit.id);
 
       if (error) {
         console.error('Error updating user', error);
         alert('Failed to update profile.');
         return;
       }
-      if (!updatedRows || updatedRows.length === 0) {
-        console.warn('No rows returned from update; check RLS or payload', payload);
+      try {
+        await persistEndDateChange();
+      } catch (lifecycleError: any) {
+        alert(lifecycleError?.message || 'Failed to confirm the end-date change.');
+        return;
       }
 
       // Refresh list to reflect updates
@@ -398,6 +420,7 @@ const EmployeeList: React.FC = () => {
                 onSaveDraft={() => {}} // No-op for admin edit
                 draft={null}
                 isAdminEdit={true}
+                canManageEndDate={activeRoles.has(Role.Admin) || activeRoles.has(Role.HRManager) || activeRoles.has(Role.HRStaff)}
                 canEditEmployeeId={currentUser?.role === Role.HRManager || currentUser?.role === Role.HRStaff}
                 employmentFieldsOnly={!canFullyEditEmployees && canEditEmploymentDetails}
             />

@@ -22,6 +22,7 @@ type HrisUserRow = {
   department_id?: string | null;
   position?: string | null;
   date_hired?: string | null;
+  end_date?: string | null;
   birth_date?: string | null;
   sss_no?: string | null;
   pagibig_no?: string | null;
@@ -79,6 +80,7 @@ const mapUser = (row: HrisUserRow): User => ({
   employmentStatus: (row.employment_status as EmploymentStatus) || undefined,
   isPhotoEnrolled: row.is_photo_enrolled,
   dateHired: row.date_hired ? new Date(`${row.date_hired}T00:00:00`) : undefined,
+  endDate: row.end_date ? new Date(`${row.end_date}T00:00:00`) : undefined,
   birthDate: row.birth_date ? new Date(row.birth_date) : undefined,
   position: resolveEmployeePosition(row.position, row.department),
   reportsTo: row.reports_to || undefined,

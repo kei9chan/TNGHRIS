@@ -42,7 +42,9 @@ const Tickets: React.FC = () => {
     const [priorityFilter, setPriorityFilter] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [buFilter, setBuFilter] = useState('');
+    const [ownershipFilter, setOwnershipFilter] = useState<'all' | 'assigned' | 'requested'>('all');
     const [dbBus, setDbBus] = useState<BusinessUnit[]>([]);
+    const handledTicketIdRef = useRef<string | null>(null);
 
     useEffect(() => {
         supabase.from('business_units').select('id, name, code').order('name').then(({ data }) => {
@@ -71,42 +73,32 @@ const Tickets: React.FC = () => {
         const params = new URLSearchParams(location.search);
         const ticketIdToView = params.get('ticketId');
 
-        if (!ticketIdToView) return;
+        if (!ticketIdToView) {
+            handledTicketIdRef.current = null;
+            return;
+        }
+        if (handledTicketIdRef.current === ticketIdToView) return;
+        handledTicketIdRef.current = ticketIdToView;
 
         const tryLoad = async () => {
-            // first try from already loaded list
-            const fromState = tickets.find(t => t.id === ticketIdToView);
-            if (fromState) {
-                const canView = filterTicketsByScope([fromState]).length > 0;
-                if (canView) {
-                    setSelectedTicket(fromState);
-                    setIsModalOpen(true);
-                } else {
-                    alert("You do not have permission to view this ticket.");
-                }
-                navigate('/helpdesk/tickets', { replace: true });
-                return;
-            }
-
-            // fallback: fetch single ticket from supabase
             try {
                 const remote = await fetchTicketById(ticketIdToView);
-                if (remote && filterTicketsByScope([remote]).length > 0) {
+                if (remote) {
                     setSelectedTicket(remote);
                     setIsModalOpen(true);
+                    setTickets(previous => [remote, ...previous.filter(item => item.id !== remote.id)]);
                 } else {
-                    alert(remote ? "You do not have permission to view this ticket." : "The requested ticket was not found.");
+                    alert('The requested ticket was not found.');
                 }
-            } catch (err) {
-                alert("Failed to load ticket.");
+            } catch (err: any) {
+                alert(err?.message || 'Failed to load ticket.');
             } finally {
                 navigate('/helpdesk/tickets', { replace: true });
             }
         };
 
         tryLoad();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [location.search, tickets, filterTicketsByScope, navigate]);
+    }, [location.search, navigate]);
 
     useEffect(() => {
         if (location.state?.openNewTicketModal) {
@@ -143,10 +135,13 @@ const Tickets: React.FC = () => {
             const priorityMatch = !priorityFilter || ticket.priority === priorityFilter;
             const statusMatch = !statusFilter || (statusFilter === 'Overdue' ? isTicketOverdue(ticket) : ticket.status === statusFilter);
             const buMatch = !buFilter || ticket.businessUnitId === buFilter;
+            const ownershipMatch = ownershipFilter === 'all'
+                || (ownershipFilter === 'assigned' && ticket.assignedToId === user?.id)
+                || (ownershipFilter === 'requested' && ticket.requesterId === user?.id);
 
-            return searchMatch && categoryMatch && priorityMatch && statusMatch && buMatch;
+            return searchMatch && categoryMatch && priorityMatch && statusMatch && buMatch && ownershipMatch;
         });
-    }, [tickets, searchTerm, categoryFilter, priorityFilter, statusFilter, buFilter]);
+    }, [tickets, searchTerm, categoryFilter, priorityFilter, statusFilter, buFilter, ownershipFilter, user?.id]);
 
     const handleViewTicket = (ticket: Ticket) => {
         setSelectedTicket(ticket);
@@ -234,8 +229,8 @@ const Tickets: React.FC = () => {
             if (!ticketToSave.id) {
                 try {
                     const { data: supportStaff } = await supabase
-                        .from('hris_users')
-                        .select('id, role')
+                        .rpc('get_accessible_hris_users')
+                        .eq('status', 'Active')
                         .in('role', [Role.Admin, Role.HRManager, Role.HRStaff, Role.IT]);
                     (supportStaff || []).forEach((row: any) => {
                         if (row?.id && row.id !== user.id) {
@@ -256,13 +251,12 @@ const Tickets: React.FC = () => {
 
             if (newlyAssigned && saved.assignedToId) {
                 const { data: assigneeRow } = await supabase
-                    .from('hris_users')
-                    .select('id, full_name, role')
-                    .eq('id', saved.assignedToId)
+                    .rpc('get_hris_user_profile', { p_user_id: saved.assignedToId })
                     .maybeSingle();
 
-                const assigneeName = assigneeRow?.full_name || saved.assignedToName || 'Assignee';
-                const assigneeRole = assigneeRow?.role as Role | undefined;
+                const assignee = assigneeRow as any;
+                const assigneeName = assignee?.full_name || saved.assignedToName || 'Assignee';
+                const assigneeRole = assignee?.role as Role | undefined;
 
                 const targets = new Set<string>();
                 targets.add(saved.assignedToId);
@@ -272,8 +266,8 @@ const Tickets: React.FC = () => {
 
                 if (assigneeRole === Role.Manager) {
                     const { data: adminRows } = await supabase
-                        .from('hris_users')
-                        .select('id, role')
+                        .rpc('get_accessible_hris_users')
+                        .eq('status', 'Active')
                         .in('role', [Role.Admin, Role.HRManager, Role.HRStaff]);
                     (adminRows || []).forEach((row: any) => {
                         if (row?.id) targets.add(row.id);
@@ -505,8 +499,8 @@ const Tickets: React.FC = () => {
             <EditableDescription descriptionKey={descriptionKey} />
 
             <Card>
-                <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="md:col-span-2 lg:col-span-4">
+                <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                    <div className="md:col-span-2 lg:col-span-5">
                         <Input
                             label="Search Tickets"
                             id="ticket-search"
@@ -514,6 +508,14 @@ const Tickets: React.FC = () => {
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
                         />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Ticket View</label>
+                        <select aria-label="Ticket view" value={ownershipFilter} onChange={e => setOwnershipFilter(e.target.value as typeof ownershipFilter)} className={selectClasses}>
+                            <option value="all">All accessible tickets</option>
+                            <option value="assigned">Assigned to Me</option>
+                            <option value="requested">Requested by Me</option>
+                        </select>
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Category</label>

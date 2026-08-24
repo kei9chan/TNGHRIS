@@ -64,13 +64,19 @@ const mapRoleFromDb = (raw: string | null): Role | null => {
 const isActiveStatus = (status?: string | null) =>
   (status || '').toString().toLowerCase() === 'active';
 
-const setHrPendingNotice = () => {
+type AuthNotice = 'hr_pending' | 'account_inactive';
+
+const setAuthNotice = (notice: AuthNotice) => {
   try {
-    localStorage.setItem('authNotice', 'hr_pending');
+    localStorage.setItem('authNotice', notice);
   } catch {
     // ignore storage failures
   }
 };
+
+const setHrPendingNotice = () => setAuthNotice('hr_pending');
+const setAccountInactiveNotice = () => setAuthNotice('account_inactive');
+const ACTIVE_SESSION_RECHECK_MS = 30_000;
 
 /**
  * Build a User directly from Supabase data — no more legacy mock merging.
@@ -104,6 +110,13 @@ const buildAppUserFromSupabase = async (
   if (!data) {
     console.warn('AuthProvider: no hris_users row found', sbUser.id);
     return null;
+  }
+
+  if (!isActiveStatus(data.status)) {
+    throw new SupabaseAuthError(
+      'Your HRIS account is inactive. Contact HR or an administrator if access should be restored.',
+      'account_inactive'
+    );
   }
 
   const mappedRole = mapRoleFromDb(data.role);
@@ -216,7 +229,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       const hydrated = await buildAppUserFromSupabase(sbUser);
       if (hydrated) {
         if (!isActiveStatus(hydrated.status)) {
-          setHrPendingNotice();
+          setAccountInactiveNotice();
           await supabase.auth.signOut().catch(() => { });
           setUser(null);
           return;
@@ -230,11 +243,60 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       setUser(null);
     } catch (err) {
       console.error('[Auth] hydrateSupabaseUser failed to load HRIS profile', err);
-      setHrPendingNotice();
+      if (err instanceof SupabaseAuthError && err.code === 'account_inactive') {
+        setAccountInactiveNotice();
+      } else {
+        setHrPendingNotice();
+      }
       await supabase.auth.signOut().catch(() => { });
       setUser(null);
     }
   };
+
+  // Backend status and Supabase Auth revocation are authoritative. Recheck an
+  // open browser periodically and whenever it regains focus so an employee who
+  // is offboarded in another session is signed out without a hard refresh.
+  useEffect(() => {
+    if (!user?.authUserId) return;
+
+    let disposed = false;
+    let checking = false;
+
+    const validateActiveAccount = async () => {
+      if (checking || disposed) return;
+      checking = true;
+      try {
+        const { data, error } = await supabase.rpc('get_my_hris_bootstrap');
+        if (error) {
+          console.warn('[Auth] active-session recheck failed', error);
+          return;
+        }
+        const profile = data as any;
+        if (!profile || !isActiveStatus(profile.status)) {
+          setAccountInactiveNotice();
+          await supabase.auth.signOut().catch(() => { });
+          if (!disposed) setUser(null);
+        }
+      } finally {
+        checking = false;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void validateActiveAccount();
+    };
+
+    const intervalId = window.setInterval(() => void validateActiveAccount(), ACTIVE_SESSION_RECHECK_MS);
+    window.addEventListener('focus', validateActiveAccount);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', validateActiveAccount);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user?.authUserId]);
 
   const login = async (
     email: string,
@@ -267,13 +329,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
 
       console.log('[Auth] AFTER signInWithPassword', { data, error });
 
-      const supabaseErrorCode =
+      let supabaseErrorCode =
         (error as any)?.code || (error instanceof SupabaseAuthError ? error.code : undefined);
-      const supabaseErrorMsg =
+      let supabaseErrorMsg =
         error?.message ??
         (supabaseErrorCode === 'email_not_confirmed'
           ? 'Please verify your email before signing in.'
           : 'Login failed. Please check your credentials.');
+      if (error && /banned|disabled|inactive/i.test(String(error?.message || ''))) {
+        supabaseErrorCode = 'account_inactive';
+        supabaseErrorMsg = 'Your HRIS account is inactive. Contact HR or an administrator if access should be restored.';
+      }
 
       if (!error && data?.user) {
         console.log('[Auth] Supabase signInWithPassword succeeded');
@@ -291,11 +357,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         const statusLower = (userCandidate.status || '').toString().toLowerCase();
         const isActive = statusLower === 'active';
         if (!isActive) {
-          setHrPendingNotice();
+          setAccountInactiveNotice();
           await supabase.auth.signOut().catch(() => { });
           throw new SupabaseAuthError(
-            'Your account is pending HR approval.',
-            'hr_pending'
+            'Your HRIS account is inactive. Contact HR or an administrator if access should be restored.',
+            'account_inactive'
           );
         }
 

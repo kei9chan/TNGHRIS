@@ -46,6 +46,17 @@ const AccountLifecycleModal: React.FC<AccountLifecycleModalProps> = ({ user, isO
           ? 'This restores login access. Historical employee and workflow records remain unchanged.'
           : 'This blocks login and removes the account from active lists without deleting its employee profile or history.'}
       </p>
+      <dl className="grid grid-cols-1 gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm dark:border-slate-700 dark:bg-slate-900/40 sm:grid-cols-2">
+        <div><dt className="text-xs uppercase text-gray-500">Account</dt><dd className="font-medium">{user.name}<br /><span className="font-normal text-gray-500">{user.email}</span></dd></div>
+        <div><dt className="text-xs uppercase text-gray-500">Linked employee</dt><dd className="font-medium">{user.employeeId || user.id}</dd></div>
+        <div><dt className="text-xs uppercase text-gray-500">Role</dt><dd className="font-medium">{(user.roles || [user.role]).join(', ')}</dd></div>
+        <div><dt className="text-xs uppercase text-gray-500">Business unit</dt><dd className="font-medium">{user.businessUnit || 'Not assigned'}</dd></div>
+      </dl>
+      {!reactivating && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          Linked payroll, leave, evaluations, tickets, contracts, documents, approvals, and audit history will be preserved. This action never hard-deletes the employee or those records.
+        </p>
+      )}
       {!reactivating && (
         <label className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
           <input type="checkbox" className="mt-1" checked={markDuplicate} onChange={event => setMarkDuplicate(event.target.checked)} />

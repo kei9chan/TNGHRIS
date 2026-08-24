@@ -65,10 +65,7 @@ export const fetchTickets = async (): Promise<Ticket[]> => {
 
 export const fetchTicketById = async (id: string): Promise<Ticket | null> => {
   const { data, error } = await supabase
-    .from('tickets')
-    .select('*')
-    .eq('id', id)
-    .maybeSingle();
+    .rpc('get_accessible_helpdesk_ticket', { p_ticket_id: id });
   if (error) throw new Error(error.message || 'Failed to load ticket');
   return data ? mapRow(data as TicketRow) : null;
 };
@@ -87,13 +84,12 @@ export const saveTicket = async (ticket: Partial<Ticket>): Promise<Ticket> => {
 
   if (ticket.requesterId) {
     const { data: requesterRow } = await supabase
-      .from('hris_users')
-      .select('business_unit_id, business_unit')
-      .eq('id', ticket.requesterId)
+      .rpc('get_hris_user_profile', { p_user_id: ticket.requesterId })
       .maybeSingle();
+    const requester = requesterRow as any;
 
-    requesterBuId = requesterBuId || requesterRow?.business_unit_id || null;
-    requesterBuName = requesterBuName || requesterRow?.business_unit || undefined;
+    requesterBuId = requesterBuId || requester?.business_unit_id || null;
+    requesterBuName = requesterBuName || requester?.business_unit || undefined;
   }
 
   if (!isUuid(requesterBuId) && requesterBuName) {

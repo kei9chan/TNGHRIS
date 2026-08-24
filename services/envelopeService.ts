@@ -13,6 +13,7 @@ type ContractTemplateRow = {
   logo_url?: string | null;
   logo_position?: string | null;
   logo_max_width?: number | null;
+  document_settings?: any;
   body: string;
   sections: any;
   footer: string;
@@ -54,6 +55,7 @@ const mapContractTemplate = (row: ContractTemplateRow): ContractTemplate => ({
   logoUrl: row.logo_url || undefined,
   logoPosition: (row.logo_position as 'left' | 'center' | 'right') || undefined,
   logoMaxWidth: row.logo_max_width ?? undefined,
+  documentSettings: row.document_settings || undefined,
   body: row.body,
   sections: Array.isArray(row.sections) ? (row.sections as ContractTemplateSection[]) : [],
   footer: row.footer,
@@ -107,6 +109,7 @@ export const saveContractTemplate = async (template: Partial<ContractTemplate>):
     logo_url: template.logoUrl || null,
     logo_position: template.logoPosition || null,
     logo_max_width: template.logoMaxWidth ?? null,
+    document_settings: template.documentSettings || {},
     body: template.body || '',
     sections: template.sections || [],
     footer: template.footer || '',

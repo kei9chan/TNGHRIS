@@ -14,8 +14,8 @@ const FloatingIcon: React.FC<{ children: React.ReactNode; delay?: string; classN
 );
 
 const Login: React.FC = () => {
-  const [email, setEmail] = useState('kay@thenextperience.com');
-  const [password, setPassword] = useState('@Tng2025');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -34,6 +34,9 @@ const Login: React.FC = () => {
     if (err.code === 'hr_pending') {
       return 'Your account is pending HR approval. Please wait for activation.';
     }
+    if (err.code === 'account_inactive') {
+      return 'Your HRIS account is inactive. Contact HR or an administrator if access should be restored.';
+    }
     return err.message || 'Invalid email or password. New accounts require HR approval.';
   };
 
@@ -50,6 +53,9 @@ const Login: React.FC = () => {
       const notice = localStorage.getItem('authNotice');
       if (notice === 'hr_pending') {
         setError('Your email is verified but HR approval is pending. Please wait for activation.');
+        localStorage.removeItem('authNotice');
+      } else if (notice === 'account_inactive') {
+        setError('Your HRIS account is inactive. Contact HR or an administrator if access should be restored.');
         localStorage.removeItem('authNotice');
       }
     } catch {

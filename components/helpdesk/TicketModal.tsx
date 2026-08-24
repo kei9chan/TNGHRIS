@@ -83,8 +83,8 @@ const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, ticket, onSa
     const fetchAssignees = async () => {
       try {
         const { data, error } = await supabase
-          .from('hris_users')
-          .select('id, full_name, role, department, business_unit, business_unit_id, position, email')
+          .rpc('get_accessible_hris_users')
+          .eq('status', 'Active')
           .order('full_name', { ascending: true });
 
         if (error) {

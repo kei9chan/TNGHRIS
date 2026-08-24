@@ -32,6 +32,7 @@ export function useUsers() {
         position: resolveEmployeePosition(u.position, u.department),
         employmentStatus: u.employment_status || undefined,
         dateHired: u.date_hired ? new Date(`${u.date_hired}T00:00:00`) : undefined,
+        endDate: u.end_date ? new Date(`${u.end_date}T00:00:00`) : undefined,
         reportsTo: u.reports_to || undefined,
         avatarUrl: u.avatar_url || '',
         hireDate: u.hire_date || '',

@@ -25,6 +25,19 @@ const TrashIcon: React.FC = () => <svg xmlns="http://www.w3.org/2000/svg" classN
 
 const defaultAcknowledgmentText = `<p>ACKNOWLEDGMENT</p><p><br></p><p>REPUBLIC OF THE PHILIPPINES )</p><p>MAKATI CITY ) S.S.</p><p><br></p><p>BEFORE ME, a Notary Public for and in the City of Makati, personally appeared the following:</p><p><br></p><p><em>[The table of parties will be dynamically inserted here during PDF generation based on the data entered below.]</em></p><p><br></p><p>known to me to be the same persons who executed the foregoing instrument, and who acknowledged to me that the same is their free and voluntary act and deed, as well as the free and voluntary act and deed of the entity represented herein.</p><p><br></p><p>This Instrument, consists of {{total_pages}} pages including this page where the Acknowledgement is written and is signed by the parties and their instrumental witnesses on each and every page thereof.</p><p><br></p><p><strong>WITNESS MY HAND AND SEAL</strong> this ______ day of ________________ 2024 at the place first above written.</p><p>Doc. No. ____;</p><p>Page No. ____;</p><p>Book No. ____;</p><p>Series of 2024.</p>`;
 
+const defaultDocumentSettings = {
+    pageSize: 'A4' as const,
+    marginTopMm: 20,
+    marginRightMm: 20,
+    marginBottomMm: 20,
+    marginLeftMm: 20,
+    fontFamily: 'Times New Roman',
+    fontSizePt: 12,
+    lineHeight: 1.45,
+    showPageNumbers: false,
+    showFooter: true,
+};
+
 
 const TemplateDrawer: React.FC<TemplateDrawerProps> = ({ isOpen, onClose, template, onSave }) => {
     const [current, setCurrent] = useState<Partial<ContractTemplate>>({});
@@ -32,7 +45,7 @@ const TemplateDrawer: React.FC<TemplateDrawerProps> = ({ isOpen, onClose, templa
 
     useEffect(() => {
         if (isOpen) {
-            setCurrent(template || {
+            const baseTemplate = template || {
                 title: '',
                 owningBusinessUnitId: '', // set explicitly when BU selector is added
                 isDefault: false,
@@ -46,6 +59,13 @@ const TemplateDrawer: React.FC<TemplateDrawerProps> = ({ isOpen, onClose, templa
                 witnesses: [],
                 acknowledgmentBody: defaultAcknowledgmentText,
                 acknowledgmentParties: [],
+            };
+            setCurrent({
+                ...baseTemplate,
+                documentSettings: {
+                    ...defaultDocumentSettings,
+                    ...(baseTemplate.documentSettings || {}),
+                },
             });
         }
     }, [template, isOpen]);
@@ -68,6 +88,17 @@ const TemplateDrawer: React.FC<TemplateDrawerProps> = ({ isOpen, onClose, templa
             const base64 = await fileToBase64(file);
             setCurrent(prev => ({...prev, logoUrl: base64}));
         }
+    };
+
+    const handleDocumentSettingChange = (name: string, value: string | number | boolean) => {
+        setCurrent(prev => ({
+            ...prev,
+            documentSettings: {
+                ...defaultDocumentSettings,
+                ...(prev.documentSettings || {}),
+                [name]: value,
+            },
+        }));
     };
 
     // Section handlers
@@ -172,9 +203,44 @@ const TemplateDrawer: React.FC<TemplateDrawerProps> = ({ isOpen, onClose, templa
             <div className="space-y-6">
                 <Input label="Template Name *" name="title" value={current.title || ''} onChange={handleChange} required autoFocus />
                 
-                 <div className="flex items-center">
+                <div className="flex items-center">
                     <input type="checkbox" id="isDefault" name="isDefault" checked={current.isDefault || false} onChange={handleChange} className="h-4 w-4 text-indigo-600 border-gray-300 rounded" />
                     <label htmlFor="isDefault" className="ml-2 text-sm text-gray-700 dark:text-gray-300">Set as default template for this company</label>
+                </div>
+
+                <div className="space-y-4 rounded-md border p-4 dark:border-gray-600">
+                    <div>
+                        <h3 className="text-lg font-semibold">Document Layout</h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">These settings are saved with the template and applied to newly generated previews and PDFs.</p>
+                    </div>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                        <div>
+                            <label className="block text-sm font-medium">Page size</label>
+                            <select value={current.documentSettings?.pageSize || 'A4'} onChange={event => handleDocumentSettingChange('pageSize', event.target.value)} className="mt-1 block w-full rounded-md border-gray-300 py-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white">
+                                <option value="A4">A4</option>
+                                <option value="Letter">Letter</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium">Font family</label>
+                            <select value={current.documentSettings?.fontFamily || 'Times New Roman'} onChange={event => handleDocumentSettingChange('fontFamily', event.target.value)} className="mt-1 block w-full rounded-md border-gray-300 py-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white">
+                                <option value="Times New Roman">Times New Roman</option>
+                                <option value="Arial">Arial</option>
+                                <option value="Georgia">Georgia</option>
+                                <option value="Calibri">Calibri</option>
+                            </select>
+                        </div>
+                        <Input label="Font size (pt)" type="number" min="8" max="18" value={current.documentSettings?.fontSizePt || 12} onChange={event => handleDocumentSettingChange('fontSizePt', Number(event.target.value))} />
+                        <Input label="Top margin (mm)" type="number" min="8" max="45" value={current.documentSettings?.marginTopMm || 20} onChange={event => handleDocumentSettingChange('marginTopMm', Number(event.target.value))} />
+                        <Input label="Right margin (mm)" type="number" min="8" max="45" value={current.documentSettings?.marginRightMm || 20} onChange={event => handleDocumentSettingChange('marginRightMm', Number(event.target.value))} />
+                        <Input label="Bottom margin (mm)" type="number" min="8" max="45" value={current.documentSettings?.marginBottomMm || 20} onChange={event => handleDocumentSettingChange('marginBottomMm', Number(event.target.value))} />
+                        <Input label="Left margin (mm)" type="number" min="8" max="45" value={current.documentSettings?.marginLeftMm || 20} onChange={event => handleDocumentSettingChange('marginLeftMm', Number(event.target.value))} />
+                        <Input label="Line height" type="number" min="1" max="2.2" step="0.05" value={current.documentSettings?.lineHeight || 1.45} onChange={event => handleDocumentSettingChange('lineHeight', Number(event.target.value))} />
+                    </div>
+                    <div className="flex flex-wrap gap-6 text-sm">
+                        <label className="flex items-center gap-2"><input type="checkbox" checked={current.documentSettings?.showFooter ?? true} onChange={event => handleDocumentSettingChange('showFooter', event.target.checked)} /> Show footer</label>
+                        <label className="flex items-center gap-2"><input type="checkbox" checked={current.documentSettings?.showPageNumbers ?? false} onChange={event => handleDocumentSettingChange('showPageNumbers', event.target.checked)} /> Show page numbers</label>
+                    </div>
                 </div>
 
                 <div className="p-4 border rounded-md dark:border-gray-600 space-y-4">

@@ -28,12 +28,12 @@ const UserManagement: React.FC = () => {
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
     const [lifecycleUser, setLifecycleUser] = useState<User | null>(null);
     const currentRoles = useMemo(() => new Set(currentUser?.roles?.length ? currentUser.roles : currentUser ? [currentUser.role] : []), [currentUser]);
-    const canManageLifecycle = currentRoles.has(Role.Admin) || currentRoles.has(Role.HRManager);
+    const canManageLifecycle = currentRoles.has(Role.Admin);
 
     const loadData = async () => {
         setLoading(true); setError(null);
         const [userResult, buResult, roleResult, assignmentResult, featureResult, sensitiveResult, workflowResult] = await Promise.all([
-            supabase.from('hris_users').select('id,email,first_name,last_name,full_name,role,status,is_duplicate,account_lifecycle_reason,account_inactivated_at,account_inactivated_by,account_reactivated_at,account_reactivated_by,business_unit,department,business_unit_id,department_id,data_access_scope,dashboard_type,permission_updated_at,permission_updated_by'),
+            supabase.rpc('get_accessible_hris_users'),
             supabase.from('business_units').select('id,name').order('name'),
             supabase.from('roles').select('id').eq('is_active', true).order('display_name'),
             supabase.from('user_roles').select('user_id,role_id,is_primary,scope_type,allowed_business_unit_ids,dashboard_type,is_active').eq('is_active', true),
@@ -68,6 +68,7 @@ const UserManagement: React.FC = () => {
             workflowRows.filter((item: any) => roleIds.includes(item.role_id)).forEach((item: any) => { workflows[item.workflow_key] = item.actions; });
             return {
                 id: row.id,
+                employeeId: row.employee_id || undefined,
                 name: formatEmployeeName(row.full_name || `${row.first_name || ''} ${row.last_name || ''}`.trim()),
                 email: row.email || '',
                 role: (primary?.role_id || row.role) as Role,
@@ -168,7 +169,7 @@ const UserManagement: React.FC = () => {
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white">User Management</h1>
                 <p className="mt-1 text-sm text-gray-500">Server-resolved roles, scope, sensitive access, workflow authority, and audit metadata.</p>
             </header>
-            {error && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
+            {error && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"><span><strong>User Management could not be loaded.</strong> {error}</span><Button size="sm" variant="secondary" onClick={loadData}>Retry</Button></div>}
             <div className="rounded-lg border border-gray-200 bg-white shadow dark:border-slate-700 dark:bg-slate-800">
                 <div className="grid gap-3 border-b p-4 md:grid-cols-3">
                     <Input label="" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search name or email…" className="md:w-72" />
@@ -200,7 +201,7 @@ const UserManagement: React.FC = () => {
                                 <td className="px-4 py-3 text-xs text-gray-500">{user.permissionUpdatedAt?.toLocaleString() || 'Legacy assignment'}<br />{user.permissionUpdatedByName ? `by ${user.permissionUpdatedByName}` : user.permissionUpdatedBy ? `by ${user.permissionUpdatedBy}` : 'by system / legacy migration'}</td>
                                 <td className="px-4 py-3 text-right"><div className="flex justify-end gap-2">{canManage && <Button size="sm" variant="secondary" disabled={saving || user.id === currentUser?.id} onClick={() => setSelectedUser(user)}>{user.id === currentUser?.id ? 'Self change blocked' : 'Edit access'}</Button>}{canManageLifecycle && user.id !== currentUser?.id && <Button size="sm" variant="secondary" disabled={saving} onClick={() => setLifecycleUser(user)}>{user.status === 'Inactive' ? 'Reactivate' : 'Inactivate'}</Button>}</div></td>
                             </tr>)}
-                            {!loading && filteredUsers.length === 0 && <tr><td colSpan={8} className="p-10 text-center text-gray-500">No users found.</td></tr>}
+                            {!loading && !error && filteredUsers.length === 0 && <tr><td colSpan={8} className="p-10 text-center text-gray-500">No users found for the selected filters.</td></tr>}
                         </tbody>
                     </table>
                     {loading && <div className="p-10 text-center text-gray-500">Loading effective access…</div>}

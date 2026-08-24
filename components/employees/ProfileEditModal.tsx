@@ -10,20 +10,22 @@ interface ProfileEditModalProps {
   isOpen: boolean;
   onClose: () => void;
   user: User;
-  onSave: (updatedProfileData: Partial<User>) => void;
+  onSave: (updatedProfileData: Partial<User>, options?: { endDateReason?: string }) => void;
   onSaveDraft: (draftData: Partial<User>) => void;
   draft: EmployeeDraft | null;
   isAdminEdit?: boolean;
+  canManageEndDate?: boolean;
   canEditEmployeeId?: boolean;
   employmentFieldsOnly?: boolean;
 }
 
 type Tab = 'personal' | 'gov' | 'emergency' | 'banking' | 'compensation' | 'leave';
 
-const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, user, onSave, onSaveDraft, draft, isAdminEdit = false, canEditEmployeeId = false, employmentFieldsOnly = false }) => {
+const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, user, onSave, onSaveDraft, draft, isAdminEdit = false, canManageEndDate = false, canEditEmployeeId = false, employmentFieldsOnly = false }) => {
   const [activeTab, setActiveTab] = useState<Tab>('personal');
   const [formData, setFormData] = useState<Partial<User>>({});
   const [validationError, setValidationError] = useState('');
+  const [endDateReason, setEndDateReason] = useState('');
   const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
   const [reportsToOptions, setReportsToOptions] = useState<Array<{ id: string; label: string }>>([]);
   const [businessUnits, setBusinessUnits] = useState<{ id: string; name: string }[]>([]);
@@ -81,13 +83,13 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
       };
       setFormData(initialData);
       setValidationError('');
+      setEndDateReason('');
       setActiveTab('personal');
 
       const fetchReports = async () => {
         try {
           const { data, error } = await supabase
-            .from('hris_users')
-            .select('id, full_name, role')
+            .rpc('get_accessible_hris_users')
             .eq('status', 'Active')
             .order('full_name');
 
@@ -240,9 +242,12 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
       // keep as plain YYYY-MM-DD string for reliable DB writes
       setFormData(prev => ({ ...prev, [name]: value }));
     } else if (name === 'endDate') {
-      const date = new Date(value);
-      const userTimezoneOffset = date.getTimezoneOffset() * 60000;
-      setFormData(prev => ({ ...prev, [name]: new Date(date.getTime() + userTimezoneOffset) }));
+      if (!value) {
+        setFormData(prev => ({ ...prev, [name]: undefined }));
+      } else {
+        const date = new Date(`${value}T00:00:00`);
+        setFormData(prev => ({ ...prev, [name]: date }));
+      }
     } else if (name === 'businessUnitId') {
       // Changing BU clears department to prevent mismatched data
       const selectedBu = businessUnits.find(b => b.id === value);
@@ -343,6 +348,16 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
     return `px-4 py-2 text-sm font-medium rounded-md focus:outline-none transition-colors ${activeTab === tabName ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`;
   };
 
+  const formatDateOnly = (value?: Date | string | null) => {
+    if (!value) return '';
+    if (typeof value === 'string') return value.split('T')[0];
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+  };
+
+  const endDateChanged = canManageEndDate
+    && formatDateOnly(formData.endDate) !== formatDateOnly(user.endDate);
+  const reactivating = endDateChanged && !formData.endDate;
+
   const submitForm = () => {
     const dateHired = formData.dateHired;
     if (dateHired) {
@@ -361,14 +376,24 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
         return;
       }
     }
+    if (endDateChanged) {
+      if (endDateReason.trim().length < 5) {
+        setValidationError('Please provide an offboarding or reactivation reason of at least 5 characters.');
+        return;
+      }
+      const message = reactivating
+        ? `Reactivate ${user.name}? This will restore application access using the employee's existing roles and permissions.`
+        : `Confirm ${user.name}'s end date? The employee will be marked inactive and application access will be disabled immediately.`;
+      if (!window.confirm(message)) return;
+    }
     setValidationError('');
-    onSave(formData);
+    onSave(formData, { endDateReason: endDateChanged ? endDateReason.trim() : undefined });
   };
 
   const adminFooter = (
     <div className="flex justify-end w-full space-x-2">
       <Button variant="secondary" onClick={onClose}>Cancel</Button>
-      <Button onClick={submitForm}>Save Changes</Button>
+      <Button onClick={submitForm}>{endDateChanged ? (reactivating ? 'Confirm Reactivation' : 'Confirm End Date') : 'Save Changes'}</Button>
     </div>
   );
 
@@ -488,7 +513,17 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
               </div>
             )}
             {isAdminEdit && <Input label="Date Hired" name="dateHired" type="date" max={new Date().toISOString().split('T')[0]} value={formData.dateHired ? (typeof formData.dateHired === 'string' ? formData.dateHired : `${new Date(formData.dateHired).getFullYear()}-${String(new Date(formData.dateHired).getMonth() + 1).padStart(2, '0')}-${String(new Date(formData.dateHired).getDate()).padStart(2, '0')}`) : ''} onChange={handleChange} />}
-            {!employmentFieldsOnly && <Input label="End Date (for inactive employees)" name="endDate" type="date" value={formData.endDate ? new Date(formData.endDate).toISOString().split('T')[0] : ''} onChange={handleChange} disabled={!isAdminEdit} />}
+            {canManageEndDate && <Input label="End Date (for inactive employees)" name="endDate" type="date" min={formatDateOnly(formData.dateHired)} value={formatDateOnly(formData.endDate)} onChange={handleChange} />}
+            {endDateChanged && (
+              <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-100">
+                <p className="font-semibold">{reactivating ? 'Reactivation confirmation required' : 'Offboarding confirmation required'}</p>
+                <p className="mt-1">{reactivating
+                  ? 'Saving will restore access using the employee’s existing RBAC assignments.'
+                  : 'Saving will mark the employee inactive and immediately block protected HRIS access.'}</p>
+                <label htmlFor="end-date-reason" className="mt-3 block font-medium">Reason *</label>
+                <textarea id="end-date-reason" rows={3} value={endDateReason} onChange={event => setEndDateReason(event.target.value)} className="mt-1 block w-full rounded-md border border-amber-300 bg-white px-3 py-2 text-gray-900 dark:border-amber-700 dark:bg-slate-800 dark:text-white" placeholder={reactivating ? 'Reason for restoring access' : 'Reason for ending employment'} />
+              </div>
+            )}
           </div>
         )}
         {activeTab === 'compensation' && isAdminEdit && (
