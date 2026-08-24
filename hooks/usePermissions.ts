@@ -1,11 +1,13 @@
 import { supabase } from '../services/supabaseClient';
 import { useAuth } from './useAuth';
 import { usePermissionsContext } from '../context/PermissionsContext';
-import { Resource, Permission, Role, IncidentReport, Ticket, BusinessUnit, Department, Evaluation, EvaluatorType, User, COERequest, OTRequest, OTStatus } from '../types';
+import { useSettings } from '../context/SettingsContext';
+import { Resource, Permission, Role, IncidentReport, Ticket, BusinessUnit, Department, Evaluation, EvaluatorType, User, COERequest, OTRequest, OTStatus, COEApprovalAuthority } from '../types';
 
 export const usePermissions = () => {
     const { user: sessionUser } = useAuth();
     const { effectiveRbac, loadingPermissions, authorizationError } = usePermissionsContext();
+    const { approverConfigs } = useSettings();
 
     // Use the session user directly from AuthContext (live Supabase data)
     const getCurrentUser = () => {
@@ -261,7 +263,14 @@ export const usePermissions = () => {
         }
 
         const canRequest = workflowCan('COE', Permission.Submit);
-        const canApprove = workflowCan('COE', Permission.Approve);
+        const assignedRoles = new Set([user.role, ...(user.roles || [])]);
+        const configuredApproverRoles = approverConfigs.coeApproval.authority === COEApprovalAuthority.HRStaff
+            ? [Role.HRStaff]
+            : approverConfigs.coeApproval.authority === COEApprovalAuthority.HRManagerOrHRStaff
+                ? [Role.HRManager, Role.HRStaff]
+                : [Role.HRManager];
+        const canApprove = workflowCan('COE', Permission.Approve)
+            && configuredApproverRoles.some(role => assignedRoles.has(role));
         const canView = can('COE', Permission.View);
         const scope = effectiveScope();
 

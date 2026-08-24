@@ -1,12 +1,11 @@
 // Migration complete: mockDataCompat removed from BODDashboard
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Card from '../ui/Card';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
-import { ResolutionStatus, ApproverStatus, PANStatus, PANStepStatus, JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, NotificationType, TicketStatus, OnboardingTaskStatus, PANActionTaken, NTEStatus, PAN, Resolution, NTE, JobRequisition, EmployeeAward, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COEDocumentData, COERequest, BenefitRequestStatus, Envelope, EnvelopeStatus, RoutingStepStatus, WFHRequest, WFHRequestStatus, COETemplate, User, Role, Evaluation, EvaluatorType, Memo, MemoAcknowledgement } from '../../types';
+import { ResolutionStatus, ApproverStatus, PANStatus, PANStepStatus, JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, NotificationType, TicketStatus, OnboardingTaskStatus, PANActionTaken, NTEStatus, PAN, Resolution, NTE, JobRequisition, EmployeeAward, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COERequest, BenefitRequestStatus, Envelope, EnvelopeStatus, RoutingStepStatus, WFHRequest, WFHRequestStatus, User, Role, Evaluation, EvaluatorType, Memo, MemoAcknowledgement } from '../../types';
 import QuickAnalyticsPreview from './QuickAnalyticsPreview';
 import ActionItemCard from './ActionItemCard';
 import UpcomingEventsWidget from './UpcomingEventsWidget';
@@ -18,9 +17,7 @@ import RequestCOEModal from '../employees/RequestCOEModal';
 import { logActivity } from '../../services/auditService';
 import { bodApproveWfhRequest, rejectWfhRequest } from '../../services/wfhService';
 import { createNotification } from '../../services/notificationService';
-import { createCoeRequest, fetchCoeDocument, fetchCoeRequests, approveCoeRequest, rejectCoeRequest, fetchActiveCoeTemplates } from '../../services/coeService';
-import COEQueue from './COEQueue';
-import PrintableCOE from '../admin/PrintableCOE';
+import { createCoeRequest } from '../../services/coeService';
 import MemoViewModal from '../feedback/MemoViewModal';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
@@ -158,10 +155,6 @@ const BODDashboard: React.FC = () => {
     const [assignedTickets, setAssignedTickets] = useState<Array<{ id: string; status: TicketStatus; category: string; priority: string; assignedAt?: Date; createdAt?: Date; requesterName?: string }>>([]);
     const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
     const [supabaseNotifications, setSupabaseNotifications] = useState<any[]>([]);
-    const [coeRequests, setCoeRequests] = useState<COERequest[]>([]);
-    const [coeTemplates, setCoeTemplates] = useState<COETemplate[]>([]);
-    const [coeToPrint, setCoeToPrint] = useState<COEDocumentData | null>(null);
-    const [isLoadingCoe, setIsLoadingCoe] = useState(false);
     const [memos, setMemos] = useState<Memo[]>([]);
     const [selectedMemo, setSelectedMemo] = useState<Memo | null>(null);
     const [isMemoViewOpen, setIsMemoViewOpen] = useState(false);
@@ -176,8 +169,6 @@ const BODDashboard: React.FC = () => {
     const [isRequestCOEModalOpen, setIsRequestCOEModalOpen] = useState(false);
 
     const coeAccess = getCoeAccess();
-    const scopedCOE = useMemo(() => coeAccess.filterRequests(coeRequests), [coeRequests, coeAccess]);
-    const pendingCOE = useMemo(() => scopedCOE.filter(r => r.status === 'Pending'), [scopedCOE]);
     const legacyUserId = useMemo(() => user?.id ?? null, [user?.id]);
     const employeeProfileId = useMemo(() => panApproverId || user?.id || null, [panApproverId, user?.id]);
 
@@ -187,25 +178,6 @@ const BODDashboard: React.FC = () => {
             navigate(location.pathname, { replace: true, state: {} });
         }
     }, [location.state, navigate]);
-
-    useEffect(() => {
-        const loadCoe = async () => {
-            setIsLoadingCoe(true);
-            try {
-                const [requests, templates] = await Promise.all([
-                    fetchCoeRequests(),
-                    fetchActiveCoeTemplates()
-                ]);
-                setCoeRequests(requests);
-                setCoeTemplates(templates);
-            } catch (error: any) {
-                console.error('Failed to load COE requests', error);
-            } finally {
-                setIsLoadingCoe(false);
-            }
-        };
-        loadCoe();
-    }, []);
 
     useEffect(() => {
         let active = true;
@@ -590,49 +562,6 @@ const BODDashboard: React.FC = () => {
             alert(error?.message || 'Failed to submit COE request.');
         } finally {
             setIsRequestCOEModalOpen(false);
-        }
-    };
-
-    const handleApproveCOE = async (request: COERequest) => {
-        if (!user) return;
-        if (!coeAccess.canActOn(request)) {
-            alert('You do not have permission to approve this request.');
-            return;
-        }
-        try {
-            const updated = await approveCoeRequest(request.id, user.id);
-            setCoeRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
-            logActivity(user, 'APPROVE', 'COERequest', request.id, `Approved COE request for ${request.employeeName}`);
-            setCoeToPrint(await fetchCoeDocument(request.id));
-        } catch (error: any) {
-            alert(error?.message || 'Failed to approve COE request.');
-        }
-    };
-
-    const handleRejectCOE = async (request: COERequest) => {
-        if (!user) return;
-        if (!coeAccess.canActOn(request)) {
-            alert('You do not have permission to reject this request.');
-            return;
-        }
-        const reason = prompt('Enter rejection reason:') || '';
-        if (!reason.trim()) return;
-        try {
-            const updated = await rejectCoeRequest(request.id, user.id, reason.trim());
-            setCoeRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
-            logActivity(user, 'REJECT', 'COERequest', request.id, `Rejected COE request. Reason: ${reason}`);
-
-            // Notify the requester their COE was rejected
-            createNotification({
-                userId: request.employeeId,
-                title: '❌ COE Request Rejected',
-                message: `Your Certificate of Employment request was not approved by ${user.name}${reason ? `: "${reason}"` : '.'}`,
-                type: NotificationType.COE_UPDATE,
-                link: '/my-profile?tab=documents',
-                relatedEntityId: request.id,
-            }).catch((e: any) => console.error('Failed to send BOD COE rejection notification', e));
-        } catch (error: any) {
-            alert(error?.message || 'Failed to reject COE request.');
         }
     };
 
@@ -1274,16 +1203,6 @@ const BODDashboard: React.FC = () => {
             <QuickLinks />
             <UpcomingEventsWidget />
 
-            <Card title="COE Requests">
-            <COEQueue 
-                requests={pendingCOE}
-                onApprove={handleApproveCOE}
-                onReject={handleRejectCOE}
-                canAct={coeAccess.canApprove}
-                canActOn={coeAccess.canActOn}
-            />
-            </Card>
-
             {actionItems.length > 0 ? (
                  <Card title="Action Items">
                     <div className="space-y-4">
@@ -1363,13 +1282,6 @@ const BODDashboard: React.FC = () => {
                 onClose={() => setIsRequestCOEModalOpen(false)}
                 onSave={handleSaveCOERequest}
             />
-            {coeToPrint && createPortal(
-                <PrintableCOE 
-                    documentData={coeToPrint}
-                    onClose={() => setCoeToPrint(null)}
-                />,
-                document.body
-            )}
         </div>
     );
 };

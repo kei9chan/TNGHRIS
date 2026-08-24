@@ -27,7 +27,6 @@ import PrintableCOE from '../admin/PrintableCOE';
 import RejectReasonModal from '../feedback/RejectReasonModal';
 import { logActivity } from '../../services/auditService';
 import { approveCoeRequest, createCoeRequest, fetchCoeDocument, rejectCoeRequest, fetchCoeRequests, fetchActiveCoeTemplates } from '../../services/coeService';
-import { createNotification } from '../../services/notificationService';
 import MemoViewModal from '../feedback/MemoViewModal';
 
 
@@ -750,16 +749,6 @@ const HRDashboard: React.FC = () => {
             setCoeRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
 
             logActivity(user, 'REJECT', 'COERequest', coeToReject.id, `Rejected COE request. Reason: ${reason}`);
-
-            // Notify the requester their COE was rejected
-            createNotification({
-                userId: coeToReject.employeeId,
-                title: '❌ COE Request Rejected',
-                message: `Your Certificate of Employment request was not approved by ${user.name}${reason ? `: "${reason}"` : '.'}`,
-                type: NotificationType.COE_UPDATE,
-                link: '/my-profile?tab=documents',
-                relatedEntityId: coeToReject.id,
-            }).catch((e: any) => console.error('Failed to send COE rejection notification', e));
         } catch (error: any) {
             alert(error?.message || 'Failed to reject COE request.');
         }

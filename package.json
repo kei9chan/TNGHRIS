@@ -22,6 +22,7 @@
     "test:lifecycle-awards": "node tests/offboardingLeaveAwardsSmokeTest.mjs",
     "test:focused-repairs": "node tests/hrisFocusedRepairSmokeTest.mjs",
     "test:coe-discipline": "node tests/coeDisciplineBulkRepairSmokeTest.mjs",
+    "test:coe-approval": "node tests/coeApprovalRoutingSmokeTest.mjs",
     "test:conditional-approvals": "node tests/conditionalTimeApprovalsSmokeTest.mjs",
     "test:theme": "node tests/themeModeSmokeTest.mjs"
   },

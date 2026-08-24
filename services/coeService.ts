@@ -9,7 +9,6 @@ import {
   COETemplateStyle,
   COETemplateStatus,
   NotificationType,
-  Role,
   User,
 } from '../types';
 
@@ -100,31 +99,6 @@ export const createCoeRequest = async (request: Partial<COERequest>, user: User)
   if (error) {
     throw new Error(error.message || 'Failed to submit COE request');
   }
-  
-  // Notify HR about new COE request
-  try {
-      const { data: hrRows } = await supabase
-          .from('hris_users')
-          .select('id')
-          .in('role', [Role.HRManager, Role.HRStaff]);
-      
-      if (hrRows && hrRows.length > 0) {
-          const notificationRows = hrRows.map((hr: any) => ({
-              id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${hr.id}`,
-              user_id: hr.id,
-              type: NotificationType.COE_UPDATE,
-              title: 'New COE Request',
-              message: `${user.name} has requested a Certificate of Employment.`,
-              link: `/employees/coe/requests?requestId=${data.id}`,
-              is_read: false,
-              created_at: new Date().toISOString(),
-              related_entity_id: data.id
-          }));
-          await supabase.from('notifications').insert(notificationRows);
-      }
-  } catch (notifyErr) {
-      console.warn('Failed to notify HR about new COE request', notifyErr);
-  }
 
   return mapCoeRequest(data as CoeRequestRow);
 };
@@ -149,7 +123,7 @@ export const approveCoeRequest = async (
   // Notify employee
   try {
       if (requestRow.employee_id) {
-          await supabase.from('notifications').insert({
+          await supabase.from('notifications').upsert({
               id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${requestRow.employee_id}`,
               user_id: requestRow.employee_id,
               type: NotificationType.COE_UPDATE,
@@ -158,8 +132,9 @@ export const approveCoeRequest = async (
               link: `/employees/coe/requests?requestId=${requestRow.id}`,
               is_read: false,
               created_at: new Date().toISOString(),
-              related_entity_id: requestRow.id
-          });
+              related_entity_id: requestRow.id,
+              dedupe_key: `coe-decision:${requestRow.id}:approved`,
+          }, { onConflict: 'user_id,dedupe_key' });
       }
   } catch (notifyErr) {
       console.warn('Failed to notify employee about approved COE request', notifyErr);
@@ -169,15 +144,11 @@ export const approveCoeRequest = async (
 };
 
 export const rejectCoeRequest = async (requestId: string, approverId: string, reason: string): Promise<COERequest> => {
-  const updates = {
-    status: COERequestStatus.Rejected,
-    rejection_reason: reason,
-    approved_by: approverId,
-    approved_at: new Date().toISOString(),
-    generated_document_url: null,
-  };
-
-  const { data, error } = await supabase.from('coe_requests').update(updates).eq('id', requestId).select().single();
+  void approverId;
+  const { data, error } = await supabase.rpc('reject_coe_request', {
+    p_request_id: requestId,
+    p_reason: reason,
+  });
   if (error) {
     throw new Error(error.message || 'Failed to reject COE request');
   }
@@ -185,7 +156,7 @@ export const rejectCoeRequest = async (requestId: string, approverId: string, re
   // Notify employee
   try {
       if (data.employee_id) {
-          await supabase.from('notifications').insert({
+          await supabase.from('notifications').upsert({
               id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${data.employee_id}`,
               user_id: data.employee_id,
               type: NotificationType.COE_UPDATE,
@@ -194,8 +165,9 @@ export const rejectCoeRequest = async (requestId: string, approverId: string, re
               link: `/employees/coe/requests?requestId=${data.id}`,
               is_read: false,
               created_at: new Date().toISOString(),
-              related_entity_id: data.id
-          });
+              related_entity_id: data.id,
+              dedupe_key: `coe-decision:${data.id}:rejected`,
+          }, { onConflict: 'user_id,dedupe_key' });
       }
   } catch (notifyErr) {
       console.warn('Failed to notify employee about rejected COE request', notifyErr);

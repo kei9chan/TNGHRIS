@@ -7,8 +7,17 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
-import { BusinessUnit, COEDocumentData, COERequest, COERequestStatus, Permission } from '../../types';
+import {
+    BusinessUnit,
+    COEDocumentData,
+    COEApprovalAuthority,
+    COE_APPROVAL_AUTHORITY_LABELS,
+    COE_APPROVAL_PENDING_LABELS,
+    COERequest,
+    COERequestStatus,
+} from '../../types';
 import { approveCoeRequest, createCoeRequest, fetchCoeDocument, fetchCoeRequestById, fetchCoeRequests, rejectCoeRequest } from '../../services/coeService';
+import { fetchCOEApprovalAuthority, getCOEApprovalRoles } from '../../services/approverConfigService';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -22,12 +31,21 @@ import { logActivity } from '../../services/auditService';
 
 const COERequests: React.FC = () => {
     const { user } = useAuth();
-    const { can, getAccessibleBusinessUnits } = usePermissions();
+    const { getAccessibleBusinessUnits, getCoeAccess } = usePermissions();
     const location = useLocation();
-    
-    // Permission check to see if user can manage (Approve/Reject) or just view own
-    const canManage = can('COE', Permission.Manage) || can('COE', Permission.Approve);
-    const canRequest = can('COE', Permission.Create);
+
+    const coeAccess = getCoeAccess();
+    const [coeApprovalAuthority, setCoeApprovalAuthority] = useState<COEApprovalAuthority>(COEApprovalAuthority.HRManager);
+    const [coeApprovalAuthorityLoaded, setCoeApprovalAuthorityLoaded] = useState(false);
+    const [coeApprovalAuthorityError, setCoeApprovalAuthorityError] = useState<string | null>(null);
+    const assignedRoles = useMemo(() => new Set([user?.role, ...(user?.roles || [])].filter(Boolean)), [user]);
+    const isConfiguredApproverRole = useMemo(
+        () => getCOEApprovalRoles(coeApprovalAuthority).some(role => assignedRoles.has(role)),
+        [assignedRoles, coeApprovalAuthority],
+    );
+    const canManage = coeApprovalAuthorityLoaded && coeAccess.canApprove && isConfiguredApproverRole;
+    const canViewAll = coeAccess.canView && coeAccess.scope !== 'self';
+    const canRequest = coeAccess.canRequest;
 
     const [requests, setRequests] = useState<COERequest[]>([]);
     const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
@@ -44,6 +62,26 @@ const COERequests: React.FC = () => {
     const [documentError, setDocumentError] = useState<string | null>(null);
     const [loadingDocumentId, setLoadingDocumentId] = useState<string | null>(null);
 
+    useEffect(() => {
+        let isMounted = true;
+        fetchCOEApprovalAuthority()
+            .then(authority => {
+                if (!isMounted) return;
+                setCoeApprovalAuthority(authority);
+                setCoeApprovalAuthorityError(null);
+            })
+            .catch(error => {
+                if (!isMounted) return;
+                setCoeApprovalAuthorityError(error?.message || 'COE approval routing could not be loaded.');
+            })
+            .finally(() => {
+                if (isMounted) setCoeApprovalAuthorityLoaded(true);
+            });
+        return () => {
+            isMounted = false;
+        };
+    }, []);
+
     const accessibleBus = useMemo(() => getAccessibleBusinessUnits(businessUnits), [getAccessibleBusinessUnits, businessUnits]);
     const accessibleBuIds = useMemo(() => new Set(accessibleBus.map(b => b.id)), [accessibleBus]);
 
@@ -58,6 +96,20 @@ const COERequests: React.FC = () => {
                 ]);
                 if (!isMounted) return;
                 let hydratedRequests = reqs;
+                const approverIds = Array.from(new Set(reqs.map(request => request.approvedBy).filter(Boolean))) as string[];
+                if (approverIds.length > 0) {
+                    const { data: approverRows, error: approverError } = await supabase
+                        .from('hris_users')
+                        .select('id, full_name')
+                        .in('id', approverIds);
+                    if (!approverError && approverRows) {
+                        const approverNames = new Map(approverRows.map((row: any) => [row.id, row.full_name]));
+                        hydratedRequests = hydratedRequests.map(request => ({
+                            ...request,
+                            approvedByName: request.approvedBy ? approverNames.get(request.approvedBy) : undefined,
+                        }));
+                    }
+                }
                 const missingBuIds = reqs.filter(r => !r.businessUnitId).map(r => r.employeeId);
                 if (missingBuIds.length > 0) {
                     const { data: userRows, error: userErr } = await supabase
@@ -66,7 +118,7 @@ const COERequests: React.FC = () => {
                         .in('id', missingBuIds);
                     if (!userErr && userRows) {
                         const buMap = new Map(userRows.map((row: any) => [row.id, row.business_unit_id]));
-                        hydratedRequests = reqs.map(req => ({
+                        hydratedRequests = hydratedRequests.map(req => ({
                             ...req,
                             businessUnitId: req.businessUnitId || buMap.get(req.employeeId) || ''
                         }));
@@ -98,7 +150,7 @@ const COERequests: React.FC = () => {
     const filteredRequests = useMemo(() => {
         return requests.filter(req => {
             // 1. Role/Scope Check
-            if (!canManage) {
+            if (!canViewAll) {
                 // Regular employees only see their own requests
                 if (req.employeeId !== user?.id) return false;
             } else {
@@ -116,7 +168,7 @@ const COERequests: React.FC = () => {
             
             return statusMatch && searchMatch;
         }).sort((a, b) => new Date(b.dateRequested).getTime() - new Date(a.dateRequested).getTime());
-    }, [requests, accessibleBuIds, statusFilter, searchTerm, canManage, user]);
+    }, [requests, accessibleBuIds, statusFilter, searchTerm, canViewAll, user]);
 
     const requestId = useMemo(() => {
         const params = new URLSearchParams(location.search);
@@ -146,7 +198,7 @@ const COERequests: React.FC = () => {
                 }
             }
 
-            const hasAccess = canManage
+            const hasAccess = canViewAll
                 ? (target.employeeId === user?.id || accessibleBuIds.has(target.businessUnitId))
                 : target.employeeId === user?.id;
 
@@ -185,7 +237,7 @@ const COERequests: React.FC = () => {
         };
 
         void openPreview();
-    }, [requestId, autoOpenedRequestId, requests, canManage, accessibleBuIds, user, dataLoaded]);
+    }, [requestId, autoOpenedRequestId, requests, canViewAll, accessibleBuIds, user, dataLoaded]);
 
     const getBuName = (id: string) => businessUnits.find(b => b.id === id)?.name || 'Unknown BU';
 
@@ -267,7 +319,7 @@ const COERequests: React.FC = () => {
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900 dark:text-white">COE Requests</h1>
                     <p className="text-gray-600 dark:text-gray-400 mt-1">
-                        {canManage ? "Manage and issue Certificates of Employment." : "View and track your COE requests."}
+                        {canManage ? "Manage and issue Certificates of Employment." : "View and track COE requests."}
                     </p>
                 </div>
                 {canRequest && (
@@ -287,11 +339,17 @@ const COERequests: React.FC = () => {
                         </div>
                     </div>
                 )}
+                {coeApprovalAuthorityError && (
+                    <div className="m-4 rounded-lg border border-red-200 bg-red-50 p-4 text-red-900 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200" role="alert">
+                        <p className="font-semibold">COE approval routing is unavailable</p>
+                        <p className="mt-1 text-sm">{coeApprovalAuthorityError} Approval actions are disabled until the configured authority can be verified.</p>
+                    </div>
+                )}
                 <div className="p-4 flex flex-col md:flex-row gap-4">
                     <div className="flex-grow">
                          <Input 
                             label="" 
-                            placeholder={canManage ? "Search by Employee or ID..." : "Search by ID..."}
+                            placeholder={canViewAll ? "Search by Employee or ID..." : "Search by ID..."}
                             value={searchTerm} 
                             onChange={e => setSearchTerm(e.target.value)} 
                         />
@@ -317,6 +375,7 @@ const COERequests: React.FC = () => {
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Date Requested</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Purpose</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Status</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Approval Authority</th>
                                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Actions</th>
                             </tr>
                         </thead>
@@ -329,6 +388,13 @@ const COERequests: React.FC = () => {
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{new Date(req.dateRequested).toLocaleDateString()}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{req.purpose.replace(/_/g, ' ')}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm">{getStatusBadge(req.status)}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                        {req.status === COERequestStatus.Pending
+                                            ? `Pending ${COE_APPROVAL_PENDING_LABELS[coeApprovalAuthority]}`
+                                            : req.approvedByName
+                                                ? `${req.status} by ${req.approvedByName}`
+                                                : COE_APPROVAL_AUTHORITY_LABELS[coeApprovalAuthority]}
+                                    </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                         {canManage && req.status === COERequestStatus.Pending ? (
                                             <div className="flex justify-end space-x-2">
@@ -349,7 +415,7 @@ const COERequests: React.FC = () => {
                             ))}
                              {filteredRequests.length === 0 && (
                                 <tr>
-                                    <td colSpan={7} className="text-center py-10 text-gray-500 dark:text-gray-400">No requests found.</td>
+                                    <td colSpan={8} className="text-center py-10 text-gray-500 dark:text-gray-400">No requests found.</td>
                                 </tr>
                             )}
                         </tbody>

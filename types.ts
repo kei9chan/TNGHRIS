@@ -286,6 +286,24 @@ export enum COERequestStatus {
   Rejected = 'Rejected',
 }
 
+export enum COEApprovalAuthority {
+  HRManager = 'HR_MANAGER',
+  HRStaff = 'HR_STAFF',
+  HRManagerOrHRStaff = 'HR_MANAGER_OR_HR_STAFF',
+}
+
+export const COE_APPROVAL_AUTHORITY_LABELS: Record<COEApprovalAuthority, string> = {
+  [COEApprovalAuthority.HRManager]: 'HR Manager only',
+  [COEApprovalAuthority.HRStaff]: 'HR Staff only',
+  [COEApprovalAuthority.HRManagerOrHRStaff]: 'HR Manager or HR Staff',
+};
+
+export const COE_APPROVAL_PENDING_LABELS: Record<COEApprovalAuthority, string> = {
+  [COEApprovalAuthority.HRManager]: 'HR Manager Approval',
+  [COEApprovalAuthority.HRStaff]: 'HR Staff Approval',
+  [COEApprovalAuthority.HRManagerOrHRStaff]: 'HR Manager or HR Staff Approval',
+};
+
 export type COETemplateStatus = 'Draft' | 'Published' | 'Archived';
 
 export type COETemplateStyle =
@@ -382,6 +400,7 @@ export interface COERequest {
   fallbackReason?: string;
   documentVersion?: number;
   approvedBy?: string;
+  approvedByName?: string;
   approvedAt?: Date;
 }
 
@@ -2903,6 +2922,10 @@ export interface BODApproverConfig {
   user_names: string[];
 }
 
+export interface COEApprovalConfig {
+  authority: COEApprovalAuthority;
+}
+
 export interface ConditionalTimeApprovalConfig {
   user_ids: string[];
   user_names: string[];
@@ -2918,6 +2941,7 @@ export interface ConditionalTimeApprovalConfig {
 export interface ApproverConfigs {
   gmApprover: GMApproverConfig;
   bodApprovers: BODApproverConfig;
+  coeApproval: COEApprovalConfig;
   conditionalTimeApprovals: ConditionalTimeApprovalConfig;
 }
 

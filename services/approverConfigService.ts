@@ -1,11 +1,20 @@
 import { supabase } from './supabaseClient';
-import { ApproverConfigs, GMApproverConfig, BODApproverConfig, ConditionalTimeApprovalConfig } from '../types';
+import {
+  ApproverConfigs,
+  COEApprovalAuthority,
+  COEApprovalConfig,
+  ConditionalTimeApprovalConfig,
+  GMApproverConfig,
+  BODApproverConfig,
+  Role,
+} from '../types';
 
 // ---------------------------------------------------------------------------
 // Default Configs
 // ---------------------------------------------------------------------------
 const DEFAULT_GM: GMApproverConfig = { user_id: null, user_name: null };
 const DEFAULT_BOD: BODApproverConfig = { user_ids: [], user_names: [] };
+export const DEFAULT_COE_APPROVAL: COEApprovalConfig = { authority: COEApprovalAuthority.HRManager };
 export const DEFAULT_CONDITIONAL_TIME_APPROVALS: ConditionalTimeApprovalConfig = {
   user_ids: [],
   user_names: [],
@@ -28,11 +37,17 @@ export const fetchApproverConfigs = async (): Promise<ApproverConfigs> => {
 
   if (error || !data) {
     console.warn('Failed to load approver configs, using defaults', error);
-    return { gmApprover: DEFAULT_GM, bodApprovers: DEFAULT_BOD, conditionalTimeApprovals: DEFAULT_CONDITIONAL_TIME_APPROVALS };
+    return {
+      gmApprover: DEFAULT_GM,
+      bodApprovers: DEFAULT_BOD,
+      coeApproval: DEFAULT_COE_APPROVAL,
+      conditionalTimeApprovals: DEFAULT_CONDITIONAL_TIME_APPROVALS,
+    };
   }
 
   let gmApprover = DEFAULT_GM;
   let bodApprovers = DEFAULT_BOD;
+  let coeApproval = DEFAULT_COE_APPROVAL;
   let conditionalTimeApprovals = DEFAULT_CONDITIONAL_TIME_APPROVALS;
 
   for (const row of data) {
@@ -40,6 +55,11 @@ export const fetchApproverConfigs = async (): Promise<ApproverConfigs> => {
       gmApprover = row.config_value as GMApproverConfig;
     } else if (row.config_key === 'bod_approvers') {
       bodApprovers = row.config_value as BODApproverConfig;
+    } else if (row.config_key === 'coe_approval_authority') {
+      const authority = row.config_value?.authority;
+      if (Object.values(COEApprovalAuthority).includes(authority)) {
+        coeApproval = { authority };
+      }
     } else if (row.config_key === 'conditional_time_approvals') {
       conditionalTimeApprovals = { ...DEFAULT_CONDITIONAL_TIME_APPROVALS, ...(row.config_value as ConditionalTimeApprovalConfig) };
     }
@@ -47,7 +67,38 @@ export const fetchApproverConfigs = async (): Promise<ApproverConfigs> => {
 
   const { data: validated } = await supabase.rpc('get_conditional_time_approval_config');
   if (validated) conditionalTimeApprovals = { ...conditionalTimeApprovals, ...(validated as ConditionalTimeApprovalConfig) };
-  return { gmApprover, bodApprovers, conditionalTimeApprovals };
+  const { data: configuredCoeAuthority, error: coeAuthorityError } = await supabase.rpc('get_coe_approval_authority');
+  if (!coeAuthorityError && Object.values(COEApprovalAuthority).includes(configuredCoeAuthority as COEApprovalAuthority)) {
+    coeApproval = { authority: configuredCoeAuthority as COEApprovalAuthority };
+  }
+  return { gmApprover, bodApprovers, coeApproval, conditionalTimeApprovals };
+};
+
+export const fetchCOEApprovalAuthority = async (): Promise<COEApprovalAuthority> => {
+  const { data, error } = await supabase.rpc('get_coe_approval_authority');
+  if (error) throw new Error(error.message || 'Failed to load COE approval authority');
+  if (!Object.values(COEApprovalAuthority).includes(data as COEApprovalAuthority)) {
+    throw new Error('The COE approval authority configuration is invalid.');
+  }
+  return data as COEApprovalAuthority;
+};
+
+export const saveCOEApprovalAuthority = async (authority: COEApprovalAuthority): Promise<COEApprovalConfig> => {
+  const { data, error } = await supabase.rpc('save_coe_approval_authority', {
+    p_authority: authority,
+  });
+  if (error) throw new Error(error.message || 'Failed to save COE approval authority');
+  const savedAuthority = (data as any)?.authority;
+  if (!Object.values(COEApprovalAuthority).includes(savedAuthority as COEApprovalAuthority)) {
+    throw new Error('The saved COE approval authority configuration is invalid.');
+  }
+  return { authority: savedAuthority as COEApprovalAuthority };
+};
+
+export const getCOEApprovalRoles = (authority: COEApprovalAuthority): Role[] => {
+  if (authority === COEApprovalAuthority.HRStaff) return [Role.HRStaff];
+  if (authority === COEApprovalAuthority.HRManagerOrHRStaff) return [Role.HRManager, Role.HRStaff];
+  return [Role.HRManager];
 };
 
 // ---------------------------------------------------------------------------

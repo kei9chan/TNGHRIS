@@ -2,7 +2,16 @@ import React, { useEffect, useState, useCallback } from 'react';
 import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
-import { Settings as SettingsType, Permission, GMApproverConfig, BODApproverConfig, ConditionalTimeApprovalConfig, Role } from '../../types';
+import {
+    Settings as SettingsType,
+    Permission,
+    COEApprovalAuthority,
+    COE_APPROVAL_AUTHORITY_LABELS,
+    GMApproverConfig,
+    BODApproverConfig,
+    ConditionalTimeApprovalConfig,
+    Role,
+} from '../../types';
 import FileUploader from '../../components/ui/FileUploader';
 import { useSettings } from '../../context/SettingsContext';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -21,11 +30,15 @@ interface UserOption {
 const Settings: React.FC = () => {
     const {
         settings, updateSettings, isRbacEnabled, setIsRbacEnabled,
-        approverConfigs, updateGMApprover, updateBODApprovers, updateConditionalTimeApprovals,
+        approverConfigs,
+        updateGMApprover,
+        updateBODApprovers,
+        updateCOEApprovalAuthority,
+        updateConditionalTimeApprovals,
     } = useSettings();
     const [localSettings, setLocalSettings] = React.useState<SettingsType>(settings);
     const [isLoading, setIsLoading] = React.useState(false);
-    const { can } = usePermissions();
+    const { can, isSuperAdmin } = usePermissions();
 
     // Approver config local state
     const [allUsers, setAllUsers] = useState<UserOption[]>([]);
@@ -33,6 +46,9 @@ const Settings: React.FC = () => {
     const [selectedBODs, setSelectedBODs] = useState<string[]>([]);
     const [approverSaving, setApproverSaving] = useState(false);
     const [approverMsg, setApproverMsg] = useState('');
+    const [coeApprovalAuthority, setCoeApprovalAuthority] = useState<COEApprovalAuthority>(COEApprovalAuthority.HRManager);
+    const [coeApprovalSaving, setCoeApprovalSaving] = useState(false);
+    const [coeApprovalMsg, setCoeApprovalMsg] = useState('');
     const [conditionalApprovers, setConditionalApprovers] = useState<string[]>([]);
     const [requiredConditionalApprovers, setRequiredConditionalApprovers] = useState<string[]>([]);
     const [leaveThreshold, setLeaveThreshold] = useState(1);
@@ -71,6 +87,7 @@ const Settings: React.FC = () => {
     useEffect(() => {
         setSelectedGM(approverConfigs.gmApprover.user_id || '');
         setSelectedBODs(approverConfigs.bodApprovers.user_ids || []);
+        setCoeApprovalAuthority(approverConfigs.coeApproval.authority);
         const conditional = approverConfigs.conditionalTimeApprovals;
         setConditionalApprovers(conditional.user_ids || []);
         setRequiredConditionalApprovers(conditional.required_user_ids || []);
@@ -148,6 +165,19 @@ const Settings: React.FC = () => {
         );
     };
 
+    const handleSaveCOEApprovalAuthority = useCallback(async () => {
+        setCoeApprovalSaving(true);
+        setCoeApprovalMsg('');
+        try {
+            await updateCOEApprovalAuthority(coeApprovalAuthority);
+            setCoeApprovalMsg('COE approval routing saved successfully.');
+        } catch (e: any) {
+            setCoeApprovalMsg(`Error: ${e.message || 'Failed to save COE approval routing'}`);
+        } finally {
+            setCoeApprovalSaving(false);
+        }
+    }, [coeApprovalAuthority, updateCOEApprovalAuthority]);
+
     const toggleConditionalApprover = (userId: string) => {
         setConditionalApprovers(prev => {
             if (prev.includes(userId)) {
@@ -209,6 +239,40 @@ const Settings: React.FC = () => {
                         </div>
                     </label>
                 </div>
+            </Card>
+
+            <Card title="COE Approval Routing">
+                <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+                    Choose which HR role can approve Certificate of Employment requests. Board of Director users are never approvers for COE requests.
+                </p>
+                <label htmlFor="coe-approval-authority" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    COE Approval Authority
+                </label>
+                <select
+                    id="coe-approval-authority"
+                    value={coeApprovalAuthority}
+                    onChange={event => setCoeApprovalAuthority(event.target.value as COEApprovalAuthority)}
+                    className="block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-base focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white sm:text-sm"
+                >
+                    {Object.values(COEApprovalAuthority).map(authority => (
+                        <option key={authority} value={authority}>
+                            {COE_APPROVAL_AUTHORITY_LABELS[authority]}
+                        </option>
+                    ))}
+                </select>
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                    Default: <strong>{COE_APPROVAL_AUTHORITY_LABELS[COEApprovalAuthority.HRManager]}</strong>. Active: <strong>{COE_APPROVAL_AUTHORITY_LABELS[coeApprovalAuthority]}</strong>. When both HR roles are selected, one eligible approval completes the request.
+                </p>
+                {coeApprovalMsg && (
+                    <p className={`mt-3 text-sm ${coeApprovalMsg.startsWith('Error') ? 'text-red-600' : 'text-green-600'}`}>
+                        {coeApprovalMsg}
+                    </p>
+                )}
+                {isSuperAdmin() && (
+                    <Button className="mt-4" onClick={handleSaveCOEApprovalAuthority} isLoading={coeApprovalSaving} variant="secondary">
+                        Save COE Routing
+                    </Button>
+                )}
             </Card>
 
             {/* ====== Approver Configuration ====== */}

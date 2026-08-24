@@ -1,6 +1,21 @@
 import React, { createContext, useState, ReactNode, useContext, useCallback, useEffect } from 'react';
-import { Settings, ApproverConfigs, GMApproverConfig, BODApproverConfig, ConditionalTimeApprovalConfig } from '../types';
-import { fetchApproverConfigs, saveGMApprover, saveBODApprovers, saveConditionalTimeApprovals, DEFAULT_CONDITIONAL_TIME_APPROVALS } from '../services/approverConfigService';
+import {
+  Settings,
+  ApproverConfigs,
+  COEApprovalAuthority,
+  GMApproverConfig,
+  BODApproverConfig,
+  ConditionalTimeApprovalConfig,
+} from '../types';
+import {
+  fetchApproverConfigs,
+  saveGMApprover,
+  saveBODApprovers,
+  saveCOEApprovalAuthority,
+  saveConditionalTimeApprovals,
+  DEFAULT_COE_APPROVAL,
+  DEFAULT_CONDITIONAL_TIME_APPROVALS,
+} from '../services/approverConfigService';
 
 const defaultAppSettings: Settings = {
   appName: 'TNG HRIS',
@@ -16,6 +31,7 @@ const defaultAppSettings: Settings = {
 const DEFAULT_APPROVER_CONFIGS: ApproverConfigs = {
   gmApprover: { user_id: null, user_name: null },
   bodApprovers: { user_ids: [], user_names: [] },
+  coeApproval: DEFAULT_COE_APPROVAL,
   conditionalTimeApprovals: DEFAULT_CONDITIONAL_TIME_APPROVALS,
 };
 
@@ -27,6 +43,7 @@ interface SettingsContextType {
   approverConfigs: ApproverConfigs;
   updateGMApprover: (config: GMApproverConfig) => Promise<void>;
   updateBODApprovers: (config: BODApproverConfig) => Promise<void>;
+  updateCOEApprovalAuthority: (authority: COEApprovalAuthority) => Promise<void>;
   updateConditionalTimeApprovals: (config: ConditionalTimeApprovalConfig, changeNote: string) => Promise<void>;
   refreshApproverConfigs: () => Promise<void>;
 }
@@ -66,6 +83,11 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
     setApproverConfigs(prev => ({ ...prev, bodApprovers: config }));
   }, []);
 
+  const updateCOEApprovalAuthority = useCallback(async (authority: COEApprovalAuthority) => {
+    const saved = await saveCOEApprovalAuthority(authority);
+    setApproverConfigs(prev => ({ ...prev, coeApproval: saved }));
+  }, []);
+
   const updateConditionalTimeApprovals = useCallback(async (config: ConditionalTimeApprovalConfig, changeNote: string) => {
     const saved = await saveConditionalTimeApprovals(config, changeNote);
     setApproverConfigs(prev => ({ ...prev, conditionalTimeApprovals: saved }));
@@ -74,7 +96,12 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
   return (
     <SettingsContext.Provider value={{
       settings, updateSettings, isRbacEnabled, setIsRbacEnabled,
-      approverConfigs, updateGMApprover, updateBODApprovers, updateConditionalTimeApprovals, refreshApproverConfigs,
+      approverConfigs,
+      updateGMApprover,
+      updateBODApprovers,
+      updateCOEApprovalAuthority,
+      updateConditionalTimeApprovals,
+      refreshApproverConfigs,
     }}>
       {children}
     </SettingsContext.Provider>
