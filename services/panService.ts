@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient';
-import { PAN, PANTemplate, PANRoutingStep, PANStatus, PANActionTaken } from '../types';
+import { PAN, PANTemplate, PANRoutingStep, PANStatus, PANActionTaken, PANActionType, PANTemplateStatus } from '../types';
+import { normalizeTemplateFields, normalizeTemplateSections } from './panTemplateUtils';
 
 // ---------------------------------------------------------------------------
 // Row Types
@@ -24,6 +25,12 @@ type PANRow = {
   pdf_hash?: string | null;
   preparer_name?: string | null;
   preparer_signature_url?: string | null;
+  template_id?: string | null;
+  business_unit_id?: string | null;
+  template_version?: number | null;
+  template_name?: string | null;
+  template_snapshot?: any;
+  action_type?: string | null;
   created_by_user_id?: string | null;
   workflow_version?: number | null;
   approval_completed_at?: string | null;
@@ -48,6 +55,21 @@ type PANTemplateRow = {
   created_at: string;
   updated_at: string;
   is_default?: boolean | null;
+  business_unit_id?: string | null;
+  action_type?: string | null;
+  status?: string | null;
+  version?: number | null;
+  document_title?: string | null;
+  document_code?: string | null;
+  footer_text?: string | null;
+  color_accent?: string | null;
+  paper_size?: string | null;
+  orientation?: string | null;
+  sections?: any;
+  field_config?: any;
+  published_at?: string | null;
+  published_by?: string | null;
+  updated_by?: string | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -73,6 +95,12 @@ const mapPAN = (row: PANRow): PAN => ({
   pdfHash: row.pdf_hash || undefined,
   preparerName: row.preparer_name || undefined,
   preparerSignatureUrl: row.preparer_signature_url || undefined,
+  templateId: row.template_id || undefined,
+  businessUnitId: row.business_unit_id || undefined,
+  templateVersion: row.template_version ?? undefined,
+  templateName: row.template_name || undefined,
+  templateSnapshot: row.template_snapshot || undefined,
+  actionType: (row.action_type as PANActionType) || undefined,
   createdByUserId: row.created_by_user_id || undefined,
   workflowVersion: row.workflow_version ?? 1,
   approvalCompletedAt: row.approval_completed_at ? new Date(row.approval_completed_at) : undefined,
@@ -97,6 +125,21 @@ const mapPANTemplate = (row: PANTemplateRow): PANTemplate => ({
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
   isDefault: row.is_default ?? undefined,
+  businessUnitId: row.business_unit_id || undefined,
+  actionType: (row.action_type as PANActionType) || 'general',
+  status: (row.status as PANTemplateStatus) || 'published',
+  version: row.version ?? 1,
+  documentTitle: row.document_title || 'PERSONNEL ACTION NOTICE',
+  documentCode: row.document_code || 'TNG-HRD-022',
+  footerText: row.footer_text || '',
+  colorAccent: row.color_accent || '#172554',
+  paperSize: row.paper_size === 'Letter' ? 'Letter' : 'A4',
+  orientation: row.orientation === 'landscape' ? 'landscape' : 'portrait',
+  sections: normalizeTemplateSections(row.sections),
+  fieldConfig: normalizeTemplateFields(row.field_config),
+  publishedAt: row.published_at ? new Date(row.published_at) : undefined,
+  publishedByUserId: row.published_by || undefined,
+  updatedByUserId: row.updated_by || undefined,
 });
 
 // ---------------------------------------------------------------------------
@@ -127,6 +170,12 @@ export const savePAN = async (pan: Partial<PAN>): Promise<PAN> => {
     pdf_hash: pan.pdfHash || null,
     preparer_name: pan.preparerName || null,
     preparer_signature_url: pan.preparerSignatureUrl || null,
+    template_id: pan.templateId || null,
+    business_unit_id: pan.businessUnitId || pan.particulars?.from?.businessUnitId || null,
+    template_version: pan.templateVersion || null,
+    template_name: pan.templateName || null,
+    template_snapshot: pan.templateSnapshot || null,
+    action_type: pan.actionType || null,
   };
 
   const { data, error } = pan.id
@@ -153,6 +202,19 @@ export const savePANTemplate = async (template: Partial<PANTemplate>): Promise<P
     preparer_signature_url: template.preparerSignatureUrl || null,
     created_by_user_id: template.createdByUserId,
     is_default: template.isDefault ?? false,
+    business_unit_id: template.businessUnitId || null,
+    action_type: template.actionType || 'general',
+    status: template.status || 'draft',
+    version: template.version || 1,
+    document_title: template.documentTitle || 'PERSONNEL ACTION NOTICE',
+    document_code: template.documentCode || 'TNG-HRD-022',
+    footer_text: template.footerText || '',
+    color_accent: template.colorAccent || '#172554',
+    paper_size: template.paperSize || 'A4',
+    orientation: template.orientation || 'portrait',
+    sections: template.sections || [],
+    field_config: template.fieldConfig || [],
+    updated_by: template.updatedByUserId || template.createdByUserId,
   };
 
   const { data, error } = template.id

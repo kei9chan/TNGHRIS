@@ -8,7 +8,7 @@ interface ModalProps {
   title: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
-  size?: 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl';
+  size?: 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | 'full';
   centered?: boolean;
 }
 
@@ -45,6 +45,7 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer,
       '3xl': 'max-w-3xl',
       '4xl': 'max-w-4xl',
       '5xl': 'max-w-5xl',
+      full: 'max-w-[1600px]',
   }
 
   const modalContent = (

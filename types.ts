@@ -1590,6 +1590,67 @@ export interface PANParticulars {
   position?: string;
   department?: string;
   salary?: SalaryBreakdown;
+  otherBusinessUnits?: string[];
+}
+
+export type PANActionType =
+  | 'general'
+  | 'status_change'
+  | 'promotion'
+  | 'transfer'
+  | 'salary_increase'
+  | 'job_title_change'
+  | 'other';
+
+export type PANTemplateStatus = 'draft' | 'published' | 'archived';
+export type PANPaperSize = 'A4' | 'Letter';
+export type PANOrientation = 'portrait' | 'landscape';
+
+export type PANSectionKey =
+  | 'employee_information'
+  | 'action_taken'
+  | 'effective_date'
+  | 'from_to'
+  | 'salary_package'
+  | 'remarks'
+  | 'approval_signatures'
+  | 'employee_acknowledgement';
+
+export interface PANSectionConfig {
+  key: PANSectionKey;
+  label: string;
+  visible: boolean;
+  required: boolean;
+  order: number;
+}
+
+export interface PANFieldConfig {
+  key: string;
+  label: string;
+  visible: boolean;
+  required: boolean;
+  section: PANSectionKey;
+  display: 'text' | 'table' | 'checkbox' | 'signature';
+  order: number;
+}
+
+export interface PANTemplateSnapshot {
+  id?: string;
+  name: string;
+  version: number;
+  businessUnitId?: string;
+  actionType: PANActionType;
+  documentTitle: string;
+  documentCode: string;
+  footerText: string;
+  colorAccent: string;
+  paperSize: PANPaperSize;
+  orientation: PANOrientation;
+  logoUrl?: string;
+  preparerName?: string;
+  preparerSignatureUrl?: string;
+  sections: PANSectionConfig[];
+  fieldConfig: PANFieldConfig[];
 }
 
 export interface PANActionTaken {
@@ -1661,6 +1722,12 @@ export interface PAN {
   acceptedAt?: Date;
   acceptedBy?: string;
   appliedAt?: Date;
+  templateId?: string;
+  templateVersion?: number;
+  templateName?: string;
+  templateSnapshot?: PANTemplateSnapshot;
+  businessUnitId?: string;
+  actionType?: PANActionType;
 }
 
 export interface PANTemplate {
@@ -1675,6 +1742,22 @@ export interface PANTemplate {
   createdAt: Date;
   updatedAt: Date;
   isDefault?: boolean;
+  businessUnitId?: string;
+  businessUnitName?: string;
+  actionType: PANActionType;
+  status: PANTemplateStatus;
+  version: number;
+  documentTitle: string;
+  documentCode: string;
+  footerText: string;
+  colorAccent: string;
+  paperSize: PANPaperSize;
+  orientation: PANOrientation;
+  sections: PANSectionConfig[];
+  fieldConfig: PANFieldConfig[];
+  publishedAt?: Date;
+  publishedByUserId?: string;
+  updatedByUserId?: string;
 }
 
 

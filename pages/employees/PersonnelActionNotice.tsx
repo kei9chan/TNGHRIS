@@ -18,10 +18,10 @@ import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { mergePanParticulars } from '../../services/panUtils';
 import { logActivity } from '../../services/auditService';
+import { getPANActionType, normalizeTemplateFields, normalizeTemplateSections } from '../../services/panTemplateUtils';
 import {
   PAN,
   PANStatus,
-  Permission,
   User,
   Role,
   PANTemplate,
@@ -42,7 +42,7 @@ const emptyActions: PANActionTaken = {
 const PersonnelActionNotice: React.FC = () => {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
-  const { can, getPanAccess } = usePermissions();
+  const { getPanAccess } = usePermissions();
 
   const [records, setRecords] = useState<PAN[]>([]);
   const [templates, setTemplates] = useState<PANTemplate[]>([]);
@@ -67,8 +67,8 @@ const PersonnelActionNotice: React.FC = () => {
 
   const panAccess = getPanAccess();
   const canCreatePAN = panAccess.canCreate;
-  const canManageTemplates = panAccess.canCreate;
-  const canViewTemplatesTab = panAccess.canCreate;
+  const canManageTemplates = panAccess.canManageTemplates;
+  const canViewTemplatesTab = panAccess.canManageTemplates;
   const canRespond = panAccess.canRespond;
 
   const mapPanRow = (p: any): PAN => {
@@ -101,6 +101,12 @@ const PersonnelActionNotice: React.FC = () => {
       acceptedAt: p.accepted_at ? new Date(p.accepted_at) : undefined,
       acceptedBy: p.accepted_by || undefined,
       appliedAt: p.applied_at ? new Date(p.applied_at) : undefined,
+      templateId: p.template_id || undefined,
+      businessUnitId: p.business_unit_id || undefined,
+      templateVersion: p.template_version ?? undefined,
+      templateName: p.template_name || undefined,
+      templateSnapshot: p.template_snapshot || undefined,
+      actionType: p.action_type || getPANActionType(p.action_taken),
     };
   };
 
@@ -164,6 +170,22 @@ const PersonnelActionNotice: React.FC = () => {
               createdAt: t.created_at ? new Date(t.created_at) : new Date(),
               updatedAt: t.updated_at ? new Date(t.updated_at) : new Date(),
               isDefault: t.is_default || false,
+              businessUnitId: t.business_unit_id || undefined,
+              businessUnitName: (unitRows || []).find((unit: any) => unit.id === t.business_unit_id)?.name,
+              actionType: t.action_type || 'general',
+              status: t.status || 'published',
+              version: t.version || 1,
+              documentTitle: t.document_title || 'PERSONNEL ACTION NOTICE',
+              documentCode: t.document_code || 'TNG-HRD-022',
+              footerText: t.footer_text || '',
+              colorAccent: t.color_accent || '#172554',
+              paperSize: t.paper_size === 'Letter' ? 'Letter' : 'A4',
+              orientation: t.orientation === 'landscape' ? 'landscape' : 'portrait',
+              sections: normalizeTemplateSections(t.sections),
+              fieldConfig: normalizeTemplateFields(t.field_config),
+              publishedAt: t.published_at ? new Date(t.published_at) : undefined,
+              publishedByUserId: t.published_by || undefined,
+              updatedByUserId: t.updated_by || undefined,
             }))
           );
         }
@@ -208,6 +230,11 @@ const PersonnelActionNotice: React.FC = () => {
       preparer_name: recordToSave.preparerName || null,
       preparer_signature_url: recordToSave.preparerSignatureUrl || null,
       template_id: (recordToSave as any).templateId || null,
+      business_unit_id: recordToSave.businessUnitId || recordToSave.particulars?.from?.businessUnitId || null,
+      template_version: recordToSave.templateVersion || null,
+      template_name: recordToSave.templateName || null,
+      template_snapshot: recordToSave.templateSnapshot || null,
+      action_type: recordToSave.actionType || getPANActionType(recordToSave.actionTaken),
       salary_from: recordToSave.particulars?.from?.salary || null,
       updated_at: new Date().toISOString(),
     };
@@ -245,6 +272,10 @@ const PersonnelActionNotice: React.FC = () => {
     }
     if (!panToSend.routingSteps || panToSend.routingSteps.length === 0) {
       alert('Please add at least one routing step/approver.');
+      return;
+    }
+    if (getPANActionType(panToSend.actionTaken) === 'general') {
+      alert('Select at least one personnel action before sending for approval.');
       return;
     }
     const draft = await upsertPan(panToSend, PANStatus.Draft);
@@ -350,6 +381,22 @@ const PersonnelActionNotice: React.FC = () => {
           createdAt: t.created_at ? new Date(t.created_at) : new Date(),
           updatedAt: t.updated_at ? new Date(t.updated_at) : new Date(),
           isDefault: t.is_default || false,
+          businessUnitId: t.business_unit_id || undefined,
+          businessUnitName: businessUnits.find(unit => unit.id === t.business_unit_id)?.name,
+          actionType: t.action_type || 'general',
+          status: t.status || 'published',
+          version: t.version || 1,
+          documentTitle: t.document_title || 'PERSONNEL ACTION NOTICE',
+          documentCode: t.document_code || 'TNG-HRD-022',
+          footerText: t.footer_text || '',
+          colorAccent: t.color_accent || '#172554',
+          paperSize: t.paper_size === 'Letter' ? 'Letter' : 'A4',
+          orientation: t.orientation === 'landscape' ? 'landscape' : 'portrait',
+          sections: normalizeTemplateSections(t.sections),
+          fieldConfig: normalizeTemplateFields(t.field_config),
+          publishedAt: t.published_at ? new Date(t.published_at) : undefined,
+          publishedByUserId: t.published_by || undefined,
+          updatedByUserId: t.updated_by || undefined,
         }))
       );
     }
@@ -357,25 +404,49 @@ const PersonnelActionNotice: React.FC = () => {
 
   const handleSaveTemplate = async (templateToSave: PANTemplate) => {
     const payload: any = {
-      id: templateToSave.id?.startsWith('PANTPL-') ? undefined : templateToSave.id,
+      id: templateToSave.id?.startsWith('PANTPL-') ? null : templateToSave.id,
       name: templateToSave.name,
-      action_taken: templateToSave.actionTaken || {},
+      actionTaken: templateToSave.actionTaken || {},
       notes: templateToSave.notes || '',
-      logo_url: templateToSave.logoUrl || null,
-      preparer_name: templateToSave.preparerName || null,
-      preparer_signature_url: templateToSave.preparerSignatureUrl || null,
-      is_default: templateToSave.isDefault || false,
-      created_by_user_id: templateToSave.createdByUserId || user?.id || null,
-      updated_at: new Date().toISOString(),
+      logoUrl: templateToSave.logoUrl || null,
+      preparerName: templateToSave.preparerName || null,
+      preparerSignatureUrl: templateToSave.preparerSignatureUrl || null,
+      businessUnitId: templateToSave.businessUnitId || null,
+      actionType: templateToSave.actionType,
+      status: templateToSave.status,
+      isDefault: templateToSave.isDefault || false,
+      documentTitle: templateToSave.documentTitle,
+      documentCode: templateToSave.documentCode,
+      footerText: templateToSave.footerText,
+      colorAccent: templateToSave.colorAccent,
+      paperSize: templateToSave.paperSize,
+      orientation: templateToSave.orientation,
+      sections: templateToSave.sections,
+      fieldConfig: templateToSave.fieldConfig,
     };
-    await supabase.from('pan_templates').upsert(payload);
+    const { error } = await supabase.rpc('save_pan_template', { p_template: payload });
+    if (error) throw new Error(error.message || 'Failed to save PAN template.');
     setIsTemplateModalOpen(false);
-    refreshTemplates();
+    setSelectedTemplate(null);
+    await refreshTemplates();
   };
 
-  const handleDeleteTemplate = async (templateId: string) => {
-    await supabase.from('pan_templates').delete().eq('id', templateId);
-    refreshTemplates();
+  const handleDuplicateTemplate = (template: PANTemplate) => {
+    setSelectedTemplate({ ...template, id: `PANTPL-${Date.now()}`, name: `${template.name} — Copy`, status: 'draft', version: 1, isDefault: false, publishedAt: undefined, publishedByUserId: undefined });
+    setIsTemplateModalOpen(true);
+  };
+
+  const handleArchiveTemplate = async (template: PANTemplate) => {
+    if (!window.confirm(`Archive “${template.name}”? Existing PANs will keep their saved template version.`)) return;
+    const { error } = await supabase.rpc('archive_pan_template', { p_template_id: template.id });
+    if (error) return alert(error.message || 'Failed to archive the template.');
+    await refreshTemplates();
+  };
+
+  const handleSetDefaultTemplate = async (template: PANTemplate) => {
+    const { error } = await supabase.rpc('set_default_pan_template', { p_template_id: template.id });
+    if (error) return alert(error.message || 'Failed to set the default template.');
+    await refreshTemplates();
   };
 
   const handleOpenModal = (record: PAN | null) => {
@@ -443,7 +514,7 @@ const PersonnelActionNotice: React.FC = () => {
           <div className="space-x-2">
             <Button onClick={() => handleOpenModal(null)}>Create New PAN</Button>
             {canViewTemplatesTab && (
-              <Button variant="secondary" onClick={() => setIsTemplateModalOpen(true)}>Create PAN Template</Button>
+              <Button variant="secondary" onClick={() => handleOpenTemplateModal(null)}>Create PAN Template</Button>
             )}
           </div>
         )}
@@ -485,6 +556,7 @@ const PersonnelActionNotice: React.FC = () => {
           <PANTable
             records={filteredRecords}
             onEdit={handleOpenModal}
+            onPrint={setPanToPrint}
           />
         </>
       )}
@@ -492,8 +564,12 @@ const PersonnelActionNotice: React.FC = () => {
       {activeTab === 'templates' && canViewTemplatesTab && (
         <PANTemplateTable
           templates={templates}
+          businessUnits={businessUnits}
+          canManage={canManageTemplates}
           onEdit={handleOpenTemplateModal}
-          onDelete={handleDeleteTemplate}
+          onDuplicate={handleDuplicateTemplate}
+          onArchive={handleArchiveTemplate}
+          onSetDefault={handleSetDefaultTemplate}
         />
       )}
 
@@ -523,12 +599,13 @@ const PersonnelActionNotice: React.FC = () => {
           isOpen={isTemplateModalOpen}
           onClose={() => setIsTemplateModalOpen(false)}
           template={selectedTemplate}
+          businessUnits={businessUnits}
           onSave={handleSaveTemplate}
         />
       )}
 
       {panToPrint && (
-        <PrintablePAN pan={panToPrint} onClose={() => setPanToPrint(null)} />
+        <PrintablePAN pan={panToPrint} template={templates.find(template => template.id === panToPrint.templateId)} onClose={() => setPanToPrint(null)} />
       )}
 
       {isRejectModalOpen && panForAction && (

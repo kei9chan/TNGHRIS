@@ -17,6 +17,7 @@
     "test:followups-comms": "node tests/followupsCommunicationsSmokeTest.mjs",
     "test:employee-management": "node tests/employeeManagementEnhancementSmokeTest.mjs",
     "test:pan-workflow": "node tests/panWorkflowSmokeTest.mjs",
+    "test:pan-redesign": "node tests/panTemplateRedesignSmokeTest.mjs",
     "test:evaluation-workflow": "node tests/evaluationWorkflowSmokeTest.mjs",
     "test:lifecycle-awards": "node tests/offboardingLeaveAwardsSmokeTest.mjs",
     "test:focused-repairs": "node tests/hrisFocusedRepairSmokeTest.mjs",

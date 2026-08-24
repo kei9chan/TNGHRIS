@@ -386,11 +386,16 @@ export const usePermissions = () => {
 
     const getPanAccess = () => {
         const user = getCurrentUser();
-        if (!user) return { canView: false, canRespond: false, canCreate: false, scope: 'none' as const };
+        if (!user) return { canView: false, canRespond: false, canCreate: false, canManageTemplates: false, scope: 'none' as const };
+        const roles = new Set(user.roles?.length ? user.roles : [user.role]);
         return {
             canView: can('PersonnelActionNotices' as Resource, Permission.View),
             canRespond: workflowCan('PersonnelActionNotices', Permission.Review),
             canCreate: can('PersonnelActionNotices' as Resource, Permission.Create),
+            canManageTemplates: roles.has(Role.Admin)
+                || roles.has(Role.HRManager)
+                || can('PersonnelActionNotices' as Resource, Permission.Manage)
+                || can('PersonnelActionNotices' as Resource, Permission.Publish),
             scope: effectiveScope(),
         };
     };
