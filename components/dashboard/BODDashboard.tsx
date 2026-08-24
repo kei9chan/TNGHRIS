@@ -757,7 +757,7 @@ const BODDashboard: React.FC = () => {
         const pendingFinalRequisitions = requisitions.filter(req => 
             req.status === JobRequisitionStatus.PendingApproval &&
             req.routingSteps.some(step => 
-                step.role === JobRequisitionRole.Final &&
+                (step.role === JobRequisitionRole.BOD || step.roleSnapshot === Role.BOD) &&
                 step.status === JobRequisitionStepStatus.Pending &&
                 step.userId === user.id
             )
@@ -796,7 +796,7 @@ const BODDashboard: React.FC = () => {
             allItems.push({
                 id: `req-final-${req.id}`,
                 icon: <DocumentMagnifyingGlassIcon {...iconProps} />,
-                title: "Requisition for Final Approval",
+                title: "Job Requisition — BOD Approval",
                 subtitle: `${req.title} for ${req.headcount} position(s)`,
                 date: new Date(req.createdAt).toLocaleDateString(),
                 link: '/recruitment/requisitions',

@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { JobRequisition, JobRequisitionStatus } from '../types';
+import { JobRequisition, JobRequisitionStatus, Role, User } from '../types';
 
 type JobRequisitionRow = {
   id: string;
@@ -74,6 +74,27 @@ export const fetchJobRequisitions = async (): Promise<JobRequisition[]> => {
     .order('created_at', { ascending: false });
   if (error) throw new Error(error.message || 'Failed to load requisitions');
   return (data as JobRequisitionRow[]).map(mapRow);
+};
+
+export const fetchJobRequisitionApprovalDirectory = async (): Promise<User[]> => {
+  const { data, error } = await supabase.rpc('get_job_requisition_approval_directory');
+  if (error) throw new Error(error.message || 'Failed to load job-requisition approvers');
+
+  return (data || []).map((row: any) => {
+    const roles = (Array.isArray(row.roles) ? row.roles : []) as Role[];
+    return {
+      id: row.id,
+      name: row.full_name || 'Approver',
+      email: '',
+      role: roles.includes(Role.HRManager) ? Role.HRManager : Role.BOD,
+      roles,
+      department: '',
+      businessUnit: '',
+      status: 'Active',
+      isPhotoEnrolled: false,
+      position: '',
+    } as User;
+  });
 };
 
 export const saveJobRequisition = async (req: Partial<JobRequisition>): Promise<JobRequisition> => {

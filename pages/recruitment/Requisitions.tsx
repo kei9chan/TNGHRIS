@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { JobRequisition, JobRequisitionStatus, NotificationType, Permission, Role, JobRequisitionRole, JobRequisitionStepStatus } from '../../types';
+import { JobRequisition, JobRequisitionStatus, NotificationType, Permission } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import Card from '../../components/ui/Card';
@@ -69,33 +69,6 @@ const Requisitions: React.FC = () => {
         };
         loadMeta();
     }, []);
-
-    // Notify all HR Managers/Staff/Admin of a new job requisition
-    const notifyHRofNewRequisition = async (req: JobRequisition) => {
-        try {
-            const { data: hrUsers } = await supabase
-                .from('hris_users')
-                .select('id, auth_user_id')
-                .in('role', [Role.Admin, Role.HRManager, Role.HRStaff]);
-            if (!hrUsers || hrUsers.length === 0) return;
-
-            const notifications = hrUsers.map((u: any) => ({
-                user_id: u.auth_user_id || u.id,
-                type: NotificationType.JOB_REQUISITION_SUBMITTED,
-                title: 'New Job Requisition',
-                message: `A new job requisition "${req.title}" (${req.reqCode}) has been submitted and needs review.`,
-                link: '/recruitment/requisitions',
-                is_read: false,
-                created_at: new Date().toISOString(),
-                related_entity_id: req.id,
-            }));
-
-            await supabase.from('notifications').insert(notifications)
-                .then(({ error }) => { if (error) console.warn('[Requisitions] Failed to notify HR', error); });
-        } catch (err) {
-            console.warn('[Requisitions] notifyHRofNewRequisition error', err);
-        }
-    };
 
     const notifyRequesterOfDecision = async (req: JobRequisition, approved: boolean, reason?: string) => {
         if (!req.createdByUserId) return;
@@ -182,9 +155,7 @@ const Requisitions: React.FC = () => {
                 return [saved, ...rest];
             });
             logActivity(user, isNew ? 'CREATE' : 'UPDATE', 'JobRequisition', saved.id, `${isNew ? 'Created' : 'Updated'} requisition ${saved.reqCode || saved.id}`);
-            if (isNew) {
-                notifyHRofNewRequisition(saved).catch(() => {});
-            }
+            // The database notifies only the currently active approval step.
             handleCloseModal();
         } catch (err: any) {
             alert(err?.message || 'Failed to save requisition.');
@@ -237,43 +208,6 @@ const Requisitions: React.FC = () => {
             alert(err?.message || 'Failed to reject requisition.');
         }
     };
-
-    const handleAddFinalApprovers = async (requisitionId: string, finalApproverIds: string[]) => {
-        const existing = requisitions.find(r => r.id === requisitionId);
-        if (!existing) return;
-
-        // Resolve approver names from Supabase
-        const { data: approverData } = await supabase
-            .from('hris_users')
-            .select('id, name')
-            .in('id', finalApproverIds);
-        const approverMap = new Map((approverData || []).map((u: any) => [u.id, u.name]));
-
-        const updatedReq = { ...existing };
-        const finalSteps = finalApproverIds.map((id, index) => ({
-            id: `req-step-${requisitionId}-final-${index}`,
-            userId: id,
-            name: approverMap.get(id) || 'Final Approver',
-            role: JobRequisitionRole.Final,
-            status: JobRequisitionStepStatus.Pending,
-            order: 2,
-        }));
-
-        updatedReq.routingSteps.push(...finalSteps);
-
-        try {
-            const saved = await saveJobRequisition(updatedReq);
-            setRequisitions(prev => {
-                const rest = prev.filter(r => r.id !== saved.id);
-                return [saved, ...rest];
-            });
-            logActivity(user!, 'UPDATE', 'JobRequisition', requisitionId, `Added ${finalSteps.length} final approver(s).`);
-            handleCloseModal();
-        } catch (err: any) {
-            alert(err?.message || 'Failed to add final approvers.');
-        }
-    };
-
 
     return (
         <div className="space-y-6">
@@ -357,7 +291,6 @@ const Requisitions: React.FC = () => {
                     onSave={handleSaveRequisition}
                     onApprove={handleApprove}
                     onReject={handleOpenRejectModal}
-                    onAddFinalApprovers={handleAddFinalApprovers}
                 />
             )}
             
