@@ -24,6 +24,8 @@ type PANRow = {
   pdf_hash?: string | null;
   preparer_name?: string | null;
   preparer_signature_url?: string | null;
+  template_id?: string | null;
+  business_unit_id?: string | null;
   created_by_user_id?: string | null;
   workflow_version?: number | null;
   approval_completed_at?: string | null;
@@ -48,6 +50,7 @@ type PANTemplateRow = {
   created_at: string;
   updated_at: string;
   is_default?: boolean | null;
+  business_unit_id?: string | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -73,6 +76,8 @@ const mapPAN = (row: PANRow): PAN => ({
   pdfHash: row.pdf_hash || undefined,
   preparerName: row.preparer_name || undefined,
   preparerSignatureUrl: row.preparer_signature_url || undefined,
+  templateId: row.template_id || undefined,
+  businessUnitId: row.business_unit_id || undefined,
   createdByUserId: row.created_by_user_id || undefined,
   workflowVersion: row.workflow_version ?? 1,
   approvalCompletedAt: row.approval_completed_at ? new Date(row.approval_completed_at) : undefined,
@@ -97,6 +102,7 @@ const mapPANTemplate = (row: PANTemplateRow): PANTemplate => ({
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
   isDefault: row.is_default ?? undefined,
+  businessUnitId: row.business_unit_id || undefined,
 });
 
 // ---------------------------------------------------------------------------
@@ -127,6 +133,8 @@ export const savePAN = async (pan: Partial<PAN>): Promise<PAN> => {
     pdf_hash: pan.pdfHash || null,
     preparer_name: pan.preparerName || null,
     preparer_signature_url: pan.preparerSignatureUrl || null,
+    template_id: pan.templateId || null,
+    business_unit_id: pan.businessUnitId || pan.particulars?.from?.businessUnitId || null,
   };
 
   const { data, error } = pan.id
@@ -153,6 +161,7 @@ export const savePANTemplate = async (template: Partial<PANTemplate>): Promise<P
     preparer_signature_url: template.preparerSignatureUrl || null,
     created_by_user_id: template.createdByUserId,
     is_default: template.isDefault ?? false,
+    business_unit_id: template.businessUnitId || null,
   };
 
   const { data, error } = template.id
