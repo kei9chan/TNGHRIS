@@ -52,6 +52,18 @@ export const fetchOtRequests = async (): Promise<OTRequest[]> => {
   return (data as OtRequestRow[]).map(mapRow);
 };
 
+export const fetchOtRequestById = async (id: string): Promise<OTRequest | null> => {
+  const { data, error } = await supabase
+    .from('ot_requests')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message || 'Failed to load the overtime request');
+  if (!data) return null;
+  return mapRow(data as OtRequestRow);
+};
+
 export const saveOtRequest = async (
   request: Partial<OTRequest>,
   status: OTStatus,

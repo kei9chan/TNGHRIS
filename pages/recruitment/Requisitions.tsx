@@ -13,7 +13,7 @@ import RequisitionTable from '../../components/recruitment/RequisitionTable';
 import RequisitionModal from '../../components/recruitment/RequisitionModal';
 import RejectReasonModal from '../../components/feedback/RejectReasonModal';
 import { logActivity } from '../../services/auditService';
-import { fetchJobRequisitions, saveJobRequisition, processJobRequisitionApproval } from '../../services/jobRequisitionService';
+import { fetchJobRequisitionById, fetchJobRequisitions, saveJobRequisition, processJobRequisitionApproval } from '../../services/jobRequisitionService';
 import { supabase } from '../../services/supabaseClient';
 import { getApprovalRequestId } from '../../services/approvalDeepLinks';
 
@@ -31,6 +31,8 @@ const Requisitions: React.FC = () => {
     const [businessUnits, setBusinessUnits] = useState<{ id: string; name: string; code?: string }[]>([]);
     const [departments, setDepartments] = useState<{ id: string; name: string; businessUnitId: string }[]>([]);
     const [applications, setApplications] = useState<{ requisitionId: string; stage: string }[]>([]);
+    const [openedReviewId, setOpenedReviewId] = useState<string | null>(null);
+    const [reviewLoadError, setReviewLoadError] = useState('');
     
     // State for filters
     const [searchTerm, setSearchTerm] = useState('');
@@ -106,10 +108,28 @@ const Requisitions: React.FC = () => {
 
     useEffect(() => {
         const reviewId = getApprovalRequestId(location.search);
-        if (!reviewId || requisitions.length === 0) return;
-        const requested = requisitions.find(requisition => requisition.id === reviewId);
-        if (requested) handleOpenModal(requested);
-    }, [location.search, requisitions, handleOpenModal]);
+        if (!reviewId || !user?.id || reviewId === openedReviewId) return;
+
+        let cancelled = false;
+        setReviewLoadError('');
+        fetchJobRequisitionById(reviewId)
+            .then(requested => {
+                if (cancelled) return;
+                if (!requested) throw new Error('This requisition is no longer available or is not assigned to you.');
+                setRequisitions(previous => [requested, ...previous.filter(candidate => candidate.id !== requested.id)]);
+                handleOpenModal(requested);
+                setOpenedReviewId(reviewId);
+            })
+            .catch((error: any) => {
+                if (cancelled) return;
+                setOpenedReviewId(reviewId);
+                setReviewLoadError(error?.message || 'The assigned requisition could not be loaded.');
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [location.search, user?.id, handleOpenModal]);
 
 
     const departmentsForBU = useMemo(() => {
@@ -219,6 +239,11 @@ const Requisitions: React.FC = () => {
 
     return (
         <div className="space-y-6">
+            {reviewLoadError && (
+                <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
+                    <strong>Unable to open requisition review.</strong> {reviewLoadError}
+                </div>
+            )}
             <div className="flex justify-between items-center">
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Job Requisitions</h1>
                 {canCreate && (

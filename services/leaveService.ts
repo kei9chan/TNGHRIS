@@ -118,7 +118,8 @@ export const fetchLeaveRequestById = async (id: string): Promise<LeaveRequest | 
     .eq('id', id)
     .maybeSingle();
 
-  if (error || !data) return null;
+  if (error) throw new Error(error.message || 'Failed to load the leave request');
+  if (!data) return null;
   return mapLeaveRequest(data as LeaveRequestRow);
 };
 

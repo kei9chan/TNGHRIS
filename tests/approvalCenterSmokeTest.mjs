@@ -16,6 +16,12 @@ const wfh = read('pages/payroll/WFHRequests.tsx');
 const overtime = read('pages/payroll/OvertimeRequests.tsx');
 const manpower = read('pages/payroll/ManpowerPlanning.tsx');
 const requisitions = read('pages/recruitment/Requisitions.tsx');
+const leaveService = read('services/leaveService.ts');
+const wfhService = read('services/wfhService.ts');
+const overtimeService = read('services/otService.ts');
+const manpowerService = read('services/manpowerService.ts');
+const requisitionService = read('services/jobRequisitionService.ts');
+const timeAssignmentService = read('services/timeApprovalAssignmentService.ts');
 
 const checks = [
   [page.includes('Approval Center'), 'Approval Center heading'],
@@ -26,7 +32,7 @@ const checks = [
   [page.includes('All business units') && page.includes('All departments'), 'scope filters'],
   [page.includes("kind: 'nte'") && page.includes("kind: 'pan'"), 'NTE and PAN queues'],
   [page.includes('canonicalKey') && page.includes('new Map<string, ApprovalItem>'), 'canonical approval deduplication'],
-  [page.includes('/feedback/nte/${row.id}') && page.includes('/employees/pan?item=${row.id}'), 'exact NTE and PAN review links'],
+  [page.includes("getApprovalReviewUrl('nte', row.id)") && page.includes("getApprovalReviewUrl('pan', row.id)"), 'canonical exact NTE and PAN review links'],
   [additionalApprovals.includes(".eq('status', 'PendingApproval')") && additionalApprovals.includes(".from('pans')"), 'pending NTE and PAN data sources'],
   [additionalApprovals.includes('step.userId === user.id') && additionalApprovals.includes('isPending(step.status)'), 'current approver-step filtering'],
   [widget.includes('Approval workload') && widget.includes('Auto-routing & delegation'), 'dashboard workload redesign'],
@@ -44,11 +50,13 @@ const checks = [
   [consolidationMigration.includes('notifications_user_dedupe_key_unique'), 'notification idempotency constraint'],
   [notifications.includes('canonicalApprovalLink') && notifications.includes('getApprovalReviewUrl(kind, requestId)'), 'notification direct-review routing'],
   [deepLinks.includes("params.get('review') || params.get('item') || params.get('requestId')"), 'backward-compatible review parameters'],
-  [leave.includes("setActiveView(request.employeeId === user?.id ? 'my_requests' : 'team_requests')") && leave.includes('setIsModalOpen(true)'), 'leave opens exact staff review'],
-  [wfh.includes('setSelectedReviewRequest(request)') && wfh.includes('setIsReviewModalOpen(true)'), 'WFH opens exact staff review'],
-  [overtime.includes("setActiveTab('team_approvals')") && overtime.includes('setSelectedRequest(request)'), 'overtime opens exact team review'],
-  [manpower.includes('getApprovalRequestId(location.search)') && manpower.includes('setIsReviewModalOpen(true)'), 'manpower opens exact review'],
-  [requisitions.includes('getApprovalRequestId(location.search)') && requisitions.includes('handleOpenModal(requested)'), 'requisition opens exact review'],
+  [leave.includes('fetchLeaveRequestById(reviewId)') && leaveService.includes(".eq('id', id)") && leave.includes("'team_requests'"), 'leave fetches and opens the exact staff review'],
+  [wfh.includes('fetchWfhRequestById(reviewId)') && wfhService.includes('fetchWfhRequestById') && wfh.includes('setIsReviewModalOpen(true)'), 'WFH fetches and opens the exact staff review'],
+  [overtime.includes('fetchOtRequestById(reviewId)') && overtimeService.includes('fetchOtRequestById') && overtime.includes("'team_approvals'"), 'overtime fetches and opens the exact team review'],
+  [manpower.includes('fetchManpowerRequestById(requestId)') && manpowerService.includes('fetchManpowerRequestById') && manpower.includes('setIsReviewModalOpen(true)'), 'manpower fetches and opens the exact review'],
+  [requisitions.includes('fetchJobRequisitionById(reviewId)') && requisitionService.includes('fetchJobRequisitionById') && requisitions.includes('handleOpenModal(requested)'), 'requisition fetches and opens the exact review'],
+  [timeAssignmentService.includes(".from('time_request_approval_assignments')") && [leave, wfh, overtime].every(source => source.includes('hasPendingTimeApprovalAssignment')), 'time-request deep links honor immutable pending assignments'],
+  [[leave, wfh, overtime, manpower, requisitions].every(source => source.includes('Unable to open')), 'direct-review failures are visible instead of silently falling back'],
   [notifications.includes("error.code === '23505'"), 'duplicate notification retry protection'],
 ];
 

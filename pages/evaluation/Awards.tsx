@@ -13,7 +13,7 @@ import Confetti from '../../components/ui/Confetti';
 import Toast from '../../components/ui/Toast';
 import Modal from '../../components/ui/Modal';
 import RejectReasonModal from '../../components/feedback/RejectReasonModal';
-import { fetchAwardTemplates, fetchEmployeeAwards, createEmployeeAward, processEmployeeAwardApproval, markEmployeeAwardIssued, saveAwardTemplate } from '../../services/awardService';
+import { fetchAwardTemplates, fetchEmployeeAwardById, fetchEmployeeAwards, createEmployeeAward, processEmployeeAwardApproval, markEmployeeAwardIssued, saveAwardTemplate } from '../../services/awardService';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import CertificateRenderer from '../../components/evaluation/CertificateRenderer';
@@ -29,6 +29,27 @@ type EnrichedEmployeeAward = EmployeeAward & {
     createdByName: string, 
     businessUnitName: string 
 };
+
+const toEmployeeAward = (award: Awaited<ReturnType<typeof fetchEmployeeAwards>>[number]): EmployeeAward => ({
+  id: award.id,
+  employeeId: award.employeeId,
+  awardId: award.awardTemplateId,
+  notes: award.notes || '',
+  dateAwarded: award.dateAwarded || new Date(),
+  createdByUserId: award.createdByUserId || '',
+  level: award.level || BadgeLevel.Bronze,
+  businessUnitId: award.businessUnitId,
+  departmentId: award.departmentId,
+  status: award.status,
+  approverSteps: award.approverSteps as ApproverStep[],
+  rejectionReason: award.rejectionReason,
+  certificateSnapshotUrl: award.certificateUrl,
+  approverId: award.approverId,
+  approverName: award.approverName,
+  submittedAt: award.submittedAt,
+  decidedAt: award.decidedAt,
+  issuedAt: award.issuedAt,
+});
 
 
 const Awards: React.FC = () => {
@@ -58,6 +79,8 @@ const Awards: React.FC = () => {
   const [reviewAward, setReviewAward] = React.useState<EnrichedEmployeeAward | null>(null);
   const [isRejectModalOpen, setIsRejectModalOpen] = React.useState(false);
   const [awardToReject, setAwardToReject] = React.useState<EnrichedEmployeeAward | null>(null);
+  const [openedReviewId, setOpenedReviewId] = React.useState<string | null>(null);
+  const [reviewLoadError, setReviewLoadError] = React.useState('');
   const reviewCertificateRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
@@ -73,26 +96,7 @@ const Awards: React.FC = () => {
       }
       try {
         const ea = await fetchEmployeeAwards();
-        const mapped: EmployeeAward[] = ea.map(a => ({
-          id: a.id,
-          employeeId: a.employeeId,
-          awardId: a.awardTemplateId,
-          notes: a.notes || '',
-          dateAwarded: a.dateAwarded || new Date(),
-          createdByUserId: a.createdByUserId || '',
-          level: a.level || BadgeLevel.Bronze,
-          businessUnitId: a.businessUnitId,
-          departmentId: a.departmentId,
-          status: a.status,
-          approverSteps: a.approverSteps as ApproverStep[],
-          rejectionReason: a.rejectionReason,
-          certificateSnapshotUrl: a.certificateUrl,
-          approverId: a.approverId,
-          approverName: a.approverName,
-          submittedAt: a.submittedAt,
-          decidedAt: a.decidedAt,
-          issuedAt: a.issuedAt,
-        }));
+        const mapped: EmployeeAward[] = ea.map(toEmployeeAward);
         setEmployeeAwards(mapped);
       } catch {
         setEmployeeAwards([]);
@@ -152,6 +156,30 @@ const Awards: React.FC = () => {
     };
     load();
   }, []);
+
+  React.useEffect(() => {
+    const requestedAwardId = getApprovalRequestId(searchParams);
+    if (!requestedAwardId || !user?.id || requestedAwardId === openedReviewId) return;
+
+    let cancelled = false;
+    setReviewLoadError('');
+    fetchEmployeeAwardById(requestedAwardId)
+      .then(award => {
+        if (cancelled) return;
+        if (!award) throw new Error('This award is no longer available or is not assigned to you.');
+        const mapped = toEmployeeAward(award);
+        setEmployeeAwards(previous => [mapped, ...previous.filter(candidate => candidate.id !== mapped.id)]);
+      })
+      .catch((error: any) => {
+        if (cancelled) return;
+        setOpenedReviewId(requestedAwardId);
+        setReviewLoadError(error?.message || 'The assigned award could not be loaded.');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, user?.id]);
 
   const submitAwardForApproval = async (
       employeeId: string, 
@@ -265,6 +293,10 @@ const Awards: React.FC = () => {
     });
 
     const filteredByScope = base.filter(ea => {
+      const assignedToUser = !!user && (
+        ea.approverId === user.id || ea.approverSteps.some(step => step.userId === user.id)
+      );
+      if (assignedToUser) return true;
       if (!awardsAccess.canView) return false;
       if (awardsAccess.scope === 'global') return true;
       if (awardsAccess.scope === 'self' && user) return ea.employeeId === user.id;
@@ -276,7 +308,7 @@ const Awards: React.FC = () => {
 
   React.useEffect(() => {
     const requestedAwardId = getApprovalRequestId(searchParams);
-    if (!requestedAwardId || !user) return;
+    if (!requestedAwardId || !user || requestedAwardId === openedReviewId) return;
     const requestedAward = enrichedEmployeeAwards.find(award => award.id === requestedAwardId);
     if (!requestedAward) return;
     const assignedToUser = requestedAward.approverId === user.id
@@ -286,8 +318,13 @@ const Awards: React.FC = () => {
       || (requestedAward.status === ResolutionStatus.Approved && (assignedToUser || canManage))
     ) {
       setReviewAward(requestedAward);
+      setOpenedReviewId(requestedAwardId);
+      setReviewLoadError('');
+    } else {
+      setOpenedReviewId(requestedAwardId);
+      setReviewLoadError('This award is not assigned to you for review.');
     }
-  }, [searchParams, enrichedEmployeeAwards, user, canManage]);
+  }, [searchParams, enrichedEmployeeAwards, user, canManage, openedReviewId]);
 
     const captureFinalCertificate = async () => {
         const source = reviewCertificateRef.current;
@@ -507,6 +544,7 @@ const Awards: React.FC = () => {
     <div className="space-y-6">
       {showConfetti && <Confetti />}
       <Toast show={toastInfo.show} onClose={() => setToastInfo(previous => ({ ...previous, show: false }))} title={toastInfo.title} message={toastInfo.message} icon={toastInfo.icon} />
+      {reviewLoadError && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800" role="alert"><strong>Unable to open award review.</strong> {reviewLoadError}</div>}
       {loadError && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800" role="alert">{loadError} Some award data may be unavailable. Refresh to try again.</div>}
       {!awardsAccess.canView ? <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">You do not have permission to view awards.</div> : <AwardsStudioDashboard
         awards={awards}

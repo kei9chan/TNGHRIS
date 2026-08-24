@@ -67,6 +67,7 @@ const PersonnelActionNotice: React.FC = () => {
   const [yearFilter, setYearFilter] = useState<string>('all');
   const [monthFilter, setMonthFilter] = useState<string>('all');
   const [openedQueryItem, setOpenedQueryItem] = useState<string | null>(null);
+  const [reviewLoadError, setReviewLoadError] = useState('');
 
   const panAccess = getPanAccess();
   const canCreatePAN = panAccess.canCreate;
@@ -126,6 +127,7 @@ const PersonnelActionNotice: React.FC = () => {
     businessUnitId: u.business_unit_id || undefined,
     employmentStatus: u.employment_status || undefined,
     position: u.position || '',
+    isPhotoEnrolled: false,
     roles: Array.isArray(u.roles) && u.roles.length ? u.roles as Role[] : [u.role as Role],
     salary: {
       basic: u.salary_basic ?? 0,
@@ -212,13 +214,38 @@ const PersonnelActionNotice: React.FC = () => {
 
   useEffect(() => {
     const requestedPanId = getApprovalRequestId(searchParams);
-    if (!requestedPanId || requestedPanId === openedQueryItem || !records.length) return;
-    const requestedPan = records.find(record => record.id === requestedPanId);
-    if (!requestedPan) return;
-    setSelectedRecord(requestedPan);
-    setIsModalOpen(true);
-    setOpenedQueryItem(requestedPanId);
-  }, [searchParams, records, openedQueryItem]);
+    if (!requestedPanId || !user?.id || requestedPanId === openedQueryItem) return;
+
+    let cancelled = false;
+    setReviewLoadError('');
+    const loadRequestedPan = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('pans')
+          .select('*')
+          .eq('id', requestedPanId)
+          .maybeSingle();
+        if (cancelled) return;
+        if (error) throw new Error(error.message || 'Failed to load the PAN');
+        if (!data) throw new Error('This PAN is no longer available or is not assigned to you.');
+        const requestedPan = mapPanRow(data);
+        setRecords(previous => [requestedPan, ...previous.filter(record => record.id !== requestedPan.id)]);
+        setActiveTab('records');
+        setSelectedRecord(requestedPan);
+        setIsModalOpen(true);
+        setOpenedQueryItem(requestedPanId);
+      } catch (error: any) {
+        if (cancelled) return;
+        setOpenedQueryItem(requestedPanId);
+        setReviewLoadError(error?.message || 'The assigned PAN could not be loaded.');
+      }
+    };
+    loadRequestedPan();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, user?.id]);
 
   const upsertPan = async (recordToSave: Partial<PAN>, status: PANStatus) => {
     if (!user || !recordToSave.employeeId) return null;
@@ -518,6 +545,11 @@ const PersonnelActionNotice: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {reviewLoadError && (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
+          <strong>Unable to open PAN review.</strong> {reviewLoadError}
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Personnel Action Notice (PAN)</h1>
         {canCreatePAN && (

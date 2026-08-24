@@ -16,6 +16,8 @@ import Toast from '../../components/ui/Toast';
 import LeaveCalendar from '../../components/payroll/LeaveCalendar';
 import { processTimeRequestApproval, sendConditionalApprovalEmails } from '../../services/approverConfigService';
 import { getApprovalRequestId } from '../../services/approvalDeepLinks';
+import { fetchLeaveRequestById } from '../../services/leaveService';
+import { hasPendingTimeApprovalAssignment } from '../../services/timeApprovalAssignmentService';
 
 type ActiveView = 'my_requests' | 'team_requests' | 'schedule';
 
@@ -190,17 +192,42 @@ const Leave: React.FC = () => {
     return [];
   }, [leaveRequests, user, access.scope]);
 
-  // Open the exact employee request from Approval Center and notification links.
+  // Fetch the exact record instead of depending on this page's role/scope list.
+  // The database still enforces whether the signed-in approver may read it.
   useEffect(() => {
     const reviewId = getApprovalRequestId(location.search);
-    if (!reviewId || reviewId === openedReviewId || leaveRequests.length === 0) return;
-    const request = leaveRequests.find(candidate => candidate.id === reviewId);
-    if (!request) return;
-    setActiveView(request.employeeId === user?.id ? 'my_requests' : 'team_requests');
-    setSelectedRequest(request);
-    setIsModalOpen(true);
-    setOpenedReviewId(reviewId);
-  }, [location.search, leaveRequests, openedReviewId, user?.id]);
+    if (!reviewId || !user?.id || reviewId === openedReviewId) return;
+
+    let cancelled = false;
+    fetchLeaveRequestById(reviewId)
+      .then(async request => {
+        if (cancelled) return;
+        if (!request) throw new Error('This leave request is no longer available or is not assigned to you.');
+        if (request.employeeId !== user.id && !canApprove) {
+          const assigned = await hasPendingTimeApprovalAssignment('leave', reviewId, user.id);
+          if (!assigned) throw new Error('This leave request is not assigned to you for review.');
+        }
+        if (cancelled) return;
+        setLeaveRequests(previous => [request, ...previous.filter(candidate => candidate.id !== request.id)]);
+        setActiveView(request.employeeId === user.id ? 'my_requests' : 'team_requests');
+        setSelectedRequest(request);
+        setIsModalOpen(true);
+        setOpenedReviewId(reviewId);
+      })
+      .catch((error: any) => {
+        if (cancelled) return;
+        setOpenedReviewId(reviewId);
+        setToastInfo({
+          show: true,
+          title: 'Unable to open leave review',
+          message: error?.message || 'The assigned leave request could not be loaded.',
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [location.search, user?.id, canApprove]);
 
   const visibleRequests = useMemo(() => {
     if (!user) return [];

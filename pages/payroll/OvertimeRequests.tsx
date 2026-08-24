@@ -15,11 +15,12 @@ import OTCalendar from '../../components/payroll/OTCalendar';
 import OTLedger from '../../components/payroll/OTLedger';
 import EditableDescription from '../../components/ui/EditableDescription';
 import { logActivity } from '../../services/auditService';
-import { fetchOtRequests, saveOtRequest, deleteOtRequest, withdrawOtRequest, verifyAndConvertOT } from '../../services/otService';
+import { fetchOtRequestById, fetchOtRequests, saveOtRequest, deleteOtRequest, withdrawOtRequest, verifyAndConvertOT } from '../../services/otService';
 import { createNotification } from '../../services/notificationService';
 import { processTimeRequestApproval, sendConditionalApprovalEmails } from '../../services/approverConfigService';
 import { supabase } from '../../services/supabaseClient';
 import { getApprovalRequestId } from '../../services/approvalDeepLinks';
+import { hasPendingTimeApprovalAssignment } from '../../services/timeApprovalAssignmentService';
 
 type Tab = 'my_ot' | 'team_approvals' | 'hr_verification' | 'calendar' | 'ledger';
 
@@ -52,11 +53,13 @@ const OvertimeRequests: React.FC = () => {
     
     const [requests, setRequests] = useState<OTRequest[]>([]);
     const [reporteeIds, setReporteeIds] = useState<string[]>([]);
+    const [reporteeIdsLoaded, setReporteeIdsLoaded] = useState(false);
     
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedRequest, setSelectedRequest] = useState<OTRequest | null>(null);
     const [showSuccessToast, setShowSuccessToast] = useState(false);
     const [openedReviewId, setOpenedReviewId] = useState<string | null>(null);
+    const [reviewLoadError, setReviewLoadError] = useState('');
 
     const { users: hrUsers } = useUsers();
     const { businessUnits: hrBusinessUnits } = useBusinessUnits();
@@ -95,6 +98,7 @@ const OvertimeRequests: React.FC = () => {
         const loadReportees = async () => {
             if (!user?.id) {
                 setReporteeIds([]);
+                setReporteeIdsLoaded(false);
                 return;
             }
             const { data, error } = await supabase
@@ -103,9 +107,11 @@ const OvertimeRequests: React.FC = () => {
                 .eq('reports_to', user.id);
             if (error || !data) {
                 setReporteeIds([]);
+                setReporteeIdsLoaded(true);
                 return;
             }
             setReporteeIds(data.map((row: any) => row.id).filter(Boolean));
+            setReporteeIdsLoaded(true);
         };
         loadReportees();
     }, [user?.id]);
@@ -222,17 +228,46 @@ const OvertimeRequests: React.FC = () => {
         return uniqueRequests;
     }, [requests, reporteeIds, user, canApprove, isConfiguredBOD]);
 
-    // A Review link must open the exact staff request, not merely the OT landing page.
+    // A Review link loads the exact record independently of My OT/team list filters.
     useEffect(() => {
         const reviewId = getApprovalRequestId(location.search);
-        if (!reviewId || reviewId === openedReviewId || requests.length === 0) return;
-        const request = requests.find(candidate => candidate.id === reviewId);
-        if (!request) return;
-        setActiveTab('team_approvals');
-        setSelectedRequest(request);
-        setIsModalOpen(true);
-        setOpenedReviewId(reviewId);
-    }, [location.search, requests, openedReviewId]);
+        if (!reviewId || !user?.id || !reporteeIdsLoaded || reviewId === openedReviewId) return;
+
+        let cancelled = false;
+        setReviewLoadError('');
+        fetchOtRequestById(reviewId)
+            .then(async request => {
+                if (cancelled) return;
+                if (!request) throw new Error('This overtime request is no longer available or is not assigned to you.');
+                let canReview = reporteeIds.includes(request.employeeId)
+                    || otAccess.canActOn(request)
+                    || (isConfiguredBOD && request.status === OTStatus.PendingBOD);
+                if (!canReview && request.employeeId !== user.id) {
+                    canReview = await hasPendingTimeApprovalAssignment('overtime', reviewId, user.id);
+                }
+                if (request.employeeId !== user.id && !canReview) {
+                    throw new Error('This overtime request is not assigned to you for review.');
+                }
+                if (cancelled) return;
+                setRequests(previous => [request, ...previous.filter(candidate => candidate.id !== request.id)]);
+                setActiveTab(request.employeeId === user.id ? 'my_ot' : 'team_approvals');
+                setSelectedRequest(request);
+                setIsModalOpen(true);
+                setOpenedReviewId(reviewId);
+            })
+            .catch((error: any) => {
+                if (cancelled) return;
+                setOpenedReviewId(reviewId);
+                setReviewLoadError(error?.message || 'The assigned overtime request could not be loaded.');
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    // otAccess is recreated by the permission helper; the stable auth/scope inputs below
+    // are sufficient and avoid cancelling the exact-record query on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [location.search, user?.id, reporteeIdsLoaded, reporteeIds, isConfiguredBOD]);
 
     // 3. Calendar Data Source
     const calendarRequests = useMemo(() => {
@@ -456,6 +491,11 @@ const OvertimeRequests: React.FC = () => {
     return (
         <div className="space-y-6">
             <SuccessToast show={showSuccessToast} message="Submitted successfully." onClose={() => setShowSuccessToast(false)} />
+            {reviewLoadError && (
+                <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
+                    <strong>Unable to open overtime review.</strong> {reviewLoadError}
+                </div>
+            )}
 
             <div className="flex justify-between items-start md:items-center flex-col md:flex-row gap-4">
                 <div>

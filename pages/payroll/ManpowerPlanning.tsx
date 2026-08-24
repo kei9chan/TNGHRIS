@@ -12,6 +12,7 @@ import ManpowerReviewModal from '../../components/payroll/ManpowerReviewModal';
 import { logActivity } from '../../services/auditService';
 import { supabase } from '../../services/supabaseClient';
 import { getApprovalRequestId } from '../../services/approvalDeepLinks';
+import { fetchManpowerRequestById } from '../../services/manpowerService';
 
 const getStatusColor = (status: ManpowerRequestStatus) => {
     switch (status) {
@@ -31,6 +32,8 @@ const ManpowerPlanning: React.FC = () => {
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
     const [selectedRequest, setSelectedRequest] = useState<ManpowerRequest | null>(null);
+    const [openedReviewId, setOpenedReviewId] = useState<string | null>(null);
+    const [reviewLoadError, setReviewLoadError] = useState('');
     
     const role = user?.role as Role | undefined;
 
@@ -130,13 +133,32 @@ const ManpowerPlanning: React.FC = () => {
 
     useEffect(() => {
         const requestId = getApprovalRequestId(location.search);
-        if (!requestId || requests.length === 0) return;
-        const match = requests.find(r => r.id === requestId);
-        if (match) {
-            setSelectedRequest(match);
-            setIsReviewModalOpen(true);
-        }
-    }, [location.search, requests]);
+        if (!requestId || !user?.id || requestId === openedReviewId) return;
+
+        let cancelled = false;
+        setReviewLoadError('');
+        fetchManpowerRequestById(requestId)
+            .then(request => {
+                if (cancelled) return;
+                if (!request) throw new Error('This manpower request is no longer available or is not assigned to you.');
+                if (request.requestedBy !== user.id && !canApprove) {
+                    throw new Error('This manpower request is not assigned to you for review.');
+                }
+                setRequests(previous => [request, ...previous.filter(candidate => candidate.id !== request.id)]);
+                setSelectedRequest(request);
+                setIsReviewModalOpen(true);
+                setOpenedReviewId(requestId);
+            })
+            .catch((error: any) => {
+                if (cancelled) return;
+                setOpenedReviewId(requestId);
+                setReviewLoadError(error?.message || 'The assigned manpower request could not be loaded.');
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [location.search, user?.id, canApprove]);
 
     const filteredRequests = useMemo(() => {
         return requests.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -197,6 +219,11 @@ const ManpowerPlanning: React.FC = () => {
 
     return (
         <div className="space-y-6">
+            {reviewLoadError && (
+                <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
+                    <strong>Unable to open manpower review.</strong> {reviewLoadError}
+                </div>
+            )}
             <div className="flex justify-between items-center">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Manpower Planning</h1>

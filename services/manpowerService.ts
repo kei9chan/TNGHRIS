@@ -71,6 +71,18 @@ export const fetchManpowerRequestsByBU = async (businessUnitId: string): Promise
   return (data as ManpowerRequestRow[]).map(mapManpowerRequest);
 };
 
+export const fetchManpowerRequestById = async (id: string): Promise<ManpowerRequest | null> => {
+  const { data, error } = await supabase
+    .from('manpower_requests')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message || 'Failed to load the manpower request');
+  if (!data) return null;
+  return mapManpowerRequest(data as ManpowerRequestRow);
+};
+
 export const createManpowerRequest = async (request: Partial<ManpowerRequest>, user: User): Promise<ManpowerRequest> => {
   const payload = {
     business_unit_id: request.businessUnitId || user.businessUnitId || null,

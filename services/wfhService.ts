@@ -64,6 +64,18 @@ export const fetchWfhRequestsByEmployee = async (employeeId: string): Promise<WF
   return (data as WfhRequestRow[]).map(mapWfhRequest);
 };
 
+export const fetchWfhRequestById = async (id: string): Promise<WFHRequest | null> => {
+  const { data, error } = await supabase
+    .from('wfh_requests')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message || 'Failed to load the WFH request');
+  if (!data) return null;
+  return mapWfhRequest(data as WfhRequestRow);
+};
+
 export const createWfhRequest = async (request: Partial<WFHRequest>, user: User, isDraft: boolean = false, skipToBOD: boolean = false): Promise<WFHRequest> => {
   // Determine if user is a manager (triggers GM → BOD approval chain)
   const managerRoles = [

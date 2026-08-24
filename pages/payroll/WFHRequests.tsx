@@ -17,10 +17,12 @@ import { createNotification } from '../../services/notificationService';
 import EditableDescription from '../../components/ui/EditableDescription';
 import { 
   createWfhRequest, 
+  fetchWfhRequestById,
   updateWfhRequestDetails, 
   submitWfhRequest
 } from '../../services/wfhService';
 import { getApprovalRequestId } from '../../services/approvalDeepLinks';
+import { hasPendingTimeApprovalAssignment } from '../../services/timeApprovalAssignmentService';
 
 
 const WFH_STATUS_LABELS: Record<WFHRequestStatus, string> = {
@@ -82,6 +84,7 @@ const WFHRequests: React.FC = () => {
   const [selectedReviewRequest, setSelectedReviewRequest] = useState<WFHRequest | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [openedReviewId, setOpenedReviewId] = useState<string | null>(null);
+  const [reviewLoadError, setReviewLoadError] = useState('');
 
   const loadRequests = async () => {
     if (!user || !canView) return;
@@ -170,18 +173,37 @@ const WFHRequests: React.FC = () => {
 
   useEffect(() => {
     const reviewId = getApprovalRequestId(location.search);
-    if (!reviewId || reviewId === openedReviewId || requests.length === 0) return;
-    const request = requests.find(candidate => candidate.id === reviewId);
-    if (!request) return;
-    if (request.employeeId !== user?.id && canManage) {
-      setSelectedReviewRequest(request);
-      setIsReviewModalOpen(true);
-    } else {
-      setSelectedRequest(request);
-      setIsModalOpen(true);
-    }
-    setOpenedReviewId(reviewId);
-  }, [location.search, requests, openedReviewId, user?.id, canManage]);
+    if (!reviewId || !user?.id || !canView || !reporteeIdsLoaded || reviewId === openedReviewId) return;
+
+    let cancelled = false;
+    setReviewLoadError('');
+    fetchWfhRequestById(reviewId)
+      .then(async request => {
+        if (cancelled) return;
+        if (!request) throw new Error('This WFH request is no longer available or is not assigned to you.');
+        if (request.employeeId !== user.id) {
+          const assigned = canManage || await hasPendingTimeApprovalAssignment('wfh', reviewId, user.id);
+          if (!assigned) throw new Error('This WFH request is not assigned to you for review.');
+          if (cancelled) return;
+          setSelectedReviewRequest(request);
+          setIsReviewModalOpen(true);
+        } else {
+          setSelectedRequest(request);
+          setIsModalOpen(true);
+        }
+        setRequests(previous => [request, ...previous.filter(candidate => candidate.id !== request.id)]);
+        setOpenedReviewId(reviewId);
+      })
+      .catch((error: any) => {
+        if (cancelled) return;
+        setOpenedReviewId(reviewId);
+        setReviewLoadError(error?.message || 'The assigned WFH request could not be loaded.');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [location.search, user?.id, canView, reporteeIdsLoaded, canManage]);
 
   const myRequests = useMemo(() => {
       if (!user) return [];
@@ -308,6 +330,11 @@ const WFHRequests: React.FC = () => {
 
   return (
     <div className="space-y-6">
+        {reviewLoadError && (
+          <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
+            <strong>Unable to open WFH review.</strong> {reviewLoadError}
+          </div>
+        )}
         <div className="flex justify-between items-center">
             <div>
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Work From Home Requests</h1>

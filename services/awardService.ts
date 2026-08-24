@@ -158,6 +158,18 @@ export const fetchEmployeeAwards = async (): Promise<EmployeeAwardRecord[]> => {
   return data.map(mapEmployeeAward);
 };
 
+export const fetchEmployeeAwardById = async (id: string): Promise<EmployeeAwardRecord | null> => {
+  const { data, error } = await supabase
+    .from('employee_awards')
+    .select('*, award_templates(title, badge_icon_url), hris_users:employee_id(full_name), approver:approver_id(full_name), business_units(name)')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message || 'Failed to load the award approval');
+  if (!data) return null;
+  return mapEmployeeAward(data);
+};
+
 export const createEmployeeAward = async (payload: {
   employeeId: string;
   awardTemplateId: string;

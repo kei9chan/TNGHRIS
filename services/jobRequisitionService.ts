@@ -76,6 +76,18 @@ export const fetchJobRequisitions = async (): Promise<JobRequisition[]> => {
   return (data as JobRequisitionRow[]).map(mapRow);
 };
 
+export const fetchJobRequisitionById = async (id: string): Promise<JobRequisition | null> => {
+  const { data, error } = await supabase
+    .from('job_requisitions')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message || 'Failed to load the job requisition');
+  if (!data) return null;
+  return mapRow(data as JobRequisitionRow);
+};
+
 export const fetchJobRequisitionApprovalDirectory = async (): Promise<User[]> => {
   const { data, error } = await supabase.rpc('get_job_requisition_approval_directory');
   if (error) throw new Error(error.message || 'Failed to load job-requisition approvers');
