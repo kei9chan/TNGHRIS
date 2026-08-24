@@ -32,6 +32,12 @@ const calculateTenure = (dateHired?: Date): string => {
   return `${Math.max(0, years)} Years & ${Math.max(0, months)} Months`;
 };
 
+const isActiveUser = (candidate: User): boolean => String(candidate.status || '').toLowerCase() === 'active';
+const parseBusinessUnitList = (value: string): string[] => value
+  .split(',')
+  .map(item => item.trim())
+  .filter(Boolean);
+
 const PANModal: React.FC<PANModalProps> = (props) => {
   const { isOpen, onClose, pan, templates, employees, businessUnits, onSaveDraft, onSendForAcknowledgement, onAcknowledge, onDownloadPdf, onApprove, onReject, onCancel } = props;
   const { user } = useAuth();
@@ -41,6 +47,7 @@ const PANModal: React.FC<PANModalProps> = (props) => {
   const [templateWasChosenManually, setTemplateWasChosenManually] = useState(false);
   const [selectedApprovers, setSelectedApprovers] = useState<User[]>([]);
   const [employeeSearch, setEmployeeSearch] = useState('');
+  const [otherBusinessUnitText, setOtherBusinessUnitText] = useState<Record<'from' | 'to', string>>({ from: '', to: '' });
   const [isEmployeeSearchOpen, setIsEmployeeSearchOpen] = useState(false);
   const searchWrapperRef = useRef<HTMLDivElement>(null);
   const signaturePadRef = useRef<SignaturePadRef>(null);
@@ -52,7 +59,7 @@ const PANModal: React.FC<PANModalProps> = (props) => {
     return employees.find(item => item.email?.toLowerCase() === user.email?.toLowerCase())?.id || user.id;
   }, [user, employees]);
   const isForAcknowledgement = !!pan && pan.employeeId === resolvedUserId && pan.status === PANStatus.PendingEmployee;
-  const approverPool = useMemo(() => employees.filter(item => item.status === 'Active' && (item.role !== Role.Employee || (item.roles || []).some(role => role !== Role.Employee))), [employees]);
+  const approverPool = useMemo(() => employees.filter(item => isActiveUser(item) && (item.role !== Role.Employee || (item.roles || []).some(role => role !== Role.Employee))), [employees]);
   const isAuthorizedHr = useMemo(() => {
     const roles = new Set(user?.roles?.length ? user.roles : user ? [user.role] : []);
     return roles.has(Role.Admin) || roles.has(Role.HRManager) || roles.has(Role.HRStaff);
@@ -92,9 +99,14 @@ const PANModal: React.FC<PANModalProps> = (props) => {
       setCurrent(pan); setSelectedEmployee(employees.find(item => item.id === pan.employeeId) || null);
       setSelectedTemplateId(pan.templateId || ''); setTemplateWasChosenManually(!!pan.templateId); setEmployeeSearch(pan.employeeName || '');
       setSelectedApprovers(pan.routingSteps.map(step => employees.find(item => item.id === step.userId)).filter((item): item is User => !!item));
+      setOtherBusinessUnitText({
+        from: (pan.particulars?.from?.otherBusinessUnits || []).join(', '),
+        to: (pan.particulars?.to?.otherBusinessUnits || []).join(', '),
+      });
     } else {
       setCurrent({ status: PANStatus.Draft, effectiveDate: new Date(), actionTaken: { ...emptyActions }, particulars: { from: { salary: { ...emptySalary } }, to: { salary: { ...emptySalary } } }, notes: '' });
       setSelectedEmployee(null); setSelectedTemplateId(''); setTemplateWasChosenManually(false); setSelectedApprovers([]); setEmployeeSearch('');
+      setOtherBusinessUnitText({ from: '', to: '' });
     }
     setTypedName(isForAcknowledgement ? user?.name || '' : '');
   }, [pan, isOpen, employees, user, isForAcknowledgement]);
@@ -131,8 +143,13 @@ const PANModal: React.FC<PANModalProps> = (props) => {
 
   const availableEmployees = useMemo(() => {
     if (!employeeSearch || employeeSearch === selectedEmployee?.name) return [];
-    const search = employeeSearch.toLowerCase();
-    return employees.filter(item => item.status === 'Active' && item.name.toLowerCase().includes(search)).slice(0, 8);
+    const search = employeeSearch.trim().toLowerCase();
+    if (!search) return [];
+    return employees.filter(item => {
+      if (!isActiveUser(item)) return false;
+      return [item.name, item.employeeId, item.email, item.position, item.department, item.businessUnit]
+        .some(value => String(value || '').toLowerCase().includes(search));
+    }).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 20);
   }, [employeeSearch, selectedEmployee, employees]);
 
   const updateParticular = (side: 'from' | 'to', field: string, value: unknown) => setCurrent(previous => ({
@@ -157,6 +174,30 @@ const PANModal: React.FC<PANModalProps> = (props) => {
   };
   const hasBodApprover = selectedApprovers.some(item => item.role === Role.BOD || item.roles?.includes(Role.BOD));
   const selectEmployee = (employee: User) => { setSelectedEmployee(employee); setSelectedTemplateId(''); setTemplateWasChosenManually(false); setCurrent(previous => ({ ...previous, employeeId: employee.id, employeeName: employee.name, templateId: undefined, templateSnapshot: undefined })); setEmployeeSearch(employee.name); setIsEmployeeSearchOpen(false); };
+  const handleEmployeeSearchChange = (value: string) => {
+    setEmployeeSearch(value);
+    setIsEmployeeSearchOpen(true);
+    if (selectedEmployee && value !== selectedEmployee.name) {
+      setSelectedEmployee(null);
+      setSelectedTemplateId('');
+      setTemplateWasChosenManually(false);
+      setCurrent(previous => ({
+        ...previous,
+        employeeId: undefined,
+        employeeName: undefined,
+        templateId: undefined,
+        templateName: undefined,
+        templateSnapshot: undefined,
+        routingSteps: [],
+      }));
+      setSelectedApprovers([]);
+    }
+  };
+  const clearEmployee = () => handleEmployeeSearchChange('');
+  const handleOtherBusinessUnitsChange = (side: 'from' | 'to', value: string) => {
+    setOtherBusinessUnitText(previous => ({ ...previous, [side]: value }));
+    updateParticular(side, 'otherBusinessUnits', parseBusinessUnitList(value));
+  };
   const signatureSubmit = () => {
     if (!pan || !signaturePadRef.current) return;
     if (!typedName.trim()) return alert('Please type your name before acknowledging.');
@@ -183,14 +224,14 @@ const PANModal: React.FC<PANModalProps> = (props) => {
       {pan && <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Personnel Action Notice</p><p className="mt-1 text-lg font-bold text-slate-900 dark:text-white">PAN-{pan.id.slice(0, 8).toUpperCase()}</p><p className="mt-1 text-xs text-slate-500">Template: {pan.templateName || selectedTemplate?.name || 'Standard PAN layout'}{pan.templateVersion ? ` · v${pan.templateVersion}` : ''}</p></div><span className={`rounded-full px-3 py-1 text-sm font-semibold ${statusClass}`}>{statusLabel}</span></div><div className="mt-4 grid gap-3 border-t border-slate-200 pt-4 sm:grid-cols-2 lg:grid-cols-4 dark:border-slate-700"><div><span className="text-xs text-slate-500">Employee</span><div className="font-semibold">{pan.employeeName}</div></div><div><span className="text-xs text-slate-500">Business unit</span><div className="font-semibold">{pan.particulars?.from?.businessUnit || 'Not applicable'}</div></div><div><span className="text-xs text-slate-500">Department</span><div className="font-semibold">{pan.particulars?.from?.department || 'Not applicable'}</div></div><div><span className="text-xs text-slate-500">Position</span><div className="font-semibold">{pan.particulars?.from?.position || 'Not applicable'}</div></div></div></div>}
 
       <section><div className="mb-3 flex items-center gap-2"><b className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-xs text-white">1</b><div><h3 className="font-semibold">Document setup</h3><p className="text-xs text-slate-500">Choose the employee, effectivity date, and business-unit template.</p></div></div><div className="grid gap-4 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-3 dark:border-slate-700 dark:bg-slate-900">
-        <div className="relative sm:col-span-2" ref={searchWrapperRef}><label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Employee</label><Input value={employeeSearch} onChange={event => { setEmployeeSearch(event.target.value); setIsEmployeeSearchOpen(true); }} onFocus={() => setIsEmployeeSearchOpen(true)} placeholder="Search by employee name" disabled={!canEdit} />{isEmployeeSearchOpen && availableEmployees.length > 0 && <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-52 overflow-y-auto rounded-lg border bg-white shadow-xl dark:bg-slate-800">{availableEmployees.map(employee => <button type="button" key={employee.id} onClick={() => selectEmployee(employee)} className="block w-full px-3 py-2 text-left text-sm hover:bg-indigo-50"><span className="font-medium">{employee.name}</span><span className="ml-2 text-xs text-slate-500">{employee.position || employee.role}</span></button>)}</div>}</div>
+        <div className="relative sm:col-span-2" ref={searchWrapperRef}><label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Employee</label><Input value={employeeSearch} onChange={event => handleEmployeeSearchChange(event.target.value)} onFocus={() => setIsEmployeeSearchOpen(true)} placeholder="Search name, employee ID, email, position, department, or business unit" disabled={!canEdit} />{selectedEmployee && <div className="mt-2 flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm dark:border-emerald-800 dark:bg-emerald-950/30"><div><span className="font-semibold text-emerald-800 dark:text-emerald-200">Selected: {selectedEmployee.name}</span><span className="ml-2 text-xs text-emerald-700 dark:text-emerald-300">{[selectedEmployee.employeeId, selectedEmployee.position, selectedEmployee.department, selectedEmployee.businessUnit].filter(Boolean).join(' · ')}</span></div>{canEdit && <button type="button" onClick={clearEmployee} className="font-semibold text-emerald-800 hover:underline dark:text-emerald-200">Clear</button>}</div>}{isEmployeeSearchOpen && employeeSearch.trim() && employeeSearch !== selectedEmployee?.name && <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-72 overflow-y-auto rounded-lg border bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800">{availableEmployees.length > 0 ? availableEmployees.map(employee => <button type="button" key={employee.id} onClick={() => selectEmployee(employee)} className="block w-full border-b border-slate-100 px-3 py-2 text-left text-sm last:border-0 hover:bg-indigo-50 dark:border-slate-700 dark:hover:bg-slate-700"><span className="block font-medium">{employee.name}</span><span className="block text-xs text-slate-500 dark:text-slate-400">{[employee.employeeId, employee.position || employee.role, employee.department, employee.businessUnit, employee.email].filter(Boolean).join(' · ')}</span></button>) : <div className="px-3 py-3 text-sm text-slate-500">No active employee matches this search. Check the employee's status and your authorized business-unit access.</div>}</div>}</div>
         <Input label="Effectivity date" type="date" value={current.effectiveDate ? new Date(current.effectiveDate).toISOString().split('T')[0] : ''} onChange={event => setCurrent(previous => ({ ...previous, effectiveDate: new Date(event.target.value) }))} disabled={!canEdit} />
         <div className="sm:col-span-3"><label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">PAN template</label><select value={selectedTemplateId} onChange={handleTemplateSelect} disabled={!canEdit} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-white"><option value="">Use standard PAN layout</option>{templateOptions.map(template => <option key={template.id} value={template.id}>{template.name}{template.businessUnitName ? ` — ${template.businessUnitName}` : ' — Global'}</option>)}</select><p className="mt-1 text-xs text-slate-500">{selectedEmployee?.businessUnit ? `Showing ${selectedEmployee.businessUnit} and Global templates.` : 'Select an employee to prioritize its business-unit templates.'}</p></div>
       </div></section>
 
       <section><div className="mb-3 flex items-center gap-2"><b className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-xs text-white">2</b><div><h3 className="font-semibold">Action taken</h3><p className="text-xs text-slate-500">Select every change that applies.</p></div></div><div className="grid gap-2 rounded-xl border bg-slate-50 p-4 sm:grid-cols-2 dark:bg-slate-800">{actionLabels.map(([key, label]) => <label key={key} className="flex items-center gap-3 rounded-lg border bg-white px-3 py-2 text-sm dark:bg-slate-900"><input type="checkbox" checked={!!current.actionTaken?.[key]} disabled={!canEdit} onChange={event => setCurrent(previous => ({ ...previous, actionTaken: { ...emptyActions, ...previous.actionTaken, [key]: event.target.checked } }))} className="h-4 w-4 text-indigo-600" /><span>{label}</span></label>)}<div className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 dark:bg-slate-900"><input type="checkbox" checked={!!current.actionTaken?.others} disabled={!canEdit} onChange={event => setCurrent(previous => ({ ...previous, actionTaken: { ...emptyActions, ...previous.actionTaken, others: event.target.checked ? previous.actionTaken?.others || 'Other action' : '' } }))} className="h-4 w-4 text-indigo-600" /><Input value={current.actionTaken?.others || ''} onChange={event => setCurrent(previous => ({ ...previous, actionTaken: { ...emptyActions, ...previous.actionTaken, others: event.target.value } }))} placeholder="Other action" disabled={!canEdit} /></div></div></section>
 
-      <section><div className="mb-3 flex items-center gap-2"><b className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-xs text-white">3</b><div><h3 className="font-semibold">From vs To details</h3><p className="text-xs text-slate-500">The complete transfer and employment comparison used by the printable form.</p></div></div><div className="grid gap-4 lg:grid-cols-2">{(['from', 'to'] as const).map(side => <div key={side} className="rounded-xl border bg-white p-4 dark:bg-slate-900"><div className="mb-4 flex items-center justify-between"><h4 className="font-semibold">{side === 'from' ? 'From / Current' : 'To / New'}</h4><span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-500">{side === 'from' ? 'Existing' : 'Proposed'}</span></div><div className="space-y-3">{valueField(side, 'Business Unit / Company', 'businessUnit')}{valueField(side, 'Department', 'department')}{valueField(side, 'Position', 'position')}{valueField(side, 'Employment status', 'employmentStatus')}<Input label="Other business units / affiliates" value={(current.particulars?.[side]?.otherBusinessUnits || []).join(', ')} onChange={event => updateParticular(side, 'otherBusinessUnits', event.target.value.split(',').map(item => item.trim()).filter(Boolean))} placeholder="Separate multiple companies with commas" disabled={!canEdit} /></div></div>)}</div></section>
+      <section><div className="mb-3 flex items-center gap-2"><b className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-xs text-white">3</b><div><h3 className="font-semibold">From vs To details</h3><p className="text-xs text-slate-500">The complete transfer and employment comparison used by the printable form.</p></div></div><div className="grid gap-4 lg:grid-cols-2">{(['from', 'to'] as const).map(side => <div key={side} className="rounded-xl border bg-white p-4 dark:bg-slate-900"><div className="mb-4 flex items-center justify-between"><h4 className="font-semibold">{side === 'from' ? 'From / Current' : 'To / New'}</h4><span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-500">{side === 'from' ? 'Existing' : 'Proposed'}</span></div><div className="space-y-3">{valueField(side, 'Business Unit / Company', 'businessUnit')}{valueField(side, 'Department', 'department')}{valueField(side, 'Position', 'position')}{valueField(side, 'Employment status', 'employmentStatus')}<Input label="Other business units / affiliates" value={otherBusinessUnitText[side]} onChange={event => handleOtherBusinessUnitsChange(side, event.target.value)} placeholder="Separate multiple companies with commas" disabled={!canEdit} /></div></div>)}</div></section>
 
       {showSalary && <section><div className="mb-3 flex items-center gap-2"><b className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-xs text-white">4</b><div><h3 className="font-semibold">Salary package</h3><p className="text-xs text-slate-500">Amounts are shown in PHP in the printed From / To table.</p></div></div><div className="grid gap-4 lg:grid-cols-2">{(['from', 'to'] as const).map(side => <div key={side} className="rounded-xl border bg-white p-4 dark:bg-slate-900"><h4 className="mb-3 font-semibold">{side === 'from' ? 'From / Current' : 'To / New'}</h4><div className="grid gap-3 sm:grid-cols-3">{(['basic', 'deminimis', 'reimbursable'] as const).map(field => <Input key={field} label={field === 'deminimis' ? 'De minimis' : field[0].toUpperCase() + field.slice(1)} type="number" unit="PHP" value={current.particulars?.[side]?.salary?.[field] ?? 0} onChange={event => updateSalary(side, field, event.target.value)} disabled={!canEdit} />)}</div></div>)}</div></section>}
 

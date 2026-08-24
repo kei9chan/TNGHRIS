@@ -152,6 +152,7 @@ const ManagerDashboard: React.FC = () => {
     const { getVisibleEmployeeIds, isUserEligibleEvaluator, getCoeAccess } = usePermissions();
     const location = useLocation();
     const navigate = useNavigate();
+    const isBodDashboard = user?.role === Role.BOD || (!!user?.roles?.includes(Role.BOD) && !user.roles.some(role => role === Role.HRManager || role === Role.HRStaff || role === Role.Admin));
 
     // Escalated Leave/WFH/OT is rendered by ApprovalWidget from explicit
     // assignment rows. Keep this legacy team panel scoped to direct reports.
@@ -371,6 +372,11 @@ const ManagerDashboard: React.FC = () => {
 
     useEffect(() => {
         const loadCoe = async () => {
+            if (isBodDashboard) {
+                setCoeRequests([]);
+                setCoeTemplates([]);
+                return;
+            }
             setIsLoadingCoe(true);
             try {
                 const [requests, templates] = await Promise.all([
@@ -386,7 +392,7 @@ const ManagerDashboard: React.FC = () => {
             }
         };
         loadCoe();
-    }, []);
+    }, [isBodDashboard]);
 
     useEffect(() => {
         const loadAwards = async () => {
@@ -1531,7 +1537,7 @@ const ManagerDashboard: React.FC = () => {
             <ApprovalWidget />
             <UpcomingEventsWidget />
 
-            <Card title="COE Requests">
+            {!isBodDashboard && <Card title="COE Requests">
                 <COEQueue
                     requests={pendingCOE}
                     onApprove={handleApproveCOE}
@@ -1539,7 +1545,7 @@ const ManagerDashboard: React.FC = () => {
                     canAct={coeAccess.canApprove}
                     canActOn={coeAccess.canActOn}
                 />
-            </Card>
+            </Card>}
 
             {actionItems.length > 0 ? (
                 <Card title="Action Items">

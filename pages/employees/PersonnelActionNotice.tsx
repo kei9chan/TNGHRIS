@@ -115,7 +115,7 @@ const PersonnelActionNotice: React.FC = () => {
       try {
         const [{ data: empRows }, { data: tplRows }, { data: panRows }, { data: unitRows }, { data: roleRows }] = await Promise.all([
           supabase.from('hris_users').select(
-            'id, full_name, email, role, status, department, department_id, business_unit, business_unit_id, employment_status, position, salary_basic, salary_deminimis, salary_reimbursable, date_hired'
+            'id, employee_id, full_name, email, role, status, department, department_id, business_unit, business_unit_id, employment_status, position, salary_basic, salary_deminimis, salary_reimbursable, date_hired'
           ),
           supabase.from('pan_templates').select('*').order('updated_at', { ascending: false }),
           supabase.from('pans').select('*').order('updated_at', { ascending: false }),
@@ -133,10 +133,11 @@ const PersonnelActionNotice: React.FC = () => {
           setEmployees(
             empRows.map((u: any) => ({
               id: u.id,
+              employeeId: u.employee_id || undefined,
               name: formatEmployeeName(u.full_name || u.email || 'Unknown'),
               email: u.email,
               role: u.role as Role,
-              status: (u.status as any) || 'Active',
+              status: String(u.status || 'Active').toLowerCase() === 'active' ? 'Active' : 'Inactive',
               department: u.department || '',
               departmentId: u.department_id || undefined,
               businessUnit: u.business_unit || '',

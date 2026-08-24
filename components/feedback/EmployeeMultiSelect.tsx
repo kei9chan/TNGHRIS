@@ -42,7 +42,10 @@ const EmployeeMultiSelect: React.FC<EmployeeMultiSelectProps> = ({ label, allUse
         formatEmployeeName(user.name).toLowerCase().includes(lowerSearch) ||
         (user.email || '').toLowerCase().includes(lowerSearch) ||
         (user.position || '').toLowerCase().includes(lowerSearch) ||
-        (user.department || '').toLowerCase().includes(lowerSearch)
+        (user.department || '').toLowerCase().includes(lowerSearch) ||
+        (user.businessUnit || '').toLowerCase().includes(lowerSearch) ||
+        (user.employeeId || '').toLowerCase().includes(lowerSearch) ||
+        (user.roles || []).some(role => String(role).toLowerCase().includes(lowerSearch))
     );
   }, [searchTerm, allUsers, selectedUsers]);
 
@@ -97,7 +100,7 @@ const EmployeeMultiSelect: React.FC<EmployeeMultiSelectProps> = ({ label, allUse
                           {formatEmployeeName(user.name)}
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
-                          {user.role || 'Employee'}{user.position ? ` • ${user.position}` : ''}
+                          {[user.role || 'Employee', user.position, user.businessUnit, user.email].filter(Boolean).join(' • ')}
                         </p>
                     </div>
                 </div>

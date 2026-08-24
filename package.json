@@ -26,7 +26,8 @@
     "test:conditional-approvals": "node tests/conditionalTimeApprovalsSmokeTest.mjs",
     "test:batch-imports": "node tests/batchImportsSmokeTest.mjs",
     "test:theme": "node tests/themeModeSmokeTest.mjs",
-    "test:awards-studio": "node tests/modernAwardsStudioSmokeTest.mjs"
+    "test:awards-studio": "node tests/modernAwardsStudioSmokeTest.mjs",
+    "test:pan-entry-dashboard": "node tests/panEntryAndBodDashboardSmokeTest.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.84.0",
