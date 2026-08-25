@@ -1470,6 +1470,7 @@ export interface LeaveRequest {
   approvalRoute?: 'MANAGER_ONLY' | 'BOD_REQUIRED';
   approvalReason?: string;
   approvalContext?: Record<string, unknown>;
+  createdAt?: Date;
 }
 
 export enum LeaveLedgerEntryType {

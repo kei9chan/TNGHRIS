@@ -11,6 +11,7 @@ import { ApprovalRequestKind, getApprovalRequestId, getApprovalReviewUrl } from 
 import {
   approvalContextNumber,
   formatApprovalNumber,
+  getApprovalActionLabel,
   getApprovalStatusLabel,
   getApprovalStepLabel,
   getOvertimeWeekDetails,
@@ -25,6 +26,7 @@ type ApprovalItem = {
   id: string; canonicalKey: string; kind: Kind; reference: string; employeeId?: string; employee: string; employeeCode?: string;
   businessUnitId?: string; businessUnit: string; departmentId?: string; department: string;
   start: Date; end: Date; duration: string; status: string; currentStep: string; details?: string;
+  requestStart?: Date; requestEnd?: Date; approvalStep?: string;
   reason?: string; exception?: string; nextStep?: string; bulkEligible: boolean; reviewUrl: string;
   route?: 'MANAGER_ONLY' | 'BOD_REQUIRED';
   approvalContext?: Record<string, unknown>;
@@ -46,12 +48,22 @@ const KIND_META: Record<Kind, { title: string; badge: string; rule: string }> = 
 const GROUP_ORDER: Kind[] = ['nte', 'pan', 'award', 'wfh', 'leave', 'overtime', 'requisition', 'manpower'];
 const BULK_KINDS = new Set<Kind>(['leave', 'wfh', 'overtime', 'manpower']);
 const TIME_KINDS = new Set<Kind>(['leave', 'wfh', 'overtime']);
+const TIME_DESKTOP_HEADINGS = ['Select', 'Request / Employee', 'Business unit / Department', 'Request details', 'Submitted / Pending', 'Approval step', 'Eligibility', 'Action'];
+const OVERTIME_DESKTOP_HEADINGS = ['Select', 'Request / Employee', 'Business unit / Department', 'Request details', 'Week of', 'Submitted / Pending', 'Approval step', 'Eligibility', 'Action'];
+const GENERIC_DESKTOP_HEADINGS = ['Select', 'Request / Employee', 'Business unit / Department', 'Submitted / Aging', 'Current step', 'Status', 'Exception / Reason', 'Action'];
 const fmtDate = (date: Date) => date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+const fmtDateRange = (start?: Date, end?: Date) => {
+  if (!start) return '—';
+  if (!end || end.getTime() === start.getTime()) return fmtDate(start);
+  return `${fmtDate(start)}–${fmtDate(end)}`;
+};
 const dayAge = (date: Date) => Math.max(0, Math.floor((Date.now() - date.getTime()) / 86400000));
 const needsIndividualReview = (item: ApprovalItem) => Boolean(item.exception || item.route === 'BOD_REQUIRED');
 const reasonTone = (item: ApprovalItem) => needsIndividualReview(item)
-  ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100'
+  ? 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-100'
   : 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100';
+const eligibilityLabel = (item: ApprovalItem) => needsIndividualReview(item) ? 'Exception' : 'Eligible';
+const eligibilityReason = (item: ApprovalItem) => item.exception || item.reason || (item.bulkEligible ? 'Request is within the standard approval policy.' : 'Individual review is required.');
 
 const groupDisplayTitle = (kind: Kind, groupItems: ApprovalItem[]) => {
   if (!TIME_KINDS.has(kind)) return KIND_META[kind].title;
@@ -74,7 +86,8 @@ const ApprovalMobileCard: React.FC<{
   const threshold = approvalContextNumber(item.approvalContext, 'threshold');
   const month = item.approvalContext?.month ? String(item.approvalContext.month) : undefined;
   const statusLabel = getApprovalStatusLabel(item.status);
-  const detail = item.kind === 'overtime' ? week.detail || item.reason : item.reason || item.details;
+  const isTimeRequest = TIME_KINDS.has(item.kind);
+  const detail = isTimeRequest ? item.details : item.reason || item.details;
 
   return <article className={`rounded-xl border p-4 shadow-sm ${requested ? 'border-indigo-400 bg-indigo-50 ring-1 ring-indigo-300 dark:bg-indigo-950' : 'border-slate-200 bg-white dark:border-slate-600 dark:bg-slate-800'}`}>
     <div className="flex items-start justify-between gap-3">
@@ -86,12 +99,12 @@ const ApprovalMobileCard: React.FC<{
     <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
       <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Submitted</dt><dd className="mt-0.5 font-medium">{fmtDate(item.start)}</dd></div>
       <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Pending</dt><dd className={`mt-0.5 font-medium ${dayAge(item.start) >= 3 ? 'text-red-600 dark:text-red-300' : ''}`}>{dayAge(item.start)} day{dayAge(item.start) === 1 ? '' : 's'}</dd></div>
-      <div className="col-span-2"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Request</dt><dd className="mt-0.5 font-medium">{item.duration}</dd></div>
-      <div className="col-span-2"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Current step</dt><dd className="mt-0.5 font-medium">{item.currentStep}</dd></div>
-      <div className="col-span-2"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Status</dt><dd className="mt-1"><span className="inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200">{statusLabel}</span></dd></div>
-      {item.kind === 'overtime' && week.range && <div className="col-span-2 border-t border-slate-200 pt-3 dark:border-slate-600"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Week covered</dt><dd className="mt-0.5 font-semibold">{week.range}</dd>{week.workweekNote && <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{week.workweekNote}</p>}</div>}
+      <div className="col-span-2"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Request details</dt><dd className="mt-0.5 font-medium">{item.kind === 'overtime' ? <>{fmtDate(item.requestStart || item.start)}<span className="mt-1 block">{item.duration}</span></> : isTimeRequest ? <>{fmtDateRange(item.requestStart, item.requestEnd)}<span className="mt-1 block text-slate-600 dark:text-slate-300">{item.duration}</span></> : item.duration}</dd></div>
+      <div className="col-span-2"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Approval step</dt><dd className="mt-1"><span className="inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200">{item.approvalStep || item.currentStep}</span></dd></div>
+      {!isTimeRequest && <div className="col-span-2"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Status</dt><dd className="mt-1"><span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-100">{statusLabel}</span></dd></div>}
+      {isTimeRequest && <div className={`col-span-2 rounded-lg border p-3 ${reasonTone(item)}`}><dt className="text-xs font-bold uppercase tracking-wide">{eligibilityLabel(item)}</dt><dd className="mt-1 font-medium">{eligibilityReason(item)}</dd></div>}
+      {item.kind === 'overtime' && week.range && <div className="col-span-2 border-t border-slate-200 pt-3 dark:border-slate-600"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Week of</dt><dd className="mt-0.5 font-semibold">{week.range}</dd>{week.workweekNote && <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{week.workweekNote}</p>}</div>}
       {item.kind === 'wfh' && month && <div className="col-span-2 border-t border-slate-200 pt-3 dark:border-slate-600"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Month covered</dt><dd className="mt-0.5 font-semibold">{month}</dd></div>}
-      {item.kind === 'leave' && <div className="col-span-2 border-t border-slate-200 pt-3 dark:border-slate-600"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Leave period</dt><dd className="mt-0.5 font-semibold">{fmtDate(item.start)}{item.end.getTime() !== item.start.getTime() ? `–${fmtDate(item.end)}` : ''}</dd></div>}
       {detail && <div className="col-span-2"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Details</dt><dd className="mt-0.5 break-words">{detail}</dd></div>}
       {item.kind === 'overtime' && week.weeklyOt && <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Weekly OT</dt><dd className="mt-0.5 font-semibold">{week.weeklyOt}</dd></div>}
       {item.kind === 'overtime' && week.total && <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Weekly total — {week.range || 'covered week'}</dt><dd className="mt-0.5 font-semibold">{week.total}</dd></div>}
@@ -101,7 +114,7 @@ const ApprovalMobileCard: React.FC<{
       {item.kind === 'leave' && yearLeaveDays !== undefined && <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Year leave total</dt><dd className="mt-0.5 font-semibold">{formatApprovalNumber(yearLeaveDays)} day{yearLeaveDays === 1 ? '' : 's'}{threshold !== undefined ? ` / ${formatApprovalNumber(threshold)}-day allowance` : ''}</dd></div>}
     </dl>
     {(item.nextStep || item.route === 'BOD_REQUIRED') && <div className="mt-4 flex flex-wrap gap-2"><span className="rounded-full bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-700 dark:bg-violet-950 dark:text-violet-200">{item.nextStep || 'Additional BOD approval required'}</span></div>}
-    {item.exception && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-100">⚠ {item.exception}</p>}
+    {!isTimeRequest && item.exception && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-100">⚠ {item.exception}</p>}
     <Link className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-indigo-600 px-4 py-2.5 text-center font-bold text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800" to={item.reviewUrl} aria-label={`Review ${KIND_META[item.kind].title} request ${item.reference} for ${item.employee}`}>Review request</Link>
   </article>;
 };
@@ -178,24 +191,26 @@ export default function ApprovalCenter() {
   const items = useMemo<ApprovalItem[]>(() => {
     const metaFor = (id?: string) => employeeMeta[id || ''] || { businessUnit: 'Not assigned', department: 'Not assigned', active: true };
     const leave: ApprovalItem[] = approvals.pendingLeaveApprovals.map(row => {
-      const meta = metaFor(row.employeeId), start = new Date(row.startDate), end = new Date(row.endDate);
-      const exception = !meta.active ? 'Employee is inactive' : end < start ? 'Request dates are invalid' : Number(row.durationDays) <= 0 || Number(row.durationDays) > 30 ? 'Unusual duration' : undefined;
+      const meta = metaFor(row.employeeId), requestStart = new Date(row.startDate), requestEnd = new Date(row.endDate);
+      const submittedAt = row.createdAt ? new Date(row.createdAt) : requestStart;
+      const exception = !meta.active ? 'Employee is inactive' : requestEnd < requestStart ? 'Request dates are invalid' : Number(row.durationDays) <= 0 || Number(row.durationDays) > 30 ? 'Unusual duration' : undefined;
       const requiresBod = row.approvalRoute === 'BOD_REQUIRED';
-      return { id: row.id, canonicalKey: `leave:${row.id}:${row.status}`, kind: 'leave', reference: `LEAVE-${String(row.id).slice(0, 8).toUpperCase()}`, employeeId: row.employeeId, employee: row.employeeName, employeeCode: meta.employeeId, businessUnitId: meta.businessUnitId, businessUnit: meta.businessUnit, departmentId: meta.departmentId, department: meta.department, start, end, duration: `${formatApprovalNumber(row.durationDays)} day${Number(row.durationDays) === 1 ? '' : 's'}`, status: String(row.status), currentStep: getApprovalStepLabel(row.status), details: row.reason, reason: getTimeApprovalReason('leave', row.approvalContext, row.approvalReason, requiresBod), exception, nextStep: getTimeApprovalNextStep(row.status, requiresBod), bulkEligible: !exception && !requiresBod, route: row.approvalRoute, approvalContext: row.approvalContext, reviewUrl: getApprovalReviewUrl('leave', row.id) };
+      return { id: row.id, canonicalKey: `leave:${row.id}:${row.status}`, kind: 'leave', reference: `LEAVE-${String(row.id).slice(0, 8).toUpperCase()}`, employeeId: row.employeeId, employee: row.employeeName, employeeCode: meta.employeeId, businessUnitId: meta.businessUnitId, businessUnit: meta.businessUnit, departmentId: meta.departmentId, department: meta.department, start: submittedAt, end: requestEnd, requestStart, requestEnd, duration: `${formatApprovalNumber(row.durationDays)} day${Number(row.durationDays) === 1 ? '' : 's'}`, status: String(row.status), currentStep: getApprovalStepLabel(row.status), approvalStep: getApprovalActionLabel(row.status), details: row.reason, reason: getTimeApprovalReason('leave', row.approvalContext, row.approvalReason, requiresBod), exception, nextStep: getTimeApprovalNextStep(row.status, requiresBod), bulkEligible: !exception && !requiresBod, route: row.approvalRoute, approvalContext: row.approvalContext, reviewUrl: getApprovalReviewUrl('leave', row.id) };
     });
     const wfh: ApprovalItem[] = approvals.pendingWfhApprovals.map(row => {
-      const meta = metaFor(row.employeeId), start = new Date(row.date), end = new Date(row.endDate || row.date);
-      const days = Math.floor((end.getTime() - start.getTime()) / 86400000) + 1;
-      const overlap = approvals.pendingLeaveApprovals.some(leaveRow => leaveRow.employeeId === row.employeeId && new Date(leaveRow.startDate) <= end && new Date(leaveRow.endDate) >= start);
-      const exception = !meta.active ? 'Employee is inactive' : end < start ? 'Request dates are invalid' : days > 31 ? 'Unusual duration' : overlap ? 'Overlapping leave request' : String(row.status) === 'WFH_FOR_TIMEKEEPING' ? 'Timekeeping verification requires individual review' : undefined;
+      const meta = metaFor(row.employeeId), requestStart = new Date(row.date), requestEnd = new Date(row.endDate || row.date);
+      const submittedAt = row.createdAt ? new Date(row.createdAt) : requestStart;
+      const days = Math.floor((requestEnd.getTime() - requestStart.getTime()) / 86400000) + 1;
+      const overlap = approvals.pendingLeaveApprovals.some(leaveRow => leaveRow.employeeId === row.employeeId && new Date(leaveRow.startDate) <= requestEnd && new Date(leaveRow.endDate) >= requestStart);
+      const exception = !meta.active ? 'Employee is inactive' : requestEnd < requestStart ? 'Request dates are invalid' : days > 31 ? 'Unusual duration' : overlap ? 'Overlapping leave request' : String(row.status) === 'WFH_FOR_TIMEKEEPING' ? 'Timekeeping verification requires individual review' : undefined;
       const requiresBod = row.approvalRoute === 'BOD_REQUIRED';
-      return { id: row.id, canonicalKey: `wfh:${row.id}:${row.status}`, kind: 'wfh', reference: `WFH-${String(row.id).slice(0, 8).toUpperCase()}`, employeeId: row.employeeId, employee: row.employeeName, employeeCode: meta.employeeId, businessUnitId: meta.businessUnitId, businessUnit: meta.businessUnit, departmentId: meta.departmentId, department: meta.department, start, end, duration: `${days} day${days === 1 ? '' : 's'}`, status: String(row.status), currentStep: getApprovalStepLabel(row.status), details: row.reason, reason: getTimeApprovalReason('wfh', row.approvalContext, row.approvalReason, requiresBod), exception, nextStep: getTimeApprovalNextStep(row.status, requiresBod), bulkEligible: !exception && !requiresBod, route: row.approvalRoute, approvalContext: row.approvalContext, reviewUrl: getApprovalReviewUrl('wfh', row.id) };
+      return { id: row.id, canonicalKey: `wfh:${row.id}:${row.status}`, kind: 'wfh', reference: `WFH-${String(row.id).slice(0, 8).toUpperCase()}`, employeeId: row.employeeId, employee: row.employeeName, employeeCode: meta.employeeId, businessUnitId: meta.businessUnitId, businessUnit: meta.businessUnit, departmentId: meta.departmentId, department: meta.department, start: submittedAt, end: requestEnd, requestStart, requestEnd, duration: `${days} day${days === 1 ? '' : 's'}`, status: String(row.status), currentStep: getApprovalStepLabel(row.status), approvalStep: getApprovalActionLabel(row.status), details: row.reason, reason: getTimeApprovalReason('wfh', row.approvalContext, row.approvalReason, requiresBod), exception, nextStep: getTimeApprovalNextStep(row.status, requiresBod), bulkEligible: !exception && !requiresBod, route: row.approvalRoute, approvalContext: row.approvalContext, reviewUrl: getApprovalReviewUrl('wfh', row.id) };
     });
     const overtime: ApprovalItem[] = approvals.pendingOtApprovals.map(row => {
-      const meta = metaFor(row.employeeId), start = new Date(row.submittedAt || row.date);
+      const meta = metaFor(row.employeeId), start = new Date(row.submittedAt || row.date), requestStart = new Date(row.date);
       const exception = !meta.active ? 'Employee is inactive' : !String(row.reason || '').trim() ? 'Missing reason' : undefined;
       const requiresBod = row.approvalRoute === 'BOD_REQUIRED';
-      return { id: row.id, canonicalKey: `overtime:${row.id}:${row.status}`, kind: 'overtime', reference: `OT-${String(row.id).slice(0, 8).toUpperCase()}`, employeeId: row.employeeId, employee: row.employeeName, employeeCode: meta.employeeId, businessUnitId: meta.businessUnitId, businessUnit: meta.businessUnit, departmentId: meta.departmentId, department: meta.department, start, end: start, duration: `${row.startTime || '—'}–${row.endTime || '—'}`, status: String(row.status), currentStep: getApprovalStepLabel(row.status), details: row.reason, reason: getTimeApprovalReason('overtime', row.approvalContext, row.approvalReason, requiresBod), exception, nextStep: getTimeApprovalNextStep(row.status, requiresBod), bulkEligible: !exception && !requiresBod, route: row.approvalRoute, approvalContext: row.approvalContext, reviewUrl: getApprovalReviewUrl('overtime', row.id) };
+      return { id: row.id, canonicalKey: `overtime:${row.id}:${row.status}`, kind: 'overtime', reference: `OT-${String(row.id).slice(0, 8).toUpperCase()}`, employeeId: row.employeeId, employee: row.employeeName, employeeCode: meta.employeeId, businessUnitId: meta.businessUnitId, businessUnit: meta.businessUnit, departmentId: meta.departmentId, department: meta.department, start, end: requestStart, requestStart, requestEnd: requestStart, duration: `${row.startTime || '—'}–${row.endTime || '—'}`, status: String(row.status), currentStep: getApprovalStepLabel(row.status), approvalStep: getApprovalActionLabel(row.status), details: row.reason, reason: getTimeApprovalReason('overtime', row.approvalContext, row.approvalReason, requiresBod), exception, nextStep: getTimeApprovalNextStep(row.status, requiresBod), bulkEligible: !exception && !requiresBod, route: row.approvalRoute, approvalContext: row.approvalContext, reviewUrl: getApprovalReviewUrl('overtime', row.id) };
     });
     const manpower: ApprovalItem[] = approvals.pendingManpowerApprovals.map(row => {
       const meta = metaFor(row.requestedBy), start = new Date(row.createdAt || row.date), exception = !meta.active ? 'Employee is inactive' : undefined;
@@ -286,6 +301,8 @@ export default function ApprovalCenter() {
         const oldest = group.items.reduce((left, right) => left.start < right.start ? left : right);
         const individualOnly = !BULK_KINDS.has(group.kind);
         const displayTitle = groupDisplayTitle(group.kind, group.items);
+        const isTimeGroup = TIME_KINDS.has(group.kind);
+        const desktopHeadings = group.kind === 'overtime' ? OVERTIME_DESKTOP_HEADINGS : isTimeGroup ? TIME_DESKTOP_HEADINGS : GENERIC_DESKTOP_HEADINGS;
         return <section key={group.kind} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-600 dark:bg-slate-800">
           <div className="flex flex-wrap items-center gap-3 p-4">
             <button aria-label={`Toggle ${displayTitle}`} onClick={() => setExpanded(expanded === group.kind ? null : group.kind)} className="inline-flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg text-xl text-slate-700 hover:bg-slate-100 dark:text-white dark:hover:bg-slate-700">{expanded === group.kind ? '⌄' : '›'}</button>
@@ -297,19 +314,31 @@ export default function ApprovalCenter() {
           {expanded === group.kind && <div className="border-t border-slate-200 dark:border-slate-600">
             {!individualOnly && <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 px-4 py-3 text-sm dark:bg-slate-700 dark:text-slate-100"><label className="flex min-h-11 items-center gap-2"><input type="checkbox" checked={standardRequests.length > 0 && checked.length === standardRequests.length} onChange={event => { const next = new Set(selected); standardRequests.forEach(item => event.target.checked ? next.add(item.canonicalKey) : next.delete(item.canonicalKey)); setSelected(next); }} /> Select all standard requests ({standardRequests.length})</label><Button size="sm" disabled={!checked.length} onClick={() => openConfirm(group.kind, checked.map(item => item.id))}>Approve selected — {checked.length}</Button></div>}
             <div className="space-y-3 bg-slate-50 p-3 dark:bg-slate-900/40 lg:hidden">{group.items.map(item => <ApprovalMobileCard key={item.canonicalKey} item={item} requested={requestedItem === item.id} selected={selected.has(item.canonicalKey)} onSelect={checkedItem => { const next = new Set(selected); checkedItem ? next.add(item.canonicalKey) : next.delete(item.canonicalKey); setSelected(next); }} />)}</div>
-            <div className="hidden overflow-x-auto lg:block"><table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500 dark:bg-slate-700 dark:text-slate-200"><tr>{['', 'Request / Employee', 'Business unit / Department', 'Submitted / Aging', 'Current step', 'Status', 'Exception / Reason', 'Action'].map((heading, index) => <th key={index} className="px-4 py-3">{heading}</th>)}</tr></thead>
+            <div className="hidden overflow-x-auto lg:block"><table className={`${group.kind === 'overtime' ? 'min-w-[1320px]' : isTimeGroup ? 'min-w-[1120px]' : 'min-w-full'} text-sm`}>
+              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-700 dark:text-slate-200"><tr>{desktopHeadings.map((heading, index) => <th key={heading} className={`${index === 0 ? 'w-16' : ''} px-4 py-3`}>{heading}</th>)}</tr></thead>
               <tbody>{group.items.map(item => {
-                const reason = item.exception || item.reason || (item.bulkEligible ? 'Standard approval' : 'Individual review');
-                return <tr id={`approval-${item.id}`} key={item.canonicalKey} className={`border-t border-slate-200 dark:border-slate-600 ${requestedItem === item.id ? 'bg-indigo-50 ring-1 ring-inset ring-indigo-300 dark:bg-indigo-950' : ''}`}>
+                const reason = eligibilityReason(item);
+                const week = getOvertimeWeekDetails(item.approvalContext);
+                return <tr id={`approval-${item.id}`} key={item.canonicalKey} className={`border-t border-slate-200 align-top dark:border-slate-600 ${requestedItem === item.id ? 'bg-indigo-50 ring-1 ring-inset ring-indigo-300 dark:bg-indigo-950' : ''}`}>
                   <td className="px-4 py-4">{item.bulkEligible && <input type="checkbox" aria-label={`Select ${item.reference} for bulk approval`} checked={selected.has(item.canonicalKey)} onChange={event => { const next = new Set(selected); event.target.checked ? next.add(item.canonicalKey) : next.delete(item.canonicalKey); setSelected(next); }} />}</td>
                   <td className="px-4 py-4 font-semibold"><div className="text-xs font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">{item.reference}</div>{item.employee}<div className="text-xs font-normal text-slate-500 dark:text-slate-300">{item.employeeCode || 'No employee ID'}</div></td>
                   <td className="px-4 py-4">{item.businessUnit}<div className="text-xs text-slate-500 dark:text-slate-300">{item.department}</div></td>
-                  <td className="whitespace-nowrap px-4 py-4">{fmtDate(item.start)}<div className={`text-xs ${dayAge(item.start) >= 3 ? 'font-semibold text-red-600 dark:text-red-300' : 'text-slate-500 dark:text-slate-300'}`}>{dayAge(item.start)} day{dayAge(item.start) === 1 ? '' : 's'} pending · {item.duration}</div></td>
-                  <td className="px-4 py-4 font-medium">{item.currentStep}</td>
-                  <td className="px-4 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${isBodApprovalStatus(item.status) ? 'bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-200' : 'bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200'}`}>{getApprovalStatusLabel(item.status)}</span></td>
-                  <td className="max-w-xs px-4 py-4"><div className={`rounded-lg border px-3 py-2 text-sm ${reasonTone(item)}`}><span aria-hidden="true" className="mr-2">{needsIndividualReview(item) ? '⚠' : '✓'}</span>{reason}{item.nextStep && <div className="mt-1 text-xs font-semibold text-violet-700 dark:text-violet-200">{item.nextStep}</div>}</div></td>
-                  <td className="px-4 py-4"><Link className="inline-flex min-h-11 items-center font-semibold text-indigo-600 dark:text-indigo-300" to={item.reviewUrl}>Review →</Link></td>
+                  {isTimeGroup ? <>
+                    <td className="min-w-48 px-4 py-4">
+                      <div className="font-medium text-slate-900 dark:text-white">{group.kind === 'overtime' ? fmtDate(item.requestStart || item.start) : fmtDateRange(item.requestStart, item.requestEnd)}</div>
+                      <div className="mt-1 text-xs text-slate-500 dark:text-slate-300">{group.kind === 'overtime' ? 'Overtime' : group.kind === 'leave' ? 'Duration' : 'WFH duration'} <span className="font-semibold text-slate-700 dark:text-slate-100">{item.duration}</span></div>
+                    </td>
+                    {group.kind === 'overtime' && <td className="min-w-40 px-4 py-4"><div className="font-semibold text-slate-900 dark:text-white">{week.dateRange || '—'}</div>{week.workweekNote && <div className="mt-1 text-xs text-slate-500 dark:text-slate-300">{week.workweekNote}</div>}</td>}
+                    <td className="whitespace-nowrap px-4 py-4"><div className="font-medium">{fmtDate(item.start)}</div><div className={`mt-1 text-xs ${dayAge(item.start) >= 3 ? 'font-semibold text-red-600 dark:text-red-300' : 'text-slate-500 dark:text-slate-300'}`}>{dayAge(item.start)} day{dayAge(item.start) === 1 ? '' : 's'} pending</div></td>
+                    <td className="min-w-48 px-4 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${isBodApprovalStatus(item.status) ? 'bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-200' : 'bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200'}`}>{item.approvalStep || getApprovalActionLabel(item.status)}</span></td>
+                    <td className="min-w-64 max-w-sm px-4 py-4"><div className={`rounded-lg border px-3 py-2 ${reasonTone(item)}`}><div className="flex items-start gap-2"><span aria-hidden="true">{needsIndividualReview(item) ? '⚠' : '✓'}</span><p><span className="font-bold">{eligibilityLabel(item)} — </span>{reason}</p></div>{group.kind === 'overtime' && week.weeklyOt && <div className="mt-2 border-t border-current/20 pt-2 text-xs"><span className="font-semibold">Weekly OT:</span> {week.weeklyOt}</div>}{item.nextStep && <div className="mt-1 text-xs font-semibold text-violet-700 dark:text-violet-200">{item.nextStep}</div>}</div></td>
+                  </> : <>
+                    <td className="whitespace-nowrap px-4 py-4">{fmtDate(item.start)}<div className={`text-xs ${dayAge(item.start) >= 3 ? 'font-semibold text-red-600 dark:text-red-300' : 'text-slate-500 dark:text-slate-300'}`}>{dayAge(item.start)} day{dayAge(item.start) === 1 ? '' : 's'} pending · {item.duration}</div></td>
+                    <td className="px-4 py-4 font-medium">{item.currentStep}</td>
+                    <td className="px-4 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${isBodApprovalStatus(item.status) ? 'bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-200' : 'bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200'}`}>{getApprovalStatusLabel(item.status)}</span></td>
+                    <td className="max-w-xs px-4 py-4"><div className={`rounded-lg border px-3 py-2 text-sm ${reasonTone(item)}`}><span aria-hidden="true" className="mr-2">{needsIndividualReview(item) ? '⚠' : '✓'}</span>{reason}</div></td>
+                  </>}
+                  <td className="px-4 py-4"><Link className="inline-flex min-h-11 items-center font-semibold text-indigo-600 dark:text-indigo-300" to={item.reviewUrl}>Review request →</Link></td>
                 </tr>;
               })}</tbody>
             </table></div>

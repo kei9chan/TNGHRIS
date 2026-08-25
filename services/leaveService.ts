@@ -71,6 +71,7 @@ const mapLeaveRequest = (row: LeaveRequestRow): LeaveRequest => ({
   approvalRoute: row.approval_route || undefined,
   approvalReason: row.approval_reason || undefined,
   approvalContext: row.approval_context || undefined,
+  createdAt: row.created_at ? new Date(row.created_at) : undefined,
 });
 
 const mapLeaveType = (row: LeaveTypeRow): LeaveType => ({

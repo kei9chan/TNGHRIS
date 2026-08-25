@@ -102,6 +102,19 @@ export const getApprovalStepLabel = (status: unknown, fallback?: string): string
   return fallbackKey ? formatNumbersInApprovalText(fallbackKey) : getApprovalStatusLabel(key);
 };
 
+export const getApprovalActionLabel = (status: unknown, fallback?: string): string => {
+  const key = String(status ?? '').trim();
+  if (isDirectManagerApprovalStatus(key)) return 'Pending Direct Manager Review';
+  if (GM_STATUSES.has(key)) return 'Pending GM Approval';
+  if (isBodApprovalStatus(key)) return 'Pending BOD Final Approval';
+  if (/_PENDING_HR(?:_MANAGER)?_APPROVAL$/i.test(key)) return 'Pending HR Approval';
+  if (/_PENDING_BUSINESS_UNIT_MANAGER_APPROVAL$/i.test(key)) return 'Pending Business Unit Manager Approval';
+  if (key === 'WFH_FOR_TIMEKEEPING') return 'Pending Timekeeping Review';
+
+  const fallbackKey = String(fallback ?? '').trim();
+  return fallbackKey ? formatNumbersInApprovalText(fallbackKey) : getApprovalStatusLabel(key);
+};
+
 const parseDateOnly = (value: unknown): Date | undefined => {
   if (!value) return undefined;
   const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -112,6 +125,7 @@ const parseDateOnly = (value: unknown): Date | undefined => {
 
 export type OvertimeWeekDetails = {
   range?: string;
+  dateRange?: string;
   workweekNote?: string;
   weeklyOt?: string;
   total?: string;
@@ -124,6 +138,7 @@ export const getOvertimeWeekDetails = (context: ApprovalContext): OvertimeWeekDe
   if (weekEnd) weekEnd.setDate(weekEnd.getDate() + 6);
 
   let range: string | undefined;
+  let dateRange: string | undefined;
   if (weekStart && weekEnd) {
     const sameMonth = weekStart.getMonth() === weekEnd.getMonth() && weekStart.getFullYear() === weekEnd.getFullYear();
     const startLabel = weekStart.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
@@ -132,7 +147,8 @@ export const getOvertimeWeekDetails = (context: ApprovalContext): OvertimeWeekDe
       : { month: 'short', day: 'numeric', year: 'numeric' });
     const startDay = weekStart.toLocaleDateString('en-PH', { weekday: 'short' });
     const endDay = weekEnd.toLocaleDateString('en-PH', { weekday: 'short' });
-    range = `${startLabel}–${endLabel} (${startDay}–${endDay})`;
+    dateRange = `${startLabel}–${endLabel}`;
+    range = `${dateRange} (${startDay}–${endDay})`;
   }
 
   const weeklyOt = approvalContextNumber(context, 'weekOtHours');
@@ -153,6 +169,7 @@ export const getOvertimeWeekDetails = (context: ApprovalContext): OvertimeWeekDe
 
   return {
     range,
+    dateRange,
     workweekNote: weekStart && weekEnd
       ? `Based on the configured ${weekStart.toLocaleDateString('en-PH', { weekday: 'long' })}–${weekEnd.toLocaleDateString('en-PH', { weekday: 'long' })} workweek`
       : undefined,
@@ -175,7 +192,7 @@ export const getTimeApprovalReason = (
   if (kind === 'wfh') {
     const days = approvalContextNumber(context, 'monthWfhDays');
     if (days !== undefined && threshold !== undefined) {
-      return `${formatApprovalNumber(days)} WFH days ${overThreshold ? 'exceed' : 'are within'} the ${formatApprovalNumber(threshold)}-day monthly threshold.`;
+      return `${formatApprovalNumber(days)} WFH days ${overThreshold ? 'exceed' : 'within'} the ${formatApprovalNumber(threshold)}-day monthly threshold.`;
     }
   }
 
@@ -184,13 +201,15 @@ export const getTimeApprovalReason = (
     const monthsRemaining = approvalContextNumber(context, 'monthsRemaining');
     if (leaveDays !== undefined && threshold !== undefined) {
       const period = monthsRemaining !== undefined ? ` for ${formatApprovalNumber(monthsRemaining)} months remaining` : '';
-      return `${formatApprovalNumber(leaveDays)} leave days ${overThreshold ? 'exceed' : 'are within'} the ${formatApprovalNumber(threshold)}-day allowance${period}.`;
+      return `${formatApprovalNumber(leaveDays)} leave days ${overThreshold ? 'exceed' : 'within'} the ${formatApprovalNumber(threshold)}-day allowance${period}.`;
     }
   }
 
   if (kind === 'overtime') {
-    const week = getOvertimeWeekDetails(context);
-    if (week.total) return week.total;
+    const total = approvalContextNumber(context, 'totalWeekHours');
+    if (total !== undefined && threshold !== undefined) {
+      return `${formatApprovalNumber(total)} total weekly hours ${overThreshold ? 'exceed' : 'within'} the ${formatApprovalNumber(threshold)}-hour threshold.`;
+    }
   }
 
   const reason = context?.reason || fallback;
