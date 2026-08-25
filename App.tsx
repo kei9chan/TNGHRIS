@@ -108,6 +108,7 @@ import COERequests from './pages/admin/COERequests'; // NEW
 const Requisitions = React.lazy(() => import('./pages/recruitment/Requisitions'));
 const JobPosts = React.lazy(() => import('./pages/recruitment/JobPosts'));
 const JobPostTemplates = React.lazy(() => import('./pages/recruitment/JobPostTemplates'));
+const SavedJobPosts = React.lazy(() => import('./pages/recruitment/SavedJobPosts'));
 const JobSocialMediaPostGenerator = React.lazy(() => import('./pages/recruitment/JobSocialMediaPostGenerator'));
 const Applicants = React.lazy(() => import('./pages/recruitment/Applicants'));
 const Candidates = React.lazy(() => import('./pages/recruitment/Candidates'));
@@ -373,6 +374,7 @@ const AppRoutes: React.FC = () => {
              <Route path="requisitions" element={<ProtectedRoute><Requisitions /></ProtectedRoute>} />
              <Route path="job-posts" element={<ProtectedRoute><JobPosts /></ProtectedRoute>} />
              <Route path="job-post-templates" element={<ProtectedRoute><JobPostTemplates /></ProtectedRoute>} />
+             <Route path="saved-job-posts" element={<ProtectedRoute><SavedJobPosts /></ProtectedRoute>} />
              <Route path="job-social-media-generator" element={<ProtectedRoute><JobSocialMediaPostGenerator /></ProtectedRoute>} />
              <Route path="application-pages" element={<ProtectedRoute><ApplicationPages /></ProtectedRoute>} />
              <Route path="applicants" element={<ProtectedRoute><Applicants /></ProtectedRoute>} />

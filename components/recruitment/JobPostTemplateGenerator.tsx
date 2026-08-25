@@ -18,6 +18,7 @@ interface JobPostTemplateGeneratorProps {
     onSave: (template: JobPostTemplateRecord) => void | Promise<void>;
     template?: JobPostTemplateRecord | null;
     saving?: boolean;
+    purpose?: 'template' | 'post';
 }
 
 type ImageConfigKey = 'backgroundImage' | 'logoImage';
@@ -139,11 +140,11 @@ const buildConfig = (template?: JobPostTemplateRecord | null): TemplateConfig =>
     const isNew = !template;
     const details = (source.details || []).map(item => ({ icon: cleanTemplateText(item.icon), label: cleanTemplateText(item.label) })).filter(item => item.label || item.icon);
     return {
-        name: cleanTemplateText(source.name) || (isNew ? DEFAULT_JOB_POST_TEMPLATE.name : 'Custom Job Post Template'),
+        name: isNew ? 'New Job Post Template' : cleanTemplateText(source.name) || 'Custom Job Post Template',
         businessUnit: cleanTemplateText(source.businessUnit) || (isNew ? DEFAULT_JOB_POST_TEMPLATE.businessUnit || '' : ''),
         status: source.status || 'Draft',
-        templateKey: source.templateKey,
-        isStarter: source.isStarter,
+        templateKey: isNew ? undefined : source.templateKey,
+        isStarter: isNew ? false : source.isStarter,
         ctaLink: cleanTemplateText(source.ctaLink),
         brandWordmark: cleanTemplateText(source.brandWordmark) || cleanTemplateText(source.businessUnit) || 'TNG HRIS',
         backgroundColor: source.backgroundColor || '#FDE7EF',
@@ -169,7 +170,7 @@ const buildConfig = (template?: JobPostTemplateRecord | null): TemplateConfig =>
     };
 };
 
-const JobPostTemplateGenerator: React.FC<JobPostTemplateGeneratorProps> = ({ isOpen, onClose, onSave, template, saving }) => {
+const JobPostTemplateGenerator: React.FC<JobPostTemplateGeneratorProps> = ({ isOpen, onClose, onSave, template, saving, purpose = 'template' }) => {
     const { user } = useAuth();
     const previewRef = useRef<HTMLDivElement>(null);
     const initialConfigRef = useRef('');
@@ -185,7 +186,7 @@ const JobPostTemplateGenerator: React.FC<JobPostTemplateGeneratorProps> = ({ isO
             setUploadingAsset(null);
             setAssetError('');
         }
-    }, [isOpen, template]);
+    }, [isOpen, template, purpose]);
 
     const updateConfig = <K extends keyof TemplateConfig>(key: K, value: TemplateConfig[K]) => setConfig(previous => ({ ...previous, [key]: value }));
 
@@ -420,9 +421,9 @@ const JobPostTemplateGenerator: React.FC<JobPostTemplateGeneratorProps> = ({ isO
         <div className="fixed inset-0 z-[9999] flex h-[100dvh] w-screen items-center justify-center overflow-hidden bg-black/90 p-2 backdrop-blur-sm sm:p-4" onMouseDown={event => { if (event.target === event.currentTarget) requestClose(); }}>
             <div role="dialog" aria-modal="true" aria-labelledby="job-post-template-generator-title" className="relative flex w-full max-w-[1600px] flex-col overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-2xl" style={{ height: 'calc(100dvh - 2rem)', maxHeight: 'calc(100dvh - 2rem)' }}>
                 <div className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-700 bg-slate-950 px-4 py-3 sm:px-6">
-                    <div className="min-w-0"><h2 id="job-post-template-generator-title" className="truncate text-base font-bold text-white sm:text-lg">Job Post Template Generator</h2><p className="hidden text-xs text-slate-400 sm:block">Edit the template, review the complete preview, then save or download it.</p></div>
+                    <div className="min-w-0"><h2 id="job-post-template-generator-title" className="truncate text-base font-bold text-white sm:text-lg">{purpose === 'post' ? 'Job Post Editor' : 'Job Post Template Generator'}</h2><p className="hidden text-xs text-slate-400 sm:block">{purpose === 'post' ? 'Customize this job post, then save it to the library or download it for posting.' : 'Edit the template, review the complete preview, then save or download it.'}</p></div>
                     <div className="flex shrink-0 items-center gap-2">
-                        <button type="button" onClick={requestClose} className="inline-flex rounded-md border border-slate-600 px-2 py-2 text-[11px] font-semibold text-slate-200 transition-colors hover:bg-slate-800 sm:px-3 sm:text-xs">Back to Job Post Templates</button>
+                        <button type="button" onClick={requestClose} className="inline-flex rounded-md border border-slate-600 px-2 py-2 text-[11px] font-semibold text-slate-200 transition-colors hover:bg-slate-800 sm:px-3 sm:text-xs">{purpose === 'post' ? 'Back to Saved Job Posts' : 'Back to Job Post Templates'}</button>
                         <button type="button" onClick={requestClose} className="rounded-full border border-white/10 bg-slate-800 p-2 text-white transition-colors hover:bg-slate-700" aria-label="Close editor"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M6 6l8 8M14 6l-8 8" /></svg></button>
                     </div>
                 </div>
@@ -430,10 +431,10 @@ const JobPostTemplateGenerator: React.FC<JobPostTemplateGeneratorProps> = ({ isO
                 <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
 
                 <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden border-r border-slate-800 bg-[#0F172A] lg:w-2/5">
-                    <div className="shrink-0 border-b border-slate-800 bg-slate-900/50 p-5"><h2 className="flex items-center gap-2 text-lg font-bold text-white"><span className="h-6 w-2 rounded-full bg-indigo-500" />Job Post Template Generator</h2><p className="mt-1 pl-4 text-xs text-slate-400">Design reusable job-post content and brand themes.</p><div className="mt-3 flex items-center gap-2 text-[11px] text-slate-400"><span className="rounded-full bg-slate-800 px-2 py-1">{config.status || 'Draft'}</span>{config.isStarter && <span className="rounded-full bg-indigo-500/20 px-2 py-1 text-indigo-300">Reusable starter</span>}</div></div>
+                    <div className="shrink-0 border-b border-slate-800 bg-slate-900/50 p-5"><h2 className="flex items-center gap-2 text-lg font-bold text-white"><span className="h-6 w-2 rounded-full bg-indigo-500" />{purpose === 'post' ? 'Job Post Editor' : 'Job Post Template Generator'}</h2><p className="mt-1 pl-4 text-xs text-slate-400">{purpose === 'post' ? 'Prepare editable artwork for a specific vacancy.' : 'Design reusable job-post content and brand themes.'}</p><div className="mt-3 flex items-center gap-2 text-[11px] text-slate-400"><span className="rounded-full bg-slate-800 px-2 py-1">{config.status || 'Draft'}</span>{config.isStarter && <span className="rounded-full bg-indigo-500/20 px-2 py-1 text-indigo-300">Reusable starter</span>}</div></div>
                     <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto p-5 pb-10">
-                        <SectionHeader title="Template details" />
-                        <InputGroup label="Template name" value={config.name} onChange={(value: string) => updateConfig('name', value)} />
+                        <SectionHeader title={purpose === 'post' ? 'Job post details' : 'Template details'} />
+                        <InputGroup label={purpose === 'post' ? 'Saved job post name' : 'Template name'} value={config.name} onChange={(value: string) => updateConfig('name', value)} />
                         <InputGroup label="Business unit" value={config.businessUnit} onChange={(value: string) => updateConfig('businessUnit', value)} placeholder="e.g., The Dessert Museum" />
                         <SectionHeader title="1. Visual theme" />
                         <div className="mb-4 grid grid-cols-2 gap-4"><ColorPickerInput label="Background" value={config.backgroundColor} onChange={value => updateConfig('backgroundColor', value)} /><ColorPickerInput label="Card base" value={config.cardColor} onChange={value => updateConfig('cardColor', value)} /><ColorPickerInput label="Text color" value={config.textColor} onChange={value => updateConfig('textColor', value)} /><ColorPickerInput label="Accent color" value={config.accentColor} onChange={value => updateConfig('accentColor', value)} /></div>
@@ -447,7 +448,7 @@ const JobPostTemplateGenerator: React.FC<JobPostTemplateGeneratorProps> = ({ isO
                         <SectionHeader title="5. Contact & call to action" />
                         <InputGroup label="Contact title" value={config.contactTitle} onChange={(value: string) => updateConfig('contactTitle', value)} maxWords={CONTENT_LIMITS.contactTitle} /><div className="grid grid-cols-1 gap-4 sm:grid-cols-2"><InputGroup label="Email 1" value={config.email1} onChange={(value: string) => updateConfig('email1', value)} /><InputGroup label="Email 2" value={config.email2} onChange={(value: string) => updateConfig('email2', value)} /></div><InputGroup label="Email subject" value={config.subjectLine} onChange={(value: string) => updateConfig('subjectLine', value)} /><InputGroup label="CTA button text" value={config.buttonText} onChange={(value: string) => updateConfig('buttonText', value)} maxWords={CONTENT_LIMITS.buttonText} /><InputGroup label="CTA link" value={config.ctaLink} onChange={(value: string) => updateConfig('ctaLink', value)} placeholder="/careers or https://…" />
                     </div>
-                    <div className="shrink-0 border-t border-slate-800 bg-slate-900 p-4 sm:p-5">{assetError && <p className="mb-3 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">{assetError}</p>}{contentValidationMessages.length > 0 && <p className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">Some content is longer than the recommended limits. Nothing has been truncated. Shorten the highlighted fields before saving.</p>}<div className="flex flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-center"><div className="text-xs text-slate-500">Preview updates as you edit. Close with X or Escape.</div><div className="flex gap-2"><Button type="button" variant="secondary" onClick={handleDownloadImage} disabled={!!uploadingAsset}>Download Image</Button><Button type="button" onClick={handleSaveTemplate} disabled={!!saving || !!uploadingAsset}>{saving ? 'Saving…' : 'Save Template'}</Button></div></div></div>
+                    <div className="shrink-0 border-t border-slate-800 bg-slate-900 p-4 sm:p-5">{assetError && <p className="mb-3 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">{assetError}</p>}{contentValidationMessages.length > 0 && <p className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">Some content is longer than the recommended limits. Nothing has been truncated. Shorten the highlighted fields before saving.</p>}<div className="flex flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-center"><div className="text-xs text-slate-500">Preview updates as you edit. Close with X or Escape.</div><div className="flex gap-2"><Button type="button" variant="secondary" onClick={handleDownloadImage} disabled={!!uploadingAsset}>Download Image</Button><Button type="button" onClick={handleSaveTemplate} disabled={!!saving || !!uploadingAsset}>{saving ? 'Saving…' : purpose === 'post' ? 'Save Job Post' : 'Save Template'}</Button></div></div></div>
                 </div>
 
                 <div className="relative flex min-h-0 w-full min-w-0 flex-1 items-start justify-center overflow-hidden bg-gray-100 lg:w-3/5"><div className="custom-scrollbar flex min-h-0 h-full w-full items-start justify-center overflow-y-auto p-4 sm:p-8"><div ref={previewRef} className="relative flex h-auto min-h-[900px] w-full max-w-[640px] shrink-0 flex-col overflow-visible shadow-2xl" style={{ backgroundColor: config.backgroundColor, color: config.textColor }}>

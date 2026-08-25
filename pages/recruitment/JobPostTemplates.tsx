@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import { Permission } from '../../types';
+import { Permission, Role } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
 import JobPostTemplateGenerator from '../../components/recruitment/JobPostTemplateGenerator';
 import { supabase } from '../../services/supabaseClient';
@@ -13,6 +14,7 @@ import {
     JOB_POST_TEMPLATE_PRESETS,
     JobPostTemplateRecord,
 } from '../../components/recruitment/jobPostTemplatePresets';
+import { createJobPostDesignTemplate, jobPostDesignPayload } from '../../components/recruitment/jobPostDesigns';
 
 const mapRow = (row: any): JobPostTemplateRecord => ({
     id: row.id,
@@ -90,13 +92,17 @@ const asFallbackTemplate = (template: JobPostTemplateRecord): JobPostTemplateRec
 const JobPostTemplates: React.FC = () => {
     const { can } = usePermissions();
     const { user } = useAuth();
-    const canManage = can('JobPosts', Permission.Manage);
+    const navigate = useNavigate();
+    const assignedRoles = new Set([user?.role, ...(user?.roles || [])]);
+    const canManage = assignedRoles.has(Role.HRStaff) || assignedRoles.has(Role.HRManager) || can('JobPosts', Permission.Manage);
     const canView = can('JobPosts', Permission.View) || canManage;
     const [templates, setTemplates] = useState<JobPostTemplateRecord[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [isGeneratorOpen, setIsGeneratorOpen] = useState(false);
     const [selectedTemplate, setSelectedTemplate] = useState<JobPostTemplateRecord | null>(null);
+    const [editorPurpose, setEditorPurpose] = useState<'template' | 'post'>('template');
+    const [sourceTemplateId, setSourceTemplateId] = useState<string | undefined>();
     const [loadError, setLoadError] = useState('');
     const [saveError, setSaveError] = useState('');
 
@@ -149,13 +155,25 @@ const JobPostTemplates: React.FC = () => {
 
     const handleCreate = () => {
         setSaveError('');
+        setEditorPurpose('template');
+        setSourceTemplateId(undefined);
         setSelectedTemplate(null);
         setIsGeneratorOpen(true);
     };
 
     const handleEdit = (template: JobPostTemplateRecord) => {
         setSaveError('');
+        setEditorPurpose('template');
+        setSourceTemplateId(undefined);
         setSelectedTemplate(template);
+        setIsGeneratorOpen(true);
+    };
+
+    const handleUseTemplate = (template: JobPostTemplateRecord) => {
+        setSaveError('');
+        setEditorPurpose('post');
+        setSourceTemplateId(template.persisted ? template.id : undefined);
+        setSelectedTemplate(createJobPostDesignTemplate(template));
         setIsGeneratorOpen(true);
     };
 
@@ -163,6 +181,13 @@ const JobPostTemplates: React.FC = () => {
         setIsSaving(true);
         setSaveError('');
         try {
+            if (editorPurpose === 'post') {
+                const { error } = await supabase.from('job_post_designs').insert(jobPostDesignPayload(template, sourceTemplateId, user?.id));
+                if (error) throw error;
+                setIsGeneratorOpen(false);
+                navigate('/recruitment/saved-job-posts');
+                return;
+            }
             const payload = templatePayload(template, user?.id);
             if (selectedTemplate?.persisted && selectedTemplate.id) {
                 const { data, error } = await supabase.from('job_post_templates').update(payload).eq('id', selectedTemplate.id).select('*').single();
@@ -209,7 +234,7 @@ const JobPostTemplates: React.FC = () => {
         <div className="space-y-6">
             <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
                 <div><h1 className="text-3xl font-bold text-gray-900 dark:text-white">Job Post Templates</h1><p className="mt-1 text-gray-600 dark:text-gray-400">Reusable, on-brand job post layouts for every business unit.</p></div>
-                {canManage && <Button onClick={handleCreate}>Create Visual Template</Button>}
+                {canManage && <div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={() => navigate('/recruitment/saved-job-posts')}>Saved Job Posts</Button><Button onClick={handleCreate}>Create Visual Template</Button></div>}
             </div>
             {loadError && <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">{loadError}</div>}
             {saveError && <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200">{saveError}</div>}
@@ -223,7 +248,7 @@ const JobPostTemplates: React.FC = () => {
                                 {template.backgroundImage && <img src={template.backgroundImage} alt="" className="absolute inset-0 h-full w-full object-cover opacity-25" />}
                                 <div className="relative z-10"><div className="mb-3 text-xs font-black uppercase tracking-[0.18em]" style={{ color: template.accentColor }}>{wordmark}</div><h3 className="line-clamp-2 text-sm font-bold uppercase" style={{ color: template.accentColor }}>{template.headline}</h3><h2 className="mt-2 line-clamp-2 text-xl font-extrabold uppercase leading-tight" style={{ color: template.textColor }}>{template.jobTitle}</h2><div className="mx-auto mt-5 h-2 w-32 rounded-full" style={{ backgroundColor: template.accentColor }} /></div>
                             </div>
-                            <div className="flex flex-grow flex-col justify-between bg-white p-4 dark:bg-slate-800"><div><div className="flex items-start justify-between gap-3"><h3 className="font-bold text-gray-900 dark:text-white">{template.name}</h3>{template.isStarter && <span className="shrink-0 rounded-full bg-indigo-100 px-2 py-1 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">Starter</span>}</div><p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{template.businessUnit || 'Custom template'} · {template.status || 'Draft'}</p></div>{canManage && <div className="mt-4 flex gap-2 border-t border-gray-200 pt-4 dark:border-slate-700"><Button size="sm" variant="secondary" className="w-full" onClick={() => handleEdit(template)}>Edit</Button>{!template.isStarter && <Button size="sm" variant="danger" className="w-full" onClick={() => handleDelete(template)}>Delete</Button>}</div>}</div>
+                            <div className="flex flex-grow flex-col justify-between bg-white p-4 dark:bg-slate-800"><div><div className="flex items-start justify-between gap-3"><h3 className="font-bold text-gray-900 dark:text-white">{template.name}</h3>{template.isStarter && <span className="shrink-0 rounded-full bg-indigo-100 px-2 py-1 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">Starter</span>}</div><p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{template.businessUnit || 'Custom template'} · {template.status || 'Draft'}</p></div>{canManage && <div className="mt-4 grid grid-cols-2 gap-2 border-t border-gray-200 pt-4 dark:border-slate-700"><Button size="sm" className="col-span-2 w-full" onClick={() => handleUseTemplate(template)}>Use Template</Button><Button size="sm" variant="secondary" className={!template.isStarter ? '' : 'col-span-2'} onClick={() => handleEdit(template)}>Edit</Button>{!template.isStarter && <Button size="sm" variant="danger" onClick={() => handleDelete(template)}>Delete</Button>}</div>}</div>
                         </Card>;
                     })}
                     {!isLoading && templates.length === 0 && <div className="col-span-full py-12 text-center text-gray-500">No templates found.</div>}
@@ -231,7 +256,7 @@ const JobPostTemplates: React.FC = () => {
             )}
 
             {demo && <span className="sr-only">Demo template loaded: {demo.name}</span>}
-            {isGeneratorOpen && <JobPostTemplateGenerator isOpen={isGeneratorOpen} onClose={() => setIsGeneratorOpen(false)} onSave={handleSave} template={selectedTemplate} saving={isSaving} />}
+            {isGeneratorOpen && <JobPostTemplateGenerator isOpen={isGeneratorOpen} onClose={() => setIsGeneratorOpen(false)} onSave={handleSave} template={selectedTemplate} saving={isSaving} purpose={editorPurpose} />}
         </div>
     );
 };
