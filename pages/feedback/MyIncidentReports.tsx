@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { IncidentReport, IRStatus } from '../../types';
-import { fetchIncidentReports, followUpIncidentReport } from '../../services/incidentReportService';
+import { fetchIncidentReports, followUpIncidentReport, resubmitIncidentReport, saveIncidentReport } from '../../services/incidentReportService';
 import { fetchNTEs } from '../../services/nteService';
 import { fetchResolutions } from '../../services/resolutionService';
 import CaseListTable from '../../components/feedback/CaseListTable';
@@ -126,11 +126,20 @@ export default function MyIncidentReports() {
             setSelectedReport(null);
             loadData();
           }}
-          onSave={() => {
-            setIsModalOpen(false);
-            setSelectedReport(null);
-            loadData();
+          onSave={async changes => {
+            if (!user) return;
+            const saved = await saveIncidentReport(changes, user);
+            setSelectedReport(saved);
+            setReports(previous => previous.map(item => item.id === saved.id ? saved : item));
+            return saved;
           }}
+          onResubmit={async reportId => {
+            const saved = await resubmitIncidentReport(reportId);
+            setSelectedReport(saved);
+            setReports(previous => previous.map(item => item.id === saved.id ? saved : item));
+            return saved;
+          }}
+          isEmployeeView
         />
       )}
     </div>

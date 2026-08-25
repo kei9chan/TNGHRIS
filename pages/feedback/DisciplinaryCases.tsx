@@ -17,7 +17,7 @@ import Card from '../../components/ui/Card';
 import PrintableIncidentReport from '../../components/feedback/PrintableIncidentReport';
 import CaseListTable from '../../components/feedback/CaseListTable';
 import { logActivity } from '../../services/auditService';
-import { assignIncidentCaseHandler, fetchIncidentReports, saveIncidentReport, addIncidentReportMessage, fetchPipelineStages } from '../../services/incidentReportService';
+import { assignIncidentCaseHandler, fetchIncidentReports, saveIncidentReport, addIncidentReportMessage, fetchPipelineStages, rejectIncidentReport, returnIncidentReportForRevision } from '../../services/incidentReportService';
 import { saveNTEs, updateNTE, fetchNTEs, resubmitNTERevision } from '../../services/nteService';
 import { fetchResolutions, createResolution, updateResolution } from '../../services/resolutionService';
 import { formatIRDisplayId } from '../../utils/formatCaseId';
@@ -1026,6 +1026,18 @@ const DisciplinaryCases: React.FC = () => {
           onGenerateNTE={handleGenerateNTE}
           onConvertToCoaching={handleConvertToCoaching}
           onDownloadPdf={setReportToPrint}
+          onReturnForRevision={async (reportId, reason) => {
+            const saved = await returnIncidentReportForRevision(reportId, reason);
+            setAllReports(previous => previous.map(item => item.id === saved.id ? saved : item));
+            setSelectedReport(saved);
+            return saved;
+          }}
+          onRejectReport={async (reportId, reason) => {
+            const saved = await rejectIncidentReport(reportId, reason);
+            setAllReports(previous => previous.map(item => item.id === saved.id ? saved : item));
+            setSelectedReport(saved);
+            return saved;
+          }}
         />
       )}
 

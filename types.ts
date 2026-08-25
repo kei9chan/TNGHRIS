@@ -805,8 +805,11 @@ export interface PipelineStage {
 }
 
 export enum IRStatus {
+  Draft = 'Draft',
   Submitted = 'Submitted',
   HRReview = 'HR Review',
+  ReturnedForRevision = 'Returned for Revision',
+  Rejected = 'Rejected',
   Converted = 'Converted',
   NoAction = 'NoAction',
   Closed = 'Closed',
@@ -854,6 +857,9 @@ export interface IncidentReport {
   followUpCount?: number;
   lastFollowUpAt?: Date;
   followUpHistory?: FollowUpHistoryItem[];
+  revisionNotes?: string;
+  rejectionReason?: string;
+  revisionHistory?: Array<Record<string, unknown>>;
 }
 
 export enum NTEStatus {

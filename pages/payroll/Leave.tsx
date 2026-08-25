@@ -43,6 +43,7 @@ const Leave: React.FC = () => {
   });
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [liveQuotas, setLiveQuotas] = useState({ vacation: 0, sick: 0, offset: 0 });
+  const [reporteeIds, setReporteeIds] = useState<string[]>([]);
 
   const roleCanApprove = access.canApprove;
   const canApprove = (can('Leave', Permission.Approve) || hasDirectReports() || roleCanApprove) ?? false;
@@ -71,8 +72,9 @@ const Leave: React.FC = () => {
     } else if (access.scope === 'bu') {
       if (user.businessUnitId) query = query.eq('business_unit_id', user.businessUnitId);
     } else if (access.scope === 'team') {
-      if (user.departmentId) query = query.eq('department_id', user.departmentId);
-      else query = query.eq('employee_id', user.id);
+      query = reporteeIds.length > 0
+        ? query.in('employee_id', [user.id, ...reporteeIds])
+        : query.eq('employee_id', user.id);
     } else if (access.scope === 'self') {
       query = query.eq('employee_id', user.id);
     } else {
@@ -154,7 +156,14 @@ const Leave: React.FC = () => {
         });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [user, reporteeIds.join(',')]);
+
+  useEffect(() => {
+    if (!user?.id) return setReporteeIds([]);
+    supabase.rpc('get_my_direct_report_ids').then(({ data, error }) => {
+      setReporteeIds(error ? [] : (data || []).map((row: any) => row.id).filter(Boolean));
+    });
+  }, [user?.id]);
 
   const myBalances = useMemo(() => {
     if (!user) return [];
@@ -194,11 +203,11 @@ const Leave: React.FC = () => {
     if (access.scope === 'bu' && user.businessUnitId) {
       return leaveRequests.filter(r => r.businessUnitId === user.businessUnitId);
     }
-    if (access.scope === 'team' && user.departmentId) {
-      return leaveRequests.filter(r => r.departmentId === user.departmentId);
+    if (access.scope === 'team') {
+      return leaveRequests.filter(r => reporteeIds.includes(r.employeeId));
     }
     return [];
-  }, [leaveRequests, user, access.scope]);
+  }, [leaveRequests, user, access.scope, reporteeIds]);
 
   // Fetch the exact record instead of depending on this page's role/scope list.
   // The database still enforces whether the signed-in approver may read it.
@@ -243,11 +252,11 @@ const Leave: React.FC = () => {
     if (access.scope === 'bu' && user.businessUnitId) {
       return leaveRequests.filter(r => r.businessUnitId === user.businessUnitId);
     }
-    if (access.scope === 'team' && user.departmentId) {
-      return leaveRequests.filter(r => r.departmentId === user.departmentId);
+    if (access.scope === 'team') {
+      return leaveRequests.filter(r => r.employeeId === user.id || reporteeIds.includes(r.employeeId));
     }
     return leaveRequests.filter(r => r.employeeId === user.id);
-  }, [leaveRequests, user, access.scope]);
+  }, [leaveRequests, user, access.scope, reporteeIds]);
 
   const calendarLeaves = useMemo(() => {
     return visibleRequests.filter(r => r.status === LeaveRequestStatus.Approved);

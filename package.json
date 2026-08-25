@@ -33,7 +33,8 @@
     "test:incident-universal-filing": "node tests/incidentReportUniversalFilingSmokeTest.mjs",
     "test:password-recovery": "node tests/passwordRecoverySmokeTest.mjs",
     "test:mobile-approval-ux": "node tests/mobileApprovalUxSmokeTest.mjs",
-    "test:approval-presentation": "node tests/approvalPresentationSmokeTest.mjs"
+    "test:approval-presentation": "node tests/approvalPresentationSmokeTest.mjs",
+    "test:record-authorization": "node tests/recordAuthorizationAndIncidentRevisionSmokeTest.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.84.0",

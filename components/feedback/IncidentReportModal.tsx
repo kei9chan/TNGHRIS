@@ -21,11 +21,14 @@ interface IncidentReportModalProps {
   onClose: () => void;
   report: IncidentReport | null;
   onSave: (report: Partial<IncidentReport>) => Promise<IncidentReport | void> | void;
-  onSendMessage: (reportId: string, text: string) => void;
-  onGenerateNTE: (report: Partial<IncidentReport>) => Promise<void> | void;
-  onMarkNoAction: (reportId: string) => void;
+  onSendMessage?: (reportId: string, text: string) => void;
+  onGenerateNTE?: (report: Partial<IncidentReport>) => Promise<void> | void;
+  onMarkNoAction?: (reportId: string) => void;
   onConvertToCoaching?: (report: IncidentReport) => void;
-  onDownloadPdf: (report: IncidentReport) => void;
+  onDownloadPdf?: (report: IncidentReport) => void;
+  onReturnForRevision?: (reportId: string, reason: string) => Promise<IncidentReport | void>;
+  onRejectReport?: (reportId: string, reason: string) => Promise<IncidentReport | void>;
+  onResubmit?: (reportId: string) => Promise<IncidentReport | void>;
   isEmployeeView?: boolean;
 }
 
@@ -35,6 +38,12 @@ const getStatusTag = (status: IRStatus, pipelineStage?: string) => {
   }
   if (status === IRStatus.Submitted) {
     return { text: 'New', color: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200' };
+  }
+  if (status === IRStatus.ReturnedForRevision) {
+    return { text: 'Returned for Revision', color: 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200' };
+  }
+  if (status === IRStatus.Rejected) {
+    return { text: 'Rejected', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200' };
   }
   if (status === IRStatus.Converted || pipelineStage === 'converted-coaching') {
     return { text: 'For Coaching', color: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200' };
@@ -50,7 +59,7 @@ const DetailItem: React.FC<{ label: string; children: React.ReactNode }> = ({ la
 );
 
 
-const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClose, report, onSave, onGenerateNTE, onMarkNoAction, onConvertToCoaching, onDownloadPdf, isEmployeeView = false }) => {
+const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClose, report, onSave, onGenerateNTE, onMarkNoAction, onConvertToCoaching, onDownloadPdf, onReturnForRevision, onRejectReport, onResubmit, isEmployeeView = false }) => {
   const { user } = useAuth();
   const { can } = usePermissions();
   const [currentReport, setCurrentReport] = useState<Partial<IncidentReport>>({});
@@ -66,6 +75,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
   const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
   const [assignmentState, setAssignmentState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [assignmentMessage, setAssignmentMessage] = useState('');
+  const [isEditingRevision, setIsEditingRevision] = useState(false);
   const signaturePathRef = useRef<string | null>(null);
   const signatureCacheRef = useRef<Map<string, string>>(new Map());
 
@@ -178,6 +188,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
         setAttachmentPreview(report.attachmentUrl || null);
         signaturePathRef.current = report.signatureDataUrl || null;
         setSignaturePreview(report.signatureDataUrl || null);
+        setIsEditingRevision(false);
       } else {
         const defaultBu = businessUnits.find(
           b => b.id === user?.businessUnitId || (user?.businessUnit && b.name.toLowerCase() === user.businessUnit.toLowerCase())
@@ -327,6 +338,26 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
     onSave(reportToSave);
   };
 
+  const handleSaveExisting = async (resubmit = false) => {
+    if (!report || !user) return;
+    if (!currentReport.category || !currentReport.description?.trim() || !currentReport.location?.trim()) {
+      alert('Date, location, category, and description are required.');
+      return;
+    }
+    const saved = await onSave({
+      ...currentReport,
+      id: report.id,
+      reportedBy: report.reportedBy,
+      involvedEmployeeIds: involvedEmployees.map(item => item.id),
+      involvedEmployeeNames: involvedEmployees.map(item => item.name),
+      witnessIds: witnesses.map(item => item.id),
+      witnessNames: witnesses.map(item => item.name),
+    });
+    if (resubmit && onResubmit) await onResubmit(report.id);
+    setIsEditingRevision(false);
+    return saved;
+  };
+
   const reporterName = report ? allUsers.find(u => u.id === report.reportedBy)?.name : user?.name;
   const statusTag = report ? getStatusTag(report.status, report.pipelineStage) : null;
 
@@ -334,13 +365,24 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
   const showAssignment = !isEmployeeView && canAssign && report && report.pipelineStage === 'ir-review';
 
   const renderModalContent = () => {
-    if (report) {
+    if (report && !isEditingRevision) {
       // VIEW mode for existing reports
       return (
         <div className="space-y-6">
           <h2 className="text-lg text-gray-600 dark:text-gray-400 -mt-4">
             {report.category}
           </h2>
+
+          {report.status === IRStatus.ReturnedForRevision && report.revisionNotes && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-100">
+              <strong>Revision requested:</strong> {report.revisionNotes}
+            </div>
+          )}
+          {report.status === IRStatus.Rejected && report.rejectionReason && (
+            <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-700 dark:bg-red-950/30 dark:text-red-100">
+              <strong>Rejection reason:</strong> {report.rejectionReason}
+            </div>
+          )}
 
           <dl className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-3">
             <DetailItem label="Case ID">{formatIRDisplayId(report.caseNumber) || report.id}</DetailItem>
@@ -419,13 +461,13 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
       );
     }
 
-    // CREATE mode for new reports
+    // CREATE mode and controlled reporter revision mode share the same fields.
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Row 1: Reporter and Date */}
         <div>
           <label className="block text-sm font-medium text-gray-500 dark:text-gray-400">Reporter</label>
-          <p className="mt-1 font-semibold text-gray-900 dark:text-white">{user?.name}</p>
+          <p className="mt-1 font-semibold text-gray-900 dark:text-white">{report ? reporterName : user?.name}</p>
         </div>
         <Input
           label="Date of Incident"
@@ -537,9 +579,10 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
           <div className="space-y-2">
             <FileUploader onFileUpload={handleAttachmentUpload} maxSize={5 * 1024 * 1024} disabled={uploadingAttachment} />
             {attachmentPreview && (
-              <a className="text-indigo-600 hover:underline text-sm" href={attachmentPreview} target="_blank" rel="noopener noreferrer">
-                View uploaded attachment
-              </a>
+              <div className="flex items-center gap-3">
+                <a className="text-indigo-600 hover:underline text-sm" href={attachmentPreview} target="_blank" rel="noopener noreferrer">View uploaded attachment</a>
+                {isEditingRevision && <button type="button" className="text-sm font-semibold text-red-600" onClick={() => { setCurrentReport(value => ({ ...value, attachmentUrl: undefined })); setAttachmentPreview(null); }}>Remove</button>}
+              </div>
             )}
             {uploadingAttachment && <p className="text-xs text-gray-500">Uploading...</p>}
           </div>
@@ -557,10 +600,19 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
   const renderFooter = () => {
     if (report) {
       const isClosed = report.status === IRStatus.Closed || report.status === IRStatus.NoAction;
+      const reporterCanRevise = isEmployeeView && report.reportedBy === user?.id && [IRStatus.Draft, IRStatus.ReturnedForRevision].includes(report.status);
+      if (isEditingRevision) {
+        return <div className="flex w-full justify-end gap-2">
+          <Button variant="secondary" onClick={() => setIsEditingRevision(false)}>Cancel</Button>
+          <Button variant="secondary" onClick={() => void handleSaveExisting(false)}>Save draft</Button>
+          {report.status === IRStatus.ReturnedForRevision && <Button onClick={() => void handleSaveExisting(true)}>Save and resubmit</Button>}
+        </div>;
+      }
       return (
         <div className="flex justify-between items-center w-full">
           <div className="flex space-x-2">
-            <Button variant="secondary" onClick={() => onDownloadPdf(report)}>Download as PDF</Button>
+            {onDownloadPdf && <Button variant="secondary" onClick={() => onDownloadPdf(report)}>Download as PDF</Button>}
+            {reporterCanRevise && <Button onClick={() => setIsEditingRevision(true)}>Edit report</Button>}
             {/* If HR Manager/Admin, they can save reassignment changes */}
             {!isEmployeeView && canAssign && (
               <Button
@@ -583,9 +635,11 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
 
           {!isEmployeeView && !isClosed && (
             <div className="flex space-x-2">
-              <Button variant="secondary" onClick={() => onMarkNoAction(report.id)}>Mark as "No Action"</Button>
+              {onReturnForRevision && <Button variant="secondary" onClick={async () => { const reason = window.prompt('Revision instructions (required)'); if (reason?.trim()) await onReturnForRevision(report.id, reason); }}>Return for Revision</Button>}
+              {onRejectReport && <Button variant="danger" onClick={async () => { const reason = window.prompt('Rejection reason (required)'); if (reason?.trim()) await onRejectReport(report.id, reason); }}>Reject</Button>}
+              {onMarkNoAction && <Button variant="secondary" onClick={() => onMarkNoAction(report.id)}>Mark as "No Action"</Button>}
               {onConvertToCoaching && <Button variant="secondary" onClick={() => onConvertToCoaching(report)}>Convert to Coaching</Button>}
-              <Button
+              {onGenerateNTE && <Button
                 isLoading={assignmentState === 'saving'}
                 onClick={async () => {
                   setAssignmentState('saving');
@@ -598,7 +652,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
                     setAssignmentMessage(error?.message || 'The NTE transition could not be completed.');
                   }
                 }}
-              >Issue NTE</Button>
+              >Continue Processing</Button>}
             </div>
           )}
           {!isEmployeeView && isClosed && (

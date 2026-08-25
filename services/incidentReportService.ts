@@ -35,6 +35,9 @@ type IncidentReportRow = {
   follow_up_count?: number | null;
   last_follow_up_at?: string | null;
   follow_up_history?: any[] | null;
+  revision_notes?: string | null;
+  rejection_reason?: string | null;
+  revision_history?: any[] | null;
 };
 
 const mapRow = (row: IncidentReportRow): IncidentReport => ({
@@ -72,7 +75,38 @@ const mapRow = (row: IncidentReportRow): IncidentReport => ({
     sentById: entry?.sentById || '',
     sentByName: entry?.sentByName || 'Employee',
   })),
+  revisionNotes: row.revision_notes || undefined,
+  rejectionReason: row.rejection_reason || undefined,
+  revisionHistory: row.revision_history || [],
 });
+
+export const returnIncidentReportForRevision = async (reportId: string, reason: string): Promise<IncidentReport> => {
+  const note = reason.trim();
+  if (!note) throw new Error('Revision instructions are required.');
+  const { data, error } = await supabase.rpc('return_incident_report_for_revision', {
+    p_report_id: reportId,
+    p_reason: note,
+  });
+  if (error) throw new Error(error.message || 'Failed to return the incident report for revision.');
+  return mapRow(data as IncidentReportRow);
+};
+
+export const rejectIncidentReport = async (reportId: string, reason: string): Promise<IncidentReport> => {
+  const note = reason.trim();
+  if (!note) throw new Error('A rejection reason is required.');
+  const { data, error } = await supabase.rpc('reject_incident_report', {
+    p_report_id: reportId,
+    p_reason: note,
+  });
+  if (error) throw new Error(error.message || 'Failed to reject the incident report.');
+  return mapRow(data as IncidentReportRow);
+};
+
+export const resubmitIncidentReport = async (reportId: string): Promise<IncidentReport> => {
+  const { data, error } = await supabase.rpc('resubmit_incident_report', { p_report_id: reportId });
+  if (error) throw new Error(error.message || 'Failed to resubmit the incident report.');
+  return mapRow(data as IncidentReportRow);
+};
 
 export const fetchIncidentReportUserDirectory = async (): Promise<User[]> => {
   const { data, error } = await supabase.rpc('get_incident_report_user_directory');
