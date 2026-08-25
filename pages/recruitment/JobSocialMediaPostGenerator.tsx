@@ -179,13 +179,28 @@ const wrapText = (ctx: CanvasRenderingContext2D, value: string, maxWidth: number
     const lines: string[] = [];
     let current = '';
     words.forEach(word => {
-        const candidate = current ? `${current} ${word}` : word;
-        if (current && ctx.measureText(candidate).width > maxWidth) {
-            lines.push(current);
-            current = word;
-        } else {
-            current = candidate;
+        const pieces: string[] = [];
+        let piece = '';
+        for (const character of word) {
+            const candidate = `${piece}${character}`;
+            if (piece && ctx.measureText(candidate).width > maxWidth) {
+                pieces.push(piece);
+                piece = character;
+            } else {
+                piece = candidate;
+            }
         }
+        if (piece) pieces.push(piece);
+
+        pieces.forEach((part, partIndex) => {
+            const candidate = partIndex === 0 && current ? `${current} ${part}` : `${current}${part}`;
+            if (current && ctx.measureText(candidate).width > maxWidth) {
+                lines.push(current);
+                current = part;
+            } else {
+                current = candidate;
+            }
+        });
     });
     if (current) lines.push(current);
     return lines;
@@ -211,6 +226,29 @@ const drawCenteredText = (
     const visibleLines = maxLines ? lines.slice(0, maxLines) : lines;
     visibleLines.forEach((line, index) => ctx.fillText(line, centerX, startY + index * lineHeight));
     return startY + visibleLines.length * lineHeight;
+};
+
+const fitTitleToBox = (ctx: CanvasRenderingContext2D, value: string, fontFamily: string) => {
+    const maxWidth = 900;
+    const maxHeight = 290;
+    const maxLines = 4;
+    const minimumFontSize = 32;
+    let fontSize = 128;
+    let lines: string[] = [];
+    let lineHeight = 0;
+
+    while (fontSize >= minimumFontSize) {
+        ctx.font = `900 ${fontSize}px ${fontFamily}`;
+        lines = wrapText(ctx, value, maxWidth);
+        lineHeight = Math.round(fontSize * 0.9);
+        if (lines.length <= maxLines && lines.length * lineHeight <= maxHeight) break;
+        fontSize -= 4;
+    }
+
+    ctx.font = `900 ${fontSize}px ${fontFamily}`;
+    lines = wrapText(ctx, value, maxWidth);
+    lineHeight = Math.round(fontSize * 0.9);
+    return { fontSize, lineHeight, lines };
 };
 
 const drawBackgroundImage = (
@@ -371,16 +409,9 @@ const renderSocialPost = async ({
     drawCenteredText(ctx, headline.toUpperCase() || 'WE ARE HIRING', OUTPUT_SIZE / 2, headlineY, 880, `800 54px ${fontFamily}`, style.headlineColor, 68, 2);
 
     const title = position.toUpperCase();
-    ctx.font = `900 128px ${fontFamily}`;
-    let titleFontSize = 128;
-    let titleLines = wrapText(ctx, title, 900);
-    while (titleLines.length > 3 && titleFontSize > 58) {
-        titleFontSize -= 6;
-        ctx.font = `900 ${titleFontSize}px ${fontFamily}`;
-        titleLines = wrapText(ctx, title, 900);
-    }
+    const { fontSize: titleFontSize, lineHeight: titleLineHeight, lines: titleLines } = fitTitleToBox(ctx, title, fontFamily);
     const titleY = headlineY + 145;
-    drawCenteredText(ctx, title, OUTPUT_SIZE / 2, titleY, 900, `900 ${titleFontSize}px ${fontFamily}`, titleColor, Math.max(70, titleFontSize * 0.9), 4);
+    drawCenteredText(ctx, title, OUTPUT_SIZE / 2, titleY, 900, `900 ${titleFontSize}px ${fontFamily}`, titleColor, titleLineHeight, titleLines.length);
 
     ctx.strokeStyle = accentColor;
     ctx.lineWidth = 8;
