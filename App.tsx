@@ -114,6 +114,7 @@ const Applicants = React.lazy(() => import('./pages/recruitment/Applicants'));
 const Candidates = React.lazy(() => import('./pages/recruitment/Candidates'));
 const Interviews = React.lazy(() => import('./pages/recruitment/Interviews'));
 const Offers = React.lazy(() => import('./pages/recruitment/Offers'));
+const OfferTemplates = React.lazy(() => import('./pages/recruitment/OfferTemplates'));
 const FeedbackTemplates = React.lazy(() => import('./pages/feedback/FeedbackTemplates'));
 const Apply = React.lazy(() => import('./pages/Apply'));
 const ThankYou = React.lazy(() => import('./pages/ThankYou'));
@@ -381,6 +382,7 @@ const AppRoutes: React.FC = () => {
              <Route path="candidates" element={<ProtectedRoute><Candidates /></ProtectedRoute>} />
              <Route path="interviews" element={<ProtectedRoute><Interviews /></ProtectedRoute>} />
              <Route path="offers" element={<ProtectedRoute><Offers /></ProtectedRoute>} />
+             <Route path="offer-templates" element={<ProtectedRoute><OfferTemplates /></ProtectedRoute>} />
         </Route>
 
       </Route>
