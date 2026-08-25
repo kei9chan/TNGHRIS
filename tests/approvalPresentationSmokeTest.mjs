@@ -29,7 +29,10 @@ assert.match(presentation, /dateRange/);
 assert.match(presentation, /exceeded by/);
 
 assert.doesNotMatch(approvalCenter, /Select all eligible/);
-assert.match(approvalCenter, /Select all standard requests/);
+assert.match(approvalCenter, /Select all pending requests/);
+assert.doesNotMatch(approvalCenter, /Standard requests|Select all standard requests|Approve standard/);
+assert.doesNotMatch(widget, /review=eligible|Review standard requests/);
+assert.match(approvalCenter, /sticky right-0/);
 const timeHeadings = approvalCenter.match(/const TIME_DESKTOP_HEADINGS = \[([^\]]+)\]/)?.[1] || '';
 const overtimeHeadings = approvalCenter.match(/const OVERTIME_DESKTOP_HEADINGS = \[([^\]]+)\]/)?.[1] || '';
 assert.match(timeHeadings, /Request details/);

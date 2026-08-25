@@ -11,8 +11,8 @@ const [header, widget, approvalCenter, notifications, faq] = await Promise.all([
 ]);
 
 assert.doesNotMatch(widget, /Approve standard/, 'Dashboard queue must not imply that opening the queue approves requests');
-assert.match(widget, /Review standard requests/, 'Dashboard must use clear standard-request review wording');
-assert.match(widget, /Opening the queue does not approve them/, 'Dashboard must explain the review action');
+assert.doesNotMatch(widget, /Standard requests|Review standard requests|review=eligible/, 'Dashboard must not expose the removed standard-request view');
+assert.match(widget, /Review queue/, 'Dashboard must open the full pending queue');
 assert.match(approvalCenter, /searchParams\.get\('review'\)/, 'Review links must apply their requested queue filter');
 
 assert.match(header, /aria-label="Open navigation menu"/, 'Mobile header must expose a menu button');

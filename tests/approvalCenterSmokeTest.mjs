@@ -26,8 +26,9 @@ const timeAssignmentService = read('services/timeApprovalAssignmentService.ts');
 const checks = [
   [page.includes('Approval Center'), 'Approval Center heading'],
   [page.includes('Approve selected'), 'selected bulk action'],
-  [page.includes('Approve standard'), 'standard-request bulk action'],
-  [page.includes('Select all standard requests') && !page.includes('Select all eligible'), 'plain-language standard selection'],
+  [page.includes('Approve all pending'), 'all-pending bulk action'],
+  [page.includes('Select all pending requests') && !page.includes('Select all eligible'), 'plain-language pending selection'],
+  [!page.includes('Standard requests') && !widget.includes('review=eligible'), 'standard-request view removed'],
   [page.includes('TIME_DESKTOP_HEADINGS') && page.includes("'Approval step', 'Eligibility', 'Action'"), 'standardized time-request columns'],
   [page.includes('OVERTIME_DESKTOP_HEADINGS') && page.includes("'Week of'"), 'overtime week column'],
   [page.includes('I confirm these requests meet policy'), 'confirmation safeguard'],
