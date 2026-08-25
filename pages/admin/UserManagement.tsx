@@ -9,6 +9,7 @@ import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { usePermissionsContext } from '../../context/PermissionsContext';
 import AccountLifecycleModal from '../../components/admin/AccountLifecycleModal';
+import PasswordManagementModal from '../../components/admin/PasswordManagementModal';
 
 const UserManagement: React.FC = () => {
     const { user: currentUser } = useAuth();
@@ -27,6 +28,7 @@ const UserManagement: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
     const [lifecycleUser, setLifecycleUser] = useState<User | null>(null);
+    const [passwordUser, setPasswordUser] = useState<User | null>(null);
     const currentRoles = useMemo(() => new Set(currentUser?.roles?.length ? currentUser.roles : currentUser ? [currentUser.role] : []), [currentUser]);
     const canManageLifecycle = currentRoles.has(Role.Admin);
 
@@ -199,7 +201,7 @@ const UserManagement: React.FC = () => {
                                 <td className="px-4 py-3 text-sm"><span className="font-medium">{user.accessScope?.type || 'SELF'}</span><br /><span className="text-xs text-gray-500">{scopeSummary(user)}</span></td>
                                 <td className="px-4 py-3 text-xs text-gray-600">{Object.keys(user.effectiveFeaturePermissions || {}).length} feature resources<br />{Object.keys(user.sensitivePermissions || {}).length} sensitive · {Object.keys(user.workflowPermissions || {}).length} workflows</td>
                                 <td className="px-4 py-3 text-xs text-gray-500">{user.permissionUpdatedAt?.toLocaleString() || 'Legacy assignment'}<br />{user.permissionUpdatedByName ? `by ${user.permissionUpdatedByName}` : user.permissionUpdatedBy ? `by ${user.permissionUpdatedBy}` : 'by system / legacy migration'}</td>
-                                <td className="px-4 py-3 text-right"><div className="flex justify-end gap-2">{canManage && <Button size="sm" variant="secondary" disabled={saving || user.id === currentUser?.id} onClick={() => setSelectedUser(user)}>{user.id === currentUser?.id ? 'Self change blocked' : 'Edit access'}</Button>}{canManageLifecycle && user.id !== currentUser?.id && <Button size="sm" variant="secondary" disabled={saving} onClick={() => setLifecycleUser(user)}>{user.status === 'Inactive' ? 'Reactivate' : 'Inactivate'}</Button>}</div></td>
+                                <td className="px-4 py-3 text-right"><div className="flex flex-wrap justify-end gap-2">{canManage && <Button size="sm" variant="secondary" disabled={saving || user.id === currentUser?.id} onClick={() => setSelectedUser(user)}>{user.id === currentUser?.id ? 'Self change blocked' : 'Edit access'}</Button>}{canManageLifecycle && user.id !== currentUser?.id && <Button size="sm" variant="secondary" disabled={saving} onClick={() => setPasswordUser(user)}>Password</Button>}{canManageLifecycle && user.id !== currentUser?.id && <Button size="sm" variant="secondary" disabled={saving} onClick={() => setLifecycleUser(user)}>{user.status === 'Inactive' ? 'Reactivate' : 'Inactivate'}</Button>}</div></td>
                             </tr>)}
                             {!loading && !error && filteredUsers.length === 0 && <tr><td colSpan={8} className="p-10 text-center text-gray-500">No users found for the selected filters.</td></tr>}
                         </tbody>
@@ -209,6 +211,7 @@ const UserManagement: React.FC = () => {
             </div>
             {selectedUser && <UserRoleEditModal isOpen onClose={() => setSelectedUser(null)} user={selectedUser} businessUnits={businessUnits} roles={roles} onSave={saveAccess} />}
             {lifecycleUser && <AccountLifecycleModal isOpen user={lifecycleUser} saving={saving} onClose={() => setLifecycleUser(null)} onConfirm={saveLifecycle} />}
+            {passwordUser && <PasswordManagementModal user={passwordUser} onClose={() => setPasswordUser(null)} />}
         </div>
     );
 };

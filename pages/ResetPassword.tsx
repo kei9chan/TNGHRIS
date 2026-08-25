@@ -11,29 +11,75 @@ const ResetPassword: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
+  const [checkingLink, setCheckingLink] = useState(true);
   const navigate = useNavigate();
 
-  /**
-   * Supabase sends the user back to /reset-password with a recovery token
-   * embedded in the URL hash (#access_token=...&type=recovery).
-   * The Supabase JS client automatically picks this up via onAuthStateChange.
-   * We wait for the PASSWORD_RECOVERY event before enabling the form.
-   */
   useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+    let active = true;
+    const markReady = () => {
+      if (!active) return;
+      setSessionReady(true);
+      setCheckingLink(false);
+      window.history.replaceState({}, document.title, '/reset-password');
+    };
+    const fail = (message: string) => {
+      if (!active) return;
+      setError(message);
+      setSessionReady(false);
+      setCheckingLink(false);
+    };
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
-        setSessionReady(true);
+        markReady();
+      } else if (event === 'SIGNED_IN' && session && window.location.hash.includes('type=recovery')) {
+        markReady();
       }
     });
 
-    // Also check if there's already a valid session (e.g., page refresh)
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) {
-        setSessionReady(true);
+    const establishRecoverySession = async () => {
+      try {
+        const url = new URL(window.location.href);
+        const linkError = url.searchParams.get('error_description') || new URLSearchParams(url.hash.slice(1)).get('error_description');
+        if (linkError) return fail(decodeURIComponent(linkError.replace(/\+/g, ' ')));
+
+        const code = url.searchParams.get('code');
+        const tokenHash = url.searchParams.get('token_hash');
+        const type = url.searchParams.get('type');
+        const hash = new URLSearchParams(url.hash.slice(1));
+        const accessToken = hash.get('access_token');
+        const refreshToken = hash.get('refresh_token');
+        let session = null;
+        let authError = null;
+
+        if (code) {
+          const result = await supabase.auth.exchangeCodeForSession(code);
+          session = result.data.session;
+          authError = result.error;
+        } else if (tokenHash && type === 'recovery') {
+          const result = await supabase.auth.verifyOtp({ type: 'recovery', token_hash: tokenHash });
+          session = result.data.session;
+          authError = result.error;
+        } else if (accessToken && refreshToken) {
+          const result = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+          session = result.data.session;
+          authError = result.error;
+        } else {
+          const result = await supabase.auth.getSession();
+          session = result.data.session;
+          authError = result.error;
+        }
+        if (authError) return fail(authError.message || 'This reset link is invalid or has expired.');
+        if (session) markReady();
+        else fail('This reset link is invalid or has expired. Please request a new one.');
+      } catch (caught) {
+        console.error('[ResetPassword] recovery session error', caught);
+        fail('This reset link could not be verified. Please request a new one.');
       }
-    });
+    };
+    void establishRecoverySession();
 
     return () => {
+      active = false;
       sub.subscription.unsubscribe();
     };
   }, []);
@@ -53,7 +99,10 @@ const ResetPassword: React.FC = () => {
 
     setIsLoading(true);
     try {
-      const { error: updateError } = await supabase.auth.updateUser({ password });
+      const { error: updateError } = await supabase.auth.updateUser({
+        password,
+        data: { must_change_password: false },
+      });
 
       if (updateError) {
         setError(updateError.message || 'Failed to update password. Please try again.');
@@ -161,7 +210,13 @@ const ResetPassword: React.FC = () => {
             </div>
           )}
 
-          {!sessionReady && !successMessage && (
+          {checkingLink && !successMessage && (
+            <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-4 text-violet-700" role="status">
+              Verifying your secure reset link…
+            </div>
+          )}
+
+          {!checkingLink && !sessionReady && !successMessage && (
             <div className="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-4 rounded-xl mb-6 flex items-start gap-3">
               <svg className="w-5 h-5 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />

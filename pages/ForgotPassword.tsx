@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { supabase } from '../services/supabaseClient';
+import { requestPasswordReset } from '../services/passwordManagementService';
 
 const ForgotPassword: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -15,22 +15,11 @@ const ForgotPassword: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(
-        email.trim(),
-        {
-          // After clicking the link in the email, Supabase redirects here
-          redirectTo: `${window.location.origin}/reset-password`,
-        }
+      await requestPasswordReset(email);
+      setSuccessMessage(
+        'If an active account matches that email, a working reset link has been sent. Check your inbox and spam folder.'
       );
-
-      if (resetError) {
-        setError(resetError.message || 'Failed to send reset email. Please try again.');
-      } else {
-        setSuccessMessage(
-          'Password reset link sent! Check your email inbox and follow the instructions.'
-        );
-        setEmail('');
-      }
+      setEmail('');
     } catch (err) {
       console.error('[ForgotPassword] unexpected error', err);
       setError('An unexpected error occurred. Please try again.');

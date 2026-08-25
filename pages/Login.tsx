@@ -3,6 +3,7 @@ import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { DeviceConflictError, SupabaseAuthError } from '../context/AuthContext';
 import GoogleIcon from '../components/icons/GoogleIcon';
+import { supabase } from '../services/supabaseClient';
 
 const FloatingIcon: React.FC<{ children: React.ReactNode; delay?: string; className?: string }> = ({ children, delay = '0s', className = '' }) => (
   <div 
@@ -44,7 +45,11 @@ const Login: React.FC = () => {
   useEffect(() => {
     const isActive = (user?.status || '').toString().toLowerCase() === 'active';
     if (user && isActive) {
-      navigate('/dashboard');
+      let mounted = true;
+      void supabase.auth.getUser().then(({ data }) => {
+        if (mounted) navigate(data.user?.user_metadata?.must_change_password ? '/reset-password' : '/dashboard');
+      });
+      return () => { mounted = false; };
     }
   }, [user, navigate]);
 
@@ -85,7 +90,8 @@ const Login: React.FC = () => {
       console.log('[Login] login() returned:', loggedInUser);
 
       if (loggedInUser) {
-        navigate('/dashboard');
+        const { data } = await supabase.auth.getUser();
+        navigate(data.user?.user_metadata?.must_change_password ? '/reset-password' : '/dashboard');
       } else {
         // covers: wrong password, Supabase user not found,
         // or status not Active (if you add that gate in AuthContext)
@@ -116,7 +122,8 @@ const Login: React.FC = () => {
     try {
       const loggedInUser = await forceLogin(email, password);
       if (loggedInUser) {
-        navigate('/dashboard');
+        const { data } = await supabase.auth.getUser();
+        navigate(data.user?.user_metadata?.must_change_password ? '/reset-password' : '/dashboard');
       } else {
         setError('Invalid email or password.');
       }
