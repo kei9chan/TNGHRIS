@@ -8,6 +8,13 @@ import {
   BODApproverConfig,
   Role,
 } from '../types';
+import {
+  getApprovalStatusLabel,
+  getApprovalStepLabel,
+  getOvertimeWeekDetails,
+  getTimeApprovalReason,
+  isDirectManagerApprovalStatus,
+} from '../utils/approvalPresentation';
 
 // ---------------------------------------------------------------------------
 // Default Configs
@@ -171,10 +178,17 @@ export const sendConditionalApprovalEmails = async (
   const payload = data as any;
   const openUrl = `${window.location.origin}${payload.link}`;
   const escapeHtml = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char] || char));
-  const managerStage = ['Pending', 'PendingGM', 'WFH_PENDING_DEPT_HEAD_APPROVAL', 'WFH_PENDING_GM_APPROVAL', 'Submitted'].includes(payload.status);
+  const managerStage = isDirectManagerApprovalStatus(payload.status) || ['PendingGM', 'WFH_PENDING_GM_APPROVAL'].includes(payload.status);
+  const threshold = getTimeApprovalReason(requestType, payload.context, payload.context?.reason, payload.context?.requiresBod) || 'Standard approval path.';
+  const statusLabel = getApprovalStatusLabel(payload.status);
+  const currentStep = getApprovalStepLabel(payload.status);
+  const week = requestType === 'overtime' ? getOvertimeWeekDetails(payload.context) : undefined;
   await Promise.all((payload.recipients || []).map(async (recipient: any) => {
-    const threshold = payload.context?.reason || 'Configured threshold exceeded';
-    const message = `${payload.employeeName} submitted a ${payload.requestLabel} requiring your approval. ${threshold} Open: ${openUrl}`;
+    const weekCopy = week?.range ? ` Week covered: ${week.range}.` : '';
+    const message = `${payload.employeeName} submitted a ${payload.requestLabel} requiring your approval. Status: ${statusLabel}.${weekCopy} ${threshold} Open: ${openUrl}`;
+    const weekHtml = week?.range
+      ? `<p><b>Week covered:</b> ${escapeHtml(week.range)}<br><span style="color:#64748b">${escapeHtml(week.workweekNote)}</span></p><p><b>Details:</b> ${escapeHtml(week.detail || threshold)}</p><p><b>Weekly OT:</b> ${escapeHtml(week.weeklyOt || '—')}</p><p><b>Weekly total:</b> ${escapeHtml(week.total || '—')}</p>`
+      : `<p><b>Exception / reason:</b> ${escapeHtml(threshold)}</p>`;
     const response = await fetch('/api/send-email', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -182,7 +196,7 @@ export const sendConditionalApprovalEmails = async (
         to: recipient.email,
         subject: `[TNG HRIS] ${payload.requestLabel} requires your approval`,
         message,
-        html: `<div style="font-family:Arial,sans-serif;line-height:1.5"><h2>Approval required</h2><p><b>Employee:</b> ${escapeHtml(payload.employeeName)}</p><p><b>Request:</b> ${escapeHtml(payload.requestLabel)}</p><p><b>Dates / duration:</b> ${escapeHtml(payload.requestDates)}</p><p><b>Business unit / department:</b> ${escapeHtml(payload.businessUnit)} / ${escapeHtml(payload.department)}</p><p><b>Threshold calculation:</b> ${escapeHtml(threshold)}</p>${managerStage ? '' : '<p><b>Manager recommendation:</b> Approved — proceed to final review</p>'}<p><b>Status:</b> ${managerStage ? 'Pending Direct Manager Review' : 'Pending BOD Final Approval'}</p><p><a href="${escapeHtml(openUrl)}" style="display:inline-block;background:#4f46e5;color:white;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">Open Request</a></p></div>`,
+        html: `<div style="font-family:Arial,sans-serif;line-height:1.5"><h2>Approval required</h2><p><b>Employee:</b> ${escapeHtml(payload.employeeName)}</p><p><b>Request:</b> ${escapeHtml(payload.requestLabel)}</p><p><b>Dates / duration:</b> ${escapeHtml(payload.requestDates)}</p><p><b>Business unit / department:</b> ${escapeHtml(payload.businessUnit)} / ${escapeHtml(payload.department)}</p><p><b>Current step:</b> ${escapeHtml(currentStep)}</p><p><b>Status:</b> ${escapeHtml(statusLabel)}</p>${weekHtml}${managerStage && payload.context?.requiresBod ? '<p><b>Next step:</b> BOD approval</p>' : ''}${managerStage ? '' : '<p><b>Manager recommendation:</b> Approved — proceed to final review</p>'}<p><a href="${escapeHtml(openUrl)}" style="display:inline-block;background:#4f46e5;color:white;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">Open Request</a></p></div>`,
       }),
     });
     if (!response.ok) throw new Error(`Approval email failed for ${recipient.email}`);

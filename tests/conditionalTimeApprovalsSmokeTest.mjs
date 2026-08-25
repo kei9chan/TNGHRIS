@@ -33,8 +33,9 @@ assert.match(settings, /Conditional Approval Routing/);
 assert.match(settings, /active BOD and mark that BOD as required/);
 assert.match(settings, /Reason \/ change note/);
 assert.match(service, /Open Request/);
-assert.match(service, /Pending Direct Manager Review/);
-assert.match(service, /Pending BOD Final Approval/);
+assert.match(service, /getApprovalStepLabel/);
+assert.match(service, /getApprovalStatusLabel/);
+assert.match(service, /BOD approval/);
 for (const source of [leave, wfh, overtime]) {
   assert.match(source, /processTimeRequestApproval/);
   assert.match(source, /sendConditionalApprovalEmails/);

@@ -18,6 +18,7 @@ import { processTimeRequestApproval, sendConditionalApprovalEmails } from '../..
 import { getApprovalRequestId } from '../../services/approvalDeepLinks';
 import { fetchLeaveRequestById } from '../../services/leaveService';
 import { hasPendingTimeApprovalAssignment } from '../../services/timeApprovalAssignmentService';
+import { getApprovalStatusLabel, getTimeApprovalReason } from '../../utils/approvalPresentation';
 
 type ActiveView = 'my_requests' | 'team_requests' | 'schedule';
 
@@ -92,6 +93,10 @@ const Leave: React.FC = () => {
             return LeaveRequestStatus.Cancelled;
           case 'draft':
             return LeaveRequestStatus.Draft;
+          case 'pendinggm':
+            return LeaveRequestStatus.PendingGM;
+          case 'pendingbod':
+            return LeaveRequestStatus.PendingBOD;
           case 'pending':
           default:
             return LeaveRequestStatus.Pending;
@@ -117,6 +122,9 @@ const Leave: React.FC = () => {
           approverId: r.approver_id || undefined,
           businessUnitId: r.business_unit_id || undefined,
           departmentId: r.department_id || undefined,
+          approvalRoute: r.approval_route || undefined,
+          approvalReason: r.approval_reason || undefined,
+          approvalContext: r.approval_context || undefined,
         }))
       );
     }
@@ -301,7 +309,7 @@ const Leave: React.FC = () => {
       const { error } = await supabase.from('leave_requests').update(payload).eq('id', requestToSave.id);
       if (error) throw error;
     } else {
-      const { data: inserted, error } = await supabase.from('leave_requests').insert(payload).select('id').single();
+      const { data: inserted, error } = await supabase.from('leave_requests').insert(payload).select('id, status, approval_route, approval_reason, approval_context').single();
       if (error) throw error;
       savedId = inserted.id;
     }
@@ -310,10 +318,16 @@ const Leave: React.FC = () => {
     if (status === LeaveRequestStatus.Pending && user.managerId) {
       try {
         const leaveTypeName = leaveTypes.find(lt => lt.id === requestToSave.leaveTypeId)?.name || 'Leave';
+        const { data: approvalDetails } = await supabase
+          .from('leave_requests')
+          .select('status, approval_route, approval_reason, approval_context')
+          .eq('id', savedId)
+          .maybeSingle();
+        const thresholdReason = getTimeApprovalReason('leave', approvalDetails?.approval_context, approvalDetails?.approval_reason, approvalDetails?.approval_route === 'BOD_REQUIRED');
         await createNotification({
           userId: user.managerId,
           title: '📋 Leave Request Pending Approval',
-          message: `${user.name} submitted a ${leaveTypeName} request (${requestToSave.durationDays || 1} day${(requestToSave.durationDays || 1) !== 1 ? 's' : ''}) for your approval.`,
+          message: `${user.name} submitted a ${leaveTypeName} request (${requestToSave.durationDays || 1} day${(requestToSave.durationDays || 1) !== 1 ? 's' : ''}). Status: ${getApprovalStatusLabel(approvalDetails?.status || finalStatus)}.${thresholdReason ? ` ${thresholdReason}` : ''}`,
           type: NotificationType.LEAVE_REQUEST,
           link: `/approvals?type=leave&item=${savedId}`,
         });
@@ -375,7 +389,7 @@ const Leave: React.FC = () => {
         userId: request.employeeId,
         title: approved ? '✅ Leave Request Approved' : '❌ Leave Request Rejected',
         message: approved
-          ? (result?.route === 'BOD_REQUIRED' ? `Your leave request was recommended by ${user.name} and is pending final approval. ${result?.context?.reason || ''}` : `Your leave request (${request.durationDays} day${request.durationDays !== 1 ? 's' : ''}) has been approved by ${user.name}.`)
+          ? (result?.route === 'BOD_REQUIRED' ? `Your leave request was recommended by ${user.name} and is pending BOD approval. ${getTimeApprovalReason('leave', result?.context, result?.context?.reason, true) || ''}` : `Your leave request (${request.durationDays} day${request.durationDays !== 1 ? 's' : ''}) has been approved by ${user.name}.`)
           : `Your leave request has been rejected by ${user.name}${notes ? `: "${notes}"` : '.'}`,
         type: NotificationType.LEAVE_DECISION,
         link: `/approvals?type=leave&item=${request.id}`,

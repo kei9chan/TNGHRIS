@@ -9,6 +9,7 @@ const assignModal = read('components/evaluation/AssignAwardModal.tsx');
 const awardsPage = read('pages/evaluation/Awards.tsx');
 const awardService = read('services/awardService.ts');
 const approvalCenter = read('pages/ApprovalCenter.tsx');
+const approvalDeepLinks = read('services/approvalDeepLinks.ts');
 const additionalApprovals = read('hooks/useAdditionalApprovals.ts');
 const notifications = read('services/notificationService.ts');
 
@@ -49,7 +50,8 @@ assert.match(awardsPage, /isDuplicatingTemplate/);
 
 assert.match(additionalApprovals, /pendingAwardApprovals/);
 assert.match(approvalCenter, /kind: 'award'/);
-assert.match(approvalCenter, /\/evaluation\/awards\?item=/);
+assert.match(approvalCenter, /getApprovalReviewUrl\('award', row\.id\)/);
+assert.match(approvalDeepLinks, /award: '\/evaluation\/awards'/);
 assert.match(notifications, /linkedType === 'award'.*getApprovalReviewUrl\(kind, requestId\)/s);
 
 console.log('Offboarding, unpaid leave, and awards workflow smoke tests passed.');

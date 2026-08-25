@@ -10,6 +10,14 @@ import { usePermissions } from '../../hooks/usePermissions';
 import FileUploader from '../ui/FileUploader';
 import { supabase } from '../../services/supabaseClient';
 import { useRef } from 'react';
+import {
+    formatApprovalNumber,
+    getApprovalStatusLabel,
+    getApprovalStepLabel,
+    getOvertimeWeekDetails,
+    getTimeApprovalNextStep,
+    getTimeApprovalReason,
+} from '../../utils/approvalPresentation';
 
 interface OTRequestModalProps {
     isOpen: boolean;
@@ -292,6 +300,12 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
         requestToEdit?.status === OTStatus.PendingBOD
     );
     const canApprove = can('OT', Permission.Approve) || !!canApproveOverride;
+    const approvalStep = requestToEdit ? getApprovalStepLabel(request.status) : '';
+    const approvalStatus = requestToEdit ? getApprovalStatusLabel(request.status) : '';
+    const requiresBod = request.approvalRoute === 'BOD_REQUIRED';
+    const approvalReason = requestToEdit ? getTimeApprovalReason('overtime', request.approvalContext, request.approvalReason, requiresBod) : undefined;
+    const nextStep = requestToEdit ? getTimeApprovalNextStep(request.status, requiresBod) : undefined;
+    const overtimeWeek = getOvertimeWeekDetails(request.approvalContext);
 
     // Auto-set approved hours for manager convenience
     useEffect(() => {
@@ -305,7 +319,7 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
             return (
                 <div className="flex flex-col gap-3 w-full sm:flex-row sm:items-center sm:justify-between">
                     <span className="text-sm text-gray-600 dark:text-gray-400 text-center sm:text-left">
-                        Planned: {plannedHours.toFixed(2)}h
+                        Planned: {formatApprovalNumber(plannedHours)}h
                     </span>
                     <div className="flex flex-col gap-2 w-full sm:w-auto sm:flex-row sm:gap-2">
                         <Button variant="secondary" onClick={onClose} className="w-full sm:w-auto">Cancel</Button>
@@ -323,7 +337,7 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
         return (
             <div className="flex flex-col gap-3 w-full sm:flex-row sm:items-center sm:justify-between">
                 <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400 text-center sm:text-left">
-                    Duration: {plannedHours.toFixed(2)} Hours
+                    Duration: {formatApprovalNumber(plannedHours)} Hours
                 </span>
                 <div className="flex flex-col gap-2 w-full sm:w-auto sm:flex-row sm:gap-2">
                     <Button variant="secondary" onClick={onClose} className="w-full sm:w-auto">Cancel</Button>
@@ -342,6 +356,19 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
             footer={renderFooter()}
         >
             <div className="space-y-4">
+                {requestToEdit && (
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-600 dark:bg-slate-800">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Current step</p><p className="mt-1 font-semibold text-slate-900 dark:text-white">{approvalStep}</p></div>
+                            <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Status</p><p className="mt-1"><span className="inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200">{approvalStatus}</span></p></div>
+                            {overtimeWeek.range && <div className="sm:col-span-2"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Week covered</p><p className="mt-1 font-semibold text-slate-900 dark:text-white">{overtimeWeek.range}</p><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{overtimeWeek.workweekNote}</p></div>}
+                            {(overtimeWeek.detail || approvalReason) && <div className="sm:col-span-2"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Details</p><p className="mt-1 text-slate-800 dark:text-slate-100">{overtimeWeek.detail || approvalReason}</p></div>}
+                            {overtimeWeek.weeklyOt && <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Weekly OT</p><p className="mt-1 font-semibold text-slate-900 dark:text-white">{overtimeWeek.weeklyOt}</p></div>}
+                            {overtimeWeek.total && <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Weekly total — {overtimeWeek.range || 'covered week'}</p><p className="mt-1 font-semibold text-slate-900 dark:text-white">{overtimeWeek.total}</p></div>}
+                        </div>
+                        {nextStep && <span className="mt-4 inline-flex rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700 dark:bg-violet-950 dark:text-violet-200">{nextStep}</span>}
+                    </div>
+                )}
                 {shiftInfo && (
                     <div className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 p-2 rounded">
                         <span className="font-semibold">Assigned Shift:</span> {shiftInfo}
@@ -475,7 +502,7 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
                 {(isManagerReviewing || isFinalized) && (
                      <div className="space-y-4 pt-4 mt-4 border-t border-gray-200 dark:border-gray-700">
                         <h4 className="text-lg font-medium text-gray-900 dark:text-white">
-                            {request.status === OTStatus.PendingBOD ? 'BOD Final Review' : "Reporting Manager's Review"}
+                            {request.status === OTStatus.PendingBOD ? 'BOD review' : 'Direct Manager review'}
                         </h4>
                          <Input
                             label="Approved Hours"

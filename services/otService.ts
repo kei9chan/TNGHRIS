@@ -21,6 +21,9 @@ type OtRequestRow = {
   updated_at?: string;
   is_converted?: boolean;
   converted_at?: string;
+  approval_route?: 'MANAGER_ONLY' | 'BOD_REQUIRED' | null;
+  approval_reason?: string | null;
+  approval_context?: Record<string, unknown> | null;
 };
 
 const mapRow = (row: OtRequestRow): OTRequest => ({
@@ -41,6 +44,9 @@ const mapRow = (row: OtRequestRow): OTRequest => ({
   paidOtType: (row.paid_ot_type as 'Regular Overtime' | 'Legal Holiday' | 'Special Holiday' | 'Rest Day') || undefined,
   isConverted: row.is_converted ?? false,
   convertedAt: row.converted_at ? new Date(row.converted_at) : undefined,
+  approvalRoute: row.approval_route || undefined,
+  approvalReason: row.approval_reason || undefined,
+  approvalContext: row.approval_context || undefined,
 });
 
 export const fetchOtRequests = async (): Promise<OTRequest[]> => {

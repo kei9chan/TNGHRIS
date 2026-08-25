@@ -18,6 +18,9 @@ type WfhRequestRow = {
   rejection_reason?: string | null;
   business_unit_id?: string | null;
   department_id?: string | null;
+  approval_route?: 'MANAGER_ONLY' | 'BOD_REQUIRED' | null;
+  approval_reason?: string | null;
+  approval_context?: Record<string, unknown> | null;
   created_at: string;
 };
 
@@ -37,6 +40,9 @@ const mapWfhRequest = (row: WfhRequestRow): WFHRequest => ({
   approvedAt: row.approved_at ? new Date(row.approved_at) : undefined,
   rejectionReason: row.rejection_reason || undefined,
   createdAt: new Date(row.created_at),
+  approvalRoute: row.approval_route || undefined,
+  approvalReason: row.approval_reason || undefined,
+  approvalContext: row.approval_context || undefined,
 });
 
 // ---------------------------------------------------------------------------

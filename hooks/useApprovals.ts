@@ -10,6 +10,7 @@ import {
     NotificationType,
     User, Role
 } from '../types';
+import { getTimeApprovalReason } from '../utils/approvalPresentation';
 
 interface UseApprovalsOptions {
     user: User | null;
@@ -289,7 +290,7 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
         if (request.employeeId) createNotification({
             userId: request.employeeId,
             title: approved ? (result?.route === 'BOD_REQUIRED' ? '🔄 Leave Request Forwarded for Final Approval' : '✅ Leave Request Approved') : '❌ Leave Request Rejected',
-            message: result?.context?.reason || `Your leave request was ${approved ? 'approved' : 'rejected'}.`,
+            message: getTimeApprovalReason('leave', result?.context, result?.context?.reason, result?.route === 'BOD_REQUIRED') || `Your leave request was ${approved ? 'approved' : 'rejected'}.`,
             type: approved ? NotificationType.LEAVE_APPROVED : NotificationType.LEAVE_DECISION,
             link: `/approvals?type=leave&item=${request.id}`,
         }).catch(error => console.error('Leave notification failed', error));
@@ -307,7 +308,7 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
             if (request.employeeId) createNotification({
                 userId: request.employeeId,
                 title: result?.route === 'BOD_REQUIRED' ? '🔄 WFH Request Forwarded for Final Approval' : '✅ WFH Request Approved',
-                message: result?.context?.reason || 'Your WFH request was approved.',
+                message: getTimeApprovalReason('wfh', result?.context, result?.context?.reason, result?.route === 'BOD_REQUIRED') || 'Your WFH request was approved.',
                 type: NotificationType.WFH_APPROVED,
                 link: `/approvals?type=wfh&item=${requestId}`,
             }).catch(error => console.error('WFH notification failed', error));
@@ -354,7 +355,7 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
             if (request.employeeId) createNotification({
                 userId: request.employeeId,
                 title: newStatus === OTStatus.Rejected ? '❌ OT Request Rejected' : (result?.route === 'BOD_REQUIRED' ? '🔄 OT Request Forwarded for Final Approval' : '✅ OT Request Approved'),
-                message: result?.context?.reason || `Your overtime request was ${newStatus === OTStatus.Approved ? 'approved' : 'rejected'}.`,
+                message: getTimeApprovalReason('overtime', result?.context, result?.context?.reason, result?.route === 'BOD_REQUIRED') || `Your overtime request was ${newStatus === OTStatus.Approved ? 'approved' : 'rejected'}.`,
                 type: newStatus === OTStatus.Approved ? NotificationType.OT_APPROVED : NotificationType.OT_REJECTED,
                 link: `/approvals?type=overtime&item=${request.id}`,
             }).catch(error => console.error('OT notification failed', error));

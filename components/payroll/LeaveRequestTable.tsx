@@ -2,6 +2,7 @@
 import React from 'react';
 import { LeaveRequest, LeaveRequestStatus } from '../../types';
 import Button from '../ui/Button';
+import { getApprovalStatusLabel } from '../../utils/approvalPresentation';
 
 interface LeaveRequestTableProps {
     requests: LeaveRequest[];
@@ -16,6 +17,8 @@ const getStatusColor = (status: LeaveRequestStatus) => {
     switch(status) {
         case LeaveRequestStatus.Approved: return 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-200';
         case LeaveRequestStatus.Pending: return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-200';
+        case LeaveRequestStatus.PendingGM: return 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-200';
+        case LeaveRequestStatus.PendingBOD: return 'bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-200';
         case LeaveRequestStatus.Rejected:
         case LeaveRequestStatus.Cancelled: return 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200';
         case LeaveRequestStatus.Draft:
@@ -70,7 +73,7 @@ const LeaveRequestTable: React.FC<LeaveRequestTableProps> = ({ requests, leaveTy
                                     }
                                   }}
                                 >
-                                    {req.status}
+                                    {getApprovalStatusLabel(req.status)}
                                 </span>
                                 {(req.status === LeaveRequestStatus.Rejected || req.status === LeaveRequestStatus.Cancelled) && rejectionNote && (
                                     <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-xs truncate cursor-pointer" title={rejectionNote}>

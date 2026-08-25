@@ -1,9 +1,17 @@
 
 import React, { useState, useEffect } from 'react';
-import { WFHRequest, WFHRequestStatus } from '../../types';
+import { WFHRequest } from '../../types';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Textarea from '../ui/Textarea';
+import {
+    approvalContextNumber,
+    formatApprovalNumber,
+    getApprovalStatusLabel,
+    getApprovalStepLabel,
+    getTimeApprovalNextStep,
+    getTimeApprovalReason,
+} from '../../utils/approvalPresentation';
 
 interface WFHReviewModalProps {
     isOpen: boolean;
@@ -27,9 +35,14 @@ const WFHReviewModal: React.FC<WFHReviewModalProps> = ({ isOpen, onClose, reques
 
     if (!request) return null;
 
-    const isDeptHeadReview = request.status === WFHRequestStatus.PendingDeptHead;
-    const isBODReview = request.status === WFHRequestStatus.PendingBOD;
-    const stageText = isDeptHeadReview ? 'Dept Head Review' : isBODReview ? 'BOD Review' : '';
+    const stageText = getApprovalStepLabel(request.status);
+    const statusText = getApprovalStatusLabel(request.status);
+    const monthlyWfhDays = approvalContextNumber(request.approvalContext, 'monthWfhDays');
+    const threshold = approvalContextNumber(request.approvalContext, 'threshold');
+    const requiresBod = request.approvalRoute === 'BOD_REQUIRED';
+    const approvalReason = getTimeApprovalReason('wfh', request.approvalContext, request.approvalReason, requiresBod);
+    const nextStep = getTimeApprovalNextStep(request.status, requiresBod);
+    const monthCovered = request.approvalContext?.month ? String(request.approvalContext.month) : undefined;
     const hasEndDate = !!request.endDate && new Date(request.endDate).getTime() !== new Date(request.date).getTime();
     const dayCount = hasEndDate
         ? Math.round((new Date(request.endDate!).getTime() - new Date(request.date).getTime()) / (1000 * 60 * 60 * 24)) + 1
@@ -63,7 +76,7 @@ const WFHReviewModal: React.FC<WFHReviewModalProps> = ({ isOpen, onClose, reques
         <Modal
             isOpen={isOpen}
             onClose={onClose}
-            title={`Review WFH Request ${stageText ? `(${stageText})` : ''}`}
+            title={`Review WFH Request (${stageText})`}
             footer={
                 <div className="flex justify-end w-full space-x-2">
                     <Button variant="secondary" onClick={onClose}>Close</Button>
@@ -78,16 +91,14 @@ const WFHReviewModal: React.FC<WFHReviewModalProps> = ({ isOpen, onClose, reques
         >
             <div className="space-y-6">
                 {/* Status stage badge */}
-                {stageText && (
-                    <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                         <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300">
-                            ⏳ {stageText}
+                            {statusText}
                         </span>
                         <span className="text-xs text-gray-500 dark:text-gray-400">
                             Submitted {request.createdAt ? new Date(request.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
                         </span>
-                    </div>
-                )}
+                </div>
 
                 <div className="p-4 bg-teal-50 dark:bg-teal-900/20 rounded-lg border border-teal-100 dark:border-teal-800">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -136,6 +147,19 @@ const WFHReviewModal: React.FC<WFHReviewModalProps> = ({ isOpen, onClose, reques
                         )}
                     </div>
                 </div>
+
+                {(approvalReason || monthlyWfhDays !== undefined || threshold !== undefined) && (
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-600 dark:bg-slate-800">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Current step</p><p className="mt-1 font-semibold text-slate-900 dark:text-white">{stageText}</p></div>
+                            {monthCovered && <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Month covered</p><p className="mt-1 font-semibold text-slate-900 dark:text-white">{monthCovered}</p></div>}
+                            {approvalReason && <div className="sm:col-span-2"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Details</p><p className="mt-1 text-slate-800 dark:text-slate-100">{approvalReason}</p></div>}
+                            {monthlyWfhDays !== undefined && <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Monthly WFH</p><p className="mt-1 font-semibold text-slate-900 dark:text-white">{formatApprovalNumber(monthlyWfhDays)} day{monthlyWfhDays === 1 ? '' : 's'}</p></div>}
+                            {threshold !== undefined && <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Monthly limit</p><p className="mt-1 font-semibold text-slate-900 dark:text-white">{formatApprovalNumber(threshold)} days</p></div>}
+                        </div>
+                        {nextStep && <span className="mt-4 inline-flex rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700 dark:bg-violet-950 dark:text-violet-200">{nextStep}</span>}
+                    </div>
+                )}
 
                 {isRejecting && (
                     <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg animate-fade-in-down">

@@ -26,7 +26,9 @@ const timeAssignmentService = read('services/timeApprovalAssignmentService.ts');
 const checks = [
   [page.includes('Approval Center'), 'Approval Center heading'],
   [page.includes('Approve selected'), 'selected bulk action'],
-  [page.includes('Approve group'), 'group bulk action'],
+  [page.includes('Approve standard'), 'standard-request bulk action'],
+  [page.includes('Select all standard requests') && !page.includes('Select all eligible'), 'plain-language standard selection'],
+  [page.includes('Exception / Reason') && !page.includes("'Classification'"), 'plain-language reason column'],
   [page.includes('I confirm these requests meet policy'), 'confirmation safeguard'],
   [page.includes('Overlapping leave request'), 'exception detection'],
   [page.includes('All business units') && page.includes('All departments'), 'scope filters'],

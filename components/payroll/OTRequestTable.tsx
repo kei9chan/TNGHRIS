@@ -24,9 +24,9 @@ const statusColors: { [key in OTStatus]: string } = {
 
 const statusLabels: { [key in OTStatus]: string } = {
     [OTStatus.Draft]: 'Draft',
-    [OTStatus.Submitted]: 'Pending Manager Approval',
-    [OTStatus.PendingGM]: 'Pending GM Approval',
-    [OTStatus.PendingBOD]: 'Pending BOD Approval',
+    [OTStatus.Submitted]: 'Pending Direct Manager approval',
+    [OTStatus.PendingGM]: 'Pending GM approval',
+    [OTStatus.PendingBOD]: 'BOD approval',
     [OTStatus.Approved]: 'Approved',
     [OTStatus.Rejected]: 'Rejected',
 };
@@ -68,7 +68,7 @@ const OTRequestTable: React.FC<OTRequestTableProps> = ({ requests, onEdit, onDel
                                     )}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{req.startTime} - {req.endTime}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-700 dark:text-gray-300">{req.approvedHours?.toFixed(2) ?? 'N/A'}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-700 dark:text-gray-300">{req.approvedHours === undefined ? 'N/A' : req.approvedHours.toLocaleString('en-PH', { maximumFractionDigits: 2 })}</td>
                                 <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate" title={req.reason}>{req.reason}</td>
                                 <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate" title={req.managerNote}>{req.managerNote || 'N/A'}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm">

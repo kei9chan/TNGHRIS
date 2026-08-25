@@ -7,6 +7,14 @@ import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
 import FileUploader from '../ui/FileUploader';
+import {
+    approvalContextNumber,
+    formatApprovalNumber,
+    getApprovalStatusLabel,
+    getApprovalStepLabel,
+    getTimeApprovalNextStep,
+    getTimeApprovalReason,
+} from '../../utils/approvalPresentation';
 
 interface LeaveRequestModalProps {
   isOpen: boolean;
@@ -23,8 +31,17 @@ const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({ isOpen, onClose, 
     const [managerNotes, setManagerNotes] = useState('');
 
     const isNewRequest = !request;
-    const isManagerView = request && request.employeeId !== user?.id && request.status === LeaveRequestStatus.Pending;
+    const isManagerView = Boolean(request && request.employeeId !== user?.id && [LeaveRequestStatus.Pending, LeaveRequestStatus.PendingGM, LeaveRequestStatus.PendingBOD].includes(request.status));
     const canEdit = isNewRequest || request?.status === LeaveRequestStatus.Draft;
+    const approvalStep = request ? getApprovalStepLabel(request.status) : '';
+    const approvalStatus = request ? getApprovalStatusLabel(request.status) : '';
+    const requiresBod = request?.approvalRoute === 'BOD_REQUIRED';
+    const approvalReason = request ? getTimeApprovalReason('leave', request.approvalContext, request.approvalReason, requiresBod) : undefined;
+    const nextStep = request ? getTimeApprovalNextStep(request.status, requiresBod) : undefined;
+    const requestDays = approvalContextNumber(request?.approvalContext, 'requestDays');
+    const yearLeaveDays = approvalContextNumber(request?.approvalContext, 'yearLeaveDays');
+    const threshold = approvalContextNumber(request?.approvalContext, 'threshold');
+    const monthsRemaining = approvalContextNumber(request?.approvalContext, 'monthsRemaining');
 
     useEffect(() => {
         if (isOpen) {
@@ -116,8 +133,18 @@ const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({ isOpen, onClose, 
         >
             <div className="space-y-4">
                 {request && (
-                    <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-md">
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-600 dark:bg-slate-800">
                         <p><span className="font-semibold">Employee:</span> {request.employeeName}</p>
+                        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Current step</p><p className="mt-1 font-semibold">{approvalStep}</p></div>
+                            <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Status</p><p className="mt-1"><span className="inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200">{approvalStatus}</span></p></div>
+                            <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Leave period</p><p className="mt-1 font-semibold">{new Date(request.startDate).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}–{new Date(request.endDate).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}</p></div>
+                            {monthsRemaining !== undefined && <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Months remaining</p><p className="mt-1 font-semibold">{formatApprovalNumber(monthsRemaining)}</p></div>}
+                            {approvalReason && <div className="sm:col-span-2"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Details</p><p className="mt-1">{approvalReason}</p></div>}
+                            {(requestDays !== undefined || request.durationDays !== undefined) && <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Leave requested</p><p className="mt-1 font-semibold">{formatApprovalNumber(requestDays ?? request.durationDays)} days</p></div>}
+                            {yearLeaveDays !== undefined && <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Year leave total</p><p className="mt-1 font-semibold">{formatApprovalNumber(yearLeaveDays)} days{threshold !== undefined ? ` / ${formatApprovalNumber(threshold)}-day allowance` : ''}</p></div>}
+                        </div>
+                        {nextStep && <span className="mt-4 inline-flex rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700 dark:bg-violet-950 dark:text-violet-200">{nextStep}</span>}
                     </div>
                  )}
 

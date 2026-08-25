@@ -22,6 +22,9 @@ type LeaveRequestRow = {
   approver_id?: string | null;
   business_unit_id?: string | null;
   department_id?: string | null;
+  approval_route?: 'MANAGER_ONLY' | 'BOD_REQUIRED' | null;
+  approval_reason?: string | null;
+  approval_context?: Record<string, unknown> | null;
   created_at?: string | null;
 };
 
@@ -65,6 +68,9 @@ const mapLeaveRequest = (row: LeaveRequestRow): LeaveRequest => ({
   historyLog: Array.isArray(row.history_log) ? row.history_log : [],
   attachmentUrl: row.attachment_url || undefined,
   approverId: row.approver_id || undefined,
+  approvalRoute: row.approval_route || undefined,
+  approvalReason: row.approval_reason || undefined,
+  approvalContext: row.approval_context || undefined,
 });
 
 const mapLeaveType = (row: LeaveTypeRow): LeaveType => ({

@@ -23,13 +23,14 @@ import {
 } from '../../services/wfhService';
 import { getApprovalRequestId } from '../../services/approvalDeepLinks';
 import { hasPendingTimeApprovalAssignment } from '../../services/timeApprovalAssignmentService';
+import { getApprovalStatusLabel, getTimeApprovalReason } from '../../utils/approvalPresentation';
 
 
 const WFH_STATUS_LABELS: Record<WFHRequestStatus, string> = {
     [WFHRequestStatus.PendingSubmission]: 'Pending Submission',
-    [WFHRequestStatus.PendingDeptHead]: 'Pending Dept Head Approval',
-    [WFHRequestStatus.PendingGM]: 'Pending GM Approval',
-    [WFHRequestStatus.PendingBOD]: 'Pending BOD Approval',
+    [WFHRequestStatus.PendingDeptHead]: 'Pending Direct Manager approval',
+    [WFHRequestStatus.PendingGM]: 'Pending GM approval',
+    [WFHRequestStatus.PendingBOD]: 'BOD approval',
     [WFHRequestStatus.ForTimekeeping]: 'For Timekeeping',
     [WFHRequestStatus.Approved]: 'Approved',
     [WFHRequestStatus.Rejected]: 'Rejected',
@@ -124,6 +125,7 @@ const WFHRequests: React.FC = () => {
           employeeId: r.employee_id,
           employeeName: r.employee_name,
           date: new Date(r.date),
+          endDate: r.end_date ? new Date(r.end_date) : undefined,
           reason: r.reason,
           status: r.status as WFHRequestStatus,
           reportLink: r.report_link || undefined,
@@ -131,6 +133,9 @@ const WFHRequests: React.FC = () => {
           approvedAt: r.approved_at ? new Date(r.approved_at) : undefined,
           rejectionReason: r.rejection_reason || undefined,
           createdAt: r.created_at ? new Date(r.created_at) : new Date(),
+          approvalRoute: r.approval_route || undefined,
+          approvalReason: r.approval_reason || undefined,
+          approvalContext: r.approval_context || undefined,
         }))
       );
     }
@@ -260,7 +265,7 @@ const WFHRequests: React.FC = () => {
                   createNotification({
                     userId: user.managerId,
                     title: '📋 WFH Request Pending Approval',
-                    message: `${user.name} submitted a Work From Home request for ${new Date(inserted.date).toLocaleDateString()} for your approval.`,
+                    message: `${user.name} submitted a Work From Home request for ${new Date(inserted.date).toLocaleDateString()}. Status: ${getApprovalStatusLabel(inserted.status)}.${getTimeApprovalReason('wfh', inserted.approvalContext, inserted.approvalReason, inserted.approvalRoute === 'BOD_REQUIRED') ? ` ${getTimeApprovalReason('wfh', inserted.approvalContext, inserted.approvalReason, inserted.approvalRoute === 'BOD_REQUIRED')}` : ''}`,
                     type: NotificationType.WFH_SUBMITTED,
                     link: `/approvals?type=wfh&item=${inserted.id}`,
                   }).catch(e => console.error('Failed to send WFH submission notification', e));
@@ -287,7 +292,7 @@ const WFHRequests: React.FC = () => {
         if (req.employeeId) createNotification({
           userId: req.employeeId,
           title: result?.route === 'BOD_REQUIRED' ? '🔄 WFH Request Forwarded for Final Approval' : '✅ WFH Request Approved',
-          message: result?.context?.reason || 'Your WFH request was approved.',
+          message: getTimeApprovalReason('wfh', result?.context, result?.context?.reason, result?.route === 'BOD_REQUIRED') || 'Your WFH request was approved.',
           type: NotificationType.WFH_APPROVED,
           link: `/approvals?type=wfh&item=${requestId}`,
         }).catch(console.error);

@@ -21,6 +21,7 @@ import { processTimeRequestApproval, sendConditionalApprovalEmails } from '../..
 import { supabase } from '../../services/supabaseClient';
 import { getApprovalRequestId } from '../../services/approvalDeepLinks';
 import { hasPendingTimeApprovalAssignment } from '../../services/timeApprovalAssignmentService';
+import { getApprovalStatusLabel, getOvertimeWeekDetails, getTimeApprovalReason } from '../../utils/approvalPresentation';
 
 type Tab = 'my_ot' | 'team_approvals' | 'hr_verification' | 'calendar' | 'ledger';
 
@@ -434,10 +435,12 @@ const OvertimeRequests: React.FC = () => {
 
                 // Notify the manager that an OT request needs their approval
                 if (user.managerId) {
+                    const week = getOvertimeWeekDetails(saved.approvalContext);
+                    const thresholdReason = getTimeApprovalReason('overtime', saved.approvalContext, saved.approvalReason, saved.approvalRoute === 'BOD_REQUIRED');
                     createNotification({
                         userId: user.managerId,
                         title: '📋 OT Request Pending Approval',
-                        message: `${user.name} submitted an overtime request for your approval.`,
+                        message: `${user.name} submitted an overtime request. Status: ${getApprovalStatusLabel(saved.status)}.${week.range ? ` Week covered: ${week.range}.` : ''}${thresholdReason ? ` ${thresholdReason}` : ''}`,
                         type: NotificationType.OT_SUBMITTED,
                         link: `/approvals?type=overtime&item=${saved.id}`,
                     }).catch(e => console.error('Failed to send OT submission notification', e));
@@ -471,7 +474,7 @@ const OvertimeRequests: React.FC = () => {
             if (requestToUpdate.employeeId) createNotification({
                 userId: requestToUpdate.employeeId,
                 title: newStatus === OTStatus.Rejected ? '❌ OT Request Rejected' : (result?.route === 'BOD_REQUIRED' ? '🔄 OT Request Forwarded for Final Approval' : '✅ OT Request Approved'),
-                message: result?.context?.reason || detailText,
+                message: getTimeApprovalReason('overtime', result?.context, result?.context?.reason, result?.route === 'BOD_REQUIRED') || detailText,
                 type: newStatus === OTStatus.Approved ? NotificationType.OT_APPROVED : NotificationType.OT_REJECTED,
                 link: `/approvals?type=overtime&item=${requestToUpdate.id}`,
             }).catch(console.error);
