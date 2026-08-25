@@ -31,7 +31,8 @@
     "test:mandatory-bod-workflows": "node tests/mandatoryBodAwardsRequisitionsSmokeTest.mjs",
     "test:nte-bod-outcomes": "node tests/nteBodOutcomeSmokeTest.mjs",
     "test:incident-universal-filing": "node tests/incidentReportUniversalFilingSmokeTest.mjs",
-    "test:password-recovery": "node tests/passwordRecoverySmokeTest.mjs"
+    "test:password-recovery": "node tests/passwordRecoverySmokeTest.mjs",
+    "test:mobile-approval-ux": "node tests/mobileApprovalUxSmokeTest.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.84.0",

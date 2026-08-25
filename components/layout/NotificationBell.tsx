@@ -149,7 +149,7 @@ const NotificationBell: React.FC = () => {
     const unreadCount = notifications.filter(n => !n.isRead).length;
 
     return (
-        <div className="relative mr-4" ref={dropdownRef}>
+        <div className="relative" ref={dropdownRef}>
             {/* Bell button */}
             <button
                 id="notification-bell-btn"
@@ -169,7 +169,7 @@ const NotificationBell: React.FC = () => {
             {isOpen && (
                 <div
                     id="notification-dropdown"
-                    className="origin-top-right absolute right-0 mt-2 w-80 sm:w-96 rounded-xl shadow-2xl bg-white dark:bg-slate-800 ring-1 ring-black ring-opacity-5 dark:ring-white/10 z-50 overflow-hidden"
+                    className="fixed left-4 right-4 top-16 z-50 mt-2 overflow-hidden rounded-xl bg-white shadow-2xl ring-1 ring-black/5 dark:bg-slate-800 dark:ring-white/10 sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:w-96 sm:origin-top-right"
                 >
                     {/* Header */}
                     <div className="px-4 py-3 border-b border-gray-100 dark:border-slate-700 flex justify-between items-center bg-gray-50 dark:bg-slate-700/50">

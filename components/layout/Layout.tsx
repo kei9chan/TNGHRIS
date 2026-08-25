@@ -28,7 +28,7 @@ const Layout: React.FC = () => {
   const isAdminSection = location.pathname.startsWith('/admin');
 
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-slate-900">
+    <div className="min-h-screen overflow-x-hidden bg-gray-100 dark:bg-slate-900">
       {/* Main Header - z-40 to stay above everything */}
       <div className="sticky top-0 z-40">
         <Header />

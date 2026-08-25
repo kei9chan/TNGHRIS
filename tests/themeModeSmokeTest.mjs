@@ -17,8 +17,10 @@ assert.doesNotMatch(themeContext, /prefers-color-scheme/, 'Theme provider must n
 assert.match(themeContext, /document\.documentElement\.classList\.toggle\('dark'/, 'Theme provider must update the root class');
 assert.match(app, /<ThemeProvider>/, 'Theme provider must wrap the app');
 
-assert.match(header, /Switch to \$\{theme === 'dark' \? 'day' : 'night'\} mode/, 'Header must expose an accessible theme toggle');
-assert.match(header, /theme === 'dark' \? 'Day' : 'Night'/, 'Header toggle must have a visible Day/Night label');
+assert.match(header, /aria-label="Appearance"/, 'Profile menu must expose an accessible appearance control');
+assert.match(header, /setTheme\('light'\)/, 'Profile menu must expose light mode');
+assert.match(header, /setTheme\('dark'\)/, 'Profile menu must expose dark mode');
+assert.doesNotMatch(header, /Switch to \$\{theme === 'dark'/, 'Theme control must not occupy the primary header');
 
 assert.match(approvalCenter, /dark:bg-slate-700 dark:text-white dark:placeholder:text-slate-300/, 'Approval controls must retain dark-mode contrast');
 assert.match(approvalCenter, /dark:disabled:bg-slate-600 dark:disabled:text-slate-100/, 'Disabled approver scope must remain readable');
@@ -28,4 +30,3 @@ assert.doesNotMatch(signaturePad, /prefers-color-scheme/, 'Signature pad must fo
 assert.match(signaturePad, /theme === 'dark'/, 'Signature pad must render using the selected app theme');
 
 console.log('Theme mode smoke test passed.');
-

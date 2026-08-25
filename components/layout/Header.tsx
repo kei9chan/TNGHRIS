@@ -34,6 +34,38 @@ const MoonIcon = () => (
     </svg>
 );
 
+const MenuIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+);
+
+const CloseIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18 18 6M6 6l12 12" />
+    </svg>
+);
+
+const MobileNavTree: React.FC<{ links: NavLink[]; depth?: number; onNavigate: () => void }> = ({ links, depth = 0, onNavigate }) => (
+    <div className={depth ? 'ml-3 border-l border-slate-200 pl-3 dark:border-slate-700' : 'space-y-4'}>
+        {links.map(link => link.children?.length ? (
+            <section key={`${depth}-${link.name}`} className={depth ? 'mb-3' : ''}>
+                <h3 className={`${depth ? 'text-xs' : 'text-sm'} mb-2 font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400`}>{link.name}</h3>
+                <MobileNavTree links={link.children} depth={depth + 1} onNavigate={onNavigate} />
+            </section>
+        ) : (
+            <RouterNavLink
+                key={`${depth}-${link.name}`}
+                to={link.path}
+                onClick={onNavigate}
+                className={({ isActive }) => `mb-1 flex min-h-11 items-center rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors ${isActive ? 'bg-indigo-600 text-white' : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800'}`}
+            >
+                {link.name}
+            </RouterNavLink>
+        ))}
+    </div>
+);
+
 const NavItem: React.FC<{ link: NavLink; hasEvaluationAccess: boolean }> = ({ link, hasEvaluationAccess }) => {
     const { user } = useAuth();
     const { can } = usePermissions();
@@ -69,13 +101,26 @@ const Header: React.FC = () => {
     const { user, logout } = useAuth();
     const { can } = usePermissions();
     const { settings } = useSettings();
-    const { theme, toggleTheme } = useTheme();
+    const { theme, setTheme } = useTheme();
     const navigate = useNavigate();
     const canViewEvaluation = can('Evaluation', Permission.View);
     const { hasAssignment: hasAssignedEvaluation } = useEvaluationAssignmentAccess(!canViewEvaluation);
     const hasEvaluationAccess = canViewEvaluation || hasAssignedEvaluation;
     const [isProfileMenuOpen, setProfileMenuOpen] = React.useState(false);
+    const [isMobileMenuOpen, setMobileMenuOpen] = React.useState(false);
     const profileMenuRef = React.useRef<HTMLDivElement>(null);
+    const location = useLocation();
+
+    const visibleMobileLinks = React.useMemo(() => {
+        const filterLinks = (links: NavLink[]): NavLink[] => links.flatMap(link => {
+            const children = link.children ? filterLinks(link.children) : [];
+            const hasDirectPermission = Boolean(link.requiredPermission && can(link.requiredPermission.resource, link.requiredPermission.permission));
+            const hasAssignmentOnlyAccess = link.name === 'Evaluation' && hasEvaluationAccess;
+            if (!hasDirectPermission && !hasAssignmentOnlyAccess && children.length === 0) return [];
+            return [{ ...link, children: children.length ? children : undefined }];
+        });
+        return filterLinks(NAV_LINKS);
+    }, [can, hasEvaluationAccess]);
 
     const handleLogout = () => {
         logout();
@@ -92,18 +137,47 @@ const Header: React.FC = () => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
+    React.useEffect(() => {
+        setMobileMenuOpen(false);
+        setProfileMenuOpen(false);
+    }, [location.pathname]);
+
+    React.useEffect(() => {
+        if (!isMobileMenuOpen) return;
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        const closeOnEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setMobileMenuOpen(false);
+        };
+        document.addEventListener('keydown', closeOnEscape);
+        return () => {
+            document.body.style.overflow = previousOverflow;
+            document.removeEventListener('keydown', closeOnEscape);
+        };
+    }, [isMobileMenuOpen]);
+
     return (
-        <header className="bg-slate-900 shadow-lg sticky top-0 z-20">
+        <header className="sticky top-0 z-20 bg-slate-900 shadow-lg">
             <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 xl:px-10">
                 <div className="flex items-center justify-between h-16">
                     <div className="flex items-center flex-1 min-w-0">
-                        <Link to="/dashboard" className="flex-shrink-0 text-white font-bold text-xl mr-4 flex items-center space-x-2">
+                        <button
+                            type="button"
+                            onClick={() => setMobileMenuOpen(true)}
+                            aria-label="Open navigation menu"
+                            aria-expanded={isMobileMenuOpen}
+                            aria-controls="mobile-navigation"
+                            className="mr-2 inline-flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl text-white hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-white lg:hidden"
+                        >
+                            <MenuIcon />
+                        </button>
+                        <Link to="/dashboard" className="mr-2 flex min-w-0 flex-shrink items-center space-x-2 font-bold text-white sm:mr-4 sm:text-xl">
                             {settings.appLogoUrl ? (
                                 <img src={settings.appLogoUrl} alt={`${settings.appName} logo`} className="h-8 w-auto" />
                             ) : null}
-                            <span>{settings.appName}</span>
+                            <span className="truncate">{settings.appName}</span>
                         </Link>
-                        <div className="flex-1 min-w-0">
+                        <div className="hidden min-w-0 flex-1 lg:block">
                             <div className="flex items-baseline space-x-4 overflow-x-auto scrollbar-hide">
                                 {NAV_LINKS.map((link) => (
                                     <NavItem key={link.name} link={link} hasEvaluationAccess={hasEvaluationAccess} />
@@ -111,21 +185,11 @@ const Header: React.FC = () => {
                             </div>
                         </div>
                     </div>
-                    <div className="flex items-center gap-2 pl-2 sm:pl-4">
-                        <button
-                            type="button"
-                            onClick={toggleTheme}
-                            aria-label={`Switch to ${theme === 'dark' ? 'day' : 'night'} mode`}
-                            title={`Switch to ${theme === 'dark' ? 'day' : 'night'} mode`}
-                            className="inline-flex h-10 items-center gap-1.5 rounded-full border border-slate-600 bg-slate-800 px-2.5 text-xs font-semibold text-white transition-colors hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-slate-900 sm:px-3 sm:text-sm"
-                        >
-                            {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
-                            <span>{theme === 'dark' ? 'Day' : 'Night'}</span>
-                        </button>
+                    <div className="flex flex-shrink-0 items-center gap-1 pl-1 sm:gap-2 sm:pl-4">
                         <NotificationBell />
                         <div className="relative" ref={profileMenuRef}>
                             <div>
-                                <button onClick={() => setProfileMenuOpen(!isProfileMenuOpen)} className="max-w-xs bg-slate-800 rounded-full flex items-center text-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-white" id="user-menu" aria-haspopup="true">
+                                <button onClick={() => setProfileMenuOpen(!isProfileMenuOpen)} className="flex h-11 w-11 max-w-xs items-center justify-center rounded-full bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-slate-900" id="user-menu" aria-haspopup="true" aria-expanded={isProfileMenuOpen}>
                                     <span className="sr-only">Open user menu</span>
                                     <div className="h-8 w-8 rounded-full bg-slate-700 text-white flex items-center justify-center">
                                        <UserIcon/>
@@ -133,16 +197,23 @@ const Header: React.FC = () => {
                                 </button>
                             </div>
                             {isProfileMenuOpen && (
-                                <div className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg py-1 bg-white ring-1 ring-black ring-opacity-5 z-20">
+                                <div className="absolute right-0 z-50 mt-2 w-[min(18rem,calc(100vw-2rem))] origin-top-right overflow-hidden rounded-xl bg-white py-1 shadow-2xl ring-1 ring-black/5 dark:bg-slate-800 dark:ring-white/10">
                                     <div className="px-4 py-2 text-sm text-gray-700 border-b">
-                                        <p className="font-semibold">{user?.name}</p>
-                                        <p className="text-xs text-gray-500">{user?.role}</p>
+                                        <p className="font-semibold dark:text-white">{user?.name}</p>
+                                        <p className="text-xs text-gray-500 dark:text-slate-300">{user?.role}</p>
                                     </div>
-                                    <RouterNavLink to="/my-profile" onClick={() => setProfileMenuOpen(false)} className="w-full text-left flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                    <RouterNavLink to="/my-profile" onClick={() => setProfileMenuOpen(false)} className="flex min-h-11 w-full items-center px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-slate-100 dark:hover:bg-slate-700">
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
                                         My Profile
                                     </RouterNavLink>
-                                    <button onClick={handleLogout} className="w-full text-left flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                    <div className="border-y border-slate-100 px-4 py-3 dark:border-slate-700">
+                                        <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-300">Appearance</p>
+                                        <div className="grid grid-cols-2 gap-2" role="group" aria-label="Appearance">
+                                            <button type="button" onClick={() => setTheme('light')} aria-pressed={theme === 'light'} className={`flex min-h-11 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold ${theme === 'light' ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700'}`}><SunIcon /> Light</button>
+                                            <button type="button" onClick={() => setTheme('dark')} aria-pressed={theme === 'dark'} className={`flex min-h-11 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold ${theme === 'dark' ? 'border-indigo-400 bg-indigo-950 text-indigo-200' : 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700'}`}><MoonIcon /> Dark</button>
+                                        </div>
+                                    </div>
+                                    <button onClick={handleLogout} className="flex min-h-11 w-full items-center px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-slate-100 dark:hover:bg-slate-700">
                                         <LogoutIcon />
                                         Sign out
                                     </button>
@@ -152,6 +223,21 @@ const Header: React.FC = () => {
                     </div>
                 </div>
             </div>
+            {isMobileMenuOpen && (
+                <div className="fixed inset-x-0 bottom-0 top-16 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation menu">
+                    <button type="button" className="absolute inset-0 bg-slate-950/55" onClick={() => setMobileMenuOpen(false)} aria-label="Close navigation menu" />
+                    <aside id="mobile-navigation" className="relative flex h-full w-[min(21rem,calc(100vw-3rem))] flex-col bg-white shadow-2xl dark:bg-slate-900">
+                        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+                            <div><p className="font-bold text-slate-900 dark:text-white">Menu</p><p className="text-xs text-slate-500 dark:text-slate-400">Your authorized modules</p></div>
+                            <button type="button" onClick={() => setMobileMenuOpen(false)} className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800" aria-label="Close navigation menu"><CloseIcon /></button>
+                        </div>
+                        <nav className="flex-1 overflow-y-auto overscroll-contain px-4 py-4" aria-label="Mobile navigation">
+                            <RouterNavLink to="/approvals" onClick={() => setMobileMenuOpen(false)} className={({ isActive }) => `mb-4 flex min-h-11 items-center rounded-xl px-3 py-2.5 text-sm font-bold ${isActive ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-200'}`}>Approval Center</RouterNavLink>
+                            <MobileNavTree links={visibleMobileLinks} onNavigate={() => setMobileMenuOpen(false)} />
+                        </nav>
+                    </aside>
+                </div>
+            )}
         </header>
     );
 };

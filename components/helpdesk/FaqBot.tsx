@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import Button from '../ui/Button';
 import { fetchKBArticles } from '../../services/helpdeskService';
 import { fetchMemos } from '../../services/memoService';
@@ -18,6 +18,7 @@ interface Message {
 }
 
 const FaqBot: React.FC = () => {
+    const location = useLocation();
     const [isOpen, setIsOpen] = useState(false);
     const [inputValue, setInputValue] = useState('');
     const [messages, setMessages] = useState<Message[]>([
@@ -28,6 +29,10 @@ const FaqBot: React.FC = () => {
     const [kbArticles, setKbArticles] = useState<KnowledgeBaseArticle[]>([]);
     const [memos, setMemos] = useState<Memo[]>([]);
     const [codeOfDiscipline, setCodeOfDiscipline] = useState<CodeOfDiscipline | null>(null);
+
+    useEffect(() => {
+        if (location.pathname === '/approvals' || location.pathname === '/dashboard') setIsOpen(false);
+    }, [location.pathname]);
 
     useEffect(() => {
         const loadData = async () => {
@@ -146,7 +151,7 @@ const FaqBot: React.FC = () => {
 
     return (
         <>
-            <div className={`fixed bottom-4 right-4 md:bottom-8 md:right-8 z-40 transition-all duration-300 ${isOpen ? 'opacity-0 scale-75' : 'opacity-100 scale-100'}`}>
+            <div className={`fixed bottom-4 right-4 z-40 transition-all duration-300 md:bottom-8 md:right-8 ${(location.pathname === '/approvals' || location.pathname === '/dashboard') ? 'hidden md:block' : ''} ${isOpen ? 'opacity-0 scale-75' : 'opacity-100 scale-100'}`}>
                 <button
                     onClick={() => setIsOpen(true)}
                     className="bg-indigo-600 text-white p-4 rounded-full shadow-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
