@@ -10,6 +10,7 @@ const requisitionsPage = read('pages/recruitment/Requisitions.tsx');
 const requisitionService = read('services/jobRequisitionService.ts');
 const migration = read('supabase/migrations/20260824183000_mandatory_bod_awards_requisitions.sql');
 const sequentialMigration = read('supabase/migrations/20260824210000_enforce_requisition_hr_then_bod.sql');
+const triggerPermissionRepair = read('supabase/migrations/20260825170000_repair_job_requisition_private_schema_trigger.sql');
 
 assert.match(awardService, /error\?\.code === '42703'/);
 assert.match(awardModal, /filteredTemplates/);
@@ -38,5 +39,9 @@ assert.match(sequentialMigration, /At least one active Board of Director approve
 assert.match(sequentialMigration, /'status', 'Pending',[\s\S]*'order', 1/);
 assert.match(sequentialMigration, /'status', 'Waiting'/);
 assert.match(sequentialMigration, /Board of Director approval must occur after HR Manager approval/);
+assert.match(triggerPermissionRepair, /enforce_job_requisition_bod_workflow\(\)[\s\S]*security definer/);
+assert.match(triggerPermissionRepair, /set search_path = ''/);
+assert.match(triggerPermissionRepair, /revoke all[\s\S]*from public, anon, authenticated/);
+assert.doesNotMatch(triggerPermissionRepair, /grant usage on schema private/);
 
 console.log('Mandatory BOD awards and requisitions smoke tests passed.');
