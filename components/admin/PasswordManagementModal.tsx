@@ -15,19 +15,24 @@ const PasswordManagementModal: React.FC<PasswordManagementModalProps> = ({ user,
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [manualResetLink, setManualResetLink] = useState('');
 
   const run = async (action: 'send_reset_link' | 'set_temporary_password') => {
     setSaving(true);
     setError('');
     setMessage('');
+    setManualResetLink('');
     try {
-      await manageUserPassword({
+      const result = await manageUserPassword({
         action,
         targetUserId: user.id,
         temporaryPassword: action === 'set_temporary_password' ? temporaryPassword : undefined,
       });
+      if (result.manualResetLink) setManualResetLink(result.manualResetLink);
       setMessage(action === 'send_reset_link'
-        ? `A working password-reset link was sent to ${user.email}.`
+        ? result.delivered
+          ? `A working password-reset link was sent to ${user.email}.`
+          : (result.warning || 'The email could not be delivered. Copy the secure reset link below and share it privately with the user.')
         : 'Temporary password created. Share it securely with the user.');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'The password action could not be completed.');
@@ -41,6 +46,11 @@ const PasswordManagementModal: React.FC<PasswordManagementModalProps> = ({ user,
     setMessage('Temporary password copied to the clipboard.');
   };
 
+  const copyResetLink = async () => {
+    await navigator.clipboard.writeText(manualResetLink);
+    setMessage('Secure reset link copied. Share it privately with the intended user; it expires after use.');
+  };
+
   return (
     <Modal isOpen onClose={onClose} title={`Password access — ${user.name}`} size="lg" footer={(
       <div className="flex justify-end"><Button variant="secondary" onClick={onClose}>Close</Button></div>
@@ -52,6 +62,13 @@ const PasswordManagementModal: React.FC<PasswordManagementModalProps> = ({ user,
 
       {message && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{message}</div>}
       {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+      {manualResetLink && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <p className="font-semibold">Email delivery is unavailable, but the secure reset link is ready.</p>
+          <p className="mt-1">Copy it and send it only to {user.name} through a private channel.</p>
+          <Button className="mt-3" variant="secondary" onClick={copyResetLink}>Copy secure reset link</Button>
+        </div>
+      )}
 
       <section className="rounded-lg border border-gray-200 p-4 dark:border-slate-600">
         <h4 className="font-semibold text-gray-900 dark:text-white">Send password-reset link</h4>

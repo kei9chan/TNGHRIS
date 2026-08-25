@@ -8,6 +8,22 @@ interface PasswordManagementRequest {
   temporaryPassword?: string;
 }
 
+export interface PasswordManagementResult {
+  ok: boolean;
+  delivered?: boolean;
+  warning?: string;
+  manualResetLink?: string;
+}
+
+const throwFunctionError = async (error: any): Promise<never> => {
+  let payload: any;
+  try {
+    payload = await error?.context?.json?.();
+  } catch { /* The response may not contain JSON. Preserve the original function error below. */ }
+  if (payload?.error) throw new Error(payload.error);
+  throw error instanceof Error ? error : new Error('The password service could not complete the request.');
+};
+
 export const requestPasswordReset = async (email: string) => {
   const { data, error } = await supabase.functions.invoke('password-management', {
     body: {
@@ -16,21 +32,21 @@ export const requestPasswordReset = async (email: string) => {
       redirectTo: `${window.location.origin}/reset-password`,
     },
   });
-  if (error) throw error;
+  if (error) return throwFunctionError(error);
   if (data?.error) throw new Error(data.error);
   return data;
 };
 
-export const manageUserPassword = async (request: PasswordManagementRequest) => {
+export const manageUserPassword = async (request: PasswordManagementRequest): Promise<PasswordManagementResult> => {
   const { data, error } = await supabase.functions.invoke('password-management', {
     body: {
       ...request,
       redirectTo: `${window.location.origin}/reset-password`,
     },
   });
-  if (error) throw error;
+  if (error) return throwFunctionError(error);
   if (data?.error) throw new Error(data.error);
-  return data;
+  return data as PasswordManagementResult;
 };
 
 export const generateTemporaryPassword = () => {

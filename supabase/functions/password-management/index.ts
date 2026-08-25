@@ -28,6 +28,17 @@ const encodeBase64 = (value: string) => {
 const encodeBase64Url = (value: string) => encodeBase64(value).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 const encodeHeader = (value: string) => `=?UTF-8?B?${encodeBase64(value)}?=`;
 
+const googleError = async (response: Response) => {
+  const payload = await response.json().catch(() => ({}));
+  const reason = payload?.error?.errors?.[0]?.reason;
+  const message = payload?.error?.message || payload?.error_description || `Google Gmail returned HTTP ${response.status}.`;
+  if (response.status === 403 && ['insufficientPermissions', 'forbidden'].includes(reason)) {
+    return 'Google is connected, but the saved authorization does not include Gmail send permission. Reconnect Google with the Gmail send scope.';
+  }
+  if (reason === 'accessNotConfigured') return 'Gmail API is not enabled for the connected Google Cloud project.';
+  return reason && !message.includes(reason) ? `${message} (${reason})` : message;
+};
+
 const allowedRedirect = (raw: unknown) => {
   try {
     const url = new URL(String(raw || 'https://hris.thenextperience.com/reset-password'));
@@ -53,9 +64,9 @@ const sendRecoveryEmail = async (to: string, actionLink: string) => {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token' }),
   });
-  if (!tokenResponse.ok) throw new Error('Password email delivery could not authenticate.');
+  if (!tokenResponse.ok) throw new Error(await googleError(tokenResponse));
   const tokenPayload = await tokenResponse.json();
-  if (!tokenPayload?.access_token) throw new Error('Password email delivery could not authenticate.');
+  if (!tokenPayload?.access_token) throw new Error('Google did not return an access token for password email delivery.');
 
   const safeLink = escapeHtml(actionLink);
   const plainText = `Reset your TNG HRIS password\n\nOpen this secure link to choose a new password:\n${actionLink}\n\nThis link expires and can be used only for password recovery. If you did not request this, you can ignore this email.`;
@@ -73,7 +84,7 @@ const sendRecoveryEmail = async (to: string, actionLink: string) => {
     method: 'POST', headers: { Authorization: `Bearer ${tokenPayload.access_token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ raw: encodeBase64Url(mime) }),
   });
-  if (!response.ok) throw new Error('Password reset email could not be delivered.');
+  if (!response.ok) throw new Error(await googleError(response));
 };
 
 Deno.serve(async (request: Request) => {
@@ -129,12 +140,27 @@ Deno.serve(async (request: Request) => {
   if (targetError || !target?.auth_user_id) return json({ error: 'The selected HRIS user has no linked login account.' }, 404);
   if (target.status !== 'Active') return json({ error: 'Password actions are unavailable for inactive accounts.' }, 409);
   const { data: actor } = await admin.from('hris_users').select('id,email').eq('auth_user_id', authData.user.id).single();
+  let result: Record<string, unknown> = { ok: true };
 
   if (action === 'send_reset_link') {
     const generated = await admin.auth.admin.generateLink({ type: 'recovery', email: target.email, options: { redirectTo } });
-    if (generated.error || !generated.data?.properties?.action_link) return json({ error: 'A reset link could not be generated for this account.' }, 502);
-    try { await sendRecoveryEmail(target.email, generated.data.properties.action_link); }
-    catch (error) { return json({ error: error instanceof Error ? error.message : 'Password reset email could not be delivered.' }, 502); }
+    if (generated.error || !generated.data?.properties?.action_link) {
+      console.error('Admin recovery-link generation failed', generated.error?.message || 'No action link returned.');
+      return json({ error: generated.error?.message || 'A reset link could not be generated for this account.' }, 502);
+    }
+    try {
+      await sendRecoveryEmail(target.email, generated.data.properties.action_link);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'Password reset email could not be delivered.';
+      console.error('Admin password recovery delivery failed:', reason);
+      result = {
+        ok: true,
+        delivered: false,
+        warning: `${reason} The secure reset link was generated and can be copied below.`,
+        manualResetLink: generated.data.properties.action_link,
+      };
+    }
+    if (!('delivered' in result)) result.delivered = true;
   } else if (action === 'set_temporary_password') {
     const temporaryPassword = String(body?.temporaryPassword || '');
     if (!strongPassword(temporaryPassword)) return json({ error: 'Temporary password must be at least 12 characters and include uppercase, lowercase, number, and symbol.' }, 400);
@@ -142,6 +168,7 @@ Deno.serve(async (request: Request) => {
     if (existing.error) return json({ error: 'The linked login account could not be loaded.' }, 502);
     const updated = await admin.auth.admin.updateUserById(target.auth_user_id, {
       password: temporaryPassword,
+      email_confirm: true,
       user_metadata: { ...(existing.data.user.user_metadata || {}), must_change_password: true },
     });
     if (updated.error) return json({ error: 'The temporary password could not be saved.' }, 502);
@@ -150,9 +177,12 @@ Deno.serve(async (request: Request) => {
   }
 
   if (actor?.id) await admin.from('audit_logs').insert({
-    user_id: actor.id, user_email: actor.email, action: action === 'send_reset_link' ? 'PASSWORD_RESET_SENT' : 'TEMPORARY_PASSWORD_SET',
+    user_id: actor.id, user_email: actor.email,
+    action: action === 'send_reset_link'
+      ? (result.delivered ? 'PASSWORD_RESET_SENT' : 'PASSWORD_RESET_LINK_GENERATED')
+      : 'TEMPORARY_PASSWORD_SET',
     entity: 'hris_user', entity_id: target.id,
     details: JSON.stringify({ targetEmail: target.email, sourceModule: 'Admin/UserManagement' }),
   });
-  return json({ ok: true });
+  return json(result);
 });
