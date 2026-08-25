@@ -1,11 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../services/supabaseClient';
 import { useAuth } from '../hooks/useAuth';
 import { useApprovals } from '../hooks/useApprovals';
 import { useAdditionalApprovals } from '../hooks/useAdditionalApprovals';
-import { Role } from '../types';
+import { OTStatus, Role } from '../types';
 import Button from '../components/ui/Button';
+import LeaveRequestModal from '../components/payroll/LeaveRequestModal';
+import OTRequestModal from '../components/payroll/OTRequestModal';
+import WFHReviewModal from '../components/payroll/WFHReviewModal';
 import { useSettings } from '../context/SettingsContext';
 import { ApprovalRequestKind, getApprovalRequestId, getApprovalReviewUrl } from '../services/approvalDeepLinks';
 import {
@@ -113,6 +116,7 @@ const ApprovalMobileCard: React.FC<{
 
 export default function ApprovalCenter() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { approverConfigs } = useSettings();
   const roles = new Set([user?.role, ...(user?.roles || [])].filter(Boolean));
@@ -133,6 +137,17 @@ export default function ApprovalCenter() {
   const approvals = useApprovals({ user, isHR: roles.has(Role.HRStaff), reporteeIds });
   const additional = useAdditionalApprovals(user);
   const requestedItem = getApprovalRequestId(searchParams);
+  const requestedType = searchParams.get('type');
+  const requestedLeave = requestedType === 'leave' ? approvals.pendingLeaveApprovals.find(request => request.id === requestedItem) || null : null;
+  const requestedWfh = requestedType === 'wfh' ? approvals.pendingWfhApprovals.find(request => request.id === requestedItem) || null : null;
+  const requestedOvertime = requestedType === 'overtime' ? approvals.pendingOtApprovals.find(request => request.id === requestedItem) || null : null;
+
+  const closeRequestedReview = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('item');
+    next.delete('review');
+    navigate({ pathname: '/approvals', search: next.toString() ? `?${next.toString()}` : '' }, { replace: true });
+  };
 
   useEffect(() => {
     const requestedType = searchParams.get('type');
@@ -147,7 +162,7 @@ export default function ApprovalCenter() {
 
   useEffect(() => {
     if (!user) return;
-    supabase.from('hris_users').select('id').eq('reports_to', user.id).then(({ data, error }) => {
+    supabase.rpc('get_my_direct_report_ids').then(({ data, error }) => {
       if (error) setLoadError(`Approver scope could not be loaded: ${error.message}`);
       else setReporteeIds((data || []).map((row: any) => row.id));
     });
@@ -273,6 +288,7 @@ export default function ApprovalCenter() {
   return <div className="space-y-5 pb-12 text-slate-900 dark:text-slate-100">
     <div className="flex flex-wrap items-end justify-between gap-3"><div><h1 className="text-3xl font-bold text-slate-900 dark:text-white">Approval Center</h1><p className="mt-1 text-slate-500 dark:text-slate-300">The single queue for every approval requiring your action.</p></div><Link to="/dashboard" className="font-semibold text-indigo-600 dark:text-indigo-300">← Dashboard</Link></div>
     {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-800"><b>Some approval data could not be loaded.</b> {error}</div>}
+    {requestedItem && !approvals.approvalsLoading && !items.some(item => item.id === requestedItem) && !error && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"><b>This request is no longer awaiting your action.</b> It may already be processed, reassigned, or outside your authorized scope.</div>}
     {!approverConfigs.conditionalTimeApprovals.valid && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900"><b>Conditional approval routing needs an Admin.</b> {approverConfigs.conditionalTimeApprovals.invalid_reason || 'At least one active BOD approver must be selected.'}</div>}
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">{[['Pending approvals', filtered.length, 'bg-blue-50 text-blue-700'], ['Manager only', managerOnlyCount, 'bg-emerald-50 text-emerald-700'], ['BOD required', bodRequiredCount, 'bg-violet-50 text-violet-700'], ['Due today', dueTodayCount, 'bg-orange-50 text-orange-700'], ['Overdue', overdueCount, 'bg-red-50 text-red-700'], ['High risk / exceptions', exceptionCount, 'bg-amber-50 text-amber-700']].map(([label, value, color]) => <div key={String(label)} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-600 dark:bg-slate-800 sm:p-5"><div className={`inline-flex rounded-lg px-3 py-1 text-2xl font-bold ${color}`}>{value}</div><p className="mt-2 text-sm text-slate-600 dark:text-slate-200">{label}</p></div>)}</div>
     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-600 dark:bg-slate-800">
@@ -338,5 +354,43 @@ export default function ApprovalCenter() {
       })}{!groups.length && !error && <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">No pending approvals match these filters.</div>}</div>
     </div>
     {confirming && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"><div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-600 dark:bg-slate-800 dark:text-white"><h2 className="text-xl font-bold">Approve {confirming.ids.length} {KIND_META[confirming.kind].title} request{confirming.ids.length === 1 ? '' : 's'}?</h2><ul className="mt-4 list-disc space-y-2 pl-5 text-sm text-slate-600 dark:text-slate-200"><li>{confirming.ids.length} requests currently shown in your assigned scope will be processed.</li><li>Requests that changed, are no longer assigned to you, or require another approver are safely skipped.</li><li>Each request keeps its own history and audit record.</li><li>Employees are notified using existing settings.</li></ul><label className="mt-5 flex gap-3 rounded-lg bg-slate-50 p-4 font-semibold dark:bg-slate-700 dark:text-white"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} /> I confirm these requests meet policy.</label>{result?.error && <p role="alert" className="mt-4 text-red-700 dark:text-red-300">{result.error}</p>}{result && !result.error && <div className={`mt-4 rounded-lg p-4 text-sm ${result.failed ? 'bg-red-50 text-red-800' : result.skipped ? 'bg-amber-50 text-amber-900' : 'bg-emerald-50 text-emerald-800'}`}><div><b>{result.succeeded} approved</b> · {result.skipped} skipped · {result.failed} failed</div>{result.skippedItems?.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5">{Array.from(new Set(result.skippedItems.map((item: any) => item.reason))).map((reason: any) => <li key={String(reason)}>{String(reason)}</li>)}</ul>}{result.failures?.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5">{Array.from(new Set(result.failures.map((item: any) => item.error))).map((failure: any) => <li key={String(failure)}>{String(failure)}</li>)}</ul>}</div>}<div className="mt-6 flex justify-end gap-3"><Button variant="secondary" onClick={() => { setConfirming(null); setResult(null); }}>{result && !result.error ? 'Close' : 'Cancel'}</Button><Button disabled={!confirmed || busy || !!(result && !result.error)} isLoading={busy} onClick={runBulk}>Approve {confirming.ids.length} requests</Button></div></div></div>}
+    <LeaveRequestModal
+      isOpen={Boolean(requestedLeave)}
+      onClose={closeRequestedReview}
+      request={requestedLeave}
+      leaveTypes={approvals.leaveTypes}
+      onSave={() => {}}
+      onApprove={async (request, approved, notes) => {
+        await approvals.handleLeaveApproval(request, approved, notes);
+        closeRequestedReview();
+      }}
+    />
+    <WFHReviewModal
+      isOpen={Boolean(requestedWfh)}
+      onClose={closeRequestedReview}
+      request={requestedWfh}
+      onApprove={async requestId => {
+        await approvals.handleApproveWFH(requestId);
+        closeRequestedReview();
+      }}
+      onReject={async (requestId, reason) => {
+        await approvals.handleRejectWFH(requestId, reason);
+        closeRequestedReview();
+      }}
+    />
+    <OTRequestModal
+      isOpen={Boolean(requestedOvertime)}
+      onClose={closeRequestedReview}
+      requestToEdit={requestedOvertime}
+      attendanceRecords={[]}
+      shiftAssignments={[]}
+      shiftTemplates={[]}
+      canApproveOverride={Boolean(requestedOvertime)}
+      onSave={() => {}}
+      onApproveOrReject={async (request, status, details) => {
+        await approvals.handleApproveRejectOT(request, status as OTStatus.Approved | OTStatus.Rejected, details);
+        closeRequestedReview();
+      }}
+    />
   </div>;
 }

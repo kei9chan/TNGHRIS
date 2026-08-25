@@ -114,7 +114,6 @@ const Applicants = React.lazy(() => import('./pages/recruitment/Applicants'));
 const Candidates = React.lazy(() => import('./pages/recruitment/Candidates'));
 const Interviews = React.lazy(() => import('./pages/recruitment/Interviews'));
 const Offers = React.lazy(() => import('./pages/recruitment/Offers'));
-const OfferTemplates = React.lazy(() => import('./pages/recruitment/OfferTemplates'));
 const FeedbackTemplates = React.lazy(() => import('./pages/feedback/FeedbackTemplates'));
 const Apply = React.lazy(() => import('./pages/Apply'));
 const ThankYou = React.lazy(() => import('./pages/ThankYou'));
@@ -133,6 +132,7 @@ const DisciplineAnalytics = React.lazy(() => import('./pages/analytics/Disciplin
 
 // Workflows
 import { autoCelebrateBirthdays } from './services/workflows';
+import { getApprovalRequestId, getApprovalReviewUrl } from './services/approvalDeepLinks';
 
 const flattenRoutePermissions = (links: NavLink[]): Array<[string, Resource, Permission]> =>
   links.flatMap(link => [
@@ -154,6 +154,15 @@ const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }
   const { effectiveRbac, loadingPermissions, authorizationError } = usePermissionsContext();
   const location = useLocation();
 
+  const legacyRequestId = getApprovalRequestId(location.search);
+  const legacyApprovalKind = location.pathname === '/payroll/wfh-requests'
+    ? 'wfh'
+    : location.pathname === '/payroll/leave'
+      ? 'leave'
+      : location.pathname === '/payroll/overtime-requests'
+        ? 'overtime'
+        : null;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -164,6 +173,13 @@ const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  // Old emails and notifications used payroll module URLs. Assigned approvers
+  // must enter through the centralized review route, where record-level
+  // authorization is enforced independently of dashboard/module visibility.
+  if (legacyRequestId && legacyApprovalKind) {
+    return <Navigate to={getApprovalReviewUrl(legacyApprovalKind, legacyRequestId)} replace />;
   }
 
   if (loadingPermissions) {
@@ -382,7 +398,6 @@ const AppRoutes: React.FC = () => {
              <Route path="candidates" element={<ProtectedRoute><Candidates /></ProtectedRoute>} />
              <Route path="interviews" element={<ProtectedRoute><Interviews /></ProtectedRoute>} />
              <Route path="offers" element={<ProtectedRoute><Offers /></ProtectedRoute>} />
-             <Route path="offer-templates" element={<ProtectedRoute><OfferTemplates /></ProtectedRoute>} />
         </Route>
 
       </Route>

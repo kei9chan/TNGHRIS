@@ -9,21 +9,23 @@ interface Props {
     user: User;
     businessUnits: BusinessUnit[];
     roles: string[];
+    saving?: boolean;
     onSave: (configuration: {
         userId: string;
         roleIds: string[];
         primaryRole: string;
         accessScope: AccessScope;
         dashboardType: string;
-    }) => void;
+    }) => Promise<void>;
 }
 
-const UserRoleEditModal: React.FC<Props> = ({ isOpen, onClose, user, onSave, businessUnits, roles }) => {
+const UserRoleEditModal: React.FC<Props> = ({ isOpen, onClose, user, onSave, businessUnits, roles, saving = false }) => {
     const [primaryRole, setPrimaryRole] = useState<string>(user.role);
     const [additionalRole, setAdditionalRole] = useState('');
     const [scopeType, setScopeType] = useState<AccessScope['type']>('SELF');
     const [selectedBuIds, setSelectedBuIds] = useState<string[]>([]);
     const [dashboardType, setDashboardType] = useState(user.dashboardType || 'employee');
+    const [saveError, setSaveError] = useState<string | null>(null);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -32,6 +34,7 @@ const UserRoleEditModal: React.FC<Props> = ({ isOpen, onClose, user, onSave, bus
         setScopeType(user.accessScope?.type || 'SELF');
         setSelectedBuIds(user.accessScope?.allowedBuIds || []);
         setDashboardType(user.dashboardType || 'employee');
+        setSaveError(null);
     }, [isOpen, user]);
 
     const roleIds = [...new Set([primaryRole, additionalRole].filter(Boolean))];
@@ -39,22 +42,40 @@ const UserRoleEditModal: React.FC<Props> = ({ isOpen, onClose, user, onSave, bus
         previous.includes(id) ? previous.filter(value => value !== id) : [...previous, id]
     );
 
-    const footer = (
-        <div className="flex w-full justify-end gap-2">
-            <Button variant="secondary" onClick={onClose}>Cancel</Button>
-            <Button onClick={() => onSave({
+    const handleSave = async () => {
+        setSaveError(null);
+        if (!primaryRole || !roleIds.includes(primaryRole)) {
+            setSaveError('Choose a valid primary role.');
+            return;
+        }
+        if (scopeType === 'SPECIFIC' && selectedBuIds.length === 0) {
+            setSaveError('Select at least one business unit for the selected scope.');
+            return;
+        }
+        try {
+            await onSave({
                 userId: user.id,
                 roleIds,
                 primaryRole,
                 accessScope: { type: scopeType, allowedBuIds: scopeType === 'SPECIFIC' ? selectedBuIds : undefined },
                 dashboardType,
-            })}>Save audited change</Button>
+            });
+        } catch (error: any) {
+            setSaveError(error?.message || 'The access change could not be saved.');
+        }
+    };
+
+    const footer = (
+        <div className="flex w-full justify-end gap-2">
+            <Button variant="secondary" disabled={saving} onClick={onClose}>Cancel</Button>
+            <Button isLoading={saving} disabled={saving} onClick={handleSave}>Save audited change</Button>
         </div>
     );
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Access for ${user.name}`} footer={footer}>
             <div className="space-y-6">
+                {saveError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{saveError}</div>}
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                     Role and scope changes are atomic, server-authorized, and recorded in the RBAC audit history. Self-promotion is blocked.
                 </div>

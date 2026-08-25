@@ -25,6 +25,7 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
     const [pendingManpowerApprovals, setPendingManpowerApprovals] = useState<ManpowerRequest[]>([]);
     const [leaveTypes, setLeaveTypes] = useState<{ id: string; name: string }[]>([]);
     const [approvalError, setApprovalError] = useState<string | null>(null);
+    const [approvalsLoading, setApprovalsLoading] = useState(true);
 
     useEffect(() => {
         const loadLeaveTypes = async () => {
@@ -46,9 +47,11 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
             setPendingOtApprovals([]);
             setPendingManpowerApprovals([]);
             setApprovalError(null);
+            setApprovalsLoading(false);
             return;
         }
 
+        setApprovalsLoading(true);
         setApprovalError(null);
 
         const normalizeLeaveStatus = (status: string | null | undefined): LeaveRequestStatus => {
@@ -69,10 +72,7 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
         const assignedRoles = new Set([user.role, ...(user.roles || [])]);
         const isGlobalHrAuthority = assignedRoles.has(Role.BOD) || assignedRoles.has(Role.HRManager);
         const { data: assignmentRows, error: assignmentError } = await supabase
-            .from('time_request_approval_assignments')
-            .select('request_type, request_id')
-            .eq('approver_user_id', user.id)
-            .eq('status', 'Pending');
+            .rpc('get_my_pending_time_approval_ids');
         if (assignmentError) {
             setApprovalError(`Conditional approval assignments could not be loaded. ${assignmentError.message}`);
         }
@@ -102,31 +102,14 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
             .select('id, business_unit_id, business_unit_name, department_id, requester_id, requester_name, date_needed, forecasted_pax, general_note, items, grand_total, status, created_at, approved_by, approved_at, rejection_reason')
             .eq('status', ManpowerRequestStatus.Pending);
 
-        const reporteeList = `(${reporteeIds.join(',')})`;
-        const assignedList = (ids: string[]) => `(${ids.join(',')})`;
-        if (reporteeIds.length && assignedLeaveIds.length) {
-            leaveQuery = leaveQuery.or(`and(employee_id.in.${reporteeList},status.in.(Pending,PendingGM)),and(id.in.${assignedList(assignedLeaveIds)},status.eq.PendingBOD)`);
-        } else if (reporteeIds.length) {
-            leaveQuery = leaveQuery.in('employee_id', reporteeIds).in('status', [LeaveRequestStatus.Pending, LeaveRequestStatus.PendingGM]);
-        } else if (assignedLeaveIds.length) {
-            leaveQuery = leaveQuery.in('id', assignedLeaveIds).eq('status', LeaveRequestStatus.PendingBOD);
-        } else skipLeave = true;
+        if (assignedLeaveIds.length) leaveQuery = leaveQuery.in('id', assignedLeaveIds);
+        else skipLeave = true;
 
-        if (reporteeIds.length && assignedWfhIds.length) {
-            wfhQuery = wfhQuery.or(`and(employee_id.in.${reporteeList},status.in.(${WFHRequestStatus.PendingDeptHead},${WFHRequestStatus.PendingGM})),and(id.in.${assignedList(assignedWfhIds)},status.eq.${WFHRequestStatus.PendingBOD})`);
-        } else if (reporteeIds.length) {
-            wfhQuery = wfhQuery.in('employee_id', reporteeIds).in('status', [WFHRequestStatus.PendingDeptHead, WFHRequestStatus.PendingGM]);
-        } else if (assignedWfhIds.length) {
-            wfhQuery = wfhQuery.in('id', assignedWfhIds).eq('status', WFHRequestStatus.PendingBOD);
-        } else skipWfh = true;
+        if (assignedWfhIds.length) wfhQuery = wfhQuery.in('id', assignedWfhIds);
+        else skipWfh = true;
 
-        if (reporteeIds.length && assignedOtIds.length) {
-            otQuery = otQuery.or(`and(employee_id.in.${reporteeList},status.in.(${OTStatus.Submitted},${OTStatus.PendingGM})),and(id.in.${assignedList(assignedOtIds)},status.eq.${OTStatus.PendingBOD})`);
-        } else if (reporteeIds.length) {
-            otQuery = otQuery.in('employee_id', reporteeIds).in('status', [OTStatus.Submitted, OTStatus.PendingGM]);
-        } else if (assignedOtIds.length) {
-            otQuery = otQuery.in('id', assignedOtIds).eq('status', OTStatus.PendingBOD);
-        } else skipOt = true;
+        if (assignedOtIds.length) otQuery = otQuery.in('id', assignedOtIds);
+        else skipOt = true;
 
         leaveQuery = leaveQuery.order('start_date', { ascending: false });
         wfhQuery = wfhQuery.order('created_at', { ascending: false });
@@ -257,6 +240,7 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
                 }))
             );
         }
+        setApprovalsLoading(false);
     }, [user, isHR, reporteeIds]);
 
     useEffect(() => {
@@ -402,6 +386,7 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
         pendingManpowerApprovals,
         leaveTypes,
         approvalError,
+        approvalsLoading,
         handleLeaveApproval,
         handleApproveWFH,
         handleRejectWFH,

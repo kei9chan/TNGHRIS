@@ -26,6 +26,7 @@ const UserManagement: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [success, setSuccess] = useState<string | null>(null);
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
     const [lifecycleUser, setLifecycleUser] = useState<User | null>(null);
     const [passwordUser, setPasswordUser] = useState<User | null>(null);
@@ -127,20 +128,31 @@ const UserManagement: React.FC = () => {
         userId: string; roleIds: string[]; primaryRole: string;
         accessScope: AccessScope; dashboardType: string;
     }) => {
-        setSaving(true); setError(null);
-        const { error: saveError } = await supabase.rpc('admin_set_user_roles', {
-            p_target_user_id: configuration.userId,
-            p_role_ids: configuration.roleIds,
-            p_primary_role: configuration.primaryRole,
-            p_scope_type: configuration.accessScope.type,
-            p_allowed_business_unit_ids: configuration.accessScope.allowedBuIds || [],
-            p_dashboard_type: configuration.dashboardType,
-        });
-        if (saveError) { setError(saveError.message); setSaving(false); return; }
-        setSelectedUser(null);
-        await loadData();
-        if (configuration.userId === currentUser?.id) await refreshPermissions();
-        setSaving(false);
+        setSaving(true); setError(null); setSuccess(null);
+        try {
+            const { data, error: saveError } = await supabase.rpc('admin_set_user_roles', {
+                p_target_user_id: configuration.userId,
+                p_role_ids: configuration.roleIds,
+                p_primary_role: configuration.primaryRole,
+                p_scope_type: configuration.accessScope.type,
+                p_allowed_business_unit_ids: configuration.accessScope.allowedBuIds || [],
+                p_dashboard_type: configuration.dashboardType,
+            });
+            if (saveError) throw new Error(saveError.message);
+            if (!(data as any)?.success || (data as any)?.primaryRole !== configuration.primaryRole) {
+                throw new Error('The server did not confirm the requested role configuration.');
+            }
+            await loadData();
+            if (configuration.userId === currentUser?.id) await refreshPermissions();
+            setSelectedUser(null);
+            setSuccess(`Access saved: ${configuration.primaryRole}, ${configuration.accessScope.type.replaceAll('_', ' ')}, ${configuration.dashboardType} dashboard. The affected user should refresh the app to load the new access.`);
+        } catch (saveError: any) {
+            const message = saveError?.message || 'The audited access change could not be saved.';
+            setError(message);
+            throw new Error(message);
+        } finally {
+            setSaving(false);
+        }
     };
 
     const saveLifecycle = async (reason: string, markDuplicate: boolean) => {
@@ -172,6 +184,7 @@ const UserManagement: React.FC = () => {
                 <p className="mt-1 text-sm text-gray-500">Server-resolved roles, scope, sensitive access, workflow authority, and audit metadata.</p>
             </header>
             {error && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"><span><strong>User Management could not be loaded.</strong> {error}</span><Button size="sm" variant="secondary" onClick={loadData}>Retry</Button></div>}
+            {success && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800"><strong>Access updated.</strong> {success}</div>}
             <div className="rounded-lg border border-gray-200 bg-white shadow dark:border-slate-700 dark:bg-slate-800">
                 <div className="grid gap-3 border-b p-4 md:grid-cols-3">
                     <Input label="" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search name or email…" className="md:w-72" />
@@ -209,7 +222,7 @@ const UserManagement: React.FC = () => {
                     {loading && <div className="p-10 text-center text-gray-500">Loading effective access…</div>}
                 </div>
             </div>
-            {selectedUser && <UserRoleEditModal isOpen onClose={() => setSelectedUser(null)} user={selectedUser} businessUnits={businessUnits} roles={roles} onSave={saveAccess} />}
+            {selectedUser && <UserRoleEditModal isOpen saving={saving} onClose={() => setSelectedUser(null)} user={selectedUser} businessUnits={businessUnits} roles={roles} onSave={saveAccess} />}
             {lifecycleUser && <AccountLifecycleModal isOpen user={lifecycleUser} saving={saving} onClose={() => setLifecycleUser(null)} onConfirm={saveLifecycle} />}
             {passwordUser && <PasswordManagementModal user={passwordUser} onClose={() => setPasswordUser(null)} />}
         </div>

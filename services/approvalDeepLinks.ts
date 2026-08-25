@@ -23,6 +23,9 @@ const approvalPaths: Record<ApprovalRequestKind, string> = {
 export const getApprovalReviewUrl = (kind: ApprovalRequestKind, requestId: string): string => {
   const encodedId = encodeURIComponent(requestId);
   if (kind === 'nte') return `${approvalPaths.nte}/${encodedId}`;
+  if (kind === 'leave' || kind === 'wfh' || kind === 'overtime') {
+    return `/approvals?type=${kind}&item=${encodedId}`;
+  }
   return `${approvalPaths[kind]}?review=${encodedId}`;
 };
 
@@ -31,4 +34,3 @@ export const getApprovalRequestId = (search: string | URLSearchParams): string |
   const params = typeof search === 'string' ? new URLSearchParams(search) : search;
   return params.get('review') || params.get('item') || params.get('requestId');
 };
-
