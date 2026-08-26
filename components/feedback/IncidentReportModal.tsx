@@ -360,9 +360,20 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
 
   const reporterName = report ? allUsers.find(u => u.id === report.reportedBy)?.name : user?.name;
   const statusTag = report ? getStatusTag(report.status, report.pipelineStage) : null;
+  const activeRoles = new Set([user?.role, ...(user?.roles || [])].filter(Boolean));
+  const isReporter = !!report && report.reportedBy === user?.id;
+  const isReporterRevisionState = !!report && [IRStatus.ReturnedForRevision, IRStatus.Rejected].includes(report.status);
+  const reporterCanRevise = isReporter && !!report && [IRStatus.Draft, IRStatus.ReturnedForRevision, IRStatus.Rejected].includes(report.status);
+  const isActiveHrReview = !!report
+    && [IRStatus.Submitted, IRStatus.HRReview].includes(report.status)
+    && report.pipelineStage === 'ir-review';
+  const hasIncidentProcessorRole = activeRoles.has(Role.HRManager)
+    || activeRoles.has(Role.HRStaff)
+    || activeRoles.has(Role.Admin);
+  const canProcessReport = !isEmployeeView && hasIncidentProcessorRole && isActiveHrReview;
 
   // Only show assignment if editing an existing report AND it is in the initial review stage
-  const showAssignment = !isEmployeeView && canAssign && report && report.pipelineStage === 'ir-review';
+  const showAssignment = canProcessReport && canAssign;
 
   const renderModalContent = () => {
     if (report && !isEditingRevision) {
@@ -600,21 +611,33 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
   const renderFooter = () => {
     if (report) {
       const isClosed = report.status === IRStatus.Closed || report.status === IRStatus.NoAction;
-      const reporterCanRevise = isEmployeeView && report.reportedBy === user?.id && [IRStatus.Draft, IRStatus.ReturnedForRevision].includes(report.status);
       if (isEditingRevision) {
         return <div className="flex w-full justify-end gap-2">
           <Button variant="secondary" onClick={() => setIsEditingRevision(false)}>Cancel</Button>
-          <Button variant="secondary" onClick={() => void handleSaveExisting(false)}>Save draft</Button>
-          {report.status === IRStatus.ReturnedForRevision && <Button onClick={() => void handleSaveExisting(true)}>Save and resubmit</Button>}
+          <Button variant="secondary" onClick={() => void handleSaveExisting(false)}>Save changes</Button>
+          {isReporterRevisionState && <Button onClick={() => void handleSaveExisting(true)}>Resubmit report</Button>}
         </div>;
       }
+
+      if (isReporterRevisionState) {
+        return (
+          <div className="flex w-full items-center justify-between gap-3">
+            <div>{onDownloadPdf && <Button variant="secondary" onClick={() => onDownloadPdf(report)}>Download as PDF</Button>}</div>
+            <div className="flex items-center gap-2">
+              {reporterCanRevise && <Button onClick={() => setIsEditingRevision(true)}>Edit for resubmission</Button>}
+              {!reporterCanRevise && <Button variant="secondary" onClick={onClose}>Close</Button>}
+            </div>
+          </div>
+        );
+      }
+
       return (
         <div className="flex justify-between items-center w-full">
           <div className="flex space-x-2">
             {onDownloadPdf && <Button variant="secondary" onClick={() => onDownloadPdf(report)}>Download as PDF</Button>}
             {reporterCanRevise && <Button onClick={() => setIsEditingRevision(true)}>Edit report</Button>}
             {/* If HR Manager/Admin, they can save reassignment changes */}
-            {!isEmployeeView && canAssign && (
+            {canProcessReport && canAssign && (
               <Button
                 isLoading={assignmentState === 'saving'}
                 onClick={async () => {
@@ -633,7 +656,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
             )}
           </div>
 
-          {!isEmployeeView && !isClosed && (
+          {canProcessReport && (
             <div className="flex space-x-2">
               {onReturnForRevision && <Button variant="secondary" onClick={async () => { const reason = window.prompt('Revision instructions (required)'); if (reason?.trim()) await onReturnForRevision(report.id, reason); }}>Return for Revision</Button>}
               {onRejectReport && <Button variant="danger" onClick={async () => { const reason = window.prompt('Rejection reason (required)'); if (reason?.trim()) await onRejectReport(report.id, reason); }}>Reject</Button>}
@@ -655,7 +678,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
               >Continue Processing</Button>}
             </div>
           )}
-          {!isEmployeeView && isClosed && (
+          {!canProcessReport && (isClosed || !reporterCanRevise) && (
             <Button variant="secondary" onClick={onClose}>Close</Button>
           )}
         </div>

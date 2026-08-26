@@ -17,7 +17,7 @@ import Card from '../../components/ui/Card';
 import PrintableIncidentReport from '../../components/feedback/PrintableIncidentReport';
 import CaseListTable from '../../components/feedback/CaseListTable';
 import { logActivity } from '../../services/auditService';
-import { assignIncidentCaseHandler, fetchIncidentReports, saveIncidentReport, addIncidentReportMessage, fetchPipelineStages, rejectIncidentReport, returnIncidentReportForRevision } from '../../services/incidentReportService';
+import { assignIncidentCaseHandler, fetchIncidentReports, saveIncidentReport, addIncidentReportMessage, fetchPipelineStages, rejectIncidentReport, resubmitIncidentReport, returnIncidentReportForRevision } from '../../services/incidentReportService';
 import { saveNTEs, updateNTE, fetchNTEs, resubmitNTERevision } from '../../services/nteService';
 import { fetchResolutions, createResolution, updateResolution } from '../../services/resolutionService';
 import { formatIRDisplayId } from '../../utils/formatCaseId';
@@ -205,7 +205,7 @@ const DisciplinaryCases: React.FC = () => {
   // Handle opening specific cases via URL parameters (e.g. from notifications)
   useEffect(() => {
     const action = searchParams.get('action');
-    const caseId = searchParams.get('caseId');
+    const caseId = searchParams.get('caseId') || searchParams.get('reportId');
     const employeeId = searchParams.get('employeeId');
 
     if (caseId && allReports.length > 0) {
@@ -227,6 +227,7 @@ const DisciplinaryCases: React.FC = () => {
           setSearchParams(prev => {
             prev.delete('action');
             prev.delete('caseId');
+            prev.delete('reportId');
             prev.delete('employeeId');
             return prev;
           }, { replace: true });
@@ -889,6 +890,12 @@ const DisciplinaryCases: React.FC = () => {
             onGenerateNTE={handleGenerateNTE}
             onMarkNoAction={handleMarkNoAction}
             onDownloadPdf={setReportToPrint}
+            onResubmit={async reportId => {
+              const saved = await resubmitIncidentReport(reportId);
+              setAllReports(previous => previous.map(item => item.id === saved.id ? saved : item));
+              setSelectedReport(saved);
+              return saved;
+            }}
             isEmployeeView={true}
           />
         )}
@@ -1034,6 +1041,12 @@ const DisciplinaryCases: React.FC = () => {
           }}
           onRejectReport={async (reportId, reason) => {
             const saved = await rejectIncidentReport(reportId, reason);
+            setAllReports(previous => previous.map(item => item.id === saved.id ? saved : item));
+            setSelectedReport(saved);
+            return saved;
+          }}
+          onResubmit={async reportId => {
+            const saved = await resubmitIncidentReport(reportId);
             setAllReports(previous => previous.map(item => item.id === saved.id ? saved : item));
             setSelectedReport(saved);
             return saved;
