@@ -125,7 +125,7 @@ export default function ApprovalCenter() {
   const [businessUnitLabels, setBusinessUnitLabels] = useState<Record<string, string>>({});
   const [departmentLabels, setDepartmentLabels] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [expanded, setExpanded] = useState<Kind | null>('nte');
+  const [expanded, setExpanded] = useState<Kind | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState<{ kind: Kind; ids: string[] } | null>(null);
   const [confirmed, setConfirmed] = useState(false);
@@ -256,7 +256,13 @@ export default function ApprovalCenter() {
     return true;
   }).sort((a, b) => filters.sort === 'newest' ? b.start.getTime() - a.start.getTime() : a.start.getTime() - b.start.getTime()), [items, filters]);
 
-  const groups = GROUP_ORDER.map(kind => ({ kind, items: filtered.filter(item => item.kind === kind) })).filter(group => group.items.length);
+  const activeGroupKinds = useMemo(() => GROUP_ORDER.filter(kind => filtered.some(item => item.kind === kind)), [filtered]);
+  const groups = useMemo(() => activeGroupKinds.map(kind => ({ kind, items: filtered.filter(item => item.kind === kind) })), [activeGroupKinds, filtered]);
+  useEffect(() => {
+    const requestedKind = filters.kind as Kind;
+    const preferred = requestedKind && activeGroupKinds.includes(requestedKind) ? requestedKind : activeGroupKinds[0] || null;
+    setExpanded(current => current && activeGroupKinds.includes(current) ? current : preferred);
+  }, [activeGroupKinds, filters.kind]);
   const exceptionCount = filtered.filter(needsIndividualReview).length;
   const dueTodayCount = filtered.filter(item => dayAge(item.start) === 0).length;
   const overdueCount = filtered.filter(item => dayAge(item.start) >= 3).length;
@@ -351,7 +357,7 @@ export default function ApprovalCenter() {
             </table></div>
           </div>}
         </section>;
-      })}{!groups.length && !error && <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">No pending approvals match these filters.</div>}</div>
+      })}{!groups.length && !error && <div className="rounded-xl border border-slate-200 bg-white p-10 text-center dark:border-slate-600 dark:bg-slate-800"><p className="text-lg font-bold text-slate-900 dark:text-white">{items.length ? 'No pending approvals match your filters.' : 'No pending approvals'}</p><p className="mt-1 text-sm text-slate-500 dark:text-slate-300">{items.length ? 'Try clearing a filter to see the active queues.' : 'You are all caught up.'}</p></div>}</div>
     </div>
     {confirming && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"><div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-600 dark:bg-slate-800 dark:text-white"><h2 className="text-xl font-bold">Approve {confirming.ids.length} {KIND_META[confirming.kind].title} request{confirming.ids.length === 1 ? '' : 's'}?</h2><ul className="mt-4 list-disc space-y-2 pl-5 text-sm text-slate-600 dark:text-slate-200"><li>{confirming.ids.length} requests currently shown in your assigned scope will be processed.</li><li>Requests that changed, are no longer assigned to you, or require another approver are safely skipped.</li><li>Each request keeps its own history and audit record.</li><li>Employees are notified using existing settings.</li></ul><label className="mt-5 flex gap-3 rounded-lg bg-slate-50 p-4 font-semibold dark:bg-slate-700 dark:text-white"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} /> I confirm these requests meet policy.</label>{result?.error && <p role="alert" className="mt-4 text-red-700 dark:text-red-300">{result.error}</p>}{result && !result.error && <div className={`mt-4 rounded-lg p-4 text-sm ${result.failed ? 'bg-red-50 text-red-800' : result.skipped ? 'bg-amber-50 text-amber-900' : 'bg-emerald-50 text-emerald-800'}`}><div><b>{result.succeeded} approved</b> · {result.skipped} skipped · {result.failed} failed</div>{result.skippedItems?.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5">{Array.from(new Set(result.skippedItems.map((item: any) => item.reason))).map((reason: any) => <li key={String(reason)}>{String(reason)}</li>)}</ul>}{result.failures?.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5">{Array.from(new Set(result.failures.map((item: any) => item.error))).map((failure: any) => <li key={String(failure)}>{String(failure)}</li>)}</ul>}</div>}<div className="mt-6 flex justify-end gap-3"><Button variant="secondary" onClick={() => { setConfirming(null); setResult(null); }}>{result && !result.error ? 'Close' : 'Cancel'}</Button><Button disabled={!confirmed || busy || !!(result && !result.error)} isLoading={busy} onClick={runBulk}>Approve {confirming.ids.length} requests</Button></div></div></div>}
     <LeaveRequestModal
