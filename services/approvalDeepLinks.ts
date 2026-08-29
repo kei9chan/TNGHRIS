@@ -26,6 +26,7 @@ export const getApprovalReviewUrl = (kind: ApprovalRequestKind, requestId: strin
   if (kind === 'leave' || kind === 'wfh' || kind === 'overtime') {
     return `/approvals?type=${kind}&item=${encodedId}`;
   }
+  if (kind === 'manpower') return `/approvals?type=manpower&item=${encodedId}`;
   return `${approvalPaths[kind]}?review=${encodedId}`;
 };
 

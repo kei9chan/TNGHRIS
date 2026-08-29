@@ -9,6 +9,7 @@ import Button from '../components/ui/Button';
 import LeaveRequestModal from '../components/payroll/LeaveRequestModal';
 import OTRequestModal from '../components/payroll/OTRequestModal';
 import WFHReviewModal from '../components/payroll/WFHReviewModal';
+import ManpowerReviewModal from '../components/payroll/ManpowerReviewModal';
 import { useSettings } from '../context/SettingsContext';
 import { ApprovalRequestKind, getApprovalRequestId, getApprovalReviewUrl } from '../services/approvalDeepLinks';
 import {
@@ -49,7 +50,7 @@ const KIND_META: Record<Kind, { title: string; badge: string; rule: string }> = 
 };
 
 const GROUP_ORDER: Kind[] = ['nte', 'pan', 'award', 'wfh', 'leave', 'overtime', 'requisition', 'manpower'];
-const BULK_KINDS = new Set<Kind>(['leave', 'wfh', 'overtime', 'manpower']);
+const BULK_KINDS = new Set<Kind>(['leave', 'wfh', 'overtime']);
 const TIME_KINDS = new Set<Kind>(['leave', 'wfh', 'overtime']);
 const TIME_DESKTOP_HEADINGS = ['Select', 'Request / Employee', 'Business unit / Department', 'Request details', 'Submitted / Pending', 'Approval step', 'Eligibility', 'Action'];
 const OVERTIME_DESKTOP_HEADINGS = ['Select', 'Request / Employee', 'Business unit / Department', 'Request details', 'Week of', 'Submitted / Pending', 'Approval step', 'Eligibility', 'Action'];
@@ -141,6 +142,7 @@ export default function ApprovalCenter() {
   const requestedLeave = requestedType === 'leave' ? approvals.pendingLeaveApprovals.find(request => request.id === requestedItem) || null : null;
   const requestedWfh = requestedType === 'wfh' ? approvals.pendingWfhApprovals.find(request => request.id === requestedItem) || null : null;
   const requestedOvertime = requestedType === 'overtime' ? approvals.pendingOtApprovals.find(request => request.id === requestedItem) || null : null;
+  const requestedManpower = requestedType === 'manpower' ? approvals.pendingManpowerApprovals.find(request => request.id === requestedItem) || null : null;
 
   const closeRequestedReview = () => {
     const next = new URLSearchParams(searchParams);
@@ -221,7 +223,8 @@ export default function ApprovalCenter() {
     });
     const manpower: ApprovalItem[] = approvals.pendingManpowerApprovals.map(row => {
       const meta = metaFor(row.requestedBy), start = new Date(row.createdAt || row.date), exception = !meta.active ? 'Employee is inactive' : undefined;
-      return { id: row.id, canonicalKey: `manpower:${row.id}:${row.status}`, kind: 'manpower', reference: `MP-${String(row.id).slice(0, 8).toUpperCase()}`, employeeId: row.requestedBy, employee: row.requesterName, employeeCode: meta.employeeId, businessUnitId: row.businessUnitId || meta.businessUnitId, businessUnit: row.businessUnitName || meta.businessUnit, departmentId: row.departmentId || meta.departmentId, department: meta.department, start, end: start, duration: 'One request', status: String(row.status), currentStep: String(row.status), exception, bulkSelectable: true, reviewUrl: getApprovalReviewUrl('manpower', row.id) };
+      const stage = row.approvalStage === 'BOD_GM' ? 'Pending BOD / GM Approval' : 'Pending Business Unit Manager';
+      return { id: row.id, canonicalKey: `manpower:${row.id}:${row.status}:${row.approvalStage || 'BUSINESS_UNIT_MANAGER'}`, kind: 'manpower', reference: `MP-${String(row.id).slice(0, 8).toUpperCase()}`, employeeId: row.requestedBy, employee: row.requesterName, employeeCode: meta.employeeId, businessUnitId: row.businessUnitId || meta.businessUnitId, businessUnit: row.businessUnitName || meta.businessUnit, departmentId: row.departmentId || meta.departmentId, department: meta.department, start, end: start, duration: 'On-call coverage request', status: String(row.status), currentStep: stage, approvalStep: stage, reason: row.approvalIssue || 'Assigned approval required.', exception: exception || row.approvalIssue, bulkSelectable: false, route: row.approvalStage === 'BOD_GM' ? 'BOD_REQUIRED' : 'MANAGER_ONLY', reviewUrl: getApprovalReviewUrl('manpower', row.id) };
     });
     const ntes: ApprovalItem[] = additional.pendingNTEApprovals.map(row => {
       const meta = metaFor(row.employeeId);
@@ -397,6 +400,20 @@ export default function ApprovalCenter() {
         await approvals.handleApproveRejectOT(request, status as OTStatus.Approved | OTStatus.Rejected, details);
         closeRequestedReview();
       }}
+    />
+    <ManpowerReviewModal
+      isOpen={Boolean(requestedManpower)}
+      onClose={closeRequestedReview}
+      request={requestedManpower}
+      onApprove={async (requestId, comments) => {
+        await approvals.handleApproveManpower(requestId, comments);
+        closeRequestedReview();
+      }}
+      onReject={async (requestId, reason) => {
+        await approvals.handleRejectManpower(requestId, reason);
+        closeRequestedReview();
+      }}
+      canApprove={Boolean(requestedManpower)}
     />
   </div>;
 }

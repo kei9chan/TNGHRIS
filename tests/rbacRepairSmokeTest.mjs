@@ -44,7 +44,9 @@ assert.match(permissions, /setAuthorizationError/);
 assert.match(app, /Authorization unavailable/);
 assert.match(app, /routePermissions/);
 assert.match(approvals, /approvalError/);
-assert.match(approvals, /isGlobalHrAuthority/);
+assert.doesNotMatch(approvals, /isGlobalHrAuthority/, 'approval queues must not be granted by a broad global-role shortcut');
+assert.match(approvals, /get_my_pending_time_approval_ids/);
+assert.match(approvals, /get_my_pending_manpower_approval_ids/);
 
 assert.doesNotMatch(signUp, /roleOptions\.map|name=["']role["']/, 'public signup must not expose authorization roles');
 assert.match(signUp, /p_role:\s+Role\.Employee/);

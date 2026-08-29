@@ -8,9 +8,10 @@ import {
     OTRequest, OTStatus,
     ManpowerRequest, ManpowerRequestStatus,
     NotificationType,
-    User, Role
+    User
 } from '../types';
 import { getTimeApprovalReason } from '../utils/approvalPresentation';
+import { approveManpowerRequest, rejectManpowerRequest } from '../services/manpowerService';
 
 interface UseApprovalsOptions {
     user: User | null;
@@ -69,8 +70,6 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
 
         // Leave/WFH/OT are scoped to direct reports plus explicit escalation
         // assignments. A broad BOD or HR role no longer creates a global queue.
-        const assignedRoles = new Set([user.role, ...(user.roles || [])]);
-        const isGlobalHrAuthority = assignedRoles.has(Role.BOD) || assignedRoles.has(Role.HRManager);
         const { data: assignmentRows, error: assignmentError } = await supabase
             .rpc('get_my_pending_time_approval_ids');
         if (assignmentError) {
@@ -82,6 +81,14 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
         const assignedLeaveIds = assignedIds('leave');
         const assignedWfhIds = assignedIds('wfh');
         const assignedOtIds = assignedIds('overtime');
+        const { data: manpowerAssignmentRows, error: manpowerAssignmentError } = await supabase
+            .rpc('get_my_pending_manpower_approval_ids');
+        if (manpowerAssignmentError) {
+            setApprovalError(`On-call approval assignments could not be loaded. ${manpowerAssignmentError.message}`);
+        }
+        const assignedManpowerIds = (manpowerAssignmentRows || [])
+            .map((row: any) => row.request_id as string)
+            .filter(Boolean);
 
         let skipLeave = false;
         let skipWfh = false;
@@ -99,7 +106,7 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
             .select('id, employee_id, employee_name, date, start_time, end_time, reason, status, submitted_at, approved_hours, manager_note, history_log, attachment_url, approval_route, approval_reason, approval_context');
         let manpowerQuery = supabase
             .from('manpower_requests')
-            .select('id, business_unit_id, business_unit_name, department_id, requester_id, requester_name, date_needed, forecasted_pax, general_note, items, grand_total, status, created_at, approved_by, approved_at, rejection_reason')
+            .select('id, business_unit_id, business_unit_name, department_id, requester_id, requester_name, date_needed, forecasted_pax, general_note, items, grand_total, status, created_at, approved_by, approved_at, rejection_reason, approval_stage, approval_issue, approval_history')
             .eq('status', ManpowerRequestStatus.Pending);
 
         if (assignedLeaveIds.length) leaveQuery = leaveQuery.in('id', assignedLeaveIds);
@@ -115,11 +122,8 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
         wfhQuery = wfhQuery.order('created_at', { ascending: false });
         otQuery = otQuery.order('submitted_at', { ascending: false });
 
-        if (isGlobalHrAuthority) {
-            manpowerQuery = manpowerQuery.order('created_at', { ascending: false });
-        } else if (reporteeIds.length) {
-            manpowerQuery = manpowerQuery.in('requester_id', reporteeIds);
-        } else skipManpower = true;
+        if (assignedManpowerIds.length) manpowerQuery = manpowerQuery.in('id', assignedManpowerIds);
+        else skipManpower = true;
 
         const emptyResult = { data: [] as unknown[], error: null };
         const [leaveRes, wfhRes, otRes, manpowerRes] = await Promise.all([
@@ -233,6 +237,9 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
                     items: Array.isArray(row.items) ? row.items : (row.items ? JSON.parse(row.items) : []),
                     grandTotal: row.grand_total || 0,
                     status: row.status as ManpowerRequestStatus,
+                    approvalStage: row.approval_stage || undefined,
+                    approvalIssue: row.approval_issue || undefined,
+                    approvalTrail: Array.isArray(row.approval_history) ? row.approval_history : [],
                     createdAt: row.created_at ? new Date(row.created_at) : new Date(),
                     approvedBy: row.approved_by || undefined,
                     approvedAt: row.approved_at ? new Date(row.approved_at) : undefined,
@@ -351,32 +358,26 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
         }
     };
 
-    const handleApproveManpower = async (requestId: string) => {
+    const handleApproveManpower = async (requestId: string, comments?: string) => {
         if (!user) return;
-        const { error } = await supabase
-            .from('manpower_requests')
-            .update({ status: ManpowerRequestStatus.Approved, approved_by: user.id, approved_at: new Date().toISOString() })
-            .eq('id', requestId);
-        if (error) { 
-            alert('Error approving request.'); 
-            throw error; 
+        try {
+            await approveManpowerRequest(requestId, user.id, comments);
+            setPendingManpowerApprovals(prev => prev.filter(r => r.id !== requestId));
+        } catch (error: any) {
+            alert(error?.message || 'Error approving request.');
+            throw error;
         }
-        setPendingManpowerApprovals(prev => prev.filter(r => r.id !== requestId));
-        alert('Manpower Request Approved.');
     };
 
     const handleRejectManpower = async (requestId: string, reason: string) => {
         if (!user) return;
-        const { error } = await supabase
-            .from('manpower_requests')
-            .update({ status: ManpowerRequestStatus.Rejected, rejection_reason: reason })
-            .eq('id', requestId);
-        if (error) { 
-            alert('Error rejecting request.'); 
-            throw error; 
+        try {
+            await rejectManpowerRequest(requestId, user.id, reason);
+            setPendingManpowerApprovals(prev => prev.filter(r => r.id !== requestId));
+        } catch (error: any) {
+            alert(error?.message || 'Error rejecting request.');
+            throw error;
         }
-        setPendingManpowerApprovals(prev => prev.filter(r => r.id !== requestId));
-        alert('Manpower Request Rejected.');
     };
 
     return {

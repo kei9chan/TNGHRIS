@@ -1,437 +1,449 @@
-// Phase 2 Migration: mock imports removed — BU data fetched from Supabase, notifications via DB
-
-import React, { useState, useEffect, useMemo } from 'react';
-import { ManpowerRequest, ManpowerRequestStatus, ManpowerRequestItem, NotificationType, Role } from '../../types';
+import React, { useEffect, useMemo, useState } from 'react';
+import { BusinessUnit, Department, ManpowerRequest, ManpowerRequestItem } from '../../types';
 import { supabase } from '../../services/supabaseClient';
+import { createManpowerRequest } from '../../services/manpowerService';
 import Modal from '../ui/Modal';
-import Input from '../ui/Input';
 import Button from '../ui/Button';
-import Textarea from '../ui/Textarea';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 
 interface ManpowerRequestModalProps {
-    isOpen: boolean;
-    onClose: () => void;
-    onSave: (request: ManpowerRequest) => void;
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (request: ManpowerRequest) => void;
 }
 
-const TrashIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>;
-const PlusIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>;
+const FALLBACK_RATE = 610;
+const REASONS = [
+  'Sick call / absence',
+  'No-show',
+  'Approved leave',
+  'Sudden increase in bookings / PAX',
+  'Special event / group booking',
+  'Additional coverage required',
+  'Other',
+];
+
+const SHIFT_PRESETS: Record<string, { label: string; time: string }> = {
+  Opening: { label: 'Opening Shift · 7:00 AM – 4:00 PM', time: '7:00 AM – 4:00 PM' },
+  Mid: { label: 'Mid Shift · 10:00 AM – 7:00 PM', time: '10:00 AM – 7:00 PM' },
+  Closing: { label: 'Closing Shift · 1:00 PM – 10:00 PM', time: '1:00 PM – 10:00 PM' },
+  Custom: { label: 'Custom shift', time: '' },
+};
+
+const controlClasses = 'block w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:border-slate-600 dark:bg-slate-700 dark:text-white dark:focus:border-indigo-400 dark:focus:ring-indigo-900';
+const labelClasses = 'mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300';
+
+const TrashIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+  </svg>
+);
+
+const PlusIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" className="mr-1.5 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v12m6-6H6" />
+  </svg>
+);
+
+const InfoIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" className="mt-0.5 h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <circle cx="12" cy="12" r="9" strokeWidth={1.8} />
+    <path strokeLinecap="round" strokeWidth={1.8} d="M12 10.5v5m0-8h.01" />
+  </svg>
+);
+
+const emptyItem = (id: string, rate = FALLBACK_RATE): ManpowerRequestItem => ({
+  id,
+  role: '',
+  departmentId: '',
+  departmentName: '',
+  requiredFte: 0,
+  reportingFte: 0,
+  onCallNeeded: 0,
+  currentFte: 0,
+  requestedCount: 0,
+  costPerHead: rate,
+  ratePerDay: rate,
+  totalItemCost: 0,
+  shiftPreset: 'Mid',
+  shiftTime: SHIFT_PRESETS.Mid.time,
+  reason: '',
+  departmentNote: '',
+  otherReason: '',
+  justification: '',
+});
+
+const itemWithDerivedValues = (item: ManpowerRequestItem, patch: Partial<ManpowerRequestItem>): ManpowerRequestItem => {
+  const next = { ...item, ...patch };
+  const requiredFte = Math.max(0, Number(next.requiredFte ?? next.currentFte ?? 0) || 0);
+  const reportingFte = Math.max(0, Number(next.reportingFte ?? next.currentFte ?? 0) || 0);
+  const ratePerDay = Math.max(0, Number(next.ratePerDay ?? next.costPerHead ?? FALLBACK_RATE) || 0);
+  const onCallNeeded = Math.max(requiredFte - reportingFte, 0);
+  return {
+    ...next,
+    requiredFte,
+    reportingFte,
+    onCallNeeded,
+    currentFte: reportingFte,
+    requestedCount: onCallNeeded,
+    ratePerDay,
+    costPerHead: ratePerDay,
+    totalItemCost: onCallNeeded * ratePerDay,
+    justification: next.reason || next.justification || '',
+  };
+};
 
 const ManpowerRequestModal: React.FC<ManpowerRequestModalProps> = ({ isOpen, onClose, onSave }) => {
-    const { user } = useAuth();
-    const { getAccessibleBusinessUnits } = usePermissions();
-    const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-    const [forecastedPax, setForecastedPax] = useState<number>(0);
-    const [generalNote, setGeneralNote] = useState('');
-    const [items, setItems] = useState<ManpowerRequestItem[]>([]);
-    const [selectedBuId, setSelectedBuId] = useState('');
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [businessUnits, setBusinessUnits] = useState<{ id: string; name: string }[]>([]);
+  const { user } = useAuth();
+  const { getAccessibleBusinessUnits } = usePermissions();
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [forecastedPax, setForecastedPax] = useState(0);
+  const [generalNote, setGeneralNote] = useState('');
+  const [items, setItems] = useState<ManpowerRequestItem[]>([]);
+  const [selectedBuId, setSelectedBuId] = useState('');
+  const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [departmentRates, setDepartmentRates] = useState<Record<string, number>>({});
+  const [scheduleLoading, setScheduleLoading] = useState<Record<string, boolean>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState('');
 
-    // For now expose all business units; if you want to reintroduce scoping, reapply getAccessibleBusinessUnits here.
-    const accessibleBus = businessUnits;
+  const accessibleBusinessUnits = getAccessibleBusinessUnits(businessUnits);
+  const accessibleBuKey = accessibleBusinessUnits.map(unit => unit.id).join(',');
 
-    useEffect(() => {
-        const loadBus = async () => {
-            const { data, error } = await supabase.from('business_units').select('id, name').order('name');
-            if (!error && data) {
-                setBusinessUnits(data.map(d => ({ id: d.id, name: d.name })));
-            } else {
-                setBusinessUnits([]);
-            }
-        };
-        loadBus();
-    }, []);
-    const isPrivileged = user && [Role.Admin, Role.HRManager, Role.HRStaff].includes(user.role);
+  useEffect(() => {
+    if (!isOpen) return;
+    const loadBusinessUnits = async () => {
+      const { data, error } = await supabase.from('business_units').select('id, name, code').order('name');
+      setBusinessUnits(error || !data ? [] : data.map(row => ({ id: row.id, name: row.name, code: row.code || undefined })));
+    };
+    loadBusinessUnits();
+  }, [isOpen]);
 
-    const notifyApprovers = async (requestId: string, requestDate: string, buName: string, buId: string | null, deptId: string | null) => {
-        if (!user) return;
-        const candidateRoles = [
-            Role.Admin,
-            Role.HRManager,
-            Role.HRStaff,
-            Role.BOD,
-            Role.GeneralManager,
-            Role.OperationsDirector,
-            Role.BusinessUnitManager,
-            Role.Manager,
-        ];
+  useEffect(() => {
+    if (!isOpen || !user) return;
+    setDate(new Date().toISOString().split('T')[0]);
+    setForecastedPax(0);
+    setGeneralNote('');
+    setDepartments([]);
+    setDepartmentRates({});
+    setFormError('');
+    setItems([emptyItem(`item-${Date.now()}`)]);
+    const home = accessibleBusinessUnits.find(unit => unit.id === user.businessUnitId || unit.name === user.businessUnit);
+    setSelectedBuId(home?.id || accessibleBusinessUnits[0]?.id || '');
+  }, [isOpen, user?.id, accessibleBuKey]);
 
-        try {
-            const { data, error } = await supabase
-                .from('hris_users')
-                .select('id, auth_user_id, role, business_unit_id, department_id')
-                .in('role', candidateRoles);
-            if (error || !data) return;
+  useEffect(() => {
+    if (!isOpen || !selectedBuId) {
+      setDepartments([]);
+      setDepartmentRates({});
+      return;
+    }
+    let cancelled = false;
+    const loadDepartments = async () => {
+      const { data, error } = await supabase
+        .from('departments')
+        .select('id, name, business_unit_id')
+        .eq('business_unit_id', selectedBuId)
+        .order('name');
+      if (cancelled) return;
+      const nextDepartments: Department[] = error || !data
+        ? []
+        : data.map(row => ({ id: row.id, name: row.name, businessUnitId: row.business_unit_id }));
+      setDepartments(nextDepartments);
 
-            const approverIds = new Set<string>();
-            data.forEach(row => {
-                const targetUserId = row.auth_user_id || row.id;
-                const role = row.role as Role | null;
-                const approverBuId = row.business_unit_id || null;
-                const approverDeptId = row.department_id || null;
-                if (!role) return;
-
-                if ([Role.Admin, Role.HRManager, Role.HRStaff, Role.BOD].includes(role)) {
-                    approverIds.add(targetUserId);
-                    return;
-                }
-
-                if ([Role.GeneralManager, Role.OperationsDirector, Role.BusinessUnitManager].includes(role)) {
-                    if (buId && approverBuId === buId) {
-                        approverIds.add(targetUserId);
-                    }
-                    return;
-                }
-
-                if (role === Role.Manager) {
-                    if (deptId && approverDeptId === deptId) {
-                        approverIds.add(targetUserId);
-                    } else if (!deptId && buId && approverBuId === buId) {
-                        approverIds.add(targetUserId);
-                    }
-                }
-            });
-
-            const requesterIsApprover = (() => {
-                if (!user.role) return false;
-                if ([Role.Admin, Role.HRManager, Role.HRStaff, Role.BOD].includes(user.role)) return true;
-                if ([Role.GeneralManager, Role.OperationsDirector, Role.BusinessUnitManager].includes(user.role)) {
-                    return !!buId && user.businessUnitId === buId;
-                }
-                if (user.role === Role.Manager) {
-                    if (deptId && user.departmentId) {
-                        return user.departmentId === deptId;
-                    }
-                    return !!buId && user.businessUnitId === buId;
-                }
-                return false;
-            })();
-
-            if (!requesterIsApprover) {
-                approverIds.delete(user.id);
-                if (user.authUserId) {
-                    approverIds.delete(user.authUserId);
-                }
-            }
-            if (approverIds.size === 0) return;
-
-            const notifications = [...approverIds].map(uid => ({
-                user_id: uid,
-                type: NotificationType.MANPOWER_REQUEST_SUBMITTED,
-                title: 'New On-Call Request',
-                message: `A new on-call manpower request for ${buName} on ${new Date(requestDate).toLocaleDateString()} has been submitted by ${user!.name}.`,
-                link: `/payroll/manpower-planning?requestId=${requestId}`,
-                is_read: false,
-                created_at: new Date().toISOString(),
-                related_entity_id: requestId,
-            }));
-
-            const { error: notifError } = await supabase.from('notifications').insert(notifications);
-            if (notifError) console.warn('[ManpowerRequest] Failed to insert approver notifications', notifError);
-
-        } catch (err) {
-            console.error('Failed to notify manpower approvers', err);
+      if (nextDepartments.length) {
+        const { data: rates } = await supabase
+          .from('manpower_department_rates')
+          .select('department_id, default_rate')
+          .in('department_id', nextDepartments.map(department => department.id));
+        if (!cancelled) {
+          setDepartmentRates(Object.fromEntries((rates || []).map(rate => [rate.department_id, Number(rate.default_rate) || FALLBACK_RATE])));
         }
+      } else {
+        setDepartmentRates({});
+      }
+
+      setItems(previous => previous.map(item => {
+        if (!item.departmentId || nextDepartments.some(department => department.id === item.departmentId)) return item;
+        return itemWithDerivedValues(emptyItem(item.id), { shiftPreset: item.shiftPreset, shiftTime: item.shiftTime });
+      }));
     };
+    loadDepartments();
+    return () => { cancelled = true; };
+  }, [isOpen, selectedBuId]);
 
-    useEffect(() => {
-        if (!isOpen || !user) return;
-        setDate(new Date().toISOString().split('T')[0]);
-        setForecastedPax(0);
-        setGeneralNote('');
-        setItems([{ id: `item-${Date.now()}`, role: '', currentFte: 0, requestedCount: 0, costPerHead: 0, totalItemCost: 0, shiftTime: '', justification: '' }]);
-        
-        if (accessibleBus.length > 0) {
-            const userHomeBu = accessibleBus.find(b => b.name === user.businessUnit);
-            setSelectedBuId(userHomeBu?.id || accessibleBus[0].id);
-        } else {
-            setSelectedBuId('');
-        }
-    }, [isOpen, user]); 
+  const updateItem = (index: number, patch: Partial<ManpowerRequestItem>) => {
+    setItems(previous => previous.map((item, itemIndex) => itemIndex === index ? itemWithDerivedValues(item, patch) : item));
+  };
 
-    // Rate estimation: use a default minimum daily wage; can be improved later with a Supabase lookup
-    const getEstimatedRate = (_roleName: string) => {
-        return 610; // fallback: minimum daily wage
-    };
+  const loadReportingFte = async (index: number, departmentId: string, dateValue = date) => {
+    if (!selectedBuId || !departmentId) return;
+    setScheduleLoading(previous => ({ ...previous, [departmentId]: true }));
+    const { data, error } = await supabase.rpc('get_department_reporting_fte', {
+      p_business_unit_id: selectedBuId,
+      p_department_id: departmentId,
+      p_date: dateValue,
+    });
+    setScheduleLoading(previous => ({ ...previous, [departmentId]: false }));
+    if (!error && data !== null && data !== undefined) updateItem(index, { reportingFte: Number(data) || 0 });
+  };
 
-    // FTE calculation: returns 0 as a placeholder; requires a live shift_assignments query to be accurate
-    const calculateFteForRole = (_roleName: string, _dateStr: string) => {
-        return 0;
-    };
+  useEffect(() => {
+    if (!isOpen || !date || !selectedBuId) return;
+    items.forEach((item, index) => {
+      if (item.departmentId) loadReportingFte(index, item.departmentId, date);
+    });
+    // Date changes refresh only the schedule-derived value.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [date]);
 
-    const handleAddItem = () => {
-        setItems(prev => [
-            ...prev,
-            { id: `item-${Date.now()}`, role: '', currentFte: 0, requestedCount: 0, costPerHead: 0, totalItemCost: 0, shiftTime: '', justification: '' },
-        ]);
-    };
+  const handleDepartmentChange = (index: number, departmentId: string) => {
+    const department = departments.find(candidate => candidate.id === departmentId);
+    const rate = departmentRates[departmentId] || FALLBACK_RATE;
+    updateItem(index, {
+      departmentId,
+      departmentName: department?.name || '',
+      role: department?.name || '',
+      ratePerDay: rate,
+      costPerHead: rate,
+    });
+    if (departmentId) loadReportingFte(index, departmentId);
+  };
 
-    const handleRemoveItem = (index: number) => {
-        setItems(prev => prev.filter((_, i) => i !== index));
-    };
+  const handleShiftChange = (index: number, shiftPreset: string) => {
+    updateItem(index, {
+      shiftPreset,
+      shiftTime: shiftPreset === 'Custom' ? items[index]?.shiftTime || '' : SHIFT_PRESETS[shiftPreset]?.time || '',
+    });
+  };
 
-    const handleDateChange = (newDate: string) => {
-        setDate(newDate);
-    };
+  const handleAddDepartment = () => setItems(previous => [...previous, emptyItem(`item-${Date.now()}-${previous.length}`)]);
 
-    const handleBuChange = (newBuId: string) => {
-        setSelectedBuId(newBuId);
-    };
+  const handleRemoveDepartment = (index: number) => {
+    setItems(previous => previous.length === 1 ? previous : previous.filter((_, itemIndex) => itemIndex !== index));
+  };
 
-    const handleItemChange = (index: number, field: keyof ManpowerRequestItem, value: string | number) => {
-        setItems(prev => {
-            const next = [...prev];
-            const current = { ...next[index], [field]: value };
+  const totals = useMemo(() => items.reduce((summary, item) => ({
+    needed: summary.needed + (Number(item.onCallNeeded ?? item.requestedCount) || 0),
+    cost: summary.cost + (Number(item.totalItemCost) || 0),
+  }), { needed: 0, cost: 0 }), [items]);
 
-            if (field === 'requestedCount' || field === 'costPerHead') {
-                const count = field === 'requestedCount' ? (value as number) : current.requestedCount;
-                const rate = field === 'costPerHead' ? (value as number) : current.costPerHead;
-                current.totalItemCost = count * rate;
-            }
+  const handleSubmit = async () => {
+    if (!user) {
+      setFormError('You must be signed in to submit a request.');
+      return;
+    }
+    const selectedBusinessUnit = accessibleBusinessUnits.find(unit => unit.id === selectedBuId);
+    const duplicateDepartments = new Set<string>();
+    const duplicateFound = items.some(item => {
+      if (!item.departmentId || duplicateDepartments.has(item.departmentId)) return Boolean(item.departmentId);
+      duplicateDepartments.add(item.departmentId);
+      return false;
+    });
+    const invalidItem = items.find(item => {
+      const needed = Number(item.onCallNeeded) || 0;
+      return !item.departmentId
+        || item.requiredFte === undefined || item.requiredFte < 0
+        || item.reportingFte === undefined || item.reportingFte < 0
+        || item.ratePerDay === undefined || item.ratePerDay < 0
+        || (needed > 0 && !item.reason?.trim())
+        || (needed > 0 && item.reason === 'Other' && !item.otherReason?.trim());
+    });
+    if (!selectedBuId || !selectedBusinessUnit) return setFormError('Select a valid Business Unit.');
+    if (!date) return setFormError('Select the date coverage is needed.');
+    if (!items.length || duplicateFound) return setFormError('Choose a different department for each coverage row.');
+    if (invalidItem) return setFormError('Complete the department, FTE, rate, and reason fields for every row with on-call coverage.');
 
-            next[index] = current;
-            return next;
-        });
-    };
+    setFormError('');
+    setIsSubmitting(true);
+    try {
+      const saved = await createManpowerRequest({
+        businessUnitId: selectedBuId,
+        businessUnitName: selectedBusinessUnit.name,
+        departmentId: items[0]?.departmentId,
+        date: new Date(`${date}T00:00:00`),
+        forecastedPax: Number(forecastedPax) || 0,
+        generalNote: generalNote.trim() || undefined,
+        items,
+        grandTotal: totals.cost,
+      }, user);
+      onSave(saved);
+      onClose();
+    } catch (error: any) {
+      setFormError(error?.message || 'Failed to submit the on-call request.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
-    const handleSubmit = async () => {
-        if (!user) {
-            alert('You must be signed in to submit a request.');
-            return;
-        }
-        setIsSubmitting(true);
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Request On-Call Coverage"
+      size="5xl"
+      footer={(
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={isSubmitting || !accessibleBusinessUnits.length}>
+            {isSubmitting ? 'Submitting…' : 'Submit Request'}
+          </Button>
+        </div>
+      )}
+    >
+      <div className="space-y-6 text-slate-900 dark:text-slate-100">
+        <div>
+          <p className="text-sm text-slate-500 dark:text-slate-300">Request temporary coverage when the reporting team cannot meet the required staffing level.</p>
+        </div>
 
-        // All rows must have a role; keep all rows (including count 0) to avoid dropping items.
-        if (items.some(i => !i.role)) {
-            alert('Please fill in a role/area for each row or remove empty rows.');
-            setIsSubmitting(false);
-            return;
-        }
+        <section className="space-y-4">
+          <h3 className="text-lg font-bold">Request details</h3>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <label>
+              <span className={labelClasses}>Business Unit</span>
+              <select aria-label="Business Unit" value={selectedBuId} onChange={event => setSelectedBuId(event.target.value)} className={controlClasses}>
+                <option value="">Select Business Unit</option>
+                {accessibleBusinessUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
+              </select>
+            </label>
+            <label>
+              <span className={labelClasses}>Date Needed</span>
+              <input aria-label="Date Needed" type="date" value={date} onChange={event => setDate(event.target.value)} className={controlClasses} />
+            </label>
+            <label>
+              <span className={labelClasses}>Forecasted PAX</span>
+              <input aria-label="Forecasted PAX" type="number" min="0" value={forecastedPax} onChange={event => setForecastedPax(Number(event.target.value) || 0)} className={controlClasses} />
+            </label>
+            <label>
+              <span className={labelClasses}>Event / Operational Context</span>
+              <input aria-label="Event / Operational Context" value={generalNote} onChange={event => setGeneralNote(event.target.value)} placeholder="e.g. Saturday group booking" className={controlClasses} />
+            </label>
+          </div>
+          <div className="flex gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
+            <InfoIcon />
+            <p>Reporting FTE starts from the published schedule for the selected date. Edit it for sick calls, absences, or last-minute manpower changes. Each department with on-call coverage has its own reason.</p>
+          </div>
+        </section>
 
-        const bu = businessUnits.find(b => b.id === selectedBuId);
-        const grandTotal = items.reduce((sum, item) => sum + (Number(item.totalItemCost) || 0), 0);
-
-        const payload = {
-            business_unit_id: selectedBuId || null,
-            business_unit_name: bu?.name || user.businessUnit || null,
-            department_id: user.departmentId || null,
-            requester_id: user.id,
-            requester_name: user.name,
-            date_needed: date,
-            forecasted_pax: forecastedPax,
-            general_note: generalNote,
-            justification: generalNote,
-            items,
-            grand_total: grandTotal,
-            status: ManpowerRequestStatus.Pending,
-        };
-
-        const { data, error } = await supabase.from('manpower_requests').insert(payload).select().single();
-        if (error) {
-            alert('Failed to submit request. Please try again.');
-            setIsSubmitting(false);
-            return;
-        }
-
-        const newRequest: ManpowerRequest = {
-            id: data.id,
-            businessUnitId: data.business_unit_id || selectedBuId || '',
-            businessUnitName: data.business_unit_name || bu?.name || user.businessUnit || 'Unknown BU',
-            requestedBy: data.requester_id || user.id,
-            requesterName: data.requester_name || user.name,
-            date: data.date_needed ? new Date(data.date_needed) : new Date(date),
-            forecastedPax: data.forecasted_pax || forecastedPax,
-            generalNote: data.general_note || generalNote,
-            items: (data.items as ManpowerRequestItem[]) || items,
-            grandTotal: data.grand_total || grandTotal,
-            status: (data.status as ManpowerRequestStatus) || ManpowerRequestStatus.Pending,
-            createdAt: data.created_at ? new Date(data.created_at) : new Date(),
-            approvedBy: data.approved_by || undefined,
-            approvedAt: data.approved_at ? new Date(data.approved_at) : undefined,
-            rejectionReason: data.rejection_reason || undefined,
-        };
-
-        await notifyApprovers(
-            data.id,
-            data.date_needed || date,
-            data.business_unit_name || bu?.name || user.businessUnit || 'Unknown BU',
-            data.business_unit_id || selectedBuId || user.businessUnitId || null,
-            data.department_id || user.departmentId || null
-        );
-
-        onSave(newRequest);
-        setIsSubmitting(false);
-        onClose();
-    };
-
-    const totalRequestedCount = items.reduce((sum, item) => sum + (Number(item.requestedCount) || 0), 0);
-    const totalRequestedCost = items.reduce((sum, item) => sum + (Number(item.totalItemCost) || 0), 0);
-
-    return (
-        <Modal
-            isOpen={isOpen}
-            onClose={onClose}
-            title="Create On-Call Manpower Request"
-            size="4xl"
-            footer={
-                <div className="flex justify-end w-full space-x-2">
-                    <Button variant="secondary" onClick={onClose}>Cancel</Button>
-                    <Button onClick={handleSubmit} disabled={isSubmitting}>
-                        {isSubmitting ? 'Submitting...' : 'Submit Request'}
-                    </Button>
-                </div>
-            }
-        >
-            <div className="space-y-6">
-                {/* Header Info */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border dark:border-gray-700">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
-                         <select 
-                            value={selectedBuId} 
-                            onChange={(e) => handleBuChange(e.target.value)} 
-                            className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                        >
-                            {accessibleBus.map(bu => (
-                                <option key={bu.id} value={bu.id}>{bu.name}</option>
-                            ))}
-                        </select>
-                    </div>
-                     <Input 
-                        label="Date Needed" 
-                        type="date" 
-                        value={date} 
-                        onChange={e => handleDateChange(e.target.value)} 
-                        required
-                    />
-                    <Input 
-                        label="Forecasted PAX" 
-                        type="number" 
-                        value={forecastedPax} 
-                        onChange={e => setForecastedPax(parseInt(e.target.value) || 0)} 
-                        required
-                    />
-                    <Input 
-                        label="Event Context / Header Note (Optional)" 
-                        value={generalNote} 
-                        onChange={e => setGeneralNote(e.target.value)} 
-                        placeholder="e.g. Halloween Event, Big Group Booking"
-                    />
-                </div>
-
-                {/* Dynamic Table */}
-                <div>
-                    <div className="flex justify-between items-center mb-2">
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Staffing Breakdown</h3>
-                        <Button size="sm" variant="secondary" onClick={handleAddItem}>
-                            <PlusIcon /> Add Row
-                        </Button>
-                    </div>
-                    <div className="overflow-x-auto border rounded-lg dark:border-gray-700">
-                        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                            <thead className="bg-gray-100 dark:bg-gray-900">
-                                <tr>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/5">Role/Area</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24" title="Reporting Full-Time Equivalent (Scheduled Staff)">Sched. Count</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Req. On-Call</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">Rate/Day</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">Total Cost</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-40">Shift Time</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Justification</th>
-                                    <th className="px-4 py-3 w-10"></th>
-                                </tr>
-                            </thead>
-                            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                                {items.map((item, index) => (
-                                    <tr key={item.id}>
-                                        <td className="px-4 py-2">
-                                            <input 
-                                                type="text" 
-                                                className="w-full p-1 border rounded dark:bg-gray-700 dark:border-gray-600 text-sm"
-                                                placeholder="e.g. CRA"
-                                                value={item.role}
-                                                onChange={e => handleItemChange(index, 'role', e.target.value)}
-                                            />
-                                        </td>
-                                        <td className="px-4 py-2">
-                                            <input 
-                                                type="number" 
-                                                className="w-full p-1 border rounded dark:bg-gray-700 dark:border-gray-600 text-sm bg-gray-100 dark:bg-gray-800 text-center"
-                                                min="0"
-                                                readOnly
-                                                title="Auto-calculated from Schedule"
-                                                value={item.currentFte}
-                                                onChange={e => handleItemChange(index, 'currentFte', parseInt(e.target.value) || 0)}
-                                            />
-                                        </td>
-                                        <td className="px-4 py-2">
-                                             <input 
-                                                type="number" 
-                                                className="w-full p-1 border rounded dark:bg-gray-700 dark:border-gray-600 text-sm font-bold text-blue-600 text-center"
-                                                min="0"
-                                                value={item.requestedCount}
-                                                onChange={e => handleItemChange(index, 'requestedCount', parseInt(e.target.value) || 0)}
-                                            />
-                                        </td>
-                                         <td className="px-4 py-2">
-                                            <input 
-                                                type="number" 
-                                                className="w-full p-1 border rounded dark:bg-gray-700 dark:border-gray-600 text-sm text-right"
-                                                min="0"
-                                                value={item.costPerHead}
-                                                onChange={e => handleItemChange(index, 'costPerHead', parseFloat(e.target.value) || 0)}
-                                            />
-                                        </td>
-                                        <td className="px-4 py-2">
-                                            <div className="text-sm font-bold text-gray-700 dark:text-gray-300 text-right">
-                                                {item.totalItemCost.toLocaleString()}
-                                            </div>
-                                        </td>
-                                        <td className="px-4 py-2">
-                                            <input 
-                                                type="text" 
-                                                className="w-full p-1 border rounded dark:bg-gray-700 dark:border-gray-600 text-sm"
-                                                placeholder="8am-5pm"
-                                                value={item.shiftTime}
-                                                onChange={e => handleItemChange(index, 'shiftTime', e.target.value)}
-                                            />
-                                        </td>
-                                        <td className="px-4 py-2">
-                                            <input 
-                                                type="text" 
-                                                className="w-full p-1 border rounded dark:bg-gray-700 dark:border-gray-600 text-sm"
-                                                placeholder="Reason..."
-                                                value={item.justification}
-                                                onChange={e => handleItemChange(index, 'justification', e.target.value)}
-                                            />
-                                        </td>
-                                        <td className="px-4 py-2 text-center">
-                                            <button onClick={() => handleRemoveItem(index)} className="text-red-500 hover:text-red-700">
-                                                <TrashIcon />
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                            <tfoot className="bg-gray-50 dark:bg-gray-900 font-semibold">
-                                <tr>
-                                    <td colSpan={2} className="px-4 py-3 text-right text-sm">Total Requested:</td>
-                                    <td className="px-4 py-3 text-center text-sm text-blue-600">{totalRequestedCount}</td>
-                                    <td></td>
-                                    <td className="px-4 py-3 text-right text-sm text-green-600">{totalRequestedCost.toLocaleString()}</td>
-                                    <td colSpan={3}></td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-2">* 'Sched. Count' is automatically populated based on published shifts for the selected date. Rates are estimated.</p>
-                </div>
+        <section className="space-y-3">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-bold">Coverage by Department</h3>
+              <p className="text-sm text-slate-500 dark:text-slate-300">Reason is required only for departments with on-call coverage.</p>
             </div>
-        </Modal>
-    );
+            <Button size="sm" variant="secondary" onClick={handleAddDepartment}><PlusIcon /> Add Department</Button>
+          </div>
+
+          {!departments.length && selectedBuId && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">No departments are configured for this Business Unit yet.</div>
+          )}
+
+          <div className="space-y-3">
+            {items.map((item, index) => {
+              const needed = Number(item.onCallNeeded) || 0;
+              const selectedReason = item.reason || '';
+              return (
+                <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-600 dark:bg-slate-900/40">
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+                    <label className="lg:col-span-3">
+                      <span className={labelClasses}>Department / Area</span>
+                      <select aria-label={`Department / Area ${index + 1}`} value={item.departmentId || ''} onChange={event => handleDepartmentChange(index, event.target.value)} className={controlClasses}>
+                        <option value="">Select department</option>
+                        {departments.map(department => <option key={department.id} value={department.id}>{department.name}</option>)}
+                      </select>
+                    </label>
+                    <label className="lg:col-span-1">
+                      <span className={labelClasses}>Required FTE</span>
+                      <input aria-label={`Required FTE ${index + 1}`} type="number" min="0" step="1" value={item.requiredFte ?? 0} onChange={event => updateItem(index, { requiredFte: Number(event.target.value) || 0 })} className={controlClasses} />
+                    </label>
+                    <label className="lg:col-span-2">
+                      <span className={labelClasses}>Reporting FTE</span>
+                      <input aria-label={`Reporting FTE ${index + 1}`} type="number" min="0" step="1" value={item.reportingFte ?? 0} onChange={event => updateItem(index, { reportingFte: Number(event.target.value) || 0 })} className={`${controlClasses} border-indigo-300 dark:border-indigo-500`} />
+                      <span className="mt-1 block text-[11px] text-slate-500 dark:text-slate-400">{item.departmentId && scheduleLoading[item.departmentId] ? 'Loading schedule…' : `${item.reportingFte ?? 0} scheduled · editable`}</span>
+                    </label>
+                    <div className="lg:col-span-2">
+                      <span className={labelClasses}>On-call needed</span>
+                      <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2.5 dark:border-orange-900 dark:bg-orange-950/40">
+                        <p className="text-sm font-bold text-orange-700 dark:text-orange-200">On-call needed: {needed}</p>
+                        <p className="text-[11px] text-orange-600 dark:text-orange-300">Required − Reporting</p>
+                      </div>
+                    </div>
+                    <label className="lg:col-span-3">
+                      <span className={labelClasses}>Shift / Coverage</span>
+                      <select aria-label={`Shift / Coverage ${index + 1}`} value={item.shiftPreset || 'Custom'} onChange={event => handleShiftChange(index, event.target.value)} className={controlClasses}>
+                        {Object.entries(SHIFT_PRESETS).map(([value, preset]) => <option key={value} value={value}>{preset.label}</option>)}
+                      </select>
+                      <span className="mt-1 block text-[11px] text-slate-500 dark:text-slate-400">Presets: Opening · Mid · Closing · Custom</span>
+                    </label>
+                    <button type="button" aria-label={`Remove department ${index + 1}`} onClick={() => handleRemoveDepartment(index)} disabled={items.length === 1} className="hidden text-red-500 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-40 lg:block lg:col-span-1 lg:self-start lg:justify-self-end" title="Remove department">
+                      <TrashIcon />
+                    </button>
+                  </div>
+
+                  {item.shiftPreset === 'Custom' && (
+                    <label className="mt-3 block max-w-sm">
+                      <span className={labelClasses}>Custom shift time</span>
+                      <input aria-label={`Custom shift time ${index + 1}`} value={item.shiftTime} onChange={event => updateItem(index, { shiftTime: event.target.value })} placeholder="e.g. 6:30 AM – 3:30 PM" className={controlClasses} />
+                    </label>
+                  )}
+
+                  <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-12">
+                    <label className="md:col-span-3">
+                      <span className={labelClasses}>Rate / Day</span>
+                      <div className="relative">
+                        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-slate-500">₱</span>
+                        <input aria-label={`Rate / Day ${index + 1}`} type="number" min="0" step="0.01" value={item.ratePerDay ?? FALLBACK_RATE} onChange={event => updateItem(index, { ratePerDay: Number(event.target.value) || 0 })} className={`${controlClasses} pl-8`} />
+                      </div>
+                      <span className="mt-1 block text-[11px] text-slate-500 dark:text-slate-400">Prefilled from department default · editable</span>
+                    </label>
+                    <label className="md:col-span-4">
+                      <span className={labelClasses}>Reason for on-call {needed > 0 && <span className="text-red-500">*</span>}</span>
+                      <select aria-label={`Reason for on-call ${index + 1}`} value={selectedReason} onChange={event => updateItem(index, { reason: event.target.value, justification: event.target.value })} className={controlClasses}>
+                        <option value="">{needed > 0 ? 'Select a reason' : 'No reason needed when count is zero'}</option>
+                        {REASONS.map(reason => <option key={reason} value={reason}>{reason}</option>)}
+                      </select>
+                    </label>
+                    <label className="md:col-span-5">
+                      <span className={labelClasses}>Department note <span className="font-normal normal-case tracking-normal text-slate-400">(optional)</span></span>
+                      <input aria-label={`Department note ${index + 1}`} value={item.departmentNote || ''} onChange={event => updateItem(index, { departmentNote: event.target.value })} placeholder="Add context for this department" className={controlClasses} />
+                    </label>
+                  </div>
+
+                  {selectedReason === 'Other' && (
+                    <label className="mt-3 block">
+                      <span className={labelClasses}>Explain other reason {needed > 0 && <span className="text-red-500">*</span>}</span>
+                      <input aria-label={`Explain other reason ${index + 1}`} value={item.otherReason || ''} onChange={event => updateItem(index, { otherReason: event.target.value })} placeholder="Describe why on-call coverage is needed" className={controlClasses} />
+                    </label>
+                  )}
+
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3 text-sm dark:border-slate-700">
+                    <span className="text-slate-500 dark:text-slate-400">{needed} × ₱{(item.ratePerDay || 0).toLocaleString()} = <strong className="text-slate-800 dark:text-slate-100">₱{(item.totalItemCost || 0).toLocaleString()}</strong></span>
+                    <button type="button" onClick={() => handleRemoveDepartment(index)} disabled={items.length === 1} className="inline-flex items-center gap-1 text-sm font-semibold text-red-600 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-40 lg:hidden"><TrashIcon /> Remove</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:max-w-2xl">
+          <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4 dark:border-indigo-900 dark:bg-indigo-950/40">
+            <p className="text-xs font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">Total on-call FTE</p>
+            <p className="mt-1 text-2xl font-bold text-indigo-700 dark:text-indigo-200">{totals.needed}</p>
+          </div>
+          <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4 dark:border-emerald-900 dark:bg-emerald-950/40">
+            <p className="text-xs font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-300">Estimated total cost</p>
+            <p className="mt-1 text-2xl font-bold text-emerald-700 dark:text-emerald-200">₱{totals.cost.toLocaleString()}</p>
+          </div>
+        </div>
+        <p className="text-xs text-slate-500 dark:text-slate-400">On-call needed = max(Required FTE − Reporting FTE, 0). Reporting FTE is schedule-based and can be adjusted for actual absences.</p>
+
+        {formError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">{formError}</div>}
+      </div>
+    </Modal>
+  );
 };
 
 export default ManpowerRequestModal;

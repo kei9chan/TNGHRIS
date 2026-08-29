@@ -27,6 +27,7 @@ import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { mergePanParticulars } from '../../services/panUtils';
 import { resolveEmployeePosition } from '../../services/employeeProfile';
 import COEQueue from './COEQueue';
+import { approveManpowerRequest, fetchMyPendingManpowerApprovalIds, rejectManpowerRequest } from '../../services/manpowerService';
 
 
 const InboxIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" /></svg>;
@@ -656,7 +657,7 @@ const ManagerDashboard: React.FC = () => {
         };
 
         const loadPendingApprovals = async () => {
-            if (!user?.id || (reporteeIds.length === 0 && !isConfiguredBOD)) {
+            if (!user?.id) {
                 setPendingLeaveApprovals([]);
                 setPendingWfhApprovals([]);
                 setPendingOtApprovals([]);
@@ -664,38 +665,50 @@ const ManagerDashboard: React.FC = () => {
                 return;
             }
 
+            const emptyEmployeeId = '00000000-0000-0000-0000-000000000000';
+            const scopedReporteeIds = reporteeIds.length ? reporteeIds : [emptyEmployeeId];
+            let assignedManpowerIds: string[] = [];
+            try {
+                assignedManpowerIds = await fetchMyPendingManpowerApprovalIds();
+            } catch (error) {
+                console.error('Failed to load assigned manpower approvals', error);
+            }
+
             let leaveQuery = supabase
                 .from('leave_requests')
                 .select('id, employee_id, employee_name, leave_type_id, start_date, end_date, start_time, end_time, duration_days, reason, status, history_log, attachment_url, approver_id, business_unit_id, department_id');
             if (isConfiguredBOD) {
-                leaveQuery = leaveQuery.or(`and(employee_id.in.(${reporteeIds.join(',') || '00000000-0000-0000-0000-000000000000'}),status.eq.pending),status.eq.PendingBOD`);
+                leaveQuery = leaveQuery.or(`and(employee_id.in.(${scopedReporteeIds.join(',')}),status.eq.pending),status.eq.PendingBOD`);
             } else {
-                leaveQuery = leaveQuery.in('employee_id', reporteeIds).eq('status', 'pending');
+                leaveQuery = leaveQuery.in('employee_id', scopedReporteeIds).eq('status', 'pending');
             }
 
             let wfhQuery = supabase
                 .from('wfh_requests')
                 .select('id, employee_id, employee_name, date, reason, status, report_link, approved_by, approved_at, rejection_reason, created_at');
             if (isConfiguredBOD) {
-                wfhQuery = wfhQuery.or(`and(employee_id.in.(${reporteeIds.join(',') || '00000000-0000-0000-0000-000000000000'}),status.eq.${WFHRequestStatus.PendingDeptHead}),status.eq.${WFHRequestStatus.PendingBOD}`);
+                wfhQuery = wfhQuery.or(`and(employee_id.in.(${scopedReporteeIds.join(',')}),status.eq.${WFHRequestStatus.PendingDeptHead}),status.eq.${WFHRequestStatus.PendingBOD}`);
             } else {
-                wfhQuery = wfhQuery.in('employee_id', reporteeIds).eq('status', WFHRequestStatus.PendingDeptHead);
+                wfhQuery = wfhQuery.in('employee_id', scopedReporteeIds).eq('status', WFHRequestStatus.PendingDeptHead);
             }
 
             let otQuery = supabase
                 .from('ot_requests')
                 .select('id, employee_id, employee_name, date, start_time, end_time, reason, status, submitted_at, approved_hours, manager_note, history_log, attachment_url');
             if (isConfiguredBOD) {
-                otQuery = otQuery.or(`and(employee_id.in.(${reporteeIds.join(',') || '00000000-0000-0000-0000-000000000000'}),status.eq.${OTStatus.Submitted}),status.eq.${OTStatus.PendingBOD}`);
+                otQuery = otQuery.or(`and(employee_id.in.(${scopedReporteeIds.join(',')}),status.eq.${OTStatus.Submitted}),status.eq.${OTStatus.PendingBOD}`);
             } else {
-                otQuery = otQuery.in('employee_id', reporteeIds).eq('status', OTStatus.Submitted);
+                otQuery = otQuery.in('employee_id', scopedReporteeIds).eq('status', OTStatus.Submitted);
             }
 
             let manpowerQuery = supabase
                 .from('manpower_requests')
-                .select('id, business_unit_id, business_unit_name, department_id, requester_id, requester_name, date_needed, forecasted_pax, general_note, items, grand_total, status, created_at, approved_by, approved_at, rejection_reason');
-            // Manpower requests only have 'Pending', 'Approved', 'Rejected'
-            manpowerQuery = manpowerQuery.in('requester_id', reporteeIds).eq('status', ManpowerRequestStatus.Pending);
+                .select('id, business_unit_id, business_unit_name, department_id, requester_id, requester_name, date_needed, forecasted_pax, general_note, items, grand_total, status, created_at, approved_by, approved_at, rejection_reason, approval_stage, approval_issue, approval_history');
+            // Manpower approval is assignment-based, not department- or
+            // reportee-based. This also covers a BUM with no direct reports.
+            manpowerQuery = assignedManpowerIds.length
+                ? manpowerQuery.in('id', assignedManpowerIds).eq('status', ManpowerRequestStatus.Pending)
+                : manpowerQuery.eq('id', emptyEmployeeId);
 
             const [leaveRes, wfhRes, otRes, manpowerRes] = await Promise.all([
                 leaveQuery,
@@ -784,6 +797,9 @@ const ManagerDashboard: React.FC = () => {
                         items: Array.isArray(row.items) ? row.items : (row.items ? JSON.parse(row.items) : []),
                         grandTotal: row.grand_total || 0,
                         status: row.status as ManpowerRequestStatus,
+                        approvalStage: row.approval_stage || undefined,
+                        approvalIssue: row.approval_issue || undefined,
+                        approvalTrail: Array.isArray(row.approval_history) ? row.approval_history : [],
                         createdAt: row.created_at ? new Date(row.created_at) : new Date(),
                         approvedBy: row.approved_by || undefined,
                         approvedAt: row.approved_at ? new Date(row.approved_at) : undefined,
@@ -887,15 +903,12 @@ const ManagerDashboard: React.FC = () => {
         }
     };
 
-    const handleApproveManpower = async (requestId: string) => {
+    const handleApproveManpower = async (requestId: string, comments?: string) => {
         if (!user) return;
-        const { error } = await supabase
-            .from('manpower_requests')
-            .update({ status: ManpowerRequestStatus.Approved, approved_by: user.id, approved_at: new Date().toISOString() })
-            .eq('id', requestId);
-
-        if (error) {
-            alert("Error approving request.");
+        try {
+            await approveManpowerRequest(requestId, user.id, comments);
+        } catch (error: any) {
+            alert(error?.message || "Error approving request.");
             return;
         }
 
@@ -914,13 +927,10 @@ const ManagerDashboard: React.FC = () => {
 
     const handleRejectManpower = async (requestId: string, reason: string) => {
         if (!user) return;
-        const { error } = await supabase
-            .from('manpower_requests')
-            .update({ status: ManpowerRequestStatus.Rejected, rejection_reason: reason })
-            .eq('id', requestId);
-
-        if (error) {
-            alert("Error rejecting request.");
+        try {
+            await rejectManpowerRequest(requestId, user.id, reason);
+        } catch (error: any) {
+            alert(error?.message || "Error rejecting request.");
             return;
         }
 
@@ -1236,12 +1246,10 @@ const ManagerDashboard: React.FC = () => {
 
         // 4. Manpower Request Approvals (For Approvers)
         if (isApprover || isBusinessUnitManager) {
-            // IMPORTANT: Filter by scope. Only show requests from employees I can see (subordinates or BU members)
-            // OR if I am the one who needs to approve it.
-            const pendingManpower = manpowerRequests.filter(r =>
-                r.status === ManpowerRequestStatus.Pending &&
-                visibleEmployeeIds.includes(r.requestedBy)
-            );
+            // This list is returned by the active-assignment RPC, so the
+            // notification surface follows the same authority rule as the
+            // Approval Center and review action.
+            const pendingManpower = pendingManpowerApprovals.filter(r => r.status === ManpowerRequestStatus.Pending);
 
             pendingManpower.forEach(req => {
                 items.push({
@@ -1526,7 +1534,7 @@ const ManagerDashboard: React.FC = () => {
             if (priorityDiff !== 0) return priorityDiff;
             return String(a.id).localeCompare(String(b.id));
         });
-    }, [user, notificationUserIds, employeeProfileId, memos, memoUpdateKey, requests, assignments, assignedTickets, checklists, templates, pans, pendingOtApprovals, exceptions, requisitions, resolutions, ntes, awards, manpowerRequests, isApprover, isBusinessUnitManager, subordinateIds, envelopes, benefitRequests, coachingSessions, evaluationSubmissions, evaluations, evaluationTimelines, isUserEligibleEvaluator, visibleEmployeeIds, panApproverId]);
+    }, [user, notificationUserIds, employeeProfileId, memos, memoUpdateKey, requests, assignments, assignedTickets, checklists, templates, pans, pendingOtApprovals, pendingManpowerApprovals, exceptions, requisitions, resolutions, ntes, awards, manpowerRequests, isApprover, isBusinessUnitManager, subordinateIds, envelopes, benefitRequests, coachingSessions, evaluationSubmissions, evaluations, evaluationTimelines, isUserEligibleEvaluator, visibleEmployeeIds, panApproverId]);
 
     // Team approval items are now handled by the global ApprovalWidget component
 

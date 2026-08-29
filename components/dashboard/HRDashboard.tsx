@@ -355,7 +355,7 @@ const HRDashboard: React.FC = () => {
                 Promise.resolve(emptyResult),
                 supabase
                     .from('manpower_requests')
-                    .select('id, business_unit_id, business_unit_name, department_id, requester_id, requester_name, date_needed, forecasted_pax, general_note, items, grand_total, status, created_at, approved_by, approved_at, rejection_reason')
+                    .select('id, business_unit_id, business_unit_name, department_id, requester_id, requester_name, date_needed, forecasted_pax, general_note, items, grand_total, status, created_at, approved_by, approved_at, rejection_reason, approval_stage, approval_issue, approval_history')
                     .eq('status', ManpowerRequestStatus.Pending)
                     .order('created_at', { ascending: false }),
             ]);
@@ -420,6 +420,9 @@ const HRDashboard: React.FC = () => {
                         items: Array.isArray(row.items) ? row.items : (row.items ? JSON.parse(row.items) : []),
                         grandTotal: row.grand_total || 0,
                         status: row.status as ManpowerRequestStatus,
+                        approvalStage: row.approval_stage || undefined,
+                        approvalIssue: row.approval_issue || undefined,
+                        approvalTrail: Array.isArray(row.approval_history) ? row.approval_history : [],
                         createdAt: row.created_at ? new Date(row.created_at) : new Date(),
                         approvedBy: row.approved_by || undefined,
                         approvedAt: row.approved_at ? new Date(row.approved_at) : undefined,
@@ -1098,10 +1101,10 @@ const HRDashboard: React.FC = () => {
                 id: `manpower-approve-${req.id}`,
                 icon: <ClipboardCheckIcon {...iconProps} />,
                 title: "Manpower Request",
-                subtitle: `From ${req.requesterName} (Needed: ${new Date(req.dateNeeded).toLocaleDateString()})`,
+                subtitle: `From ${req.requesterName} (Needed: ${new Date(req.date).toLocaleDateString()})`,
                 date: new Date(sortDate).toLocaleDateString(),
                 sortDate: sortDate,
-                link: '/payroll/manpower',
+                link: `/payroll/manpower-planning?requestId=${encodeURIComponent(req.id)}`,
                 colorClass: "bg-blue-500",
                 priority: 1
             });

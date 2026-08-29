@@ -34,7 +34,8 @@
     "test:password-recovery": "node tests/passwordRecoverySmokeTest.mjs",
     "test:mobile-approval-ux": "node tests/mobileApprovalUxSmokeTest.mjs",
     "test:approval-presentation": "node tests/approvalPresentationSmokeTest.mjs",
-    "test:record-authorization": "node tests/recordAuthorizationAndIncidentRevisionSmokeTest.mjs"
+    "test:record-authorization": "node tests/recordAuthorizationAndIncidentRevisionSmokeTest.mjs",
+    "test:on-call-manpower": "node tests/onCallManpowerWorkflowSmokeTest.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.84.0",

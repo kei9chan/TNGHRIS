@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { ManpowerRequest, ManpowerRequestStatus, ManpowerRequestItem, User } from '../types';
+import { ManpowerApprovalTrailEntry, ManpowerRequest, ManpowerRequestStatus, ManpowerRequestItem, User } from '../types';
 
 // ---------------------------------------------------------------------------
 // Row Type
@@ -19,9 +19,16 @@ type ManpowerRequestRow = {
   approved_by?: string | null;
   approved_at?: string | null;
   rejection_reason?: string | null;
-  justification?: string | null;
   department_id?: string | null;
+  approval_stage?: string | null;
+  approval_issue?: string | null;
+  approval_history?: unknown;
   created_at: string;
+};
+
+const parseTrail = (value: unknown): ManpowerApprovalTrailEntry[] => {
+  if (!Array.isArray(value)) return [];
+  return value as ManpowerApprovalTrailEntry[];
 };
 
 // ---------------------------------------------------------------------------
@@ -40,6 +47,9 @@ const mapManpowerRequest = (row: ManpowerRequestRow): ManpowerRequest => ({
   items: Array.isArray(row.items) ? (row.items as ManpowerRequestItem[]) : [],
   grandTotal: row.grand_total || 0,
   status: row.status as ManpowerRequestStatus,
+  approvalStage: row.approval_stage || undefined,
+  approvalIssue: row.approval_issue || undefined,
+  approvalTrail: parseTrail(row.approval_history),
   createdAt: new Date(row.created_at),
   approvedBy: row.approved_by || undefined,
   approvedAt: row.approved_at ? new Date(row.approved_at) : undefined,
@@ -95,7 +105,7 @@ export const createManpowerRequest = async (request: Partial<ManpowerRequest>, u
     items: request.items || [],
     grand_total: request.grandTotal || 0,
     status: ManpowerRequestStatus.Pending,
-    department_id: request.departmentId || user.departmentId || null,
+    department_id: request.departmentId || request.items?.[0]?.departmentId || user.departmentId || null,
   };
 
   const { data, error } = await supabase.from('manpower_requests').insert(payload).select().single();
@@ -103,36 +113,31 @@ export const createManpowerRequest = async (request: Partial<ManpowerRequest>, u
   return mapManpowerRequest(data as ManpowerRequestRow);
 };
 
-export const approveManpowerRequest = async (id: string, approverId: string): Promise<ManpowerRequest> => {
-  const { data, error } = await supabase
-    .from('manpower_requests')
-    .update({
-      status: ManpowerRequestStatus.Approved,
-      approved_by: approverId,
-      approved_at: new Date().toISOString(),
-      rejection_reason: null,
-    })
-    .eq('id', id)
-    .select()
-    .single();
-
-  if (error) throw new Error(error.message || 'Failed to approve manpower request');
-  return mapManpowerRequest(data as ManpowerRequestRow);
+export const fetchMyPendingManpowerApprovalIds = async (): Promise<string[]> => {
+  const { data, error } = await supabase.rpc('get_my_pending_manpower_approval_ids');
+  if (error) throw new Error(error.message || 'Failed to load assigned manpower approvals');
+  return (data || []).map((row: { request_id: string }) => row.request_id).filter(Boolean);
 };
 
-export const rejectManpowerRequest = async (id: string, approverId: string, reason: string): Promise<ManpowerRequest> => {
-  const { data, error } = await supabase
-    .from('manpower_requests')
-    .update({
-      status: ManpowerRequestStatus.Rejected,
-      approved_by: approverId,
-      approved_at: new Date().toISOString(),
-      rejection_reason: reason,
-    })
-    .eq('id', id)
-    .select()
-    .single();
+const processManpowerApproval = async (
+  id: string,
+  decision: 'approve' | 'reject',
+  comments?: string,
+): Promise<ManpowerRequest> => {
+  const { error } = await supabase.rpc('process_manpower_request_approval', {
+    p_request_id: id,
+    p_decision: decision,
+    p_comments: comments?.trim() || null,
+  });
+  if (error) throw new Error(error.message || `Failed to ${decision} manpower request`);
 
-  if (error) throw new Error(error.message || 'Failed to reject manpower request');
-  return mapManpowerRequest(data as ManpowerRequestRow);
+  const updated = await fetchManpowerRequestById(id);
+  if (!updated) throw new Error('The manpower request could not be reloaded after processing.');
+  return updated;
 };
+
+export const approveManpowerRequest = async (id: string, _approverId?: string, comments?: string): Promise<ManpowerRequest> =>
+  processManpowerApproval(id, 'approve', comments);
+
+export const rejectManpowerRequest = async (id: string, _approverId?: string, reason?: string): Promise<ManpowerRequest> =>
+  processManpowerApproval(id, 'reject', reason);

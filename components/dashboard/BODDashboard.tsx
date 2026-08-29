@@ -21,6 +21,7 @@ import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { mergePanParticulars } from '../../services/panUtils';
 import { resolveEmployeePosition } from '../../services/employeeProfile';
+import { approveManpowerRequest, rejectManpowerRequest } from '../../services/manpowerService';
 
 const GavelIcon: React.FC<{className?: string}> = ({className}) => <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>;
 const DocumentTextIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m5.231 13.5h-8.021a1.125 1.125 0 0 1-1.125-1.125v-1.5A1.125 1.125 0 0 1 5.625 15h12.75a1.125 1.125 0 0 1 1.125 1.125v1.5a1.125 1.125 0 0 1-1.125 1.125H13.5m-3.031-1.125a3 3 0 1 0-5.962 0 3 3 0 0 0 5.962 0ZM15 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" /></svg>);
@@ -443,7 +444,26 @@ const BODDashboard: React.FC = () => {
                 approverSteps: r.approver_steps || [],
                 approverId: r.approver_id || undefined,
             })));
-            if (!manRes.error && manRes.data) setManpowerRequests(manRes.data.map((r: any) => ({ ...r, requestedBy: r.requested_by, businessUnitName: r.business_unit_name, date: mapDate(r.date), createdAt: mapDate(r.created_at), approvedAt: r.approved_at ? mapDate(r.approved_at) : undefined })));
+            if (!manRes.error && manRes.data) setManpowerRequests(manRes.data.map((r: any) => ({
+                ...r,
+                businessUnitId: r.business_unit_id,
+                departmentId: r.department_id || undefined,
+                requestedBy: r.requester_id,
+                requesterName: r.requester_name,
+                businessUnitName: r.business_unit_name,
+                date: mapDate(r.date_needed),
+                forecastedPax: r.forecasted_pax || 0,
+                items: Array.isArray(r.items) ? r.items : (r.items ? JSON.parse(r.items) : []),
+                grandTotal: r.grand_total || 0,
+                status: r.status as ManpowerRequestStatus,
+                approvalStage: r.approval_stage || undefined,
+                approvalIssue: r.approval_issue || undefined,
+                approvalTrail: Array.isArray(r.approval_history) ? r.approval_history : [],
+                createdAt: mapDate(r.created_at),
+                approvedBy: r.approved_by || undefined,
+                approvedAt: r.approved_at ? mapDate(r.approved_at) : undefined,
+                rejectionReason: r.rejection_reason || undefined,
+            })));
             if (!wfhRes.error && wfhRes.data) setWfhRequests(wfhRes.data.map((r: any) => ({ ...r, employeeId: r.employee_id, employeeName: r.employee_name, date: mapDate(r.date), createdAt: mapDate(r.created_at) })));
             if (!benRes.error && benRes.data) setBenefitRequests(benRes.data.map((r: any) => ({ ...r, employeeId: r.employee_id, employeeName: r.employee_name, benefitTypeName: r.benefit_type_name || '', dateNeeded: mapDate(r.date_needed) })));
             if (!envRes.error && envRes.data) setEnvelopes(envRes.data.map((r: any) => ({ ...r, createdAt: mapDate(r.created_at), routingSteps: r.routing_steps || [], employeeName: r.employee_name || '' })));
@@ -455,17 +475,25 @@ const BODDashboard: React.FC = () => {
         return () => { active = false; };
     }, []);
 
-    const handleApproveManpower = async (requestId: string) => {
-        const { error } = await supabase.from('manpower_requests').update({ status: ManpowerRequestStatus.Approved, approved_by: user?.id, approved_at: new Date().toISOString() }).eq('id', requestId);
-        if (error) { alert('Failed to approve request.'); return; }
+    const handleApproveManpower = async (requestId: string, comments?: string) => {
+        try {
+            await approveManpowerRequest(requestId, user?.id, comments);
+        } catch (error: any) {
+            alert(error?.message || 'Failed to approve request.');
+            return;
+        }
         setManpowerRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: ManpowerRequestStatus.Approved } : r));
         setIsManpowerReviewModalOpen(false);
         alert('Manpower Request Approved.');
     };
 
     const handleRejectManpower = async (requestId: string, reason: string) => {
-        const { error } = await supabase.from('manpower_requests').update({ status: ManpowerRequestStatus.Rejected, rejection_reason: reason }).eq('id', requestId);
-        if (error) { alert('Failed to reject request.'); return; }
+        try {
+            await rejectManpowerRequest(requestId, user?.id, reason);
+        } catch (error: any) {
+            alert(error?.message || 'Failed to reject request.');
+            return;
+        }
         setManpowerRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: ManpowerRequestStatus.Rejected } : r));
         setIsManpowerReviewModalOpen(false);
         alert('Manpower Request Rejected.');

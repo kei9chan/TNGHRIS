@@ -452,15 +452,47 @@ export enum ManpowerRequestStatus {
   Rejected = 'Rejected'
 }
 
+export enum ManpowerApprovalStage {
+  BusinessUnitManager = 'BUSINESS_UNIT_MANAGER',
+  BodGm = 'BOD_GM',
+  Completed = 'COMPLETED',
+  Rejected = 'REJECTED',
+}
+
+export interface ManpowerApprovalTrailEntry {
+  stage: ManpowerApprovalStage | string;
+  action: string;
+  approverName: string;
+  approverRole: string;
+  timestamp: string | Date;
+  previousStatus?: string;
+  newStatus?: string;
+  previousStage?: string;
+  newStage?: string;
+  comments?: string;
+}
+
 export interface ManpowerRequestItem {
   id: string;
-  role: string; // e.g. CRA, BEACH GUIDE
-  currentFte: number; // Reporting FTE
-  requestedCount: number; // Requested Oncall
-  costPerHead: number; // Daily rate
-  totalItemCost: number; // count * rate
-  shiftTime: string; // e.g. 8am-5pm
-  justification: string; // e.g. To remove the trapal...
+  // `role`, `currentFte`, `requestedCount`, and `costPerHead` remain as
+  // compatibility aliases for records created by the original form.
+  role: string;
+  departmentId?: string;
+  departmentName?: string;
+  requiredFte?: number;
+  reportingFte?: number;
+  onCallNeeded?: number;
+  currentFte: number;
+  requestedCount: number;
+  costPerHead: number;
+  ratePerDay?: number;
+  totalItemCost: number;
+  shiftPreset?: 'Opening' | 'Mid' | 'Closing' | 'Custom' | string;
+  shiftTime: string;
+  reason?: string;
+  departmentNote?: string;
+  otherReason?: string;
+  justification: string;
 }
 
 export interface ManpowerRequest {
@@ -476,6 +508,9 @@ export interface ManpowerRequest {
   items: ManpowerRequestItem[];
   grandTotal: number; // Sum of all items
   status: ManpowerRequestStatus;
+  approvalStage?: ManpowerApprovalStage | string;
+  approvalIssue?: string;
+  approvalTrail?: ManpowerApprovalTrailEntry[];
   createdAt: Date;
   approvedBy?: string;
   approvedAt?: Date;
