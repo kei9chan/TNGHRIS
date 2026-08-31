@@ -11,9 +11,10 @@ interface WFHRequestModalProps {
     onClose: () => void;
     onSave: (data: Partial<WFHRequest>, isDraft: boolean) => void;
     request: WFHRequest | null;
+    readOnly?: boolean;
 }
 
-const WFHRequestModal: React.FC<WFHRequestModalProps> = ({ isOpen, onClose, onSave, request }) => {
+const WFHRequestModal: React.FC<WFHRequestModalProps> = ({ isOpen, onClose, onSave, request, readOnly = false }) => {
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
     const [reason, setReason] = useState('');
@@ -29,8 +30,8 @@ const WFHRequestModal: React.FC<WFHRequestModalProps> = ({ isOpen, onClose, onSa
 
     // Fields are editable if it's a new request or pending submission.
     // Report link is only editable if approved-for-timekeeping AND no report submitted yet.
-    const canEditDetails = isNew || isPendingSubmission;
-    const canEditReport = isForTimekeeping && !hasSubmittedReport;
+    const canEditDetails = !readOnly && (isNew || isPendingSubmission);
+    const canEditReport = !readOnly && isForTimekeeping && !hasSubmittedReport;
 
     useEffect(() => {
         if (isOpen) {
@@ -61,6 +62,7 @@ const WFHRequestModal: React.FC<WFHRequestModalProps> = ({ isOpen, onClose, onSa
     }, [startDate]);
 
     const handleSave = (isDraft: boolean) => {
+        if (readOnly) return;
         if (!startDate || !endDate || !reason) {
             alert("Date range and Reason are required.");
             return;
@@ -80,6 +82,7 @@ const WFHRequestModal: React.FC<WFHRequestModalProps> = ({ isOpen, onClose, onSa
 
     const getTitle = () => {
         if (isNew) return 'Request Work From Home';
+        if (readOnly) return 'View WFH Request';
         if (isForTimekeeping && hasSubmittedReport) return 'WFH Report Submitted';
         if (isForTimekeeping) return 'Submit WFH Accomplishment Report';
         if (isRejected) return 'Rejected Request';
@@ -93,19 +96,19 @@ const WFHRequestModal: React.FC<WFHRequestModalProps> = ({ isOpen, onClose, onSa
             title={getTitle()}
             footer={
                 <div className="flex justify-end w-full space-x-2">
-                    <Button variant="secondary" onClick={onClose}>Cancel</Button>
-                    {(!isRejected && !isPendingApproval && !isForTimekeeping) && (
+                    <Button variant="secondary" onClick={onClose}>{readOnly ? 'Close' : 'Cancel'}</Button>
+                    {!readOnly && (!isRejected && !isPendingApproval && !isForTimekeeping) && (
                          <Button variant="secondary" onClick={() => handleSave(true)}>
                              Save Draft
                          </Button>
                     )}
-                    {(!isRejected && !isForTimekeeping && (!request || isPendingSubmission)) && (
+                    {!readOnly && (!isRejected && !isForTimekeeping && (!request || isPendingSubmission)) && (
                          <Button onClick={() => handleSave(false)}>
                              Submit Request
                          </Button>
                     )}
                     {/* Only show Save when ForTimekeeping AND report not yet submitted */}
-                    {(!isRejected && isForTimekeeping && !hasSubmittedReport) && (
+                    {!readOnly && (!isRejected && isForTimekeeping && !hasSubmittedReport) && (
                          <Button onClick={() => handleSave(false)}>
                              Submit Report
                          </Button>

@@ -81,6 +81,7 @@ const WFHRequests: React.FC = () => {
   const [requests, setRequests] = useState<WFHRequest[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<WFHRequest | null>(null);
+  const [isReadOnlyRequest, setIsReadOnlyRequest] = useState(false);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [selectedReviewRequest, setSelectedReviewRequest] = useState<WFHRequest | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -193,6 +194,7 @@ const WFHRequests: React.FC = () => {
           setSelectedReviewRequest(request);
           setIsReviewModalOpen(true);
         } else {
+          setIsReadOnlyRequest(false);
           setSelectedRequest(request);
           setIsModalOpen(true);
         }
@@ -224,8 +226,12 @@ const WFHRequests: React.FC = () => {
 
   const handleOpenModal = (request: WFHRequest | null) => {
       if (!canView) return;
-      if (request && request.employeeId !== user?.id) return;
-      if (request && !canManage && !canCreate) return;
+      const isReadOnly = Boolean(request && request.employeeId !== user?.id);
+      // Requests returned by Supabase are already filtered by RLS/scope. An
+      // authorized manager, BOD, or admin must still be able to open a loaded
+      // request when it is not theirs; the modal will remove all edit actions.
+      if (request && !isReadOnly && !canManage && !canCreate) return;
+      setIsReadOnlyRequest(isReadOnly);
       setSelectedRequest(request);
       setIsModalOpen(true);
   };
@@ -238,6 +244,10 @@ const WFHRequests: React.FC = () => {
 
   const handleSave = async (data: Partial<WFHRequest>, isDraft: boolean) => {
       if (!user) return;
+      if (isReadOnlyRequest) {
+        alert('This WFH request is view-only for your account.');
+        return;
+      }
       if (!canCreate && !canManage) {
         alert('You do not have permission to update WFH requests.');
         return;
@@ -277,6 +287,7 @@ const WFHRequests: React.FC = () => {
           alert(error.message || 'Failed to save WFH request.');
       }
       setIsModalOpen(false);
+      setIsReadOnlyRequest(false);
       loadRequests();
   };
 
@@ -448,9 +459,13 @@ const WFHRequests: React.FC = () => {
 
         <WFHRequestModal 
             isOpen={isModalOpen}
-            onClose={() => setIsModalOpen(false)}
+            onClose={() => {
+              setIsModalOpen(false);
+              setIsReadOnlyRequest(false);
+            }}
             request={selectedRequest}
             onSave={handleSave}
+            readOnly={isReadOnlyRequest}
         />
         <WFHReviewModal
             isOpen={isReviewModalOpen}

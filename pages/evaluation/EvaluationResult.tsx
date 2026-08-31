@@ -10,6 +10,7 @@ import { usePermissions } from '../../hooks/usePermissions';
 import { Evaluation, EvaluationSubmission, User, EvaluationQuestion, Role, Permission, EvaluatorType, EvaluatorConfig, RaterGroup } from '../../types';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
+import { hasEvaluationOversightAccess, isEvaluationSubject } from '../../utils/evaluationAccess';
 
 const ArrowLeftIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>;
 const ChevronDownIcon = ({ className }: { className?: string }) => <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 transition-transform ${className}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>;
@@ -514,8 +515,14 @@ const EvaluationResult: React.FC = () => {
     if (loadError) return <div>{loadError}</div>;
     if (!evaluation || !user) return <div>Evaluation not found.</div>;
     
-    const isAdminView = can('Evaluation', Permission.Manage);
-    const isEvaluatedEmployee = evaluation.targetEmployeeIds.includes(user.id);
+    const canManageEvaluation = can('Evaluation', Permission.Manage);
+    const isEvaluationOversight = hasEvaluationOversightAccess(user);
+    const isEvaluatedEmployee = isEvaluationSubject(user.id, evaluation.targetEmployeeIds);
+    // Oversight roles can inspect an internal cycle even when they were not
+    // configured as an evaluator. A target employee must still wait for the
+    // normal released-results flow, even if they also hold an HR/BOD role.
+    const canViewAllResults = !isEvaluatedEmployee && (canManageEvaluation || isEvaluationOversight);
+    const canChangeResultVisibility = canManageEvaluation && !isEvaluatedEmployee;
 
     const selectedEmployeeScores = selectedUserForDetails ? results.employeeScores.find(es => es.user.id === selectedUserForDetails.id) : null;
 
@@ -648,7 +655,7 @@ const EvaluationResult: React.FC = () => {
                     </Link>
                     <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{evaluation.name} - Results</h1>
                 </div>
-                 {isAdminView && (
+                 {canChangeResultVisibility && (
                     <div className="flex items-center">
                         <span className="mr-3 text-sm font-medium">Allow Employees to View Results</span>
                         <label htmlFor="visibility-toggle" className="flex items-center cursor-pointer">
@@ -662,7 +669,7 @@ const EvaluationResult: React.FC = () => {
                 )}
             </div>
             
-            {isAdminView ? renderAdminView() : isEvaluatedEmployee ? renderEmployeeView() : <Card><p>You do not have permission to view these results.</p></Card>}
+            {canViewAllResults ? renderAdminView() : isEvaluatedEmployee ? renderEmployeeView() : <Card><p>You do not have permission to view these results.</p></Card>}
             
             {selectedUserForDetails && (
                 <Modal 

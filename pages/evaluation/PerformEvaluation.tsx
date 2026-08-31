@@ -11,6 +11,7 @@ import { logActivity } from '../../services/auditService';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { resolveCurrentHrisUserId } from '../../services/evaluationService';
+import { hasEvaluationOversightAccess, isEvaluationSubject } from '../../utils/evaluationAccess';
 
 // Icons
 const ArrowLeftIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>;
@@ -292,6 +293,9 @@ const PerformEvaluation: React.FC = () => {
     }
     
     if (eligibleTargets.length === 0) {
+        const canInspectReadOnly = hasEvaluationOversightAccess(user)
+            && !isEvaluationSubject(raterProfileId || user.id, evaluation.targetEmployeeIds);
+
         return (
             <div className="space-y-6">
                 <Link to="/evaluation/reviews" className="flex items-center text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 mb-2">
@@ -299,7 +303,19 @@ const PerformEvaluation: React.FC = () => {
                 </Link>
                 <Card>
                     <div className="text-center py-12">
-                        <p className="text-gray-600 dark:text-gray-400">You are not assigned to evaluate any employees in this cycle.</p>
+                        {canInspectReadOnly ? (
+                            <>
+                                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Evaluation overview</h2>
+                                <p className="mt-2 text-gray-600 dark:text-gray-400">
+                                    You are not assigned as an evaluator for this cycle, but your role allows read-only access.
+                                </p>
+                                <Link to={`/evaluation/report/${evaluation.id}`} className="mt-4 inline-block">
+                                    <Button variant="secondary">View Evaluation</Button>
+                                </Link>
+                            </>
+                        ) : (
+                            <p className="text-gray-600 dark:text-gray-400">You are not assigned to evaluate any employees in this cycle.</p>
+                        )}
                     </div>
                 </Card>
             </div>

@@ -41,7 +41,7 @@ const ComplianceModal: React.FC<ComplianceModalProps> = ({ isOpen, onClose, titl
             isOpen={isOpen}
             onClose={onClose}
             title="Compliance Report"
-            size="lg"
+            size="3xl"
             footer={
                 <div className="flex justify-end w-full space-x-2">
                     <Button variant="secondary" onClick={onClose}>Close</Button>
@@ -69,57 +69,63 @@ const ComplianceModal: React.FC<ComplianceModalProps> = ({ isOpen, onClose, titl
                 </div>
 
                 <div className="overflow-hidden border rounded-lg dark:border-gray-700">
-                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                        <thead className="bg-gray-50 dark:bg-slate-800">
+                    <div className="max-h-[min(24rem,55vh)] overflow-x-auto overflow-y-auto">
+                    <table className={`w-full table-fixed divide-y divide-gray-200 dark:divide-gray-700 ${type === 'Evaluation' ? 'min-w-[720px]' : 'min-w-[560px]'}`}>
+                        <colgroup>
+                            <col className={type === 'Evaluation' ? 'w-[42%]' : 'w-[55%]'} />
+                            {type === 'Evaluation' && <col className="w-[30%]" />}
+                            <col className={type === 'Evaluation' ? 'w-[28%]' : 'w-[45%]'} />
+                        </colgroup>
+                        <thead className="sticky top-0 z-10 bg-gray-50 dark:bg-slate-800">
                             <tr>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                <th scope="col" className="px-6 py-3 text-left align-top text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                                     {type === 'Evaluation' ? 'Evaluator' : 'Employee'}
                                 </th>
                                 {type === 'Evaluation' && (
-                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                    <th scope="col" className="px-6 py-3 text-left align-top text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                                         Missing Review For
                                     </th>
                                 )}
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                <th scope="col" className="px-6 py-3 text-left align-top text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                                     Department
                                 </th>
                             </tr>
                         </thead>
-                        <tbody className="bg-white dark:bg-slate-900 divide-y divide-gray-200 dark:divide-gray-700 max-h-64 overflow-y-auto block w-full">
-                            {/* Note: Making tbody block for scrolling is a quick CSS hack, for production use a wrapper div */}
+                        <tbody className="bg-white dark:bg-slate-900 divide-y divide-gray-200 dark:divide-gray-700">
                             {missingUsers.length > 0 ? (
                                 missingUsers.map((item, idx) => (
-                                    <tr key={`${item.user.id}-${idx}`} className="table w-full table-fixed">
-                                        <td className="px-6 py-4 whitespace-nowrap">
+                                    <tr key={`${item.user.id}-${idx}`}>
+                                        <td className="px-6 py-4 align-top">
                                             <div className="flex items-center">
                                                 <div className="flex-shrink-0 h-8 w-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center text-xs font-bold">
                                                     {item.user.name.charAt(0)}
                                                 </div>
-                                                <div className="ml-3">
-                                                    <div className="text-sm font-medium text-gray-900 dark:text-white">{item.user.name}</div>
-                                                    <div className="text-xs text-gray-500">{item.user.email}</div>
+                                                <div className="ml-3 min-w-0">
+                                                    <div className="break-words text-sm font-medium text-gray-900 dark:text-white">{item.user.name}</div>
+                                                    <div className="break-all text-xs text-gray-500">{item.user.email}</div>
                                                 </div>
                                             </div>
                                         </td>
                                         {type === 'Evaluation' && (
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 dark:text-red-400">
+                                            <td className="px-6 py-4 align-top break-words text-sm text-red-600 dark:text-red-400">
                                                 {item.subjectName}
                                             </td>
                                         )}
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                        <td className="px-6 py-4 align-top break-words text-sm text-gray-500 dark:text-gray-400">
                                             {item.user.department}
                                         </td>
                                     </tr>
                                 ))
                             ) : (
-                                <tr className="table w-full table-fixed">
-                                    <td colSpan={3} className="px-6 py-8 text-center text-sm text-green-600 dark:text-green-400 font-medium">
+                                <tr>
+                                    <td colSpan={type === 'Evaluation' ? 3 : 2} className="px-6 py-8 text-center text-sm font-medium text-green-600 dark:text-green-400">
                                         All required submissions have been received!
                                     </td>
                                 </tr>
                             )}
                         </tbody>
                     </table>
+                    </div>
                 </div>
             </div>
         </Modal>

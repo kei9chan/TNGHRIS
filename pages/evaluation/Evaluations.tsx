@@ -11,6 +11,7 @@ import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { resolveCurrentHrisUserId } from '../../services/evaluationService';
 import { useEvaluationAssignmentAccess } from '../../hooks/useEvaluationAssignmentAccess';
+import { hasEvaluationOversightAccess, isEvaluationSubject } from '../../utils/evaluationAccess';
 
 const Evaluations: React.FC = () => {
     const { user } = useAuth();
@@ -18,7 +19,8 @@ const Evaluations: React.FC = () => {
     const { getAccessibleBusinessUnits, isUserEligibleEvaluator, can } = usePermissions();
     const canView = can('Evaluation', Permission.View);
     const canManage = can('Evaluation', Permission.Manage);
-    const { hasAssignment, loading: assignmentAccessLoading } = useEvaluationAssignmentAccess(!canView);
+    const isEvaluationOversight = hasEvaluationOversightAccess(user);
+    const { hasAssignment, loading: assignmentAccessLoading } = useEvaluationAssignmentAccess(!canView && !isEvaluationOversight);
     
     const [yearFilter, setYearFilter] = useState<string>('all');
     const [monthFilter, setMonthFilter] = useState<string>('all');
@@ -201,6 +203,15 @@ const Evaluations: React.FC = () => {
             return yearMatch && monthMatch && buMatch;
         });
 
+        if (isEvaluationOversight) {
+            return filteredByDateAndBU.filter(evaluation => {
+                const isTarget = isEvaluationSubject(evaluatorUser.id, evaluation.targetEmployeeIds);
+                // Evaluated employees only see their own released results. Internal
+                // cycles remain visible to oversight users who are not subjects.
+                return !isTarget || (evaluation.status === 'Completed' && evaluation.isEmployeeVisible);
+            });
+        }
+
         if (canManage) {
             return filteredByDateAndBU;
         }
@@ -220,7 +231,7 @@ const Evaluations: React.FC = () => {
 
             return false;
         });
-    }, [user, employeeProfileId, evaluations, yearFilter, monthFilter, buFilter, canManage, isUserEligibleEvaluator]);
+    }, [user, employeeProfileId, evaluations, yearFilter, monthFilter, buFilter, canManage, isEvaluationOversight, isUserEligibleEvaluator]);
 
     const handleViewCompliance = async (evaluation: Evaluation) => {
         setSelectedEvaluationForCompliance(evaluation);
@@ -344,8 +355,8 @@ const Evaluations: React.FC = () => {
     };
 
     const selectClasses = "block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white";
-    const isAdminView = canManage;
-    const filterBusinessUnits = canManage ? accessibleBus : businessUnits;
+    const isAdminView = canManage || isEvaluationOversight;
+    const filterBusinessUnits = canManage || isEvaluationOversight ? accessibleBus : businessUnits;
 
     if (isLoading || (!canView && assignmentAccessLoading)) {
         return (
@@ -355,7 +366,7 @@ const Evaluations: React.FC = () => {
         );
     }
 
-    const hasWorkspaceAccess = canView || hasAssignment || evaluations.length > 0;
+    const hasWorkspaceAccess = canView || isEvaluationOversight || hasAssignment || evaluations.length > 0;
 
     return (
         <div className="space-y-6">
@@ -408,7 +419,16 @@ const Evaluations: React.FC = () => {
                     {viewableEvaluations.map(evaluation => {
                         const { completed, total, percentage, configurationIncomplete } = calculateProgress(evaluation);
                         const isOverdue = evaluation.dueDate && new Date() > new Date(evaluation.dueDate) && percentage < 100;
-                        const canOpenEvaluation = evaluation.status === 'InProgress' && !configurationIncomplete;
+                        const evaluatorUser = { ...user!, id: employeeProfileId || user!.id };
+                        const isTarget = isEvaluationSubject(evaluatorUser.id, evaluation.targetEmployeeIds);
+                        const canEvaluate = evaluation.status === 'InProgress'
+                            && !configurationIncomplete
+                            && evaluation.targetEmployeeIds.some(targetId => isUserEligibleEvaluator(evaluatorUser, evaluation, targetId));
+                        const canInspectAsOversight = isEvaluationOversight && !isTarget;
+                        const canOpenEvaluation = canEvaluate || canInspectAsOversight;
+                        const evaluationPath = canEvaluate
+                            ? `/evaluation/perform/${evaluation.id}`
+                            : `/evaluation/report/${evaluation.id}`;
                         
                         const cardContent = (
                             <Card key={evaluation.id}>
@@ -416,7 +436,7 @@ const Evaluations: React.FC = () => {
                                     className={`flex flex-col md:flex-row justify-between md:items-center ${canOpenEvaluation ? 'cursor-pointer' : ''}`}
                                     onClick={() => {
                                         if (canOpenEvaluation) {
-                                            navigate(`/evaluation/perform/${evaluation.id}`);
+                                            navigate(evaluationPath);
                                         }
                                     }}
                                 >
@@ -443,8 +463,8 @@ const Evaluations: React.FC = () => {
                                             </Button>
                                         )}
                                         <Link to={`/evaluation/report/${evaluation.id}`}>
-                                            <Button variant={percentage === 100 ? "success" : "secondary"} disabled={completed === 0}>
-                                                View Results
+                                            <Button variant={percentage === 100 ? "success" : "secondary"} disabled={completed === 0 && !canInspectAsOversight}>
+                                                {canInspectAsOversight && evaluation.status === 'InProgress' ? 'View Evaluation' : 'View Results'}
                                             </Button>
                                         </Link>
                                     </div>

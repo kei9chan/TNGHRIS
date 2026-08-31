@@ -17,6 +17,7 @@ import { useAuth } from './hooks/useAuth';
 import { usePermissions } from './hooks/usePermissions';
 import { usePermissionsContext } from './context/PermissionsContext';
 import { NavLink, Permission, Resource } from './types';
+import { hasEvaluationOversightAccess } from './utils/evaluationAccess';
 import Layout from './components/layout/Layout';
 const Login = React.lazy(() => import('./pages/Login'));
 const SignUp = React.lazy(() => import('./pages/SignUp'));
@@ -208,7 +209,12 @@ const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }
   }
 
   const required = routePermissions.find(([prefix]) => location.pathname.startsWith(prefix));
-  if (required && !can(required[1], required[2])) {
+  const isEvaluationReadRoute = location.pathname === '/evaluation/reviews'
+    || location.pathname.startsWith('/evaluation/report/')
+    || location.pathname.startsWith('/evaluation/perform/');
+  const canReadEvaluationAsOversight = isEvaluationReadRoute && hasEvaluationOversightAccess(user);
+
+  if (required && !can(required[1], required[2]) && !canReadEvaluationAsOversight) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center p-6">
         <div className="max-w-lg rounded-xl border border-amber-200 bg-white p-6 text-center shadow dark:border-amber-900 dark:bg-slate-900">
