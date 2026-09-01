@@ -2205,6 +2205,95 @@ export interface InterviewFeedback {
   submittedAt: Date;
 }
 
+export type InterviewTemplateFieldType = 'text' | 'textarea' | 'date' | 'rating' | 'choice' | 'yes_no' | 'acknowledgement';
+export type InterviewTemplateStatus = 'Draft' | 'Active' | 'Inactive';
+export type InterviewRatingStatus = 'Not Started' | 'Draft' | 'Submitted' | 'Returned for Revision' | 'Locked';
+
+export interface InterviewTemplateOption {
+  label: string;
+  value: string | number;
+}
+
+export interface InterviewTemplateField {
+  id: string;
+  label: string;
+  type: InterviewTemplateFieldType;
+  required: boolean;
+  autoLinked?: boolean;
+  system?: boolean;
+  description?: string;
+  options?: InterviewTemplateOption[];
+}
+
+export interface InterviewTemplateSection {
+  id: string;
+  title: string;
+  description?: string;
+  order: number;
+  fields: InterviewTemplateField[];
+}
+
+export interface InterviewRatingScaleOption {
+  label: string;
+  value: number;
+}
+
+export interface InterviewRatingTemplate {
+  id: string;
+  templateGroupId: string;
+  version: number;
+  name: string;
+  description: string;
+  status: InterviewTemplateStatus;
+  assignmentBusinessUnitIds: string[];
+  assignmentPositions: string[];
+  assignmentStages: string[];
+  sections: InterviewTemplateSection[];
+  ratingScale: InterviewRatingScaleOption[];
+  createdByUserId: string;
+  createdAt: Date;
+  updatedAt: Date;
+  isCurrent: boolean;
+  supersedesTemplateId?: string;
+}
+
+export interface InterviewRatingRecord {
+  id: string;
+  candidateId: string;
+  applicationId: string;
+  templateVersionId: string;
+  templateGroupId: string;
+  templateVersion: number;
+  templateSnapshot: InterviewRatingTemplate;
+  reviewerUserId: string;
+  reviewerNameSnapshot: string;
+  reviewerPositionSnapshot: string;
+  dueDate?: Date;
+  interviewRound: string;
+  status: InterviewRatingStatus;
+  formData: Record<string, unknown>;
+  createdByUserId: string;
+  returnedNotes?: string;
+  submittedAt?: Date;
+  lockedAt?: Date;
+  reopenedAt?: Date;
+  reopenedByUserId?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface InterviewRatingAttachment {
+  id: string;
+  ratingId: string;
+  fileName: string;
+  storagePath: string;
+  mimeType: string;
+  fileSize?: number;
+  category: string;
+  uploadedByUserId: string;
+  createdAt: Date;
+}
+
 export enum OfferStatus {
   Draft = 'Draft',
   Sent = 'Sent',
@@ -2777,6 +2866,9 @@ export enum NotificationType {
   TICKET_ASSIGNED_TO_YOU = 'TICKET_ASSIGNED_TO_YOU',
   TICKET_UPDATE_REQUESTER = 'TICKET_UPDATE_REQUESTER',
   InterviewInvite = 'InterviewInvite',
+  INTERVIEW_RATING_ASSIGNED = 'INTERVIEW_RATING_ASSIGNED',
+  INTERVIEW_RATING_SUBMITTED = 'INTERVIEW_RATING_SUBMITTED',
+  INTERVIEW_RATING_RETURNED = 'INTERVIEW_RATING_RETURNED',
   OFFBOARDING_STARTED = 'OFFBOARDING_STARTED',
   NTE_ISSUED = 'NTE_ISSUED',
   NTE_RESPONSE_SUBMITTED = 'NTE_RESPONSE_SUBMITTED',

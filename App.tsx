@@ -114,6 +114,8 @@ const JobSocialMediaPostGenerator = React.lazy(() => import('./pages/recruitment
 const Applicants = React.lazy(() => import('./pages/recruitment/Applicants'));
 const Candidates = React.lazy(() => import('./pages/recruitment/Candidates'));
 const Interviews = React.lazy(() => import('./pages/recruitment/Interviews'));
+const InterviewTemplates = React.lazy(() => import('./pages/recruitment/InterviewTemplates'));
+const InterviewRatingPage = React.lazy(() => import('./pages/recruitment/InterviewRatingPage'));
 const Offers = React.lazy(() => import('./pages/recruitment/Offers'));
 const OfferTemplates = React.lazy(() => import('./pages/recruitment/OfferTemplates'));
 const FeedbackTemplates = React.lazy(() => import('./pages/feedback/FeedbackTemplates'));
@@ -404,6 +406,8 @@ const AppRoutes: React.FC = () => {
              <Route path="applicants" element={<ProtectedRoute><Applicants /></ProtectedRoute>} />
              <Route path="candidates" element={<ProtectedRoute><Candidates /></ProtectedRoute>} />
              <Route path="interviews" element={<ProtectedRoute><Interviews /></ProtectedRoute>} />
+             <Route path="interview-templates" element={<ProtectedRoute><InterviewTemplates /></ProtectedRoute>} />
+             <Route path="interview-ratings/:ratingId" element={<ProtectedRoute><InterviewRatingPage /></ProtectedRoute>} />
              <Route path="offers" element={<ProtectedRoute><Offers /></ProtectedRoute>} />
              <Route path="offer-templates" element={<ProtectedRoute><OfferTemplates /></ProtectedRoute>} />
         </Route>

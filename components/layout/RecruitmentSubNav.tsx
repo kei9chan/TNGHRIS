@@ -28,6 +28,7 @@ const iconMap: { [key: string]: React.FC<{className?: string}> } = {
     'Applicants': ApplicantsIcon,
     'Candidates': IdentificationIcon,
     'Interviews': CalendarIcon,
+    'Interview Templates': DocumentDuplicateIcon,
     'Offers': DocumentCheckIcon,
     'Job Offers': DocumentCheckIcon,
     'Offer Templates': DocumentDuplicateIcon,

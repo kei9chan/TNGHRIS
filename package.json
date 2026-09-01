@@ -10,6 +10,7 @@
     "test:recruitment": "node tests/recruitmentFlowSmokeTest.mjs",
     "test:job-social-generator": "node tests/jobSocialMediaPostGeneratorSmokeTest.mjs",
     "test:interview-workflow": "node tests/interviewWorkflowSmokeTest.mjs",
+    "test:interview-ratings": "node tests/interviewRatingsPhase1SmokeTest.mjs",
     "test:offer-builder": "node tests/offerBuilderSmokeTest.mjs",
     "test:rbac": "node tests/rbacRepairSmokeTest.mjs",
     "test:approvals": "node tests/approvalCenterSmokeTest.mjs",
