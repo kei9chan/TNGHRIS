@@ -257,15 +257,6 @@ const InterviewSchedulerModal: React.FC<InterviewSchedulerModalProps> = ({
     setError('');
   };
 
-  const pasteMeetingLink = async () => {
-    try {
-      const value = await navigator.clipboard.readText();
-      handleCustomLinkChange(value);
-    } catch {
-      setError('Clipboard access was unavailable. Paste the attendee link directly into the Meeting Link field.');
-    }
-  };
-
   const formatDateForInput = (date?: Date) => {
     if (!date) return '';
     const value = new Date(date);
@@ -531,8 +522,8 @@ const InterviewSchedulerModal: React.FC<InterviewSchedulerModalProps> = ({
               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                 {([
                   { provider: 'Zoom' as const, title: 'Zoom', subtitle: 'Create a Zoom meeting automatically', icon: 'Z' },
-                  { provider: 'Google Meet' as const, title: 'Google Meet', subtitle: 'Create a Google Meet link automatically', icon: 'M' },
-                  { provider: 'Custom' as const, title: 'Custom Meeting Link', subtitle: 'Paste an existing Zoom, Teams, Meet, Webex, or other link', icon: '↗' },
+                  { provider: 'Google Meet' as const, title: 'Google Meet', subtitle: 'Create Google Meet automatically', icon: 'M' },
+                  { provider: 'Custom' as const, title: 'Custom Link', subtitle: 'Paste an existing meeting link', icon: '↗' },
                 ]).map((card) => (
                   <button
                     key={card.provider}
@@ -583,15 +574,13 @@ const InterviewSchedulerModal: React.FC<InterviewSchedulerModalProps> = ({
                 <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/30">
                   <label htmlFor="meeting-link" className="block text-sm font-semibold text-gray-900 dark:text-white">Meeting Link</label>
                   <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                    <input id="meeting-link" type="url" value={customLink} onChange={(event) => handleCustomLinkChange(event.target.value)} placeholder="Paste Zoom, Google Meet, Microsoft Teams, Webex, or another meeting link" className={`${inputClasses} mt-0 flex-1`} />
-                    <button type="button" onClick={pasteMeetingLink} className="rounded-md border border-indigo-300 bg-white px-3 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50 dark:border-indigo-700 dark:bg-slate-800 dark:text-indigo-200">Paste Link</button>
+                    <input id="meeting-link" type="url" value={customLink} onChange={(event) => handleCustomLinkChange(event.target.value)} placeholder="Paste Zoom, Google Meet, Teams, Webex, or another meeting link" className={`${inputClasses} mt-0 flex-1`} />
                   </div>
                   {detectedProvider && <p className="mt-2 text-xs font-medium text-indigo-700 dark:text-indigo-300">Detected provider: {detectedProvider}</p>}
                   {customLinkIsHostOnly && <p className="mt-2 text-xs font-medium text-red-700 dark:text-red-300">This looks like a Zoom host/start link. Paste the attendee join link instead.</p>}
                   <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">This link will be included in the Google Calendar invitation sent to the candidate and interview panel.</p>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <button type="button" disabled={!isValidHttpsLink(customLink) || isHostOnlyZoomLink(customLink)} onClick={() => window.open(customLink, '_blank', 'noopener,noreferrer')} className="rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-slate-800 dark:text-gray-200">Open/Test Link</button>
-                    <button type="button" disabled={!customLink} onClick={() => handleCustomLinkChange('')} className="rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-slate-800 dark:text-gray-200">Clear Link</button>
+                    <button type="button" disabled={!isValidHttpsLink(customLink) || isHostOnlyZoomLink(customLink)} onClick={() => window.open(customLink, '_blank', 'noopener,noreferrer')} className="rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-slate-800 dark:text-gray-200">Test Link</button>
                   </div>
                 </div>
               )}

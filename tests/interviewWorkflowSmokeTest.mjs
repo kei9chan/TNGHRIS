@@ -25,7 +25,7 @@ assert.doesNotMatch(scheduler, /Generate a real Google Meet link/);
 assert.match(scheduler, /How will you conduct the interview\?/);
 assert.match(scheduler, /Zoom/);
 assert.match(scheduler, /Google Meet/);
-assert.match(scheduler, /Custom Meeting Link/);
+assert.match(scheduler, /Custom Link/);
 assert.match(scheduler, /Use Custom Link Instead/);
 assert.match(scheduler, /Please enter a valid attendee meeting link\./);
 assert.doesNotMatch(scheduler, /name="meetingProvider"/);
