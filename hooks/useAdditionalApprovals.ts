@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { User } from '../types';
+import { fetchOfferApprovalPackage, fetchPendingOfferApprovalIds } from '../services/offerApprovalService';
 
 type PendingStep = {
   userId?: string;
@@ -68,6 +69,21 @@ export type PendingAwardApproval = {
   canonicalKey: string;
 };
 
+export type PendingOfferApproval = {
+  id: string;
+  offerId: string;
+  candidateId: string;
+  candidateName: string;
+  reference: string;
+  jobTitle: string;
+  businessUnit: string;
+  status: string;
+  approvalStage: string;
+  createdAt: Date;
+  currentStep: string;
+  canonicalKey: string;
+};
+
 const isPending = (status?: string) => String(status || '').trim().toLowerCase() === 'pending';
 const AWARD_PENDING_STATUSES = ['PendingApproval', 'Pending Approval'] as const;
 
@@ -88,6 +104,7 @@ export function useAdditionalApprovals(user: User | null) {
   const [pendingPANApprovals, setPendingPANApprovals] = useState<PendingPANApproval[]>([]);
   const [pendingRequisitionApprovals, setPendingRequisitionApprovals] = useState<PendingRequisitionApproval[]>([]);
   const [pendingAwardApprovals, setPendingAwardApprovals] = useState<PendingAwardApproval[]>([]);
+  const [pendingOfferApprovals, setPendingOfferApprovals] = useState<PendingOfferApproval[]>([]);
   const [additionalApprovalError, setAdditionalApprovalError] = useState<string | null>(null);
 
   const refreshAdditionalApprovals = useCallback(async () => {
@@ -96,11 +113,17 @@ export function useAdditionalApprovals(user: User | null) {
       setPendingPANApprovals([]);
       setPendingRequisitionApprovals([]);
       setPendingAwardApprovals([]);
+      setPendingOfferApprovals([]);
       setAdditionalApprovalError(null);
       return;
     }
 
-    const [nteResult, panResult, requisitionResult, awardResult] = await Promise.all([
+    let offerLoadError: any = null;
+    const offerIdsPromise = fetchPendingOfferApprovalIds().catch((error: any) => {
+      offerLoadError = error;
+      return [] as Awaited<ReturnType<typeof fetchPendingOfferApprovalIds>>;
+    });
+    const [[nteResult, panResult, requisitionResult, awardResult], offerIds] = await Promise.all([Promise.all([
       supabase
         .from('ntes')
         .select('id,incident_report_id,recipients,recipient_names,response_deadline,status,approval_log,created_at,updated_at,nte_number,nte_code')
@@ -121,10 +144,15 @@ export function useAdditionalApprovals(user: User | null) {
         .select('id,employee_id,business_unit_id,department_id,status,submitted_at,approver_id,approver_steps,hris_users:employee_id(full_name),award_templates(title)')
         .in('status', [...AWARD_PENDING_STATUSES])
         .order('submitted_at', { ascending: false }),
-    ]);
+    ]), offerIdsPromise]);
 
-    const errors = [nteResult.error, panResult.error, requisitionResult.error, awardResult.error].filter(Boolean);
-    setAdditionalApprovalError(errors.length ? errors.map(error => error!.message).join(' · ') : null);
+    const offerPackageErrors: any[] = [];
+    const offerPackages = await Promise.all(offerIds.map(async item => {
+      try { return await fetchOfferApprovalPackage(item.requestId); } catch (error: any) {
+        offerPackageErrors.push(error);
+        return null;
+      }
+    }));
 
     const nteRows = (nteResult.data || []).filter((row: any) =>
       (Array.isArray(row.approval_log) ? row.approval_log : []).some(
@@ -138,9 +166,8 @@ export function useAdditionalApprovals(user: User | null) {
           .select('id,case_number,category,business_unit_id,business_unit_name,assigned_to_name')
           .in('id', incidentIds)
       : { data: [], error: null };
-    if (incidentResult.error) {
-      setAdditionalApprovalError(current => [current, incidentResult.error?.message].filter(Boolean).join(' · '));
-    }
+    const errors = [nteResult.error, panResult.error, requisitionResult.error, awardResult.error, incidentResult.error, offerLoadError, ...offerPackageErrors].filter(Boolean);
+    setAdditionalApprovalError(errors.length ? errors.map(error => error!.message).join(' · ') : null);
     const incidents = new Map((incidentResult.data || []).map((row: any) => [row.id, row]));
 
     setPendingNTEApprovals(nteRows.map((row: any) => {
@@ -226,6 +253,26 @@ export function useAdditionalApprovals(user: User | null) {
         canonicalKey: `award:${row.id}:${step?.order ?? stepIndex ?? 0}`,
       }];
     }));
+
+    setPendingOfferApprovals(offerPackages.flatMap((pkg, index) => {
+      if (!pkg) return [];
+      const queue = offerIds[index];
+      const candidateName = `${pkg.candidate.firstName} ${pkg.candidate.lastName}`.trim() || 'Candidate';
+      return [{
+        id: pkg.request.id,
+        offerId: pkg.offer.id,
+        candidateId: pkg.candidate.id,
+        candidateName,
+        reference: pkg.offer.offerNumber || `OFFER-${String(pkg.offer.id).slice(0, 8).toUpperCase()}`,
+        jobTitle: pkg.offer.offerDetails?.jobTitle || pkg.application.roleTitleSnapshot || 'Position not recorded',
+        businessUnit: pkg.offer.offerDetails?.businessUnit || 'Business unit not recorded',
+        status: pkg.request.status,
+        approvalStage: pkg.request.approvalStage,
+        createdAt: pkg.request.submittedAt || queue.assignedAt,
+        currentStep: pkg.request.approvalStage === 'HR_MANAGER' ? 'HR Manager approval' : 'BOD / GM approval',
+        canonicalKey: `offer:${pkg.request.id}:${pkg.request.approvalStage}`,
+      }];
+    }));
   }, [user?.id]);
 
   useEffect(() => {
@@ -239,6 +286,7 @@ export function useAdditionalApprovals(user: User | null) {
     pendingPANApprovals,
     pendingRequisitionApprovals,
     pendingAwardApprovals,
+    pendingOfferApprovals,
     additionalApprovalError,
     refreshAdditionalApprovals,
   };

@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Offer, Permission, OfferStatus, Application, User, Role, ApplicationStage, Candidate, JobRequisition, BusinessUnit, Department, OfferTemplate } from '../../types';
+import { Offer, Permission, OfferStatus, Application, User, Role, ApplicationStage, Candidate, JobRequisition, BusinessUnit, Department, OfferTemplate, InterviewRatingRecord } from '../../types';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -15,6 +15,8 @@ import { logActivity } from '../../services/auditService';
 import { supabase } from '../../services/supabaseClient';
 import OfferTemplatePicker from '../../components/recruitment/OfferTemplatePicker';
 import { mapOfferTemplate } from './OfferTemplates';
+import { fetchRatingRecordsForCandidate } from '../../services/interviewRatingService';
+import OfferApprovalPackageModal from '../../components/recruitment/OfferApprovalPackageModal';
 
 
 const Offers: React.FC = () => {
@@ -42,6 +44,7 @@ const Offers: React.FC = () => {
   const [initialTemplate, setInitialTemplate] = useState<OfferTemplate | null>(null);
   const [businessUnitFilter, setBusinessUnitFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [approvalPackage, setApprovalPackage] = useState<{ offer: EnrichedOffer; candidate: Candidate; application: Application; ratings: InterviewRatingRecord[] } | null>(null);
 
   const canManage = can('Offers', Permission.Manage);
   const canView = can('Offers', Permission.View) || canManage;
@@ -85,6 +88,8 @@ const Offers: React.FC = () => {
     offerTemplateId: row.offer_template_id || undefined,
     offerTemplateName: row.offer_template_name || undefined,
     offerTemplateSnapshot: row.offer_template_snapshot || undefined,
+    approvalStatus: row.approval_status || 'Not Requested',
+    approvalRequestId: row.approval_request_id || undefined,
     // Optional fields not in table
     workScheduleDays: '',
     workScheduleHours: '',
@@ -129,6 +134,21 @@ const Offers: React.FC = () => {
         updatedAt: a.updated_at ? new Date(a.updated_at) : new Date(),
         notes: a.notes || a.cover_letter || '',
         referrer: a.referrer || '',
+        roleId: a.role_id || undefined,
+        roleSlug: a.role_slug || undefined,
+        roleTitleSnapshot: a.role_title_snapshot || undefined,
+        departmentSnapshot: a.department_snapshot || undefined,
+        locationSnapshot: a.location_snapshot || undefined,
+        employmentTypeSnapshot: a.employment_type_snapshot || undefined,
+        workArrangementSnapshot: a.work_arrangement_snapshot || undefined,
+        roleAnswers: a.role_answers || undefined,
+        sourceApplicationPage: a.source_application_page || undefined,
+        applicationReference: a.application_reference || undefined,
+        submissionToken: a.submission_token || undefined,
+        resumeLink: a.resume_link || a.resume_url || undefined,
+        resumeFileUrl: a.resume_file_url || undefined,
+        resumeFilePath: a.resume_file_path || undefined,
+        coverLetter: a.cover_letter || undefined,
       } as Application)));
       setCandidates((candRes.data || []).map((c: any) => ({
         id: c.id,
@@ -140,6 +160,11 @@ const Offers: React.FC = () => {
         tags: c.tags || [],
         portfolioUrl: c.portfolio_url || '',
         consentAt: c.consent_at ? new Date(c.consent_at) : undefined,
+        currentCity: c.current_city || undefined,
+        currentEmployer: c.current_employer || undefined,
+        yearsRelevantExperience: c.years_relevant_experience || undefined,
+        earliestStartDate: c.earliest_start_date || undefined,
+        linkedinUrl: c.linkedin_url || undefined,
       } as Candidate)));
       setRequisitions((reqRes.data || []).map((r: any) => ({
         id: r.id,
@@ -236,6 +261,22 @@ const Offers: React.FC = () => {
     setIsDetailModalOpen(false);
     setSelectedOffer(null);
     setEditingOffer(null);
+  };
+
+  const handleRequestOfferApproval = async (offer: EnrichedOffer) => {
+    const application = applications.find(item => item.id === offer.applicationId);
+    const candidate = candidates.find(item => item.id === application?.candidateId);
+    if (!application || !candidate) {
+      setSuccessMessage('The candidate or application record could not be found for this offer.');
+      return;
+    }
+    try {
+      const allRatings = await fetchRatingRecordsForCandidate(candidate.id);
+      setApprovalPackage({ offer, candidate, application, ratings: allRatings.filter(rating => rating.applicationId === application.id) });
+    } catch (error: any) {
+      setSuccessMessage(error?.message || 'Unable to load interview ratings for this candidate.');
+      setTimeout(() => setSuccessMessage(''), 5000);
+    }
   };
 
   const handleSaveOffer = async (offerToSave: Offer): Promise<Offer> => {
@@ -427,8 +468,10 @@ const Offers: React.FC = () => {
               onConvertToEmployee={handleConvertToEmployee}
               onEdit={offer => { setEditingOffer(offer); setIsDetailModalOpen(false); setIsCreationDrawerOpen(true); }}
               onSend={offer => { setEditingOffer(offer); setIsDetailModalOpen(false); setIsCreationDrawerOpen(true); }}
+              onRequestApproval={offer => void handleRequestOfferApproval(offer)}
             />
           )}
+          {approvalPackage && <OfferApprovalPackageModal isOpen={true} onClose={() => setApprovalPackage(null)} offer={approvalPackage.offer} candidate={approvalPackage.candidate} application={approvalPackage.application} ratings={approvalPackage.ratings} onSubmitted={requestId => { setOffers(current => current.map(item => item.id === approvalPackage.offer.id ? { ...item, approvalStatus: 'Pending Approval', approvalRequestId: requestId } : item)); setSuccessMessage('Offer approval request submitted successfully.'); setTimeout(() => setSuccessMessage(''), 5000); }} />}
         </>
       )}
     </div>

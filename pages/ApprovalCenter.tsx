@@ -10,6 +10,7 @@ import LeaveRequestModal from '../components/payroll/LeaveRequestModal';
 import OTRequestModal from '../components/payroll/OTRequestModal';
 import WFHReviewModal from '../components/payroll/WFHReviewModal';
 import ManpowerReviewModal from '../components/payroll/ManpowerReviewModal';
+import OfferApprovalReviewModal from '../components/recruitment/OfferApprovalReviewModal';
 import { useSettings } from '../context/SettingsContext';
 import { ApprovalRequestKind, getApprovalRequestId, getApprovalReviewUrl } from '../services/approvalDeepLinks';
 import {
@@ -47,9 +48,10 @@ const KIND_META: Record<Kind, { title: string; badge: string; rule: string }> = 
   requisition: { title: 'Job Requisitions', badge: 'bg-indigo-100 text-indigo-800', rule: 'Requisitions awaiting your configured routing step.' },
   manpower: { title: 'Manpower', badge: 'bg-teal-100 text-teal-800', rule: 'Manpower requests within your permitted approval scope.' },
   award: { title: 'Awards', badge: 'bg-amber-100 text-amber-800', rule: 'Award nominations awaiting your required approval before certificate issuance.' },
+  offer: { title: 'Offer Approval', badge: 'bg-violet-100 text-violet-800', rule: 'Hiring packets awaiting your configured offer approval.' },
 };
 
-const GROUP_ORDER: Kind[] = ['nte', 'pan', 'award', 'wfh', 'leave', 'overtime', 'requisition', 'manpower'];
+const GROUP_ORDER: Kind[] = ['nte', 'pan', 'award', 'offer', 'wfh', 'leave', 'overtime', 'requisition', 'manpower'];
 const BULK_KINDS = new Set<Kind>(['leave', 'wfh', 'overtime']);
 const TIME_KINDS = new Set<Kind>(['leave', 'wfh', 'overtime']);
 const TIME_DESKTOP_HEADINGS = ['Select', 'Request / Employee', 'Business unit / Department', 'Request details', 'Submitted / Pending', 'Approval step', 'Eligibility', 'Action'];
@@ -239,8 +241,27 @@ export default function ApprovalCenter() {
       const meta = metaFor(row.employeeId);
       return { id: row.id, canonicalKey: row.canonicalKey, kind: 'award', reference: row.reference, employeeId: row.employeeId, employee: row.employeeName, employeeCode: meta.employeeId, businessUnitId: row.businessUnitId || meta.businessUnitId, businessUnit: businessUnitLabels[row.businessUnitId || ''] || meta.businessUnit, departmentId: row.departmentId || meta.departmentId, department: departmentLabels[row.departmentId || ''] || meta.department, start: row.createdAt, end: row.createdAt, duration: `${dayAge(row.createdAt)} day${dayAge(row.createdAt) === 1 ? '' : 's'} pending`, status: row.status, currentStep: row.currentStep, details: row.awardTitle, bulkSelectable: false, reviewUrl: getApprovalReviewUrl('award', row.id) };
     });
+    const offerItems: ApprovalItem[] = additional.pendingOfferApprovals.map(row => ({
+      id: row.id,
+      canonicalKey: row.canonicalKey,
+      kind: 'offer',
+      reference: row.reference,
+      employeeId: row.candidateId,
+      employee: row.candidateName,
+      businessUnit: row.businessUnit,
+      department: 'Recruitment',
+      start: row.createdAt,
+      end: row.createdAt,
+      duration: `Offer approval · ${row.jobTitle}`,
+      status: row.status,
+      currentStep: row.currentStep,
+      approvalStep: row.currentStep,
+      details: row.jobTitle,
+      bulkSelectable: false,
+      reviewUrl: getApprovalReviewUrl('offer', row.id),
+    }));
     const canonical = new Map<string, ApprovalItem>();
-    [...ntes, ...pans, ...awardItems, ...wfh, ...leave, ...overtime, ...requisitions, ...manpower].forEach(item => { if (!canonical.has(item.canonicalKey)) canonical.set(item.canonicalKey, item); });
+    [...ntes, ...pans, ...awardItems, ...offerItems, ...wfh, ...leave, ...overtime, ...requisitions, ...manpower].forEach(item => { if (!canonical.has(item.canonicalKey)) canonical.set(item.canonicalKey, item); });
     return Array.from(canonical.values());
   }, [approvals, additional, employeeMeta, businessUnitLabels, departmentLabels]);
 
@@ -297,7 +318,7 @@ export default function ApprovalCenter() {
   return <div className="space-y-5 pb-12 text-slate-900 dark:text-slate-100">
     <div className="flex flex-wrap items-end justify-between gap-3"><div><h1 className="text-3xl font-bold text-slate-900 dark:text-white">Approval Center</h1><p className="mt-1 text-slate-500 dark:text-slate-300">The single queue for every approval requiring your action.</p></div><Link to="/dashboard" className="font-semibold text-indigo-600 dark:text-indigo-300">← Dashboard</Link></div>
     {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-800"><b>Some approval data could not be loaded.</b> {error}</div>}
-    {requestedItem && !approvals.approvalsLoading && !items.some(item => item.id === requestedItem) && !error && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"><b>This request is no longer awaiting your action.</b> It may already be processed, reassigned, or outside your authorized scope.</div>}
+    {requestedItem && requestedType !== 'offer' && !approvals.approvalsLoading && !items.some(item => item.id === requestedItem) && !error && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"><b>This request is no longer awaiting your action.</b> It may already be processed, reassigned, or outside your authorized scope.</div>}
     {!approverConfigs.conditionalTimeApprovals.valid && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900"><b>Conditional approval routing needs an Admin.</b> {approverConfigs.conditionalTimeApprovals.invalid_reason || 'At least one active BOD approver must be selected.'}</div>}
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">{[['Pending approvals', filtered.length, 'bg-blue-50 text-blue-700'], ['Manager only', managerOnlyCount, 'bg-emerald-50 text-emerald-700'], ['BOD required', bodRequiredCount, 'bg-violet-50 text-violet-700'], ['Due today', dueTodayCount, 'bg-orange-50 text-orange-700'], ['Overdue', overdueCount, 'bg-red-50 text-red-700'], ['High risk / exceptions', exceptionCount, 'bg-amber-50 text-amber-700']].map(([label, value, color]) => <div key={String(label)} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-600 dark:bg-slate-800 sm:p-5"><div className={`inline-flex rounded-lg px-3 py-1 text-2xl font-bold ${color}`}>{value}</div><p className="mt-2 text-sm text-slate-600 dark:text-slate-200">{label}</p></div>)}</div>
     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-600 dark:bg-slate-800">
@@ -414,6 +435,12 @@ export default function ApprovalCenter() {
         closeRequestedReview();
       }}
       canApprove={Boolean(requestedManpower)}
+    />
+    <OfferApprovalReviewModal
+      isOpen={requestedType === 'offer' && Boolean(requestedItem)}
+      requestId={requestedType === 'offer' ? requestedItem : null}
+      onClose={closeRequestedReview}
+      onProcessed={() => { void additional.refreshAdditionalApprovals(); }}
     />
   </div>;
 }

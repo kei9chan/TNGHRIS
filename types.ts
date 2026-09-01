@@ -2359,6 +2359,65 @@ export interface Offer {
   offerTemplateId?: string;
   offerTemplateName?: string;
   offerTemplateSnapshot?: Record<string, unknown>;
+  approvalStatus?: OfferApprovalStatus;
+  approvalRequestId?: string;
+}
+
+export type OfferApprovalStatus = 'Not Requested' | 'Pending Approval' | 'Returned for Revision' | 'Approved' | 'Rejected' | 'Cancelled';
+export type OfferPackageDocumentType = 'Resume' | 'Interview Rating' | 'Offer' | 'Other Supporting Document';
+export type OfferPackageDocumentSource = 'resume' | 'rating' | 'rating_attachment' | 'offer' | 'candidate_document';
+
+export interface OfferPackageDocument {
+  id: string;
+  candidateId: string;
+  applicationId?: string;
+  documentType: OfferPackageDocumentType;
+  fileName: string;
+  mimeType: string;
+  source: OfferPackageDocumentSource;
+  sourceId: string;
+  ratingId?: string;
+  offerId?: string;
+  reviewerName?: string;
+  reviewerPosition?: string;
+  uploadedAt?: Date;
+  status?: string;
+  externalUrl?: string;
+  storageBucket?: string;
+  storagePath?: string;
+  isSelectable?: boolean;
+  description?: string;
+}
+
+export interface OfferApprovalTrailEntry {
+  id: string;
+  stage: string;
+  approverName: string;
+  approverRole: string;
+  action: string;
+  statusBefore?: string;
+  statusAfter?: string;
+  comments?: string;
+  documentsReviewed?: string[];
+  createdAt: Date;
+}
+
+export interface OfferApprovalRequestSummary {
+  id: string;
+  offerId: string;
+  applicationId: string;
+  candidateId: string;
+  status: OfferApprovalStatus;
+  approvalStage: string;
+  revision: number;
+  requesterUserId: string;
+  submittedAt: Date;
+  updatedAt: Date;
+  completedAt?: Date;
+  overrideIncompleteRatings: boolean;
+  overrideReason?: string;
+  packageSnapshot: Record<string, unknown>;
+  attachmentSnapshot?: OfferPackageDocument[];
 }
 
 export type OfferTemplateStatus = 'Draft' | 'Active' | 'Archived';

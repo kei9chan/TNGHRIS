@@ -11,6 +11,7 @@ import {
   InterviewTemplateSection,
   InterviewTemplateStatus,
 } from '../types';
+import { createInterviewRatingSummary } from './interviewRatingSummary';
 
 export const INTERVIEW_RATING_ATTACHMENT_BUCKET = 'interview-rating-attachments';
 export const STANDARD_INTERVIEW_TEMPLATE_NAME = 'Standard Interview Rating Form — Existing Company Template';
@@ -429,6 +430,77 @@ export const downloadInterviewRatingPdf = async (rating: InterviewRatingRecord, 
   labelValue('Submission Date and Time', rating.submittedAt?.toLocaleString() || 'Not submitted');
   labelValue('Electronic Acknowledgement', answers.electronic_acknowledgement === true ? 'Acknowledged' : 'Not acknowledged');
   if (autoDownload) pdf.save(`interview-rating-${candidateName.replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase() || rating.id}.pdf`);
+  return pdf.output('blob');
+};
+
+/**
+ * Creates one decision-friendly PDF containing the submitted summary followed
+ * by each reviewer form. The original reviewer records remain the source of
+ * truth; this is only a convenient combined export.
+ */
+export const downloadCombinedInterviewRatingsPdf = async (
+  ratings: InterviewRatingRecord[],
+  candidate: Candidate,
+  autoDownload = true,
+): Promise<Blob> => {
+  const { jsPDF } = await import('jspdf');
+  const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
+  const summary = createInterviewRatingSummary(ratings);
+  const candidateName = `${candidate.firstName} ${candidate.lastName}`.trim();
+  const margin = 16;
+  const width = 178;
+  const lineHeight = 5;
+  let y = 18;
+
+  const newPage = () => { pdf.addPage(); y = 18; };
+  const ensure = (height: number) => { if (y + height > 278) newPage(); };
+  const write = (value: string, size = 10, bold = false, color = [15, 23, 42] as [number, number, number]) => {
+    pdf.setFont('helvetica', bold ? 'bold' : 'normal');
+    pdf.setFontSize(size);
+    pdf.setTextColor(...color);
+    const lines = pdf.splitTextToSize(value || 'Not provided', width) as string[];
+    ensure(Math.max(lineHeight, lines.length * lineHeight + 2));
+    pdf.text(lines, margin, y);
+    y += lines.length * lineHeight + 2;
+  };
+  const labelValue = (label: string, value: unknown) => {
+    write(label.toUpperCase(), 8, true, [100, 116, 139]);
+    write(asAnswerText(value), 10);
+  };
+
+  pdf.setFillColor(79, 70, 229);
+  pdf.rect(0, 0, 210, 10, 'F');
+  write('INTERVIEW RATING SUMMARY', 18, true, [79, 70, 229]);
+  write(candidateName || 'Candidate', 14, true);
+  write(`Submitted reviewers: ${summary.submittedReviewers} of ${summary.totalReviewers}`, 10, false, [71, 85, 105]);
+  write(summary.overallScore === undefined ? 'No interview rating submitted yet' : `Overall score: ${summary.overallScore.toFixed(1)} / 5.0 — ${summary.overallLabel}`, 11, true);
+  write(`Recommendation summary: ${summary.quickRecommendation || 'No recommendation yet'} · ${summary.recommendationState}`, 10, false, [71, 85, 105]);
+  ensure(14);
+  write('Rating breakdown', 13, true);
+  summary.criteria.forEach(criterion => write(`${criterion.label}: ${criterion.average === undefined ? 'Not answered' : `${criterion.average.toFixed(1)} / 5 — ${criterion.ratingLabel}`} (${criterion.answeredCount} answered)`, 9));
+
+  ratings.forEach((rating, index) => {
+    newPage();
+    write(`Reviewer form ${index + 1} of ${ratings.length}`, 16, true, [79, 70, 229]);
+    write(`${rating.reviewerNameSnapshot} · ${rating.reviewerPositionSnapshot || 'Position not recorded'}`, 11, true);
+    write(`${rating.interviewRound} · Template v${rating.templateVersion} · ${rating.status}`, 9, false, [100, 116, 139]);
+    labelValue('Applicant', candidateName || rating.formData.applicant_name);
+    labelValue('Position Applied For', rating.formData.position_applied_for);
+    labelValue('Date', rating.formData.candidate_date);
+    rating.templateSnapshot.sections.forEach(section => {
+      ensure(14);
+      write(section.title, 13, true, [30, 41, 59]);
+      section.fields.forEach(field => {
+        if (field.system && field.id !== 'electronic_acknowledgement') return;
+        labelValue(field.label, rating.formData[field.id]);
+      });
+    });
+    labelValue("Interviewer's Name", rating.reviewerNameSnapshot);
+    labelValue("Interviewer's Position", rating.reviewerPositionSnapshot);
+    labelValue('Submission Date and Time', rating.submittedAt?.toLocaleString() || 'Not submitted');
+  });
+
+  if (autoDownload) pdf.save(`interview-ratings-${candidateName.replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase() || candidate.id}.pdf`);
   return pdf.output('blob');
 };
 

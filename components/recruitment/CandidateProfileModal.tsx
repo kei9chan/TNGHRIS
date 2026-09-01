@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Candidate, Application, ApplicationStage, JobPost, InterviewRatingRecord, Permission } from '../../types';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
@@ -6,12 +6,20 @@ import Card from '../ui/Card';
 import { usePermissions } from '../../hooks/usePermissions';
 import {
   downloadInterviewRatingPdf,
+  downloadCombinedInterviewRatingsPdf,
   fetchRatingRecordsForCandidate,
   isInterviewRatingSubmitted,
   removeInterviewRatingAssignment,
 } from '../../services/interviewRatingService';
 import InterviewRatingEditor from './InterviewRatingEditor';
 import CreateInterviewRatingModal from './CreateInterviewRatingModal';
+import InterviewSummaryPanel from './InterviewSummaryPanel';
+import InterviewSummaryModal from './InterviewSummaryModal';
+import { createInterviewRatingSummary } from '../../services/interviewRatingSummary';
+import OfferApprovalPackageModal from './OfferApprovalPackageModal';
+import { mapApprovalOfferRow } from '../../services/offerApprovalService';
+import { supabase } from '../../services/supabaseClient';
+import { EnrichedOffer } from './OfferTable';
 
 interface CandidateProfileModalProps {
   isOpen: boolean;
@@ -48,11 +56,16 @@ const recommendationSummary = (rating: InterviewRatingRecord) => {
 const CandidateProfileModal: React.FC<CandidateProfileModalProps> = ({ isOpen, onClose, candidate, applications, jobPosts }) => {
   const { can } = usePermissions();
   const canManageInterviews = can('Interviews', Permission.Manage);
+  const canRequestOfferApproval = can('Offers', Permission.Manage);
   const [ratings, setRatings] = useState<InterviewRatingRecord[]>([]);
   const [isLoadingRatings, setIsLoadingRatings] = useState(false);
   const [ratingsError, setRatingsError] = useState('');
   const [isCreateRatingOpen, setIsCreateRatingOpen] = useState(false);
   const [selectedRating, setSelectedRating] = useState<InterviewRatingRecord | null>(null);
+  const [isSummaryOpen, setIsSummaryOpen] = useState(false);
+  const ratingsSectionRef = useRef<HTMLElement | null>(null);
+  const [approvalPackage, setApprovalPackage] = useState<{ offer: EnrichedOffer; application: Application; ratings: InterviewRatingRecord[] } | null>(null);
+  const [isLoadingApprovalPackage, setIsLoadingApprovalPackage] = useState(false);
 
   const applicationHistory = useMemo(() => applications
     .filter(app => app.candidateId === candidate.id)
@@ -86,6 +99,32 @@ const CandidateProfileModal: React.FC<CandidateProfileModalProps> = ({ isOpen, o
     }
   };
   const submittedCount = ratings.filter(rating => isInterviewRatingSubmitted(rating.status)).length;
+  const summary = useMemo(() => createInterviewRatingSummary(ratings), [ratings]);
+  const primaryApplication = applicationHistory[0];
+  const candidateName = `${candidate.firstName} ${candidate.lastName}`.trim();
+  const handleRequestOfferApproval = async () => {
+    if (!primaryApplication) return setRatingsError('This candidate has no application to attach to an offer approval package.');
+    setIsLoadingApprovalPackage(true); setRatingsError('');
+    try {
+      const { data, error } = await supabase.from('job_offers').select('*').eq('application_id', primaryApplication.id).order('created_at', { ascending: false }).limit(1).maybeSingle();
+      if (error) throw error;
+      if (!data) throw new Error('No offer exists for this application yet. Create or select an offer before requesting approval.');
+      const offer = mapApprovalOfferRow(data) as EnrichedOffer;
+      offer.candidateName = candidateName;
+      offer.candidateEmail = candidate.email;
+      offer.jobTitle = data.offer_details?.jobTitle || primaryApplication.roleTitleSnapshot || jobPosts.find(post => post.id === primaryApplication.jobPostId)?.title || 'Position not recorded';
+      setApprovalPackage({ offer, application: primaryApplication, ratings: ratings.filter(rating => rating.applicationId === primaryApplication.id) });
+    } catch (error: any) {
+      setRatingsError(error?.message || 'Unable to open the offer approval package.');
+    } finally { setIsLoadingApprovalPackage(false); }
+  };
+  const downloadSummaryPdf = async () => {
+    try {
+      await downloadCombinedInterviewRatingsPdf(ratings, candidate);
+    } catch (error: any) {
+      setRatingsError(error?.message || 'Unable to generate the combined PDF.');
+    }
+  };
 
   return (
     <>
@@ -102,11 +141,21 @@ const CandidateProfileModal: React.FC<CandidateProfileModalProps> = ({ isOpen, o
           </section>
 
           <section>
-            <h3 className="mb-2 border-b pb-2 text-lg font-medium text-gray-900 dark:border-slate-700 dark:text-white">Application History</h3>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-3 border-b pb-2 dark:border-slate-700"><h3 className="text-lg font-medium text-gray-900 dark:text-white">Application History</h3>{canRequestOfferApproval && primaryApplication && <Button size="sm" variant="secondary" onClick={() => void handleRequestOfferApproval()} isLoading={isLoadingApprovalPackage}>Request Offer Approval</Button>}</div>
             {applicationHistory.length > 0 ? <ul className="max-h-64 space-y-3 overflow-y-auto pr-2">{applicationHistory.map(app => <li key={app.id} className="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900/50"><div className="flex items-start justify-between"><div><p className="font-semibold text-gray-800 dark:text-gray-200">{app.jobTitle}</p><p className="text-xs text-gray-500 dark:text-gray-400">Applied on: {new Date(app.createdAt).toLocaleDateString()}</p></div><span className={`rounded-full px-2 py-1 text-xs font-semibold ${getStageColor(app.stage)}`}>{app.stage}</span></div>{app.notes && <p className="mt-2 text-sm italic text-gray-600 dark:text-gray-400">Note: “{app.notes}”</p>}</li>)}</ul> : <p className="text-sm text-gray-500 dark:text-gray-400">No application history found for this candidate.</p>}
           </section>
 
           <section>
+            <InterviewSummaryPanel
+              summary={summary}
+              onViewDetailed={() => setIsSummaryOpen(true)}
+              onViewFullRatings={() => ratingsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              onDownloadPdf={ratings.length ? () => void downloadSummaryPdf() : undefined}
+              onCreateRating={canManageInterviews ? () => setIsCreateRatingOpen(true) : undefined}
+            />
+          </section>
+
+          <section ref={ratingsSectionRef}>
             <div className="flex flex-col justify-between gap-3 border-b pb-2 sm:flex-row sm:items-center dark:border-slate-700"><div><h3 className="text-lg font-medium text-gray-900 dark:text-white">Interview Ratings</h3><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{submittedCount} of {ratings.length} Submitted</p></div>{canManageInterviews && <Button size="sm" onClick={() => setIsCreateRatingOpen(true)}>+ Create Interview Rating</Button>}</div>
             {ratingsError && <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">{ratingsError}</div>}
             {isLoadingRatings ? <p className="mt-4 text-sm text-slate-500">Loading reviewer forms…</p> : ratings.length === 0 ? <div className="mt-4 rounded-lg border border-dashed border-slate-300 p-5 text-center text-sm text-slate-500 dark:border-slate-700">No interview ratings have been assigned.</div> : <div className="mt-4 space-y-3">{ratings.map(rating => <Card key={rating.id} className="border border-slate-200 shadow-none dark:border-slate-700"><div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-slate-900 dark:text-white">{rating.reviewerNameSnapshot}</p><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-200">{rating.status}</span></div><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{rating.reviewerPositionSnapshot || 'Position not recorded'} · {rating.interviewRound} · Template v{rating.templateVersion}</p><div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600 dark:text-slate-300"><span>Overall: <strong>{displayOverall(rating)}</strong></span><span>{recommendationSummary(rating)}</span><span>Submitted: {rating.submittedAt?.toLocaleDateString() || '—'}</span></div></div><div className="flex shrink-0 flex-wrap gap-2"><Button size="sm" variant="secondary" onClick={() => setSelectedRating(rating)}>View rating</Button><Button size="sm" variant="secondary" onClick={() => downloadInterviewRatingPdf(rating, candidate).catch(error => setRatingsError(error?.message || 'Unable to generate PDF.'))}>Download PDF</Button>{canManageInterviews && !isInterviewRatingSubmitted(rating.status) && <Button size="sm" variant="danger" onClick={() => void removeRating(rating)}>Remove</Button>}</div></div></Card>)}</div>}
@@ -117,6 +166,18 @@ const CandidateProfileModal: React.FC<CandidateProfileModalProps> = ({ isOpen, o
       <CreateInterviewRatingModal isOpen={isCreateRatingOpen} onClose={() => setIsCreateRatingOpen(false)} candidate={candidate} applications={applications} jobPosts={jobPosts} onAssigned={async assigned => { setRatings(current => { const byId = new Map<string, InterviewRatingRecord>(current.map(item => [item.id, item] as [string, InterviewRatingRecord])); assigned.forEach(item => byId.set(item.id, item)); return Array.from(byId.values()).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()); }); await loadRatings(); }} />
 
       {selectedRating && <Modal isOpen={true} onClose={() => setSelectedRating(null)} title={`Interview Rating · ${selectedRating.reviewerNameSnapshot}`} size="5xl"><InterviewRatingEditor rating={selectedRating} candidate={candidate} onUpdated={updated => { updateRating(updated); setSelectedRating(updated); }} /></Modal>}
+      <InterviewSummaryModal
+        isOpen={isSummaryOpen}
+        onClose={() => setIsSummaryOpen(false)}
+        candidate={candidate}
+        ratings={ratings}
+        application={primaryApplication}
+        position={primaryApplication?.jobTitle}
+        businessUnit="Business unit not recorded"
+        onViewRating={rating => { setIsSummaryOpen(false); setSelectedRating(rating); }}
+        onViewOriginalForms={() => { setIsSummaryOpen(false); ratingsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+      />
+      {approvalPackage && <OfferApprovalPackageModal isOpen={true} onClose={() => setApprovalPackage(null)} offer={approvalPackage.offer} candidate={candidate} application={approvalPackage.application} ratings={approvalPackage.ratings} onSubmitted={requestId => { setApprovalPackage(current => current ? { ...current, offer: { ...current.offer, approvalStatus: 'Pending Approval', approvalRequestId: requestId } } : current); setRatingsError('Offer approval request submitted successfully.'); }} />}
     </>
   );
 };
