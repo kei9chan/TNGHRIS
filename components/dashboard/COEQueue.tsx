@@ -1,17 +1,29 @@
 
 import React from 'react';
-import { COERequest, COEPurpose } from '../../types';
+import { COERequest, getCoePurposeLabel } from '../../types';
 import Button from '../ui/Button';
 
 interface COEQueueProps {
     requests: COERequest[];
     onApprove: (request: COERequest) => void;
     onReject: (request: COERequest) => void;
+    onReturn?: (request: COERequest) => void;
     canAct?: boolean;
     canActOn?: (request: COERequest) => boolean;
+    canReturn?: boolean;
+    canReturnOn?: (request: COERequest) => boolean;
 }
 
-const COEQueue: React.FC<COEQueueProps> = ({ requests, onApprove, onReject, canAct = true, canActOn }) => {
+const COEQueue: React.FC<COEQueueProps> = ({
+    requests,
+    onApprove,
+    onReject,
+    onReturn,
+    canAct = true,
+    canActOn,
+    canReturn = false,
+    canReturnOn,
+}) => {
     if (requests.length === 0) {
         return (
             <div className="p-6 text-center text-gray-500 dark:text-gray-400">
@@ -28,6 +40,7 @@ const COEQueue: React.FC<COEQueueProps> = ({ requests, onApprove, onReject, canA
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Employee</th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Date Requested</th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Purpose</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Template</th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Details</th>
                         <th scope="col" className="relative px-6 py-3"><span className="sr-only">Actions</span></th>
                     </tr>
@@ -39,17 +52,27 @@ const COEQueue: React.FC<COEQueueProps> = ({ requests, onApprove, onReject, canA
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{new Date(req.dateRequested).toLocaleDateString()}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                 <span className="px-2 py-1 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-200 text-xs font-semibold">
-                                    {req.purpose.replace(/_/g, ' ')}
+                                    {getCoePurposeLabel(req.purpose, req.otherPurposeDetail)}
                                 </span>
                             </td>
                             <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate">
-                                {req.purpose === COEPurpose.Others ? req.otherPurposeDetail : '-'}
+                                {req.templateName || (req.templateId ? `Template ${req.templateId.slice(0, 8)}` : 'Not selected')}
+                            </td>
+                            <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate">
+                                {req.otherPurposeDetail || '-'}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                {canAct && (!canActOn || canActOn(req)) ? (
+                                {((canAct && (!canActOn || canActOn(req))) || (onReturn && canReturn && (!canReturnOn || canReturnOn(req)))) ? (
                                     <div className="flex justify-end space-x-2">
-                                        <Button size="sm" variant="danger" onClick={() => onReject(req)}>Reject</Button>
-                                        <Button size="sm" variant="success" onClick={() => onApprove(req)}>Approve</Button>
+                                        {onReturn && canReturn && (!canReturnOn || canReturnOn(req)) && (
+                                            <Button size="sm" variant="secondary" onClick={() => onReturn(req)}>Return</Button>
+                                        )}
+                                        {canAct && (!canActOn || canActOn(req)) && (
+                                            <>
+                                                <Button size="sm" variant="danger" onClick={() => onReject(req)}>Reject</Button>
+                                                <Button size="sm" variant="success" onClick={() => onApprove(req)}>Approve</Button>
+                                            </>
+                                        )}
                                     </div>
                                 ) : (
                                     <span className="text-xs text-gray-400">View only</span>

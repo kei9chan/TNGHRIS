@@ -15,8 +15,10 @@ import {
     COE_APPROVAL_PENDING_LABELS,
     COERequest,
     COERequestStatus,
+    getCoePurposeLabel,
+    isPendingCoeRequestStatus,
 } from '../../types';
-import { approveCoeRequest, createCoeRequest, fetchCoeDocument, fetchCoeRequestById, fetchCoeRequests, rejectCoeRequest } from '../../services/coeService';
+import { approveCoeRequest, createCoeRequest, fetchCoeDocument, fetchCoeRequestById, fetchCoeRequests, rejectCoeRequest, returnCoeRequest } from '../../services/coeService';
 import { fetchCOEApprovalAuthority, getCOEApprovalRoles } from '../../services/approverConfigService';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../hooks/useAuth';
@@ -43,7 +45,7 @@ const COERequests: React.FC = () => {
         () => getCOEApprovalRoles(coeApprovalAuthority).some(role => assignedRoles.has(role)),
         [assignedRoles, coeApprovalAuthority],
     );
-    const canManage = coeApprovalAuthorityLoaded && coeAccess.canApprove && isConfiguredApproverRole;
+    const canManage = coeApprovalAuthorityLoaded && isConfiguredApproverRole && (coeAccess.canApprove || coeAccess.canReturn);
     const canViewAll = coeAccess.canView && coeAccess.scope !== 'self';
     const canRequest = coeAccess.canRequest;
 
@@ -56,6 +58,8 @@ const COERequests: React.FC = () => {
     // Actions State
     const [requestToReject, setRequestToReject] = useState<COERequest | null>(null);
     const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
+    const [requestToReturn, setRequestToReturn] = useState<COERequest | null>(null);
+    const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
     const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
     const [printData, setPrintData] = useState<COEDocumentData | null>(null);
     const [autoOpenedRequestId, setAutoOpenedRequestId] = useState<string | null>(null);
@@ -293,6 +297,30 @@ const COERequests: React.FC = () => {
         setRequestToReject(null);
     };
 
+    const handleReturnClick = (request: COERequest) => {
+        if (!coeAccess.canReturnOn(request)) {
+            alert('You do not have permission to return this request.');
+            return;
+        }
+        setRequestToReturn(request);
+        setIsReturnModalOpen(true);
+    };
+
+    const handleConfirmReturn = async (reason: string) => {
+        if (!user || !requestToReturn) return;
+
+        try {
+            const updated = await returnCoeRequest(requestToReturn.id, user.id, reason);
+            setRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
+            logActivity(user, 'UPDATE', 'COERequest', requestToReturn.id, `Returned COE request for revision. Reason: ${reason}`);
+        } catch (error: any) {
+            alert(error?.message || 'Failed to return COE request.');
+        }
+
+        setIsReturnModalOpen(false);
+        setRequestToReturn(null);
+    };
+
     const handleViewDocument = async (request: COERequest) => {
         setLoadingDocumentId(request.id);
         setDocumentError(null);
@@ -309,7 +337,9 @@ const COERequests: React.FC = () => {
         switch(status) {
             case COERequestStatus.Approved: return <span className="px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-200">Approved</span>;
             case COERequestStatus.Rejected: return <span className="px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200">Rejected</span>;
-            case COERequestStatus.Pending: return <span className="px-2 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-200">Pending</span>;
+            case COERequestStatus.Pending:
+            case COERequestStatus.PendingHRManagerApproval: return <span className="px-2 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-200">{status}</span>;
+            case COERequestStatus.ReturnedForRevision: return <span className="px-2 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-200">Returned for Revision</span>;
         }
     };
 
@@ -386,22 +416,30 @@ const COERequests: React.FC = () => {
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{req.employeeName}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{getBuName(req.businessUnitId)}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{new Date(req.dateRequested).toLocaleDateString()}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{req.purpose.replace(/_/g, ' ')}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                        <div>{getCoePurposeLabel(req.purpose, req.otherPurposeDetail)}</div>
+                                        <div className="mt-1 text-xs text-gray-400 dark:text-gray-500">{req.templateName || (req.templateId ? `Template ${req.templateId.slice(0, 8)}` : 'No template selected')}</div>
+                                    </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm">{getStatusBadge(req.status)}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                                        {req.status === COERequestStatus.Pending
+                                        {isPendingCoeRequestStatus(req.status)
                                             ? `Pending ${COE_APPROVAL_PENDING_LABELS[coeApprovalAuthority]}`
                                             : req.approvedByName
                                                 ? `${req.status} by ${req.approvedByName}`
                                                 : COE_APPROVAL_AUTHORITY_LABELS[coeApprovalAuthority]}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                        {canManage && req.status === COERequestStatus.Pending ? (
+                                        {isPendingCoeRequestStatus(req.status) && canManage ? (
                                             <div className="flex justify-end space-x-2">
-                                                <Button size="sm" variant="danger" onClick={() => handleRejectClick(req)}>Reject</Button>
-                                                <Button size="sm" variant="success" onClick={() => handleApprove(req)} disabled={loadingDocumentId === req.id}>
-                                                    {loadingDocumentId === req.id ? 'Preparing…' : 'Approve'}
-                                                </Button>
+                                                {coeAccess.canReturnOn(req) && <Button size="sm" variant="secondary" onClick={() => handleReturnClick(req)}>Return</Button>}
+                                                {coeAccess.canActOn(req) && (
+                                                    <>
+                                                        <Button size="sm" variant="danger" onClick={() => handleRejectClick(req)}>Reject</Button>
+                                                        <Button size="sm" variant="success" onClick={() => handleApprove(req)} disabled={loadingDocumentId === req.id}>
+                                                            {loadingDocumentId === req.id ? 'Preparing…' : 'Approve'}
+                                                        </Button>
+                                                    </>
+                                                )}
                                             </div>
                                         ) : req.status === COERequestStatus.Approved ? (
                                             <Button size="sm" variant="secondary" onClick={() => handleViewDocument(req)} disabled={loadingDocumentId === req.id}>
@@ -428,6 +466,16 @@ const COERequests: React.FC = () => {
                 onClose={() => setIsRejectModalOpen(false)}
                 onSubmit={handleConfirmReject}
                 title="Reject COE Request"
+            />
+
+            <RejectReasonModal
+                isOpen={isReturnModalOpen}
+                onClose={() => setIsReturnModalOpen(false)}
+                onSubmit={handleConfirmReturn}
+                title="Return COE Request"
+                prompt="Please provide revision notes for the employee."
+                submitText="Return for Revision"
+                submitVariant="primary"
             />
             
             <RequestCOEModal

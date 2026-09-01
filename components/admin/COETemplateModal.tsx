@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { BusinessUnit, COEPurpose, COERequestStatus, COETemplate, COETemplateStatus } from '../../types';
+import { BusinessUnit, COE_PURPOSE_OPTIONS, COEPurpose, COERequestStatus, COETemplate, COETemplateStatus } from '../../types';
 import {
   applyCoePreset,
   COE_PLACEHOLDERS,
@@ -41,6 +41,8 @@ const readAsDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
   reader.readAsDataURL(file);
 });
 
+const allCoePurposes = COE_PURPOSE_OPTIONS.map(option => option.value);
+
 const COETemplateModal: React.FC<COETemplateModalProps> = ({
   isOpen,
   onClose,
@@ -77,10 +79,14 @@ const COETemplateModal: React.FC<COETemplateModalProps> = ({
         fontFamily: template.fontFamily || 'Times New Roman',
         layoutSettings: { ...DEFAULT_COE_LAYOUT, ...(template.layoutSettings || {}) },
         status: template.status || (template.isActive ? 'Published' : 'Draft'),
+        purposes: template.purposes?.length ? template.purposes : allCoePurposes,
+        recommendedPurposes: template.recommendedPurposes !== undefined
+          ? template.recommendedPurposes
+          : (template.isActive ? allCoePurposes : []),
       });
     } else {
       const brandSource = brandTemplates.find(item => item.businessUnitId === firstBusinessUnit?.id);
-      setCurrent(applyCoePreset({
+      setCurrent({ ...applyCoePreset({
         id: '',
         businessUnitId: firstBusinessUnit?.id || '',
         businessUnitName: firstBusinessUnit?.name,
@@ -92,7 +98,10 @@ const COETemplateModal: React.FC<COETemplateModalProps> = ({
         footerText: `${firstBusinessUnit?.name || 'TNG'} · Official Certificate of Employment`,
         status: 'Draft',
         isActive: false,
-      }, 'classic-corporate', firstBusinessUnit?.color || brandSource?.primaryColor));
+      }, 'classic-corporate', firstBusinessUnit?.color || brandSource?.primaryColor),
+        purposes: allCoePurposes,
+        recommendedPurposes: [],
+      });
     }
     setMode('edit');
     setSavingStatus(null);
@@ -149,9 +158,40 @@ const COETemplateModal: React.FC<COETemplateModalProps> = ({
     setCurrent(previous => applyCoePreset(previous, presetKey, selectedBusinessUnit?.color));
   };
 
+  const togglePurpose = (purpose: COEPurpose) => {
+    setCurrent(previous => {
+      const purposes = previous.purposes || [];
+      const nextPurposes = purposes.includes(purpose)
+        ? purposes.filter(value => value !== purpose)
+        : [...purposes, purpose];
+      return {
+        ...previous,
+        purposes: nextPurposes,
+        recommendedPurposes: (previous.recommendedPurposes || []).filter(value => nextPurposes.includes(value)),
+      };
+    });
+  };
+
+  const toggleRecommendedPurpose = (purpose: COEPurpose) => {
+    setCurrent(previous => {
+      if (!(previous.purposes || []).includes(purpose)) return previous;
+      const recommendedPurposes = previous.recommendedPurposes || [];
+      return {
+        ...previous,
+        recommendedPurposes: recommendedPurposes.includes(purpose)
+          ? recommendedPurposes.filter(value => value !== purpose)
+          : [...recommendedPurposes, purpose],
+      };
+    });
+  };
+
   const handleSave = async (status: COETemplateStatus) => {
     if (!current.businessUnitId || !current.body?.trim() || !current.signatoryName?.trim()) {
       alert('Business unit, certificate body, and signatory name are required.');
+      return;
+    }
+    if (!current.purposes?.length) {
+      alert('Assign at least one purpose to this template.');
       return;
     }
     if (unsupportedPlaceholders.length) {
@@ -166,6 +206,8 @@ const COETemplateModal: React.FC<COETemplateModalProps> = ({
         businessUnitName: selectedBusinessUnit?.name,
         status,
         isActive: status === 'Published',
+        purposes: current.purposes,
+        recommendedPurposes: (current.recommendedPurposes || []).filter(value => current.purposes?.includes(value)),
         layoutSettings: { ...DEFAULT_COE_LAYOUT, ...(current.layoutSettings || {}) },
       });
     } finally {
@@ -270,6 +312,30 @@ const COETemplateModal: React.FC<COETemplateModalProps> = ({
             </div>
 
             <Input label="Template Name *" value={current.name || ''} onChange={event => setCurrent(previous => ({ ...previous, name: event.target.value }))} />
+
+            <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+              <h4 className="font-semibold text-gray-900 dark:text-white">COE Purposes</h4>
+              <p className="mt-1 text-xs text-slate-500">Choose where this template can be used, then mark the purposes where it is recommended.</p>
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {COE_PURPOSE_OPTIONS.map(option => {
+                  const assigned = current.purposes?.includes(option.value) || false;
+                  const recommended = current.recommendedPurposes?.includes(option.value) || false;
+                  return (
+                    <div key={option.value} className="rounded-md border border-slate-200 px-3 py-2 dark:border-slate-600">
+                      <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+                        <input type="checkbox" checked={assigned} onChange={() => togglePurpose(option.value)} />
+                        <span>{option.label}</span>
+                      </label>
+                      <label className={`mt-2 flex items-center gap-2 pl-6 text-xs ${assigned ? 'text-amber-700 dark:text-amber-300' : 'text-slate-400'}`}>
+                        <input type="checkbox" checked={recommended} disabled={!assigned} onChange={() => toggleRecommendedPurpose(option.value)} />
+                        <span>Recommended</span>
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             <Input label="Document Title *" value={current.documentTitle || ''} onChange={event => setCurrent(previous => ({ ...previous, documentTitle: event.target.value }))} />
             <Input label="Business Address" value={current.address || ''} onChange={event => setCurrent(previous => ({ ...previous, address: event.target.value }))} />
 

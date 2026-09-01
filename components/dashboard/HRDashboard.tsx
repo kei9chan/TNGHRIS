@@ -10,7 +10,7 @@ import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { mergePanParticulars } from '../../services/panUtils';
 import { resolveEmployeePosition } from '../../services/employeeProfile';
-import { JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, Role, NotificationType, ResignationStatus, Notification, TicketStatus, UserDocumentStatus, OnboardingTaskStatus, ChangeHistoryStatus, PANStatus, PANActionTaken, PANStepStatus, PAN, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COEDocumentData, COERequest, COERequestStatus, COETemplate, BenefitRequestStatus, IRStatus, IncidentReport, User, Evaluation, EvaluatorType, Memo, MemoAcknowledgement, OTRequest, OTStatus, BenefitRequest, EvaluationSubmission, JobRequisition, Resignation, LeaveRequest, LeaveRequestStatus, WFHRequest, WFHRequestStatus } from '../../types';
+import { JobRequisitionStatus, JobRequisitionRole, JobRequisitionStepStatus, Role, NotificationType, ResignationStatus, Notification, TicketStatus, UserDocumentStatus, OnboardingTaskStatus, ChangeHistoryStatus, PANStatus, PANActionTaken, PANStepStatus, PAN, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COEDocumentData, COERequest, COERequestStatus, COETemplate, BenefitRequestStatus, IRStatus, IncidentReport, User, Evaluation, EvaluatorType, Memo, MemoAcknowledgement, OTRequest, OTStatus, BenefitRequest, EvaluationSubmission, JobRequisition, Resignation, LeaveRequest, LeaveRequestStatus, WFHRequest, WFHRequestStatus, isPendingCoeRequestStatus } from '../../types';
 import ActionItemCard from './ActionItemCard';
 import QuickAnalyticsPreview from './QuickAnalyticsPreview';
 import UpcomingEventsWidget from './UpcomingEventsWidget';
@@ -26,7 +26,7 @@ import COEQueue from './COEQueue';
 import PrintableCOE from '../admin/PrintableCOE';
 import RejectReasonModal from '../feedback/RejectReasonModal';
 import { logActivity } from '../../services/auditService';
-import { approveCoeRequest, createCoeRequest, fetchCoeDocument, rejectCoeRequest, fetchCoeRequests, fetchActiveCoeTemplates } from '../../services/coeService';
+import { approveCoeRequest, createCoeRequest, fetchCoeDocument, rejectCoeRequest, returnCoeRequest, fetchCoeRequests, fetchActiveCoeTemplates } from '../../services/coeService';
 import MemoViewModal from '../feedback/MemoViewModal';
 
 
@@ -189,6 +189,8 @@ const HRDashboard: React.FC = () => {
     const [coeToPrint, setCoeToPrint] = useState<COEDocumentData | null>(null);
     const [coeToReject, setCoeToReject] = useState<COERequest | null>(null);
     const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
+    const [coeToReturn, setCoeToReturn] = useState<COERequest | null>(null);
+    const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
     const [isLoadingCoe, setIsLoadingCoe] = useState(false);
     const [reporteeIds, setReporteeIds] = useState<string[]>([]);
     const [pendingOtApprovals, setPendingOtApprovals] = useState<OTRequest[]>([]);
@@ -456,6 +458,7 @@ const HRDashboard: React.FC = () => {
     }, []);
 
     useEffect(() => {
+        let active = true;
         const loadCoeData = async () => {
             setIsLoadingCoe(true);
             try {
@@ -463,16 +466,22 @@ const HRDashboard: React.FC = () => {
                     fetchCoeRequests(),
                     fetchActiveCoeTemplates()
                 ]);
+                if (!active) return;
                 setCoeRequests(requests);
                 setCoeTemplates(templates);
             } catch (error: any) {
                 console.error('Failed to load COE data', error);
-                alert(error?.message || 'Failed to load COE data.');
+                if (active) console.warn(error?.message || 'Failed to load COE data.');
             } finally {
-                setIsLoadingCoe(false);
+                if (active) setIsLoadingCoe(false);
             }
         };
-        loadCoeData();
+        void loadCoeData();
+        const interval = setInterval(() => void loadCoeData(), 15000);
+        return () => {
+            active = false;
+            clearInterval(interval);
+        };
     }, []);
 
     useEffect(() => {
@@ -683,7 +692,7 @@ const HRDashboard: React.FC = () => {
     const coeAccess = getCoeAccess();
     const scopedCOE = useMemo(() => coeAccess.filterRequests(coeRequests), [coeRequests, coeAccess]);
     const pendingCOE = useMemo(() => {
-        return scopedCOE.filter(r => r.status === COERequestStatus.Pending);
+        return scopedCOE.filter(r => isPendingCoeRequestStatus(r.status));
     }, [scopedCOE]);
 
     const pendingBenefitRequests = useMemo(() => {
@@ -763,6 +772,30 @@ const HRDashboard: React.FC = () => {
         
         setIsRejectModalOpen(false);
         setCoeToReject(null);
+    };
+
+    const handleReturnCOE = (request: COERequest) => {
+        if (!coeAccess.canReturnOn(request)) {
+            alert('You do not have permission to return this request.');
+            return;
+        }
+        setCoeToReturn(request);
+        setIsReturnModalOpen(true);
+    };
+
+    const confirmReturnCOE = async (reason: string) => {
+        if (!user || !coeToReturn) return;
+
+        try {
+            const updated = await returnCoeRequest(coeToReturn.id, user.id, reason);
+            setCoeRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
+            logActivity(user, 'UPDATE', 'COERequest', coeToReturn.id, `Returned COE request for revision. Reason: ${reason}`);
+        } catch (error: any) {
+            alert(error?.message || 'Failed to return COE request.');
+        }
+
+        setIsReturnModalOpen(false);
+        setCoeToReturn(null);
     };
 
     // Team approval handlers are now in the global ApprovalWidget
@@ -1468,8 +1501,11 @@ const HRDashboard: React.FC = () => {
                         requests={pendingCOE}
                         onApprove={handleApproveCOE}
                         onReject={handleRejectCOE}
+                        onReturn={handleReturnCOE}
                         canAct={coeAccess.canApprove}
                         canActOn={coeAccess.canActOn}
+                        canReturn={coeAccess.canReturn}
+                        canReturnOn={coeAccess.canReturnOn}
                     />
                 </Card>
             )}
@@ -1535,6 +1571,16 @@ const HRDashboard: React.FC = () => {
                 onSubmit={confirmRejectCOE}
                 title="Reject COE Request"
                 prompt="Please provide a reason for rejecting this request."
+            />
+
+            <RejectReasonModal
+                isOpen={isReturnModalOpen}
+                onClose={() => setIsReturnModalOpen(false)}
+                onSubmit={confirmReturnCOE}
+                title="Return COE Request"
+                prompt="Please provide revision notes for the employee."
+                submitText="Return for Revision"
+                submitVariant="primary"
             />
 
             {/* Leave/WFH/OT/Manpower review modals are now handled by the global ApprovalWidget */}

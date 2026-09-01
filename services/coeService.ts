@@ -26,12 +26,16 @@ type CoeRequestRow = {
   rejection_reason?: string | null;
   generated_document_url?: string | null;
   template_id?: string | null;
+  template?: { name?: string | null } | null;
   snapshot_created_at?: string | null;
   generation_source?: 'template' | 'fallback' | 'historical_snapshot' | null;
   fallback_reason?: string | null;
   document_version?: number | null;
   approved_by?: string | null;
   approved_at?: string | null;
+  return_reason?: string | null;
+  returned_by?: string | null;
+  returned_at?: string | null;
   requested_by?: string | null;
   created_at?: string | null;
 };
@@ -53,15 +57,26 @@ const mapCoeRequest = (row: CoeRequestRow): COERequest => ({
   rejectionReason: row.rejection_reason || undefined,
   generatedDocumentUrl: row.generated_document_url || undefined,
   templateId: row.template_id || undefined,
+  templateName: row.template?.name || undefined,
   snapshotCreatedAt: row.snapshot_created_at ? new Date(row.snapshot_created_at) : undefined,
   generationSource: row.generation_source || undefined,
   fallbackReason: row.fallback_reason || undefined,
   documentVersion: row.document_version || 1,
   approvedBy: row.approved_by || undefined,
   approvedAt: row.approved_at ? new Date(row.approved_at) : undefined,
+  returnReason: row.return_reason || undefined,
+  returnedBy: row.returned_by || undefined,
+  returnedAt: row.returned_at ? new Date(row.returned_at) : undefined,
 });
 
 export const createCoeRequest = async (request: Partial<COERequest>, user: User): Promise<COERequest> => {
+  if (!request.purpose) {
+    throw new Error('Please choose what the COE is for.');
+  }
+  if (!request.templateId || !isUuid(request.templateId)) {
+    throw new Error('Please choose a COE template.');
+  }
+
   // Fetch authoritative BU/Dept ids and role from hris_users to avoid non-UUIDs (e.g., "bu3")
   const { data: employeeRow } = await supabase
     .from('hris_users')
@@ -91,7 +106,8 @@ export const createCoeRequest = async (request: Partial<COERequest>, user: User)
     employee_department_id: isUuid(employeeRow?.department_id || user.departmentId) ? (employeeRow?.department_id || user.departmentId) : null,
     purpose: request.purpose,
     other_purpose_detail: request.otherPurposeDetail || null,
-    status: COERequestStatus.Pending,
+    status: COERequestStatus.PendingHRManagerApproval,
+    template_id: request.templateId,
     requested_by: user.id,
   };
 
@@ -100,7 +116,11 @@ export const createCoeRequest = async (request: Partial<COERequest>, user: User)
     throw new Error(error.message || 'Failed to submit COE request');
   }
 
-  return mapCoeRequest(data as CoeRequestRow);
+  const savedRequest = mapCoeRequest(data as CoeRequestRow);
+  return {
+    ...savedRequest,
+    templateName: savedRequest.templateName || request.templateName || undefined,
+  };
 };
 
 export const approveCoeRequest = async (
@@ -176,10 +196,25 @@ export const rejectCoeRequest = async (requestId: string, approverId: string, re
   return mapCoeRequest(data as CoeRequestRow);
 };
 
+export const returnCoeRequest = async (requestId: string, approverId: string, reason: string): Promise<COERequest> => {
+  void approverId;
+  const { data, error } = await supabase.rpc('return_coe_request', {
+    p_request_id: requestId,
+    p_reason: reason,
+  });
+  if (error) {
+    throw new Error(error.message || 'Failed to return COE request');
+  }
+  if (!data) {
+    throw new Error('The COE request could not be returned.');
+  }
+  return mapCoeRequest(data as CoeRequestRow);
+};
+
 export const fetchCoeRequests = async (): Promise<COERequest[]> => {
   const { data, error } = await supabase
     .from('coe_requests')
-    .select('*')
+    .select('*, template:coe_templates(name)')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -192,7 +227,7 @@ export const fetchCoeRequests = async (): Promise<COERequest[]> => {
 export const fetchCoeRequestById = async (requestId: string): Promise<COERequest | null> => {
   const { data, error } = await supabase
     .from('coe_requests')
-    .select('*')
+    .select('*, template:coe_templates(name)')
     .eq('id', requestId)
     .maybeSingle();
 
@@ -227,7 +262,12 @@ type CoeTemplateRow = {
   is_preset?: boolean | null;
   preset_key?: string | null;
   created_from_template_id?: string | null;
+  purposes?: string[] | null;
+  recommended_purposes?: string[] | null;
 };
+
+const mapPurposeArray = (value: unknown): COEPurpose[] =>
+  Array.isArray(value) ? value.filter(Boolean).map(item => String(item) as COEPurpose) : [];
 
 export const mapCoeTemplate = (row: any): COETemplate => ({
   id: row.id || '',
@@ -253,6 +293,8 @@ export const mapCoeTemplate = (row: any): COETemplate => ({
   isPreset: Boolean(row.isPreset ?? row.is_preset),
   presetKey: row.presetKey || row.preset_key || undefined,
   createdFromTemplateId: row.createdFromTemplateId || row.created_from_template_id || undefined,
+  purposes: mapPurposeArray(row.purposes),
+  recommendedPurposes: mapPurposeArray(row.recommendedPurposes || row.recommended_purposes),
   isActive: Boolean(row.isActive ?? row.is_active),
 });
 

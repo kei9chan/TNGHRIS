@@ -4,7 +4,7 @@ import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Card from '../ui/Card';
-import { OTStatus, Role, ResolutionStatus, ApproverStatus, PANStatus, PANStepStatus, JobRequisitionStatus, JobRequisitionStepStatus, TicketStatus, OnboardingTaskStatus, PANActionTaken, AssetRequest, AssetRequestStatus, NTEStatus, PAN, Resolution, NTE, JobRequisition, OTRequest, AttendanceExceptionRecord, EmployeeAward, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COEDocumentData, COERequest, Envelope, EnvelopeStatus, RoutingStepStatus, BenefitRequest, BenefitRequestStatus, CoachingStatus, COETemplate, User, LeaveRequest, LeaveRequestStatus, WFHRequest, WFHRequestStatus, AttendanceRecord, ShiftAssignment, ShiftTemplate, Evaluation, EvaluatorType, Memo, MemoAcknowledgement, CoachingSession, EvaluationSubmission, EvaluationTimeline } from '../../types';
+import { OTStatus, Role, ResolutionStatus, ApproverStatus, PANStatus, PANStepStatus, JobRequisitionStatus, JobRequisitionStepStatus, TicketStatus, OnboardingTaskStatus, PANActionTaken, AssetRequest, AssetRequestStatus, NTEStatus, PAN, Resolution, NTE, JobRequisition, OTRequest, AttendanceExceptionRecord, EmployeeAward, AssetAssignment, ManpowerRequest, ManpowerRequestStatus, OnboardingChecklist, OnboardingChecklistTemplate, COEDocumentData, COERequest, Envelope, EnvelopeStatus, RoutingStepStatus, BenefitRequest, BenefitRequestStatus, CoachingStatus, COETemplate, User, LeaveRequest, LeaveRequestStatus, WFHRequest, WFHRequestStatus, AttendanceRecord, ShiftAssignment, ShiftTemplate, Evaluation, EvaluatorType, Memo, MemoAcknowledgement, CoachingSession, EvaluationSubmission, EvaluationTimeline, isPendingCoeRequestStatus } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useAuth } from '../../hooks/useAuth';
 import ActionItemCard from './ActionItemCard';
@@ -21,7 +21,7 @@ import RequestCOEModal from '../employees/RequestCOEModal';
 import PrintableCOE from '../admin/PrintableCOE';
 import MemoViewModal from '../feedback/MemoViewModal';
 import { logActivity } from '../../services/auditService';
-import { approveCoeRequest, createCoeRequest, fetchCoeDocument, fetchCoeRequests, rejectCoeRequest, fetchActiveCoeTemplates } from '../../services/coeService';
+import { approveCoeRequest, createCoeRequest, fetchCoeDocument, fetchCoeRequests, rejectCoeRequest, returnCoeRequest, fetchActiveCoeTemplates } from '../../services/coeService';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { mergePanParticulars } from '../../services/panUtils';
@@ -207,7 +207,7 @@ const ManagerDashboard: React.FC = () => {
     const [isRequestCOEModalOpen, setIsRequestCOEModalOpen] = useState(false);
     const coeAccess = getCoeAccess();
     const scopedCOE = useMemo(() => coeAccess.filterRequests(coeRequests), [coeRequests, coeAccess]);
-    const pendingCOE = useMemo(() => scopedCOE.filter(r => r.status === 'Pending'), [scopedCOE]);
+    const pendingCOE = useMemo(() => scopedCOE.filter(r => isPendingCoeRequestStatus(r.status)), [scopedCOE]);
     // legacyUserId is now resolved via panApproverId (which queries hris_users)
     const legacyUserId = panApproverId;
     const notificationUserIdsRef = useRef<Set<string>>(new Set());
@@ -903,6 +903,23 @@ const ManagerDashboard: React.FC = () => {
         }
     };
 
+    const handleReturnCOE = async (request: COERequest) => {
+        if (!user) return;
+        if (!coeAccess.canReturnOn(request)) {
+            alert('You do not have permission to return this request.');
+            return;
+        }
+        const reason = prompt('Enter revision notes:') || '';
+        if (!reason.trim()) return;
+        try {
+            const updated = await returnCoeRequest(request.id, user.id, reason.trim());
+            setCoeRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
+            logActivity(user, 'UPDATE', 'COERequest', request.id, `Returned COE request for revision. Reason: ${reason}`);
+        } catch (error: any) {
+            alert(error?.message || 'Failed to return COE request.');
+        }
+    };
+
     const handleApproveManpower = async (requestId: string, comments?: string) => {
         if (!user) return;
         try {
@@ -1549,8 +1566,11 @@ const ManagerDashboard: React.FC = () => {
                     requests={pendingCOE}
                     onApprove={handleApproveCOE}
                     onReject={handleRejectCOE}
+                    onReturn={handleReturnCOE}
                     canAct={coeAccess.canApprove}
                     canActOn={coeAccess.canActOn}
+                    canReturn={coeAccess.canReturn}
+                    canReturnOn={coeAccess.canReturnOn}
                 />
             </Card>}
 

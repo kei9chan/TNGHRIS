@@ -42,7 +42,8 @@ import {
     WFHRequestStatus,
     OTStatus,
     OTRequest,
-    ManpowerRequestStatus
+    ManpowerRequestStatus,
+    getCoePurposeLabel
 } from '../../types';
 import ActionItemCard from './ActionItemCard';
 import RecentMemosWidget from './RecentMemosWidget';
@@ -928,11 +929,11 @@ const EmployeeDashboard: React.FC = () => {
                 const requests = await fetchCoeRequests();
                 if (!isMounted) return;
                 const myDecisions = requests
-                    .filter(r => r.employeeId === user.id && (r.status === 'Approved' || r.status === 'Rejected'))
+                    .filter(r => r.employeeId === user.id && (r.status === 'Approved' || r.status === 'Rejected' || r.status === 'Returned for Revision'))
                     .map(r => ({
                         id: r.id,
                         status: r.status,
-                        date: r.approvedAt || r.dateRequested,
+                        date: r.returnedAt || r.approvedAt || r.dateRequested,
                         purpose: r.purpose,
                     }));
                 setCoeDecisions(myDecisions);
@@ -1244,17 +1245,19 @@ const EmployeeDashboard: React.FC = () => {
 
         coeDecisions.forEach(req => {
             const approved = req.status === 'Approved';
+            const returned = req.status === 'Returned for Revision';
+            const statusLabel = approved ? 'Approved' : returned ? 'Returned for Revision' : 'Rejected';
             const sortDate = req.date;
             items.push({
-                id: `coe-${approved ? 'approved' : 'rejected'}-${req.id}`,
+                id: `coe-${statusLabel.toLowerCase().replace(/\s+/g, '-')}-${req.id}`,
                 icon: <DocumentTextIcon {...iconProps} />,
-                title: `COE ${approved ? 'Approved' : 'Rejected'}`,
-                subtitle: `${(req.purpose ?? 'COE_REQUEST').replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())} • ${new Date(req.date).toLocaleDateString()}`,
+                title: `COE ${statusLabel}`,
+                subtitle: `${getCoePurposeLabel(req.purpose)} • ${new Date(req.date).toLocaleDateString()}`,
                 date: new Date(req.date).toLocaleDateString(),
                 sortDate,
                 link: `/employees/coe/requests?requestId=${req.id}`,
-                colorClass: approved ? 'bg-green-500' : 'bg-red-500',
-                priority: approved ? 3 : 2
+                colorClass: approved ? 'bg-green-500' : returned ? 'bg-orange-500' : 'bg-red-500',
+                priority: approved ? 3 : returned ? 1 : 2
             });
         });
 

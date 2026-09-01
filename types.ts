@@ -273,18 +273,60 @@ export interface BenefitRequest {
 
 export enum COEPurpose {
   LoanApplication = 'LOAN_APPLICATION',
+  VisaTravel = 'VISA_TRAVEL',
+  SchoolEducation = 'SCHOOL_EDUCATION',
+  GovernmentLegal = 'GOVERNMENT_LEGAL',
+  GeneralEmployment = 'GENERAL_EMPLOYMENT',
+  Others = 'OTHERS',
+
+  // Retained for existing requests and historical document snapshots.
   Travel = 'TRAVEL',
   VisaApplication = 'VISA_APPLICATION',
   SchoolApplication = 'SCHOOL_APPLICATION',
   LegalPurposes = 'LEGAL_PURPOSES',
-  Others = 'OTHERS',
 }
 
+export const COE_PURPOSE_OPTIONS: Array<{ value: COEPurpose; label: string }> = [
+  { value: COEPurpose.LoanApplication, label: 'Loan Application' },
+  { value: COEPurpose.VisaTravel, label: 'Visa/Travel' },
+  { value: COEPurpose.SchoolEducation, label: 'School/Education' },
+  { value: COEPurpose.GovernmentLegal, label: 'Government/Legal' },
+  { value: COEPurpose.GeneralEmployment, label: 'General Employment' },
+  { value: COEPurpose.Others, label: 'Other' },
+];
+
+export const COE_PURPOSE_LABELS: Record<string, string> = {
+  [COEPurpose.LoanApplication]: 'Loan Application',
+  [COEPurpose.VisaTravel]: 'Visa/Travel',
+  [COEPurpose.SchoolEducation]: 'School/Education',
+  [COEPurpose.GovernmentLegal]: 'Government/Legal',
+  [COEPurpose.GeneralEmployment]: 'General Employment',
+  [COEPurpose.Others]: 'Other',
+  [COEPurpose.Travel]: 'Visa/Travel',
+  [COEPurpose.VisaApplication]: 'Visa/Travel',
+  [COEPurpose.SchoolApplication]: 'School/Education',
+  [COEPurpose.LegalPurposes]: 'Government/Legal',
+};
+
+export const getCoePurposeLabel = (
+  purpose?: COEPurpose | string | null,
+  otherPurposeDetail?: string | null,
+) => {
+  if (purpose === COEPurpose.Others && otherPurposeDetail?.trim()) return otherPurposeDetail.trim();
+  return COE_PURPOSE_LABELS[String(purpose || '')] || String(purpose || '').replace(/_/g, ' ');
+};
+
 export enum COERequestStatus {
+  // Legacy value retained so existing records continue to render and filter.
   Pending = 'Pending',
+  PendingHRManagerApproval = 'Pending HR Manager Approval',
+  ReturnedForRevision = 'Returned for Revision',
   Approved = 'Approved',
   Rejected = 'Rejected',
 }
+
+export const isPendingCoeRequestStatus = (status?: COERequestStatus | string | null) =>
+  status === COERequestStatus.Pending || status === COERequestStatus.PendingHRManagerApproval;
 
 export enum COEApprovalAuthority {
   HRManager = 'HR_MANAGER',
@@ -347,6 +389,8 @@ export interface COETemplate {
   isPreset?: boolean;
   presetKey?: string;
   createdFromTemplateId?: string;
+  purposes?: COEPurpose[];
+  recommendedPurposes?: COEPurpose[];
   isActive: boolean;
 }
 
@@ -395,6 +439,7 @@ export interface COERequest {
   rejectionReason?: string;
   generatedDocumentUrl?: string; // Placeholder for generated PDF
   templateId?: string;
+  templateName?: string;
   snapshotCreatedAt?: Date;
   generationSource?: 'template' | 'fallback' | 'historical_snapshot';
   fallbackReason?: string;
@@ -402,6 +447,9 @@ export interface COERequest {
   approvedBy?: string;
   approvedByName?: string;
   approvedAt?: Date;
+  returnReason?: string;
+  returnedBy?: string;
+  returnedAt?: Date;
 }
 
 // =================================================================================

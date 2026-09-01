@@ -255,10 +255,12 @@ export const usePermissions = () => {
             return {
                 canRequest: false,
                 canApprove: false,
+                canReturn: false,
                 canView: false,
                 scope: 'none' as const,
                 filterRequests: (_reqs: COERequest[]) => [],
                 canActOn: (_req: COERequest) => false,
+                canReturnOn: (_req: COERequest) => false,
             };
         }
 
@@ -270,6 +272,8 @@ export const usePermissions = () => {
                 ? [Role.HRManager, Role.HRStaff]
                 : [Role.HRManager];
         const canApprove = workflowCan('COE', Permission.Approve)
+            && configuredApproverRoles.some(role => assignedRoles.has(role));
+        const canReturn = workflowCan('COE', Permission.Return)
             && configuredApproverRoles.some(role => assignedRoles.has(role));
         const canView = can('COE', Permission.View);
         const scope = effectiveScope();
@@ -321,7 +325,12 @@ export const usePermissions = () => {
             return filterRequests([request]).length > 0;
         };
 
-        return { canRequest, canApprove, canView, scope, filterRequests, canActOn };
+        const canReturnOn = (request: COERequest) => {
+            if (!canReturn) return false;
+            return filterRequests([request]).length > 0;
+        };
+
+        return { canRequest, canApprove, canReturn, canView, scope, filterRequests, canActOn, canReturnOn };
     };
 
     const getOtAccess = () => {

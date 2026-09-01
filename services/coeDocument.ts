@@ -5,6 +5,7 @@ import {
   COERequest,
   COETemplate,
   COETemplateStyle,
+  getCoePurposeLabel,
 } from '../types';
 
 export const COE_PLACEHOLDERS = [
@@ -125,7 +126,7 @@ const formatDate = (value?: string | Date) => {
 const purposeLabel = (request: COERequest, employee: COEEmployeeSnapshot) => {
   if (employee.purpose) return employee.purpose;
   if (request.purpose === COEPurpose.Others) return request.otherPurposeDetail || 'personal purposes';
-  return String(request.purpose || '').replace(/_/g, ' ').toLowerCase();
+  return getCoePurposeLabel(request.purpose, request.otherPurposeDetail).toLowerCase();
 };
 
 export const buildCoePlaceholderValues = (

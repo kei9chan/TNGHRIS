@@ -1,6 +1,6 @@
 // Phase A complete: mockDataCompat removed from COETemplates
 import React, { useState, useMemo, useEffect } from 'react';
-import { BusinessUnit, COETemplate, Permission } from '../../types';
+import { BusinessUnit, COE_PURPOSE_OPTIONS, COETemplate, Permission } from '../../types';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import COETemplateModal from '../../components/admin/COETemplateModal';
@@ -10,7 +10,7 @@ import { archiveCoeTemplate, fetchAllCoeTemplates, saveCoeTemplate } from '../..
 
 const COETemplates: React.FC = () => {
     const { can, getAccessibleBusinessUnits } = usePermissions();
-    const canManage = can('COE', Permission.Manage);
+    const canManage = can('COE', Permission.Manage) || can('COE', Permission.Edit);
 
     const [templates, setTemplates] = useState<COETemplate[]>([]);
     const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
@@ -87,9 +87,7 @@ const COETemplates: React.FC = () => {
                 const next = exists
                     ? previous.map(item => item.id === saved.id ? saved : item)
                     : [saved, ...previous];
-                return next.map(item => item.businessUnitId === saved.businessUnitId && item.id !== saved.id && saved.isActive
-                    ? { ...item, isActive: false }
-                    : item);
+                return next;
             });
             setPageError(null);
             setIsModalOpen(false);
@@ -123,6 +121,7 @@ const COETemplates: React.FC = () => {
             presetKey: undefined,
             createdFromTemplateId: template.id,
             version: 1,
+            recommendedPurposes: [],
         });
     };
 
@@ -194,6 +193,14 @@ const COETemplates: React.FC = () => {
                             </div>
                             <p><strong>Signatory:</strong> {template.signatoryName} ({template.signatoryPosition})</p>
                             <p className="truncate"><strong>Address:</strong> {template.address}</p>
+                            <p><strong>Purposes:</strong> {template.purposes?.length
+                                ? template.purposes.map(purpose => COE_PURPOSE_OPTIONS.find(option => option.value === purpose)?.label || purpose).join(', ')
+                                : 'All purposes (legacy template)'}</p>
+                            {template.recommendedPurposes?.length > 0 && (
+                                <p><strong>Recommended:</strong> {template.recommendedPurposes
+                                    .map(purpose => COE_PURPOSE_OPTIONS.find(option => option.value === purpose)?.label || purpose)
+                                    .join(', ')}</p>
+                            )}
                             <p><strong>Version:</strong> {template.version || 1}</p>
                         </div>
 
