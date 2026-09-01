@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { WFHRequest, WFHRequestStatus, User, Role } from '../types';
+import { WFHRequest, WFHRequestStatus, User } from '../types';
 
 // ---------------------------------------------------------------------------
 // Row Type
@@ -83,20 +83,12 @@ export const fetchWfhRequestById = async (id: string): Promise<WFHRequest | null
 };
 
 export const createWfhRequest = async (request: Partial<WFHRequest>, user: User, isDraft: boolean = false, skipToBOD: boolean = false): Promise<WFHRequest> => {
-  // Determine if user is a manager (triggers GM → BOD approval chain)
-  const managerRoles = [
-    Role.Manager, Role.BusinessUnitManager,
-    Role.OperationsDirector, Role.HRManager,
-  ];
-  const isManager = managerRoles.includes(user.role);
-
   let initialStatus = WFHRequestStatus.PendingSubmission;
   if (!isDraft) {
     if (skipToBOD) {
       initialStatus = WFHRequestStatus.PendingBOD;
     } else {
-      // Managers go through GM → BOD flow; regular employees go to Dept Head
-      initialStatus = isManager ? WFHRequestStatus.PendingGM : WFHRequestStatus.PendingDeptHead;
+      initialStatus = WFHRequestStatus.PendingDeptHead;
     }
   }
 
@@ -136,14 +128,8 @@ export const updateWfhRequestDetails = async (id: string, request: Partial<WFHRe
   return mapWfhRequest(data as WfhRequestRow);
 };
 
-export const submitWfhRequest = async (id: string, user: User, skipToBOD: boolean = false): Promise<WFHRequest> => {
-  const managerRoles = [
-    Role.Manager, Role.BusinessUnitManager,
-    Role.OperationsDirector, Role.HRManager,
-  ];
-  const isManager = managerRoles.includes(user.role);
-  // Managers go through GM → BOD flow; regular employees go to Dept Head
-  let newStatus = isManager ? WFHRequestStatus.PendingGM : WFHRequestStatus.PendingDeptHead;
+export const submitWfhRequest = async (id: string, _user: User, skipToBOD: boolean = false): Promise<WFHRequest> => {
+  let newStatus = WFHRequestStatus.PendingDeptHead;
   
   if (skipToBOD) {
     newStatus = WFHRequestStatus.PendingBOD;

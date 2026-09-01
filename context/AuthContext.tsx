@@ -1,5 +1,5 @@
 // src/context/AuthContext.tsx
-import React, { createContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useCallback, useEffect, useState, ReactNode } from 'react';
 import { User, Role } from '../types';
 import { supabase } from '../services/supabaseClient';
 
@@ -28,6 +28,7 @@ interface AuthContextType {
   loginWithGoogle: () => Promise<User | null>;
   logout: () => void;
   connectGoogle: () => void;
+  refreshUser: () => Promise<User | null>;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(
@@ -170,6 +171,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
 }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const refreshUser = useCallback(async (): Promise<User | null> => {
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data.user) {
+      if (!error) setUser(null);
+      return null;
+    }
+
+    const refreshed = await buildAppUserFromSupabase(data.user as SupabaseUser);
+    if (refreshed) setUser(refreshed);
+    return refreshed;
+  }, []);
 
   // On first load, get current Supabase session + HRIS profile
   useEffect(() => {
@@ -406,6 +419,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         loginWithGoogle,
         logout,
         connectGoogle,
+        refreshUser,
       }}
     >
       {children}

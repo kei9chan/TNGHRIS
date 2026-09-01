@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { WFHRequest, WFHRequestStatus, Role, Permission } from '../../types';
+import { WFHRequest, WFHRequestStatus, Permission } from '../../types';
 import { NotificationType } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -62,8 +62,8 @@ const WFHRequests: React.FC = () => {
   const { user } = useAuth();
   const { can, getDashboardRequestAccess } = usePermissions();
   const access = getDashboardRequestAccess('WFH');
-  const canView = can('WFH', Permission.View) || [Role.Manager, Role.BusinessUnitManager, Role.Employee, Role.BOD, Role.GeneralManager, Role.HRManager, Role.HRStaff, Role.OperationsDirector, Role.Admin].includes(user?.role as Role);
-  const canCreate = can('WFH', Permission.Create) || can('WFH', Permission.Manage) || [Role.Manager, Role.BusinessUnitManager, Role.Employee, Role.HRManager, Role.HRStaff, Role.Admin].includes(user?.role as Role);
+  const canView = access.canView;
+  const canCreate = access.canRequest;
   const [reporteeIds, setReporteeIds] = useState<string[]>([]);
   const [reporteeIdsLoaded, setReporteeIdsLoaded] = useState(false);
   const navigate = useNavigate();

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { OTRequest, OTStatus, Role, OTRequestHistory, Permission } from '../../types';
+import { OTRequest, OTStatus, OTRequestHistory, Permission } from '../../types';
 import { NotificationType } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -47,7 +47,7 @@ const SuccessToast: React.FC<{ message: string; show: boolean; onClose: () => vo
 
 const OvertimeRequests: React.FC = () => {
     const { user } = useAuth();
-    const { hasDirectReports, getAccessibleBusinessUnits, getOtAccess, can: canModule } = usePermissions();
+    const { getAccessibleBusinessUnits, getOtAccess, can: canModule } = usePermissions();
     const { approverConfigs } = useSettings();
     const location = useLocation();
     const navigate = useNavigate();
@@ -76,11 +76,10 @@ const OvertimeRequests: React.FC = () => {
     }, [user, approverConfigs]);
 
     const otAccess = getOtAccess();
-    const canView = canModule('OT', Permission.View) || otAccess.canView;
-    const canCreate = canModule('OT', Permission.Create) || otAccess.canRequest;
+    const canCreate = otAccess.canRequest;
     const canManage = canModule('OT', Permission.Manage);
     // Configured BOD approvers can also approve
-    const canApprove = otAccess.canApprove || reporteeIds.length > 0 || hasDirectReports() || isConfiguredBOD;
+    const canApprove = otAccess.canApprove || reporteeIds.length > 0 || isConfiguredBOD;
     const canViewLedger = canApprove;
     
     useEffect(() => {
@@ -161,18 +160,13 @@ const OvertimeRequests: React.FC = () => {
     // Identify if user is "Privileged" to see BU-wide stats
     const isPrivilegedViewer = useMemo(() => {
         if (!user) return false;
-        // Configured BOD approvers (regardless of role) are also privileged viewers
         if (isConfiguredBOD) return true;
-        return [
-            Role.Admin,
-            Role.BOD,
-            Role.GeneralManager,
-            Role.HRManager,
-            Role.HRStaff,
-            Role.OperationsDirector,
-            Role.BusinessUnitManager
-        ].includes(user.role);
-    }, [user, isConfiguredBOD]);
+        const hasAdministrativeOtCapability = canManage
+            || canModule('OT', Permission.Approve)
+            || canModule('OT', Permission.Review)
+            || canModule('OT', Permission.Finalize);
+        return hasAdministrativeOtCapability && ['global', 'bu', 'dept'].includes(otAccess.scope);
+    }, [user, isConfiguredBOD, canManage, canModule, otAccess.scope]);
 
     // Filter requests based on selected BU (for privileged users)
     const buFilteredRequests = useMemo(() => {
@@ -518,7 +512,7 @@ const OvertimeRequests: React.FC = () => {
                             {accessibleBus.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
                         </select>
                     )}
-                    <Button onClick={handleNewRequest}>+ New OT Request</Button>
+                    {canCreate && <Button onClick={handleNewRequest}>+ New OT Request</Button>}
                 </div>
             </div>
             
@@ -585,7 +579,7 @@ const OvertimeRequests: React.FC = () => {
                         onEdit={handleEditRequest}
                         onDelete={handleDeleteRequest}
                         onWithdraw={handleWithdrawRequest}
-                        onConvert={user?.role === Role.HRManager || user?.role === Role.HRStaff || user?.role === Role.Admin || user?.role === Role.GeneralManager || user?.role === Role.BOD ? handleConvertRequest : undefined}
+                        onConvert={canManage || canModule('OT', Permission.Finalize) ? handleConvertRequest : undefined}
                         canReviewRequest={(req) =>
                             reporteeIds.includes(req.employeeId) ||
                             otAccess.canActOn(req) ||

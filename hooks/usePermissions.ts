@@ -242,7 +242,7 @@ export const usePermissions = () => {
         };
         const resource = resourceByWorkflow[workflow] || 'Dashboard';
         return {
-            canRequest: workflowCan(workflow, Permission.Submit),
+            canRequest: can(resource, Permission.Create) && workflowCan(workflow, Permission.Submit),
             canApprove: workflowCan(workflow, Permission.Approve),
             canView: can(resource, Permission.View),
             scope: effectiveScope(),
@@ -337,7 +337,7 @@ export const usePermissions = () => {
             };
         }
 
-        const canRequest = workflowCan('Overtime', Permission.Submit);
+        const canRequest = can('OT', Permission.Create) && workflowCan('Overtime', Permission.Submit);
         const canApprove = workflowCan('Overtime', Permission.Approve);
         const canView = can('OT', Permission.View);
         const scope = effectiveScope();

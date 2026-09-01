@@ -39,7 +39,8 @@
     "test:approval-presentation": "node tests/approvalPresentationSmokeTest.mjs",
     "test:record-authorization": "node tests/recordAuthorizationAndIncidentRevisionSmokeTest.mjs",
     "test:on-call-manpower": "node tests/onCallManpowerWorkflowSmokeTest.mjs",
-    "test:evaluation-visibility": "node tests/evaluationVisibilityAndWfhViewSmokeTest.mjs"
+    "test:evaluation-visibility": "node tests/evaluationVisibilityAndWfhViewSmokeTest.mjs",
+    "test:rbac-self-service": "node tests/rbacSelfServiceAndCaseHandlerRegressionSmokeTest.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.84.0",

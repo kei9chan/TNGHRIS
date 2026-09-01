@@ -2,7 +2,7 @@ import { fetchBusinessUnits } from '../../services/userService';
 import { fetchCodeOfDiscipline } from '../../services/disciplineService';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { IncidentReport, IRStatus, User, Role, BusinessUnit, CodeOfDiscipline, Permission } from '../../types';
+import { IncidentReport, IRStatus, User, BusinessUnit, CodeOfDiscipline, Permission } from '../../types';
 import { formatIRDisplayId } from '../../utils/formatCaseId';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
@@ -14,7 +14,7 @@ import EmployeeMultiSelect from './EmployeeMultiSelect';
 import SignaturePad, { SignaturePadRef } from '../ui/SignaturePad';
 import { supabase } from '../../services/supabaseClient';
 import FileUploader from '../ui/FileUploader';
-import { fetchIncidentReportUserDirectory } from '../../services/incidentReportService';
+import { fetchAssignableIncidentCaseHandlers, fetchIncidentReportUserDirectory } from '../../services/incidentReportService';
 
 interface IncidentReportModalProps {
   isOpen: boolean;
@@ -64,6 +64,9 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
   const { can } = usePermissions();
   const [currentReport, setCurrentReport] = useState<Partial<IncidentReport>>({});
   const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [potentialHandlers, setPotentialHandlers] = useState<User[]>([]);
+  const [handlerDirectoryLoading, setHandlerDirectoryLoading] = useState(false);
+  const [handlerDirectoryError, setHandlerDirectoryError] = useState('');
   const [directoryLoading, setDirectoryLoading] = useState(false);
   const [directoryError, setDirectoryError] = useState('');
   const [involvedEmployees, setInvolvedEmployees] = useState<User[]>([]);
@@ -130,14 +133,6 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
     return [...new Set(disciplineEntries.map(e => e.category))].sort();
   }, [disciplineEntries]);
 
-  const potentialHandlers = useMemo(() => {
-    const handlerRoles = new Set([Role.HRManager, Role.HRStaff, Role.BOD]);
-    return allUsers.filter(u =>
-      u.status === 'Active' &&
-      [u.role, ...(u.roles || [])].some(role => handlerRoles.has(role))
-    );
-  }, [allUsers]);
-
   const availableEmployees = useMemo(() => {
     return allUsers.filter(u => !u.status || u.status.toLowerCase() === 'active');
   }, [allUsers]);
@@ -177,7 +172,26 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
       }
     };
     fetchUsers();
-  }, [isOpen]);
+
+    const fetchHandlers = async () => {
+      if (!canAssign) {
+        setPotentialHandlers([]);
+        setHandlerDirectoryError('');
+        return;
+      }
+      setHandlerDirectoryLoading(true);
+      setHandlerDirectoryError('');
+      try {
+        setPotentialHandlers(await fetchAssignableIncidentCaseHandlers());
+      } catch (err: any) {
+        setPotentialHandlers([]);
+        setHandlerDirectoryError(err?.message || 'Eligible case handlers could not be loaded.');
+      } finally {
+        setHandlerDirectoryLoading(false);
+      }
+    };
+    void fetchHandlers();
+  }, [isOpen, canAssign]);
 
   useEffect(() => {
     if (isOpen) {
@@ -360,17 +374,16 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
 
   const reporterName = report ? allUsers.find(u => u.id === report.reportedBy)?.name : user?.name;
   const statusTag = report ? getStatusTag(report.status, report.pipelineStage) : null;
-  const activeRoles = new Set([user?.role, ...(user?.roles || [])].filter(Boolean));
   const isReporter = !!report && report.reportedBy === user?.id;
   const isReporterRevisionState = !!report && [IRStatus.ReturnedForRevision, IRStatus.Rejected].includes(report.status);
   const reporterCanRevise = isReporter && !!report && [IRStatus.Draft, IRStatus.ReturnedForRevision, IRStatus.Rejected].includes(report.status);
   const isActiveHrReview = !!report
     && [IRStatus.Submitted, IRStatus.HRReview].includes(report.status)
     && report.pipelineStage === 'ir-review';
-  const hasIncidentProcessorRole = activeRoles.has(Role.HRManager)
-    || activeRoles.has(Role.HRStaff)
-    || activeRoles.has(Role.Admin);
-  const canProcessReport = !isEmployeeView && hasIncidentProcessorRole && isActiveHrReview;
+  const hasIncidentProcessingPermission = can('IncidentReports', Permission.Review)
+    || can('IncidentReports', Permission.Edit)
+    || can('IncidentReports', Permission.Manage);
+  const canProcessReport = !isEmployeeView && hasIncidentProcessingPermission && isActiveHrReview;
 
   // Only show assignment if editing an existing report AND it is in the initial review stage
   const showAssignment = canProcessReport && canAssign;
@@ -421,13 +434,18 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
                   name="assignedToId"
                   value={currentReport.assignedToId || ''}
                   onChange={handleChange}
+                  disabled={handlerDirectoryLoading || !!handlerDirectoryError || potentialHandlers.length === 0}
                   className="block w-full pl-3 pr-10 py-1 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                 >
-                  <option value="">-- Select HR Staff --</option>
+                  <option value="">{handlerDirectoryLoading ? 'Loading eligible case handlers…' : '-- Select HR Staff --'}</option>
                   {potentialHandlers.map(u => (
-                    <option key={u.id} value={u.id}>{u.name} ({u.role}) · {u.email}</option>
+                    <option key={u.id} value={u.id}>{u.name} · {u.position || u.role} · {u.email}</option>
                   ))}
                 </select>
+                {handlerDirectoryError && <p role="alert" className="mt-1 text-xs text-red-700">{handlerDirectoryError}</p>}
+                {!handlerDirectoryLoading && !handlerDirectoryError && potentialHandlers.length === 0 && (
+                  <p className="mt-1 text-xs text-amber-700">No eligible active HR case handlers found</p>
+                )}
                 <p className="text-xs text-gray-500 mt-1">Assigning will move this case to the handler's dashboard.</p>
               </div>
             )}

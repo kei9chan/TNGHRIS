@@ -1,6 +1,5 @@
 import { supabase } from './supabaseClient';
-import { IncidentReport, IRStatus, ChatMessage, User, PipelineStage, Role, NotificationType } from '../types';
-import { createNotification } from './notificationService';
+import { IncidentReport, IRStatus, ChatMessage, User, PipelineStage, Role } from '../types';
 import { formatEmployeeName } from './formatEmployeeName';
 
 const isUuid = (value?: string | null) =>
@@ -125,6 +124,25 @@ export const fetchIncidentReportUserDirectory = async (): Promise<User[]> => {
   })) as User[];
 };
 
+export const fetchAssignableIncidentCaseHandlers = async (): Promise<User[]> => {
+  const { data, error } = await supabase.rpc('get_assignable_incident_case_handlers');
+  if (error) throw new Error(error.message || 'Failed to load eligible incident case handlers.');
+
+  return (data || []).map((row: any) => ({
+    id: row.id,
+    name: formatEmployeeName(row.full_name || 'User'),
+    email: row.email || '',
+    role: row.role_id as Role,
+    roles: [row.role_id as Role],
+    department: '',
+    businessUnit: row.business_unit || '',
+    businessUnitId: row.business_unit_id || undefined,
+    status: 'Active',
+    isPhotoEnrolled: false,
+    position: row.job_title || '',
+  })) as User[];
+};
+
 export const fetchIncidentReportById = async (id: string): Promise<IncidentReport | null> => {
   const { data, error } = await supabase
     .from('incident_reports')
@@ -181,6 +199,7 @@ export const saveIncidentReport = async (
   user: User
 ): Promise<IncidentReport> => {
   const isUpdate = !!report.id;
+  const requestedHandlerId = report.assignedToId;
 
   const payload: Partial<IncidentReportRow> = {};
   const hasBuInput =
@@ -216,8 +235,6 @@ export const saveIncidentReport = async (
     if (report.signatureDataUrl !== undefined) {
       payload.signature_data_url = report.signatureDataUrl;
     }
-    if (report.assignedToId !== undefined) payload.assigned_to_id = report.assignedToId;
-    if (report.assignedToName !== undefined) payload.assigned_to_name = report.assignedToName;
 
     if (hasBuInput) {
       // resolve BU from hris_users if missing or not uuid
@@ -273,8 +290,8 @@ export const saveIncidentReport = async (
     payload.chat_thread = chatThread;
     payload.attachment_url = report.attachmentUrl || null;
     payload.signature_data_url = report.signatureDataUrl || null;
-    payload.assigned_to_id = report.assignedToId || null;
-    payload.assigned_to_name = report.assignedToName || null;
+    payload.assigned_to_id = null;
+    payload.assigned_to_name = null;
     payload.business_unit_id = isUuid(buId) ? buId : null;
     payload.business_unit_name = buName || null;
   }
@@ -297,24 +314,13 @@ export const saveIncidentReport = async (
   const { data, error } = await query;
   if (error) throw new Error(error.message || 'Failed to save incident report');
   
-  const mappedRow = mapRow(data as IncidentReportRow);
+  let mappedRow = mapRow(data as IncidentReportRow);
 
   // New-report notifications are created by the database trigger so employee
   // reporters do not need access to HR user rows and delivery is reliable.
 
-  // If assignment changed or was newly set, notify the handler
-  if (report.assignedToId && report.assignedToId !== previousAssignedToId) {
-    try {
-      await createNotification({
-        userId: report.assignedToId,
-        title: 'Case Assigned to You',
-        message: `You have been assigned as the case handler for Incident Report ${mappedRow.caseNumber ? `TNGIR-${String(mappedRow.caseNumber).padStart(5, '0')}` : 'Draft'}.`,
-        type: NotificationType.CASE_ASSIGNED,
-        link: '/feedback',
-      });
-    } catch (err) {
-      console.error('Failed to notify assignee:', err);
-    }
+  if (isUpdate && requestedHandlerId && requestedHandlerId !== previousAssignedToId) {
+    mappedRow = await assignIncidentCaseHandler(mappedRow.id, requestedHandlerId, false);
   }
 
   return mappedRow;
