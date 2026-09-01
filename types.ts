@@ -2175,6 +2175,30 @@ export enum InterviewStatus {
   Cancelled = 'Cancelled',
 }
 
+export type InterviewMeetingProvider = 'Zoom' | 'Google Meet' | 'Custom';
+
+export interface InterviewCalendarAttendeeStatus {
+  email: string;
+  displayName?: string;
+  responseStatus?: string;
+}
+
+export interface InterviewIntegrationStatus {
+  zoom: {
+    connected: boolean;
+    hostName?: string;
+    hostEmail?: string;
+    hostUserId?: string;
+    accountName?: string;
+    error?: string;
+    alternativeHostEligibility?: Record<string, {
+      eligible: boolean;
+      reason: string;
+      email?: string;
+    }>;
+  };
+}
+
 export interface Interview {
   id: string;
   applicationId: string;
@@ -2186,6 +2210,19 @@ export interface Interview {
   calendarEventId?: string;
   googleCalendarLink?: string;
   googleMeetLink?: string;
+  meetingProvider?: InterviewMeetingProvider;
+  attendeeMeetingUrl?: string;
+  zoomMeetingId?: string;
+  zoomHostUserId?: string;
+  zoomHostEmail?: string;
+  zoomAlternativeHostEmails?: string[];
+  customProviderName?: string;
+  integrationStatus?: Record<string, unknown>;
+  calendarAttendeeStatuses?: InterviewCalendarAttendeeStatus[];
+  createdByUserId?: string;
+  updatedByUserId?: string;
+  updatedAt?: Date;
+  interviewRound?: string;
   calendarInviteStatus?: 'not_requested' | 'sent' | 'failed' | 'partial' | string;
   applicantInviteStatus?: 'not_requested' | 'sent' | 'failed' | string;
   panelInviteStatus?: 'not_requested' | 'sent' | 'failed' | string;

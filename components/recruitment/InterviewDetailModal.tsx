@@ -16,6 +16,9 @@ interface InterviewDetailModalProps {
   users: User[];
   jobPosts?: JobPost[];
   businessUnitNames?: Record<string, string>;
+  onRetryCalendar?: (interview: Interview) => Promise<void>;
+  onReschedule?: (interview: Interview) => void;
+  onCancelInterview?: (interview: Interview) => Promise<void>;
 }
 
 const DetailItem: React.FC<{ label: string; value?: React.ReactNode }> = ({ label, value }) => (
@@ -43,6 +46,9 @@ const InterviewDetailModal: React.FC<InterviewDetailModalProps> = ({
   users,
   jobPosts = [],
   businessUnitNames = {},
+  onRetryCalendar,
+  onReschedule,
+  onCancelInterview,
 }) => {
   const { user } = useAuth();
   const [copied, setCopied] = useState(false);
@@ -53,8 +59,11 @@ const InterviewDetailModal: React.FC<InterviewDetailModalProps> = ({
   const panel = users.filter((item) => interview.panelUserIds?.includes(item.id));
   const position = application?.roleTitleSnapshot || jobPost?.title || 'General Application';
   const businessUnit = businessUnitNames[jobPost?.businessUnitId || ''] || 'TNG HRIS';
-  const meetLink = interview.googleMeetLink || (interview.location?.startsWith('https://meet.google.com/') ? interview.location : '');
-  const validMeetLink = /^https:\/\/meet\.google\.com\/[a-z0-9-]+/i.test(meetLink);
+  const meetingLink = interview.attendeeMeetingUrl
+    || interview.googleMeetLink
+    || (interview.location?.startsWith('https://') ? interview.location : '');
+  const validMeetingLink = /^https:\/\//i.test(meetingLink);
+  const meetingProvider = interview.meetingProvider || (interview.googleMeetLink ? 'Google Meet' : meetingLink ? 'Custom' : undefined);
   const currentUserIsOnPanel = user ? (interview.panelUserIds || []).includes(user.id) : false;
   const currentUserFeedback = currentUserIsOnPanel ? feedbacks.find((feedback) => feedback.reviewerUserId === user?.id) : null;
 
@@ -65,8 +74,8 @@ const InterviewDetailModal: React.FC<InterviewDetailModalProps> = ({
   ], [interview.applicantInviteStatus, interview.calendarInviteStatus, interview.confirmationEmailStatus, interview.panelInviteStatus]);
 
   const handleCopy = async () => {
-    if (!validMeetLink) return;
-    await navigator.clipboard.writeText(meetLink);
+    if (!validMeetingLink) return;
+    await navigator.clipboard.writeText(meetingLink);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1800);
   };
@@ -98,14 +107,17 @@ const InterviewDetailModal: React.FC<InterviewDetailModalProps> = ({
             <DetailItem label="Date" value={new Date(interview.scheduledStart).toLocaleDateString()} />
             <DetailItem label="Time" value={`${new Date(interview.scheduledStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(interview.scheduledEnd).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`} />
             <DetailItem label="Type" value={interview.interviewType} />
+            {meetingProvider && <DetailItem label="Meeting provider" value={meetingProvider} />}
+            {interview.zoomHostEmail && <DetailItem label="Company Zoom host" value={interview.zoomHostEmail} />}
+            {interview.zoomAlternativeHostEmails?.length ? <DetailItem label="Zoom alternative hosts" value={interview.zoomAlternativeHostEmails.join(', ')} /> : null}
             <DetailItem label="Panel" value={panel.map((person) => person.name).join(', ')} />
             <div className="sm:col-span-2">
               <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Location / Link</dt>
               <dd className="mt-2 flex flex-wrap items-center gap-2 text-sm">
-                {interview.interviewType === 'Virtual' ? validMeetLink ? <>
-                  <a href={meetLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center rounded-md border border-green-300 bg-green-50 px-3 py-2 font-medium text-green-700 hover:bg-green-100 dark:border-green-700 dark:bg-green-900/20 dark:text-green-300">Join Google Meet ↗</a>
+                {interview.interviewType === 'Virtual' ? validMeetingLink ? <>
+                  <a href={meetingLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center rounded-md border border-green-300 bg-green-50 px-3 py-2 font-medium text-green-700 hover:bg-green-100 dark:border-green-700 dark:bg-green-900/20 dark:text-green-300">Join {meetingProvider || 'meeting'} ↗</a>
                   <Button variant="secondary" onClick={handleCopy}>{copied ? 'Copied' : 'Copy meeting link'}</Button>
-                </> : <span className="text-amber-700 dark:text-amber-300">No valid meeting link generated</span> : interview.location || 'N/A'}
+                </> : <span className="text-amber-700 dark:text-amber-300">No valid attendee meeting link saved</span> : interview.location || 'N/A'}
               </dd>
             </div>
             {interview.googleCalendarLink && <div className="sm:col-span-2">
@@ -118,11 +130,20 @@ const InterviewDetailModal: React.FC<InterviewDetailModalProps> = ({
           </dl>
         </section>
 
+        {(onRetryCalendar || onReschedule || onCancelInterview) && interview.status !== 'Cancelled' && (
+          <div className="flex flex-wrap gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900/30">
+            {onRetryCalendar && (!interview.calendarEventId || interview.calendarInviteStatus === 'failed') && <Button variant="secondary" onClick={() => onRetryCalendar(interview)}>Retry Calendar Invitation</Button>}
+            {onReschedule && <Button variant="secondary" onClick={() => onReschedule(interview)}>Reschedule Interview</Button>}
+            {onCancelInterview && <Button variant="danger" onClick={() => onCancelInterview(interview)}>Cancel Interview</Button>}
+          </div>
+        )}
+
         <section>
           <h3 className="mb-3 border-b pb-2 text-lg font-medium text-gray-900 dark:border-gray-700 dark:text-white">Invitations</h3>
           <div className="space-y-2">
             {inviteRows.map((row) => <div key={row.label} className="flex items-center justify-between rounded-md bg-gray-50 px-3 py-2 text-sm dark:bg-gray-900/40"><span>{row.label}</span><span className={`rounded-full px-2 py-1 text-xs font-medium ${row.status === 'sent' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : row.status === 'failed' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300'}`}>{statusLabel(row.status)}</span></div>)}
           </div>
+          {interview.calendarAttendeeStatuses && interview.calendarAttendeeStatuses.length > 0 && <div className="mt-3 space-y-1"><p className="text-xs font-semibold uppercase tracking-wide text-gray-500">RSVP status</p>{interview.calendarAttendeeStatuses.map((attendee) => <div key={attendee.email} className="flex items-center justify-between gap-3 text-xs text-gray-600 dark:text-gray-300"><span className="truncate">{attendee.displayName || attendee.email}</span><span className="shrink-0 rounded-full bg-gray-100 px-2 py-1 dark:bg-gray-700">{attendee.responseStatus || 'needsAction'}</span></div>)}</div>}
         </section>
 
         <section>

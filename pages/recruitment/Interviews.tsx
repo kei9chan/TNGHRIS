@@ -14,7 +14,7 @@ import { useSettings } from '../../context/SettingsContext';
 import RichTextEditor from '../../components/ui/RichTextEditor';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
-import { buildInterviewApplicantOption, saveInterviewSchedule } from '../../services/recruitmentInterviewService';
+import { buildInterviewApplicantOption, cancelInterviewSchedule, InterviewScheduleResult, mapInterviewRow, saveInterviewSchedule } from '../../services/recruitmentInterviewService';
 
 // Date Helpers (to avoid external libraries)
 const addDays = (date: Date, amount: number) => { const d = new Date(date); d.setDate(d.getDate() + amount); return d; };
@@ -76,29 +76,7 @@ const Interviews: React.FC = () => {
         setIsEditingDesc(false);
     };
 
-    const mapInterview = useCallback((row: any): Interview => ({
-        id: row.id,
-        applicationId: row.application_id,
-        interviewerId: row.interviewer_id,
-        interviewType: row.type === 'Remote' ? 'Virtual' : row.type,
-        scheduledStart: row.start_at ? new Date(row.start_at) : new Date(),
-        scheduledEnd: row.end_at ? new Date(row.end_at) : new Date(),
-        location: row.location || '',
-        panelUserIds: row.panel_user_ids || (row.interviewer_id ? [row.interviewer_id] : []),
-        calendarEventId: row.calendar_event_id || undefined,
-        googleCalendarLink: row.google_calendar_link || undefined,
-        googleMeetLink: row.google_meet_link || undefined,
-        calendarInviteStatus: row.calendar_invite_status || 'not_requested',
-        applicantInviteStatus: row.applicant_invite_status || 'not_requested',
-        panelInviteStatus: row.panel_invite_status || 'not_requested',
-        confirmationEmailStatus: row.confirmation_email_status || 'not_requested',
-        applicantInviteSentAt: row.applicant_invite_sent_at ? new Date(row.applicant_invite_sent_at) : undefined,
-        panelInviteSentAt: row.panel_invite_sent_at ? new Date(row.panel_invite_sent_at) : undefined,
-        confirmationEmailSentAt: row.confirmation_email_sent_at ? new Date(row.confirmation_email_sent_at) : undefined,
-        calendarError: row.calendar_error || undefined,
-        status: row.status as InterviewStatus,
-        notes: row.notes || '',
-    }), []);
+    const mapInterview = useCallback((row: any): Interview => mapInterviewRow(row), []);
 
     const loadData = useCallback(async () => {
         setIsLoading(true);
@@ -212,7 +190,7 @@ const Interviews: React.FC = () => {
         setIsDetailOpen(true);
     };
 
-    const handleSaveInterview = async (interviewToSave: Interview) => {
+    const handleSaveInterview = async (interviewToSave: Interview): Promise<InterviewScheduleResult> => {
         const application = applications.find((item) => item.id === interviewToSave.applicationId);
         const candidate = candidates.find((item) => item.id === application?.candidateId);
         if (!application || !candidate) throw new Error('The selected applicant could not be found. Refresh the page and try again.');
@@ -232,7 +210,33 @@ const Interviews: React.FC = () => {
             ? previous.map((item) => item.id === result.interview.id ? result.interview : item)
             : [result.interview, ...previous]);
         setSelectedInterview(result.interview);
+        return result;
+    };
+
+    const handleRetryCalendar = async (interviewToRetry: Interview) => {
+        const application = applications.find((item) => item.id === interviewToRetry.applicationId);
+        const candidate = candidates.find((item) => item.id === application?.candidateId);
+        if (!application || !candidate) throw new Error('The applicant for this interview could not be found.');
+        const jobPost = jobPosts.find((item) => item.id === application.jobPostId);
+        const panelUsers = users.filter((item) => interviewToRetry.panelUserIds?.includes(item.id));
+        const result = await saveInterviewSchedule({ ...interviewToRetry, createCalendarEvent: true }, {
+            application,
+            candidate,
+            jobPost,
+            businessUnitName: businessUnitNames[jobPost?.businessUnitId || ''],
+            panelUsers,
+            currentUser: user,
+        });
+        setInterviews((previous) => previous.map((item) => item.id === result.interview.id ? result.interview : item));
+        setSelectedInterview(result.interview);
         if (result.warnings.length) alert(result.warnings.join('\n'));
+    };
+
+    const handleCancelInterview = async (interviewToCancel: Interview) => {
+        if (!window.confirm('Cancel this interview and notify the candidate and panel?')) return;
+        const cancelled = await cancelInterviewSchedule(interviewToCancel.id);
+        setInterviews((previous) => previous.map((item) => item.id === cancelled.id ? cancelled : item));
+        setSelectedInterview(cancelled);
     };
 
     const handleSaveFeedback = async (feedbackToSave: InterviewFeedback) => {
@@ -390,6 +394,9 @@ const Interviews: React.FC = () => {
                     users={users}
                     jobPosts={jobPosts}
                     businessUnitNames={businessUnitNames}
+                    onRetryCalendar={handleRetryCalendar}
+                    onReschedule={(interview) => { setIsDetailOpen(false); handleOpenScheduler(interview); }}
+                    onCancelInterview={handleCancelInterview}
                 />
             )}
             </>

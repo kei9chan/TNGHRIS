@@ -15,7 +15,7 @@ import { logActivity } from '../../services/auditService';
 import InterviewSchedulerModal from '../../components/recruitment/InterviewSchedulerModal';
 import RejectionEmailModal from '../../components/recruitment/RejectionEmailModal';
 import { supabase } from '../../services/supabaseClient';
-import { buildInterviewApplicantOption, saveInterviewSchedule } from '../../services/recruitmentInterviewService';
+import { buildInterviewApplicantOption, InterviewScheduleResult, saveInterviewSchedule } from '../../services/recruitmentInterviewService';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 export interface EnrichedApplication extends Application {
@@ -354,7 +354,7 @@ const Applicants: React.FC = () => {
         setIsRejectionModalOpen(true);
     };
 
-    const handleSaveInterview = async (interviewToSave: Interview) => {
+    const handleSaveInterview = async (interviewToSave: Interview): Promise<InterviewScheduleResult> => {
         const application = applications.find((item) => item.id === interviewToSave.applicationId);
         const candidate = candidates.find((item) => item.id === application?.candidateId);
         if (!application || !candidate) throw new Error('The selected applicant could not be found. Refresh the page and try again.');
@@ -369,10 +369,12 @@ const Applicants: React.FC = () => {
             currentUser: user,
         });
         setApplications((previous) => previous.map((item) => item.id === application.id ? { ...item, stage: ApplicationStage.Interview, updatedAt: new Date() } : item));
-        setIsSchedulerOpen(false);
-        setPendingAppId(null);
-        setPendingStage(null);
-        if (result.warnings.length) alert(result.warnings.join('\n'));
+        if (!result.warnings.length) {
+            setIsSchedulerOpen(false);
+            setPendingAppId(null);
+            setPendingStage(null);
+        }
+        return result;
     };
     
     const handleRejectionComplete = async ({ subject, message }: { subject: string; message: string }) => {
