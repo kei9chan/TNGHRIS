@@ -5,7 +5,7 @@ import { createNotification } from '../../services/notificationService';
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
-import { NTE, IncidentReport, User, ChatMessage, NTEStatus, Permission, Resolution, ResolutionStatus, ApproverStatus, ApproverStep, NotificationType, HearingDetails, Role } from '../../types';
+import { NTE, IncidentReport, User, ChatMessage, NTEStatus, Permission, Resolution, ResolutionStatus, ApproverStatus, ApproverStep, NotificationType, HearingDetails } from '../../types';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { useAuth } from '../../hooks/useAuth';
@@ -19,7 +19,7 @@ import { usePermissions } from '../../hooks/usePermissions';
 import RejectReasonModal from '../../components/feedback/RejectReasonModal';
 import HearingSchedulerModal from '../../components/feedback/HearingSchedulerModal';
 import { logActivity } from '../../services/auditService';
-import { fetchNTEById, processNTEBodOutcome, updateNTE, NTEBodOutcome } from '../../services/nteService';
+import { fetchNTEById, processNTEApproval, updateNTE } from '../../services/nteService';
 import { fetchIncidentReportById, addIncidentReportMessage, saveIncidentReport } from '../../services/incidentReportService';
 import { fetchResolutionsByIncidentReportId, createResolution, updateResolution } from '../../services/resolutionService';
 import { formatIRDisplayId, formatNTEDisplayId } from '../../utils/formatCaseId';
@@ -38,7 +38,9 @@ const ApproverStatusIcon: React.FC<{status: ApproverStatus}> = ({status}) => {
     switch (status) {
         case ApproverStatus.Approved: return <CheckCircleIcon />;
         case ApproverStatus.Pending: return <ClockIcon />;
+        case ApproverStatus.ReturnedForRevision:
         case ApproverStatus.Rejected: return <XCircleIcon />;
+        case ApproverStatus.Cancelled: return <span className="h-5 w-5 rounded-full bg-gray-300 dark:bg-gray-600" aria-label="Cancelled" />;
         default: return null;
     }
 };
@@ -60,7 +62,7 @@ const NTEDetail: React.FC = () => {
     const [responseToPrint, setResponseToPrint] = useState<NTE | null>(null);
     const [isResolutionModalOpen, setResolutionModalOpen] = useState(false);
     const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
-    const [bodOutcome, setBodOutcome] = useState<NTEBodOutcome | null>(null);
+    const [approvalOutcome, setApprovalOutcome] = useState<'return' | 'reject' | null>(null);
     const [isHearingModalOpen, setIsHearingModalOpen] = useState(false);
     
     const [nte, setNte] = useState<NTE | null>(null);
@@ -113,35 +115,14 @@ const NTEDetail: React.FC = () => {
         if (!user || !nte || nte.status !== NTEStatus.PendingApproval) return null;
         return nte.approverSteps?.find(step => step.userId === user.id && step.status === ApproverStatus.Pending);
     }, [nte, user]);
-    const isCurrentUserBod = !!user && (user.role === Role.BOD || user.roles?.includes(Role.BOD));
-
     const isEmployeeAcknowledgeNeeded = user?.id === nte?.employeeId && resolution?.status === ResolutionStatus.PendingAcknowledgement;
 
     const handleApprove = async () => {
         if (!user || !nte || !currentUserStep) return;
-
-        const updatedSteps = (nte.approverSteps || []).map((s: ApproverStep) =>
-            s.userId === user.id ? { ...s, status: ApproverStatus.Approved, timestamp: new Date() } : s
-        );
-        const allApproved = updatedSteps.every((s: ApproverStep) => s.status === ApproverStatus.Approved);
-
         try {
-            const saved = await updateNTE({
-                ...nte,
-                approverSteps: updatedSteps,
-                ...(allApproved ? { status: NTEStatus.Issued, issuedDate: new Date() } : {}),
-            });
+            const saved = await processNTEApproval(nte.id, 'approve');
             setNte(saved);
-            if (allApproved) {
-                await createNotification({
-                    userId: saved.employeeId,
-                    type: NotificationType.NTE_ISSUED,
-                    message: `You have been issued a Notice to Explain (NTE) regarding case ${formatIRDisplayId(incidentReport?.caseNumber) || saved.incidentReportId}.`,
-                    link: `/feedback/nte/${saved.id}`,
-                });
-            }
-            logActivity(user, 'APPROVE', 'NTE', nte.id, `Approved NTE for ${nte.employeeName}.`);
-            alert('NTE step approved.');
+            alert(saved.status === NTEStatus.Issued ? 'All required approvers have approved. The NTE is now issued.' : 'Your required approval was recorded.');
         } catch (err: any) {
             alert(err?.message || 'Failed to approve NTE.');
         }
@@ -149,44 +130,16 @@ const NTEDetail: React.FC = () => {
 
     const handleConfirmReject = async (reason: string) => {
         if (!user || !nte || !currentUserStep) return;
-
-        if (isCurrentUserBod) {
-            if (!bodOutcome) return;
-            try {
-                const saved = await processNTEBodOutcome(nte.id, bodOutcome, reason);
-                setNte(saved);
-                setIsRejectModalOpen(false);
-                setBodOutcome(null);
-                alert(bodOutcome === 'revision'
-                    ? 'NTE returned to IR Review for revision.'
-                    : 'NTE and disciplinary case closed.');
-                if (bodOutcome === 'revision' || bodOutcome === 'closure') navigate('/feedback/cases');
-            } catch (err: any) {
-                alert(err?.message || 'Failed to process BOD decision.');
-            }
-            return;
-        }
-
-        const updatedSteps = (nte.approverSteps || []).map((s: ApproverStep) =>
-            s.userId === user.id
-                ? { ...s, status: ApproverStatus.Rejected, timestamp: new Date(), rejectionReason: reason }
-                : s
-        );
-
+        if (!approvalOutcome) return;
         try {
-            const saved = await updateNTE({ ...nte, approverSteps: updatedSteps, status: NTEStatus.Rejected });
+            const saved = await processNTEApproval(nte.id, approvalOutcome, reason);
             setNte(saved);
-            logActivity(user, 'REJECT', 'NTE', nte.id, `Rejected NTE for ${nte.employeeName}. Reason: ${reason}`);
-            await createNotification({
-                userId: saved.issuedByUserId,
-                type: NotificationType.RESOLUTION_ISSUED,
-                message: `NTE ${formatNTEDisplayId(saved.nteNumber) || saved.id} for ${saved.employeeName} was rejected by ${user.name}.`,
-                link: `/feedback/nte/${saved.id}`,
-            });
             setIsRejectModalOpen(false);
-            alert('NTE rejected.');
+            setApprovalOutcome(null);
+            alert(approvalOutcome === 'return' ? 'NTE returned for revision.' : 'NTE rejected.');
+            navigate('/feedback/cases');
         } catch (err: any) {
-            alert(err?.message || 'Failed to reject NTE.');
+            alert(err?.message || 'Failed to process the NTE decision.');
         }
     };
 
@@ -518,15 +471,18 @@ const NTEDetail: React.FC = () => {
                         <Card title="Approval Status">
                             <ul className="space-y-4">
                                 {nte.approverSteps.map(step => (
-                                    <li key={step.userId} className="flex items-start space-x-3">
+                                    <li key={step.approvalId || step.userId} className="flex items-start space-x-3">
                                         <div className="mt-1"><ApproverStatusIcon status={step.status} /></div>
                                         <div>
                                             <p className="font-medium text-gray-900 dark:text-white">{step.userName}</p>
                                             <p className="text-sm text-gray-500 dark:text-gray-400">
-                                                Status: {step.status}
-                                                {step.timestamp && ` on ${new Date(step.timestamp).toLocaleDateString()}`}
+                                                {step.roleSnapshot || step.role || 'Selected approver'}{step.isBod ? ' · Required BOD approver' : ''}
                                             </p>
-                                            {step.rejectionReason && <p className="text-sm text-red-600 italic">{(step as any).decision || 'Reason'}: "{step.rejectionReason}"</p>}
+                                            <p className="text-sm text-gray-500 dark:text-gray-400">
+                                                Status: {step.status}
+                                                {step.timestamp && ` on ${new Date(step.timestamp).toLocaleString()}`}
+                                            </p>
+                                            {(step.comments || step.rejectionReason) && <p className="text-sm text-gray-600 dark:text-gray-300 italic">Comments: "{step.comments || step.rejectionReason}"</p>}
                                         </div>
                                     </li>
                                 ))}
@@ -554,15 +510,9 @@ const NTEDetail: React.FC = () => {
                     {currentUserStep && (
                         <Card title="Your Action Required" className="bg-yellow-50 dark:bg-yellow-900/40 border-yellow-400">
                             <p className="text-sm mb-4">This Notice to Explain requires your approval before it is issued to the employee.</p>
-                            <div className="flex justify-end space-x-2">
-                                {isCurrentUserBod ? (
-                                    <>
-                                        <Button variant="secondary" onClick={() => { setBodOutcome('revision'); setIsRejectModalOpen(true); }}>Return for Revision</Button>
-                                        <Button variant="danger" onClick={() => { setBodOutcome('closure'); setIsRejectModalOpen(true); }}>Close NTE</Button>
-                                    </>
-                                ) : (
-                                    <Button variant="danger" onClick={() => { setBodOutcome(null); setIsRejectModalOpen(true); }}>Reject</Button>
-                                )}
+                            <div className="flex flex-wrap justify-end gap-2">
+                                <Button variant="secondary" onClick={() => { setApprovalOutcome('return'); setIsRejectModalOpen(true); }}>Return for Revision</Button>
+                                <Button variant="danger" onClick={() => { setApprovalOutcome('reject'); setIsRejectModalOpen(true); }}>Reject</Button>
                                 <Button onClick={handleApprove}>Approve</Button>
                             </div>
                         </Card>
@@ -781,16 +731,14 @@ const NTEDetail: React.FC = () => {
 
             <RejectReasonModal
                 isOpen={isRejectModalOpen}
-                onClose={() => { setIsRejectModalOpen(false); setBodOutcome(null); }}
+                onClose={() => { setIsRejectModalOpen(false); setApprovalOutcome(null); }}
                 onSubmit={handleConfirmReject}
-                title={bodOutcome === 'revision' ? 'Return NTE for Revision' : bodOutcome === 'closure' ? 'Close NTE' : 'Reason for NTE Rejection'}
-                prompt={bodOutcome === 'revision'
+                title={approvalOutcome === 'return' ? 'Return NTE for Revision' : 'Reject NTE'}
+                prompt={approvalOutcome === 'return'
                     ? 'Enter the required revision note. This will be shown to the NTE issuer and case handler.'
-                    : bodOutcome === 'closure'
-                        ? 'Enter the closure reason. Closing stops this NTE workflow and closes the linked disciplinary case.'
-                        : 'Please provide a reason for rejecting this NTE. This will be visible to the issuer.'}
-                submitText={bodOutcome === 'revision' ? 'Return for Revision' : bodOutcome === 'closure' ? 'Close NTE' : 'Confirm Rejection'}
-                submitVariant={bodOutcome === 'revision' ? 'primary' : 'danger'}
+                    : 'Please provide a reason for rejecting this employee-specific NTE. This will be visible to the issuer.'}
+                submitText={approvalOutcome === 'return' ? 'Return for Revision' : 'Confirm Rejection'}
+                submitVariant={approvalOutcome === 'return' ? 'primary' : 'danger'}
             />
 
             <HearingSchedulerModal

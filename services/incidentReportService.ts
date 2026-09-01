@@ -19,6 +19,8 @@ type IncidentReportRow = {
   status: IRStatus;
   pipeline_stage?: string | null;
   nte_ids: string[];
+  nte_processing_complete?: boolean | null;
+  nte_processing_summary?: Record<string, any> | null;
   resolution_id?: string | null;
   chat_thread: any[];
   attachment_url?: string | null;
@@ -53,6 +55,14 @@ const mapRow = (row: IncidentReportRow): IncidentReport => ({
   status: row.status as IRStatus,
   pipelineStage: row.pipeline_stage || 'ir-review',
   nteIds: row.nte_ids || [],
+  nteProcessingComplete: !!row.nte_processing_complete,
+  nteProcessingSummary: row.nte_processing_summary ? {
+    totalEmployees: Number(row.nte_processing_summary.totalEmployees || 0),
+    employeesWithNte: Number(row.nte_processing_summary.employeesWithNte || 0),
+    activeNtes: Number(row.nte_processing_summary.activeNtes || 0),
+    statusCounts: row.nte_processing_summary.statusCounts || {},
+    processingIncomplete: !!row.nte_processing_summary.processingIncomplete,
+  } : undefined,
   resolutionId: row.resolution_id || undefined,
   chatThread: (row.chat_thread || []).map((m: any) => ({
     ...m,

@@ -1,9 +1,8 @@
 import { supabase } from './supabaseClient';
-import { NTE, NTEStatus, ApproverStep, User, NotificationType } from '../types';
-import { createNotification } from './notificationService';
-import { formatNTEDisplayId } from '../utils/formatCaseId';
+import { NTE, NTEStatus, ApproverStep, ApproverStatus, User } from '../types';
 
-// Maps a DB row to our NTE type (single-recipient view)
+// Compatibility mapper for the legacy NTE row plus its canonical recipient and
+// normalized approval snapshot.
 type NTERow = {
   id: string;
   incident_report_id: string;
@@ -12,6 +11,8 @@ type NTERow = {
   issued_by_name?: string | null;
   recipients?: string[] | null;
   recipient_names?: string[] | null;
+  recipient_employee_id?: string | null;
+  recipient_name_snapshot?: string | null;
   response_deadline?: string | null;
   details?: string | null;
   evidence_link?: string | null;
@@ -36,9 +37,18 @@ type NTERow = {
   response_date?: string | null;
 };
 
+export const cleanNteDocumentApproverLabels = (html: string): string =>
+  html.replace(/(\(([^()<>]+)\))\s*\1/gi, '$1');
+
 const mapRow = (row: NTERow): NTE => {
-  const employeeId = row.recipients?.[0] || '';
-  const employeeName = row.recipient_names?.[0] || '';
+  const employeeId = row.recipient_employee_id || row.recipients?.[0] || '';
+  const employeeName = row.recipient_name_snapshot || row.recipient_names?.[0] || '';
+  const approverSteps = ((row.approval_log as any[]) || []).map((step): ApproverStep => ({
+    ...step,
+    status: step.status as ApproverStatus,
+    assignedAt: step.assignedAt ? new Date(step.assignedAt) : undefined,
+    timestamp: step.timestamp ? new Date(step.timestamp) : undefined,
+  }));
   return {
     id: row.id,
     incidentReportId: row.incident_report_id,
@@ -48,7 +58,7 @@ const mapRow = (row: NTERow): NTE => {
     issuedDate: row.created_at ? new Date(row.created_at) : new Date(),
     deadline: row.response_deadline ? new Date(row.response_deadline) : new Date(),
     details: row.details || '',
-    body: row.body || '',
+    body: cleanNteDocumentApproverLabels(row.body || ''),
     employeeResponse: row.employee_response || '',
     employeeResponseEvidenceUrl: row.employee_response_evidence_url || undefined,
     employeeResponseSignatureUrl: row.employee_response_signature_url || undefined,
@@ -57,7 +67,7 @@ const mapRow = (row: NTERow): NTE => {
     disciplineCodeIds: [],
     evidenceUrl: row.evidence_link || undefined,
     issuedByUserId: row.issued_by_user_id || '',
-    approverSteps: (row.approval_log as ApproverStep[]) || [],
+    approverSteps,
     nteNumber: row.nte_number || undefined,
     revisionNote: row.revision_note || undefined,
     revisionRequestedAt: row.revision_requested_at ? new Date(row.revision_requested_at) : undefined,
@@ -67,6 +77,48 @@ const mapRow = (row: NTERow): NTE => {
     closedBy: row.closed_by || undefined,
     workflowHistory: row.workflow_history || [],
   };
+};
+
+export type EligibleNTEApprover = {
+  id: string;
+  name: string;
+  email: string;
+  position: string;
+  businessUnitId?: string;
+  businessUnit: string;
+  eligibleRoleIds: string[];
+  eligibleRoleLabels: string[];
+  hasBodRole: boolean;
+  preferredRoleId: string;
+};
+
+export type NTEApproverSelection = {
+  approver: EligibleNTEApprover;
+  roleId: string;
+  selectionReason?: string;
+};
+
+export const fetchEligibleNTEApprovers = async (
+  incidentReportId: string,
+  recipientEmployeeId: string
+): Promise<EligibleNTEApprover[]> => {
+  const { data, error } = await supabase.rpc('get_eligible_nte_approvers', {
+    p_incident_report_id: incidentReportId,
+    p_recipient_employee_id: recipientEmployeeId,
+  });
+  if (error) throw new Error(error.message || 'Failed to load eligible NTE approvers.');
+  return (data || []).map((row: any) => ({
+    id: row.id,
+    name: row.full_name || 'Approver',
+    email: row.email || '',
+    position: row.job_position || '',
+    businessUnitId: row.business_unit_id || undefined,
+    businessUnit: row.business_unit || '',
+    eligibleRoleIds: row.eligible_role_ids || [],
+    eligibleRoleLabels: row.eligible_role_labels || [],
+    hasBodRole: !!row.has_bod_role,
+    preferredRoleId: row.preferred_role_id || row.eligible_role_ids?.[0] || '',
+  }));
 };
 
 export type NTEBodOutcome = 'revision' | 'closure';
@@ -79,6 +131,23 @@ export const processNTEBodOutcome = async (nteId: string, outcome: NTEBodOutcome
   });
   if (error) throw new Error(error.message || 'Failed to process BOD decision');
   if (!data) throw new Error('The updated NTE was not returned');
+  return mapRow(data as NTERow);
+};
+
+export type NTEApprovalAction = 'approve' | 'return' | 'reject';
+
+export const processNTEApproval = async (
+  nteId: string,
+  action: NTEApprovalAction,
+  comments = ''
+): Promise<NTE> => {
+  const { data, error } = await supabase.rpc('act_on_nte_approval', {
+    p_nte_id: nteId,
+    p_action: action,
+    p_comments: comments || null,
+  });
+  if (error) throw new Error(error.message || 'Failed to process the NTE approval.');
+  if (!data) throw new Error('The updated NTE was not returned.');
   return mapRow(data as NTERow);
 };
 
@@ -96,54 +165,33 @@ export const resubmitNTERevision = async (nte: Partial<NTE>): Promise<NTE> => {
   return mapRow(data as NTERow);
 };
 
-export const saveNTEs = async (ntes: Partial<NTE>[], user: User): Promise<NTE[]> => {
+export const saveNTEs = async (ntes: Partial<NTE>[], _user: User): Promise<NTE[]> => {
   if (!ntes || ntes.length === 0) return [];
-
-  const payloads = ntes.map(n => ({
-    incident_report_id: n.incidentReportId,
-    issued_by_user_id: user.id,
-    issued_by_name: user.name,
-    recipients: [n.employeeId],
-    recipient_names: [n.employeeName],
-    response_deadline: n.deadline ? n.deadline.toISOString() : null,
-    details: n.details || '',
-    evidence_link: n.evidenceUrl || null,
-    status: n.status || NTEStatus.PendingApproval,
-    approver_ids: n.approverSteps?.map(a => a.userId) || [],
-    approver_names: n.approverSteps?.map(a => a.userName) || [],
-    approval_log: n.approverSteps || [],
-    ...(n.nteNumber ? { nte_number: n.nteNumber } : {}),
-    body: n.body || null,
-  }));
-
-  const { data, error } = await supabase
-    .from('ntes')
-    .insert(payloads)
-    .select('*');
-
-  if (error) throw new Error(error.message || 'Failed to save NTE');
-  
-  const savedNTEs = (data as NTERow[]).map(mapRow);
-
-  // Send notifications to approvers
-  for (const nte of savedNTEs) {
-    if (nte.approverSteps) {
-      for (const step of nte.approverSteps) {
-        await createNotification({
-          userId: step.userId,
-          title: 'NTE Approval Required',
-          message: `You have been requested to approve ${formatNTEDisplayId(nte.nteNumber) || 'an NTE'} for ${nte.employeeName}.`,
-          type: NotificationType.NTE_ISSUED,
-          isRead: false,
-          link: `/approvals?type=nte&item=${nte.id}`,
-          relatedEntityId: nte.id,
-          dedupeKey: `nte:${nte.id}:approval:${step.userId}`,
-        }).catch(err => console.warn('Failed to send notification:', err));
-      }
-    }
+  const saved: NTE[] = [];
+  for (const nte of ntes) {
+    if (!nte.incidentReportId || !nte.employeeId) throw new Error('Incident Report and recipient are required.');
+    const { data, error } = await supabase.rpc('create_nte_for_employee', {
+      p_incident_report_id: nte.incidentReportId,
+      p_recipient_employee_id: nte.employeeId,
+      p_template_id: nte.templateId || null,
+      p_response_deadline: nte.deadline ? nte.deadline.toISOString() : null,
+      p_details: nte.details || '',
+      p_body: nte.body || '',
+      p_evidence_link: nte.evidenceUrl || null,
+      p_memo_ids: nte.memoIds || [],
+      p_discipline_code_ids: nte.disciplineCodeIds || [],
+      p_approvers: (nte.approverSteps || []).map(step => ({
+        userId: step.userId,
+        roleId: step.roleId,
+        selectionReason: step.comments || null,
+      })),
+      p_nte_number: nte.nteNumber ? String(nte.nteNumber) : null,
+    });
+    if (error) throw new Error(error.message || 'Failed to create the employee-specific NTE.');
+    if (!data) throw new Error('The created NTE was not returned.');
+    saved.push(mapRow(data as NTERow));
   }
-
-  return savedNTEs;
+  return saved;
 };
 
 export const updateNTE = async (nte: Partial<NTE>): Promise<NTE> => {

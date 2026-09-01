@@ -878,6 +878,14 @@ export interface IncidentReport {
   status: IRStatus;
   pipelineStage: string;
   nteIds: string[];
+  nteProcessingComplete?: boolean;
+  nteProcessingSummary?: {
+    totalEmployees: number;
+    employeesWithNte: number;
+    activeNtes: number;
+    statusCounts: Record<string, number>;
+    processingIncomplete?: boolean;
+  };
   resolutionId?: string;
   chatThread: ChatMessage[];
   attachmentUrl?: string;
@@ -947,6 +955,7 @@ export interface NTE {
   decisionMakerSignatureUrl?: string;
   hearingDetails?: HearingDetails;
   nteNumber?: number | string;
+  templateId?: string;
   revisionNote?: string;
   revisionRequestedAt?: Date;
   revisionRequestedBy?: string;
@@ -985,14 +994,24 @@ export enum ResolutionType {
 export enum ApproverStatus {
   Pending = 'Pending',
   Approved = 'Approved',
+  ReturnedForRevision = 'Returned for Revision',
   Rejected = 'Rejected',
+  Cancelled = 'Cancelled',
 }
 
 export interface ApproverStep {
+  approvalId?: string;
   userId: string;
   userName: string;
+  roleId?: string;
+  role?: string;
+  roleSnapshot?: string;
+  isBod?: boolean;
+  required?: boolean;
   status: ApproverStatus;
+  assignedAt?: Date;
   timestamp?: Date;
+  comments?: string;
   rejectionReason?: string;
 }
 

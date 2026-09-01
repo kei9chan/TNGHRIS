@@ -4,7 +4,7 @@ import { logActivity } from '../../services/auditService';
 import { formatNTEDisplayId } from '../../utils/formatCaseId';
 import { fetchCodeOfDiscipline } from '../../services/disciplineService';
 import { fetchFeedbackTemplates } from '../../services/feedbackService';
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { renderToString } from 'react-dom/server';
 import { IncidentReport, NTE, NTEStatus, User, FeedbackTemplate, Role, ApproverStep, ApproverStatus, BusinessUnit, Memo, CodeOfDiscipline } from '../../types';
 import Modal from '../ui/Modal';
@@ -14,30 +14,24 @@ import SearchableMultiSelect, { SearchableItem } from '../ui/SearchableMultiSele
 import Input from '../ui/Input';
 import NTEPreview from './NTEPreview';
 import { useAuth } from '../../hooks/useAuth';
-import { useSettings } from '../../context/SettingsContext';
-import EmployeeMultiSelect from './EmployeeMultiSelect';
+import NTEApproverPicker from './NTEApproverPicker';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
+import { EligibleNTEApprover, fetchEligibleNTEApprovers, NTEApproverSelection } from '../../services/nteService';
 
 interface NTEModalProps {
   isOpen: boolean;
   onClose: () => void;
   incidentReport: IncidentReport;
   nte: NTE | undefined;
+  recipientEmployeeId?: string;
+  existingRecipientIds?: string[];
   onSave: (data: NTE | NTE[]) => void;
   onResubmitRevision?: (data: NTE) => void;
 }
 
-const XCircleIcon: React.FC = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
-
-
-const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nte, onSave, onResubmitRevision }) => {
+const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nte, recipientEmployeeId, existingRecipientIds = [], onSave, onResubmitRevision }) => {
   const { user } = useAuth();
-  const { approverConfigs } = useSettings();
   const isNewNTE = !nte;
 
   // State for new NTE
@@ -49,7 +43,10 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
   const [allegations, setAllegations] = useState('');
   const [evidenceUrl, setEvidenceUrl] = useState('');
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
-  const [selectedApprovers, setSelectedApprovers] = useState<User[]>([]);
+  const [selectedApprovers, setSelectedApprovers] = useState<NTEApproverSelection[]>([]);
+  const [eligibleApprovers, setEligibleApprovers] = useState<EligibleNTEApprover[]>([]);
+  const [approverLoading, setApproverLoading] = useState(false);
+  const [approverError, setApproverError] = useState<string | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [manualNteNumber, setManualNteNumber] = useState('');
 
@@ -59,29 +56,12 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
   const [disciplineEntries, setDisciplineEntries] = useState<CodeOfDiscipline[]>([]);
   const [feedbackTemplates, setFeedbackTemplates] = useState<FeedbackTemplate[]>([]);
 
-  // State for adding new recipients
-  const [searchTerm, setSearchTerm] = useState('');
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const searchWrapperRef = useRef<HTMLDivElement>(null);
-
   // State for existing NTE
   const [currentNTE, setCurrentNTE] = useState<Partial<NTE>>(nte || {});
 
   const selectedTemplate = useMemo(() => {
     return feedbackTemplates.find(t => t.id === selectedTemplateId);
   }, [selectedTemplateId, feedbackTemplates]);
-
-  // Show all users to allow search; validation still enforces at least one BOD
-  const approverPool = useMemo(() => {
-    if (!approverConfigs?.bodApprovers?.user_ids) return [];
-    return allUsers.filter(u => approverConfigs.bodApprovers.user_ids.includes(u.id));
-  }, [allUsers, approverConfigs]);
-  const approverDisplay = useMemo(() => {
-    return approverPool.map(u => ({
-      ...u,
-      name: `${u.name} (${u.role})`,
-    }));
-  }, [approverPool]);
 
   // Load users from Supabase for recipients/approvers
   useEffect(() => {
@@ -157,7 +137,11 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
       if (isNewNTE) {
         const involved = pool.filter(u => incidentReport.involvedEmployeeIds.includes(u.id));
         setRecipientList(involved);
-        setSelectedEmployeeIds(involved.map(u => u.id));
+        const available = involved.filter(u => !existingRecipientIds.includes(u.id));
+        const initialRecipientId = recipientEmployeeId && available.some(u => u.id === recipientEmployeeId)
+          ? recipientEmployeeId
+          : available[0]?.id;
+        setSelectedEmployeeIds(initialRecipientId ? [initialRecipientId] : []);
 
         const threeDaysFromNow = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
         setDeadline(threeDaysFromNow.toISOString().slice(0, 16));
@@ -171,15 +155,26 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
         setManualNteNumber('');
       } else {
         setCurrentNTE(nte);
-        if (nte?.approverSteps) {
-          const approverUsers = nte.approverSteps
-            .map(step => pool.find(u => u.id === step.userId))
-            .filter((u): u is User => !!u);
-          setSelectedApprovers(approverUsers);
-        }
       }
     }
-  }, [nte, incidentReport, isOpen, isNewNTE, allUsers, feedbackTemplates]);
+  }, [nte, incidentReport, isOpen, isNewNTE, allUsers, feedbackTemplates, recipientEmployeeId, existingRecipientIds.join('|')]);
+
+  useEffect(() => {
+    const selectedEmployeeId = selectedEmployeeIds[0];
+    if (!isOpen || !isNewNTE || !selectedEmployeeId) {
+      setEligibleApprovers([]);
+      return;
+    }
+    let cancelled = false;
+    setApproverLoading(true);
+    setApproverError(null);
+    setSelectedApprovers([]);
+    fetchEligibleNTEApprovers(incidentReport.id, selectedEmployeeId)
+      .then(rows => { if (!cancelled) setEligibleApprovers(rows); })
+      .catch(error => { if (!cancelled) setApproverError(error?.message || 'Failed to load eligible NTE approvers.'); })
+      .finally(() => { if (!cancelled) setApproverLoading(false); });
+    return () => { cancelled = true; };
+  }, [incidentReport.id, isNewNTE, isOpen, selectedEmployeeIds]);
 
   const memoItems: SearchableItem[] = useMemo(() => memos.map(memo => ({ id: memo.id, label: memo.title })), [memos]);
   const disciplineItems: SearchableItem[] = useMemo(() => disciplineEntries.map(entry => ({ id: entry.id, label: entry.description, subLabel: entry.category, tag: entry.code })), [disciplineEntries]);
@@ -211,19 +206,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
   }, [manualNteNumber, previewBusinessUnitCode]);
 
   const handleSelectEmployee = (employeeId: string) => {
-    setSelectedEmployeeIds(prev =>
-      prev.includes(employeeId)
-        ? prev.filter(id => id !== employeeId)
-        : [...prev, employeeId]
-    );
-  };
-
-  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.checked) {
-      setSelectedEmployeeIds(recipientList.map(u => u.id));
-    } else {
-      setSelectedEmployeeIds([]);
-    }
+    setSelectedEmployeeIds(employeeId ? [employeeId] : []);
   };
 
   const handleIssueNTE = () => {
@@ -236,8 +219,8 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
     if (!deadline) {
       errors.push('Set a response deadline.');
     }
-    if (selectedApprovers.length === 0 || !selectedApprovers.some(a => approverConfigs?.bodApprovers?.user_ids?.includes(a.id))) {
-      errors.push('Select at least one approver, including at least one Board of Director from the settings.');
+    if (selectedApprovers.length === 0 || !selectedApprovers.some(item => item.roleId === Role.BOD)) {
+      errors.push('Select at least one approver whose selected role is Board of Director.');
     }
 
 
@@ -246,9 +229,14 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
       return;
     }
 
-    const approverSteps: ApproverStep[] = selectedApprovers.map(approver => ({
-      userId: approver.id,
-      userName: approver.name,
+    const approverSteps: ApproverStep[] = selectedApprovers.map(item => ({
+      userId: item.approver.id,
+      userName: item.approver.name,
+      roleId: item.roleId,
+      role: item.approver.eligibleRoleLabels[item.approver.eligibleRoleIds.indexOf(item.roleId)] || item.roleId,
+      roleSnapshot: item.approver.eligibleRoleLabels[item.approver.eligibleRoleIds.indexOf(item.roleId)] || item.roleId,
+      isBod: item.roleId === Role.BOD,
+      required: true,
       status: ApproverStatus.Pending,
     }));
 
@@ -278,7 +266,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
             citedMemos={citedMemos}
             citedDiscipline={citedDiscipline}
             evidenceUrl={evidenceUrl}
-            ccRecipients={selectedApprovers.map(approver => `${approver.name} (${approver.role})`)}
+            ccRecipients={selectedApprovers.map(item => `${item.approver.name} (${item.approver.eligibleRoleLabels[item.approver.eligibleRoleIds.indexOf(item.roleId)] || item.roleId})`)}
             incidentDate={incidentReport.dateTime}
             incidentLocation={incidentReport.location}
             incidentCategory={incidentReport.category}
@@ -301,6 +289,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
         evidenceUrl,
         issuedByUserId: user.id,
         approverSteps,
+        templateId: selectedTemplateId || undefined,
         nteNumber: manualNteNumber || undefined,
       };
     });
@@ -332,43 +321,6 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
     }
   }
 
-  // --- Additional Recipient Logic ---
-  const availableUsers = useMemo(() => {
-    if (!searchTerm) return [];
-    const lowerSearch = searchTerm.toLowerCase();
-    const recipientIds = new Set(recipientList.map(u => u.id));
-    const pool = allUsers;
-    return pool.filter(u =>
-      !recipientIds.has(u.id) &&
-      u.name.toLowerCase().includes(lowerSearch)
-    );
-  }, [searchTerm, recipientList, allUsers]);
-
-  const handleAddRecipient = (user: User) => {
-    setRecipientList(prev => [...prev, user]);
-    setSelectedEmployeeIds(prev => [...prev, user.id]);
-    setSearchTerm('');
-    setIsSearchOpen(false);
-  };
-
-  const handleRemoveRecipient = (userId: string) => {
-    setRecipientList(prev => prev.filter(u => u.id !== userId));
-    setSelectedEmployeeIds(prev => prev.filter(id => id !== userId));
-  };
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (searchWrapperRef.current && !searchWrapperRef.current.contains(event.target as Node)) {
-        setIsSearchOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [searchWrapperRef]);
-
-
   // === RENDER LOGIC ===
 
   if (isNewNTE) {
@@ -381,7 +333,10 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
         footer={
           <div className="flex justify-end w-full space-x-2">
             <Button variant="secondary" onClick={onClose}>Cancel</Button>
-            <Button onClick={handleIssueNTE} disabled={selectedEmployeeIds.length === 0}>{buttonText}</Button>
+            <Button
+              onClick={handleIssueNTE}
+              disabled={selectedEmployeeIds.length === 0 || approverLoading || !selectedApprovers.some(item => item.roleId === Role.BOD)}
+            >{buttonText}</Button>
           </div>
         }
       >
@@ -390,59 +345,19 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
           <div className="space-y-4">
             <div className="p-3 border rounded-md dark:border-gray-600">
               <h4 className="font-semibold text-gray-800 dark:text-gray-200">Issue To:</h4>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">Select which employees will receive this notice.</p>
-              <div className="flex items-center mb-2 p-2 border-b dark:border-gray-600">
-                <input
-                  type="checkbox"
-                  id="select-all"
-                  checked={recipientList.length > 0 && selectedEmployeeIds.length === recipientList.length}
-                  onChange={handleSelectAll}
-                  className="h-4 w-4 text-indigo-600 border-gray-300 rounded"
-                />
-                <label htmlFor="select-all" className="ml-2 text-sm font-medium">Select All</label>
-              </div>
-              <div className="max-h-40 overflow-y-auto space-y-1">
-                {recipientList.map(employee => (
-                  <div key={employee.id} className="flex items-center justify-between p-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700/50">
-                    <div className="flex items-center">
-                      <input
-                        type="checkbox"
-                        id={`emp-${employee.id}`}
-                        checked={selectedEmployeeIds.includes(employee.id)}
-                        onChange={() => handleSelectEmployee(employee.id)}
-                        className="h-4 w-4 text-indigo-600 border-gray-300 rounded"
-                      />
-                      <label htmlFor={`emp-${employee.id}`} className="ml-2 text-sm">{employee.name}</label>
-                    </div>
-                    <button type="button" onClick={() => handleRemoveRecipient(employee.id)} className="text-gray-400 hover:text-red-500">
-                      <XCircleIcon />
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <div className="relative mt-2" ref={searchWrapperRef}>
-                <Input
-                  label=""
-                  id="add-recipient-search"
-                  placeholder="Add another employee..."
-                  value={searchTerm}
-                  onChange={e => setSearchTerm(e.target.value)}
-                  onFocus={() => setIsSearchOpen(true)}
-                />
-                {isSearchOpen && searchTerm && (
-                  <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-40 overflow-auto">
-                    {availableUsers.length > 0 ? (
-                      availableUsers.map(user => (
-                        <div key={user.id} onClick={() => handleAddRecipient(user)} className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
-                          <p className="text-sm font-medium">{user.name}</p>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="px-4 py-2 text-sm text-gray-500">No matching employees found</div>
-                    )}
-                  </div>
-                )}
-              </div>
+              <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">Each notice belongs to exactly one involved employee and proceeds independently.</p>
+              <select
+                aria-label="NTE recipient employee"
+                value={selectedEmployeeIds[0] || ''}
+                onChange={event => handleSelectEmployee(event.target.value)}
+                className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-slate-700 dark:text-white"
+              >
+                <option value="">Select an involved employee</option>
+                {recipientList.map(employee => {
+                  const alreadyHasNte = existingRecipientIds.includes(employee.id);
+                  return <option key={employee.id} value={employee.id} disabled={alreadyHasNte}>{employee.name}{alreadyHasNte ? ' — NTE already created' : ''}</option>;
+                })}
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium">Template</label>
@@ -520,7 +435,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
                 citedMemos={citedMemos}
                 citedDiscipline={citedDiscipline}
                 evidenceUrl={evidenceUrl}
-                ccRecipients={selectedApprovers.map(approver => `${approver.name} (${approver.role})`)}
+                ccRecipients={selectedApprovers.map(item => `${item.approver.name} (${item.approver.eligibleRoleLabels[item.approver.eligibleRoleIds.indexOf(item.roleId)] || item.roleId})`)}
                 incidentDate={incidentReport.dateTime}
                 incidentLocation={incidentReport.location}
                 incidentCategory={incidentReport.category}
@@ -536,11 +451,12 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
           <div className="p-3 border rounded-md dark:border-gray-600">
             <h4 className="font-semibold text-gray-800 dark:text-gray-200">Approvals:</h4>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">Select who must approve this NTE (at least one BOD required).</p>
-            <EmployeeMultiSelect
-              label="Request Approval From"
-              allUsers={approverDisplay}
-              selectedUsers={selectedApprovers}
-              onSelectionChange={setSelectedApprovers}
+            <NTEApproverPicker
+              approvers={eligibleApprovers}
+              selected={selectedApprovers}
+              onChange={setSelectedApprovers}
+              loading={approverLoading}
+              error={approverError}
             />
           </div>
         </div>
@@ -572,7 +488,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
         <div className="flex justify-end w-full space-x-2">
           <Button variant="secondary" onClick={onClose}>{isPendingApproval ? 'Close' : 'Cancel'}</Button>
           {isRevisionDraft ? (
-            <Button onClick={handleResubmitRevision}>Resubmit for BOD Approval</Button>
+            <Button onClick={handleResubmitRevision}>Resubmit for Approval</Button>
           ) : !isPendingApproval && (
             <Button onClick={handleUpdateNTE} disabled={!isEmployeeResponding && !isManagerOrHR}>
               {isEmployeeResponding ? "Submit Response" : "Save Changes"}
@@ -587,12 +503,12 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
             </svg>
-            <span className="text-sm font-medium">This NTE is awaiting BOD approval and cannot be edited.</span>
+            <span className="text-sm font-medium">This NTE is awaiting all required approvals and cannot be edited.</span>
           </div>
         )}
         {isRevisionDraft && (
           <div className="p-3 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700">
-            <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">Returned for revision by BOD</p>
+            <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">Returned for revision by an assigned approver</p>
             <p className="mt-1 text-sm text-amber-800 dark:text-amber-300 whitespace-pre-wrap">{nte.revisionNote}</p>
             <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">Revise the NTE below, then resubmit it to the existing approval route.</p>
           </div>

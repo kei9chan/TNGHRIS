@@ -123,12 +123,9 @@ export function useAdditionalApprovals(user: User | null) {
       offerLoadError = error;
       return [] as Awaited<ReturnType<typeof fetchPendingOfferApprovalIds>>;
     });
-    const [[nteResult, panResult, requisitionResult, awardResult], offerIds] = await Promise.all([Promise.all([
-      supabase
-        .from('ntes')
-        .select('id,incident_report_id,recipients,recipient_names,response_deadline,status,approval_log,created_at,updated_at,nte_number,nte_code')
-        .eq('status', 'PendingApproval')
-        .order('created_at', { ascending: false }),
+    const [nteResult, [panResult, requisitionResult, awardResult], offerIds] = await Promise.all([
+      supabase.rpc('get_my_pending_nte_approvals'),
+      Promise.all([
       supabase
         .from('pans')
         .select('id,employee_id,employee_name,effective_date,status,action_taken,routing_steps,created_at,updated_at')
@@ -144,7 +141,9 @@ export function useAdditionalApprovals(user: User | null) {
         .select('id,employee_id,business_unit_id,department_id,status,submitted_at,approver_id,approver_steps,hris_users:employee_id(full_name),award_templates(title)')
         .in('status', [...AWARD_PENDING_STATUSES])
         .order('submitted_at', { ascending: false }),
-    ]), offerIdsPromise]);
+      ]),
+      offerIdsPromise,
+    ]);
 
     const offerPackageErrors: any[] = [];
     const offerPackages = await Promise.all(offerIds.map(async item => {
@@ -154,45 +153,29 @@ export function useAdditionalApprovals(user: User | null) {
       }
     }));
 
-    const nteRows = (nteResult.data || []).filter((row: any) =>
-      (Array.isArray(row.approval_log) ? row.approval_log : []).some(
-        (step: PendingStep) => step.userId === user.id && isPending(step.status)
-      )
-    );
-    const incidentIds = Array.from(new Set(nteRows.map((row: any) => row.incident_report_id).filter(Boolean)));
-    const incidentResult = incidentIds.length
-      ? await supabase
-          .from('incident_reports')
-          .select('id,case_number,category,business_unit_id,business_unit_name,assigned_to_name')
-          .in('id', incidentIds)
-      : { data: [], error: null };
-    const errors = [nteResult.error, panResult.error, requisitionResult.error, awardResult.error, incidentResult.error, offerLoadError, ...offerPackageErrors].filter(Boolean);
+    const nteRows = nteResult.data || [];
+    const errors = [nteResult.error, panResult.error, requisitionResult.error, awardResult.error, offerLoadError, ...offerPackageErrors].filter(Boolean);
     setAdditionalApprovalError(errors.length ? errors.map(error => error!.message).join(' · ') : null);
-    const incidents = new Map((incidentResult.data || []).map((row: any) => [row.id, row]));
 
     setPendingNTEApprovals(nteRows.map((row: any) => {
-      const steps: PendingStep[] = Array.isArray(row.approval_log) ? row.approval_log : [];
-      const stepIndex = steps.findIndex(step => step.userId === user.id && isPending(step.status));
-      const step = steps[stepIndex];
-      const incident: any = incidents.get(row.incident_report_id);
       const reference = row.nte_code || (row.nte_number ? `NTE-${row.nte_number}` : `NTE-${String(row.id).slice(0, 8)}`);
-      const caseReference = incident?.case_number ? `TNGIR-${String(incident.case_number).padStart(5, '0')}` : row.incident_report_id;
+      const caseReference = row.case_number ? `TNGIR-${String(row.case_number).padStart(5, '0')}` : row.incident_report_id;
       return {
         id: row.id,
         incidentReportId: row.incident_report_id,
-        employeeId: row.recipients?.[0] || '',
-        employeeName: row.recipient_names?.[0] || 'Employee',
+        employeeId: row.recipient_employee_id || '',
+        employeeName: row.recipient_name || 'Employee',
         reference,
         caseReference,
-        category: incident?.category || 'Notice to Explain',
-        businessUnitId: incident?.business_unit_id || undefined,
-        businessUnit: incident?.business_unit_name || 'Not assigned',
-        assignedHandler: incident?.assigned_to_name || 'Not assigned',
+        category: row.category || 'Notice to Explain',
+        businessUnitId: row.business_unit_id || undefined,
+        businessUnit: row.business_unit_name || 'Not assigned',
+        assignedHandler: row.assigned_to_name || 'Not assigned',
         status: row.status,
         createdAt: new Date(row.created_at || row.updated_at || Date.now()),
         deadline: row.response_deadline ? new Date(row.response_deadline) : undefined,
-        currentStep: step?.userName || step?.name || `Approval step ${stepIndex + 1}`,
-        canonicalKey: `nte:${row.id}:${stepIndex}`,
+        currentStep: row.approval_role || 'Required NTE approval',
+        canonicalKey: `nte:${row.id}:${row.approval_id}`,
       };
     }));
 

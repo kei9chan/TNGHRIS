@@ -2,8 +2,8 @@ import { fetchBusinessUnits } from '../../services/userService';
 import { fetchCodeOfDiscipline } from '../../services/disciplineService';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { IncidentReport, IRStatus, User, BusinessUnit, CodeOfDiscipline, Permission } from '../../types';
-import { formatIRDisplayId } from '../../utils/formatCaseId';
+import { IncidentReport, IRStatus, NTE, NTEStatus, User, BusinessUnit, CodeOfDiscipline, Permission } from '../../types';
+import { formatIRDisplayId, formatNTEDisplayId } from '../../utils/formatCaseId';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
@@ -23,6 +23,9 @@ interface IncidentReportModalProps {
   onSave: (report: Partial<IncidentReport>) => Promise<IncidentReport | void> | void;
   onSendMessage?: (reportId: string, text: string) => void;
   onGenerateNTE?: (report: Partial<IncidentReport>) => Promise<void> | void;
+  relatedNtes?: NTE[];
+  onCreateNTEForEmployee?: (employeeId: string) => Promise<void> | void;
+  onOpenNTE?: (nte: NTE) => void;
   onMarkNoAction?: (reportId: string) => void;
   onConvertToCoaching?: (report: IncidentReport) => void;
   onDownloadPdf?: (report: IncidentReport) => void;
@@ -33,6 +36,9 @@ interface IncidentReportModalProps {
 }
 
 const getStatusTag = (status: IRStatus, pipelineStage?: string) => {
+  if (pipelineStage?.startsWith('nte-') || pipelineStage === 'employee-processing-complete') {
+    return { text: 'NTE Processing', color: 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200' };
+  }
   if (status === IRStatus.HRReview) {
     return { text: 'HR Review', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200' };
   }
@@ -45,7 +51,7 @@ const getStatusTag = (status: IRStatus, pipelineStage?: string) => {
   if (status === IRStatus.Rejected) {
     return { text: 'Rejected', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200' };
   }
-  if (status === IRStatus.Converted || pipelineStage === 'converted-coaching') {
+  if (pipelineStage === 'converted-coaching') {
     return { text: 'For Coaching', color: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200' };
   }
   return { text: status, color: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200' };
@@ -59,7 +65,7 @@ const DetailItem: React.FC<{ label: string; children: React.ReactNode }> = ({ la
 );
 
 
-const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClose, report, onSave, onGenerateNTE, onMarkNoAction, onConvertToCoaching, onDownloadPdf, onReturnForRevision, onRejectReport, onResubmit, isEmployeeView = false }) => {
+const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClose, report, onSave, onGenerateNTE, relatedNtes = [], onCreateNTEForEmployee, onOpenNTE, onMarkNoAction, onConvertToCoaching, onDownloadPdf, onReturnForRevision, onRejectReport, onResubmit, isEmployeeView = false }) => {
   const { user } = useAuth();
   const { can } = usePermissions();
   const [currentReport, setCurrentReport] = useState<Partial<IncidentReport>>({});
@@ -384,6 +390,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
     || can('IncidentReports', Permission.Edit)
     || can('IncidentReports', Permission.Manage);
   const canProcessReport = !isEmployeeView && hasIncidentProcessingPermission && isActiveHrReview;
+  const canProcessEmployeeNtes = !isEmployeeView && hasIncidentProcessingPermission;
 
   // Only show assignment if editing an existing report AND it is in the initial review stage
   const showAssignment = canProcessReport && canAssign;
@@ -453,6 +460,56 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
               <DetailItem label="Assigned Handler">{currentReport.assignedToName}</DetailItem>
             )}
           </dl>
+
+          {canProcessEmployeeNtes && report.involvedEmployeeIds.length > 0 && (
+            <section className="rounded-lg border border-gray-200 dark:border-gray-700">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-4 py-3 dark:border-gray-700">
+                <div>
+                  <h3 className="font-semibold text-gray-900 dark:text-white">Employee-specific NTE processing</h3>
+                  <p className="text-xs text-gray-500">{relatedNtes.length} of {report.involvedEmployeeIds.length} NTEs created · Each employee proceeds independently.</p>
+                </div>
+                <span className={`rounded-full px-2 py-1 text-xs font-semibold ${relatedNtes.length >= report.involvedEmployeeIds.length ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                  {relatedNtes.length >= report.involvedEmployeeIds.length ? 'Employee processing complete' : 'Employee processing incomplete'}
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-700">
+                  <thead className="bg-gray-50 text-left text-xs uppercase text-gray-500 dark:bg-gray-800">
+                    <tr><th className="px-4 py-3">Involved employee</th><th className="px-4 py-3">NTE</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Response</th><th className="px-4 py-3 text-right">Action</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                    {report.involvedEmployeeIds.map((employeeId, index) => {
+                      const employee = allUsers.find(item => item.id === employeeId);
+                      const employeeNte = relatedNtes.find(item => item.employeeId === employeeId && item.status !== NTEStatus.Rejected)
+                        || relatedNtes.find(item => item.employeeId === employeeId);
+                      const responseStatus = !employeeNte
+                        ? 'Not available'
+                        : employeeNte.status === NTEStatus.ResponseSubmitted
+                          ? 'Response submitted'
+                          : employeeNte.status === NTEStatus.Issued
+                            ? 'Awaiting response'
+                            : 'Not yet issued';
+                      return (
+                        <tr key={employeeId}>
+                          <td className="px-4 py-3"><p className="font-semibold text-gray-900 dark:text-white">{employee?.name || report.involvedEmployeeNames[index] || 'Employee'}</p><p className="text-xs text-gray-500">{employee?.position || 'Position not recorded'} · {employee?.department || 'Department not recorded'} · {employee?.businessUnit || report.businessUnitName || 'Business unit not recorded'}</p></td>
+                          <td className="px-4 py-3 font-medium">{employeeNte ? formatNTEDisplayId(employeeNte.nteNumber) || employeeNte.id : 'No NTE Created'}</td>
+                          <td className="px-4 py-3">{employeeNte?.status || 'No NTE Created'}</td>
+                          <td className="px-4 py-3 text-gray-500">{responseStatus}</td>
+                          <td className="px-4 py-3 text-right">
+                            {employeeNte ? (
+                              <Button size="sm" variant="secondary" onClick={() => onOpenNTE?.(employeeNte)}>{employeeNte.status === NTEStatus.Draft ? 'Continue Draft' : employeeNte.status === NTEStatus.ResponseSubmitted ? 'View Response' : 'View NTE'}</Button>
+                            ) : (
+                              <Button size="sm" onClick={() => void onCreateNTEForEmployee?.(employeeId)}>Create NTE</Button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
 
           <div>
             <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Description of Incident</h3>

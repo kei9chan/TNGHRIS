@@ -116,6 +116,7 @@ const DisciplinaryCases: React.FC = () => {
   const [isResolutionModalOpen, setResolutionModalOpen] = useState(false);
 
   const [selectedReport, setSelectedReport] = useState<IncidentReport | null>(null);
+  const [selectedNteRecipientId, setSelectedNteRecipientId] = useState<string | null>(null);
   const [reportToPrint, setReportToPrint] = useState<IncidentReport | null>(null);
 
   const accessibleBus = useMemo(() => getAccessibleBusinessUnits(businessUnits), [getAccessibleBusinessUnits, businessUnits]);
@@ -301,20 +302,21 @@ const DisciplinaryCases: React.FC = () => {
       if (report.nteIds.length > 0) {
         // This is an incident that has progressed to the NTE stage.
         if (report.involvedEmployeeIds.length > 1) {
-          // Multi-person case: Split into virtual cards for each employee with an NTE.
-          report.nteIds.forEach(nteId => {
-            const nte = ntes.find(n => n.id === nteId);
-            if (nte) {
-              const stageForThisNte = getDerivedPipelineStage(nte, resolutions, report);
-              expandedReports.push({
-                ...report,
-                id: `${report.id}_VIRTUAL_${nteId}`,
-                pipelineStage: stageForThisNte,
-                involvedEmployeeIds: [nte.employeeId],
-                involvedEmployeeNames: [nte.employeeName],
-                nteIds: [nteId],
-              });
-            }
+          // Multi-person case: always keep one card per involved employee. A
+          // sibling NTE must never hide the Create NTE action for someone else.
+          report.involvedEmployeeIds.forEach((employeeId, index) => {
+            const employeeNtes = ntes
+              .filter(item => item.incidentReportId === report.id && item.employeeId === employeeId)
+              .sort((a, b) => b.issuedDate.getTime() - a.issuedDate.getTime());
+            const nte = employeeNtes.find(item => ![NTEStatus.Rejected, NTEStatus.Closed].includes(item.status)) || employeeNtes[0];
+            expandedReports.push({
+              ...report,
+              id: `${report.id}_VIRTUAL_${nte?.id || employeeId}`,
+              pipelineStage: nte ? getDerivedPipelineStage(nte, resolutions, report) : 'ir-review',
+              involvedEmployeeIds: [employeeId],
+              involvedEmployeeNames: [report.involvedEmployeeNames[index] || nte?.employeeName || 'Employee'],
+              nteIds: nte ? [nte.id] : [],
+            });
           });
         } else {
           // Single-person case: Don't split, just derive the stage from its NTE.
@@ -413,13 +415,13 @@ const DisciplinaryCases: React.FC = () => {
 
   const selectedNTE = useMemo(() => {
     if (!selectedReport) return undefined;
-
-    const openNteForIr = ntes.find(n => n.incidentReportId === selectedReport.id && [NTEStatus.PendingApproval, NTEStatus.Issued, NTEStatus.ResponseSubmitted].includes(n.status));
+    const originalReportId = selectedReport.id.split('_VIRTUAL_')[0];
+    const recipientId = selectedNteRecipientId || selectedReport.involvedEmployeeIds[0];
+    const employeeNtes = ntes.filter(n => n.incidentReportId === originalReportId && n.employeeId === recipientId);
+    const openNteForIr = employeeNtes.find(n => [NTEStatus.Draft, NTEStatus.PendingApproval, NTEStatus.Issued, NTEStatus.ResponseSubmitted].includes(n.status));
     if (openNteForIr) return openNteForIr;
-
-    if (selectedReport.nteIds.length === 0) return undefined;
-    return ntes.find(n => n.id === selectedReport.nteIds[0]);
-  }, [selectedReport, ntes]);
+    return employeeNtes[0];
+  }, [selectedReport, selectedNteRecipientId, ntes]);
 
   const selectedResolution = useMemo(() => {
     if (!selectedReport) return undefined;
@@ -444,22 +446,21 @@ const DisciplinaryCases: React.FC = () => {
   const handleCardClick = (report: IncidentReport) => {
     const originalReportId = report.id.split('_VIRTUAL_')[0];
     const originalReport = allReports.find(r => r.id === originalReportId);
+    const clickedEmployeeId = report.involvedEmployeeIds[0];
 
-    // Create a temporary, modified report for the modal to ensure it only shows the clicked employee
-    const reportForModal = {
-      ...(originalReport || report),
-      involvedEmployeeIds: report.involvedEmployeeIds,
-      involvedEmployeeNames: report.involvedEmployeeNames,
-    };
+    // The processing modal always receives the parent report so every involved
+    // employee remains visible. The clicked employee is tracked separately.
+    const reportForModal = originalReport || report;
 
     setSelectedReport(reportForModal);
+    setSelectedNteRecipientId(clickedEmployeeId || null);
 
-    const resolutionForReport = resolutions.find(r => r.incidentReportId === reportForModal.id);
+    const resolutionForReport = resolutions.find(r => r.incidentReportId === originalReportId && (!clickedEmployeeId || r.employeeId === clickedEmployeeId));
 
     if (report.pipelineStage === 'hr-review-response' && resolutionForReport?.status === ResolutionStatus.Rejected) {
       setResolutionModalOpen(true);
     } else if (report.pipelineStage === 'ir-review' || report.pipelineStage === 'hr-review-response') {
-      const nteForThisEmployee = ntes.find(n => n.incidentReportId === originalReportId && n.employeeId === report.involvedEmployeeIds[0]);
+      const nteForThisEmployee = ntes.find(n => n.incidentReportId === originalReportId && n.employeeId === clickedEmployeeId);
       if (nteForThisEmployee) {
         if (nteForThisEmployee.status === NTEStatus.Draft && nteForThisEmployee.revisionRequestedAt) {
           setNTEModalOpen(true);
@@ -472,12 +473,11 @@ const DisciplinaryCases: React.FC = () => {
     } else if (report.pipelineStage === 'nte-for-approval' || report.pipelineStage === 'nte-sent') {
       // Always navigate to NTE detail so approvers see the Approve/Reject interface
       // Try nteIds first, then fall back to employee-based lookup
-      const nteId = report.nteIds?.[0];
       const nteForThisEmployee = ntes.find(n =>
         n.incidentReportId === originalReportId &&
-        n.employeeId === report.involvedEmployeeIds[0]
+        n.employeeId === clickedEmployeeId
       );
-      const resolvedNteId = nteId || nteForThisEmployee?.id;
+      const resolvedNteId = nteForThisEmployee?.id || report.nteIds?.[0];
       if (resolvedNteId) {
         navigate(`/feedback/nte/${resolvedNteId}`);
       } else {
@@ -498,6 +498,7 @@ const DisciplinaryCases: React.FC = () => {
     setNTEModalOpen(false);
     setResolutionModalOpen(false);
     setSelectedReport(null);
+    setSelectedNteRecipientId(null);
   };
 
   const handleSaveReport = async (reportToSave: Partial<IncidentReport>): Promise<IncidentReport | void> => {
@@ -537,23 +538,10 @@ const DisciplinaryCases: React.FC = () => {
       if (Array.isArray(data)) {
         const saved = await saveNTEs(data, user);
         setNTEs(prev => [...saved, ...prev]);
-        const incidentReportId = saved[0]?.incidentReportId;
-        if (incidentReportId) {
-          // Keep the case in approval until every required NTE approver has acted.
-          const existingIr = allReports.find(r => r.id === incidentReportId);
-          const currentNteIds = existingIr?.nteIds || [];
-          const newNteIds = saved.map(n => n.id);
-          const mergedNteIds = Array.from(new Set([...currentNteIds, ...newNteIds]));
-
-          const irUpdate: Partial<IncidentReport> = { 
-            id: incidentReportId, 
-            pipelineStage: 'nte-for-approval',
-            status: IRStatus.Converted,
-            nteIds: mergedNteIds,
-          };
-          await saveIncidentReport(irUpdate, user);
-          setAllReports(prev => prev.map(r => r.id === incidentReportId ? { ...r, ...irUpdate } : r));
-        }
+        // Parent IDs, summary, and partial/completed stage are maintained by
+        // the database from employee-specific child rows.
+        const refreshedReports = await fetchIncidentReports();
+        setAllReports(filterByIrAccess(refreshedReports));
         alert(`${saved.length} NTE(s) submitted for approval.`);
       } else {
         const saved = await updateNTE(data);
@@ -570,11 +558,10 @@ const DisciplinaryCases: React.FC = () => {
     try {
       const saved = await resubmitNTERevision(data);
       setNTEs(prev => prev.map(n => n.id === saved.id ? saved : n));
-      setAllReports(prev => prev.map(report => report.id === saved.incidentReportId
-        ? { ...report, status: IRStatus.Converted, pipelineStage: 'nte-for-approval' }
-        : report));
+      const refreshedReports = await fetchIncidentReports();
+      setAllReports(filterByIrAccess(refreshedReports));
       handleCloseNteModal();
-      alert('Revised NTE resubmitted for BOD approval.');
+      alert('Revised NTE resubmitted to all required approvers.');
     } catch (err: any) {
       alert(err?.message || 'Failed to resubmit revised NTE.');
     }
@@ -780,9 +767,10 @@ const DisciplinaryCases: React.FC = () => {
   const handleCloseNteModal = () => {
     setNTEModalOpen(false);
     setSelectedReport(null);
+    setSelectedNteRecipientId(null);
   };
 
-  const handleGenerateNTE = async (report: Partial<IncidentReport>): Promise<void> => {
+  const handleGenerateNTE = async (report: Partial<IncidentReport>, recipientEmployeeId?: string): Promise<void> => {
     if (!user) throw new Error('Your session is no longer available. Please sign in again.');
     if (!report.id) throw new Error('The incident report must be saved before an NTE can be issued.');
     if (!report.assignedToId) {
@@ -790,9 +778,12 @@ const DisciplinaryCases: React.FC = () => {
     }
 
     try {
-      // The server locks and revalidates the case, saves the canonical handler ID,
-      // creates one assignment notification, and changes the stage atomically.
-      const saved = await assignIncidentCaseHandler(report.id, report.assignedToId, true);
+      setSelectedNteRecipientId(recipientEmployeeId || selectedNteRecipientId || report.involvedEmployeeIds?.[0] || null);
+      // Only the first child NTE starts the parent transition. A partial
+      // employee-specific case is already in NTE processing.
+      const saved = report.pipelineStage === 'ir-review' && report.status !== IRStatus.Converted
+        ? await assignIncidentCaseHandler(report.id, report.assignedToId, true)
+        : report as IncidentReport;
       if (!saved.assignedToId) {
         throw new Error('The case handler assignment was not persisted. NTE approval was not started.');
       }
@@ -1031,6 +1022,17 @@ const DisciplinaryCases: React.FC = () => {
           onSendMessage={handleSendMessage}
           onMarkNoAction={handleMarkNoAction}
           onGenerateNTE={handleGenerateNTE}
+          relatedNtes={selectedReport ? ntes.filter(item => item.incidentReportId === selectedReport.id.split('_VIRTUAL_')[0]) : []}
+          onCreateNTEForEmployee={async employeeId => {
+            if (!selectedReport) return;
+            await handleGenerateNTE(selectedReport, employeeId);
+          }}
+          onOpenNTE={targetNte => {
+            setSelectedNteRecipientId(targetNte.employeeId);
+            setReportModalOpen(false);
+            if (targetNte.status === NTEStatus.Draft) setNTEModalOpen(true);
+            else navigate(`/feedback/nte/${targetNte.id}`);
+          }}
           onConvertToCoaching={handleConvertToCoaching}
           onDownloadPdf={setReportToPrint}
           onReturnForRevision={async (reportId, reason) => {
@@ -1060,6 +1062,10 @@ const DisciplinaryCases: React.FC = () => {
           onClose={handleCloseNteModal}
           incidentReport={selectedReport}
           nte={selectedNTE}
+          recipientEmployeeId={selectedNteRecipientId || undefined}
+          existingRecipientIds={ntes
+            .filter(item => item.incidentReportId === selectedReport.id.split('_VIRTUAL_')[0] && ![NTEStatus.Rejected, NTEStatus.Closed].includes(item.status))
+            .map(item => item.employeeId)}
           onSave={handleSaveNTE}
           onResubmitRevision={handleResubmitNTERevision}
         />
