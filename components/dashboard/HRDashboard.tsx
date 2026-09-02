@@ -26,9 +26,10 @@ import ManpowerRequestModal from '../payroll/ManpowerRequestModal';
 import RequestCOEModal from '../employees/RequestCOEModal';
 import COEQueue from './COEQueue';
 import PrintableCOE from '../admin/PrintableCOE';
+import COEApprovalReviewModal from '../admin/COEApprovalReviewModal';
 import RejectReasonModal from '../feedback/RejectReasonModal';
 import { logActivity } from '../../services/auditService';
-import { approveCoeRequest, createCoeRequest, fetchCoeDocument, rejectCoeRequest, returnCoeRequest, fetchCoeRequests, fetchActiveCoeTemplates } from '../../services/coeService';
+import { createCoeRequest, rejectCoeRequest, returnCoeRequest, fetchCoeRequests, fetchActiveCoeTemplates } from '../../services/coeService';
 import MemoViewModal from '../feedback/MemoViewModal';
 
 
@@ -182,6 +183,7 @@ const HRDashboard: React.FC = () => {
     
     // COE Processing State
     const [coeToPrint, setCoeToPrint] = useState<COEDocumentData | null>(null);
+    const [coeToReview, setCoeToReview] = useState<COERequest | null>(null);
     const [coeToReject, setCoeToReject] = useState<COERequest | null>(null);
     const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
     const [coeToReturn, setCoeToReturn] = useState<COERequest | null>(null);
@@ -710,22 +712,22 @@ const HRDashboard: React.FC = () => {
     };
 
     // --- COE Approval Logic ---
-    const handleApproveCOE = async (request: COERequest) => {
+    const handleApproveCOE = (request: COERequest) => {
         if (!user) return;
         if (!coeAccess.canActOn(request)) {
             alert('You do not have permission to approve this request.');
             return;
         }
+        setCoeToReview(request);
+    };
 
-        try {
-            const updated = await approveCoeRequest(request.id, user.id);
-            setCoeRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
-
-            logActivity(user, 'APPROVE', 'COERequest', request.id, `Approved COE request for ${request.employeeName}`);
-            setCoeToPrint(await fetchCoeDocument(request.id));
-        } catch (error: any) {
-            alert(error?.message || 'Failed to approve COE request.');
+    const handleCOEApproved = (documentData: COEDocumentData) => {
+        setCoeRequests(prev => prev.map(item => item.id === documentData.request.id ? documentData.request : item));
+        if (user) {
+            logActivity(user, 'APPROVE', 'COERequest', documentData.request.id, `Approved and sent COE request for ${documentData.request.employeeName}`);
         }
+        setCoeToReview(null);
+        setCoeToPrint(documentData);
     };
 
     const handleRejectCOE = (request: COERequest) => {
@@ -1535,6 +1537,13 @@ const HRDashboard: React.FC = () => {
                 isOpen={isRequestCOEModalOpen}
                 onClose={() => setIsRequestCOEModalOpen(false)}
                 onSave={handleSaveCOERequest}
+            />
+
+            <COEApprovalReviewModal
+                isOpen={Boolean(coeToReview)}
+                request={coeToReview}
+                onClose={() => setCoeToReview(null)}
+                onApproved={handleCOEApproved}
             />
             
             {coeToPrint && createPortal(

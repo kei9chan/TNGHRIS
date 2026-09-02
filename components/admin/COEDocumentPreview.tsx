@@ -8,6 +8,9 @@ type COEDocumentPreviewProps = {
   employee: COEEmployeeSnapshot;
   currency?: string;
   showSystemFooter?: boolean;
+  bodyHtml?: string;
+  bodyEditable?: boolean;
+  onBodyInput?: (html: string) => void;
 };
 
 const COEDocumentPreview = forwardRef<HTMLDivElement, COEDocumentPreviewProps>(({
@@ -16,12 +19,16 @@ const COEDocumentPreview = forwardRef<HTMLDivElement, COEDocumentPreviewProps>((
   employee,
   currency = 'PHP',
   showSystemFooter = true,
+  bodyHtml,
+  bodyEditable = false,
+  onBodyInput,
 }, ref) => {
   const layout = { ...DEFAULT_COE_LAYOUT, ...(template.layoutSettings || {}) };
-  const body = useMemo(
+  const renderedBody = useMemo(
     () => renderCoeBody(template, request, employee, currency),
     [template, request, employee, currency],
   );
+  const body = bodyHtml ?? renderedBody;
   const primary = template.primaryColor || '#1e3a8a';
   const accent = template.accentColor || '#64748b';
   const styleKey = template.styleKey || 'classic-corporate';
@@ -91,8 +98,11 @@ const COEDocumentPreview = forwardRef<HTMLDivElement, COEDocumentPreviewProps>((
         </h1>
 
         <div
-          className="coe-rich-body mt-10 text-[11.5pt] [&_p]:mb-5 [&_strong]:font-bold"
+          className={`coe-rich-body mt-10 text-[11.5pt] [&_p]:mb-5 [&_strong]:font-bold ${bodyEditable ? 'rounded-md ring-2 ring-indigo-400 ring-offset-4' : ''}`}
           style={{ lineHeight: layout.lineHeight, textAlign: layout.textAlignment }}
+          contentEditable={bodyEditable}
+          suppressContentEditableWarning={bodyEditable}
+          onInput={bodyEditable ? event => onBodyInput?.(event.currentTarget.innerHTML) : undefined}
           dangerouslySetInnerHTML={{ __html: body }}
         />
 

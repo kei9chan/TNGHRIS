@@ -20,9 +20,10 @@ import ManpowerReviewModal from '../payroll/ManpowerReviewModal';
 
 import RequestCOEModal from '../employees/RequestCOEModal';
 import PrintableCOE from '../admin/PrintableCOE';
+import COEApprovalReviewModal from '../admin/COEApprovalReviewModal';
 import MemoViewModal from '../feedback/MemoViewModal';
 import { logActivity } from '../../services/auditService';
-import { approveCoeRequest, createCoeRequest, fetchCoeDocument, fetchCoeRequests, rejectCoeRequest, returnCoeRequest, fetchActiveCoeTemplates } from '../../services/coeService';
+import { createCoeRequest, fetchCoeRequests, rejectCoeRequest, returnCoeRequest, fetchActiveCoeTemplates } from '../../services/coeService';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { mergePanParticulars } from '../../services/panUtils';
@@ -185,6 +186,7 @@ const ManagerDashboard: React.FC = () => {
     const [isMemoViewOpen, setIsMemoViewOpen] = useState(false);
     const [memoUpdateKey, setMemoUpdateKey] = useState(0);
     const [coeToPrint, setCoeToPrint] = useState<COEDocumentData | null>(null);
+    const [coeToReview, setCoeToReview] = useState<COERequest | null>(null);
     const [isLoadingCoe, setIsLoadingCoe] = useState(false);
     const [leaveTypes, setLeaveTypes] = useState<{ id: string; name: string }[]>([]);
     const [pendingLeaveApprovals, setPendingLeaveApprovals] = useState<LeaveRequest[]>([]);
@@ -845,20 +847,22 @@ const ManagerDashboard: React.FC = () => {
         }
     };
 
-    const handleApproveCOE = async (request: COERequest) => {
+    const handleApproveCOE = (request: COERequest) => {
         if (!user) return;
         if (!coeAccess.canActOn(request)) {
             alert('You do not have permission to approve this request.');
             return;
         }
-        try {
-            const updated = await approveCoeRequest(request.id, user.id);
-            setCoeRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
-            logActivity(user, 'APPROVE', 'COERequest', request.id, `Approved COE request for ${request.employeeName}`);
-            setCoeToPrint(await fetchCoeDocument(request.id));
-        } catch (error: any) {
-            alert(error?.message || 'Failed to approve COE request.');
+        setCoeToReview(request);
+    };
+
+    const handleCOEApproved = (documentData: COEDocumentData) => {
+        setCoeRequests(prev => prev.map(item => item.id === documentData.request.id ? documentData.request : item));
+        if (user) {
+            logActivity(user, 'APPROVE', 'COERequest', documentData.request.id, `Approved and sent COE request for ${documentData.request.employeeName}`);
         }
+        setCoeToReview(null);
+        setCoeToPrint(documentData);
     };
 
     const handleRejectCOE = async (request: COERequest) => {
@@ -1628,6 +1632,12 @@ const ManagerDashboard: React.FC = () => {
                 isOpen={isRequestCOEModalOpen}
                 onClose={() => setIsRequestCOEModalOpen(false)}
                 onSave={handleSaveCOERequest}
+            />
+            <COEApprovalReviewModal
+                isOpen={Boolean(coeToReview)}
+                request={coeToReview}
+                onClose={() => setCoeToReview(null)}
+                onApproved={handleCOEApproved}
             />
             {coeToPrint && createPortal(
                 <PrintableCOE

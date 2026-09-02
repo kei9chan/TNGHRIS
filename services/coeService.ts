@@ -36,6 +36,7 @@ type CoeRequestRow = {
   return_reason?: string | null;
   returned_by?: string | null;
   returned_at?: string | null;
+  approval_content_edited?: boolean | null;
   requested_by?: string | null;
   created_at?: string | null;
 };
@@ -67,16 +68,13 @@ const mapCoeRequest = (row: CoeRequestRow): COERequest => ({
   returnReason: row.return_reason || undefined,
   returnedBy: row.returned_by || undefined,
   returnedAt: row.returned_at ? new Date(row.returned_at) : undefined,
+  contentEdited: Boolean(row.approval_content_edited),
 });
 
 export const createCoeRequest = async (request: Partial<COERequest>, user: User): Promise<COERequest> => {
   if (!request.purpose) {
     throw new Error('Please choose what the COE is for.');
   }
-  if (!request.templateId || !isUuid(request.templateId)) {
-    throw new Error('Please choose a COE template.');
-  }
-
   // Fetch authoritative BU/Dept ids and role from hris_users to avoid non-UUIDs (e.g., "bu3")
   const { data: employeeRow } = await supabase
     .from('hris_users')
@@ -107,7 +105,6 @@ export const createCoeRequest = async (request: Partial<COERequest>, user: User)
     purpose: request.purpose,
     other_purpose_detail: request.otherPurposeDetail || null,
     status: COERequestStatus.PendingHRManagerApproval,
-    template_id: request.templateId,
     requested_by: user.id,
   };
 
@@ -360,6 +357,32 @@ const mapCoeDocument = (data: any): COEDocumentData => {
 export const fetchCoeDocument = async (requestId: string): Promise<COEDocumentData> => {
   const { data, error } = await supabase.rpc('get_coe_document', { p_request_id: requestId });
   if (error) throw new Error(error.message || 'Failed to load the COE document');
+  return mapCoeDocument(data);
+};
+
+export const fetchCoeReviewDocument = async (
+  requestId: string,
+  templateId?: string,
+): Promise<COEDocumentData> => {
+  const { data, error } = await supabase.rpc('get_coe_review_document', {
+    p_request_id: requestId,
+    p_template_id: templateId || null,
+  });
+  if (error) throw new Error(error.message || 'Failed to prepare the COE review');
+  return mapCoeDocument(data);
+};
+
+export const approveCoeRequestWithReview = async (
+  requestId: string,
+  templateId: string,
+  contentOverride?: string,
+): Promise<COEDocumentData> => {
+  const { data, error } = await supabase.rpc('approve_coe_request_with_review', {
+    p_request_id: requestId,
+    p_template_id: templateId,
+    p_content_override: contentOverride || null,
+  });
+  if (error) throw new Error(error.message || 'Failed to approve and send the COE');
   return mapCoeDocument(data);
 };
 

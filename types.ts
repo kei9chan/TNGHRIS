@@ -450,6 +450,7 @@ export interface COERequest {
   returnReason?: string;
   returnedBy?: string;
   returnedAt?: Date;
+  contentEdited?: boolean;
 }
 
 // =================================================================================

@@ -18,7 +18,7 @@ import {
     getCoePurposeLabel,
     isPendingCoeRequestStatus,
 } from '../../types';
-import { approveCoeRequest, createCoeRequest, fetchCoeDocument, fetchCoeRequestById, fetchCoeRequests, rejectCoeRequest, returnCoeRequest } from '../../services/coeService';
+import { createCoeRequest, fetchCoeDocument, fetchCoeRequestById, fetchCoeRequests, rejectCoeRequest, returnCoeRequest } from '../../services/coeService';
 import { fetchCOEApprovalAuthority, getCOEApprovalRoles } from '../../services/approverConfigService';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../hooks/useAuth';
@@ -27,6 +27,7 @@ import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import PrintableCOE from '../../components/admin/PrintableCOE';
+import COEApprovalReviewModal from '../../components/admin/COEApprovalReviewModal';
 import RejectReasonModal from '../../components/feedback/RejectReasonModal';
 import RequestCOEModal from '../../components/employees/RequestCOEModal';
 import { logActivity } from '../../services/auditService';
@@ -62,6 +63,7 @@ const COERequests: React.FC = () => {
     const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
     const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
     const [printData, setPrintData] = useState<COEDocumentData | null>(null);
+    const [requestToReview, setRequestToReview] = useState<COERequest | null>(null);
     const [autoOpenedRequestId, setAutoOpenedRequestId] = useState<string | null>(null);
     const [documentError, setDocumentError] = useState<string | null>(null);
     const [loadingDocumentId, setLoadingDocumentId] = useState<string | null>(null);
@@ -261,20 +263,19 @@ const COERequests: React.FC = () => {
         }
     };
 
-    const handleApprove = async (request: COERequest) => {
+    const handleApprove = (request: COERequest) => {
         if (!user) return;
-        setLoadingDocumentId(request.id);
         setDocumentError(null);
-        try {
-            const updated = await approveCoeRequest(request.id, user.id);
-            setRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
-            logActivity(user, 'APPROVE', 'COERequest', request.id, `Approved COE for ${request.employeeName}`);
-            setPrintData(await fetchCoeDocument(request.id));
-        } catch (error: any) {
-            setDocumentError(error?.message || 'Failed to approve and generate the COE document.');
-        } finally {
-            setLoadingDocumentId(null);
+        setRequestToReview(request);
+    };
+
+    const handleCOEApproved = (documentData: COEDocumentData) => {
+        setRequests(prev => prev.map(item => item.id === documentData.request.id ? documentData.request : item));
+        if (user) {
+            logActivity(user, 'APPROVE', 'COERequest', documentData.request.id, `Approved and sent COE for ${documentData.request.employeeName}`);
         }
+        setRequestToReview(null);
+        setPrintData(documentData);
     };
 
     const handleRejectClick = (request: COERequest) => {
@@ -418,7 +419,7 @@ const COERequests: React.FC = () => {
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{new Date(req.dateRequested).toLocaleDateString()}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                         <div>{getCoePurposeLabel(req.purpose, req.otherPurposeDetail)}</div>
-                                        <div className="mt-1 text-xs text-gray-400 dark:text-gray-500">{req.templateName || (req.templateId ? `Template ${req.templateId.slice(0, 8)}` : 'No template selected')}</div>
+                                        {canViewAll && <div className="mt-1 text-xs text-gray-400 dark:text-gray-500">{req.templateName || (req.templateId ? `Template ${req.templateId.slice(0, 8)}` : 'Default template pending')}</div>}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm">{getStatusBadge(req.status)}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
@@ -482,6 +483,13 @@ const COERequests: React.FC = () => {
                 isOpen={isRequestModalOpen}
                 onClose={() => setIsRequestModalOpen(false)}
                 onSave={handleSaveCOERequest}
+            />
+
+            <COEApprovalReviewModal
+                isOpen={Boolean(requestToReview)}
+                request={requestToReview}
+                onClose={() => setRequestToReview(null)}
+                onApproved={handleCOEApproved}
             />
 
             {printData && createPortal(
