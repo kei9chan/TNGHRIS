@@ -12,6 +12,7 @@ import QuickAnalyticsPreview from './QuickAnalyticsPreview';
 import UpcomingEventsWidget from './UpcomingEventsWidget';
 import QuickLinks from './QuickLinks';
 import ApprovalWidget from './ApprovalWidget';
+import MyRequestsWidget from './MyRequestsWidget';
 import { isCentralizedApprovalActionItem } from '../../utils/approvalCenterRouting';
 import Button from '../ui/Button';
 import ManpowerRequestModal from '../payroll/ManpowerRequestModal';
@@ -155,12 +156,6 @@ const ManagerDashboard: React.FC = () => {
     const navigate = useNavigate();
     const isBodDashboard = user?.role === Role.BOD || (!!user?.roles?.includes(Role.BOD) && !user.roles.some(role => role === Role.HRManager || role === Role.HRStaff || role === Role.Admin));
 
-    // Escalated Leave/WFH/OT is rendered by ApprovalWidget from explicit
-    // assignment rows. Keep this legacy team panel scoped to direct reports.
-    const isConfiguredBOD = useMemo(() => {
-        return false;
-    }, []);
-
     // Local state — all initialized empty; populated by Supabase useEffect hooks
     const [requests, setRequests] = useState<AssetRequest[]>([]);
     const [pans, setPans] = useState<PAN[]>([]);
@@ -190,7 +185,6 @@ const ManagerDashboard: React.FC = () => {
     const [memoUpdateKey, setMemoUpdateKey] = useState(0);
     const [coeToPrint, setCoeToPrint] = useState<COEDocumentData | null>(null);
     const [isLoadingCoe, setIsLoadingCoe] = useState(false);
-    const [reporteeIds, setReporteeIds] = useState<string[]>([]);
     const [leaveTypes, setLeaveTypes] = useState<{ id: string; name: string }[]>([]);
     const [pendingLeaveApprovals, setPendingLeaveApprovals] = useState<LeaveRequest[]>([]);
     const [pendingWfhApprovals, setPendingWfhApprovals] = useState<WFHRequest[]>([]);
@@ -604,25 +598,6 @@ const ManagerDashboard: React.FC = () => {
     }, [employeeProfileId]);
 
     useEffect(() => {
-        const loadReportees = async () => {
-            if (!user?.id) {
-                setReporteeIds([]);
-                return;
-            }
-            const { data, error } = await supabase
-                .from('hris_users')
-                .select('id')
-                .eq('reports_to', user.id);
-            if (error || !data) {
-                setReporteeIds([]);
-                return;
-            }
-            setReporteeIds(data.map((row: any) => row.id).filter(Boolean));
-        };
-        loadReportees();
-    }, [user?.id]);
-
-    useEffect(() => {
         const loadLeaveTypes = async () => {
             const { data, error } = await supabase
                 .from('leave_types')
@@ -665,8 +640,21 @@ const ManagerDashboard: React.FC = () => {
                 return;
             }
 
-            const emptyEmployeeId = '00000000-0000-0000-0000-000000000000';
-            const scopedReporteeIds = reporteeIds.length ? reporteeIds : [emptyEmployeeId];
+            const emptyRequestId = '00000000-0000-0000-0000-000000000000';
+            let assignedTimeRows: Array<{ request_type: string; request_id: string }> = [];
+            try {
+                const { data, error } = await supabase.rpc('get_my_pending_time_approval_ids');
+                if (error) throw error;
+                assignedTimeRows = (data || []).filter((row: any) => row.request_id);
+            } catch (error) {
+                console.error('Failed to load assigned time approvals', error);
+            }
+            const assignedIds = (requestType: string) => assignedTimeRows
+                .filter(row => row.request_type === requestType)
+                .map(row => row.request_id);
+            const assignedLeaveIds = assignedIds('leave');
+            const assignedWfhIds = assignedIds('wfh');
+            const assignedOtIds = assignedIds('overtime');
             let assignedManpowerIds: string[] = [];
             try {
                 assignedManpowerIds = await fetchMyPendingManpowerApprovalIds();
@@ -677,29 +665,17 @@ const ManagerDashboard: React.FC = () => {
             let leaveQuery = supabase
                 .from('leave_requests')
                 .select('id, employee_id, employee_name, leave_type_id, start_date, end_date, start_time, end_time, duration_days, reason, status, history_log, attachment_url, approver_id, business_unit_id, department_id');
-            if (isConfiguredBOD) {
-                leaveQuery = leaveQuery.or(`and(employee_id.in.(${scopedReporteeIds.join(',')}),status.eq.pending),status.eq.PendingBOD`);
-            } else {
-                leaveQuery = leaveQuery.in('employee_id', scopedReporteeIds).eq('status', 'pending');
-            }
+            leaveQuery = assignedLeaveIds.length ? leaveQuery.in('id', assignedLeaveIds) : leaveQuery.eq('id', emptyRequestId);
 
             let wfhQuery = supabase
                 .from('wfh_requests')
                 .select('id, employee_id, employee_name, date, reason, status, report_link, approved_by, approved_at, rejection_reason, created_at');
-            if (isConfiguredBOD) {
-                wfhQuery = wfhQuery.or(`and(employee_id.in.(${scopedReporteeIds.join(',')}),status.eq.${WFHRequestStatus.PendingDeptHead}),status.eq.${WFHRequestStatus.PendingBOD}`);
-            } else {
-                wfhQuery = wfhQuery.in('employee_id', scopedReporteeIds).eq('status', WFHRequestStatus.PendingDeptHead);
-            }
+            wfhQuery = assignedWfhIds.length ? wfhQuery.in('id', assignedWfhIds) : wfhQuery.eq('id', emptyRequestId);
 
             let otQuery = supabase
                 .from('ot_requests')
                 .select('id, employee_id, employee_name, date, start_time, end_time, reason, status, submitted_at, approved_hours, manager_note, history_log, attachment_url');
-            if (isConfiguredBOD) {
-                otQuery = otQuery.or(`and(employee_id.in.(${scopedReporteeIds.join(',')}),status.eq.${OTStatus.Submitted}),status.eq.${OTStatus.PendingBOD}`);
-            } else {
-                otQuery = otQuery.in('employee_id', scopedReporteeIds).eq('status', OTStatus.Submitted);
-            }
+            otQuery = assignedOtIds.length ? otQuery.in('id', assignedOtIds) : otQuery.eq('id', emptyRequestId);
 
             let manpowerQuery = supabase
                 .from('manpower_requests')
@@ -708,7 +684,7 @@ const ManagerDashboard: React.FC = () => {
             // reportee-based. This also covers a BUM with no direct reports.
             manpowerQuery = assignedManpowerIds.length
                 ? manpowerQuery.in('id', assignedManpowerIds).eq('status', ManpowerRequestStatus.Pending)
-                : manpowerQuery.eq('id', emptyEmployeeId);
+                : manpowerQuery.eq('id', emptyRequestId);
 
             const [leaveRes, wfhRes, otRes, manpowerRes] = await Promise.all([
                 leaveQuery,
@@ -812,7 +788,7 @@ const ManagerDashboard: React.FC = () => {
         };
 
         loadPendingApprovals();
-    }, [user?.id, reporteeIds]);
+    }, [user?.id]);
 
     // NOTE: Mock polling interval removed — all state is now populated by Supabase useEffect hooks above
 
@@ -1559,6 +1535,7 @@ const ManagerDashboard: React.FC = () => {
         <div className="space-y-6">
             <QuickLinks />
             <ApprovalWidget />
+            <MyRequestsWidget />
             <UpcomingEventsWidget />
 
             {!isBodDashboard && <Card title="COE Requests">

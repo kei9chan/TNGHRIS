@@ -59,6 +59,7 @@ import { usePermissions } from '../../hooks/usePermissions';
 import { supabase } from '../../services/supabaseClient';
 import { mergePanParticulars } from '../../services/panUtils';
 import ApprovalWidget from './ApprovalWidget';
+import MyRequestsWidget from './MyRequestsWidget';
 import { isCentralizedApprovalActionItem } from '../../utils/approvalCenterRouting';
 
 
@@ -272,7 +273,6 @@ const EmployeeDashboard: React.FC = () => {
     const [coachingSessions, setCoachingSessions] = useState<any[]>([]);
     const [envelopes, setEnvelopes] = useState<Envelope[]>([]);
     const [pans, setPans] = useState<PAN[]>([]);
-    const [reporteeIds, setReporteeIds] = useState<string[]>([]);
     const [pendingOtApprovals, setPendingOtApprovals] = useState<OTRequest[]>([]);
     const [ntes, setNTEs] = useState<NTE[]>([]);
     const [evaluationSubmissions, setEvaluationSubmissions] = useState<any[]>([]);
@@ -807,37 +807,27 @@ const EmployeeDashboard: React.FC = () => {
     }, [user?.id]);
 
     useEffect(() => {
-        const loadReportees = async () => {
-            if (!user?.id) {
-                setReporteeIds([]);
-                return;
-            }
-            const { data, error } = await supabase
-                .from('hris_users')
-                .select('id')
-                .eq('reports_to', user.id);
-            if (error || !data) {
-                setReporteeIds([]);
-                return;
-            }
-            setReporteeIds(data.map((row: any) => row.id).filter(Boolean));
-        };
-        loadReportees();
-    }, [user?.id]);
-
-    useEffect(() => {
-        if (!user?.id || reporteeIds.length === 0) {
+        if (!user?.id) {
             setPendingOtApprovals([]);
             return;
         }
         let active = true;
         const loadOtApprovals = async () => {
             try {
+                const { data: assignedRows, error: assignmentError } = await supabase.rpc('get_my_pending_time_approval_ids');
+                if (assignmentError) throw assignmentError;
+                const assignedOtIds = (assignedRows || [])
+                    .filter((row: any) => row.request_type === 'overtime')
+                    .map((row: any) => row.request_id)
+                    .filter(Boolean);
+                if (assignedOtIds.length === 0) {
+                    if (active) setPendingOtApprovals([]);
+                    return;
+                }
                 const { data, error } = await supabase
                     .from('ot_requests')
                     .select('id, employee_id, employee_name, date, start_time, end_time, reason, status, submitted_at, approved_hours, manager_note, history_log, attachment_url')
-                    .in('employee_id', reporteeIds)
-                    .eq('status', OTStatus.Submitted)
+                    .in('id', assignedOtIds)
                     .order('submitted_at', { ascending: false });
                 if (error) throw error;
                 if (!active) return;
@@ -869,7 +859,7 @@ const EmployeeDashboard: React.FC = () => {
             active = false;
             clearInterval(interval);
         };
-    }, [user?.id, reporteeIds]);
+    }, [user?.id]);
 
     useEffect(() => {
         if (!user) return;
@@ -1769,6 +1759,8 @@ const EmployeeDashboard: React.FC = () => {
             <AnniversaryBanner />
 
             <ApprovalWidget />
+
+            <MyRequestsWidget />
 
             <Card title="My Action Items">
                 <div className="space-y-4">

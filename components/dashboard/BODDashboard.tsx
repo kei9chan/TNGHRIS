@@ -10,6 +10,7 @@ import QuickAnalyticsPreview from './QuickAnalyticsPreview';
 import ActionItemCard from './ActionItemCard';
 import UpcomingEventsWidget from './UpcomingEventsWidget';
 import QuickLinks from './QuickLinks';
+import MyRequestsWidget from './MyRequestsWidget';
 import { isCentralizedApprovalActionItem } from '../../utils/approvalCenterRouting';
 import ManpowerReviewModal from '../payroll/ManpowerReviewModal';
 import WFHReviewModal from '../payroll/WFHReviewModal';
@@ -1201,6 +1202,7 @@ const BODDashboard: React.FC = () => {
     return (
         <div className="space-y-6">
             <QuickLinks hideCOE />
+            <MyRequestsWidget />
             <UpcomingEventsWidget />
 
             {actionItems.length > 0 ? (

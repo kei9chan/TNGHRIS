@@ -18,6 +18,7 @@ import UnassignedTicketsWidget from './UnassignedTicketsWidget';
 import AssignedCasesWidget from './AssignedCasesWidget';
 import QuickLinks from './QuickLinks';
 import ApprovalWidget from './ApprovalWidget';
+import MyRequestsWidget from './MyRequestsWidget';
 import { isCentralizedApprovalActionItem } from '../../utils/approvalCenterRouting';
 import ManpowerRequestModal from '../payroll/ManpowerRequestModal';
 
@@ -149,13 +150,6 @@ const HRDashboard: React.FC = () => {
     const { isUserEligibleEvaluator, getCoeAccess } = usePermissions(); // Added hook
     const isHR = user && [Role.Admin, Role.HRManager, Role.HRStaff].includes(user.role);
     
-    // Check if the current user is a configured BOD approver
-    const isConfiguredBOD = useMemo(() => {
-        // Conditional time approvals are shown only through explicit
-        // Approval Center assignments, never through an HR/BOD role fallback.
-        return false;
-    }, []);
-
     const [assignments, setAssignments] = useState<AssetAssignment[]>([]);
     const [useSupabaseAssignments, setUseSupabaseAssignments] = useState(false);
     const [checklists, setChecklists] = useState<OnboardingChecklist[]>([]);
@@ -192,7 +186,6 @@ const HRDashboard: React.FC = () => {
     const [coeToReturn, setCoeToReturn] = useState<COERequest | null>(null);
     const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
     const [isLoadingCoe, setIsLoadingCoe] = useState(false);
-    const [reporteeIds, setReporteeIds] = useState<string[]>([]);
     const [pendingOtApprovals, setPendingOtApprovals] = useState<OTRequest[]>([]);
     const [pendingLeaveApprovals, setPendingLeaveApprovals] = useState<LeaveRequest[]>([]);
     const [pendingWfhApprovals, setPendingWfhApprovals] = useState<WFHRequest[]>([]);
@@ -246,42 +239,28 @@ const HRDashboard: React.FC = () => {
     }, [user]);
 
     useEffect(() => {
-        const loadReportees = async () => {
-            if (!user?.id) {
-                setReporteeIds([]);
-                return;
-            }
-            const { data, error } = await supabase
-                .from('hris_users')
-                .select('id')
-                .eq('reports_to', user.id);
-            if (error || !data) {
-                setReporteeIds([]);
-                return;
-            }
-            setReporteeIds(data.map((row: any) => row.id).filter(Boolean));
-        };
-        loadReportees();
-    }, [user?.id]);
-
-    useEffect(() => {
-        if (!user?.id || (!isConfiguredBOD && reporteeIds.length === 0)) {
+        if (!user?.id) {
             setPendingOtApprovals([]);
             return;
         }
         let active = true;
         const loadOtApprovals = async () => {
             try {
+                const { data: assignedRows, error: assignmentError } = await supabase.rpc('get_my_pending_time_approval_ids');
+                if (assignmentError) throw assignmentError;
+                const assignedOtIds = (assignedRows || [])
+                    .filter((row: any) => row.request_type === 'overtime')
+                    .map((row: any) => row.request_id)
+                    .filter(Boolean);
+                if (assignedOtIds.length === 0) {
+                    if (active) setPendingOtApprovals([]);
+                    return;
+                }
                 let query = supabase
                     .from('ot_requests')
                     .select('id, employee_id, employee_name, date, start_time, end_time, reason, status, submitted_at, approved_hours, manager_note, history_log, attachment_url')
                     .order('submitted_at', { ascending: false });
-
-                if (isConfiguredBOD) {
-                    query = query.or(`and(employee_id.in.(${reporteeIds.join(',') || '00000000-0000-0000-0000-000000000000'}),status.eq.${OTStatus.Submitted}),status.eq.${OTStatus.PendingBOD}`);
-                } else {
-                    query = query.in('employee_id', reporteeIds).eq('status', OTStatus.Submitted);
-                }
+                query = query.in('id', assignedOtIds);
 
                 const { data, error } = await query;
                 if (error) throw error;
@@ -314,7 +293,7 @@ const HRDashboard: React.FC = () => {
             active = false;
             clearInterval(interval);
         };
-    }, [user?.id, reporteeIds]);
+    }, [user?.id]);
 
     // Fetch leave types for the LeaveRequestModal
     useEffect(() => {
@@ -1492,6 +1471,7 @@ const HRDashboard: React.FC = () => {
         <div className="space-y-6">
             <QuickLinks />
             <ApprovalWidget />
+            <MyRequestsWidget />
 
             <UpcomingEventsWidget />
 

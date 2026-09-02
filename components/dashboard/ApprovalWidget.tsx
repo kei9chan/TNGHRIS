@@ -1,6 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../hooks/useAuth';
 import { useApprovals } from '../../hooks/useApprovals';
 import { useAdditionalApprovals } from '../../hooks/useAdditionalApprovals';
@@ -11,10 +10,8 @@ const ageDays = (value: Date | string | undefined) => value ? Math.max(0, Math.f
 export default function ApprovalWidget() {
   const { user } = useAuth();
   const roles = new Set([user?.role, ...(user?.roles || [])].filter(Boolean));
-  const [reporteeIds,setReporteeIds]=useState<string[]>([]);
-  const approvals=useApprovals({user,isHR:roles.has(Role.HRStaff),reporteeIds});
+  const approvals=useApprovals({user,isHR:roles.has(Role.HRStaff)});
   const additional=useAdditionalApprovals(user);
-  useEffect(()=>{if(!user)return;supabase.from('hris_users').select('id').eq('reports_to',user.id).then(({data,error})=>{if(error)console.error('Approval scope load failed:',error.message);else setReporteeIds((data||[]).map((r:any)=>r.id));});},[user]);
   const leaveExceptions=approvals.pendingLeaveApprovals.filter(r=>{const start=new Date(r.startDate),end=new Date(r.endDate),duration=Number(r.durationDays);return r.approvalRoute==='BOD_REQUIRED'||end<start||duration<=0||duration>30;}).length;
   const wfhExceptions=approvals.pendingWfhApprovals.filter(r=>{const start=new Date(r.date),end=new Date(r.endDate||r.date),days=Math.floor((end.getTime()-start.getTime())/86400000)+1;const overlap=approvals.pendingLeaveApprovals.some(l=>l.employeeId===r.employeeId&&new Date(l.startDate)<=end&&new Date(l.endDate)>=start);return r.approvalRoute==='BOD_REQUIRED'||end<start||days>31||overlap||String(r.status)==='WFH_FOR_TIMEKEEPING';}).length;
   const overtimeExceptions=approvals.pendingOtApprovals.filter(r=>r.approvalRoute==='BOD_REQUIRED'||!String(r.reason||'').trim()).length;
