@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -10,6 +10,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { createEvaluationCycle } from '../../services/evaluationService';
+import { buildEvaluationYearOptions, EvaluationTimelineOption, loadEvaluationTimelines } from '../../services/evaluationTimelineService';
 
 // Icons
 const UserIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg>;
@@ -25,7 +26,7 @@ const NewEvaluation: React.FC = () => {
   const [selectedBuIds, setSelectedBuIds] = useState<string[]>([]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [employeeSearch, setEmployeeSearch] = useState('');
-  const [timelineType, setTimelineType] = useState<'Quarterly' | 'Onboarding' | 'Annual'>('Quarterly');
+  const [timelineType, setTimelineType] = useState<'Monthly' | 'Quarterly' | 'Onboarding' | 'Annual'>('Monthly');
   const [year, setYear] = useState(new Date().getFullYear().toString());
   const [timelineId, setTimelineId] = useState('');
   const [selectedQuestionSets, setSelectedQuestionSets] = useState<string[]>([]);
@@ -33,10 +34,15 @@ const NewEvaluation: React.FC = () => {
   const [businessUnits, setBusinessUnits] = useState<{ id: string; name: string; }[]>([]);
   const [employees, setEmployees] = useState<User[]>([]);
   const [departments, setDepartments] = useState<{ id: string; name: string; businessUnitId?: string | null; }[]>([]);
-  const [timelines, setTimelines] = useState<any[]>([]);
+  const [timelines, setTimelines] = useState<EvaluationTimelineOption[]>([]);
   const [questionSets, setQuestionSets] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const requestKeyRef = useRef(
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `evaluation-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  );
 
   // Show all business units for targeting (not scoped to user access)
   const accessibleBus = businessUnits;
@@ -44,10 +50,9 @@ const NewEvaluation: React.FC = () => {
   useEffect(() => {
     const loadLookups = async () => {
       setError(null);
-      const [{ data: buData }, { data: empData }, { data: tlData }, { data: qsData }, { data: deptData }] = await Promise.all([
+      const [{ data: buData }, { data: empData }, { data: qsData }, { data: deptData }] = await Promise.all([
         supabase.from('business_units').select('id, name').order('name'),
         supabase.from('hris_users').select('id, full_name, email, auth_user_id, role, status, business_unit, business_unit_id, department, department_id, position'),
-        supabase.from('evaluation_timelines').select('*').order('rollout_date', { ascending: false }),
         supabase.from('evaluation_question_sets').select('*').order('name'),
         supabase.from('departments').select('id, name, business_unit_id'),
       ]);
@@ -73,12 +78,37 @@ const NewEvaluation: React.FC = () => {
         profilePictureUrl: undefined,
         signatureUrl: undefined,
       } as User)));
-      setTimelines(tlData || []);
       setQuestionSets(qsData || []);
       setDepartments((deptData || []).map((d: any) => ({ id: d.id, name: d.name, businessUnitId: d.business_unit_id })));
     };
     loadLookups();
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    const selectedYear = Number(year);
+    if (!Number.isInteger(selectedYear)) return;
+
+    const refreshTimelines = async () => {
+      try {
+        const loaded = await loadEvaluationTimelines(selectedYear);
+        if (active) setTimelines(loaded);
+      } catch (timelineError: any) {
+        if (active) setError(timelineError?.message || 'Failed to load evaluation timelines.');
+      }
+    };
+
+    const handleTimelinesChanged = () => {
+      void refreshTimelines();
+    };
+
+    void refreshTimelines();
+    window.addEventListener('evaluation-timelines-changed', handleTimelinesChanged);
+    return () => {
+      active = false;
+      window.removeEventListener('evaluation-timelines-changed', handleTimelinesChanged);
+    };
+  }, [year]);
 
   const handleBuChange = (buId: string) => {
     const newSelectedBuIds = selectedBuIds.includes(buId)
@@ -116,31 +146,35 @@ const NewEvaluation: React.FC = () => {
   };
 
 
-  const filterByTypeWithFallback = (type: string) => {
-    const typeList = timelines.filter((t: any) => (t.type || '').toLowerCase() === type.toLowerCase());
-    const byYear = typeList.filter((t: any) => {
-      const timelineYear = t.rollout_date ? new Date(t.rollout_date).getFullYear().toString() : '';
-      return timelineYear === year;
-    });
-    return byYear.length > 0 ? byYear : typeList;
-  };
+  const timelinesByType = useMemo(() => {
+    const selectedYear = Number(year);
+    const available = timelines.filter(timeline => timeline.year === selectedYear);
+    return {
+      Monthly: available.filter(timeline => timeline.type === 'Monthly'),
+      Quarterly: available.filter(timeline => timeline.type === 'Quarterly'),
+      Onboarding: available.filter(timeline => timeline.type === 'Onboarding'),
+      Annual: available.filter(timeline => timeline.type === 'Annual'),
+    };
+  }, [year, timelines]);
 
-  const quarterlyTimelines = useMemo(() => filterByTypeWithFallback('Quarterly'), [year, timelines]);
-  const onboardingTimelines = useMemo(() => filterByTypeWithFallback('Onboarding'), [year, timelines]);
-  const annualTimelines = useMemo(() => filterByTypeWithFallback('Annual'), [year, timelines]);
+  const monthlyTimelines = timelinesByType.Monthly;
+  const quarterlyTimelines = timelinesByType.Quarterly;
+  const onboardingTimelines = timelinesByType.Onboarding;
+  const annualTimelines = timelinesByType.Annual;
+  const yearOptions = useMemo(() => buildEvaluationYearOptions(timelines, Number(year)), [timelines, year]);
 
   const currentTimelineOptions = useMemo(() => {
+    if (timelineType === 'Monthly') return monthlyTimelines;
     if (timelineType === 'Quarterly') return quarterlyTimelines;
     if (timelineType === 'Onboarding') return onboardingTimelines;
     if (timelineType === 'Annual') return annualTimelines;
     return [];
-  }, [timelineType, quarterlyTimelines, onboardingTimelines, annualTimelines]);
+  }, [timelineType, monthlyTimelines, quarterlyTimelines, onboardingTimelines, annualTimelines]);
 
   // Auto-select first available timeline when type/year changes
   useEffect(() => {
-    if (!timelineId && currentTimelineOptions.length > 0) {
-      setTimelineId(currentTimelineOptions[0].id);
-    }
+    const selectedStillAvailable = currentTimelineOptions.some(option => option.id === timelineId);
+    setTimelineId(selectedStillAvailable ? timelineId : (currentTimelineOptions[0]?.id || ''));
   }, [timelineType, year, currentTimelineOptions, timelineId]);
 
 
@@ -213,8 +247,7 @@ const NewEvaluation: React.FC = () => {
       alert('Total weight for evaluators must be exactly 100.');
       return;
     }
-    const requireTimeline = currentTimelineOptions.length > 0;
-    if (targetEmployeeIds.length === 0 || (requireTimeline && !timelineToUse)) {
+    if (targetEmployeeIds.length === 0 || !timelineToUse) {
       alert('Please select at least one employee and a timeline.');
       return;
     }
@@ -247,6 +280,7 @@ const NewEvaluation: React.FC = () => {
         questionSetIds: selectedQuestionSets,
         evaluators,
         dueDate,
+        requestKey: requestKeyRef.current,
       });
 
       await logActivity(
@@ -400,7 +434,19 @@ const NewEvaluation: React.FC = () => {
               {/* Timeline Type */}
               <div>
                 <h3 className="text-lg font-medium text-gray-900 dark:text-white">Timeline Type</h3>
-                <div className="mt-2 flex space-x-4">
+                <div className="mt-2 flex flex-wrap gap-4">
+                  <div className="flex items-center">
+                    <input
+                      type="radio"
+                      id="monthly"
+                      name="timelineType"
+                      value="Monthly"
+                      checked={timelineType === 'Monthly'}
+                      onChange={() => { setTimelineType('Monthly'); setTimelineId(''); }}
+                      className="h-4 w-4 text-violet-600 border-gray-300 dark:border-gray-500 focus:ring-violet-500"
+                    />
+                    <label htmlFor="monthly" className="ml-2 text-sm">Monthly Evaluation</label>
+                  </div>
                   <div className="flex items-center">
                     <input
                       type="radio"
@@ -439,47 +485,40 @@ const NewEvaluation: React.FC = () => {
                   </div>
                 </div>
 
-                {timelineType === 'Quarterly' && (
-                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium">Year</label>
-                      <input type="number" value={year} onChange={e => setYear(e.target.value)} className="mt-1 block w-full pl-3 pr-2 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium">Quarter</label>
-                      <select value={timelineId} onChange={e => setTimelineId(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white">
-                        <option value="">-- Select Timeline --</option>
-                        {quarterlyTimelines.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                )}
-
-                {timelineType === 'Onboarding' && (
-                  <div className="mt-4">
-                    <label className="block text-sm font-medium">Milestone</label>
-                    <select value={timelineId} onChange={e => setTimelineId(e.target.value)} className="mt-1 block w-full sm:max-w-xs pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white">
-                      <option value="">-- Select Milestone --</option>
-                      {onboardingTimelines.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="evaluation-year" className="block text-sm font-medium">Year</label>
+                    <select
+                      id="evaluation-year"
+                      value={year}
+                      onChange={event => { setYear(event.target.value); setTimelineId(''); }}
+                      className="mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-base focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white sm:text-sm"
+                    >
+                      {yearOptions.map(option => <option key={option} value={option}>{option}</option>)}
                     </select>
                   </div>
-                )}
-
-                {timelineType === 'Annual' && (
-                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium">Year</label>
-                      <input type="number" value={year} onChange={e => setYear(e.target.value)} className="mt-1 block w-full pl-3 pr-2 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium">Annual Timeline</label>
-                      <select value={timelineId} onChange={e => setTimelineId(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white">
-                        <option value="">-- Select Timeline --</option>
-                        {annualTimelines.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                      </select>
-                    </div>
+                  <div>
+                    <label htmlFor="evaluation-timeline" className="block text-sm font-medium">
+                      {timelineType === 'Monthly' ? 'Month' : timelineType === 'Quarterly' ? 'Quarter' : timelineType === 'Onboarding' ? 'Onboarding Timeline' : 'Annual Timeline'}
+                    </label>
+                    <select
+                      id="evaluation-timeline"
+                      value={timelineId}
+                      onChange={event => setTimelineId(event.target.value)}
+                      className="mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-base focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white sm:text-sm"
+                    >
+                      <option value="">-- Select Timeline --</option>
+                      {currentTimelineOptions.map(timeline => (
+                        <option key={timeline.id} value={timeline.id}>
+                          {timeline.periodLabel} ({timeline.rolloutDate.toLocaleDateString()} – {timeline.endDate.toLocaleDateString()})
+                        </option>
+                      ))}
+                    </select>
+                    {currentTimelineOptions.length === 0 && (
+                      <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">No timeline is available for this type and year.</p>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
 
               {/* Question Sets */}

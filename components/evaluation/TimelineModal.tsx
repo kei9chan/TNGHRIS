@@ -11,7 +11,7 @@ interface TimelineModalProps {
   onSave: (timeline: EvaluationTimeline) => void;
 }
 
-const timelineTypes = ['Quarterly', 'Onboarding', 'Annual', 'Custom'];
+const timelineTypes: EvaluationTimeline['type'][] = ['Monthly', 'Quarterly', 'Annual', 'Onboarding', 'Custom'];
 
 const TimelineModal: React.FC<TimelineModalProps> = ({ isOpen, onClose, timeline, onSave }) => {
   const [current, setCurrent] = useState<Partial<EvaluationTimeline>>(timeline || {});
@@ -19,7 +19,7 @@ const TimelineModal: React.FC<TimelineModalProps> = ({ isOpen, onClose, timeline
   useEffect(() => {
     setCurrent(timeline || {
         name: '',
-        type: 'Quarterly',
+        type: 'Monthly',
         rolloutDate: new Date(),
         endDate: new Date(),
         status: TimelineStatus.Draft,

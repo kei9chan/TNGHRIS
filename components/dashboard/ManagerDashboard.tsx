@@ -1485,6 +1485,24 @@ const ManagerDashboard: React.FC = () => {
         }).filter(Boolean);
         items.push(...evaluationItems);
 
+        evaluationsToPerform
+            .filter(evaluation => evaluation.targetEmployeeIds.includes(employeeProfileId || user.id))
+            .forEach(evaluation => {
+                const deadline = evaluation.dueDate
+                    || evaluationTimelines.find((timeline: any) => timeline.id === evaluation.timelineId)?.endDate
+                    || evaluation.createdAt;
+                items.push({
+                    id: `eval-subject-${evaluation.id}`,
+                    icon: <AcademicCapIcon {...iconProps} />,
+                    title: 'My Evaluation Pending',
+                    subtitle: `"${evaluation.name}" is awaiting completion.`,
+                    date: `Due: ${new Date(deadline).toLocaleDateString()}`,
+                    sortDate: deadline,
+                    link: '/evaluation/reviews',
+                    colorClass: 'bg-indigo-500',
+                });
+            });
+
         const parseDateValue = (value: any): Date | null => {
             if (!value) return null;
             if (value instanceof Date) {

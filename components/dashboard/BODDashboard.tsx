@@ -1137,6 +1137,21 @@ const BODDashboard: React.FC = () => {
             return null;
         }).filter(Boolean);
         allItems.push(...evaluationItems);
+        evaluationsToPerform
+            .filter(evaluation => evaluation.targetEmployeeIds.includes(employeeProfileId || user.id))
+            .forEach(evaluation => {
+                const deadline = evaluation.dueDate || evaluation.createdAt;
+                allItems.push({
+                    id: `eval-subject-${evaluation.id}`,
+                    icon: <AcademicCapIcon {...iconProps} />,
+                    title: 'My Evaluation Pending',
+                    subtitle: `"${evaluation.name}" is awaiting completion.`,
+                    date: `Due: ${new Date(deadline).toLocaleDateString()}`,
+                    sortDate: deadline,
+                    link: '/evaluation/reviews',
+                    colorClass: 'bg-indigo-500',
+                });
+            });
 
         assignedTickets.forEach(ticket => {
             const sortDate = ticket.assignedAt || ticket.createdAt;

@@ -127,6 +127,7 @@ export type CreateEvaluationCycleInput = {
   questionSetIds: string[];
   dueDate: Date | string;
   evaluators: EvaluatorConfig[];
+  requestKey: string;
 };
 
 /**
@@ -180,6 +181,7 @@ export const createEvaluationCycle = async (input: CreateEvaluationCycleInput): 
       is_anonymous: !!evaluator.isAnonymous,
       exclude_subject: evaluator.excludeSubject ?? true,
     })),
+    p_request_key: input.requestKey,
   });
 
   if (error) throw new Error(error.message || 'Failed to create evaluation.');
@@ -249,7 +251,6 @@ export const fetchEvaluationTimelines = async (): Promise<EvaluationTimeline[]> 
 
 export const saveEvaluationTimeline = async (timeline: Partial<EvaluationTimeline>): Promise<EvaluationTimeline> => {
   const payload = {
-    business_unit_id: timeline.businessUnitId,
     name: timeline.name,
     type: timeline.type,
     rollout_date: timeline.rolloutDate ? new Date(timeline.rolloutDate).toISOString().split('T')[0] : null,

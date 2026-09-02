@@ -1953,7 +1953,7 @@ export interface EvaluationTimeline {
   id: string;
   businessUnitId: string;
   name: string;
-  type: 'Quarterly' | 'Annual' | 'Onboarding' | 'Custom';
+  type: 'Monthly' | 'Quarterly' | 'Annual' | 'Onboarding' | 'Custom';
   rolloutDate: Date;
   endDate: Date;
   status: TimelineStatus;

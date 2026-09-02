@@ -74,6 +74,7 @@ const Timelines: React.FC = () => {
     setIsModalOpen(false);
     setSelectedTimeline(null);
     await loadTimelines();
+    window.dispatchEvent(new Event('evaluation-timelines-changed'));
   };
 
   const handleDelete = async (timelineId: string) => {

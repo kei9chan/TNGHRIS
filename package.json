@@ -23,6 +23,7 @@
     "test:pan-workflow": "node tests/panWorkflowSmokeTest.mjs",
     "test:pan-redesign": "node tests/panTemplateRedesignSmokeTest.mjs",
     "test:evaluation-workflow": "node tests/evaluationWorkflowSmokeTest.mjs",
+    "test:evaluation-timeline-group-results": "node tests/evaluationTimelineGroupResultsSmokeTest.mjs",
     "test:lifecycle-awards": "node tests/offboardingLeaveAwardsSmokeTest.mjs",
     "test:focused-repairs": "node tests/hrisFocusedRepairSmokeTest.mjs",
     "test:coe-discipline": "node tests/coeDisciplineBulkRepairSmokeTest.mjs",

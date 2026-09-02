@@ -1547,6 +1547,26 @@ const EmployeeDashboard: React.FC = () => {
             }
         });
 
+        evaluationsToPerform
+            .filter(evaluation => evaluation.targetEmployeeIds.includes(employeeProfileId || user.id))
+            .forEach(evaluation => {
+                const deadline = evaluation.dueDate
+                    || evaluationTimelines.find((timeline: any) => timeline.id === evaluation.timelineId)?.endDate
+                    || new Date(evaluation.createdAt.getTime() + 14 * 24 * 60 * 60 * 1000);
+                const isOverdue = new Date() > new Date(deadline);
+                items.push({
+                    id: `eval-subject-${evaluation.id}`,
+                    icon: <AcademicCapIcon {...iconProps} />,
+                    title: 'My Evaluation Pending',
+                    subtitle: `${isOverdue ? '⚠️ OVERDUE: ' : ''}${evaluation.name} is awaiting completion.`,
+                    date: `Due: ${new Date(deadline).toLocaleDateString()}`,
+                    sortDate: deadline,
+                    link: '/evaluation/reviews',
+                    colorClass: isOverdue ? 'bg-red-500' : 'bg-indigo-500',
+                    priority: isOverdue ? 0 : 2,
+                });
+            });
+
         // Resignations returned-for-edits surfaced via supabaseNotifications
 
         assignedTickets.forEach(ticket => {

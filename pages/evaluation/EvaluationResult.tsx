@@ -11,6 +11,8 @@ import { Evaluation, EvaluationSubmission, User, EvaluationQuestion, Role, Permi
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { hasEvaluationOversightAccess, isEvaluationSubject } from '../../utils/evaluationAccess';
+import EvaluationResultSummary, { EvaluationCategoryScore } from '../../components/evaluation/EvaluationResultSummary';
+import { downloadEvaluationResultPdf } from '../../services/evaluationResultPdf';
 
 const ArrowLeftIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>;
 const ChevronDownIcon = ({ className }: { className?: string }) => <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 transition-transform ${className}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>;
@@ -110,6 +112,7 @@ const EvaluationResult: React.FC = () => {
     const { can } = usePermissions();
 
     const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+    const [detailsMode, setDetailsMode] = useState<'summary' | 'full'>('summary');
     const [selectedUserForDetails, setSelectedUserForDetails] = useState<User | null>(null);
     const [evaluation, setEvaluation] = useState<Evaluation | null>(null);
     const [submissions, setSubmissions] = useState<EvaluationSubmission[]>([]);
@@ -118,6 +121,7 @@ const EvaluationResult: React.FC = () => {
     const [allUsers, setAllUsers] = useState<User[]>([]);
     const [businessUnits, setBusinessUnits] = useState<Array<{ id: string; name: string }>>([]);
     const [departments, setDepartments] = useState<Array<{ id: string; name: string }>>([]);
+    const [questionSets, setQuestionSets] = useState<Array<{ id: string; name: string; description: string }>>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [isSupabaseEvaluation, setIsSupabaseEvaluation] = useState(false);
@@ -188,6 +192,7 @@ const EvaluationResult: React.FC = () => {
                         employeesRes,
                         buRes,
                         deptRes,
+                        questionSetsRes,
                     ] = await Promise.all([
                         supabase
                             .from('evaluation_submissions')
@@ -207,6 +212,9 @@ const EvaluationResult: React.FC = () => {
                             : Promise.resolve({ data: [], error: null }),
                         supabase.from('business_units').select('id, name'),
                         supabase.from('departments').select('id, name'),
+                        questionSetIds.length > 0
+                            ? supabase.from('evaluation_question_sets').select('id, name, description').in('id', questionSetIds)
+                            : Promise.resolve({ data: [], error: null }),
                     ]);
 
                     if (submissionsRes.error) throw submissionsRes.error;
@@ -214,6 +222,7 @@ const EvaluationResult: React.FC = () => {
                     if ((employeesRes as any).error) throw (employeesRes as any).error;
                     if (buRes.error) throw buRes.error;
                     if (deptRes.error) throw deptRes.error;
+                    if ((questionSetsRes as any).error) throw (questionSetsRes as any).error;
 
                     const mappedSubmissions: EvaluationSubmission[] =
                         (submissionsRes.data || []).map((row: any) => ({
@@ -343,6 +352,11 @@ const EvaluationResult: React.FC = () => {
                     setAllUsers([...mappedEmployees, ...raterUsers]);
                     setBusinessUnits((buRes.data || []).map((b: any) => ({ id: b.id, name: b.name || 'Unknown BU' })));
                     setDepartments((deptRes.data || []).map((d: any) => ({ id: d.id, name: d.name || 'Unknown Dept' })));
+                    setQuestionSets(((questionSetsRes as any).data || []).map((set: any) => ({
+                        id: set.id,
+                        name: set.name || 'Evaluation category',
+                        description: set.description || '',
+                    })));
                     return;
                 }
 
@@ -403,6 +417,11 @@ const EvaluationResult: React.FC = () => {
     // --- PHASE 4: SCORING ENGINE ---
     const results = useMemo(() => {
         if (!evaluation) return { employeeScores: [], overallAverage: 0, questionAverages: {} };
+
+        const ratingQuestions = questions.filter(question => question.questionType === 'rating');
+        const categoryDefinitions = questionSets.length > 0
+            ? questionSets
+            : [{ id: 'all-ratings', name: 'Overall Rating Criteria', description: 'All scored evaluation questions.' }];
 
         const employeeScores = targetUsers.map(employee => {
             // Get all raw submissions for this employee
@@ -491,7 +510,60 @@ const EvaluationResult: React.FC = () => {
             // Logic: Disregard empty groups and divide by the weight that DID answer.
             const finalScore = usedWeight > 0 ? (weightedScoreSum / (usedWeight / 100)) : 0;
 
-            return { user: employee, finalScore, breakdown, usedWeight };
+            const categoryScores: EvaluationCategoryScore[] = categoryDefinitions.map(category => {
+                const questionIds = new Set(
+                    ratingQuestions
+                        .filter(question => category.id === 'all-ratings' || question.questionSetId === category.id)
+                        .map(question => question.id)
+                );
+                let categoryWeightedScore = 0;
+                let categoryUsedWeight = 0;
+
+                breakdown.forEach(item => {
+                    const submissionAverages = item.submissions.flatMap(submission => {
+                        const categoryRatings = submission.scores
+                            .filter(score => questionIds.has(score.questionId) && score.score !== undefined)
+                            .map(score => score.score as number);
+                        if (categoryRatings.length === 0) return [];
+                        return [categoryRatings.reduce((total, score) => total + score, 0) / categoryRatings.length];
+                    });
+                    if (submissionAverages.length === 0) return;
+                    const componentAverage = submissionAverages.reduce((total, score) => total + score, 0) / submissionAverages.length;
+                    categoryWeightedScore += componentAverage * (item.config.weight / 100);
+                    categoryUsedWeight += item.config.weight;
+                });
+
+                return {
+                    id: category.id,
+                    name: category.name,
+                    description: category.description || `${questionIds.size} rating criteria`,
+                    score: categoryUsedWeight > 0 ? categoryWeightedScore / (categoryUsedWeight / 100) : 0,
+                    maxScore: 5,
+                    usedWeight: categoryUsedWeight,
+                };
+            }).filter(category => ratingQuestions.some(question => category.id === 'all-ratings' || question.questionSetId === category.id));
+
+            const employeeQuestionAverages = Object.fromEntries(ratingQuestions.map(question => {
+                const questionScores = submissionsForEmployee.flatMap(submission =>
+                    submission.scores
+                        .filter(score => score.questionId === question.id && score.score !== undefined)
+                        .map(score => score.score as number)
+                );
+                return [question.id, questionScores.length > 0
+                    ? questionScores.reduce((total, score) => total + score, 0) / questionScores.length
+                    : 0];
+            }));
+
+            return {
+                user: employee,
+                finalScore,
+                breakdown,
+                usedWeight,
+                categoryScores,
+                completedComponents: breakdown.filter(item => item.submissions.length > 0).length,
+                totalComponents: breakdown.length,
+                questionAverages: employeeQuestionAverages,
+            };
         });
 
         const scoredEmployees = employeeScores.filter(es => es.usedWeight > 0);
@@ -509,7 +581,7 @@ const EvaluationResult: React.FC = () => {
         });
 
         return { employeeScores, overallAverage, overallAverageCount: scoredEmployees.length, questionAverages };
-    }, [evaluation, submissions, targetUsers, questions]);
+    }, [evaluation, submissions, targetUsers, questions, questionSets, allUsers, businessUnits, departments]);
     
     if (isLoading) return <div>Loading...</div>;
     if (loadError) return <div>{loadError}</div>;
@@ -526,6 +598,29 @@ const EvaluationResult: React.FC = () => {
 
     const selectedEmployeeScores = selectedUserForDetails ? results.employeeScores.find(es => es.user.id === selectedUserForDetails.id) : null;
 
+    const openDetails = (employee: User, mode: 'summary' | 'full') => {
+        setSelectedUserForDetails(employee);
+        setDetailsMode(mode);
+        setIsDetailsModalOpen(true);
+    };
+
+    const downloadSummary = async (employeeScores: typeof results.employeeScores[number]) => {
+        try {
+            await downloadEvaluationResultPdf({
+                evaluationName: evaluation.name,
+                employeeName: employeeScores.user.name,
+                score: employeeScores.finalScore,
+                usedWeight: employeeScores.usedWeight,
+                completedComponents: employeeScores.completedComponents,
+                totalComponents: employeeScores.totalComponents,
+                status: evaluation.acknowledgedBy?.includes(employeeScores.user.id) ? 'Acknowledged' : 'Pending',
+                categories: employeeScores.categoryScores,
+            });
+        } catch (pdfError: any) {
+            alert(pdfError?.message || 'Unable to download the evaluation PDF.');
+        }
+    };
+
     const renderAdminView = () => (
         <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -536,71 +631,23 @@ const EvaluationResult: React.FC = () => {
                 <Card title="Participants">{targetUsers.length} Employees</Card>
             </div>
 
-            <Card title="Employee Results">
-                <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                        <thead className="bg-gray-50 dark:bg-gray-700">
-                            <tr>
-                                <th className="px-4 py-3 text-left text-xs font-medium uppercase">Employee</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium uppercase">Final Score</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium uppercase w-1/3">Performance</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium uppercase">Data Integrity</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium uppercase">Status</th>
-                                <th className="relative px-4 py-3"></th>
-                            </tr>
-                        </thead>
-                        <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                            {results.employeeScores.map(es => {
-                                const hasAcknowledged = evaluation.acknowledgedBy?.includes(es.user.id);
-                                return (
-                                <tr key={es.user.id}>
-                                    <td className="px-4 py-4 whitespace-nowrap font-medium">{es.user.name}</td>
-                                    <td className="px-4 py-4 whitespace-nowrap font-bold text-lg">{es.finalScore.toFixed(2)}</td>
-                                    <td className="px-4 py-4 whitespace-nowrap">
-                                        <div className="w-full bg-gray-200 rounded-full h-4 dark:bg-gray-600">
-                                            <div className="bg-indigo-600 h-4 rounded-full" style={{ width: `${(es.finalScore / 5) * 100}%` }}></div>
-                                        </div>
-                                    </td>
-                                    <td className="px-4 py-4 whitespace-nowrap text-sm">
-                                        {es.usedWeight < 100 ? (
-                                            <span className="text-yellow-600 dark:text-yellow-400 font-semibold" title="Score is calculated based on partial data">Based on {es.usedWeight}% Weight</span>
-                                        ) : (
-                                            <span className="text-green-600 dark:text-green-400">Complete (100%)</span>
-                                        )}
-                                    </td>
-                                    <td className="px-4 py-4 whitespace-nowrap text-sm">
-                                        {hasAcknowledged ? (
-                                            <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300">
-                                                Acknowledged
-                                            </span>
-                                        ) : (
-                                            <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300">
-                                                Pending
-                                            </span>
-                                        )}
-                                    </td>
-                                    <td className="px-4 py-4 whitespace-nowrap text-right">
-                                        <Button size="sm" onClick={() => { setSelectedUserForDetails(es.user); setIsDetailsModalOpen(true); }}>View Details</Button>
-                                    </td>
-                                </tr>
-                            )})}
-                        </tbody>
-                    </table>
-                </div>
-            </Card>
-            
-            <Card title="Question Analysis">
-                <ul className="space-y-4">
-                    {questions.filter(q => q.questionType === 'rating').map(q => (
-                        <li key={q.id}>
-                            <div className="flex justify-between items-center">
-                                <span className="font-medium">{q.title}</span>
-                                <span className="font-bold text-indigo-600 dark:text-indigo-400">{results.questionAverages[q.id]?.toFixed(2) || 'N/A'}</span>
-                            </div>
-                        </li>
-                    ))}
-                </ul>
-            </Card>
+            <div className="space-y-5">
+                {results.employeeScores.map(employeeScores => (
+                    <EvaluationResultSummary
+                        key={employeeScores.user.id}
+                        employeeName={employeeScores.user.name}
+                        score={employeeScores.finalScore}
+                        usedWeight={employeeScores.usedWeight}
+                        completedComponents={employeeScores.completedComponents}
+                        totalComponents={employeeScores.totalComponents}
+                        status={evaluation.acknowledgedBy?.includes(employeeScores.user.id) ? 'Acknowledged' : 'Pending'}
+                        categories={employeeScores.categoryScores}
+                        onViewDetails={() => openDetails(employeeScores.user, 'summary')}
+                        onViewFull={() => openDetails(employeeScores.user, 'full')}
+                        onDownloadPdf={employeeScores.usedWeight > 0 ? () => void downloadSummary(employeeScores) : undefined}
+                    />
+                ))}
+            </div>
         </div>
     );
     
@@ -612,23 +659,22 @@ const EvaluationResult: React.FC = () => {
         if (!myScores) return <Card><p>Your results could not be found.</p></Card>;
 
         return (
-            <Card title={`My Results for: ${evaluation.name}`}>
-                <div className="text-center mb-6">
-                    <p className="text-gray-500">Your Final Score</p>
-                    <p className="text-5xl font-bold text-indigo-600 dark:text-indigo-400">{myScores.finalScore.toFixed(2)}</p>
-                    {myScores.usedWeight < 100 && <p className="text-xs text-yellow-500 mt-2">Note: Based on {myScores.usedWeight}% of weighted evaluators.</p>}
-                </div>
-                 <div className="mb-6">
-                     <h4 className="font-semibold mb-4 text-lg border-b pb-2 dark:border-gray-700">Performance Breakdown</h4>
-                     <div className="space-y-4">
-                         {myScores.breakdown.map(item => (
-                                     <BreakdownItem key={item.config.id} item={item} businessUnits={businessUnits} departments={departments} users={allUsers} />
-                                 ))}
-                             </div>
-                         </div>
-                 
+            <div className="space-y-6">
+                <EvaluationResultSummary
+                    employeeName={myScores.user.name}
+                    score={myScores.finalScore}
+                    usedWeight={myScores.usedWeight}
+                    completedComponents={myScores.completedComponents}
+                    totalComponents={myScores.totalComponents}
+                    status={hasAcknowledged ? 'Acknowledged' : 'Pending'}
+                    categories={myScores.categoryScores}
+                    onViewDetails={() => openDetails(myScores.user, 'summary')}
+                    onViewFull={() => openDetails(myScores.user, 'full')}
+                    onDownloadPdf={myScores.usedWeight > 0 ? () => void downloadSummary(myScores) : undefined}
+                />
                 {isEvaluatedEmployee && isEmployeeVisible && (
-                    <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700 text-center">
+                    <Card>
+                    <div className="text-center">
                         {hasAcknowledged ? (
                              <div className="flex items-center justify-center text-green-600 dark:text-green-400 font-semibold">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
@@ -640,8 +686,9 @@ const EvaluationResult: React.FC = () => {
                             </Button>
                         )}
                     </div>
+                    </Card>
                 )}
-            </Card>
+            </div>
         );
     };
 
@@ -675,7 +722,7 @@ const EvaluationResult: React.FC = () => {
                 <Modal 
                     isOpen={isDetailsModalOpen} 
                     onClose={() => setIsDetailsModalOpen(false)} 
-                    title={`Detailed Scores for ${selectedUserForDetails.name}`}
+                    title={`${detailsMode === 'full' ? 'Full Evaluation' : 'Detailed Summary'} for ${selectedUserForDetails.name}`}
                     size="4xl"
                 >
                     {selectedEmployeeScores ? (
@@ -689,11 +736,25 @@ const EvaluationResult: React.FC = () => {
                             </div>
                             
                             <div className="space-y-6">
-                                <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-200 border-b dark:border-gray-600 pb-2">Breakdown by Component</h4>
+                                <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-200 border-b dark:border-gray-600 pb-2">Breakdown by Evaluator Component</h4>
                                  {selectedEmployeeScores.breakdown.map(item => (
-                                    <BreakdownItem key={item.config.id} item={item} businessUnits={businessUnits} departments={departments} />
+                                    <BreakdownItem key={item.config.id} item={item} businessUnits={businessUnits} departments={departments} users={allUsers} />
                                 ))}
                             </div>
+                            {detailsMode === 'full' && (
+                                <div className="space-y-3">
+                                    <h4 className="border-b pb-2 text-lg font-semibold text-gray-800 dark:border-gray-600 dark:text-gray-200">Full Question Analysis</h4>
+                                    {questions.filter(question => question.questionType === 'rating').map(question => (
+                                        <div key={question.id} className="flex items-start justify-between gap-4 rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
+                                            <div>
+                                                <p className="font-medium text-slate-900 dark:text-white">{question.title}</p>
+                                                {question.description && <p className="mt-1 text-xs text-slate-500">{question.description}</p>}
+                                            </div>
+                                            <span className="shrink-0 font-bold text-violet-700 dark:text-violet-300">{selectedEmployeeScores.questionAverages[question.id] > 0 ? selectedEmployeeScores.questionAverages[question.id].toFixed(2) : 'Pending'} / 5.0</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <p>No score details available.</p>

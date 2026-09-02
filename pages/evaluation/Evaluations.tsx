@@ -225,6 +225,9 @@ const Evaluations: React.FC = () => {
             }
 
             const isTarget = evaluation.targetEmployeeIds.includes(employeeProfileId || user.id);
+            if (isTarget && evaluation.status === 'InProgress') {
+                return true;
+            }
             if (isTarget && evaluation.status === 'Completed' && evaluation.isEmployeeVisible) {
                 return true;
             }

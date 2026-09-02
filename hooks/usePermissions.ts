@@ -182,10 +182,6 @@ export const usePermissions = () => {
         // User cannot evaluate themselves unless it is a Self Evaluation (which is usually an Individual config pointing to them)
         // However, the 'excludeSubject' flag in Group configs handles the self-exclusion.
 
-        if (subjectId === user.id && evaluation.targetEmployeeIds.includes(user.id)) {
-            return true;
-        }
-
         return evaluation.evaluators.some(config => {
             // 1. Individual Assignment
             if (config.type === EvaluatorType.Individual) {
