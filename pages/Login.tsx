@@ -38,6 +38,9 @@ const Login: React.FC = () => {
     if (err.code === 'account_inactive') {
       return 'Your HRIS account is inactive. Contact HR or an administrator if access should be restored.';
     }
+    if (err.code === 'network_unavailable') {
+      return 'The connection was interrupted. Please try signing in again.';
+    }
     return err.message || 'Invalid email or password. New accounts require HR approval.';
   };
 
@@ -46,8 +49,8 @@ const Login: React.FC = () => {
     const isActive = (user?.status || '').toString().toLowerCase() === 'active';
     if (user && isActive) {
       let mounted = true;
-      void supabase.auth.getUser().then(({ data }) => {
-        if (mounted) navigate(data.user?.user_metadata?.must_change_password ? '/reset-password' : '/dashboard');
+      void supabase.auth.getSession().then(({ data }) => {
+        if (mounted) navigate(data.session?.user.user_metadata?.must_change_password ? '/reset-password' : '/dashboard');
       });
       return () => { mounted = false; };
     }
@@ -93,8 +96,8 @@ const Login: React.FC = () => {
       console.log('[Login] login() returned:', loggedInUser);
 
       if (loggedInUser) {
-        const { data } = await supabase.auth.getUser();
-        navigate(data.user?.user_metadata?.must_change_password ? '/reset-password' : '/dashboard');
+        const { data } = await supabase.auth.getSession();
+        navigate(data.session?.user.user_metadata?.must_change_password ? '/reset-password' : '/dashboard');
       } else {
         // covers: wrong password, Supabase user not found,
         // or status not Active (if you add that gate in AuthContext)
@@ -125,8 +128,8 @@ const Login: React.FC = () => {
     try {
       const loggedInUser = await forceLogin(email, password);
       if (loggedInUser) {
-        const { data } = await supabase.auth.getUser();
-        navigate(data.user?.user_metadata?.must_change_password ? '/reset-password' : '/dashboard');
+        const { data } = await supabase.auth.getSession();
+        navigate(data.session?.user.user_metadata?.must_change_password ? '/reset-password' : '/dashboard');
       } else {
         setError('Invalid email or password.');
       }

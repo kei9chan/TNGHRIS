@@ -1,7 +1,7 @@
 // src/context/AuthContext.tsx
 import React, { createContext, useCallback, useEffect, useState, ReactNode } from 'react';
 import { User, Role } from '../types';
-import { supabase } from '../services/supabaseClient';
+import { isTransientNetworkError, retryTransientSupabaseRead, supabase } from '../services/supabaseClient';
 
 // Keep this so existing imports don't break.
 export class DeviceConflictError extends Error {
@@ -102,11 +102,16 @@ const loadAppUserFromSupabase = async (
 ): Promise<User | null> => {
   if (!sbUser) return null;
 
-  const { data: bootstrapData, error } = await supabase.rpc('get_my_hris_bootstrap');
+  const { data: bootstrapData, error } = await retryTransientSupabaseRead(
+    () => supabase.rpc('get_my_hris_bootstrap')
+  );
   const data = bootstrapData as any;
 
   if (error) {
     console.error('AuthProvider: failed to load HRIS profile', error);
+    if (isTransientNetworkError(error)) {
+      throw new SupabaseAuthError('The authorization service could not be reached. Please try again.', 'network_unavailable');
+    }
     throw new SupabaseAuthError(`Unable to load your HRIS access profile: ${error.message}`, 'rbac_profile_error');
   }
 
@@ -127,8 +132,13 @@ const loadAppUserFromSupabase = async (
     throw new SupabaseAuthError(`Unknown or inactive HRIS role: ${data.role || 'none'}`, 'invalid_role');
   }
 
-  const { data: rbacData, error: rbacError } = await supabase.rpc('get_my_effective_rbac');
+  const { data: rbacData, error: rbacError } = await retryTransientSupabaseRead(
+    () => supabase.rpc('get_my_effective_rbac')
+  );
   if (rbacError) {
+    if (isTransientNetworkError(rbacError)) {
+      throw new SupabaseAuthError('The authorization service could not be reached. Please try again.', 'network_unavailable');
+    }
     throw new SupabaseAuthError(`Unable to resolve effective permissions: ${rbacError.message}`, 'rbac_resolver_error');
   }
   const effective = (rbacData || {}) as any;
@@ -199,7 +209,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
   const [loading, setLoading] = useState(true);
 
   const refreshUser = useCallback(async (): Promise<User | null> => {
-    const { data, error } = await supabase.auth.getUser();
+    const { data, error } = await retryTransientSupabaseRead(() => supabase.auth.getUser());
     if (error || !data.user) {
       if (!error) setUser(null);
       return null;
@@ -217,10 +227,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     const init = async () => {
       setLoading(true);
       console.log('[Auth] init: calling supabase.auth.getUser()');
-      const { data, error } = await supabase.auth.getUser();
+      const { data, error } = await retryTransientSupabaseRead(() => supabase.auth.getUser());
 
       if (error || !data.user) {
         console.log('[Auth] init: no Supabase user, user=null');
+        if (error && isTransientNetworkError(error)) setAuthorizationUnavailableNotice();
         if (mounted) {
           setUser(null);
           setLoading(false);
@@ -238,19 +249,28 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     init();
 
     // Keep auth state in sync if Supabase session changes
+    const pendingAuthTimers = new Set<number>();
     const { data: sub } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         console.log('[Auth] onAuthStateChange event:', event);
         if (!session?.user) {
           setUser(null);
           return;
         }
-        hydrateSupabaseUser(session.user as SupabaseUser, true);
+        // Supabase warns against starting client API calls inside this callback.
+        // Defer profile hydration until the auth event's internal lock is released.
+        const timerId = window.setTimeout(() => {
+          pendingAuthTimers.delete(timerId);
+          void hydrateSupabaseUser(session.user as SupabaseUser, true);
+        }, 0);
+        pendingAuthTimers.add(timerId);
       }
     );
 
     return () => {
       mounted = false;
+      pendingAuthTimers.forEach(timerId => window.clearTimeout(timerId));
+      pendingAuthTimers.clear();
       sub.subscription.unsubscribe();
     };
   }, []);
@@ -282,6 +302,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       setUser(null);
     } catch (err) {
       console.error('[Auth] hydrateSupabaseUser failed to load HRIS profile', err);
+      if (err instanceof SupabaseAuthError && err.code === 'network_unavailable') {
+        if (!preserveExisting) {
+          setAuthorizationUnavailableNotice();
+          setUser(null);
+        }
+        return;
+      }
       if (err instanceof SupabaseAuthError && err.code === 'account_inactive') {
         setAccountInactiveNotice();
       } else if (err instanceof SupabaseAuthError && (
@@ -309,7 +336,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       if (checking || disposed) return;
       checking = true;
       try {
-        const { data, error } = await supabase.rpc('get_my_hris_bootstrap');
+        const { data, error } = await retryTransientSupabaseRead(
+          () => supabase.rpc('get_my_hris_bootstrap')
+        );
         if (error) {
           console.warn('[Auth] active-session recheck failed', error);
           return;

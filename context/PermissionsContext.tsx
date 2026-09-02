@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from 'react';
-import { supabase } from '../services/supabaseClient';
+import { isTransientNetworkError, retryTransientSupabaseRead, supabase } from '../services/supabaseClient';
 import { Resource, Permission, AccessScope } from '../types';
 import { useAuth } from '../hooks/useAuth';
 
@@ -23,6 +23,7 @@ interface PermissionsContextType {
     effectiveRbac: EffectiveRbac | null;
     loadingPermissions: boolean;
     authorizationError: string | null;
+    authorizationTransient: boolean;
     refreshPermissions: () => Promise<void>;
 }
 
@@ -31,6 +32,7 @@ export const PermissionsContext = createContext<PermissionsContextType>({
     effectiveRbac: null,
     loadingPermissions: true,
     authorizationError: null,
+    authorizationTransient: false,
     refreshPermissions: async () => {},
 });
 
@@ -48,17 +50,23 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     const [effectiveRbac, setEffectiveRbac] = useState<EffectiveRbac | null>(null);
     const [loadingPermissions, setLoadingPermissions] = useState(true);
     const [authorizationError, setAuthorizationError] = useState<string | null>(null);
+    const [authorizationTransient, setAuthorizationTransient] = useState(false);
     const hasLoadedRef = useRef(false);
+    const hasAuthorizedSnapshotRef = useRef(false);
 
     const refreshPermissions = useCallback(async () => {
         if (!hasLoadedRef.current) setLoadingPermissions(true);
         setAuthorizationError(null);
+        setAuthorizationTransient(false);
         try {
-            const { data, error } = await supabase.rpc('get_my_effective_rbac');
+            const { data, error } = await retryTransientSupabaseRead(
+                () => supabase.rpc('get_my_effective_rbac')
+            );
             if (error) throw error;
             const payload = (data || {}) as any;
             if (!payload.authorized) {
                 const diagnostic = payload.diagnostic || 'No active approved role assignment was found.';
+                hasAuthorizedSnapshotRef.current = false;
                 setEffectiveRbac(emptyEffective(diagnostic));
                 setAuthorizationError(diagnostic);
                 return;
@@ -76,9 +84,23 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
                 cacheVersion: payload.cacheVersion,
                 selfServiceInherited: payload.selfServiceInherited === true,
             });
+            hasAuthorizedSnapshotRef.current = true;
         } catch (err: any) {
             const diagnostic = err?.message || 'Authorization could not be loaded. Access is denied until the problem is resolved.';
             console.error('Failed to load effective RBAC:', err);
+            if (isTransientNetworkError(err)) {
+                if (hasAuthorizedSnapshotRef.current) {
+                    console.warn('Keeping the last verified RBAC snapshot during a temporary network failure.');
+                    setAuthorizationError(null);
+                    setAuthorizationTransient(false);
+                    return;
+                }
+                setEffectiveRbac(null);
+                setAuthorizationError('The authorization service could not be reached after several attempts.');
+                setAuthorizationTransient(true);
+                return;
+            }
+            hasAuthorizedSnapshotRef.current = false;
             setEffectiveRbac(emptyEffective(diagnostic));
             setAuthorizationError(diagnostic);
         } finally {
@@ -90,8 +112,10 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     useEffect(() => {
         if (!user) {
             hasLoadedRef.current = false;
+            hasAuthorizedSnapshotRef.current = false;
             setEffectiveRbac(null);
             setAuthorizationError(null);
+            setAuthorizationTransient(false);
             setLoadingPermissions(false);
             return;
         }
@@ -103,11 +127,15 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
 
         let disposed = false;
         let refreshing = false;
-        const refreshAccess = async () => {
+        const refreshAccess = async (includeProfile = false) => {
             if (disposed || refreshing) return;
             refreshing = true;
             try {
-                await Promise.all([refreshPermissions(), refreshUser()]);
+                if (includeProfile) {
+                    await Promise.all([refreshPermissions(), refreshUser()]);
+                } else {
+                    await refreshPermissions();
+                }
             } catch (error) {
                 console.warn('Unable to refresh effective access.', error);
             } finally {
@@ -125,21 +153,22 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
                     table: 'rbac_cache_versions',
                     filter: `user_id=eq.${user.id}`,
                 },
-                () => void refreshAccess()
+                () => void refreshAccess(true)
             )
             .subscribe();
 
         const handleVisibility = () => {
-            if (document.visibilityState === 'visible') void refreshAccess();
+            if (document.visibilityState === 'visible') void refreshAccess(false);
         };
-        const intervalId = window.setInterval(() => void refreshAccess(), 30_000);
-        window.addEventListener('focus', refreshAccess);
+        const handleFocus = () => void refreshAccess(false);
+        const intervalId = window.setInterval(() => void refreshAccess(false), 30_000);
+        window.addEventListener('focus', handleFocus);
         document.addEventListener('visibilitychange', handleVisibility);
 
         return () => {
             disposed = true;
             window.clearInterval(intervalId);
-            window.removeEventListener('focus', refreshAccess);
+            window.removeEventListener('focus', handleFocus);
             document.removeEventListener('visibilitychange', handleVisibility);
             void supabase.removeChannel(channel);
         };
@@ -155,6 +184,7 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
             effectiveRbac,
             loadingPermissions,
             authorizationError,
+            authorizationTransient,
             refreshPermissions,
         }}>
             {children}

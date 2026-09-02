@@ -155,7 +155,7 @@ const routePermissions: Array<[string, Resource, Permission]> = [
 const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }) => {
   const { user, loading } = useAuth();
   const { can } = usePermissions();
-  const { effectiveRbac, loadingPermissions, authorizationError } = usePermissionsContext();
+  const { effectiveRbac, loadingPermissions, authorizationError, authorizationTransient, refreshPermissions } = usePermissionsContext();
   const location = useLocation();
 
   const legacyRequestId = getApprovalRequestId(location.search);
@@ -190,6 +190,25 @@ const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }
     return (
       <div className="flex h-screen items-center justify-center" aria-label="Loading authorization">
         <div className="h-16 w-16 animate-spin rounded-full border-b-2 border-t-2 border-indigo-500"></div>
+      </div>
+    );
+  }
+
+  if (authorizationTransient) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-100 p-6 dark:bg-slate-950">
+        <div className="max-w-lg rounded-xl border border-amber-200 bg-white p-6 shadow-lg dark:border-amber-900 dark:bg-slate-900">
+          <h1 className="text-xl font-bold text-amber-700 dark:text-amber-300">Connection interrupted</h1>
+          <p className="mt-2 text-gray-700 dark:text-slate-200">
+            {authorizationError || 'The authorization service could not be reached.'}
+          </p>
+          <p className="mt-3 text-sm text-gray-500 dark:text-slate-400">
+            Your role has not been changed. Access remains blocked until authorization can be verified.
+          </p>
+          <button type="button" className="mt-4 font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => void refreshPermissions()}>
+            Retry connection
+          </button>
+        </div>
       </div>
     );
   }
