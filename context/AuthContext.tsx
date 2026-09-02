@@ -2,6 +2,7 @@
 import React, { createContext, useCallback, useEffect, useState, ReactNode } from 'react';
 import { User, Role } from '../types';
 import { isTransientNetworkError, retryTransientSupabaseRead, supabase } from '../services/supabaseClient';
+import { fetchEffectiveRbacSnapshot } from '../services/rbacService';
 
 // Keep this so existing imports don't break.
 export class DeviceConflictError extends Error {
@@ -78,7 +79,7 @@ const setAuthNotice = (notice: AuthNotice) => {
 const setHrPendingNotice = () => setAuthNotice('hr_pending');
 const setAccountInactiveNotice = () => setAuthNotice('account_inactive');
 const setAuthorizationUnavailableNotice = () => setAuthNotice('authorization_unavailable');
-const ACTIVE_SESSION_RECHECK_MS = 30_000;
+const ACTIVE_SESSION_RECHECK_MS = 5 * 60_000;
 const profileHydrationInFlight = new Map<string, Promise<User | null>>();
 
 /**
@@ -102,9 +103,10 @@ const loadAppUserFromSupabase = async (
 ): Promise<User | null> => {
   if (!sbUser) return null;
 
-  const { data: bootstrapData, error } = await retryTransientSupabaseRead(
-    () => supabase.rpc('get_my_hris_bootstrap')
-  );
+  const [{ data: bootstrapData, error }, { data: rbacData, error: rbacError }] = await Promise.all([
+    retryTransientSupabaseRead(() => supabase.rpc('get_my_hris_bootstrap')),
+    fetchEffectiveRbacSnapshot(sbUser.id),
+  ]);
   const data = bootstrapData as any;
 
   if (error) {
@@ -132,9 +134,6 @@ const loadAppUserFromSupabase = async (
     throw new SupabaseAuthError(`Unknown or inactive HRIS role: ${data.role || 'none'}`, 'invalid_role');
   }
 
-  const { data: rbacData, error: rbacError } = await retryTransientSupabaseRead(
-    () => supabase.rpc('get_my_effective_rbac')
-  );
   if (rbacError) {
     if (isTransientNetworkError(rbacError)) {
       throw new SupabaseAuthError('The authorization service could not be reached. Please try again.', 'network_unavailable');

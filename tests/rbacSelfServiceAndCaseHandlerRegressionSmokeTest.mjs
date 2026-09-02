@@ -45,7 +45,7 @@ assert.match(capabilityPolicyMigration, /using \(false\)/);
 assert.match(authContext, /refreshUser: \(\) => Promise<User \| null>/);
 assert.match(authContext, /const refreshUser = useCallback/);
 assert.match(permissionsContext, /table: 'rbac_cache_versions'/);
-assert.match(permissionsContext, /window\.setInterval\(\(\) => void refreshAccess\(false\), 30_000\)/);
+assert.match(permissionsContext, /window\.setInterval\(\(\) => void refreshAccess\(false\), 5 \* 60_000\)/);
 assert.match(permissionHook, /canRequest: can\(resource, Permission\.Create\) && workflowCan/);
 assert.match(permissionHook, /can\('OT', Permission\.Create\) && workflowCan\('Overtime'/);
 

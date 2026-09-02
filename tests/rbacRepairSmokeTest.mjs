@@ -9,6 +9,9 @@ const types = read('types.ts');
 const auth = read('context/AuthContext.tsx');
 const permissions = read('context/PermissionsContext.tsx');
 const approvals = read('hooks/useApprovals.ts');
+const rbacService = read('services/rbacService.ts');
+const timeApprovalService = read('services/timeApprovalService.ts');
+const manpowerService = read('services/manpowerService.ts');
 const app = read('App.tsx');
 const signUp = read('pages/SignUp.tsx');
 const selfRegistrationMigration = read('supabase/migrations/20260823213000_secure_self_registration_rbac.sql');
@@ -37,7 +40,8 @@ for (const file of walk(root)) {
 }
 
 assert.match(auth, /get_my_hris_bootstrap/);
-assert.match(auth, /get_my_effective_rbac/);
+assert.match(auth, /fetchEffectiveRbacSnapshot/);
+assert.match(rbacService, /get_my_effective_rbac/);
 assert.doesNotMatch(auth, /\?\?\s*Role\.Employee/, 'unknown roles must not fall back to Employee');
 assert.match(permissions, /authorized:\s*false/);
 assert.match(permissions, /setAuthorizationError/);
@@ -45,8 +49,10 @@ assert.match(app, /Authorization unavailable/);
 assert.match(app, /routePermissions/);
 assert.match(approvals, /approvalError/);
 assert.doesNotMatch(approvals, /isGlobalHrAuthority/, 'approval queues must not be granted by a broad global-role shortcut');
-assert.match(approvals, /get_my_pending_time_approval_ids/);
-assert.match(approvals, /get_my_pending_manpower_approval_ids/);
+assert.match(approvals, /fetchMyPendingTimeApprovalAssignments/);
+assert.match(timeApprovalService, /get_my_pending_time_approval_ids/);
+assert.match(approvals, /fetchMyPendingManpowerApprovalIds/);
+assert.match(manpowerService, /get_my_pending_manpower_approval_ids/);
 
 assert.doesNotMatch(signUp, /roleOptions\.map|name=["']role["']/, 'public signup must not expose authorization roles');
 assert.match(signUp, /p_role:\s+Role\.Employee/);

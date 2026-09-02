@@ -6,6 +6,7 @@ const migration = read('supabase/migrations/20260824120000_conditional_time_appr
 const bulkRepair = read('supabase/migrations/20260824130000_repair_conditional_bulk_approvals.sql');
 const assignedManagerRepair = read('supabase/migrations/20260825123000_repair_rbac_editor_and_assigned_manager_access.sql');
 const approvals = read('hooks/useApprovals.ts');
+const timeApprovalService = read('services/timeApprovalService.ts');
 const settings = read('pages/admin/Settings.tsx');
 const service = read('services/approverConfigService.ts');
 const leave = read('pages/payroll/Leave.tsx');
@@ -28,7 +29,8 @@ assert.match(bulkRepair, /a\.request_type = v_request_type/);
 assert.match(bulkRepair, /public\.process_time_request_approval/);
 assert.match(bulkRepair, /private\.is_direct_reporting_manager/);
 assert.match(bulkRepair, /Pending final approval by its assigned BOD approver/);
-assert.match(approvals, /get_my_pending_time_approval_ids/);
+assert.match(approvals, /fetchMyPendingTimeApprovalAssignments/);
+assert.match(timeApprovalService, /get_my_pending_time_approval_ids/);
 assert.match(assignedManagerRepair, /time_request_approval_assignments/);
 assert.match(assignedManagerRepair, /is_active_time_request_approver/);
 assert.doesNotMatch(approvals, /\.eq\('role', Role\.BOD\)/);

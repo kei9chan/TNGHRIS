@@ -29,6 +29,7 @@ import { mergePanParticulars } from '../../services/panUtils';
 import { resolveEmployeePosition } from '../../services/employeeProfile';
 import COEQueue from './COEQueue';
 import { approveManpowerRequest, fetchMyPendingManpowerApprovalIds, rejectManpowerRequest } from '../../services/manpowerService';
+import { fetchMyPendingTimeApprovalAssignments } from '../../services/timeApprovalService';
 
 
 const InboxIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" /></svg>;
@@ -643,9 +644,7 @@ const ManagerDashboard: React.FC = () => {
             const emptyRequestId = '00000000-0000-0000-0000-000000000000';
             let assignedTimeRows: Array<{ request_type: string; request_id: string }> = [];
             try {
-                const { data, error } = await supabase.rpc('get_my_pending_time_approval_ids');
-                if (error) throw error;
-                assignedTimeRows = (data || []).filter((row: any) => row.request_id);
+                assignedTimeRows = await fetchMyPendingTimeApprovalAssignments(user.id);
             } catch (error) {
                 console.error('Failed to load assigned time approvals', error);
             }
@@ -657,7 +656,7 @@ const ManagerDashboard: React.FC = () => {
             const assignedOtIds = assignedIds('overtime');
             let assignedManpowerIds: string[] = [];
             try {
-                assignedManpowerIds = await fetchMyPendingManpowerApprovalIds();
+                assignedManpowerIds = await fetchMyPendingManpowerApprovalIds(user.id);
             } catch (error) {
                 console.error('Failed to load assigned manpower approvals', error);
             }

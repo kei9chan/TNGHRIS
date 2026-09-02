@@ -5,9 +5,16 @@ const authContext = fs.readFileSync('context/AuthContext.tsx', 'utf8');
 const login = fs.readFileSync('pages/Login.tsx', 'utf8');
 const permissionsContext = fs.readFileSync('context/PermissionsContext.tsx', 'utf8');
 const supabaseClient = fs.readFileSync('services/supabaseClient.ts', 'utf8');
+const rbacService = fs.readFileSync('services/rbacService.ts', 'utf8');
+const readCache = fs.readFileSync('services/readCache.ts', 'utf8');
+const approvals = fs.readFileSync('hooks/useApprovals.ts', 'utf8');
 const app = fs.readFileSync('App.tsx', 'utf8');
 const migration = fs.readFileSync(
   'supabase/migrations/20260902023000_restore_dashboard_rpc_access.sql',
+  'utf8'
+);
+const performanceMigration = fs.readFileSync(
+  'supabase/migrations/20260902044442_optimize_dashboard_loading.sql',
   'utf8'
 );
 
@@ -21,6 +28,14 @@ assert.doesNotMatch(
 assert.match(login, /authorization_unavailable/);
 assert.match(supabaseClient, /retryTransientSupabaseRead/);
 assert.match(supabaseClient, /failed to fetch\|fetch failed/);
+assert.match(authContext, /Promise\.all\(\[/);
+assert.match(authContext, /fetchEffectiveRbacSnapshot/);
+assert.match(rbacService, /effective-rbac:/);
+assert.match(readCache, /cached\.promise/);
+assert.doesNotMatch(approvals, /reporteeIds\s*=\s*\[\]/);
+assert.match(approvals, /\}, \[user\?\.id\]\);/);
+assert.match(performanceMigration, /leave_requests_pending_manager_queue_idx/);
+assert.match(performanceMigration, /select request_type, request_id from assigned[\s\S]*union[\s\S]*select request_type, request_id from manager_queue/);
 assert.match(authContext, /window\.setTimeout\(\(\) => \{[\s\S]*hydrateSupabaseUser/);
 assert.match(
   authContext,

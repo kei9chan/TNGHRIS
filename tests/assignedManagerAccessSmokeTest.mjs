@@ -5,6 +5,7 @@ const read = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'ut
 const app = read('App.tsx');
 const approvalCenter = read('pages/ApprovalCenter.tsx');
 const approvals = read('hooks/useApprovals.ts');
+const timeApprovalService = read('services/timeApprovalService.ts');
 const links = read('services/approvalDeepLinks.ts');
 const userManagement = read('pages/admin/UserManagement.tsx');
 const accessModal = read('components/admin/UserRoleEditModal.tsx');
@@ -21,7 +22,8 @@ assert.match(approvalCenter, /<OTRequestModal/);
 assert.match(approvalCenter, /handleApproveWFH/);
 assert.match(approvalCenter, /handleLeaveApproval/);
 assert.match(approvalCenter, /handleApproveRejectOT/);
-assert.match(approvals, /rpc\('get_my_pending_time_approval_ids'\)/);
+assert.match(approvals, /fetchMyPendingTimeApprovalAssignments/);
+assert.match(timeApprovalService, /rpc\('get_my_pending_time_approval_ids'\)/);
 assert.doesNotMatch(approvals, /from\('time_request_approval_assignments'\)/);
 
 assert.match(repair, /private\.is_active_time_request_approver/);

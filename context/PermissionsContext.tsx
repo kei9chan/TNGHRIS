@@ -1,7 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from 'react';
-import { isTransientNetworkError, retryTransientSupabaseRead, supabase } from '../services/supabaseClient';
+import { isTransientNetworkError, supabase } from '../services/supabaseClient';
 import { Resource, Permission, AccessScope } from '../types';
 import { useAuth } from '../hooks/useAuth';
+import { fetchEffectiveRbacSnapshot } from '../services/rbacService';
 
 export interface EffectiveRbac {
     authorized: boolean;
@@ -54,14 +55,14 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     const hasLoadedRef = useRef(false);
     const hasAuthorizedSnapshotRef = useRef(false);
 
-    const refreshPermissions = useCallback(async () => {
+    const loadPermissions = useCallback(async (force = false) => {
         if (!hasLoadedRef.current) setLoadingPermissions(true);
         setAuthorizationError(null);
         setAuthorizationTransient(false);
         try {
-            const { data, error } = await retryTransientSupabaseRead(
-                () => supabase.rpc('get_my_effective_rbac')
-            );
+            const cacheKey = user?.authUserId || user?.id;
+            if (!cacheKey) return;
+            const { data, error } = await fetchEffectiveRbacSnapshot(cacheKey, force);
             if (error) throw error;
             const payload = (data || {}) as any;
             if (!payload.authorized) {
@@ -107,7 +108,9 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
             hasLoadedRef.current = true;
             setLoadingPermissions(false);
         }
-    }, []);
+    }, [user?.authUserId, user?.id]);
+
+    const refreshPermissions = useCallback(() => loadPermissions(true), [loadPermissions]);
 
     useEffect(() => {
         if (!user) {
@@ -119,8 +122,8 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
             setLoadingPermissions(false);
             return;
         }
-        refreshPermissions();
-    }, [user?.id, user?.permissionUpdatedAt?.getTime(), refreshPermissions]);
+        void loadPermissions(false);
+    }, [user?.id, user?.permissionUpdatedAt?.getTime(), loadPermissions]);
 
     useEffect(() => {
         if (!user?.id) return;
@@ -161,7 +164,7 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
             if (document.visibilityState === 'visible') void refreshAccess(false);
         };
         const handleFocus = () => void refreshAccess(false);
-        const intervalId = window.setInterval(() => void refreshAccess(false), 30_000);
+        const intervalId = window.setInterval(() => void refreshAccess(false), 5 * 60_000);
         window.addEventListener('focus', handleFocus);
         document.addEventListener('visibilitychange', handleVisibility);
 

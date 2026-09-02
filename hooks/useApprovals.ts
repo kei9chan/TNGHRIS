@@ -11,7 +11,12 @@ import {
     User
 } from '../types';
 import { getTimeApprovalReason } from '../utils/approvalPresentation';
-import { approveManpowerRequest, rejectManpowerRequest } from '../services/manpowerService';
+import {
+    approveManpowerRequest,
+    fetchMyPendingManpowerApprovalIds,
+    rejectManpowerRequest,
+} from '../services/manpowerService';
+import { fetchMyPendingTimeApprovalAssignments } from '../services/timeApprovalService';
 
 interface UseApprovalsOptions {
     user: User | null;
@@ -19,7 +24,7 @@ interface UseApprovalsOptions {
     reporteeIds?: string[];
 }
 
-export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprovalsOptions) {
+export function useApprovals({ user }: UseApprovalsOptions) {
     const [pendingLeaveApprovals, setPendingLeaveApprovals] = useState<LeaveRequest[]>([]);
     const [pendingWfhApprovals, setPendingWfhApprovals] = useState<WFHRequest[]>([]);
     const [pendingOtApprovals, setPendingOtApprovals] = useState<OTRequest[]>([]);
@@ -70,8 +75,12 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
 
         // Leave/WFH/OT are scoped to direct reports plus explicit escalation
         // assignments. A broad BOD or HR role no longer creates a global queue.
-        const { data: assignmentRows, error: assignmentError } = await supabase
-            .rpc('get_my_pending_time_approval_ids');
+        const [timeAssignments, manpowerAssignments] = await Promise.all([
+            fetchMyPendingTimeApprovalAssignments(user.id).then(data => ({ data, error: null as any })).catch(error => ({ data: [], error })),
+            fetchMyPendingManpowerApprovalIds(user.id).then(data => ({ data, error: null as any })).catch(error => ({ data: [], error })),
+        ]);
+        const assignmentRows = timeAssignments.data;
+        const assignmentError = timeAssignments.error;
         if (assignmentError) {
             setApprovalError(`Conditional approval assignments could not be loaded. ${assignmentError.message}`);
         }
@@ -81,14 +90,11 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
         const assignedLeaveIds = assignedIds('leave');
         const assignedWfhIds = assignedIds('wfh');
         const assignedOtIds = assignedIds('overtime');
-        const { data: manpowerAssignmentRows, error: manpowerAssignmentError } = await supabase
-            .rpc('get_my_pending_manpower_approval_ids');
+        const manpowerAssignmentError = manpowerAssignments.error;
         if (manpowerAssignmentError) {
             setApprovalError(`On-call approval assignments could not be loaded. ${manpowerAssignmentError.message}`);
         }
-        const assignedManpowerIds = (manpowerAssignmentRows || [])
-            .map((row: any) => row.request_id as string)
-            .filter(Boolean);
+        const assignedManpowerIds = manpowerAssignments.data;
 
         let skipLeave = false;
         let skipWfh = false;
@@ -248,7 +254,7 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
             );
         }
         setApprovalsLoading(false);
-    }, [user, isHR, reporteeIds]);
+    }, [user?.id]);
 
     useEffect(() => {
         let active = true;
@@ -261,12 +267,15 @@ export function useApprovals({ user, isHR = false, reporteeIds = [] }: UseApprov
         
         // Optional polling for approvals
         const interval = setInterval(() => {
-            if (active) load();
-        }, 30000); // 30 seconds
+            if (active && document.visibilityState === 'visible') load();
+        }, 60_000);
+        const handleFocus = () => { if (active) load(); };
+        window.addEventListener('focus', handleFocus);
 
         return () => {
             active = false;
             clearInterval(interval);
+            window.removeEventListener('focus', handleFocus);
         };
     }, [fetchApprovals]);
 

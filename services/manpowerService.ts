@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient';
 import { ManpowerApprovalTrailEntry, ManpowerRequest, ManpowerRequestStatus, ManpowerRequestItem, User } from '../types';
+import { dedupeRead } from './readCache';
 
 // ---------------------------------------------------------------------------
 // Row Type
@@ -113,10 +114,13 @@ export const createManpowerRequest = async (request: Partial<ManpowerRequest>, u
   return mapManpowerRequest(data as ManpowerRequestRow);
 };
 
-export const fetchMyPendingManpowerApprovalIds = async (): Promise<string[]> => {
-  const { data, error } = await supabase.rpc('get_my_pending_manpower_approval_ids');
-  if (error) throw new Error(error.message || 'Failed to load assigned manpower approvals');
-  return (data || []).map((row: { request_id: string }) => row.request_id).filter(Boolean);
+export const fetchMyPendingManpowerApprovalIds = async (userId?: string): Promise<string[]> => {
+  const load = async () => {
+    const { data, error } = await supabase.rpc('get_my_pending_manpower_approval_ids');
+    if (error) throw new Error(error.message || 'Failed to load assigned manpower approvals');
+    return (data || []).map((row: { request_id: string }) => row.request_id).filter(Boolean);
+  };
+  return userId ? dedupeRead(`pending-manpower-approvals:${userId}`, load, 2_000) : load();
 };
 
 const processManpowerApproval = async (

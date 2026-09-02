@@ -61,6 +61,7 @@ import { mergePanParticulars } from '../../services/panUtils';
 import ApprovalWidget from './ApprovalWidget';
 import MyRequestsWidget from './MyRequestsWidget';
 import { isCentralizedApprovalActionItem } from '../../utils/approvalCenterRouting';
+import { fetchMyPendingTimeApprovalAssignments } from '../../services/timeApprovalService';
 
 
 // --- ICONS ---
@@ -814,8 +815,7 @@ const EmployeeDashboard: React.FC = () => {
         let active = true;
         const loadOtApprovals = async () => {
             try {
-                const { data: assignedRows, error: assignmentError } = await supabase.rpc('get_my_pending_time_approval_ids');
-                if (assignmentError) throw assignmentError;
+                const assignedRows = await fetchMyPendingTimeApprovalAssignments(user.id);
                 const assignedOtIds = (assignedRows || [])
                     .filter((row: any) => row.request_type === 'overtime')
                     .map((row: any) => row.request_id)
