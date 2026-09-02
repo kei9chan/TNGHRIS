@@ -15,6 +15,7 @@ const ExclamationTriangleIcon = () => <svg xmlns="http://www.w3.org/2000/svg" cl
 const CalendarDaysIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-cyan-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0h18" /></svg>;
 const ClockIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
 const DocumentDuplicateIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m9.75 11.625-3.375-3.375" /></svg>;
+const TagIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-violet-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6Z" /></svg>;
 const HomeIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>;
 
 // Updated Icons
@@ -52,6 +53,7 @@ type QuickLinkId =
   | 'leave'
   | 'overtime'
   | 'ticket'
+  | 'asset'
   | 'ir'
   | 'jobreq'
   | 'announcements'
@@ -76,6 +78,7 @@ const QuickLinks: React.FC<QuickLinksProps> = ({ hideCOE = false }) => {
             { id: 'leave', name: 'Request Leave', path: '/payroll/leave', icon: <CalendarIcon />, allowed: workflowCan('Leave', Permission.Submit) },
             { id: 'overtime', name: 'Request Overtime', path: '/payroll/overtime-requests', state: { openNewOTModal: true }, icon: <ClockIcon />, allowed: workflowCan('Overtime', Permission.Submit) },
             { id: 'ticket', name: 'Submit a Ticket', path: '/helpdesk/tickets', state: { openNewTicketModal: true }, icon: <TicketIcon />, allowed: can('Helpdesk', Permission.Create) || can('Helpdesk', Permission.Submit) },
+            { id: 'asset', name: 'Request Asset', path: '/employees/asset-management/asset-requests', state: { openRequestAsset: true }, icon: <TagIcon />, allowed: workflowCan('AssetRequests', Permission.Submit) },
             { id: 'ir', name: 'File New IR', path: '/feedback/cases', state: { openNewIrModal: true }, icon: <ExclamationTriangleIcon />, allowed: irAccess.canCreate },
             { id: 'jobreq', name: 'Job Requisition', path: '/recruitment/requisitions', state: { openNewReqModal: true }, icon: <UserPlusIcon />, allowed: can('JobRequisitions' as Resource, Permission.View) && workflowCan('JobRequisitions', Permission.Submit) },
             { id: 'announcements', name: 'View Announcements', path: '/helpdesk/announcements', icon: <MegaphoneIcon />, allowed: can('Announcements', Permission.View) },

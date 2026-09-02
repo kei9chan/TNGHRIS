@@ -201,7 +201,7 @@ export const saveAssetRequest = async (request: Partial<AssetRequest>, user: Use
     justification: request.justification || '',
     status: request.status || AssetRequestStatus.Pending,
     requested_at: new Date().toISOString(),
-    manager_id: request.managerId || user.reportsTo || '',
+    manager_id: request.managerId || user.managerId || user.reportsTo || '',
     asset_id: request.assetId || null,
   };
 

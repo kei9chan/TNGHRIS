@@ -1,6 +1,7 @@
 // Phase 2 Migration: mockBusinessUnits removed — BUs fetched from Supabase
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { AssetRequest, AssetRequestStatus, Permission, AssetStatus, NotificationType, EnrichedAssetRequest, User, Asset, AssetAssignment } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -14,9 +15,11 @@ import { logActivity } from '../../services/auditService';
 import AssetReturnSubmissionModal from '../../components/employees/AssetReturnSubmissionModal';
 import AssetRejectionModal from '../../components/employees/AssetRejectionModal';
 import AssetReturnRequestModal from '../../components/employees/AssetReturnRequestModal';
+import AssetRequestModal from '../../components/employees/AssetRequestModal';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { createNotification } from '../../services/notificationService';
+import { saveAssetRequest } from '../../services/assetService';
 
 type AssetRequestRow = {
     id: string;
@@ -88,9 +91,11 @@ const mapAssignmentRow = (row: AssignmentRow): AssetAssignment => ({
 
 const AssetRequests: React.FC = () => {
     const { user } = useAuth();
-    const { can } = usePermissions();
+    const { can, workflowCan } = usePermissions();
     const canManage = can('AssetRequests', Permission.Approve);
-    const canRequest = can('AssetRequests', Permission.Create);
+    const canRequest = workflowCan('AssetRequests', Permission.Submit);
+    const location = useLocation();
+    const navigate = useNavigate();
 
     const [requests, setRequests] = useState<AssetRequest[]>([]);
     const [employees, setEmployees] = useState<User[]>([]);
@@ -102,7 +107,15 @@ const AssetRequests: React.FC = () => {
     const [isSubmissionModalOpen, setIsSubmissionModalOpen] = useState(false);
     const [isRejectionViewModalOpen, setIsRejectionViewModalOpen] = useState(false);
     const [isReturnRequestModalOpen, setIsReturnRequestModalOpen] = useState(false);
+    const [isRequestAssetModalOpen, setIsRequestAssetModalOpen] = useState(false);
     const [selectedRequest, setSelectedRequest] = useState<EnrichedAssetRequest | null>(null);
+
+    useEffect(() => {
+        if (location.state?.openRequestAsset) {
+            setIsRequestAssetModalOpen(true);
+            navigate(location.pathname, { replace: true, state: {} });
+        }
+    }, [location.pathname, location.state, navigate]);
 
     useEffect(() => {
         const loadEmployees = async () => {
@@ -151,10 +164,12 @@ const AssetRequests: React.FC = () => {
         };
         const loadRequests = async () => {
             try {
-                const { data, error } = await supabase
+                let query = supabase
                     .from('asset_requests')
                     .select('*')
                     .order('requested_at', { ascending: false });
+                if (!canManage && user?.id) query = query.eq('employee_id', user.id);
+                const { data, error } = await query;
                 if (error) throw error;
                 setRequests((data as AssetRequestRow[] | null)?.map(mapRequestRow) || []);
             } catch (err) {
@@ -179,7 +194,7 @@ const AssetRequests: React.FC = () => {
         supabase.from('business_units').select('id, name').order('name').then(({ data }) => {
             if (data) setDbBus(data.map((d: any) => ({ id: d.id, name: d.name })));
         });
-    }, []);
+    }, [canManage, user?.id]);
 
     const [filters, setFilters] = useState({
         searchTerm: '',
@@ -392,6 +407,32 @@ const AssetRequests: React.FC = () => {
         setIsReturnRequestModalOpen(true);
     };
 
+    const handleSaveAssetRequest = async (request: Partial<AssetRequest>) => {
+        if (!user) return;
+        try {
+            const saved = await saveAssetRequest(request, user);
+            setRequests(prev => [saved, ...prev]);
+            logActivity(user, 'CREATE', 'AssetRequest', saved.id, `Requested asset: ${saved.assetDescription}`);
+
+            if (saved.managerId && saved.managerId !== user.id) {
+                createNotification({
+                    userId: saved.managerId,
+                    type: NotificationType.ASSET_REQUEST_SUBMITTED,
+                    title: 'New Asset Request',
+                    message: `${user.name} requested a ${saved.assetDescription}.`,
+                    link: '/employees/asset-management/asset-requests',
+                    relatedEntityId: saved.id,
+                }).catch(e => console.warn('Failed to send asset request notification', e));
+            }
+
+            alert('Asset request submitted.');
+            setIsRequestAssetModalOpen(false);
+        } catch (err: any) {
+            console.error('Failed to create asset request', err);
+            alert(err?.message || 'Failed to submit asset request. Please try again.');
+        }
+    };
+
     const handleSaveReturnRequest = async (request: AssetRequest) => {
         if (!user) return;
         try {
@@ -467,7 +508,12 @@ const AssetRequests: React.FC = () => {
                         Track and manage all employee requests for new assets or asset returns.
                     </p>
                 </div>
-                {canRequest && <Button variant="secondary" onClick={handleReturnAsset}>Return Asset</Button>}
+                {canRequest && (
+                    <div className="flex gap-3">
+                        <Button variant="secondary" onClick={handleReturnAsset}>Return Asset</Button>
+                        <Button onClick={() => setIsRequestAssetModalOpen(true)}>Request Asset</Button>
+                    </div>
+                )}
             </div>
 
             <Card>
@@ -560,6 +606,14 @@ const AssetRequests: React.FC = () => {
                     onSave={handleSaveReturnRequest}
                     assets={assets}
                     assignments={assignments}
+                />
+            )}
+
+            {isRequestAssetModalOpen && canRequest && (
+                <AssetRequestModal
+                    isOpen={isRequestAssetModalOpen}
+                    onClose={() => setIsRequestAssetModalOpen(false)}
+                    onSave={handleSaveAssetRequest}
                 />
             )}
         </div>
