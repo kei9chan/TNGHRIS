@@ -62,6 +62,9 @@ const Login: React.FC = () => {
       } else if (notice === 'account_inactive') {
         setError('Your HRIS account is inactive. Contact HR or an administrator if access should be restored.');
         localStorage.removeItem('authNotice');
+      } else if (notice === 'authorization_unavailable') {
+        setError('Your account is active, but authorization could not be loaded. Please try signing in again.');
+        localStorage.removeItem('authNotice');
       }
     } catch {
       // ignore storage read failures

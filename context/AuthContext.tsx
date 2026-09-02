@@ -65,7 +65,7 @@ const mapRoleFromDb = (raw: string | null): Role | null => {
 const isActiveStatus = (status?: string | null) =>
   (status || '').toString().toLowerCase() === 'active';
 
-type AuthNotice = 'hr_pending' | 'account_inactive';
+type AuthNotice = 'hr_pending' | 'account_inactive' | 'authorization_unavailable';
 
 const setAuthNotice = (notice: AuthNotice) => {
   try {
@@ -77,7 +77,9 @@ const setAuthNotice = (notice: AuthNotice) => {
 
 const setHrPendingNotice = () => setAuthNotice('hr_pending');
 const setAccountInactiveNotice = () => setAuthNotice('account_inactive');
+const setAuthorizationUnavailableNotice = () => setAuthNotice('authorization_unavailable');
 const ACTIVE_SESSION_RECHECK_MS = 30_000;
+const profileHydrationInFlight = new Map<string, Promise<User | null>>();
 
 /**
  * Build a User directly from Supabase data — no more legacy mock merging.
@@ -95,7 +97,7 @@ const applyAuthUserId = (
  * Unknown, inactive, or missing role assignments fail closed. A Supabase
  * account is not an HRIS account until it has an active approved assignment.
  */
-const buildAppUserFromSupabase = async (
+const loadAppUserFromSupabase = async (
   sbUser: SupabaseUser | null
 ): Promise<User | null> => {
   if (!sbUser) return null;
@@ -162,6 +164,30 @@ const buildAppUserFromSupabase = async (
   } as User;
 
   return applyAuthUserId(sbUser, appUser);
+};
+
+/**
+ * Supabase can emit an auth-state event while the explicit login/initial-load
+ * path is hydrating the same account. Share that work so bootstrap and RBAC
+ * are not fetched twice during dashboard startup.
+ */
+const buildAppUserFromSupabase = (
+  sbUser: SupabaseUser | null
+): Promise<User | null> => {
+  if (!sbUser) return Promise.resolve(null);
+
+  const existing = profileHydrationInFlight.get(sbUser.id);
+  if (existing) return existing;
+
+  const hydration = loadAppUserFromSupabase(sbUser);
+  profileHydrationInFlight.set(sbUser.id, hydration);
+  const clearHydration = () => {
+    if (profileHydrationInFlight.get(sbUser.id) === hydration) {
+      profileHydrationInFlight.delete(sbUser.id);
+    }
+  };
+  void hydration.then(clearHydration, clearHydration);
+  return hydration;
 };
 
 // --- provider -------------------------------------------------------
@@ -258,8 +284,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       console.error('[Auth] hydrateSupabaseUser failed to load HRIS profile', err);
       if (err instanceof SupabaseAuthError && err.code === 'account_inactive') {
         setAccountInactiveNotice();
+      } else if (err instanceof SupabaseAuthError && (
+        err.code === 'rbac_profile_error' || err.code === 'rbac_resolver_error'
+      )) {
+        setAuthorizationUnavailableNotice();
       } else {
-        setHrPendingNotice();
+        setAuthorizationUnavailableNotice();
       }
       await supabase.auth.signOut().catch(() => { });
       setUser(null);
