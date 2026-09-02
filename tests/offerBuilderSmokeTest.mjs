@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 const builder = fs.readFileSync('components/recruitment/OfferCreationDrawer.tsx', 'utf8');
 const offers = fs.readFileSync('pages/recruitment/Offers.tsx', 'utf8');
+const offerWorkspace = fs.readFileSync('services/jobOfferWorkspaceService.ts', 'utf8');
 const app = fs.readFileSync('App.tsx', 'utf8');
 const offerTemplates = fs.readFileSync('pages/recruitment/OfferTemplates.tsx', 'utf8');
 const publicOffer = fs.readFileSync('supabase/functions/public-offer/index.ts', 'utf8');
@@ -26,15 +27,15 @@ for (const feature of ['Role Purpose', 'Key Responsibilities', 'What Success Loo
 assert.match(builder, /amount \* 12/);
 assert.match(builder, /file\.size > 2 \* 1024 \* 1024/);
 assert.match(builder, /image\/svg\+xml/);
-assert.match(offers, /status: OfferStatus\.Draft/);
+assert.match(offerWorkspace, /status: OfferStatus\.Draft/);
 assert.match(offers, /navigate\('\/recruitment\/offer-templates'\)/);
 assert.match(app, /React\.lazy\(\(\) => import\('\.\/pages\/recruitment\/OfferTemplates'\)\)/);
 assert.match(app, /<Route path="offer-templates" element=\{<ProtectedRoute><OfferTemplates \/><\/ProtectedRoute>\} \/>/);
 assert.match(offerTemplates, /from\('job_offer_templates'\)/);
-assert.match(offers, /send-recruitment-email/);
-assert.match(offers, /\/api\/recruitment-email/);
-assert.match(offers, /emailDelivery/);
-assert.match(offers, /status: OfferStatus\.Sent/);
+assert.match(offerWorkspace, /send-recruitment-email/);
+assert.match(offerWorkspace, /\/api\/recruitment-email/);
+assert.match(offerWorkspace, /emailDelivery/);
+assert.match(offerWorkspace, /status: OfferStatus\.Sent/);
 assert.match(detailModal, /createPortal/);
 assert.match(detailModal, /z-\[120\]/);
 assert.match(detailModal, /Send Offer/);

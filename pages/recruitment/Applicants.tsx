@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Application, ApplicationStage, Candidate, CandidateSource, JobPostStatus, Role, BusinessUnit, JobRequisition, Interview, JobPost, Permission, User } from '../../types';
+import { Application, ApplicationStage, Candidate, CandidateSource, JobPostStatus, Role, BusinessUnit, JobRequisition, Interview, JobPost, Permission, User, Offer, OfferStatus, Department, InterviewRatingRecord } from '../../types';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { useAuth } from '../../hooks/useAuth';
@@ -17,6 +17,15 @@ import RejectionEmailModal from '../../components/recruitment/RejectionEmailModa
 import { supabase } from '../../services/supabaseClient';
 import { buildInterviewApplicantOption, InterviewScheduleResult, saveInterviewSchedule } from '../../services/recruitmentInterviewService';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
+import { EnrichedOffer } from '../../components/recruitment/OfferTable';
+import { fetchRatingRecordsForCandidate } from '../../services/interviewRatingService';
+import { mapJobOfferRow } from '../../services/jobOfferMapper';
+import { candidateOfferUrl, isPublishedOffer, offerWorkspaceStatus, saveOfferDraft, selectCurrentOffer, sendApprovedOffer } from '../../services/jobOfferWorkspaceService';
+
+const CandidateProfileModal = React.lazy(() => import('../../components/recruitment/CandidateProfileModal'));
+const CreateInterviewRatingModal = React.lazy(() => import('../../components/recruitment/CreateInterviewRatingModal'));
+const OfferCreationDrawer = React.lazy(() => import('../../components/recruitment/OfferCreationDrawer'));
+const OfferApprovalPackageModal = React.lazy(() => import('../../components/recruitment/OfferApprovalPackageModal'));
 
 export interface EnrichedApplication extends Application {
     candidateName: string;
@@ -48,7 +57,26 @@ const getStageColor = (stage: ApplicationStage) => ({
     [ApplicationStage.Withdrawn]: 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300',
 }[stage] || 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200');
 
-const ApplicantListTable: React.FC<{ applications: EnrichedApplication[]; onRowClick: (app: EnrichedApplication) => void; onScheduleInterview: (app: EnrichedApplication) => void; onReject: (app: EnrichedApplication) => void; canManage: boolean }> = ({ applications, onRowClick, onScheduleInterview, onReject, canManage }) => (
+interface ApplicantListTableProps {
+    applications: EnrichedApplication[];
+    offers: Offer[];
+    onRowClick: (app: EnrichedApplication) => void;
+    onViewProfile: (app: EnrichedApplication) => void;
+    onCreateRating: (app: EnrichedApplication) => void;
+    onScheduleInterview: (app: EnrichedApplication) => void;
+    onOfferAction: (app: EnrichedApplication, offer: Offer | null) => void;
+    onReject: (app: EnrichedApplication) => void;
+    canManageApplicants: boolean;
+    canManageInterviews: boolean;
+    canViewOffers: boolean;
+    canManageOffers: boolean;
+}
+
+const offerColor = (label: string) => label === 'Accepted & Signed'
+    ? 'bg-green-100 text-green-800'
+    : ['Sent', 'Viewed'].includes(label) ? 'bg-blue-100 text-blue-800' : label === 'Draft' ? 'bg-gray-100 text-gray-800' : 'text-gray-500';
+
+const ApplicantListTable: React.FC<ApplicantListTableProps> = ({ applications, offers, onRowClick, onViewProfile, onCreateRating, onScheduleInterview, onOfferAction, onReject, canManageApplicants, canManageInterviews, canViewOffers, canManageOffers }) => (
     <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50 dark:bg-gray-700">
@@ -58,20 +86,22 @@ const ApplicantListTable: React.FC<{ applications: EnrichedApplication[]; onRowC
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase">Business Unit</th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase">Stage</th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase">Applied</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase">Offer</th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase">Actions</th>
                 </tr>
             </thead>
             <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {applications.map(app => (
+                {applications.map(app => { const currentOffer = selectCurrentOffer(offers, app.id); const offerLabel = offerWorkspaceStatus(currentOffer); const inactive = [ApplicationStage.Rejected, ApplicationStage.Withdrawn].includes(app.stage); return (
                     <tr key={app.id} onClick={() => onRowClick(app)} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer">
                         <td className="px-6 py-4 whitespace-nowrap font-medium">{app.candidateName}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">{app.jobTitle}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">{app.businessUnitName}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStageColor(app.stage)}`}>{app.stage}</span></td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">{new Date(app.createdAt).toLocaleDateString()}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm"><div className="flex gap-2" onClick={(event) => event.stopPropagation()}>{canManage && app.stage !== ApplicationStage.Rejected && app.stage !== ApplicationStage.Withdrawn && <><button type="button" onClick={() => onScheduleInterview(app)} className="rounded-md bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700">Schedule Interview</button><button type="button" onClick={() => onReject(app)} className="rounded-md border border-red-300 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-900/20">Reject</button></>}</div></td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${offerColor(offerLabel)}`}>{offerLabel}</span>{currentOffer && isPublishedOffer(currentOffer) && currentOffer.secureToken && <span className="ml-2 inline-flex items-center gap-1 text-xs font-semibold text-emerald-700"><span className="h-2 w-2 rounded-full bg-emerald-500"/>Live</span>}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm"><div className="flex gap-2" onClick={(event) => event.stopPropagation()}><button type="button" onClick={() => onViewProfile(app)} className="rounded-md border border-indigo-200 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50">View Profile</button>{canManageInterviews && !inactive && <button type="button" onClick={() => onCreateRating(app)} className="rounded-md border border-indigo-200 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50">Create Interview Rating</button>}{canManageApplicants && !inactive && <button type="button" onClick={() => onScheduleInterview(app)} className="rounded-md bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700">Schedule Interview</button>}{(canManageOffers || (canViewOffers && currentOffer && isPublishedOffer(currentOffer))) && !inactive && <button type="button" onClick={() => onOfferAction(app, currentOffer)} className={`rounded-md px-3 py-2 text-xs font-semibold ${currentOffer && isPublishedOffer(currentOffer) ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'border border-indigo-200 text-indigo-700 hover:bg-indigo-50'}`}>{!currentOffer ? 'Create Offer' : currentOffer.status === OfferStatus.Draft ? 'View/Edit Offer' : 'Open Live Offer'}</button>}{canManageApplicants && !inactive && <button type="button" onClick={() => onReject(app)} className="rounded-md border border-red-300 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-900/20">Reject</button>}</div></td>
                     </tr>
-                ))}
+                ); })}
             </tbody>
         </table>
     </div>
@@ -92,9 +122,16 @@ const Applicants: React.FC = () => {
     const [jobRequisitions, setJobRequisitions] = useState<JobRequisition[]>([]);
     const [departments, setDepartments] = useState<{ id: string; name: string; businessUnitId: string }[]>([]);
     const [users, setUsers] = useState<User[]>([]);
+    const [offers, setOffers] = useState<Offer[]>([]);
+    const [businessUnitLogos, setBusinessUnitLogos] = useState<Record<string, string>>({});
     const [isLoading, setIsLoading] = useState(true);
 
     const [selectedApplication, setSelectedApplication] = useState<EnrichedApplication | null>(null);
+    const [profileApplication, setProfileApplication] = useState<EnrichedApplication | null>(null);
+    const [ratingApplication, setRatingApplication] = useState<EnrichedApplication | null>(null);
+    const [offerApplication, setOfferApplication] = useState<EnrichedApplication | null>(null);
+    const [editingOffer, setEditingOffer] = useState<Offer | null>(null);
+    const [approvalPackage, setApprovalPackage] = useState<{ offer: EnrichedOffer; candidate: Candidate; application: Application; ratings: InterviewRatingRecord[] } | null>(null);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     
     // Automation Modal States
@@ -121,7 +158,7 @@ const Applicants: React.FC = () => {
     const loadData = useCallback(async () => {
         setIsLoading(true);
         try {
-            const [buRes, deptRes, reqRes, postRes, candRes, appRes, userRes] = await Promise.all([
+            const [buRes, deptRes, reqRes, postRes, candRes, appRes, userRes, offerRes, themeRes] = await Promise.all([
                 supabase.from('business_units').select('id,name'),
                 supabase.from('departments').select('id,name,business_unit_id'),
                 supabase.from('job_requisitions').select('*'),
@@ -129,6 +166,8 @@ const Applicants: React.FC = () => {
                 supabase.from('job_candidates').select('*'),
                 supabase.from('job_applications').select('*'),
                 supabase.from('hris_users').select('id,full_name,role,email,department,position,business_unit,business_unit_id,department_id,status'),
+                supabase.from('job_offers').select('*').order('updated_at', { ascending: false }),
+                supabase.from('applicant_page_themes').select('business_unit_id,logo_url').not('business_unit_id', 'is', null).order('updated_at', { ascending: false }),
             ]);
             if (buRes.error) throw buRes.error;
             if (deptRes.error) throw deptRes.error;
@@ -137,6 +176,7 @@ const Applicants: React.FC = () => {
             if (candRes.error) throw candRes.error;
             if (appRes.error) throw appRes.error;
             if (userRes.error) throw userRes.error;
+            if (offerRes.error) throw offerRes.error;
 
             setBusinessUnits(buRes.data || []);
             setDepartments((deptRes.data || []).map((d: any) => ({ id: d.id, name: d.name, businessUnitId: d.business_unit_id })));
@@ -229,6 +269,11 @@ const Applicants: React.FC = () => {
                 isPhotoEnrolled: false,
                 dateHired: new Date(),
             } as User)));
+            setOffers((offerRes.data || []).map(mapJobOfferRow));
+            if (!themeRes.error) setBusinessUnitLogos((themeRes.data || []).reduce((logos: Record<string, string>, row: any) => {
+                if (row.business_unit_id && row.logo_url && !logos[row.business_unit_id]) logos[row.business_unit_id] = row.logo_url;
+                return logos;
+            }, {}));
         } catch (err) {
             console.error('Failed to load applicants', err);
             alert('Failed to load applicant data.');
@@ -240,6 +285,16 @@ const Applicants: React.FC = () => {
     useEffect(() => {
         loadData();
     }, [loadData]);
+
+    const loadOffers = useCallback(async () => {
+        const { data, error } = await supabase.from('job_offers').select('*').order('updated_at', { ascending: false });
+        if (!error) setOffers((data || []).map(mapJobOfferRow));
+    }, []);
+
+    useEffect(() => {
+        const channel = supabase.channel('ats-offer-workspace').on('postgres_changes', { event: '*', schema: 'public', table: 'job_offers' }, () => { void loadOffers(); }).subscribe();
+        return () => { void supabase.removeChannel(channel); };
+    }, [loadOffers]);
 
     const enrichedApplications: EnrichedApplication[] = useMemo(() => {
         return applications.map(app => {
@@ -352,6 +407,58 @@ const Applicants: React.FC = () => {
         setPendingAppId(application.id);
         setPendingStage(ApplicationStage.Rejected);
         setIsRejectionModalOpen(true);
+    };
+
+    const candidateForApplication = (application: Application) => candidates.find(candidate => candidate.id === application.candidateId) || null;
+
+    const enrichOffer = (offer: Offer, application: EnrichedApplication, candidate: Candidate): EnrichedOffer => ({
+        ...offer,
+        candidateName: `${candidate.firstName} ${candidate.lastName}`,
+        candidateEmail: candidate.email,
+        jobTitle: application.jobTitle,
+        businessUnitId: application.businessUnitId,
+        businessUnitName: application.businessUnitName,
+        departmentName: application.departmentName,
+    });
+
+    const openOfferAction = (application: EnrichedApplication, currentOffer: Offer | null) => {
+        if (currentOffer && isPublishedOffer(currentOffer)) {
+            const url = candidateOfferUrl(currentOffer);
+            if (url) window.open(url, '_blank', 'noopener,noreferrer');
+            return;
+        }
+        if (!can('Offers', Permission.Manage)) return;
+        setOfferApplication(application);
+        setEditingOffer(currentOffer?.status === OfferStatus.Draft ? currentOffer : null);
+    };
+
+    const handleSaveOffer = async (offerToSave: Offer): Promise<Offer> => {
+        const result = await saveOfferDraft(offerToSave, user?.id);
+        setOffers(previous => previous.some(item => item.id === result.offer.id) ? previous.map(item => item.id === result.offer.id ? result.offer : item) : [result.offer, ...previous]);
+        setEditingOffer(result.offer);
+        await logActivity(user, result.created ? 'CREATE' : 'UPDATE', 'Offer', result.offer.id, `${result.created ? 'Created' : 'Updated'} offer ${result.offer.offerNumber} from Applicant Tracking`);
+        return result.offer;
+    };
+
+    const handleSendOffer = async (offerToSend: Offer, recipient: string, subject: string, message: string, previewHtml: string): Promise<Offer> => {
+        if (!can('Offers', Permission.Manage)) throw new Error('You do not have permission to send offers.');
+        const result = await sendApprovedOffer({ offer: offerToSend, userId: user?.id, recipient, subject, message, previewHtml });
+        setOffers(previous => previous.map(item => item.id === result.offer.id ? result.offer : item));
+        setEditingOffer(result.offer);
+        await logActivity(user, 'UPDATE', 'Offer', result.offer.id, result.provider ? `Sent offer ${result.offer.offerNumber} from Applicant Tracking through ${result.provider}` : `Activated secure link for ${result.offer.offerNumber}; email delivery failed`);
+        return result.offer;
+    };
+
+    const handleRequestOfferApproval = async (offer: Offer) => {
+        const application = enrichedApplications.find(item => item.id === offer.applicationId);
+        const candidate = application ? candidateForApplication(application) : null;
+        if (!application || !candidate) return alert('The candidate or application record could not be found for this offer.');
+        try {
+            const allRatings = await fetchRatingRecordsForCandidate(candidate.id);
+            setApprovalPackage({ offer: enrichOffer(offer, application, candidate), candidate, application, ratings: allRatings.filter(rating => rating.applicationId === application.id) });
+        } catch (error: any) {
+            alert(error?.message || 'Unable to load interview ratings for this candidate.');
+        }
     };
 
     const handleSaveInterview = async (interviewToSave: Interview): Promise<InterviewScheduleResult> => {
@@ -493,6 +600,9 @@ const Applicants: React.FC = () => {
 
     const canView = can('Applicants', Permission.View) || can('Applicants', Permission.Manage);
     const canManage = can('Applicants', Permission.Manage);
+    const canManageInterviews = can('Interviews', Permission.Manage) || canManage;
+    const canManageOffers = can('Offers', Permission.Manage);
+    const canViewOffers = can('Offers', Permission.View) || canManageOffers;
 
     return (
         <div className="space-y-6">
@@ -503,6 +613,7 @@ const Applicants: React.FC = () => {
             <div className="flex justify-between items-center">
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Applicant Tracking System</h1>
                  <div className="flex items-center space-x-2">
+                    {canViewOffers && <Link to="/recruitment/offers"><Button variant="secondary">View Job Offers</Button></Link>}
                     <Link to="/apply"><Button variant="secondary">View Applicant Page</Button></Link>
                     {canManage && <Button onClick={() => setIsAddModalOpen(true)}>New Applicant</Button>}
                 </div>
@@ -560,8 +671,18 @@ const Applicants: React.FC = () => {
 
             {isLoading ? (
                 <Card><div className="p-6 text-gray-500">Loading applicants...</div></Card>
-            ) : view === 'kanban' ? <ApplicantKanbanBoard applications={filteredApplications} onUpdateStage={handleUpdateStage} onCardClick={setSelectedApplication} canManage={canManage} /> : <ApplicantListTable applications={filteredApplications} onRowClick={setSelectedApplication} onScheduleInterview={openInterviewScheduler} onReject={openRejectionEmail} canManage={canManage}/>}
+            ) : view === 'kanban' ? (
+                <ApplicantKanbanBoard applications={filteredApplications} onUpdateStage={handleUpdateStage} onCardClick={setSelectedApplication} canManage={canManage} />
+            ) : (
+                <ApplicantListTable applications={filteredApplications} offers={offers} onRowClick={setSelectedApplication} onViewProfile={setProfileApplication} onCreateRating={setRatingApplication} onScheduleInterview={openInterviewScheduler} onOfferAction={openOfferAction} onReject={openRejectionEmail} canManageApplicants={canManage} canManageInterviews={canManageInterviews} canViewOffers={canViewOffers} canManageOffers={canManageOffers}/>
+            )}
             {selectedApplication && <ApplicantDetailModal isOpen={!!selectedApplication} onClose={() => setSelectedApplication(null)} application={selectedApplication} />}
+            <React.Suspense fallback={null}>
+                {profileApplication && candidateForApplication(profileApplication) && <CandidateProfileModal isOpen={true} onClose={() => setProfileApplication(null)} candidate={candidateForApplication(profileApplication)!} applications={applications} jobPosts={jobPosts} />}
+                {ratingApplication && candidateForApplication(ratingApplication) && <CreateInterviewRatingModal isOpen={true} onClose={() => setRatingApplication(null)} candidate={candidateForApplication(ratingApplication)!} applications={applications} jobPosts={jobPosts} initialApplicationId={ratingApplication.id} onAssigned={() => setRatingApplication(null)} />}
+                {offerApplication && canManageOffers && <OfferCreationDrawer isOpen={true} onClose={() => { setOfferApplication(null); setEditingOffer(null); }} onSave={handleSaveOffer} onSend={handleSendOffer} onRequestApproval={offer => void handleRequestOfferApproval(offer)} applications={applications} candidates={candidates} requisitions={jobRequisitions} businessUnits={businessUnits} departments={departments as Department[]} businessUnitLogos={businessUnitLogos} initialOffer={editingOffer} initialApplicationId={offerApplication.id} />}
+                {approvalPackage && <OfferApprovalPackageModal isOpen={true} onClose={() => setApprovalPackage(null)} offer={approvalPackage.offer} candidate={approvalPackage.candidate} application={approvalPackage.application} ratings={approvalPackage.ratings} onSubmitted={requestId => { setOffers(current => current.map(item => item.id === approvalPackage.offer.id ? { ...item, approvalStatus: 'Pending Approval', approvalRequestId: requestId } : item)); setEditingOffer(current => current?.id === approvalPackage.offer.id ? { ...current, approvalStatus: 'Pending Approval', approvalRequestId: requestId } : current); setOfferApplication(null); setEditingOffer(null); setApprovalPackage(null); }} />}
+            </React.Suspense>
             <AddApplicantModal
                 isOpen={isAddModalOpen}
                 onClose={() => setIsAddModalOpen(false)}

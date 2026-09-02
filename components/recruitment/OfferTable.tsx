@@ -2,6 +2,7 @@ import React from 'react';
 import { OfferStatus, Offer } from '../../types';
 import Button from '../ui/Button';
 import { formatPHP, offerMonthlyPay } from './offerCurrency';
+import { isPublishedOffer } from '../../services/jobOfferWorkspaceService';
 
 export interface EnrichedOffer extends Offer {
   candidateName: string;
@@ -18,6 +19,7 @@ interface OfferTableProps {
     offers: EnrichedOffer[];
     onViewDetails: (offer: EnrichedOffer) => void;
     onEditDraft?: (offer: EnrichedOffer) => void;
+    onOpenLive?: (offer: EnrichedOffer) => void;
 }
 
 const getStatusColor = (status: OfferStatus) => {
@@ -38,7 +40,7 @@ const getStatusColor = (status: OfferStatus) => {
     }
 };
 
-const OfferTable: React.FC<OfferTableProps> = ({ offers, onViewDetails, onEditDraft }) => {
+const OfferTable: React.FC<OfferTableProps> = ({ offers, onViewDetails, onEditDraft, onOpenLive }) => {
     return (
          <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -68,10 +70,11 @@ const OfferTable: React.FC<OfferTableProps> = ({ offers, onViewDetails, onEditDr
                                 <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(offer.status)}`}>
                                     {offerStatusLabel(offer.status)}
                                 </span>
+                                {isPublishedOffer(offer) && offer.secureToken && <span className="ml-2 inline-flex items-center gap-1 text-xs font-semibold text-emerald-700"><span className="h-2 w-2 rounded-full bg-emerald-500"/>Live</span>}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{offer.offerTemplateName || '—'}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                <div className="flex justify-end gap-2">{offer.status === OfferStatus.Draft && onEditDraft && <Button size="sm" onClick={() => onEditDraft(offer)}>Edit Draft</Button>}<Button size="sm" variant="secondary" onClick={() => onViewDetails(offer)}>View Details</Button></div>
+                                <div className="flex justify-end gap-2">{offer.status === OfferStatus.Draft && onEditDraft && <Button size="sm" onClick={() => onEditDraft(offer)}>Edit Draft</Button>}{isPublishedOffer(offer) && offer.secureToken && onOpenLive && <Button size="sm" onClick={() => onOpenLive(offer)}>Open Live Offer</Button>}<Button size="sm" variant="secondary" onClick={() => onViewDetails(offer)}>View Details</Button></div>
                             </td>
                         </tr>
                     ))}

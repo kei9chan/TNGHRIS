@@ -2408,7 +2408,7 @@ export enum OfferStatus {
   AcceptedAndSigned = 'Accepted and Signed',
   Declined = 'Declined',
   Expired = 'Expired',
-  Converted = 'Converted to Employee',
+  Converted = 'Converted',
 }
 
 export interface Offer {

@@ -53,18 +53,22 @@ Deno.serve(async request => {
   const url = Deno.env.get('SUPABASE_URL'); const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!url || !serviceKey) return json({ error: 'Offer service is not configured.' }, 503);
   let body: any; try { body = await request.json(); } catch { return json({ error: 'Invalid request.' }, 400); }
-  const token = String(body?.token || ''); if (!tokenPattern.test(token)) return json({ error: 'Offer not found.' }, 404);
+  const token = String(body?.token || ''); if (!tokenPattern.test(token)) return json({ error: 'This offer link is invalid. Check that the complete link was copied from the offer email.' }, 404);
   const client = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
   try {
     const { data: offer, error } = await client.from('job_offers').select('*').eq('secure_token', token).maybeSingle();
-    if (error || !offer) return json({ error: 'Offer not found.' }, 404);
+    if (error || !offer) return json({ error: 'This offer link is invalid or is no longer available. Contact Recruitment for a current link.' }, 404);
     const now = new Date(); const respondedAt = now.toISOString();
     if (activeStatuses.includes(offer.status) && offer.offer_expiration_date && new Date(`${offer.offer_expiration_date}T23:59:59`) < now) {
       await client.from('job_offers').update({ status: 'Expired', last_saved_at: respondedAt }).eq('id', offer.id).in('status', activeStatuses);
       offer.status = 'Expired';
     }
     const action = String(body.action || 'get');
-    if (action === 'get' && offer.status === 'Draft') return json({ error: 'Offer is not available yet.' }, 404);
+    if (action === 'get' && offer.status === 'Draft') return json({ error: 'This offer has not been published yet. Contact Recruitment if you expected a live offer.' }, 409);
+    if (action === 'get' && offer.status === 'Expired') {
+      const expiry = offer.offer_expiration_date ? new Date(`${offer.offer_expiration_date}T00:00:00`).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' }) : '';
+      return json({ error: `This offer link expired${expiry ? ` on ${expiry}` : ''}. Contact Recruitment if you need an updated offer.` }, 410);
+    }
     if (action === 'signed-pdf') {
       if (!signedStatuses.includes(offer.status)) return json({ error: 'A signed PDF can only be stored after signing.' }, 409);
       const encoded = String(body.pdfBase64 || ''); if (!encoded || encoded.length > 7_000_000) return json({ error: 'Signed PDF is missing or too large.' }, 400);

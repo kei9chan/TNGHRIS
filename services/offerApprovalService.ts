@@ -12,7 +12,6 @@ import {
   OfferBuilderDetails,
   OfferPackageDocument,
   OfferPackageDocumentType,
-  OfferStatus,
 } from '../types';
 import {
   fetchInterviewRating,
@@ -25,6 +24,9 @@ import {
 } from './interviewRatingService';
 import { createInterviewRatingSummary } from './interviewRatingSummary';
 import { downloadOfferPdf } from '../components/recruitment/offerPdf';
+import { mapJobOfferRow } from './jobOfferMapper';
+
+export { mapJobOfferRow as mapApprovalOfferRow } from './jobOfferMapper';
 
 export const CANDIDATE_DOCUMENT_BUCKET = 'candidate-recruitment-documents';
 
@@ -97,49 +99,6 @@ export const mapApplicationRow = (row: any): Application => ({
   resumeFileUrl: row.resume_file_url || undefined,
   resumeFilePath: row.resume_file_path || undefined,
   coverLetter: row.cover_letter || undefined,
-});
-
-export const mapApprovalOfferRow = (row: any): Offer => ({
-  id: row.id,
-  applicationId: row.application_id,
-  offerNumber: row.offer_number || '',
-  basePay: Number(row.base_pay || 0),
-  basePaySpecified: row.offer_details?.compensationEntered === true || Number(row.base_pay || 0) > 0,
-  allowanceJSON: JSON.stringify(row.allowance_json || {}),
-  startDate: new Date(row.start_date || Date.now()),
-  probationMonths: row.probation_months ?? 0,
-  employmentType: row.employment_type || 'Full-Time',
-  status: row.status as OfferStatus,
-  reportingTo: row.reporting_to || '',
-  jobDescription: row.job_description || '',
-  offerDetails: row.offer_details || {},
-  draftStep: row.draft_step || 1,
-  offerExpirationDate: dateOrUndefined(row.offer_expiration_date),
-  logoUrl: row.logo_url || undefined,
-  logoPath: row.logo_path || undefined,
-  lastSavedAt: dateOrUndefined(row.last_saved_at),
-  sentAt: dateOrUndefined(row.sent_at),
-  sentByUserId: row.sent_by_user_id || undefined,
-  recipientEmail: row.recipient_email || undefined,
-  emailSubject: row.email_subject || undefined,
-  emailMessage: row.email_message || undefined,
-  secureToken: row.secure_token || undefined,
-  revision: row.revision || 1,
-  viewedAt: dateOrUndefined(row.viewed_at),
-  acceptedAt: dateOrUndefined(row.accepted_at),
-  signedAt: dateOrUndefined(row.signed_at),
-  declinedAt: dateOrUndefined(row.declined_at),
-  declineReason: row.decline_reason || undefined,
-  signatureName: row.signature_name || undefined,
-  signatureType: row.signature_type || undefined,
-  signaturePath: row.signature_path || undefined,
-  signedPdfPath: row.signed_pdf_path || undefined,
-  requireSignature: row.require_signature !== false,
-  offerTemplateId: row.offer_template_id || undefined,
-  offerTemplateName: row.offer_template_name || undefined,
-  offerTemplateSnapshot: row.offer_template_snapshot || undefined,
-  approvalStatus: row.approval_status as OfferApprovalStatus | undefined,
-  approvalRequestId: row.approval_request_id || undefined,
 });
 
 const mapCandidateDocument = (row: any): OfferPackageDocument => ({
@@ -455,7 +414,7 @@ export const fetchOfferApprovalPackage = async (requestId: string): Promise<Offe
   if (!payload?.request || !payload?.candidate || !payload?.application || !payload?.offer) throw new Error('The offer approval package is unavailable.');
   return {
     request: mapApprovalRequest(payload.request),
-    offer: mapApprovalOfferRow(payload.offer),
+    offer: mapJobOfferRow(payload.offer),
     application: mapApplicationRow(payload.application),
     candidate: mapCandidateRow(payload.candidate),
     ratings: (payload.ratings || []).map(mapInterviewRatingRecord),

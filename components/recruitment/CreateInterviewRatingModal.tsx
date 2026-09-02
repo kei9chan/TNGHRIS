@@ -24,9 +24,10 @@ interface CreateInterviewRatingModalProps {
   applications: Application[];
   jobPosts: JobPost[];
   onAssigned: (records: InterviewRatingRecord[]) => void;
+  initialApplicationId?: string;
 }
 
-const CreateInterviewRatingModal: React.FC<CreateInterviewRatingModalProps> = ({ isOpen, onClose, candidate, applications, jobPosts, onAssigned }) => {
+const CreateInterviewRatingModal: React.FC<CreateInterviewRatingModalProps> = ({ isOpen, onClose, candidate, applications, jobPosts, onAssigned, initialApplicationId }) => {
   const candidateApplications = useMemo(() => applications.filter(application => application.candidateId === candidate.id), [applications, candidate.id]);
   const [templates, setTemplates] = useState<InterviewRatingTemplate[]>([]);
   const [reviewers, setReviewers] = useState<ReviewerOption[]>([]);
@@ -52,7 +53,7 @@ const CreateInterviewRatingModal: React.FC<CreateInterviewRatingModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
-    setApplicationId(candidateApplications[0]?.id || '');
+    setApplicationId(candidateApplications.some(application => application.id === initialApplicationId) ? initialApplicationId! : candidateApplications[0]?.id || '');
     setTemplateId('');
     setReviewerSearch('');
     setSelectedReviewerIds([]);
@@ -69,7 +70,7 @@ const CreateInterviewRatingModal: React.FC<CreateInterviewRatingModalProps> = ({
       setTemplates(loadedTemplates);
       setReviewers((reviewerResult.data || []).map((row: any) => ({ id: row.id, name: row.full_name || row.email, email: row.email || '', position: row.position || '' })));
     }).catch((error: any) => setErrorMessage(error?.message || 'Unable to load rating templates and reviewers.')).finally(() => setIsLoading(false));
-  }, [candidateApplications, isOpen]);
+  }, [candidateApplications, initialApplicationId, isOpen]);
 
   useEffect(() => {
     if (!templateId && matchingTemplates.length) setTemplateId(matchingTemplates[0].id);

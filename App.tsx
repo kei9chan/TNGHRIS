@@ -121,6 +121,7 @@ const OfferTemplates = React.lazy(() => import('./pages/recruitment/OfferTemplat
 const FeedbackTemplates = React.lazy(() => import('./pages/feedback/FeedbackTemplates'));
 const Apply = React.lazy(() => import('./pages/Apply'));
 const ThankYou = React.lazy(() => import('./pages/ThankYou'));
+const OfferResponse = React.lazy(() => import('./pages/OfferResponse'));
 const Departments = React.lazy(() => import('./pages/admin/Departments'));
 const ApplicationPages = React.lazy(() => import('./pages/recruitment/ApplicationPages'));
 const CareerPagePreview = React.lazy(() => import('./components/recruitment/CareerPagePreview'));
@@ -270,6 +271,7 @@ const AppRoutes: React.FC = () => {
       <Route path="/apply" element={<Apply />} />
       <Route path="/apply/:jobPostId/:jobSlug?" element={<Apply />} />
         <Route path="/thank-you" element={<ThankYou />} />
+        <Route path="/offer/:token" element={<OfferResponse />} />
         {/* Public Career Pages */}
         <Route path="/careers/:slug/apply/:roleSlug" element={<CareerApplicationPage />} />
         <Route path="/careers/:slug/apply" element={<CareerApplicationPage />} />

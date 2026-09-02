@@ -17,6 +17,8 @@ import OfferTemplatePicker from '../../components/recruitment/OfferTemplatePicke
 import { mapOfferTemplate } from './OfferTemplates';
 import { fetchRatingRecordsForCandidate } from '../../services/interviewRatingService';
 import OfferApprovalPackageModal from '../../components/recruitment/OfferApprovalPackageModal';
+import { candidateOfferUrl, saveOfferDraft, sendApprovedOffer } from '../../services/jobOfferWorkspaceService';
+import { mapJobOfferRow } from '../../services/jobOfferMapper';
 
 
 const Offers: React.FC = () => {
@@ -49,59 +51,6 @@ const Offers: React.FC = () => {
   const canManage = can('Offers', Permission.Manage);
   const canView = can('Offers', Permission.View) || canManage;
 
-  const mapOffer = useCallback((row: any): Offer => ({
-    id: row.id,
-    applicationId: row.application_id,
-    offerNumber: row.offer_number,
-    basePay: Number(row.base_pay),
-    basePaySpecified: row.offer_details?.compensationEntered === true || Number(row.base_pay) > 0,
-    allowanceJSON: JSON.stringify(row.allowance_json || {}),
-    startDate: row.start_date ? new Date(row.start_date) : new Date(),
-    probationMonths: row.probation_months ?? 0,
-    employmentType: row.employment_type,
-    status: row.status,
-    reportingTo: row.reporting_to || '',
-    jobDescription: row.job_description || '',
-    offerDetails: row.offer_details || {},
-    draftStep: row.draft_step || 1,
-    offerExpirationDate: row.offer_expiration_date ? new Date(row.offer_expiration_date) : undefined,
-    logoUrl: row.logo_url || undefined,
-    logoPath: row.logo_path || undefined,
-    lastSavedAt: row.last_saved_at ? new Date(row.last_saved_at) : undefined,
-    sentAt: row.sent_at ? new Date(row.sent_at) : undefined,
-    sentByUserId: row.sent_by_user_id || undefined,
-    recipientEmail: row.recipient_email || undefined,
-    emailSubject: row.email_subject || undefined,
-    emailMessage: row.email_message || undefined,
-    secureToken: row.secure_token || undefined,
-    revision: row.revision || 1,
-    viewedAt: row.viewed_at ? new Date(row.viewed_at) : undefined,
-    acceptedAt: row.accepted_at ? new Date(row.accepted_at) : undefined,
-    signedAt: row.signed_at ? new Date(row.signed_at) : undefined,
-    declinedAt: row.declined_at ? new Date(row.declined_at) : undefined,
-    declineReason: row.decline_reason || undefined,
-    signatureName: row.signature_name || undefined,
-    signatureType: row.signature_type || undefined,
-    signaturePath: row.signature_path || undefined,
-    signedPdfPath: row.signed_pdf_path || undefined,
-    requireSignature: row.require_signature !== false,
-    offerTemplateId: row.offer_template_id || undefined,
-    offerTemplateName: row.offer_template_name || undefined,
-    offerTemplateSnapshot: row.offer_template_snapshot || undefined,
-    approvalStatus: row.approval_status || 'Not Requested',
-    approvalRequestId: row.approval_request_id || undefined,
-    // Optional fields not in table
-    workScheduleDays: '',
-    workScheduleHours: '',
-    workLocation: '',
-    paymentSchedule: '',
-    additionalPayInfo: '',
-    companyBenefits: '',
-    preEmploymentRequirements: '',
-    signatoryName: '',
-    signatoryPosition: '',
-  }), []);
-
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -122,7 +71,7 @@ const Offers: React.FC = () => {
       if (deptRes.error) throw deptRes.error;
       if (buRes.error) throw buRes.error;
 
-      setOffers((offRes.data || []).map(mapOffer));
+      setOffers((offRes.data || []).map(mapJobOfferRow));
       setApplications((appRes.data || []).map((a: any) => ({
         id: a.id,
         candidateId: a.candidate_id,
@@ -201,17 +150,22 @@ const Offers: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [mapOffer]);
+  }, []);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
+  const loadOffers = useCallback(async () => {
+    const { data, error } = await supabase.from('job_offers').select('*').order('created_at', { ascending: false });
+    if (!error) setOffers((data || []).map(mapJobOfferRow));
+  }, []);
+
   useEffect(() => {
     if (!canView) return;
-    const channel = supabase.channel('recruitment-offer-statuses').on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'job_offers' }, () => { void loadData(); }).subscribe();
+    const channel = supabase.channel('recruitment-offer-statuses').on('postgres_changes', { event: '*', schema: 'public', table: 'job_offers' }, () => { void loadOffers(); }).subscribe();
     return () => { void supabase.removeChannel(channel); };
-  }, [canView, loadData]);
+  }, [canView, loadOffers]);
 
   useEffect(() => {
     const templateId = searchParams.get('template');
@@ -263,16 +217,25 @@ const Offers: React.FC = () => {
     setEditingOffer(null);
   };
 
-  const handleRequestOfferApproval = async (offer: EnrichedOffer) => {
+  const handleRequestOfferApproval = async (offer: Offer) => {
     const application = applications.find(item => item.id === offer.applicationId);
     const candidate = candidates.find(item => item.id === application?.candidateId);
+    const requisition = requisitions.find(item => item.id === application?.requisitionId);
     if (!application || !candidate) {
       setSuccessMessage('The candidate or application record could not be found for this offer.');
       return;
     }
     try {
       const allRatings = await fetchRatingRecordsForCandidate(candidate.id);
-      setApprovalPackage({ offer, candidate, application, ratings: allRatings.filter(rating => rating.applicationId === application.id) });
+      setApprovalPackage({ offer: {
+        ...offer,
+        candidateName: `${candidate.firstName} ${candidate.lastName}`,
+        candidateEmail: candidate.email,
+        jobTitle: requisition?.title || offer.offerDetails?.jobTitle || 'N/A',
+        businessUnitId: requisition?.businessUnitId,
+        businessUnitName: businessUnits.find(unit => unit.id === requisition?.businessUnitId)?.name || offer.offerDetails?.businessUnit || '—',
+        departmentName: departments.find(department => department.id === requisition?.departmentId)?.name || offer.offerDetails?.department || '—',
+      }, candidate, application, ratings: allRatings.filter(rating => rating.applicationId === application.id) });
     } catch (error: any) {
       setSuccessMessage(error?.message || 'Unable to load interview ratings for this candidate.');
       setTimeout(() => setSuccessMessage(''), 5000);
@@ -280,51 +243,11 @@ const Offers: React.FC = () => {
   };
 
   const handleSaveOffer = async (offerToSave: Offer): Promise<Offer> => {
-    const allowanceJson = offerToSave.allowanceJSON ? JSON.parse(offerToSave.allowanceJSON) : {};
-    const payload = {
-      application_id: offerToSave.applicationId,
-      offer_number: offerToSave.offerNumber || `OFFER-${Date.now().toString().slice(-6)}`,
-      base_pay: offerToSave.basePay,
-      allowance_json: allowanceJson,
-      start_date: offerToSave.startDate ? new Date(offerToSave.startDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
-      probation_months: offerToSave.probationMonths,
-      employment_type: offerToSave.employmentType,
-      status: offerToSave.status,
-      reporting_to: offerToSave.reportingTo || null,
-      job_description: offerToSave.jobDescription || null,
-      offer_details: offerToSave.offerDetails || {},
-      draft_step: offerToSave.draftStep || 1,
-      offer_expiration_date: offerToSave.offerExpirationDate ? new Date(offerToSave.offerExpirationDate).toISOString().slice(0, 10) : null,
-      logo_url: offerToSave.logoUrl || null,
-      logo_path: offerToSave.logoPath || null,
-      last_saved_at: new Date().toISOString(),
-      recipient_email: offerToSave.recipientEmail || null,
-      email_subject: offerToSave.emailSubject || null,
-      email_message: offerToSave.emailMessage || null,
-      created_by_user_id: user?.id || null,
-      require_signature: offerToSave.requireSignature !== false,
-      offer_template_id: offerToSave.offerTemplateId || null,
-      offer_template_name: offerToSave.offerTemplateName || null,
-      offer_template_snapshot: offerToSave.offerTemplateSnapshot || {},
-    };
     try {
-      if (offerToSave.id) {
-        const { data, error } = await supabase.from('job_offers').update(payload).eq('id', offerToSave.id).select().single();
-        if (error) throw error;
-        const mapped = mapOffer(data);
-        setOffers(prev => prev.map(o => o.id === mapped.id ? mapped : o));
-        logActivity(user, 'UPDATE', 'Offer', mapped.id, `Updated offer ${mapped.offerNumber}`);
-        return mapped;
-      } else {
-        const { data: existingDraft } = await supabase.from('job_offers').select('id').eq('application_id', offerToSave.applicationId).eq('status', OfferStatus.Draft).order('updated_at', { ascending: false }).limit(1).maybeSingle();
-        const request = existingDraft?.id ? supabase.from('job_offers').update(payload).eq('id', existingDraft.id) : supabase.from('job_offers').insert(payload);
-        const { data, error } = await request.select().single();
-        if (error) throw error;
-        const mapped = mapOffer(data);
-        setOffers(prev => existingDraft?.id ? prev.map(item => item.id === mapped.id ? mapped : item) : [mapped, ...prev]);
-        logActivity(user, existingDraft?.id ? 'UPDATE' : 'CREATE', 'Offer', mapped.id, `${existingDraft?.id ? 'Updated' : 'Created'} offer ${mapped.offerNumber}`);
-        return mapped;
-      }
+      const result = await saveOfferDraft(offerToSave, user?.id);
+      setOffers(previous => previous.some(item => item.id === result.offer.id) ? previous.map(item => item.id === result.offer.id ? result.offer : item) : [result.offer, ...previous]);
+      await logActivity(user, result.created ? 'CREATE' : 'UPDATE', 'Offer', result.offer.id, `${result.created ? 'Created' : 'Updated'} offer ${result.offer.offerNumber}`);
+      return result.offer;
     } catch (err) {
       console.error('Failed to save offer', err);
       throw err;
@@ -333,48 +256,12 @@ const Offers: React.FC = () => {
 
   const handleSendOffer = async (offerToSend: Offer, recipient: string, subject: string, message: string, previewHtml: string): Promise<Offer> => {
     if (!canManage) throw new Error('You do not have permission to send offers.');
-    if (!recipient) throw new Error('The candidate email address is missing.');
-    // Persist first to obtain a stable opaque token, but keep the status Draft until email succeeds.
-    const draft = await handleSaveOffer({ ...offerToSend, status: OfferStatus.Draft, recipientEmail: recipient, emailSubject: subject, emailMessage: message });
-    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError || !sessionData.session?.access_token) throw new Error('Your session has expired. Please sign in again.');
-    const secureLink = `${window.location.origin}/offer/${draft.secureToken}`;
-    const activatedAt = new Date().toISOString();
-    const sendingDetails = { ...(draft.offerDetails || {}), emailDelivery: { status: 'sending', attemptedAt: activatedAt } };
-    const { data: activatedRow, error: activationError } = await supabase.from('job_offers').update({ status: OfferStatus.Sent, sent_at: activatedAt, sent_by_user_id: user?.id || null, last_saved_at: activatedAt, recipient_email: recipient, email_subject: subject.trim(), email_message: message.trim(), require_signature: offerToSend.requireSignature !== false, offer_details: sendingDetails }).eq('id', draft.id).select().single();
-    if (activationError || !activatedRow) throw new Error(`Unable to activate the secure offer link: ${activationError?.message || 'Unknown error'}`);
-    const activatedOffer = mapOffer(activatedRow);
-    setOffers(previous => previous.map(item => item.id === activatedOffer.id ? activatedOffer : item));
-    const html = `${previewHtml}<p style="margin-top:24px"><a href="${secureLink}" style="background:#6d28d9;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600">View and Respond to Offer</a></p><p style="color:#64748b;font-size:12px">This is a private link intended for the named recipient.</p>`;
-    const { data: emailResult, error: emailError } = await supabase.functions.invoke('send-recruitment-email', {
-      body: { to: recipient, subject: subject.trim(), message: `${message.trim()}\n\nReview your offer: ${secureLink}`, html, category: 'job-offer' },
-    });
-    let provider = emailResult?.ok ? 'google-gmail' : '';
-    let deliveryError = '';
-    if (!provider) {
-      let googleMessage = emailResult?.error;
-      if (!googleMessage) {
-        try { googleMessage = (await emailError?.context?.json?.())?.error; } catch { /* response body unavailable */ }
-      }
-      try {
-        const smtpResponse = await fetch('/api/recruitment-email', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionData.session.access_token}` }, body: JSON.stringify({ to: recipient, subject: subject.trim(), message: `${message.trim()}\n\nReview your offer: ${secureLink}`, html }) });
-        const smtpBody = await smtpResponse.json().catch(() => ({}));
-        if (!smtpResponse.ok) throw new Error(smtpBody?.error || `Email service returned HTTP ${smtpResponse.status}.`);
-        provider = 'existing-email-service';
-      } catch (smtpError: any) {
-        deliveryError = [googleMessage || emailError?.message, smtpError?.message].filter(Boolean).join(' Existing email service fallback: ');
-      }
-    }
-    const sentAt = new Date().toISOString();
-    const deliveryDetails = { ...(activatedOffer.offerDetails || {}), emailDelivery: provider ? { status: 'sent', provider, attemptedAt: activatedAt, sentAt } : { status: 'failed', attemptedAt: activatedAt, error: deliveryError || 'Email delivery failed.' } };
-    const { data, error } = await supabase.from('job_offers').update({ last_saved_at: sentAt, offer_details: deliveryDetails }).eq('id', draft.id).select().single();
-    if (error) throw new Error(`The secure link is live, but delivery status could not be recorded: ${error.message}`);
-    const mapped = mapOffer(data);
-    setOffers(previous => previous.map(item => item.id === mapped.id ? mapped : item));
-    await logActivity(user, 'UPDATE', 'Offer', mapped.id, provider ? `Sent offer ${mapped.offerNumber} to ${recipient} through ${provider}` : `Activated secure link for ${mapped.offerNumber}; email delivery failed`);
-    setSuccessMessage(provider ? `Offer sent successfully to ${recipient}.` : 'The secure offer link is live, but the email could not be delivered. Copy the link from View Details and retry sending after the Google email connection is updated.');
+    const result = await sendApprovedOffer({ offer: offerToSend, userId: user?.id, recipient, subject, message, previewHtml });
+    setOffers(previous => previous.map(item => item.id === result.offer.id ? result.offer : item));
+    await logActivity(user, 'UPDATE', 'Offer', result.offer.id, result.provider ? `Sent offer ${result.offer.offerNumber} to ${recipient} through ${result.provider}` : `Activated secure link for ${result.offer.offerNumber}; email delivery failed`);
+    setSuccessMessage(result.provider ? `Offer sent successfully to ${recipient}.` : 'The secure offer link is live, but the email could not be delivered. Copy the link from View Details and retry sending after the Google email connection is updated.');
     setTimeout(() => setSuccessMessage(''), 5000);
-    return mapped;
+    return result.offer;
   };
 
   const handleStatusChange = async (offerId: string, newStatus: OfferStatus) => {
@@ -438,7 +325,7 @@ const Offers: React.FC = () => {
           )}
 
           <Card>
-            {isLoading ? <div className="p-6 text-gray-500">Loading offers...</div> : <OfferTable offers={filteredOffers} onViewDetails={handleOpenModal} onEditDraft={offer => { setEditingOffer(offer); setSelectedOffer(null); setIsDetailModalOpen(false); setIsCreationDrawerOpen(true); }} />}
+            {isLoading ? <div className="p-6 text-gray-500">Loading offers...</div> : <OfferTable offers={filteredOffers} onViewDetails={handleOpenModal} onEditDraft={offer => { setEditingOffer(offer); setSelectedOffer(null); setIsDetailModalOpen(false); setIsCreationDrawerOpen(true); }} onOpenLive={offer => window.open(candidateOfferUrl(offer), '_blank', 'noopener,noreferrer')} />}
           </Card>
 
           {isCreationDrawerOpen && (
@@ -455,6 +342,7 @@ const Offers: React.FC = () => {
               businessUnitLogos={businessUnitLogos}
               initialOffer={editingOffer}
               initialTemplate={initialTemplate}
+              onRequestApproval={offer => void handleRequestOfferApproval(offer)}
             />
           )}
           <OfferTemplatePicker open={templatePickerOpen} templates={templates} onClose={() => { setTemplatePickerOpen(false); setSearchParams({}); }} onContinue={template => { setInitialTemplate(template); setEditingOffer(null); setSelectedOffer(null); setTemplatePickerOpen(false); setSearchParams({}); setIsCreationDrawerOpen(true); }}/>
@@ -471,7 +359,7 @@ const Offers: React.FC = () => {
               onRequestApproval={offer => void handleRequestOfferApproval(offer)}
             />
           )}
-          {approvalPackage && <OfferApprovalPackageModal isOpen={true} onClose={() => setApprovalPackage(null)} offer={approvalPackage.offer} candidate={approvalPackage.candidate} application={approvalPackage.application} ratings={approvalPackage.ratings} onSubmitted={requestId => { setOffers(current => current.map(item => item.id === approvalPackage.offer.id ? { ...item, approvalStatus: 'Pending Approval', approvalRequestId: requestId } : item)); setSuccessMessage('Offer approval request submitted successfully.'); setTimeout(() => setSuccessMessage(''), 5000); }} />}
+          {approvalPackage && <OfferApprovalPackageModal isOpen={true} onClose={() => setApprovalPackage(null)} offer={approvalPackage.offer} candidate={approvalPackage.candidate} application={approvalPackage.application} ratings={approvalPackage.ratings} onSubmitted={requestId => { setOffers(current => current.map(item => item.id === approvalPackage.offer.id ? { ...item, approvalStatus: 'Pending Approval', approvalRequestId: requestId } : item)); setIsCreationDrawerOpen(false); setEditingOffer(null); setApprovalPackage(null); setSuccessMessage('Offer approval request submitted successfully.'); setTimeout(() => setSuccessMessage(''), 5000); }} />}
         </>
       )}
     </div>
