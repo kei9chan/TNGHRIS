@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { useAuth } from './useAuth';
 import { usePermissionsContext } from '../context/PermissionsContext';
@@ -10,11 +11,11 @@ export const usePermissions = () => {
     const { approverConfigs } = useSettings();
 
     // Use the session user directly from AuthContext (live Supabase data)
-    const getCurrentUser = () => {
+    const getCurrentUser = useCallback(() => {
         return sessionUser || null;
-    };
+    }, [sessionUser]);
 
-    const getAccessibleBusinessUnits = (allBusinessUnits: BusinessUnit[]): BusinessUnit[] => {
+    const getAccessibleBusinessUnits = useCallback((allBusinessUnits: BusinessUnit[]): BusinessUnit[] => {
         const user = getCurrentUser();
         if (!user || !effectiveRbac?.authorized) return [];
         const scope = effectiveRbac.dataScope || user.accessScope || { type: 'SELF' as const };
@@ -37,9 +38,9 @@ export const usePermissions = () => {
             return allBusinessUnits.filter(bu => bu.name === user.businessUnit);
         }
         return [];
-    };
+    }, [effectiveRbac, getCurrentUser]);
 
-    const can = (resource: Resource, permission: Permission): boolean => {
+    const can = useCallback((resource: Resource, permission: Permission): boolean => {
         const user = getCurrentUser();
         if (!user || loadingPermissions || authorizationError || !effectiveRbac?.authorized) return false;
         const aliases: Partial<Record<Resource, Resource>> = {
@@ -68,15 +69,15 @@ export const usePermissions = () => {
         }
 
         return resourcePermissions.includes(permission);
-    };
+    }, [authorizationError, effectiveRbac, getCurrentUser, loadingPermissions]);
 
-    const workflowCan = (workflow: string, action: Permission): boolean => {
+    const workflowCan = useCallback((workflow: string, action: Permission): boolean => {
         if (!effectiveRbac?.authorized || loadingPermissions || authorizationError) return false;
         const actions = effectiveRbac.workflows[workflow] || [];
         return actions.includes(action);
-    };
+    }, [authorizationError, effectiveRbac, loadingPermissions]);
 
-    const effectiveScope = (): 'global' | 'bu' | 'dept' | 'team' | 'self' | 'none' => {
+    const effectiveScope = useCallback((): 'global' | 'bu' | 'dept' | 'team' | 'self' | 'none' => {
         switch (effectiveRbac?.dataScope?.type) {
             case 'GLOBAL': return 'global';
             case 'SPECIFIC':
@@ -86,7 +87,7 @@ export const usePermissions = () => {
             case 'SELF': return 'self';
             default: return 'none';
         }
-    };
+    }, [effectiveRbac?.dataScope?.type]);
 
     const getVisibleEmployeeIds = (): string[] => {
         const user = getCurrentUser();
@@ -140,14 +141,14 @@ export const usePermissions = () => {
         );
     };
 
-    const getTicketAccess = () => {
+    const getTicketAccess = useCallback(() => {
         return {
             canSubmit: can('Helpdesk', Permission.Create) || can('Helpdesk', Permission.Submit),
             canRespond: can('Helpdesk', Permission.Edit) || can('Helpdesk', Permission.Manage),
             canView: can('Helpdesk', Permission.View),
             scope: effectiveScope(),
         };
-    };
+    }, [can, effectiveScope]);
 
     const filterTicketsByScope = (data: Ticket[]): Ticket[] => {
         const user = getCurrentUser();
@@ -375,7 +376,7 @@ export const usePermissions = () => {
         return { canRequest, canApprove, canView, scope, filterRequests, canActOn };
     };
 
-    const getIrAccess = () => {
+    const getIrAccess = useCallback(() => {
         const user = getCurrentUser();
         if (!user) {
             return { canCreate: false, canView: false, scope: 'none' as const };
@@ -385,7 +386,7 @@ export const usePermissions = () => {
             canView: can('IncidentReports' as Resource, Permission.View),
             scope: effectiveScope(),
         };
-    };
+    }, [can, effectiveScope, getCurrentUser, workflowCan]);
 
     const getAwardsAccess = () => {
         const user = getCurrentUser();

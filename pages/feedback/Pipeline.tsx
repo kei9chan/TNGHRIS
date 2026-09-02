@@ -30,7 +30,7 @@ const Pipeline: React.FC = () => {
         try {
             const { data, error } = await supabase
                 .from('pipeline_stages')
-                .select('*')
+                .select('id, name, is_locked, sort_order, code')
                 .order('sort_order', { ascending: true });
             if (error) throw error;
             const mapped = (data || []).map((row: any) => ({

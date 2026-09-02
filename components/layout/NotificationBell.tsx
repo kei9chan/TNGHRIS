@@ -99,7 +99,9 @@ const NotificationBell: React.FC = () => {
     // Initial load + 30s polling
     useEffect(() => {
         loadNotifications(false);
-        const interval = setInterval(() => loadNotifications(true), 30000);
+        const interval = setInterval(() => {
+            if (document.visibilityState === 'visible') loadNotifications(true);
+        }, 30000);
         return () => clearInterval(interval);
     }, [loadNotifications]);
 

@@ -460,7 +460,9 @@ const ManagerDashboard: React.FC = () => {
             })));
         };
         loadAssignedTickets();
-        const interval = setInterval(loadAssignedTickets, 20000);
+        const interval = setInterval(() => {
+            if (document.visibilityState === 'visible') void loadAssignedTickets();
+        }, 20000);
         return () => {
             isMounted = false;
             clearInterval(interval);

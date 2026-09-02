@@ -253,7 +253,9 @@ export function useAdditionalApprovals(user: User | null) {
 
   useEffect(() => {
     refreshAdditionalApprovals();
-    const interval = window.setInterval(refreshAdditionalApprovals, 30000);
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refreshAdditionalApprovals();
+    }, 30000);
     return () => window.clearInterval(interval);
   }, [refreshAdditionalApprovals]);
 

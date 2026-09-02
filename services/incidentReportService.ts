@@ -166,7 +166,7 @@ export const fetchIncidentReportById = async (id: string): Promise<IncidentRepor
 export const fetchIncidentReports = async (): Promise<IncidentReport[]> => {
   const { data, error } = await supabase
     .from('incident_reports')
-    .select('*')
+    .select('id, category, description, location, date_time, reported_by, involved_employee_ids, involved_employee_names, witness_ids, witness_names, status, pipeline_stage, nte_ids, nte_processing_complete, nte_processing_summary, resolution_id, chat_thread, attachment_url, signature_data_url, assigned_to_id, assigned_to_name, business_unit_id, business_unit_name, created_at, case_number, sla_deadline, follow_up_count, last_follow_up_at, follow_up_history, revision_notes, rejection_reason, revision_history')
     .order('created_at', { ascending: false });
   if (error) throw new Error(error.message || 'Failed to load incident reports');
   return (data as IncidentReportRow[]).map(mapRow);
@@ -351,7 +351,7 @@ export const addIncidentReportMessage = async (
 export const fetchPipelineStages = async (): Promise<PipelineStage[]> => {
   const { data, error } = await supabase
     .from('pipeline_stages')
-    .select('*')
+    .select('id, name, is_locked, sort_order, code')
     .order('sort_order', { ascending: true });
   if (error) throw new Error(error.message || 'Failed to load pipeline stages');
   return (data || []).map((row: any) => ({

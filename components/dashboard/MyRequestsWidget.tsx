@@ -44,7 +44,9 @@ const MyRequestsWidget: React.FC = () => {
 
     setLoading(true);
     loadRequests();
-    const interval = setInterval(loadRequests, 15000);
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') void loadRequests();
+    }, 15000);
     window.addEventListener('focus', loadRequests);
 
     return () => {

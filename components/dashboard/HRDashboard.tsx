@@ -290,7 +290,9 @@ const HRDashboard: React.FC = () => {
             }
         };
         loadOtApprovals();
-        const interval = setInterval(loadOtApprovals, 20000);
+        const interval = setInterval(() => {
+            if (document.visibilityState === 'visible') void loadOtApprovals();
+        }, 20000);
         return () => {
             active = false;
             clearInterval(interval);
@@ -458,7 +460,9 @@ const HRDashboard: React.FC = () => {
             }
         };
         void loadCoeData();
-        const interval = setInterval(() => void loadCoeData(), 15000);
+        const interval = setInterval(() => {
+            if (document.visibilityState === 'visible') void loadCoeData();
+        }, 15000);
         return () => {
             active = false;
             clearInterval(interval);
@@ -531,7 +535,9 @@ const HRDashboard: React.FC = () => {
             })));
         };
         loadAssignedTickets();
-        const interval = setInterval(loadAssignedTickets, 20000);
+        const interval = setInterval(() => {
+            if (document.visibilityState === 'visible') void loadAssignedTickets();
+        }, 20000);
         return () => {
             isMounted = false;
             clearInterval(interval);

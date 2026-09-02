@@ -800,7 +800,9 @@ const EmployeeDashboard: React.FC = () => {
         };
 
         loadApproved();
-        const interval = setInterval(loadApproved, 15000);
+        const interval = setInterval(() => {
+            if (document.visibilityState === 'visible') void loadApproved();
+        }, 15000);
         return () => {
             isMounted = false;
             clearInterval(interval);
@@ -854,7 +856,9 @@ const EmployeeDashboard: React.FC = () => {
             }
         };
         loadOtApprovals();
-        const interval = setInterval(loadOtApprovals, 20000);
+        const interval = setInterval(() => {
+            if (document.visibilityState === 'visible') void loadOtApprovals();
+        }, 20000);
         return () => {
             active = false;
             clearInterval(interval);
@@ -903,7 +907,9 @@ const EmployeeDashboard: React.FC = () => {
             setPans(data.map(mapPanRow));
         };
         loadPans();
-        const interval = setInterval(loadPans, 20000);
+        const interval = setInterval(() => {
+            if (document.visibilityState === 'visible') void loadPans();
+        }, 20000);
         return () => {
             isMounted = false;
             clearInterval(interval);
@@ -933,7 +939,9 @@ const EmployeeDashboard: React.FC = () => {
         };
 
         loadCoeDecisions();
-        const interval = setInterval(loadCoeDecisions, 15000);
+        const interval = setInterval(() => {
+            if (document.visibilityState === 'visible') void loadCoeDecisions();
+        }, 15000);
         return () => {
             isMounted = false;
             clearInterval(interval);
@@ -969,7 +977,9 @@ const EmployeeDashboard: React.FC = () => {
             })));
         };
         loadAssignedTickets();
-        const interval = setInterval(loadAssignedTickets, 20000);
+        const interval = setInterval(() => {
+            if (document.visibilityState === 'visible') void loadAssignedTickets();
+        }, 20000);
         return () => {
             isMounted = false;
             clearInterval(interval);

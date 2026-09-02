@@ -109,7 +109,7 @@ const Timekeeping: React.FC = () => {
     useEffect(() => {
         const loadReferenceData = async () => {
             const [buRes, deptRes, usersRes, templateRes] = await Promise.all([
-                supabase.from('business_units').select('*'),
+                supabase.from('business_units').select('id, name, code, color'),
                 supabase.from('departments').select('id, name, business_unit_id'),
                 supabase.from('hris_users').select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position, date_hired, reports_to'),
                 supabase.from('shift_templates').select('id, name, start_time, end_time, break_minutes, business_unit_id, is_night_shift'),
@@ -281,7 +281,7 @@ const Timekeeping: React.FC = () => {
 
     const [suggestedAssignments, setSuggestedAssignments] = useState<ShiftAssignment[]>([]);
     
-    const weekStart = getStartOfWeek(viewDate);
+    const weekStart = useMemo(() => getStartOfWeek(viewDate), [viewDate]);
     const weekDates = Array.from({ length: 7 }).map((_, i) => addDays(weekStart, i));
 
     // Fetch operating hours for the selected BU
@@ -344,7 +344,9 @@ const Timekeeping: React.FC = () => {
             const leaveQuery = supabase
                 .from('leave_requests')
                 .select('id, employee_id, start_date, end_date, status')
-                .eq('status', LeaveRequestStatus.Approved);
+                .eq('status', LeaveRequestStatus.Approved)
+                .lte('start_date', toDateOnly(rangeEnd))
+                .gte('end_date', toDateOnly(rangeStart));
 
             if (selectedBuId === 'all') {
                 if (accessibleBuIds.length > 0) {
