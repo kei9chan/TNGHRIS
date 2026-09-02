@@ -132,10 +132,7 @@ export function useAdditionalApprovals(user: User | null) {
         .eq('status', 'Pending Approval')
         .order('updated_at', { ascending: false }),
       supabase
-        .from('job_requisitions')
-        .select('id,req_code,title,business_unit_id,department_id,status,created_at,routing_steps')
-        .eq('status', 'PendingApproval')
-        .order('created_at', { ascending: false }),
+        .rpc('get_my_pending_job_requisition_approvals'),
       supabase
         .from('employee_awards')
         .select('id,employee_id,business_unit_id,department_id,status,submitted_at,approver_id,approver_steps,hris_users:employee_id(full_name),award_templates(title)')
@@ -199,10 +196,6 @@ export function useAdditionalApprovals(user: User | null) {
     }));
 
     setPendingRequisitionApprovals((requisitionResult.data || []).flatMap((row: any) => {
-      const steps: PendingStep[] = Array.isArray(row.routing_steps) ? row.routing_steps : [];
-      const stepIndex = steps.findIndex(step => step.userId === user.id && isPending(step.status));
-      if (stepIndex < 0) return [];
-      const step = steps[stepIndex];
       return [{
         id: row.id,
         title: row.title,
@@ -211,8 +204,8 @@ export function useAdditionalApprovals(user: User | null) {
         departmentId: row.department_id || undefined,
         status: row.status,
         createdAt: new Date(row.created_at || Date.now()),
-        currentStep: step.role || step.name || `Approval step ${stepIndex + 1}`,
-        canonicalKey: `requisition:${row.id}:${step.order ?? stepIndex}`,
+        currentStep: row.current_step || 'Required requisition approval',
+        canonicalKey: `requisition:${row.id}:${row.step_order ?? 0}`,
       }];
     }));
 
