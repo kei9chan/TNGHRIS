@@ -1,6 +1,15 @@
 -- COE request routing, explicit purpose/template selection, and return history.
 -- Existing requests, templates, versions, snapshots, and audit records remain intact.
 
+-- The live database still has the original COE enum values. Add the canonical
+-- values used by the current request form while retaining every legacy value.
+alter type public.coe_purpose add value if not exists 'VISA_TRAVEL';
+alter type public.coe_purpose add value if not exists 'SCHOOL_EDUCATION';
+alter type public.coe_purpose add value if not exists 'GOVERNMENT_LEGAL';
+alter type public.coe_purpose add value if not exists 'GENERAL_EMPLOYMENT';
+alter type public.coe_request_status add value if not exists 'Pending HR Manager Approval';
+alter type public.coe_request_status add value if not exists 'Returned for Revision';
+
 alter table public.coe_templates
   add column if not exists purposes text[] not null default '{}'::text[],
   add column if not exists recommended_purposes text[] not null default '{}'::text[];
@@ -242,12 +251,12 @@ declare
   template_row public.coe_templates;
   employee_business_unit_id uuid;
 begin
-  if new.status not in ('Pending HR Manager Approval', 'Pending') then
+  if new.status::text not in ('Pending HR Manager Approval', 'Pending') then
     return new;
   end if;
 
   if new.template_id is null then
-    if new.status = 'Pending HR Manager Approval' then
+    if new.status::text = 'Pending HR Manager Approval' then
       raise exception 'A COE template is required before submitting a request.' using errcode = '23514';
     end if;
     return new;
@@ -350,7 +359,7 @@ begin
   where id = p_request_id;
 
   if request_row.id is null
-     or request_row.status not in ('Pending', 'Pending HR Manager Approval') then
+     or request_row.status::text not in ('Pending', 'Pending HR Manager Approval') then
     return;
   end if;
 
@@ -420,7 +429,7 @@ declare
 begin
   for request_id in
     select id from public.coe_requests
-    where status in ('Pending', 'Pending HR Manager Approval')
+    where status::text in ('Pending', 'Pending HR Manager Approval')
   loop
     perform private.coe_notify_approvers(request_id);
   end loop;
@@ -438,7 +447,7 @@ set search_path = ''
 as $$
 begin
   if old.status is distinct from new.status
-     and new.status in ('Pending', 'Pending HR Manager Approval') then
+     and new.status::text in ('Pending', 'Pending HR Manager Approval') then
     perform private.coe_notify_approvers(new.id);
   end if;
   return new;
@@ -460,7 +469,7 @@ set search_path = ''
 as $$
 begin
   if old.status is distinct from new.status
-     and new.status in ('Approved', 'Rejected', 'Returned for Revision') then
+     and new.status::text in ('Approved', 'Rejected', 'Returned for Revision') then
     update public.notifications
        set is_read = true
      where related_entity_id = new.id::text
@@ -477,12 +486,12 @@ begin
     values (
       new.employee_id::text,
       'COE_UPDATE',
-      case new.status
+      case new.status::text
         when 'Approved' then 'COE Request Approved'
         when 'Rejected' then 'COE Request Rejected'
         else 'COE Request Returned for Revision'
       end,
-      case new.status
+      case new.status::text
         when 'Approved' then 'Your Certificate of Employment request has been approved.'
         when 'Rejected' then format('Your Certificate of Employment request has been rejected. Reason: %s', coalesce(new.rejection_reason, ''))
         else format('Your Certificate of Employment request was returned for revision. Notes: %s', coalesce(new.return_reason, ''))
@@ -551,9 +560,9 @@ declare
   document_value jsonb;
   action_value text;
 begin
-  action_value := case when new.status = 'Approved' then 'approve' else 'reject' end;
+  action_value := case when new.status::text = 'Approved' then 'approve' else 'reject' end;
 
-  if new.status in ('Approved', 'Rejected')
+  if new.status::text in ('Approved', 'Rejected')
      and (tg_op = 'INSERT' or old.status is distinct from new.status)
      and not private.is_coe_approval_authorized(
        public.current_hris_user_id(), new.employee_id, action_value
@@ -561,7 +570,7 @@ begin
     raise exception 'You do not have permission to approve or reject this COE request.' using errcode = '42501';
   end if;
 
-  if new.status = 'Approved'
+  if new.status::text = 'Approved'
      and (new.template_snapshot is null or new.employee_snapshot is null) then
     new.approved_at := coalesce(new.approved_at, now());
     document_value := private.build_coe_document(new);
@@ -615,17 +624,17 @@ begin
     raise exception 'Only the configured HR Manager or HR Staff authority can approve this COE request.' using errcode = '42501';
   end if;
 
-  if request_row.status = 'Rejected' then
+  if request_row.status::text = 'Rejected' then
     raise exception 'A rejected COE request cannot be approved without reopening the existing workflow.';
   end if;
-  if request_row.status = 'Returned for Revision' then
+  if request_row.status::text = 'Returned for Revision' then
     raise exception 'A returned COE request must be resubmitted before it can be approved.';
   end if;
-  if request_row.status not in ('Pending', 'Pending HR Manager Approval', 'Approved') then
+  if request_row.status::text not in ('Pending', 'Pending HR Manager Approval', 'Approved') then
     raise exception 'Only a pending COE request can be approved.';
   end if;
 
-  if request_row.status = 'Approved'
+  if request_row.status::text = 'Approved'
      and request_row.template_snapshot is not null
      and request_row.employee_snapshot is not null then
     document_value := jsonb_build_object(
@@ -721,7 +730,7 @@ begin
   if request_row.id is null then
     raise exception 'COE request not found.' using errcode = 'P0002';
   end if;
-  if request_row.status not in ('Pending', 'Pending HR Manager Approval') then
+  if request_row.status::text not in ('Pending', 'Pending HR Manager Approval') then
     raise exception 'Only a pending COE request can be rejected.';
   end if;
   if not private.is_coe_approval_authorized(actor_id, request_row.employee_id, 'reject') then
@@ -785,7 +794,7 @@ begin
   if request_row.id is null then
     raise exception 'COE request not found.' using errcode = 'P0002';
   end if;
-  if request_row.status not in ('Pending', 'Pending HR Manager Approval') then
+  if request_row.status::text not in ('Pending', 'Pending HR Manager Approval') then
     raise exception 'Only a pending COE request can be returned.';
   end if;
   if not private.is_coe_approval_authorized(actor_id, request_row.employee_id, 'return') then
