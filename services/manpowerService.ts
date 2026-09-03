@@ -1,6 +1,7 @@
 import { supabase } from './supabaseClient';
 import { ManpowerApprovalTrailEntry, ManpowerRequest, ManpowerRequestStatus, ManpowerRequestItem, User } from '../types';
 import { dedupeRead } from './readCache';
+import { normalizeCalendarDate, parseLocalCalendarDate } from '../utils/calendarDate';
 
 // ---------------------------------------------------------------------------
 // Row Type
@@ -42,7 +43,7 @@ const mapManpowerRequest = (row: ManpowerRequestRow): ManpowerRequest => ({
   businessUnitName: row.business_unit_name || '',
   requestedBy: row.requester_id,
   requesterName: row.requester_name,
-  date: new Date(row.date_needed),
+  date: parseLocalCalendarDate(row.date_needed),
   forecastedPax: row.forecasted_pax || 0,
   generalNote: row.general_note || undefined,
   items: Array.isArray(row.items) ? (row.items as ManpowerRequestItem[]) : [],
@@ -94,13 +95,15 @@ export const fetchManpowerRequestById = async (id: string): Promise<ManpowerRequ
   return mapManpowerRequest(data as ManpowerRequestRow);
 };
 
-export const createManpowerRequest = async (request: Partial<ManpowerRequest>, user: User): Promise<ManpowerRequest> => {
+type CreateManpowerRequestInput = Partial<ManpowerRequest> & { dateNeeded?: string };
+
+export const createManpowerRequest = async (request: CreateManpowerRequestInput, user: User): Promise<ManpowerRequest> => {
   const payload = {
     business_unit_id: request.businessUnitId || user.businessUnitId || null,
     business_unit_name: request.businessUnitName || user.businessUnit || '',
     requester_id: user.id,
     requester_name: user.name,
-    date_needed: request.date ? new Date(request.date).toISOString().split('T')[0] : null,
+    date_needed: normalizeCalendarDate(request.dateNeeded || request.date),
     forecasted_pax: request.forecastedPax || 0,
     general_note: request.generalNote || null,
     items: request.items || [],

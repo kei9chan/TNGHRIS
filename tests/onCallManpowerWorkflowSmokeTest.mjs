@@ -10,6 +10,7 @@ const service = read('services/manpowerService.ts');
 const deepLinks = read('services/approvalDeepLinks.ts');
 const migration = read('supabase/migrations/20260829100000_on_call_manpower_form_and_approval_workflow.sql');
 const grantMigration = read('supabase/migrations/20260829101000_grant_manpower_rls_helper_execution.sql');
+const calendarDate = read('utils/calendarDate.ts');
 
 const reasons = [
   'Sick call / absence',
@@ -31,6 +32,10 @@ const checks = [
   [reasons.every(reason => requestForm.includes(reason)), 'per-department reason choices'],
   [requestForm.includes('Explain other reason') && requestForm.includes("selectedReason === 'Other'"), 'Other explanation field'],
   [requestForm.includes('Reason is required only for departments with on-call coverage') && requestForm.includes('needed > 0'), 'zero-count reason rule'],
+  [requestForm.includes('dateNeeded: date') && !requestForm.includes('new Date(`${date}T00:00:00`)'), 'date-only value is submitted without UTC conversion'],
+  [calendarDate.includes('getFullYear()') && calendarDate.includes('getMonth() + 1') && service.includes('normalizeCalendarDate(request.dateNeeded || request.date)'), 'local calendar date serialization'],
+  [requestForm.includes('Coverage row ${invalidItemIndex + 1}') && requestForm.includes('role="alert" aria-live="polite"'), 'visible row-specific submission validation'],
+  [requestForm.includes("scheduleIsLoading ? 'Loading staffing…'") && requestForm.includes('disabled={isSubmitting || scheduleIsLoading'), 'schedule lookup cannot race submission'],
   [requestForm.includes('Add Department') && requestForm.includes('handleAddDepartment'), 'additional department rows'],
   [migration.includes('create table if not exists public.manpower_department_rates') && migration.includes('create table if not exists public.manpower_request_approval_assignments'), 'workflow support tables'],
   [migration.includes("approval_stage text not null default 'BUSINESS_UNIT_MANAGER'") && migration.includes("'BOD_GM'"), 'staged approval columns'],

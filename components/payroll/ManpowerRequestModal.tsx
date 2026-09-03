@@ -6,6 +6,7 @@ import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
+import { toLocalCalendarDate } from '../../utils/calendarDate';
 
 interface ManpowerRequestModalProps {
   isOpen: boolean;
@@ -97,7 +98,7 @@ const itemWithDerivedValues = (item: ManpowerRequestItem, patch: Partial<Manpowe
 const ManpowerRequestModal: React.FC<ManpowerRequestModalProps> = ({ isOpen, onClose, onSave }) => {
   const { user } = useAuth();
   const { getAccessibleBusinessUnits } = usePermissions();
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(toLocalCalendarDate());
   const [forecastedPax, setForecastedPax] = useState(0);
   const [generalNote, setGeneralNote] = useState('');
   const [items, setItems] = useState<ManpowerRequestItem[]>([]);
@@ -108,6 +109,7 @@ const ManpowerRequestModal: React.FC<ManpowerRequestModalProps> = ({ isOpen, onC
   const [scheduleLoading, setScheduleLoading] = useState<Record<string, boolean>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+  const [invalidItemId, setInvalidItemId] = useState('');
 
   const accessibleBusinessUnits = getAccessibleBusinessUnits(businessUnits);
   const accessibleBuKey = accessibleBusinessUnits.map(unit => unit.id).join(',');
@@ -123,12 +125,13 @@ const ManpowerRequestModal: React.FC<ManpowerRequestModalProps> = ({ isOpen, onC
 
   useEffect(() => {
     if (!isOpen || !user) return;
-    setDate(new Date().toISOString().split('T')[0]);
+    setDate(toLocalCalendarDate());
     setForecastedPax(0);
     setGeneralNote('');
     setDepartments([]);
     setDepartmentRates({});
     setFormError('');
+    setInvalidItemId('');
     setItems([emptyItem(`item-${Date.now()}`)]);
     const home = accessibleBusinessUnits.find(unit => unit.id === user.businessUnitId || unit.name === user.businessUnit);
     setSelectedBuId(home?.id || accessibleBusinessUnits[0]?.id || '');
@@ -175,6 +178,10 @@ const ManpowerRequestModal: React.FC<ManpowerRequestModalProps> = ({ isOpen, onC
   }, [isOpen, selectedBuId]);
 
   const updateItem = (index: number, patch: Partial<ManpowerRequestItem>) => {
+    if (items[index]?.id === invalidItemId) {
+      setInvalidItemId('');
+      setFormError('');
+    }
     setItems(previous => previous.map((item, itemIndex) => itemIndex === index ? itemWithDerivedValues(item, patch) : item));
   };
 
@@ -230,6 +237,13 @@ const ManpowerRequestModal: React.FC<ManpowerRequestModalProps> = ({ isOpen, onC
     cost: summary.cost + (Number(item.totalItemCost) || 0),
   }), { needed: 0, cost: 0 }), [items]);
 
+  const scheduleIsLoading = Object.values(scheduleLoading).some(Boolean);
+
+  const failValidation = (message: string, itemId = '') => {
+    setInvalidItemId(itemId);
+    setFormError(message);
+  };
+
   const handleSubmit = async () => {
     if (!user) {
       setFormError('You must be signed in to submit a request.');
@@ -242,7 +256,7 @@ const ManpowerRequestModal: React.FC<ManpowerRequestModalProps> = ({ isOpen, onC
       duplicateDepartments.add(item.departmentId);
       return false;
     });
-    const invalidItem = items.find(item => {
+    const invalidItemIndex = items.findIndex(item => {
       const needed = Number(item.onCallNeeded) || 0;
       return !item.departmentId
         || item.requiredFte === undefined || item.requiredFte < 0
@@ -251,19 +265,31 @@ const ManpowerRequestModal: React.FC<ManpowerRequestModalProps> = ({ isOpen, onC
         || (needed > 0 && !item.reason?.trim())
         || (needed > 0 && item.reason === 'Other' && !item.otherReason?.trim());
     });
-    if (!selectedBuId || !selectedBusinessUnit) return setFormError('Select a valid Business Unit.');
-    if (!date) return setFormError('Select the date coverage is needed.');
-    if (!items.length || duplicateFound) return setFormError('Choose a different department for each coverage row.');
-    if (invalidItem) return setFormError('Complete the department, FTE, rate, and reason fields for every row with on-call coverage.');
+    if (!selectedBuId || !selectedBusinessUnit) return failValidation('Select a valid Business Unit.');
+    if (!date) return failValidation('Select the date coverage is needed.');
+    if (scheduleIsLoading) return failValidation('Please wait while the reporting FTE finishes loading.');
+    if (!items.length || duplicateFound) return failValidation('Choose a different department for each coverage row.');
+    if (invalidItemIndex >= 0) {
+      const invalidItem = items[invalidItemIndex];
+      const row = `Coverage row ${invalidItemIndex + 1}`;
+      const needed = Number(invalidItem.onCallNeeded) || 0;
+      if (!invalidItem.departmentId) return failValidation(`${row}: select a department.`, invalidItem.id);
+      if (invalidItem.requiredFte === undefined || invalidItem.requiredFte < 0) return failValidation(`${row}: enter a valid Required FTE.`, invalidItem.id);
+      if (invalidItem.reportingFte === undefined || invalidItem.reportingFte < 0) return failValidation(`${row}: enter a valid Reporting FTE.`, invalidItem.id);
+      if (invalidItem.ratePerDay === undefined || invalidItem.ratePerDay < 0) return failValidation(`${row}: enter a valid Rate / Day.`, invalidItem.id);
+      if (needed > 0 && !invalidItem.reason?.trim()) return failValidation(`${row}: select a reason for the ${needed} on-call staff needed.`, invalidItem.id);
+      return failValidation(`${row}: explain the “Other” reason.`, invalidItem.id);
+    }
 
     setFormError('');
+    setInvalidItemId('');
     setIsSubmitting(true);
     try {
       const saved = await createManpowerRequest({
         businessUnitId: selectedBuId,
         businessUnitName: selectedBusinessUnit.name,
         departmentId: items[0]?.departmentId,
-        date: new Date(`${date}T00:00:00`),
+        dateNeeded: date,
         forecastedPax: Number(forecastedPax) || 0,
         generalNote: generalNote.trim() || undefined,
         items,
@@ -285,11 +311,14 @@ const ManpowerRequestModal: React.FC<ManpowerRequestModalProps> = ({ isOpen, onC
       title="Request On-Call Coverage"
       size="5xl"
       footer={(
-        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={isSubmitting || !accessibleBusinessUnits.length}>
-            {isSubmitting ? 'Submitting…' : 'Submit Request'}
-          </Button>
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p role="alert" aria-live="polite" className="text-sm font-semibold text-red-700 dark:text-red-300">{formError}</p>
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <Button variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button onClick={handleSubmit} disabled={isSubmitting || scheduleIsLoading || !accessibleBusinessUnits.length}>
+              {isSubmitting ? 'Submitting…' : scheduleIsLoading ? 'Loading staffing…' : 'Submit Request'}
+            </Button>
+          </div>
         </div>
       )}
     >
@@ -345,7 +374,7 @@ const ManpowerRequestModal: React.FC<ManpowerRequestModalProps> = ({ isOpen, onC
               const needed = Number(item.onCallNeeded) || 0;
               const selectedReason = item.reason || '';
               return (
-                <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-600 dark:bg-slate-900/40">
+                <div key={item.id} className={`rounded-xl border bg-slate-50 p-4 dark:bg-slate-900/40 ${invalidItemId === item.id ? 'border-red-400 ring-2 ring-red-100 dark:border-red-500 dark:ring-red-950' : 'border-slate-200 dark:border-slate-600'}`}>
                   <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
                     <label className="lg:col-span-3">
                       <span className={labelClasses}>Department / Area</span>
@@ -440,7 +469,6 @@ const ManpowerRequestModal: React.FC<ManpowerRequestModalProps> = ({ isOpen, onC
         </div>
         <p className="text-xs text-slate-500 dark:text-slate-400">On-call needed = max(Required FTE − Reporting FTE, 0). Reporting FTE is schedule-based and can be adjusted for actual absences.</p>
 
-        {formError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">{formError}</div>}
       </div>
     </Modal>
   );
