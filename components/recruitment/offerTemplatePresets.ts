@@ -1,15 +1,16 @@
 import { OfferBuilderDetails, OfferSectionConfig, OfferTemplate } from '../../types';
 import { appearanceForBusinessUnit } from './offerBranding';
+import { DEFAULT_ADDITIONAL_OFFER_TERMS } from './offerEmployment';
 
 export const DEFAULT_OFFER_SECTIONS: OfferSectionConfig[] = [
   ['candidate-role', 'Candidate and Role'], ['job-description', 'Job Description'], ['responsibilities', 'Responsibilities'],
-  ['start-date', 'Start Date'], ['employment-type', 'Employment Type'], ['department', 'Department'],
+  ['start-date', 'Start Date'], ['employment-type', 'Employment Type'], ['employment-end-date', 'Employment End Date'], ['department', 'Department'],
   ['reporting-to', 'Reporting To'], ['compensation', 'Compensation'], ['monthly-salary', 'Monthly Salary'],
   ['annualized-salary', 'Annualized Salary'], ['probationary-salary', 'Probationary Salary'],
   ['regularization-salary', 'Regularization Salary'], ['allowances', 'Allowances'],
   ['bonuses-incentives', 'Bonuses and Incentives'], ['work-schedule-location', 'Work Schedule and Location'],
   ['benefits-conditions', 'Benefits and Conditions'], ['benefits-growth', 'Benefits and Growth'],
-  ['milestones', '30/60/90-Day Expectations'], ['career-growth', 'Career Growth'], ['next-steps', 'Next Steps'],
+  ['milestones', '30/60/90-Day Expectations'], ['career-growth', 'Career Growth'], ['additional-terms', 'Additional Terms & Conditions'], ['next-steps', 'Next Steps'],
   ['acceptance-decline', 'Acceptance and Decline'], ['signature', 'Signature Section'],
 ].map(([id, label], order) => ({ id, label, visible: true, order }));
 
@@ -62,6 +63,7 @@ const templateDetails = (businessUnit: string, jobTitle: string): OfferBuilderDe
   welcomeMessage: `We’re excited to welcome you to ${businessUnit}. Here’s a clear look at your role, compensation, benefits, and growth opportunity.`,
   requireSignature: true,
   termsReviewed: false,
+  additionalTerms: DEFAULT_ADDITIONAL_OFFER_TERMS,
   appearance: { ...appearanceForBusinessUnit(businessUnit), headerLayout: 'Split' },
   sectionConfig: DEFAULT_OFFER_SECTIONS.map(item => ({ ...item })),
 });
@@ -96,4 +98,3 @@ export const cloneOfferTemplate = (template: OfferTemplate): OfferTemplate => ({
   createdAt: new Date(template.createdAt),
   updatedAt: new Date(template.updatedAt),
 });
-

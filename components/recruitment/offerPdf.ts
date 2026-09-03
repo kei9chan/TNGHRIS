@@ -1,6 +1,7 @@
 import { Offer, OfferBuilderDetails } from '../../types';
 import { mergeAppearance } from './offerBranding';
 import { formatPHP } from './offerCurrency';
+import { DEFAULT_ADDITIONAL_OFFER_TERMS, employmentTypeLabel } from './offerEmployment';
 import regularFontUrl from '../../assets/fonts/TNGSans.ttf?url';
 import boldFontUrl from '../../assets/fonts/TNGSans-Bold.ttf?url';
 
@@ -65,6 +66,7 @@ export const buildOfferPdf = async (
   pdf.addFileToVFS('TNGSans-Bold.ttf', boldFont);
   pdf.addFont('TNGSans-Bold.ttf', 'TNGSans', 'bold');
   const appearance = mergeAppearance(companyName, details.appearance);
+  const employmentLabel = employmentTypeLabel(offer);
   const primary = hex(appearance.primaryColor || '#0EA5A4', [14, 165, 164]);
   const accent = hex(appearance.accentColor || '#FF6B6B', [255, 107, 107]);
   const text = hex(appearance.textColor || '#0F172A', [15, 23, 42]);
@@ -213,7 +215,7 @@ export const buildOfferPdf = async (
   pdf.setFont('TNGSans', 'normal');
   pdf.setFontSize(8);
   pdf.text(`Start: ${date(offer.startDate)}`, 137, 49);
-  pdf.text(`Type: ${offer.employmentType || 'Not specified'}`, 137, 56);
+  pdf.text(linesFor(`Type: ${employmentLabel}`, 51), 137, 56);
 
   y = 88;
   paragraph(details.welcomeMessage || `We're excited to welcome you to ${companyName}. Here is a clear look at your role, compensation, benefits, and growth opportunity.`, { size: 11, gap: 8 });
@@ -223,7 +225,7 @@ export const buildOfferPdf = async (
   const annual = details.grossAnnualizedSalary ?? (monthly !== undefined ? monthly * 12 : undefined);
   card(margin, 55, 'What you earn', money(monthly, monthlySpecified), 'gross monthly salary', palePrimary);
   card(77.5, 55, 'Annualized', money(annual, annualSpecified), 'annualized salary', tint(accent, 0.93));
-  card(139, 55, 'Work location', details.workLocation || 'Not specified', offer.employmentType || 'Employment type', [246, 248, 252]);
+  card(139, 55, 'Work location', details.workLocation || 'Not specified', employmentLabel, [246, 248, 252]);
   y += 41;
   heading('Your Role');
   twoColumnRows([
@@ -233,6 +235,8 @@ export const buildOfferPdf = async (
     ['Business unit', companyName],
     ['Work schedule', [details.workScheduleDays, details.workScheduleHours].filter(Boolean).join(' · ') || 'Not specified'],
     ['Start date', date(offer.startDate)],
+    ['Employment type', employmentLabel],
+    ['Employment end date', date(offer.employmentEndDate)],
   ]);
   heading('Role Purpose');
   paragraph(details.rolePurpose || offer.jobDescription || 'Role purpose to be discussed with the hiring team.');
@@ -295,6 +299,12 @@ export const buildOfferPdf = async (
   heading('Where You Can Grow');
   const growth = (details.growthItems || []).filter(item => item.included);
   (growth.length ? growth.map(item => `${item.name}${item.description ? ` — ${item.description}` : ''}`) : ['Growth and development opportunities will be discussed with your manager.']).forEach(item => bullet(item));
+
+  y += 4;
+  heading('Additional Terms & Conditions', 'These terms apply to this offer only.');
+  const additionalTerms = details.additionalTerms ?? DEFAULT_ADDITIONAL_OFFER_TERMS;
+  const termParagraphs = additionalTerms.split(/\n\s*\n/).map(value => value.trim()).filter(Boolean);
+  (termParagraphs.length ? termParagraphs : ['—']).forEach(value => paragraph(value, { size: 9, gap: 6 }));
 
   newPage();
   heading('Next Steps');

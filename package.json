@@ -48,7 +48,9 @@
     "test:my-requests": "node tests/myRequestsAndReportingLineSmokeTest.mjs",
     "test:dashboard-auth": "node tests/dashboardAuthResilienceSmokeTest.mjs",
     "test:requisition-dashboard": "node tests/jobRequisitionDashboardQueueSmokeTest.mjs",
-    "test:disk-io": "node tests/diskIoRegressionSmokeTest.mjs"
+    "test:disk-io": "node tests/diskIoRegressionSmokeTest.mjs",
+    "test:direct-manager-approvals": "node tests/directManagerTimeApprovalSmokeTest.mjs",
+    "test:offer-employment-pdf": "node tests/offerEmploymentTermsAndInterviewPdfSmokeTest.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.84.0",

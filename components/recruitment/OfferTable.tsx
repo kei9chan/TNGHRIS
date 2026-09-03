@@ -3,6 +3,7 @@ import { OfferStatus, Offer } from '../../types';
 import Button from '../ui/Button';
 import { formatPHP, offerMonthlyPay } from './offerCurrency';
 import { isPublishedOffer } from '../../services/jobOfferWorkspaceService';
+import { employmentTypeLabel } from './offerEmployment';
 
 export interface EnrichedOffer extends Offer {
   candidateName: string;
@@ -51,6 +52,7 @@ const OfferTable: React.FC<OfferTableProps> = ({ offers, onViewDetails, onEditDr
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Job Title</th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Business Unit</th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Start Date</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Employment</th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Base Pay</th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Template</th>
@@ -65,6 +67,7 @@ const OfferTable: React.FC<OfferTableProps> = ({ offers, onViewDetails, onEditDr
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{offer.jobTitle}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{offer.businessUnitName || '—'}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{new Date(offer.startDate).toLocaleDateString()}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400"><span className="font-medium text-gray-700 dark:text-gray-200">{employmentTypeLabel(offer)}</span><span className="block text-xs">{offer.employmentEndDate ? `Ends ${new Date(offer.employmentEndDate).toLocaleDateString()}` : 'No end date'}</span></td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{(() => { const pay = offerMonthlyPay(offer, offer.offerDetails); return formatPHP(pay.value, pay.specified); })()}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm">
                                 <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(offer.status)}`}>
@@ -80,7 +83,7 @@ const OfferTable: React.FC<OfferTableProps> = ({ offers, onViewDetails, onEditDr
                     ))}
                     {offers.length === 0 && (
                         <tr>
-                            <td colSpan={9} className="text-center py-10 text-gray-500 dark:text-gray-400">No offers found for these filters.</td>
+                            <td colSpan={10} className="text-center py-10 text-gray-500 dark:text-gray-400">No offers found for these filters.</td>
                         </tr>
                     )}
                 </tbody>

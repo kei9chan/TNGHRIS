@@ -17,7 +17,7 @@ import OfferTemplatePicker from '../../components/recruitment/OfferTemplatePicke
 import { mapOfferTemplate } from './OfferTemplates';
 import { fetchRatingRecordsForCandidate } from '../../services/interviewRatingService';
 import OfferApprovalPackageModal from '../../components/recruitment/OfferApprovalPackageModal';
-import { candidateOfferUrl, saveOfferDraft, sendApprovedOffer } from '../../services/jobOfferWorkspaceService';
+import { candidateOfferUrl, createOfferRevision, saveOfferDraft, sendApprovedOffer } from '../../services/jobOfferWorkspaceService';
 import { mapJobOfferRow } from '../../services/jobOfferMapper';
 
 
@@ -264,6 +264,31 @@ const Offers: React.FC = () => {
     return result.offer;
   };
 
+  const handleCreateRevision = async (publishedOffer: EnrichedOffer) => {
+    if (!canManage) return;
+    if (!window.confirm('Create a revised draft? The current candidate-facing offer will be marked expired and retained in history.')) return;
+    try {
+      const revised = await createOfferRevision(publishedOffer.id);
+      const enrichedRevision: EnrichedOffer = {
+        ...revised,
+        candidateName: publishedOffer.candidateName,
+        candidateEmail: publishedOffer.candidateEmail,
+        jobTitle: publishedOffer.jobTitle,
+        businessUnitId: publishedOffer.businessUnitId,
+        businessUnitName: publishedOffer.businessUnitName,
+        departmentName: publishedOffer.departmentName,
+      };
+      setOffers(previous => [revised, ...previous.map(item => item.id === publishedOffer.id ? { ...item, status: OfferStatus.Expired } : item)]);
+      setSelectedOffer(null);
+      setIsDetailModalOpen(false);
+      setEditingOffer(enrichedRevision);
+      setIsCreationDrawerOpen(true);
+      await logActivity(user, 'CREATE', 'Offer', revised.id, `Created revised version ${revised.offerNumber} from ${publishedOffer.offerNumber}`);
+    } catch (error: any) {
+      alert(error?.message || 'Unable to create a revised offer.');
+    }
+  };
+
   const handleStatusChange = async (offerId: string, newStatus: OfferStatus) => {
     try {
       const { error } = await supabase.from('job_offers').update({ status: newStatus }).eq('id', offerId);
@@ -357,6 +382,7 @@ const Offers: React.FC = () => {
               onEdit={offer => { setEditingOffer(offer); setIsDetailModalOpen(false); setIsCreationDrawerOpen(true); }}
               onSend={offer => { setEditingOffer(offer); setIsDetailModalOpen(false); setIsCreationDrawerOpen(true); }}
               onRequestApproval={offer => void handleRequestOfferApproval(offer)}
+              onCreateRevision={offer => void handleCreateRevision(offer)}
             />
           )}
           {approvalPackage && <OfferApprovalPackageModal isOpen={true} onClose={() => setApprovalPackage(null)} offer={approvalPackage.offer} candidate={approvalPackage.candidate} application={approvalPackage.application} ratings={approvalPackage.ratings} onSubmitted={requestId => { setOffers(current => current.map(item => item.id === approvalPackage.offer.id ? { ...item, approvalStatus: 'Pending Approval', approvalRequestId: requestId } : item)); setIsCreationDrawerOpen(false); setEditingOffer(null); setApprovalPackage(null); setSuccessMessage('Offer approval request submitted successfully.'); setTimeout(() => setSuccessMessage(''), 5000); }} />}

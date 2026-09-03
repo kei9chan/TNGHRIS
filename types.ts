@@ -2411,6 +2411,17 @@ export enum OfferStatus {
   Converted = 'Converted',
 }
 
+export type OfferEmploymentType =
+  | 'Regular'
+  | 'Probationary'
+  | 'Seasonal / Fixed-Term'
+  | 'Consultant / Contractor'
+  | 'Custom'
+  // Historical values remain readable without rewriting existing offers.
+  | 'Full-Time'
+  | 'Part-Time'
+  | 'Contract';
+
 export interface Offer {
   id: string;
   applicationId: string;
@@ -2420,7 +2431,10 @@ export interface Offer {
   allowanceJSON: string;
   startDate: Date;
   probationMonths: number;
-  employmentType: 'Full-Time' | 'Part-Time' | 'Contract';
+  employmentType: OfferEmploymentType;
+  employmentTypeCustomName?: string;
+  employmentEndDate?: Date;
+  supersedesOfferId?: string;
   status: OfferStatus;
 
   // Expanded fields
@@ -2620,6 +2634,8 @@ export interface OfferBuilderDetails {
   growthItems?: OfferGrowthItem[];
   workScheduleDays?: string;
   workScheduleHours?: string;
+  additionalTerms?: string;
+  customEndDateApplies?: boolean;
   welcomeMessage?: string;
   termsReviewed?: boolean;
   requireSignature?: boolean;
