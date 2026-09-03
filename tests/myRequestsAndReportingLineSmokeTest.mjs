@@ -6,6 +6,8 @@ const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'
 const migration = read('supabase/migrations/20260902100000_my_requests_and_reporting_line_routing.sql');
 const widget = read('components/dashboard/MyRequestsWidget.tsx');
 const service = read('services/myRequestsService.ts');
+const page = read('pages/MyRequests.tsx');
+const app = read('App.tsx');
 const approvalWidget = read('components/dashboard/ApprovalWidget.tsx');
 const dashboards = [
   read('components/dashboard/EmployeeDashboard.tsx'),
@@ -20,6 +22,13 @@ for (const label of ['Pending', 'Approved', 'Rejected', 'Returned']) {
 for (const field of ['requestType', 'submittedAt', 'status', 'View details']) {
   assert.match(widget, new RegExp(field), `missing My Requests field ${field}`);
 }
+assert.match(widget, /requests\.slice\(0, 3\)/, 'dashboard My Requests must show at most three records');
+assert.match(widget, /requests\.length > 3/, 'View all must only appear when more than three records exist');
+assert.match(widget, /to="\/my-requests"/, 'dashboard My Requests must link to the full list');
+assert.match(page, /PAGE_SIZE = 20/, 'full My Requests page must use a reasonable page size');
+assert.match(page, /MyRequestsList requests=\{visibleRequests\}/, 'full My Requests page must render the signed-in user feed');
+assert.match(app, /path="my-requests"/, 'full My Requests route must be registered');
+assert.match(app, /\['\/my-requests', 'Dashboard', Permission\.View\]/, 'full My Requests route must retain dashboard RBAC');
 assert.match(service, /rpc\('get_my_request_summaries'\)/);
 assert.match(migration, /create or replace function public\.get_my_request_summaries\(\)/);
 assert.match(migration, /where auth\.uid\(\) is not null/);

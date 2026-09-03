@@ -19,12 +19,13 @@ export default function ApprovalWidget() {
     {name:'NTE',slug:'nte',count:additional.pendingNTEApprovals.length,exceptions:0,ages:additional.pendingNTEApprovals.map(r=>ageDays(r.createdAt)),tone:'bg-red-100 text-red-800'},
     {name:'PAN',slug:'pan',count:additional.pendingPANApprovals.length,exceptions:0,ages:additional.pendingPANApprovals.map(r=>ageDays(r.createdAt)),tone:'bg-purple-100 text-purple-800'},
     {name:'Awards',slug:'award',count:additional.pendingAwardApprovals.length,exceptions:0,ages:additional.pendingAwardApprovals.map(r=>ageDays(r.createdAt)),tone:'bg-amber-100 text-amber-800'},
+    {name:'Offer Approvals',slug:'offer',count:additional.pendingOfferApprovals.length,exceptions:0,ages:additional.pendingOfferApprovals.map(r=>ageDays(r.createdAt)),tone:'bg-violet-100 text-violet-800'},
     {name:'Leave',slug:'leave',count:approvals.pendingLeaveApprovals.length,exceptions:leaveExceptions,ages:approvals.pendingLeaveApprovals.map(r=>ageDays(r.startDate)),tone:'bg-yellow-100 text-yellow-800'},
     {name:'WFH',slug:'wfh',count:approvals.pendingWfhApprovals.length,exceptions:wfhExceptions,ages:approvals.pendingWfhApprovals.map(r=>ageDays(r.createdAt)),tone:'bg-blue-100 text-blue-800'},
     {name:'Overtime',slug:'overtime',count:approvals.pendingOtApprovals.length,exceptions:overtimeExceptions,ages:approvals.pendingOtApprovals.map(r=>ageDays(r.submittedAt||r.date)),tone:'bg-orange-100 text-orange-800'},
     {name:'Job Requisitions',slug:'requisition',count:additional.pendingRequisitionApprovals.length,exceptions:0,ages:additional.pendingRequisitionApprovals.map(r=>ageDays(r.createdAt)),tone:'bg-indigo-100 text-indigo-800'},
     {name:'Manpower',slug:'manpower',count:approvals.pendingManpowerApprovals.length,exceptions:0,ages:approvals.pendingManpowerApprovals.map(r=>ageDays(r.createdAt)),tone:'bg-teal-100 text-teal-800'},
-  ],[approvals.pendingLeaveApprovals,approvals.pendingWfhApprovals,approvals.pendingOtApprovals,approvals.pendingManpowerApprovals,additional.pendingNTEApprovals,additional.pendingPANApprovals,additional.pendingAwardApprovals,additional.pendingRequisitionApprovals,leaveExceptions,wfhExceptions,overtimeExceptions]);
+  ],[approvals.pendingLeaveApprovals,approvals.pendingWfhApprovals,approvals.pendingOtApprovals,approvals.pendingManpowerApprovals,additional.pendingNTEApprovals,additional.pendingPANApprovals,additional.pendingAwardApprovals,additional.pendingOfferApprovals,additional.pendingRequisitionApprovals,leaveExceptions,wfhExceptions,overtimeExceptions]);
   const activeQueues=queues.filter(q=>q.count>0);
   const ages=activeQueues.flatMap(q=>q.ages), total=activeQueues.reduce((s,q)=>s+q.count,0), due=ages.filter(a=>a===0).length, overdue=ages.filter(a=>a>=3).length;
   const exceptionCount=activeQueues.reduce((sum,q)=>sum+q.exceptions,0);

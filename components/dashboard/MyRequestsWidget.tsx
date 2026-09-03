@@ -11,6 +11,25 @@ const statusClass: Record<MyRequestStatus, string> = {
   Returned: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200',
 };
 
+export const MyRequestsList: React.FC<{ requests: MyRequestSummary[] }> = ({ requests }) => (
+  <div className="divide-y divide-slate-100 dark:divide-slate-700">
+    {requests.map(request => (
+      <div key={`${request.requestType}-${request.id}`} className="grid gap-2 py-4 sm:grid-cols-[1.35fr,1fr,auto,auto] sm:items-center sm:gap-4">
+        <p className="font-semibold text-slate-800 dark:text-slate-100">{request.requestType}</p>
+        <p className="text-sm text-slate-600 dark:text-slate-300 sm:whitespace-nowrap">
+          {request.submittedAt.toLocaleDateString()}
+        </p>
+        <span className={`inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass[request.status]}`}>
+          {request.status}
+        </span>
+        <Link to={request.detailLink} className="inline-flex min-h-10 items-center font-semibold text-indigo-600 hover:text-indigo-800 dark:text-indigo-300 dark:hover:text-indigo-200">
+          View details →
+        </Link>
+      </div>
+    ))}
+  </div>
+);
+
 const MyRequestsWidget: React.FC = () => {
   const { user } = useAuth();
   const [requests, setRequests] = useState<MyRequestSummary[]>([]);
@@ -57,7 +76,14 @@ const MyRequestsWidget: React.FC = () => {
   }, [user?.id]);
 
   return (
-    <Card title="My Requests">
+    <Card
+      title="My Requests"
+      actions={requests.length > 3 ? (
+        <Link to="/my-requests" className="font-semibold text-indigo-600 hover:text-indigo-800 dark:text-indigo-300 dark:hover:text-indigo-200">
+          View all →
+        </Link>
+      ) : undefined}
+    >
       {error ? (
         <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">
           <p>{error}</p>
@@ -70,22 +96,7 @@ const MyRequestsWidget: React.FC = () => {
       ) : requests.length === 0 ? (
         <p className="py-3 text-sm text-slate-500 dark:text-slate-300">No submitted requests yet.</p>
       ) : (
-        <div className="divide-y divide-slate-100 dark:divide-slate-700">
-          {requests.map(request => (
-            <div key={`${request.requestType}-${request.id}`} className="grid gap-2 py-4 sm:grid-cols-[1.35fr,1fr,auto,auto] sm:items-center sm:gap-4">
-              <p className="font-semibold text-slate-800 dark:text-slate-100">{request.requestType}</p>
-              <p className="text-sm text-slate-600 dark:text-slate-300 sm:whitespace-nowrap">
-                {request.submittedAt.toLocaleDateString()}
-              </p>
-              <span className={`inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass[request.status]}`}>
-                {request.status}
-              </span>
-              <Link to={request.detailLink} className="inline-flex min-h-10 items-center font-semibold text-indigo-600 hover:text-indigo-800 dark:text-indigo-300 dark:hover:text-indigo-200">
-                View details →
-              </Link>
-            </div>
-          ))}
-        </div>
+        <MyRequestsList requests={requests.slice(0, 3)} />
       )}
     </Card>
   );

@@ -14,6 +14,7 @@ const approver = await source('components/recruitment/OfferApprovalReviewModal.t
 const offers = await source('pages/recruitment/Offers.tsx');
 const offerDetail = await source('components/recruitment/OfferDetailModal.tsx');
 const approvalCenter = await source('pages/ApprovalCenter.tsx');
+const approvalWidget = await source('components/dashboard/ApprovalWidget.tsx');
 const links = await source('services/approvalDeepLinks.ts');
 const hook = await source('hooks/useAdditionalApprovals.ts');
 
@@ -74,6 +75,8 @@ assert.match(offerDetail, /Request Offer Approval/);
 assert.match(approvalCenter, /pendingOfferApprovals/);
 assert.match(approvalCenter, /OfferApprovalReviewModal/);
 assert.match(approvalCenter, /kind: 'offer'/);
+assert.match(approvalWidget, /name:'Offer Approvals'/);
+assert.match(approvalWidget, /additional\.pendingOfferApprovals\.length/);
 assert.match(links, /type ApprovalRequestKind/);
 assert.match(links, /'offer'/);
 assert.match(links, /type=offer&item=/);

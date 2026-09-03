@@ -26,6 +26,7 @@ const ForgotPassword = React.lazy(() => import('./pages/ForgotPassword'));
 const ResetPassword = React.lazy(() => import('./pages/ResetPassword'));
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
 const ApprovalCenter = React.lazy(() => import('./pages/ApprovalCenter'));
+const MyRequests = React.lazy(() => import('./pages/MyRequests'));
 const NotFound = React.lazy(() => import('./pages/NotFound'));
 const Notifications = React.lazy(() => import('./pages/Notifications'));
 
@@ -151,6 +152,7 @@ const flattenRoutePermissions = (links: NavLink[]): Array<[string, Resource, Per
 const routePermissions: Array<[string, Resource, Permission]> = [
   ...flattenRoutePermissions(NAV_LINKS),
   ['/approvals', 'Dashboard', Permission.View] as [string, Resource, Permission],
+  ['/my-requests', 'Dashboard', Permission.View] as [string, Resource, Permission],
 ].sort(([leftPath], [rightPath]) => rightPath.length - leftPath.length);
 
 const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }) => {
@@ -290,6 +292,7 @@ const AppRoutes: React.FC = () => {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="approvals" element={<ProtectedRoute><ApprovalCenter /></ProtectedRoute>} />
+        <Route path="my-requests" element={<ProtectedRoute><MyRequests /></ProtectedRoute>} />
         <Route path="my-profile" element={<ProtectedRoute><EmployeeProfile/></ProtectedRoute>} />
         <Route path="notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
         <Route path="users/:userId" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
