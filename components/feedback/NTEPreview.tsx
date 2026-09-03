@@ -23,7 +23,7 @@ interface NTEPreviewProps {
 export const NTE_SIGNATURE_CSS = `
   .nte-document [data-nte-signature-block],
   .nte-document div:has(> img[alt="Signature"]) {
-    width: 220px !important;
+    width: min(220px, 100%) !important;
     margin: 24px auto 0 !important;
     text-align: center !important;
     break-inside: avoid !important;
@@ -38,6 +38,14 @@ export const NTE_SIGNATURE_CSS = `
     object-fit: contain !important;
     object-position: center !important;
     margin: 0 auto 6px !important;
+    clip-path: none !important;
+  }
+  .nte-document [data-nte-signature-block] > div:first-child {
+    height: 72px !important;
+    display: flex !important;
+    align-items: flex-end !important;
+    justify-content: center !important;
+    overflow: visible !important;
   }
 `;
 
@@ -245,12 +253,12 @@ const NTEPreview: React.FC<NTEPreviewProps> = ({ template, employeeName, employe
                     className="mt-6 text-center"
                     style={{ width: '220px', margin: '24px auto 0', textAlign: 'center', breakInside: 'avoid', pageBreakInside: 'avoid' }}
                 >
-                    <div style={{ height: '68px', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', overflow: 'hidden' }}>
+                    <div style={{ height: '72px', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', overflow: 'visible' }}>
                         {template.signatorySignatureUrl && (
                             <img
                                 src={template.signatorySignatureUrl}
                                 alt="Signature"
-                                style={{ display: 'block', width: 'auto', height: 'auto', maxWidth: '180px', maxHeight: '64px', objectFit: 'contain', objectPosition: 'center', margin: '0 auto 4px' }}
+                                style={{ display: 'block', width: 'auto', height: 'auto', maxWidth: '180px', maxHeight: '64px', objectFit: 'contain', objectPosition: 'center', margin: '0 auto 6px' }}
                             />
                         )}
                     </div>

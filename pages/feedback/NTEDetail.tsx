@@ -26,6 +26,7 @@ import { formatIRDisplayId, formatNTEDisplayId } from '../../utils/formatCaseId'
 import { formatExternalUrl } from '../../utils/urlUtils';
 import { supabase } from '../../services/supabaseClient';
 import { NTE_SIGNATURE_CSS } from '../../components/feedback/NTEPreview';
+import ResponsiveDocumentPreview from '../../components/ui/ResponsiveDocumentPreview';
 
 const PaperclipIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>;
 const PaperAirplaneIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>;
@@ -72,6 +73,8 @@ const NTEDetail: React.FC = () => {
     const [users, setUsers] = useState<User[]>([]);
     const [disciplineEntries, setDisciplineEntries] = useState<DisciplineEntry[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [isApprovalActionBusy, setIsApprovalActionBusy] = useState(false);
+    const [approvalActionMessage, setApprovalActionMessage] = useState<string | null>(null);
 
     const { recipient, nteIssuer } = useMemo(() => {
         if (!nte || !users.length) return { recipient: null, nteIssuer: null };
@@ -120,13 +123,23 @@ const NTEDetail: React.FC = () => {
     const isEmployeeAcknowledgeNeeded = user?.id === nte?.employeeId && resolution?.status === ResolutionStatus.PendingAcknowledgement;
 
     const handleApprove = async () => {
-        if (!user || !nte || !currentUserStep) return;
+        if (!user || !nte || !currentUserStep) {
+            setApprovalActionMessage('This approval is no longer assigned to you or has already been processed. Refresh the approval queue.');
+            return;
+        }
+        setIsApprovalActionBusy(true);
+        setApprovalActionMessage('Recording your approval…');
         try {
             const saved = await processNTEApproval(nte.id, 'approve');
             setNte(saved);
+            setApprovalActionMessage(saved.status === NTEStatus.Issued ? 'Approved and issued to the employee.' : 'Your approval was recorded.');
             alert(saved.status === NTEStatus.Issued ? 'All required approvers have approved. The NTE is now issued.' : 'Your required approval was recorded.');
         } catch (err: any) {
-            alert(err?.message || 'Failed to approve NTE.');
+            const message = err?.message || 'Failed to approve NTE.';
+            setApprovalActionMessage(message);
+            alert(message);
+        } finally {
+            setIsApprovalActionBusy(false);
         }
     };
 
@@ -352,7 +365,7 @@ const NTEDetail: React.FC = () => {
                     <ArrowLeftIcon />
                     Back to Disciplinary Cases
                 </Link>
-                <div className="flex justify-between items-start">
+                <div className="flex flex-wrap justify-between items-start gap-2">
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white">NTE: {formatNTEDisplayId(nte.nteNumber) || nte.id}</h1>
                     <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${nte.status === NTEStatus.Issued ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800'}`}>
                         {nte.status}
@@ -375,6 +388,18 @@ const NTEDetail: React.FC = () => {
                     </div>
                 </dl>
             </div>
+
+            {currentUserStep && (
+                <Card title="Your NTE Approval Is Required" className="border-yellow-400 bg-yellow-50 dark:bg-yellow-900/40">
+                    <p className="text-sm">Review the notice below, then record your decision. Approval is not submitted until you press Approve.</p>
+                    {approvalActionMessage && <p role="status" className="mt-3 rounded-md bg-white/80 px-3 py-2 text-sm font-medium text-slate-700 dark:bg-slate-900/50 dark:text-slate-200">{approvalActionMessage}</p>}
+                    <div className="mt-4 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+                        <Button className="w-full sm:w-auto" disabled={isApprovalActionBusy} variant="secondary" onClick={() => { setApprovalOutcome('return'); setIsRejectModalOpen(true); }}>Return for Revision</Button>
+                        <Button className="w-full sm:w-auto" disabled={isApprovalActionBusy} variant="danger" onClick={() => { setApprovalOutcome('reject'); setIsRejectModalOpen(true); }}>Reject</Button>
+                        <Button className="w-full sm:w-auto" isLoading={isApprovalActionBusy} onClick={handleApprove}>Approve NTE</Button>
+                    </div>
+                </Card>
+            )}
 
             {/* Horizontal split: Left panel (metadata/actions) | Right panel (document) */}
             <div className="flex flex-col lg:flex-row gap-6">
@@ -518,17 +543,6 @@ const NTEDetail: React.FC = () => {
                         </Card>
                     )}
                     
-                    {currentUserStep && (
-                        <Card title="Your Action Required" className="bg-yellow-50 dark:bg-yellow-900/40 border-yellow-400">
-                            <p className="text-sm mb-4">This Notice to Explain requires your approval before it is issued to the employee.</p>
-                            <div className="flex flex-wrap justify-end gap-2">
-                                <Button variant="secondary" onClick={() => { setApprovalOutcome('return'); setIsRejectModalOpen(true); }}>Return for Revision</Button>
-                                <Button variant="danger" onClick={() => { setApprovalOutcome('reject'); setIsRejectModalOpen(true); }}>Reject</Button>
-                                <Button onClick={handleApprove}>Approve</Button>
-                            </div>
-                        </Card>
-                    )}
-
                     <Card>
                         <h2 className="text-xl font-bold mb-4">Issue Summary</h2>
                         <div className="space-y-4">
@@ -688,9 +702,9 @@ const NTEDetail: React.FC = () => {
                 <div className="lg:w-[60%] lg:flex-shrink-0">
                     <div className="lg:sticky lg:top-6">
                         <Card>
-                            <div className="flex justify-between items-center mb-4 border-b pb-2">
+                            <div className="mb-4 flex flex-col gap-3 border-b pb-3 sm:flex-row sm:items-center sm:justify-between">
                                 <h2 className="text-xl font-bold">Notice to Explain Document</h2>
-                                <Button variant="secondary" size="sm" onClick={() => {
+                                <Button className="w-full sm:w-auto" variant="secondary" size="sm" onClick={() => {
                                     const printWindow = window.open('', '_blank');
                                     if (printWindow) {
                                         printWindow.document.write(`
@@ -717,8 +731,10 @@ const NTEDetail: React.FC = () => {
                                 </Button>
                             </div>
                             <style>{NTE_SIGNATURE_CSS}</style>
-                            <div className="bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg p-2 max-h-[calc(100vh-8rem)] overflow-y-auto overflow-x-hidden">
-                                <div className="nte-document bg-white origin-top p-4 overflow-hidden [&_*]:max-w-full [&_table]:w-full [&_table]:table-fixed [&_img]:max-w-full [&_img]:h-auto" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }} dangerouslySetInnerHTML={{ __html: nte.body }} />
+                            <div className="max-h-[calc(100dvh-8rem)] overflow-y-auto overflow-x-hidden rounded-lg border border-gray-300 bg-gray-100 p-1 dark:border-gray-700 dark:bg-gray-900 sm:p-2">
+                                <ResponsiveDocumentPreview ariaLabel="Published Notice to Explain preview">
+                                    <div className="nte-document" dangerouslySetInnerHTML={{ __html: nte.body }} />
+                                </ResponsiveDocumentPreview>
                             </div>
                         </Card>
                     </div>

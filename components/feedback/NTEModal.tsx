@@ -19,6 +19,7 @@ import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { EligibleNTEApprover, fetchEligibleNTEApprovers, NTEApproverSelection } from '../../services/nteService';
 import { ResolvedIncidentEvidence, resolveIncidentEvidence } from '../../services/incidentReportService';
+import ResponsiveDocumentPreview from '../ui/ResponsiveDocumentPreview';
 
 interface NTEModalProps {
   isOpen: boolean;
@@ -345,9 +346,10 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
         title="Issue New NTE"
         size="4xl"
         footer={
-          <div className="flex justify-end w-full space-x-2">
-            <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:justify-end">
+            <Button className="w-full sm:w-auto" variant="secondary" onClick={onClose}>Cancel</Button>
             <Button
+              className="w-full sm:w-auto"
               onClick={handleIssueNTE}
               disabled={selectedEmployeeIds.length === 0 || approverLoading || !selectedApprovers.some(item => item.roleId === Role.BOD)}
             >{buttonText}</Button>
@@ -471,25 +473,29 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
           </div>
 
           {/* Preview */}
-          <div className="bg-gray-200 dark:bg-slate-900 p-4 rounded-lg">
+          <div className="min-w-0 rounded-lg bg-gray-200 p-2 dark:bg-slate-900 sm:p-4">
             <h3 className="font-semibold text-center mb-2">Live Preview</h3>
             {selectedTemplate && previewEmployee && (
-              <NTEPreview
-                template={selectedTemplate}
-                employeeName={previewEmployee.name}
-                employeePosition={previewEmployee.position}
-                employeeDepartment={previewEmployee.department}
-                nteNumber={previewNteCode}
-                allegations={allegations}
-                deadline={new Date(deadline || Date.now())}
-                citedMemos={citedMemos}
-                citedDiscipline={citedDiscipline}
-                evidenceUrl={evidenceUrl}
-                ccRecipients={selectedApprovers.map(item => `${item.approver.name} (${item.approver.eligibleRoleLabels[item.approver.eligibleRoleIds.indexOf(item.roleId)] || item.roleId})`)}
-                incidentDate={incidentReport.dateTime}
-                incidentLocation={incidentReport.location}
-                incidentCategory={incidentReport.category}
-              />
+              <ResponsiveDocumentPreview ariaLabel="Live Notice to Explain preview">
+                <div className="nte-document">
+                  <NTEPreview
+                    template={selectedTemplate}
+                    employeeName={previewEmployee.name}
+                    employeePosition={previewEmployee.position}
+                    employeeDepartment={previewEmployee.department}
+                    nteNumber={previewNteCode}
+                    allegations={allegations}
+                    deadline={new Date(deadline || Date.now())}
+                    citedMemos={citedMemos}
+                    citedDiscipline={citedDiscipline}
+                    evidenceUrl={evidenceUrl}
+                    ccRecipients={selectedApprovers.map(item => `${item.approver.name} (${item.approver.eligibleRoleLabels[item.approver.eligibleRoleIds.indexOf(item.roleId)] || item.roleId})`)}
+                    incidentDate={incidentReport.dateTime}
+                    incidentLocation={incidentReport.location}
+                    incidentCategory={incidentReport.category}
+                  />
+                </div>
+              </ResponsiveDocumentPreview>
             )}
             {!previewEmployee && (
               <div className="flex items-center justify-center h-full text-gray-500">

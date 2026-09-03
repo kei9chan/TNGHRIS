@@ -704,9 +704,9 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
 
       if (isReporterRevisionState) {
         return (
-          <div className="flex w-full items-center justify-between gap-3">
+          <div className="grid w-full gap-3 sm:flex sm:flex-wrap sm:items-center sm:justify-between">
             <div>{onDownloadPdf && <Button variant="secondary" onClick={() => onDownloadPdf(report)}>Download as PDF</Button>}</div>
-            <div className="flex items-center gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center">
               {reporterCanRevise && <Button onClick={() => setIsEditingRevision(true)}>Edit for resubmission</Button>}
               {!reporterCanRevise && <Button variant="secondary" onClick={onClose}>Close</Button>}
             </div>
@@ -715,8 +715,8 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
       }
 
       return (
-        <div className="flex justify-between items-center w-full">
-          <div className="flex space-x-2">
+        <div className="grid w-full gap-3 sm:flex sm:flex-wrap sm:items-center sm:justify-between">
+          <div className="grid grid-cols-2 gap-2 [&>button]:w-full sm:flex sm:flex-wrap sm:[&>button]:w-auto">
             {onDownloadPdf && <Button variant="secondary" onClick={() => onDownloadPdf(report)}>Download as PDF</Button>}
             {reporterCanRevise && <Button onClick={() => setIsEditingRevision(true)}>Edit report</Button>}
             {/* If HR Manager/Admin, they can save reassignment changes */}
@@ -740,7 +740,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
           </div>
 
           {canProcessReport && (
-            <div className="flex space-x-2">
+            <div className="grid grid-cols-2 gap-2 [&>button]:w-full sm:flex sm:flex-wrap sm:[&>button]:w-auto">
               {onReturnForRevision && <Button variant="secondary" onClick={async () => { const reason = window.prompt('Revision instructions (required)'); if (reason?.trim()) await onReturnForRevision(report.id, reason); }}>Return for Revision</Button>}
               {onRejectReport && <Button variant="danger" onClick={async () => { const reason = window.prompt('Rejection reason (required)'); if (reason?.trim()) await onRejectReport(report.id, reason); }}>Reject</Button>}
               {onMarkNoAction && <Button variant="secondary" onClick={() => onMarkNoAction(report.id)}>Mark as "No Action"</Button>}

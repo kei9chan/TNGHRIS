@@ -50,7 +50,7 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer,
 
   const modalContent = (
     <div 
-        className={`fixed inset-0 z-[9999] flex justify-center bg-black/60 backdrop-blur-sm p-4 sm:p-6 overflow-hidden ${centered ? 'items-center' : 'items-start pt-10 sm:pt-12'}`}
+        className={`fixed inset-0 z-[9999] flex justify-center bg-black/60 backdrop-blur-sm p-3 sm:p-6 overflow-hidden ${centered ? 'items-center' : 'items-start pt-6 sm:pt-12'}`}
         onClick={onClose}
     >
       <div 
@@ -60,11 +60,11 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer,
             ${sizeClasses[size]}
         `}
         onClick={(e) => e.stopPropagation()}
-        style={{ maxHeight: 'calc(100vh - 4rem)' }}
+        style={{ maxHeight: 'calc(100dvh - 1.5rem)' }}
       >
         {/* Header - Fixed */}
-        <div className="flex-shrink-0 flex justify-between items-center p-5 border-b border-gray-200 dark:border-slate-700">
-          <h3 id="modal-title" className="text-lg font-bold text-gray-900 dark:text-white leading-6 truncate pr-4">
+        <div className="flex-shrink-0 flex justify-between items-center p-4 sm:p-5 border-b border-gray-200 dark:border-slate-700">
+          <h3 id="modal-title" className="min-w-0 text-lg font-bold text-gray-900 dark:text-white leading-6 break-words pr-4">
             {title}
           </h3>
           <button
@@ -77,7 +77,7 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer,
         </div>
         
         {/* Body - Scrollable */}
-        <div className="flex-1 overflow-y-auto p-6 min-h-0 custom-scrollbar">
+        <div className="flex-1 min-h-0 overflow-x-hidden overflow-y-auto p-3 custom-scrollbar sm:p-6">
             <div className="space-y-4">
                 {children}
             </div>
@@ -85,7 +85,7 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer,
 
         {/* Footer - Fixed */}
         {footer && (
-            <div className="flex-shrink-0 p-5 border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/50 rounded-b-xl">
+            <div className="max-h-[42dvh] flex-shrink-0 overflow-y-auto rounded-b-xl border-t border-gray-200 bg-gray-50 p-3 dark:border-slate-700 dark:bg-slate-800/50 sm:p-5">
                 {footer}
             </div>
         )}
