@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { IncidentReport, IRStatus, ChatMessage, User, PipelineStage, Role } from '../types';
+import { IncidentReport, IRStatus, ChatMessage, User, PipelineStage, Role, IncidentEvidenceItem } from '../types';
 import { formatEmployeeName } from './formatEmployeeName';
 
 const isUuid = (value?: string | null) =>
@@ -24,6 +24,7 @@ type IncidentReportRow = {
   resolution_id?: string | null;
   chat_thread: any[];
   attachment_url?: string | null;
+  attachment_urls?: unknown[] | null;
   signature_data_url?: string | null;
   assigned_to_id?: string | null;
   assigned_to_name?: string | null;
@@ -39,6 +40,39 @@ type IncidentReportRow = {
   revision_notes?: string | null;
   rejection_reason?: string | null;
   revision_history?: any[] | null;
+};
+
+const evidenceNameFromPath = (path: string, fallback: string) => {
+  try {
+    const value = decodeURIComponent(path.split('?')[0].split('/').pop() || '').trim();
+    return value || fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const normalizeIncidentEvidence = (row: Pick<IncidentReportRow, 'attachment_url' | 'attachment_urls'>): IncidentEvidenceItem[] => {
+  const values: unknown[] = [row.attachment_url, ...(Array.isArray(row.attachment_urls) ? row.attachment_urls : [])];
+  const seen = new Set<string>();
+  const evidence: IncidentEvidenceItem[] = [];
+
+  values.forEach((value, index) => {
+    const record = value && typeof value === 'object' ? value as Record<string, unknown> : null;
+    const path = typeof value === 'string'
+      ? value.trim()
+      : String(record?.path || record?.url || record?.href || record?.storagePath || '').trim();
+    if (!path || seen.has(path)) return;
+    seen.add(path);
+    const external = /^https?:\/\//i.test(path);
+    const suppliedName = String(record?.name || record?.fileName || record?.label || '').trim();
+    evidence.push({
+      path,
+      name: suppliedName || evidenceNameFromPath(path, `Supporting evidence ${index + 1}`),
+      kind: external ? 'link' : 'file',
+    });
+  });
+
+  return evidence;
 };
 
 const mapRow = (row: IncidentReportRow): IncidentReport => ({
@@ -69,6 +103,7 @@ const mapRow = (row: IncidentReportRow): IncidentReport => ({
     timestamp: m?.timestamp ? new Date(m.timestamp) : new Date(),
   })) as ChatMessage[],
   attachmentUrl: row.attachment_url || undefined,
+  attachmentUrls: normalizeIncidentEvidence(row),
   signatureDataUrl: row.signature_data_url || undefined,
   assignedToId: row.assigned_to_id || undefined,
   assignedToName: row.assigned_to_name || undefined,
@@ -163,10 +198,33 @@ export const fetchIncidentReportById = async (id: string): Promise<IncidentRepor
   return data ? mapRow(data as IncidentReportRow) : null;
 };
 
+export type ResolvedIncidentEvidence = IncidentEvidenceItem & {
+  url?: string;
+  unavailable?: boolean;
+};
+
+export const resolveIncidentEvidence = async (report: IncidentReport): Promise<ResolvedIncidentEvidence[]> => {
+  const evidence = report.attachmentUrls?.length
+    ? report.attachmentUrls
+    : report.attachmentUrl
+      ? [{ path: report.attachmentUrl, name: evidenceNameFromPath(report.attachmentUrl, 'Supporting evidence'), kind: /^https?:\/\//i.test(report.attachmentUrl) ? 'link' as const : 'file' as const }]
+      : [];
+
+  return Promise.all(evidence.map(async item => {
+    if (item.kind === 'link' || /^https?:\/\//i.test(item.path)) return { ...item, url: item.path };
+    const { data, error } = await supabase.storage
+      .from('incident_reports_attachments')
+      .createSignedUrl(item.path, 60 * 60);
+    return error || !data?.signedUrl
+      ? { ...item, unavailable: true }
+      : { ...item, url: data.signedUrl };
+  }));
+};
+
 export const fetchIncidentReports = async (): Promise<IncidentReport[]> => {
   const { data, error } = await supabase
     .from('incident_reports')
-    .select('id, category, description, location, date_time, reported_by, involved_employee_ids, involved_employee_names, witness_ids, witness_names, status, pipeline_stage, nte_ids, nte_processing_complete, nte_processing_summary, resolution_id, chat_thread, attachment_url, signature_data_url, assigned_to_id, assigned_to_name, business_unit_id, business_unit_name, created_at, case_number, sla_deadline, follow_up_count, last_follow_up_at, follow_up_history, revision_notes, rejection_reason, revision_history')
+    .select('id, category, description, location, date_time, reported_by, involved_employee_ids, involved_employee_names, witness_ids, witness_names, status, pipeline_stage, nte_ids, nte_processing_complete, nte_processing_summary, resolution_id, chat_thread, attachment_url, attachment_urls, signature_data_url, assigned_to_id, assigned_to_name, business_unit_id, business_unit_name, created_at, case_number, sla_deadline, follow_up_count, last_follow_up_at, follow_up_history, revision_notes, rejection_reason, revision_history')
     .order('created_at', { ascending: false });
   if (error) throw new Error(error.message || 'Failed to load incident reports');
   return (data as IncidentReportRow[]).map(mapRow);

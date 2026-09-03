@@ -20,6 +20,27 @@ interface NTEPreviewProps {
     incidentCategory?: string;
 }
 
+export const NTE_SIGNATURE_CSS = `
+  .nte-document [data-nte-signature-block],
+  .nte-document div:has(> img[alt="Signature"]) {
+    width: 220px !important;
+    margin: 24px auto 0 !important;
+    text-align: center !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  .nte-document img[alt="Signature"] {
+    display: block !important;
+    width: auto !important;
+    height: auto !important;
+    max-width: 180px !important;
+    max-height: 64px !important;
+    object-fit: contain !important;
+    object-position: center !important;
+    margin: 0 auto 6px !important;
+  }
+`;
+
 const NTEPreview: React.FC<NTEPreviewProps> = ({ template, employeeName, employeePosition, employeeDepartment, nteNumber, allegations, deadline, citedMemos, citedDiscipline, evidenceUrl, ccRecipients = [], issuedDate = new Date(), incidentDate, incidentLocation, incidentCategory }) => {
 
     const renderOffenses = () => {
@@ -219,18 +240,23 @@ const NTEPreview: React.FC<NTEPreviewProps> = ({ template, employeeName, employe
                     <p>For your guidance and compliance.</p>
                 </div>
                 
-                <div className="mt-8">
-                    {template.signatorySignatureUrl && (
-                        <img 
-                            src={template.signatorySignatureUrl} 
-                            alt="Signature" 
-                            className="h-16 mb-2 object-contain" 
-                            style={{ display: 'block' }}
-                        />
-                    )}
-                    <div className="w-48 border-b border-gray-400 mb-1"></div>
-                    <p className="font-bold text-[#1e293b] text-[13px] uppercase">{template.signatoryName}</p>
-                    <p className="text-[12px] text-gray-600">{template.signatoryTitle}</p>
+                <div
+                    data-nte-signature-block
+                    className="mt-6 text-center"
+                    style={{ width: '220px', margin: '24px auto 0', textAlign: 'center', breakInside: 'avoid', pageBreakInside: 'avoid' }}
+                >
+                    <div style={{ height: '68px', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', overflow: 'hidden' }}>
+                        {template.signatorySignatureUrl && (
+                            <img
+                                src={template.signatorySignatureUrl}
+                                alt="Signature"
+                                style={{ display: 'block', width: 'auto', height: 'auto', maxWidth: '180px', maxHeight: '64px', objectFit: 'contain', objectPosition: 'center', margin: '0 auto 4px' }}
+                            />
+                        )}
+                    </div>
+                    <div className="nte-signature-line" style={{ width: '100%', borderBottom: '1px solid #94a3b8', marginBottom: '4px' }}></div>
+                    <p className="font-bold text-[#1e293b] text-[13px] uppercase" style={{ margin: 0 }}>{template.signatoryName}</p>
+                    <p className="text-[12px] text-gray-600" style={{ margin: 0 }}>{template.signatoryTitle}</p>
                 </div>
                 
                 <div className="mt-16 mb-20">

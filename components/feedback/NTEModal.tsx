@@ -18,6 +18,7 @@ import NTEApproverPicker from './NTEApproverPicker';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { EligibleNTEApprover, fetchEligibleNTEApprovers, NTEApproverSelection } from '../../services/nteService';
+import { ResolvedIncidentEvidence, resolveIncidentEvidence } from '../../services/incidentReportService';
 
 interface NTEModalProps {
   isOpen: boolean;
@@ -49,6 +50,8 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
   const [approverError, setApproverError] = useState<string | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [manualNteNumber, setManualNteNumber] = useState('');
+  const [incidentEvidence, setIncidentEvidence] = useState<ResolvedIncidentEvidence[]>([]);
+  const [incidentEvidenceLoading, setIncidentEvidenceLoading] = useState(false);
 
   // Fetched data states
   const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
@@ -130,6 +133,17 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
     };
     fetchUsers();
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !isNewNTE) return;
+    let cancelled = false;
+    setIncidentEvidenceLoading(true);
+    resolveIncidentEvidence(incidentReport)
+      .then(items => { if (!cancelled) setIncidentEvidence(items); })
+      .catch(() => { if (!cancelled) setIncidentEvidence([]); })
+      .finally(() => { if (!cancelled) setIncidentEvidenceLoading(false); });
+    return () => { cancelled = true; };
+  }, [incidentReport, isNewNTE, isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -341,6 +355,42 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
         }
       >
         <div className="space-y-8">
+          <section className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/60">
+            <h3 className="font-semibold text-slate-900 dark:text-white">Original Incident Report</h3>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">These details remain linked to the original IR and are not replaced by the NTE creation date.</p>
+            <dl className="mt-4 grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
+              <div><dt className="font-medium text-slate-500">Date &amp; time of incident</dt><dd className="mt-1 font-semibold text-slate-900 dark:text-white">{new Date(incidentReport.dateTime).toLocaleString('en-PH')}</dd></div>
+              <div><dt className="font-medium text-slate-500">Location</dt><dd className="mt-1 font-semibold text-slate-900 dark:text-white">{incidentReport.location || '—'}</dd></div>
+              <div><dt className="font-medium text-slate-500">Category</dt><dd className="mt-1 font-semibold text-slate-900 dark:text-white">{incidentReport.category || '—'}</dd></div>
+              <div className="sm:col-span-2 lg:col-span-3"><dt className="font-medium text-slate-500">Involved employee(s)</dt><dd className="mt-1 font-semibold text-slate-900 dark:text-white">{incidentReport.involvedEmployeeNames.join(', ') || '—'}</dd></div>
+              <div className="sm:col-span-2 lg:col-span-3"><dt className="font-medium text-slate-500">Description</dt><dd className="mt-1 whitespace-pre-wrap rounded-md border border-slate-200 bg-white p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">{incidentReport.description || '—'}</dd></div>
+              <div className="sm:col-span-2 lg:col-span-3">
+                <dt className="font-medium text-slate-500">Supporting evidence</dt>
+                {incidentEvidenceLoading ? (
+                  <dd className="mt-1 text-slate-500">Loading evidence…</dd>
+                ) : incidentEvidence.length > 0 ? (
+                  <dd className="mt-2 space-y-2">
+                    {incidentEvidence.map(item => (
+                      <div key={item.path} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                        <span className="min-w-0 break-all text-slate-800 dark:text-slate-200">{item.name}</span>
+                        {item.url ? (
+                          <span className="flex gap-2">
+                            <a href={item.url} target="_blank" rel="noopener noreferrer" className="font-semibold text-indigo-600 hover:underline dark:text-indigo-400">Preview</a>
+                            <a href={item.url} target="_blank" rel="noopener noreferrer" download className="font-semibold text-indigo-600 hover:underline dark:text-indigo-400">Download</a>
+                          </span>
+                        ) : (
+                          <span className="text-xs text-amber-700 dark:text-amber-300">Unavailable with your current access</span>
+                        )}
+                      </div>
+                    ))}
+                  </dd>
+                ) : (
+                  <dd className="mt-1 text-slate-500">No supporting evidence attached.</dd>
+                )}
+              </div>
+            </dl>
+          </section>
+
           {/* Form Fields */}
           <div className="space-y-4">
             <div className="p-3 border rounded-md dark:border-gray-600">

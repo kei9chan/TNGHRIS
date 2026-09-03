@@ -50,7 +50,8 @@
     "test:requisition-dashboard": "node tests/jobRequisitionDashboardQueueSmokeTest.mjs",
     "test:disk-io": "node tests/diskIoRegressionSmokeTest.mjs",
     "test:direct-manager-approvals": "node tests/directManagerTimeApprovalSmokeTest.mjs",
-    "test:offer-employment-pdf": "node tests/offerEmploymentTermsAndInterviewPdfSmokeTest.mjs"
+    "test:offer-employment-pdf": "node tests/offerEmploymentTermsAndInterviewPdfSmokeTest.mjs",
+    "test:incident-nte-focused-fix": "node tests/incidentNteFocusedFixSmokeTest.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.84.0",

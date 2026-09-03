@@ -78,9 +78,12 @@ const getDerivedPipelineStage = (nte: NTE, allResolutions: Resolution[], report:
       return 'ir-review';
     case NTEStatus.PendingApproval:
       return 'nte-for-approval';
+    case NTEStatus.Rejected:
+      return 'ir-review';
     case NTEStatus.Issued:
-    default:
       return 'nte-sent';
+    default:
+      return 'ir-review';
   }
 };
 
@@ -418,9 +421,7 @@ const DisciplinaryCases: React.FC = () => {
     const originalReportId = selectedReport.id.split('_VIRTUAL_')[0];
     const recipientId = selectedNteRecipientId || selectedReport.involvedEmployeeIds[0];
     const employeeNtes = ntes.filter(n => n.incidentReportId === originalReportId && n.employeeId === recipientId);
-    const openNteForIr = employeeNtes.find(n => [NTEStatus.Draft, NTEStatus.PendingApproval, NTEStatus.Issued, NTEStatus.ResponseSubmitted].includes(n.status));
-    if (openNteForIr) return openNteForIr;
-    return employeeNtes[0];
+    return employeeNtes.find(n => [NTEStatus.Draft, NTEStatus.PendingApproval, NTEStatus.Issued, NTEStatus.ResponseSubmitted].includes(n.status));
   }, [selectedReport, selectedNteRecipientId, ntes]);
 
   const selectedResolution = useMemo(() => {
@@ -460,7 +461,11 @@ const DisciplinaryCases: React.FC = () => {
     if (report.pipelineStage === 'hr-review-response' && resolutionForReport?.status === ResolutionStatus.Rejected) {
       setResolutionModalOpen(true);
     } else if (report.pipelineStage === 'ir-review' || report.pipelineStage === 'hr-review-response') {
-      const nteForThisEmployee = ntes.find(n => n.incidentReportId === originalReportId && n.employeeId === clickedEmployeeId);
+      const nteForThisEmployee = ntes.find(n =>
+        n.incidentReportId === originalReportId
+        && n.employeeId === clickedEmployeeId
+        && ![NTEStatus.Rejected, NTEStatus.Closed].includes(n.status)
+      );
       if (nteForThisEmployee) {
         if (nteForThisEmployee.status === NTEStatus.Draft && nteForThisEmployee.revisionRequestedAt) {
           setNTEModalOpen(true);

@@ -913,6 +913,12 @@ export interface FollowUpHistoryItem {
   sentByName: string;
 }
 
+export interface IncidentEvidenceItem {
+  path: string;
+  name: string;
+  kind: 'file' | 'link';
+}
+
 export interface IncidentReport {
   id: string;
   category: string;
@@ -938,6 +944,7 @@ export interface IncidentReport {
   resolutionId?: string;
   chatThread: ChatMessage[];
   attachmentUrl?: string;
+  attachmentUrls?: IncidentEvidenceItem[];
   signatureDataUrl?: string;
   assignedToId?: string;
   assignedToName?: string;

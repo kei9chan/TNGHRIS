@@ -25,6 +25,7 @@ import { fetchResolutionsByIncidentReportId, createResolution, updateResolution 
 import { formatIRDisplayId, formatNTEDisplayId } from '../../utils/formatCaseId';
 import { formatExternalUrl } from '../../utils/urlUtils';
 import { supabase } from '../../services/supabaseClient';
+import { NTE_SIGNATURE_CSS } from '../../components/feedback/NTEPreview';
 
 const PaperclipIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>;
 const PaperAirplaneIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>;
@@ -115,6 +116,7 @@ const NTEDetail: React.FC = () => {
         if (!user || !nte || nte.status !== NTEStatus.PendingApproval) return null;
         return nte.approverSteps?.find(step => step.userId === user.id && step.status === ApproverStatus.Pending);
     }, [nte, user]);
+    const rejectionStep = useMemo(() => nte?.approverSteps?.find(step => step.status === ApproverStatus.Rejected) || null, [nte]);
     const isEmployeeAcknowledgeNeeded = user?.id === nte?.employeeId && resolution?.status === ResolutionStatus.PendingAcknowledgement;
 
     const handleApprove = async () => {
@@ -467,6 +469,15 @@ const NTEDetail: React.FC = () => {
                         </Card>
                     )}
 
+                    {nte.status === NTEStatus.Rejected && rejectionStep && (
+                        <Card title="NTE Rejected" className="border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/30">
+                            <p className="text-sm text-red-900 dark:text-red-100"><strong>Rejected by:</strong> {rejectionStep.userName}</p>
+                            <p className="mt-2 whitespace-pre-wrap text-sm text-red-800 dark:text-red-200"><strong>Reason:</strong> {rejectionStep.comments || rejectionStep.rejectionReason || 'No reason recorded.'}</p>
+                            {rejectionStep.timestamp && <p className="mt-2 text-xs text-red-700 dark:text-red-300">Rejected on {new Date(rejectionStep.timestamp).toLocaleString()}</p>}
+                            <p className="mt-3 text-sm text-red-800 dark:text-red-200">This notice was not published or sent to the employee. The assigned handler can create a revised NTE or close the case from IR Review.</p>
+                        </Card>
+                    )}
+
                     {nte.approverSteps && nte.approverSteps.length > 0 && (
                         <Card title="Approval Status">
                             <ul className="space-y-4">
@@ -688,13 +699,14 @@ const NTEDetail: React.FC = () => {
                                                     <title>Print NTE Document</title>
                                                     <script src="https://cdn.tailwindcss.com"></script>
                                                     <style>
+                                                        ${NTE_SIGNATURE_CSS}
                                                         @media print {
                                                             @page { size: A4; margin: 20mm; }
                                                         }
                                                     </style>
                                                 </head>
                                                 <body onload="setTimeout(() => { window.print(); window.close(); }, 500);">
-                                                    ${nte.body}
+                                                    <div class="nte-document">${nte.body}</div>
                                                 </body>
                                             </html>
                                         `);
@@ -704,8 +716,9 @@ const NTEDetail: React.FC = () => {
                                     Download / Print Document
                                 </Button>
                             </div>
+                            <style>{NTE_SIGNATURE_CSS}</style>
                             <div className="bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg p-2 max-h-[calc(100vh-8rem)] overflow-y-auto overflow-x-hidden">
-                                <div className="bg-white origin-top p-4 overflow-hidden [&_*]:max-w-full [&_table]:w-full [&_table]:table-fixed [&_img]:max-w-full [&_img]:h-auto" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }} dangerouslySetInnerHTML={{ __html: nte.body }} />
+                                <div className="nte-document bg-white origin-top p-4 overflow-hidden [&_*]:max-w-full [&_table]:w-full [&_table]:table-fixed [&_img]:max-w-full [&_img]:h-auto" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }} dangerouslySetInnerHTML={{ __html: nte.body }} />
                             </div>
                         </Card>
                     </div>

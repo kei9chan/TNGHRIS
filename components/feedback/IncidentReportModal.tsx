@@ -384,13 +384,18 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
   const isReporterRevisionState = !!report && [IRStatus.ReturnedForRevision, IRStatus.Rejected].includes(report.status);
   const reporterCanRevise = isReporter && !!report && [IRStatus.Draft, IRStatus.ReturnedForRevision, IRStatus.Rejected].includes(report.status);
   const isActiveHrReview = !!report
-    && [IRStatus.Submitted, IRStatus.HRReview].includes(report.status)
+    && [IRStatus.Submitted, IRStatus.HRReview, IRStatus.Converted].includes(report.status)
     && report.pipelineStage === 'ir-review';
   const hasIncidentProcessingPermission = can('IncidentReports', Permission.Review)
     || can('IncidentReports', Permission.Edit)
     || can('IncidentReports', Permission.Manage);
   const canProcessReport = !isEmployeeView && hasIncidentProcessingPermission && isActiveHrReview;
   const canProcessEmployeeNtes = !isEmployeeView && hasIncidentProcessingPermission;
+  const activeNteRecipientCount = useMemo(() => new Set(
+    relatedNtes
+      .filter(item => ![NTEStatus.Rejected, NTEStatus.Closed].includes(item.status))
+      .map(item => item.employeeId)
+  ).size, [relatedNtes]);
 
   // Only show assignment if editing an existing report AND it is in the initial review stage
   const showAssignment = canProcessReport && canAssign;
@@ -466,10 +471,10 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-4 py-3 dark:border-gray-700">
                 <div>
                   <h3 className="font-semibold text-gray-900 dark:text-white">Employee-specific NTE processing</h3>
-                  <p className="text-xs text-gray-500">{relatedNtes.length} of {report.involvedEmployeeIds.length} NTEs created · Each employee proceeds independently.</p>
+                  <p className="text-xs text-gray-500">{activeNteRecipientCount} of {report.involvedEmployeeIds.length} active NTEs · Each employee proceeds independently.</p>
                 </div>
-                <span className={`rounded-full px-2 py-1 text-xs font-semibold ${relatedNtes.length >= report.involvedEmployeeIds.length ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                  {relatedNtes.length >= report.involvedEmployeeIds.length ? 'Employee processing complete' : 'Employee processing incomplete'}
+                <span className={`rounded-full px-2 py-1 text-xs font-semibold ${activeNteRecipientCount >= report.involvedEmployeeIds.length ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                  {activeNteRecipientCount >= report.involvedEmployeeIds.length ? 'Employee processing complete' : 'Employee processing incomplete'}
                 </span>
               </div>
               <div className="overflow-x-auto">
@@ -497,7 +502,10 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
                           <td className="px-4 py-3 text-gray-500">{responseStatus}</td>
                           <td className="px-4 py-3 text-right">
                             {employeeNte ? (
-                              <Button size="sm" variant="secondary" onClick={() => onOpenNTE?.(employeeNte)}>{employeeNte.status === NTEStatus.Draft ? 'Continue Draft' : employeeNte.status === NTEStatus.ResponseSubmitted ? 'View Response' : 'View NTE'}</Button>
+                              <div className="flex justify-end gap-2">
+                                <Button size="sm" variant="secondary" onClick={() => onOpenNTE?.(employeeNte)}>{employeeNte.status === NTEStatus.Rejected ? 'View Rejection' : employeeNte.status === NTEStatus.Draft ? 'Continue Draft' : employeeNte.status === NTEStatus.ResponseSubmitted ? 'View Response' : 'View NTE'}</Button>
+                                {employeeNte.status === NTEStatus.Rejected && <Button size="sm" onClick={() => void onCreateNTEForEmployee?.(employeeId)}>Create Revised NTE</Button>}
+                              </div>
                             ) : (
                               <Button size="sm" onClick={() => void onCreateNTEForEmployee?.(employeeId)}>Create NTE</Button>
                             )}
