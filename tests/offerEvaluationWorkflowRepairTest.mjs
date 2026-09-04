@@ -98,6 +98,7 @@ const migration = await source('supabase/migrations/20260904120000_repair_offer_
 const evaluationTimestampMigration = await source('supabase/migrations/20260904123000_add_evaluation_updated_at.sql');
 const legacyResumePolicy = await source('supabase/migrations/20260904125500_fix_offer_resume_snapshot_storage_policy.sql');
 const workflowIndexes = await source('supabase/migrations/20260904131000_index_offer_evaluation_workflow_foreign_keys.sql');
+const evaluatorPrivacyFix = await source('supabase/migrations/20260904134000_restrict_evaluation_workspace_to_assignees.sql');
 const offerBaseMigration = await source('supabase/migrations/20260901113000_candidate_rating_summary_offer_approval_phase2.sql');
 const offerService = await source('services/offerApprovalService.ts');
 const requester = await source('components/recruitment/OfferApprovalPackageModal.tsx');
@@ -148,6 +149,15 @@ assert.match(legacyResumePolicy, /attachment->>'sourceId' = request\.application
 assert.match(legacyResumePolicy, /attachment->>'storagePath'/);
 assert.match(workflowIndexes, /job_offer_approval_requests_application_id_idx/);
 assert.match(workflowIndexes, /evaluation_assignments_timeline_id_idx/);
+assert.match(evaluatorPrivacyFix, /actor_id = any\(coalesce\(assignment\.evaluator_user_ids/);
+assert.match(evaluatorPrivacyFix, /coalesce\(assignment\.status, 'Pending'\) <> 'Cancelled'/);
+assert.match(evaluatorPrivacyFix, /cardinality\(eligible_target_ids\) > 0[\s\S]*question\.question_set_id/);
+assert.doesNotMatch(
+  evaluatorPrivacyFix.match(/select coalesce\(array_agg\(assignment\.employee_id[\s\S]*?if cardinality/)?.[0] || '',
+  /where has_oversight|or has_oversight/,
+  'oversight roles must not inherit evaluator-form targets without an assignment',
+);
+assert.match(evaluatorPrivacyFix, /unassigned oversight users receive metadata only/);
 assert.match(submissionHardening, /rater_id = \(select public\.current_hris_user_id\(\)\)/);
 
 const targetProjection = migration.match(/'targetUsers'[\s\S]*?'questions'/)?.[0] || '';
