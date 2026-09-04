@@ -9,6 +9,8 @@ import { useSettings } from '../../context/SettingsContext';
 import NotificationBell from './NotificationBell';
 import { useEvaluationAssignmentAccess } from '../../hooks/useEvaluationAssignmentAccess';
 import { useTheme } from '../../context/ThemeContext';
+import { useGmailConnection } from '../../hooks/useGmailConnection';
+import { disconnectGmail } from '../../services/gmailConnectionService';
 
 const UserIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -43,6 +45,12 @@ const MenuIcon = () => (
 const CloseIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18 18 6M6 6l12 12" />
+    </svg>
+);
+
+const GmailIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6.5l8 6 8-6M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
     </svg>
 );
 
@@ -108,6 +116,8 @@ const Header: React.FC = () => {
     const hasEvaluationAccess = canViewEvaluation || hasAssignedEvaluation;
     const [isProfileMenuOpen, setProfileMenuOpen] = React.useState(false);
     const [isMobileMenuOpen, setMobileMenuOpen] = React.useState(false);
+    const [isDisconnectingGmail, setDisconnectingGmail] = React.useState(false);
+    const { connection: gmailConnection, loading: gmailLoading, refresh: refreshGmailConnection } = useGmailConnection(Boolean(user));
     const profileMenuRef = React.useRef<HTMLDivElement>(null);
     const location = useLocation();
 
@@ -125,6 +135,19 @@ const Header: React.FC = () => {
     const handleLogout = () => {
         logout();
         navigate('/login');
+    };
+
+    const handleDisconnectGmail = async () => {
+        if (!window.confirm('Disconnect Gmail from HRIS sending? You will be unable to send HRIS emails until you reconnect.')) return;
+        setDisconnectingGmail(true);
+        try {
+            await disconnectGmail();
+            await refreshGmailConnection(true);
+        } catch (reason: any) {
+            window.alert(reason?.message || 'Unable to disconnect Gmail.');
+        } finally {
+            setDisconnectingGmail(false);
+        }
     };
 
     React.useEffect(() => {
@@ -206,10 +229,28 @@ const Header: React.FC = () => {
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
                                         My Profile
                                     </RouterNavLink>
-                                    <RouterNavLink to="/integrations" onClick={() => setProfileMenuOpen(false)} className="flex min-h-11 w-full items-center px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-slate-100 dark:hover:bg-slate-700">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h8m-4-4v8M7 4h10a3 3 0 013 3v10a3 3 0 01-3 3H7a3 3 0 01-3-3V7a3 3 0 013-3z" /></svg>
-                                        Integrations
-                                    </RouterNavLink>
+                                    {gmailConnection.connected ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => void handleDisconnectGmail()}
+                                            disabled={isDisconnectingGmail}
+                                            className="flex min-h-14 w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:cursor-wait disabled:opacity-60 dark:text-slate-100 dark:hover:bg-slate-700"
+                                        >
+                                            <GmailIcon />
+                                            <span className="min-w-0">
+                                                <span className="block font-semibold">{isDisconnectingGmail ? 'Disconnecting Gmail…' : 'Disconnect Gmail'}</span>
+                                                <span className="block truncate text-xs text-slate-500 dark:text-slate-300">Connected as {gmailConnection.email}</span>
+                                            </span>
+                                        </button>
+                                    ) : (
+                                        <RouterNavLink to="/integrations" onClick={() => setProfileMenuOpen(false)} className="flex min-h-14 w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-slate-100 dark:hover:bg-slate-700">
+                                            <GmailIcon />
+                                            <span>
+                                                <span className="block font-semibold">{gmailLoading ? 'Checking Gmail…' : gmailConnection.status === 'error' ? 'Reconnect Gmail' : 'Connect Gmail'}</span>
+                                                <span className="block text-xs text-slate-500 dark:text-slate-300">Send HRIS emails from your account</span>
+                                            </span>
+                                        </RouterNavLink>
+                                    )}
                                     <div className="border-y border-slate-100 px-4 py-3 dark:border-slate-700">
                                         <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-300">Appearance</p>
                                         <div className="grid grid-cols-2 gap-2" role="group" aria-label="Appearance">
