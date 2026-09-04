@@ -44,7 +44,9 @@ assert.match(awardService, /rpc\('mark_employee_award_issued'/);
 assert.match(awardsPage, /processEmployeeAwardApproval/);
 assert.match(awardsPage, /nextStatus === ResolutionStatus\.Approved/);
 assert.match(awardsPage, /await issueApprovedAward/);
-assert.match(awardsPage, /\/api\/send-email/);
+assert.match(awardsPage, /sendHrisEmail/);
+assert.match(awardsPage, /GmailSenderField/);
+assert.doesNotMatch(awardsPage, /\/api\/send-email/);
 assert.match(awardsPage, /Issue Certificate & Email/);
 assert.match(awardsPage, /isDuplicatingTemplate/);
 

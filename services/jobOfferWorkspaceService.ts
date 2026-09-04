@@ -1,6 +1,7 @@
 import { Offer, OfferStatus } from '../types';
 import { mapJobOfferRow } from './jobOfferMapper';
 import { supabase } from './supabaseClient';
+import { requireConnectedGmail, sendHrisEmail, type HrisEmailAttachment } from './gmailConnectionService';
 
 const TERMINAL_STATUSES = [OfferStatus.Declined, OfferStatus.Expired];
 const CURRENT_DB_STATUSES = ['Draft', 'Sent', 'Viewed', 'Accepted', 'Signed', 'Accepted and Signed', 'Converted'];
@@ -125,10 +126,14 @@ interface SendOfferInput {
   subject: string;
   message: string;
   previewHtml: string;
+  attachments: HrisEmailAttachment[];
 }
 
-export const sendApprovedOffer = async ({ offer, userId, recipient, subject, message, previewHtml }: SendOfferInput): Promise<{ offer: Offer; provider: string; deliveryError: string }> => {
+export const sendApprovedOffer = async ({ offer, userId, recipient, subject, message, previewHtml, attachments }: SendOfferInput): Promise<{ offer: Offer; provider: string; deliveryError: string }> => {
   if (!recipient) throw new Error('The candidate email address is missing.');
+  // Fail before activating the secure offer when the sender has no usable
+  // Gmail connection. The Edge Function repeats this check server-side.
+  await requireConnectedGmail(true);
   let draft: Offer;
   if (offer.id && [OfferStatus.Sent, OfferStatus.Viewed].includes(offer.status)) {
     const { data, error } = await supabase.from('job_offers').select('*').eq('id', offer.id).in('status', [OfferStatus.Sent, OfferStatus.Viewed]).single();
@@ -140,8 +145,6 @@ export const sendApprovedOffer = async ({ offer, userId, recipient, subject, mes
   if (draft.approvalStatus !== 'Approved') throw new Error('This offer must complete the existing approval workflow before it can be sent.');
   if (!draft.secureToken) throw new Error('Unable to create the secure candidate link. Save the draft and retry.');
 
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-  if (sessionError || !sessionData.session?.access_token) throw new Error('Your session has expired. Please sign in again.');
   const secureLink = candidateOfferUrl(draft);
   const activatedAt = new Date().toISOString();
   const sendingDetails = { ...(draft.offerDetails || {}), emailDelivery: { status: 'sending', attemptedAt: activatedAt } };
@@ -162,34 +165,28 @@ export const sendApprovedOffer = async ({ offer, userId, recipient, subject, mes
   if (activationError || !activatedRow) throw new Error(`Unable to activate the secure offer link: ${activationError?.message || 'The offer is not approved or is no longer a draft.'}`);
 
   const html = `${previewHtml}<p style="margin-top:24px"><a href="${secureLink}" style="background:#6d28d9;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600">View and Respond to Offer</a></p><p style="color:#64748b;font-size:12px">This is a private link intended for the named recipient.</p>`;
-  const { data: emailResult, error: emailError } = await supabase.functions.invoke('send-recruitment-email', {
-    body: { to: recipient, subject: subject.trim(), message: `${message.trim()}\n\nReview your offer: ${secureLink}`, html, category: 'job-offer' },
-  });
-  let provider = emailResult?.ok ? 'google-gmail' : '';
+  let provider = '';
   let deliveryError = '';
-  if (!provider) {
-    let googleMessage = emailResult?.error;
-    if (!googleMessage) {
-      try { googleMessage = (await emailError?.context?.json?.())?.error; } catch { /* response body unavailable */ }
-    }
-    try {
-      const response = await fetch('/api/recruitment-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionData.session.access_token}` },
-        body: JSON.stringify({ to: recipient, subject: subject.trim(), message: `${message.trim()}\n\nReview your offer: ${secureLink}`, html }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body?.error || `Email service returned HTTP ${response.status}.`);
-      provider = 'existing-email-service';
-    } catch (fallbackError: any) {
-      deliveryError = [googleMessage || emailError?.message, fallbackError?.message].filter(Boolean).join(' Existing email service fallback: ');
-    }
+  let gmailResult: Awaited<ReturnType<typeof sendHrisEmail>> | null = null;
+  try {
+    gmailResult = await sendHrisEmail({
+      to: recipient,
+      subject: subject.trim(),
+      message: `${message.trim()}\n\nReview your offer: ${secureLink}`,
+      html,
+      attachments,
+      documentType: 'job-offer',
+      documentId: draft.id,
+    });
+    provider = gmailResult.provider;
+  } catch (sendError: any) {
+    deliveryError = sendError?.message || 'Gmail delivery failed.';
   }
 
   const sentAt = new Date().toISOString();
   const activatedOffer = mapJobOfferRow(activatedRow);
   const deliveryDetails = { ...(activatedOffer.offerDetails || {}), emailDelivery: provider
-    ? { status: 'sent', provider, attemptedAt: activatedAt, sentAt }
+    ? { status: 'sent', provider, attemptedAt: activatedAt, sentAt, senderEmail: gmailResult?.senderEmail, gmailMessageId: gmailResult?.messageId, auditRecorded: gmailResult?.auditRecorded }
     : { status: 'failed', attemptedAt: activatedAt, error: deliveryError || 'Email delivery failed.' } };
   const { data, error } = await supabase.from('job_offers').update({ last_saved_at: sentAt, offer_details: deliveryDetails }).eq('id', draft.id).select().single();
   if (error) throw new Error(`The secure link is live, but delivery status could not be recorded: ${error.message}`);

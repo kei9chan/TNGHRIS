@@ -8,6 +8,9 @@ import { useAuth } from '../../hooks/useAuth';
 import { logActivity } from '../../services/auditService';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
+import GmailSenderField from '../integrations/GmailSenderField';
+import { useGmailConnection } from '../../hooks/useGmailConnection';
+import { sendHrisEmail } from '../../services/gmailConnectionService';
 
 interface ResignationLinkModalProps {
     isOpen: boolean;
@@ -22,6 +25,7 @@ const ResignationLinkModal: React.FC<ResignationLinkModalProps> = ({ isOpen, onC
     const [users, setUsers] = useState<User[]>([]);
     const [isLoadingUsers, setIsLoadingUsers] = useState(false);
     const [isSending, setIsSending] = useState(false);
+    const { connection: gmailConnection, loading: gmailLoading } = useGmailConnection(isOpen);
     const searchRef = useRef<HTMLDivElement>(null);
 
     const defaultSubject = "Resignation Process & Offboarding Guidance";
@@ -133,20 +137,13 @@ HR Department`;
 
         setIsSending(true);
         try {
-            const response = await fetch('/api/send-email', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    to: selectedUser.email,
-                    subject,
-                    message,
-                }),
+            await sendHrisEmail({
+                to: selectedUser.email,
+                subject,
+                message,
+                documentType: 'resignation-guidance',
+                documentId: selectedUser.id,
             });
-
-            if (!response.ok) {
-                const data = await response.json().catch(() => ({}));
-                throw new Error(data?.error || 'Failed to send email.');
-            }
 
             logActivity(
                 user, 
@@ -173,13 +170,14 @@ HR Department`;
             footer={
                 <div className="flex justify-end space-x-2">
                     <Button variant="secondary" onClick={onClose}>Cancel</Button>
-                    <Button onClick={handleSend} disabled={!selectedUser || isSending}>
-                        {isSending ? 'Sending...' : 'Send Email'}
+                    <Button onClick={handleSend} disabled={!selectedUser || isSending || gmailLoading || !gmailConnection.connected}>
+                        {isSending ? 'Sending...' : gmailConnection.connected ? 'Send Email' : 'Connect Gmail to send'}
                     </Button>
                 </div>
             }
         >
             <div className="space-y-4">
+                <GmailSenderField enabled={isOpen} />
                 <div className="relative" ref={searchRef}>
                     <Input
                         label="Search Employee"

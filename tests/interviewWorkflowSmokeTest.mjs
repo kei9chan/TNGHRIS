@@ -75,7 +75,9 @@ assert.match(applicants, /Reject/);
 assert.match(applicants, /openInterviewScheduler/);
 assert.match(applicants, /openRejectionEmail/);
 assert.match(rejection, /Update on Your Application/);
-assert.match(rejection, /\/api\/recruitment-email/);
+assert.match(rejection, /sendHrisEmail/);
+assert.match(rejection, /GmailSenderField/);
+assert.doesNotMatch(rejection, /\/api\/recruitment-email/);
 assert.match(rejection, /marked Rejected only after this email is sent successfully/);
 
 for (const column of [

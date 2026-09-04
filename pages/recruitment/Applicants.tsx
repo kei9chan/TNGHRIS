@@ -21,6 +21,7 @@ import { EnrichedOffer } from '../../components/recruitment/OfferTable';
 import { fetchRatingRecordsForCandidate } from '../../services/interviewRatingService';
 import { mapJobOfferRow } from '../../services/jobOfferMapper';
 import { candidateOfferUrl, isPublishedOffer, offerWorkspaceStatus, saveOfferDraft, selectCurrentOffer, sendApprovedOffer } from '../../services/jobOfferWorkspaceService';
+import type { HrisEmailAttachment } from '../../services/gmailConnectionService';
 import { employmentTypeLabel } from '../../components/recruitment/offerEmployment';
 
 const CandidateProfileModal = React.lazy(() => import('../../components/recruitment/CandidateProfileModal'));
@@ -441,9 +442,9 @@ const Applicants: React.FC = () => {
         return result.offer;
     };
 
-    const handleSendOffer = async (offerToSend: Offer, recipient: string, subject: string, message: string, previewHtml: string): Promise<Offer> => {
+    const handleSendOffer = async (offerToSend: Offer, recipient: string, subject: string, message: string, previewHtml: string, attachments: HrisEmailAttachment[]): Promise<Offer> => {
         if (!can('Offers', Permission.Manage)) throw new Error('You do not have permission to send offers.');
-        const result = await sendApprovedOffer({ offer: offerToSend, userId: user?.id, recipient, subject, message, previewHtml });
+        const result = await sendApprovedOffer({ offer: offerToSend, userId: user?.id, recipient, subject, message, previewHtml, attachments });
         setOffers(previous => previous.map(item => item.id === result.offer.id ? result.offer : item));
         setEditingOffer(result.offer);
         await logActivity(user, 'UPDATE', 'Offer', result.offer.id, result.provider ? `Sent offer ${result.offer.offerNumber} from Applicant Tracking through ${result.provider}` : `Activated secure link for ${result.offer.offerNumber}; email delivery failed`);

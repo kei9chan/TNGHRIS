@@ -8,6 +8,9 @@ import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Modal from '../ui/Modal';
 import COEDocumentPreview from './COEDocumentPreview';
+import GmailSenderField from '../integrations/GmailSenderField';
+import { useGmailConnection } from '../../hooks/useGmailConnection';
+import { sendHrisEmail } from '../../services/gmailConnectionService';
 
 interface PrintableCOEProps {
   documentData: COEDocumentData;
@@ -27,6 +30,7 @@ const PrintableCOE: React.FC<PrintableCOEProps> = ({ documentData, onClose }) =>
   const [isSending, setIsSending] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [emailRecipient, setEmailRecipient] = useState(employee.email || '');
+  const { connection: gmailConnection, loading: gmailLoading } = useGmailConnection(isEmailModalOpen);
   const pdfRef = useRef<HTMLDivElement | null>(null);
   const currency = /^[A-Z]{3}$/.test(settings.currency || '') ? settings.currency : 'PHP';
 
@@ -79,25 +83,19 @@ const PrintableCOE: React.FC<PrintableCOEProps> = ({ documentData, onClose }) =>
       const pdfBase64 = String(pdf.output('datauristring')).split(',')[1] || '';
       if (!pdfBase64) throw new Error('Unable to generate the COE PDF.');
 
-      const response = await fetch('/api/send-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: emailRecipient,
-          subject: `Certificate of Employment - ${employee.name}`,
-          message: `Your Certificate of Employment has been issued. Request ID: ${request.id}`,
-          html: `<p>Dear ${employee.name.split(' ')[0]},</p><p>Your Certificate of Employment has been issued.</p><hr />${renderedBody}<p>Request ID: ${request.id}</p>`,
-          attachments: [{
-            filename: `Certificate_of_Employment_${safeFilePart(employee.name)}.pdf`,
-            contentBase64: pdfBase64,
-            contentType: 'application/pdf',
-          }],
-        }),
+      await sendHrisEmail({
+        to: emailRecipient,
+        subject: `Certificate of Employment - ${employee.name}`,
+        message: `Your Certificate of Employment has been issued. Request ID: ${request.id}`,
+        html: `<p>Dear ${employee.name.split(' ')[0]},</p><p>Your Certificate of Employment has been issued.</p><hr />${renderedBody}<p>Request ID: ${request.id}</p>`,
+        attachments: [{
+          filename: `Certificate_of_Employment_${safeFilePart(employee.name)}.pdf`,
+          contentBase64: pdfBase64,
+          contentType: 'application/pdf',
+        }],
+        documentType: 'coe',
+        documentId: request.id,
       });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload?.error || 'Failed to send email.');
-      }
       await recordCoeDocumentEvent(request.id, 'EMAIL');
       alert(`Certificate successfully emailed to ${emailRecipient}.`);
       setIsEmailModalOpen(false);
@@ -174,12 +172,13 @@ const PrintableCOE: React.FC<PrintableCOEProps> = ({ documentData, onClose }) =>
         footer={(
           <div className="flex w-full justify-end space-x-2">
             <Button variant="secondary" onClick={() => setIsEmailModalOpen(false)}>Cancel</Button>
-            <Button onClick={handleSendEmail} disabled={isSending}>{isSending ? 'Sending…' : 'Send Email'}</Button>
+            <Button onClick={handleSendEmail} disabled={isSending || gmailLoading || !gmailConnection.connected}>{isSending ? 'Sending…' : gmailConnection.connected ? 'Send Email' : 'Connect Gmail to send'}</Button>
           </div>
         )}
       >
         <div className="space-y-4">
           <p className="text-sm text-gray-600 dark:text-gray-400">The exact approved COE PDF shown in the preview will be attached.</p>
+          <GmailSenderField enabled={isEmailModalOpen} />
           <Input
             label="Recipient Email Address"
             type="email"

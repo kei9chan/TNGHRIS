@@ -18,6 +18,7 @@ import { mapOfferTemplate } from './OfferTemplates';
 import { fetchRatingRecordsForCandidate } from '../../services/interviewRatingService';
 import OfferApprovalPackageModal from '../../components/recruitment/OfferApprovalPackageModal';
 import { candidateOfferUrl, createOfferRevision, saveOfferDraft, sendApprovedOffer } from '../../services/jobOfferWorkspaceService';
+import type { HrisEmailAttachment } from '../../services/gmailConnectionService';
 import { mapJobOfferRow } from '../../services/jobOfferMapper';
 
 
@@ -254,9 +255,9 @@ const Offers: React.FC = () => {
     }
   };
 
-  const handleSendOffer = async (offerToSend: Offer, recipient: string, subject: string, message: string, previewHtml: string): Promise<Offer> => {
+  const handleSendOffer = async (offerToSend: Offer, recipient: string, subject: string, message: string, previewHtml: string, attachments: HrisEmailAttachment[]): Promise<Offer> => {
     if (!canManage) throw new Error('You do not have permission to send offers.');
-    const result = await sendApprovedOffer({ offer: offerToSend, userId: user?.id, recipient, subject, message, previewHtml });
+    const result = await sendApprovedOffer({ offer: offerToSend, userId: user?.id, recipient, subject, message, previewHtml, attachments });
     setOffers(previous => previous.map(item => item.id === result.offer.id ? result.offer : item));
     await logActivity(user, 'UPDATE', 'Offer', result.offer.id, result.provider ? `Sent offer ${result.offer.offerNumber} to ${recipient} through ${result.provider}` : `Activated secure link for ${result.offer.offerNumber}; email delivery failed`);
     setSuccessMessage(result.provider ? `Offer sent successfully to ${recipient}.` : 'The secure offer link is live, but the email could not be delivered. Copy the link from View Details and retry sending after the Google email connection is updated.');

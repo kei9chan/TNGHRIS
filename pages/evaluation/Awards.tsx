@@ -19,6 +19,9 @@ import { formatEmployeeName } from '../../services/formatEmployeeName';
 import CertificateRenderer from '../../components/evaluation/CertificateRenderer';
 import { createModernAwardDesign } from '../../components/evaluation/AwardVisualSystem';
 import { captureCertificatePng, downloadCertificatePdf, printCertificateImage } from '../../services/awardCertificateExport';
+import GmailSenderField from '../../components/integrations/GmailSenderField';
+import { useGmailConnection } from '../../hooks/useGmailConnection';
+import { sendHrisEmail } from '../../services/gmailConnectionService';
 
 const FALLBACK_DESIGN = createModernAwardDesign('TNG HRIS', 'Certificate of Recognition');
 
@@ -82,6 +85,7 @@ const Awards: React.FC = () => {
   const [openedReviewId, setOpenedReviewId] = React.useState<string | null>(null);
   const [reviewLoadError, setReviewLoadError] = React.useState('');
   const reviewCertificateRef = React.useRef<HTMLDivElement>(null);
+  const { connection: gmailConnection, loading: gmailLoading } = useGmailConnection(Boolean(reviewAward));
 
   React.useEffect(() => {
     const load = async () => {
@@ -340,26 +344,20 @@ const Awards: React.FC = () => {
         const firstName = employee.name.includes(',')
           ? employee.name.split(',')[1]?.trim().split(' ')[0]
           : employee.name.split(' ')[0];
-        const senderName = (import.meta as any).env?.VITE_SMTP_FROM_NAME || user?.name || 'HR Team';
-        const response = await fetch('/api/send-email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            to: employee.email,
-            subject: `Award Certificate - ${award.awardTitle}`,
-            message: `Dear ${firstName},\n\nCongratulations on receiving the ${award.awardTitle} award. Your approved certificate is attached.\n\nBest regards,\n${senderName}`,
-            html: `<p>Dear ${firstName},</p><p>Congratulations on receiving the <strong>${award.awardTitle}</strong> award. Your approved certificate is attached.</p>${award.notes ? `<p><strong>Citation:</strong> ${award.notes}</p>` : ''}<p>Best regards,<br />${senderName}</p>`,
-            attachments: [{
-              filename: `Award_Certificate_${employee.name.replace(/\s+/g, '_')}.png`,
-              contentBase64: certificateBase64,
-              contentType: 'image/png',
-            }],
-          }),
+        const senderName = user?.name || 'HR Team';
+        await sendHrisEmail({
+          to: employee.email,
+          subject: `Award Certificate - ${award.awardTitle}`,
+          message: `Dear ${firstName},\n\nCongratulations on receiving the ${award.awardTitle} award. Your approved certificate is attached.\n\nBest regards,\n${senderName}`,
+          html: `<p>Dear ${firstName},</p><p>Congratulations on receiving the <strong>${award.awardTitle}</strong> award. Your approved certificate is attached.</p>${award.notes ? `<p><strong>Citation:</strong> ${award.notes}</p>` : ''}<p>Best regards,<br />${senderName}</p>`,
+          attachments: [{
+            filename: `Award_Certificate_${employee.name.replace(/\s+/g, '_')}.png`,
+            contentBase64: certificateBase64,
+            contentType: 'image/png',
+          }],
+          documentType: 'award',
+          documentId: award.id,
         });
-        if (!response.ok) {
-          const body = await response.json().catch(() => ({}));
-          throw new Error(body?.error || 'Approval was saved, but the award email could not be sent. Use Issue Certificate to retry.');
-        }
         const issued = await markEmployeeAwardIssued(award.id, certificateUrl);
         setEmployeeAwards(previous => previous.map(item => item.id === award.id ? {
           ...item,
@@ -482,12 +480,13 @@ const Awards: React.FC = () => {
                             } catch (error: any) {
                               alert(error?.message || 'Failed to issue certificate.');
                             }
-                          }}>Issue Certificate & Email</Button>
+                          }} disabled={gmailLoading || !gmailConnection.connected}>Issue Certificate & Email</Button>
                         )}
                     </div>
                 }
             >
                 <div className="space-y-4">
+                    <GmailSenderField enabled={Boolean(reviewAward)} />
                     <div>
                         <p className="font-bold mb-2">Certificate Preview</p>
                         <div className="border p-2 bg-gray-100 rounded flex justify-center min-h-[320px] overflow-auto">

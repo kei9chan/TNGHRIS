@@ -52,7 +52,8 @@
     "test:direct-manager-approvals": "node tests/directManagerTimeApprovalSmokeTest.mjs",
     "test:offer-employment-pdf": "node tests/offerEmploymentTermsAndInterviewPdfSmokeTest.mjs",
     "test:incident-nte-focused-fix": "node tests/incidentNteFocusedFixSmokeTest.mjs",
-    "test:nte-mobile-review": "node tests/nteMobileReviewSmokeTest.mjs"
+    "test:nte-mobile-review": "node tests/nteMobileReviewSmokeTest.mjs",
+    "test:gmail-sending": "node tests/gmailSendingConnectionSmokeTest.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.84.0",

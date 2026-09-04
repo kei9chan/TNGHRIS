@@ -4,7 +4,9 @@ import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
-import { supabase } from '../../services/supabaseClient';
+import GmailSenderField from '../integrations/GmailSenderField';
+import { useGmailConnection } from '../../hooks/useGmailConnection';
+import { sendHrisEmail } from '../../services/gmailConnectionService';
 
 interface RejectionEmailModalProps {
   isOpen: boolean;
@@ -29,6 +31,7 @@ const RejectionEmailModal: React.FC<RejectionEmailModalProps> = ({
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState('');
+  const { connection: gmailConnection, loading: gmailLoading } = useGmailConnection(isOpen);
 
   const firstName = candidate?.firstName || 'Applicant';
   const resolvedJobTitle = jobTitle || application?.roleTitleSnapshot || 'the position';
@@ -70,29 +73,13 @@ ${resolvedBusinessUnit} / TNG Recruitment Team`);
     setIsSending(true);
     setError('');
     try {
-      const { data, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError || !data.session?.access_token) {
-        throw new Error('Your session has expired. Please sign in again.');
-      }
-
-      const response = await fetch('/api/recruitment-email', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${data.session.access_token}`,
-        },
-        body: JSON.stringify({
-          to: candidate.email,
-          subject: subject.trim(),
-          message: message.trim(),
-          category: 'rejection',
-        }),
+      await sendHrisEmail({
+        to: candidate.email,
+        subject: subject.trim(),
+        message: message.trim(),
+        documentType: 'candidate-rejection',
+        documentId: application.id,
       });
-
-      if (!response.ok) {
-        const responseBody = await response.json().catch(() => ({}));
-        throw new Error(responseBody?.error || 'Failed to send rejection email.');
-      }
 
       await onSend({ subject: subject.trim(), message: message.trim() });
     } catch (sendError: any) {
@@ -113,13 +100,14 @@ ${resolvedBusinessUnit} / TNG Recruitment Team`);
       footer={(
         <div className="flex w-full justify-end gap-2">
           <Button variant="secondary" onClick={onClose} disabled={isSending}>Cancel</Button>
-          <Button variant="danger" onClick={handleSend} disabled={isSending}>
-            {isSending ? 'Sending...' : 'Send Email'}
+          <Button variant="danger" onClick={handleSend} disabled={isSending || gmailLoading || !gmailConnection.connected}>
+            {isSending ? 'Sending...' : gmailConnection.connected ? 'Send Email' : 'Connect Gmail to send'}
           </Button>
         </div>
       )}
     >
       <div className="space-y-4">
+        <GmailSenderField enabled={isOpen} />
         {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200" role="alert">{error}</div>}
         <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200">
           Review the message before sending. The application is marked Rejected only after this email is sent successfully.

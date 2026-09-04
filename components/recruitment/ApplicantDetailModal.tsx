@@ -7,6 +7,9 @@ import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
 import { useAuth } from '../../hooks/useAuth';
 import { logActivity } from '../../services/auditService';
+import GmailSenderField from '../integrations/GmailSenderField';
+import { useGmailConnection } from '../../hooks/useGmailConnection';
+import { sendHrisEmail } from '../../services/gmailConnectionService';
 
 interface ApplicantDetailModalProps {
   isOpen: boolean;
@@ -28,6 +31,7 @@ const ApplicantDetailModal: React.FC<ApplicantDetailModalProps> = ({ isOpen, onC
     const [isSending, setIsSending] = useState(false);
     const [subject, setSubject] = useState('');
     const [message, setMessage] = useState('');
+    const { connection: gmailConnection, loading: gmailLoading } = useGmailConnection(isEmailModalOpen);
 
     useEffect(() => {
         if (!isEmailModalOpen) return;
@@ -49,20 +53,13 @@ const ApplicantDetailModal: React.FC<ApplicantDetailModalProps> = ({ isOpen, onC
 
         setIsSending(true);
         try {
-            const response = await fetch('/api/send-email', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    to: application.candidateEmail,
-                    subject,
-                    message,
-                }),
+            await sendHrisEmail({
+                to: application.candidateEmail,
+                subject,
+                message,
+                documentType: 'candidate',
+                documentId: application.id,
             });
-
-            if (!response.ok) {
-                const data = await response.json().catch(() => ({}));
-                throw new Error(data?.error || 'Failed to send email.');
-            }
 
             alert(`Email sent to ${application.candidateEmail}.`);
             if (user) {
@@ -139,13 +136,14 @@ const ApplicantDetailModal: React.FC<ApplicantDetailModalProps> = ({ isOpen, onC
                 footer={
                     <div className="flex justify-end w-full space-x-2">
                         <Button variant="secondary" onClick={() => setIsEmailModalOpen(false)}>Cancel</Button>
-                        <Button onClick={handleSendEmail} disabled={isSending}>
-                            {isSending ? 'Sending...' : 'Send Email'}
+                        <Button onClick={handleSendEmail} disabled={isSending || gmailLoading || !gmailConnection.connected}>
+                            {isSending ? 'Sending...' : gmailConnection.connected ? 'Send Email' : 'Connect Gmail to send'}
                         </Button>
                     </div>
                 }
             >
                 <div className="space-y-4">
+                    <GmailSenderField enabled={isEmailModalOpen} />
                     <div className="p-2 bg-gray-100 dark:bg-slate-700 rounded text-sm">
                         <p><strong>To:</strong> {application.candidateEmail || 'N/A'}</p>
                     </div>

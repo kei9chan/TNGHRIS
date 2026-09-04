@@ -13,6 +13,9 @@ import Modal from '../../components/ui/Modal';
 import Input from '../../components/ui/Input';
 import { logActivity } from '../../services/auditService';
 import { supabase } from '../../services/supabaseClient';
+import GmailSenderField from '../../components/integrations/GmailSenderField';
+import { useGmailConnection } from '../../hooks/useGmailConnection';
+import { sendHrisEmail } from '../../services/gmailConnectionService';
 
 const ArrowLeftIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>;
 const CheckCircleIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-500" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>;
@@ -53,6 +56,7 @@ const EnvelopeDetail: React.FC = () => {
     const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
     const [emailRecipient, setEmailRecipient] = useState('');
     const [isSending, setIsSending] = useState(false);
+    const { connection: gmailConnection, loading: gmailLoading } = useGmailConnection(isEmailModalOpen);
     const pdfRef = useRef<HTMLDivElement | null>(null);
     const [resolvedUserId, setResolvedUserId] = useState<string | null>(null);
     const [showApprovalWaitBanner, setShowApprovalWaitBanner] = useState(false);
@@ -412,28 +416,21 @@ ${processedContent.sections
                 throw new Error('Unable to generate contract PDF.');
             }
 
-            const response = await fetch('/api/send-email', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    to: emailRecipient,
-                    subject,
-                    message,
-                    html,
-                    attachments: [
-                        {
-                            filename: `Contract_${envelope.title.replace(/\\s+/g, '_')}.pdf`,
-                            contentBase64: pdfBase64,
-                            contentType: 'application/pdf',
-                        },
-                    ],
-                }),
+            await sendHrisEmail({
+                to: emailRecipient,
+                subject,
+                message,
+                html,
+                attachments: [
+                    {
+                        filename: `Contract_${envelope.title.replace(/\\s+/g, '_')}.pdf`,
+                        contentBase64: pdfBase64,
+                        contentType: 'application/pdf',
+                    },
+                ],
+                documentType: 'contract',
+                documentId: envelope.id,
             });
-
-            if (!response.ok) {
-                const data = await response.json().catch(() => ({}));
-                throw new Error(data?.error || 'Failed to send email.');
-            }
 
             alert(`Contract has been emailed to ${emailRecipient}.`);
             if (user && envelope) {
@@ -589,19 +586,22 @@ ${processedContent.sections
                     footer={
                         <div className="flex justify-end w-full space-x-2">
                             <Button variant="secondary" onClick={() => setIsEmailModalOpen(false)}>Cancel</Button>
-                            <Button onClick={handleSendEmail} disabled={isSending}>
-                                {isSending ? 'Sending...' : 'Send Email'}
+                            <Button onClick={handleSendEmail} disabled={isSending || gmailLoading || !gmailConnection.connected}>
+                                {isSending ? 'Sending...' : gmailConnection.connected ? 'Send Email' : 'Connect Gmail to send'}
                             </Button>
                         </div>
                     }
                 >
-                    <Input
-                        label="Recipient Email Address"
-                        type="email"
-                        value={emailRecipient}
-                        onChange={(e) => setEmailRecipient(e.target.value)}
-                        required
-                    />
+                    <div className="space-y-4">
+                        <GmailSenderField enabled={isEmailModalOpen} />
+                        <Input
+                            label="Recipient Email Address"
+                            type="email"
+                            value={emailRecipient}
+                            onChange={(e) => setEmailRecipient(e.target.value)}
+                            required
+                        />
+                    </div>
                 </Modal>
             )}
         </div>

@@ -1,5 +1,14 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
-import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+import {
+  GmailError,
+  decryptRefreshToken,
+  hasExactGmailSendScope,
+  normalizeEmail,
+  recordDeliveryAudit,
+  refreshAccessToken,
+  sendGmailMessage,
+} from '../_shared/gmail.ts';
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
@@ -7,44 +16,32 @@ const tokenPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 const activeStatuses = ['Sent', 'Viewed'];
 const responseActions = ['accept', 'decline'];
 const signedStatuses = ['Signed', 'Accepted and Signed'];
-const validEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-const cleanHeader = (value: string) => value.replace(/[\r\n]+/g, ' ').trim();
-const encodeBase64 = (value: string) => {
-  const bytes = new TextEncoder().encode(value); let binary = '';
-  for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
-  return btoa(binary);
-};
-const encodeBase64Url = (value: string) => encodeBase64(value).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-const encodeHeader = (value: string) => `=?UTF-8?B?${encodeBase64(value)}?=`;
-const htmlEscape = (value: string) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const peso = (value: unknown) => Number.isFinite(Number(value)) ? new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 }).format(Number(value)) : 'Not specified';
 
-const googleError = async (response: Response) => {
-  const payload = await response.json().catch(() => ({}));
-  const reason = payload?.error?.errors?.[0]?.reason;
-  const message = payload?.error?.message || payload?.error_description || `Google Gmail returned HTTP ${response.status}.`;
-  if (response.status === 403 && ['insufficientPermissions', 'forbidden'].includes(reason)) return 'The Google connection does not include Gmail send permission. Reconnect Google with Gmail send access, then retry.';
-  if (reason === 'accessNotConfigured') return 'Gmail API is not enabled for the connected Google Cloud project.';
-  return reason && !message.includes(reason) ? `${message} (${reason})` : message;
-};
-
-const sendGoogleEmail = async (to: string, subject: string, message: string) => {
-  if (!validEmail(to)) throw new Error('The candidate email address is missing or invalid.');
-  const clientId = Deno.env.get('GOOGLE_CLIENT_ID')?.trim();
-  const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET')?.trim();
-  const refreshToken = Deno.env.get('GOOGLE_REFRESH_TOKEN')?.trim();
-  if (!clientId || !clientSecret || !refreshToken) throw new Error('Google Gmail integration secrets are not configured.');
-  const tokenResponse = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token' }) });
-  if (!tokenResponse.ok) throw new Error(await googleError(tokenResponse));
-  const accessToken = (await tokenResponse.json())?.access_token;
-  if (!accessToken) throw new Error('Google did not return an access token.');
-  const senderEmail = Deno.env.get('GOOGLE_GMAIL_FROM_EMAIL')?.trim() || (validEmail(Deno.env.get('GOOGLE_CALENDAR_ID')?.trim() || '') ? Deno.env.get('GOOGLE_CALENDAR_ID')!.trim() : '');
-  const boundary = `tng-offer-${crypto.randomUUID()}`;
-  const html = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;max-width:680px">${htmlEscape(message).replace(/\n/g, '<br>')}</div>`;
-  const mime = [senderEmail ? `From: TNG Recruitment Team <${cleanHeader(senderEmail)}>` : '', `To: ${cleanHeader(to)}`, `Subject: ${encodeHeader(cleanHeader(subject))}`, 'MIME-Version: 1.0', `Content-Type: multipart/alternative; boundary="${boundary}"`, '', `--${boundary}`, 'Content-Type: text/plain; charset="UTF-8"', '', message, `--${boundary}`, 'Content-Type: text/html; charset="UTF-8"', '', html, `--${boundary}--`, ''].filter((value, index) => value || index > 0).join('\r\n');
-  const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ raw: encodeBase64Url(mime) }) });
-  if (!response.ok) throw new Error(await googleError(response));
-  return await response.json();
+const sendConnectedOfferEmail = async (client: SupabaseClient, offer: Record<string, any>, to: string, subject: string, message: string, senderName: string) => {
+  if (!offer.sent_by_user_id) throw new GmailError('The original offer sender is unavailable. HR must resend from a connected Gmail account.', 409, true);
+  const { data: hrisUser } = await client.from('hris_users').select('id,auth_user_id,email,full_name,status').eq('id', offer.sent_by_user_id).maybeSingle();
+  if (!hrisUser?.auth_user_id || hrisUser.status !== 'Active') throw new GmailError('The original offer sender is not an active HRIS user.', 403);
+  const { data: connection } = await client.from('gmail_connections').select('google_email,refresh_token_ciphertext,refresh_token_iv,granted_scopes,connection_status').eq('user_id', hrisUser.auth_user_id).maybeSingle();
+  if (!connection || connection.connection_status !== 'connected' || !connection.refresh_token_ciphertext || !connection.refresh_token_iv || !hasExactGmailSendScope(connection.granted_scopes)) {
+    throw new GmailError('The offer sender must reconnect Gmail before an automatic confirmation can be sent.', 409, true);
+  }
+  const senderEmail = normalizeEmail(connection.google_email);
+  const attemptedAt = new Date().toISOString();
+  try {
+    const refreshToken = await decryptRefreshToken(connection.refresh_token_ciphertext, connection.refresh_token_iv);
+    const token = await refreshAccessToken(refreshToken);
+    const sent = await sendGmailMessage(token.accessToken, { senderEmail, senderName: senderName || hrisUser.full_name, to, subject, message });
+    const sentAt = new Date().toISOString();
+    await client.from('gmail_connections').update({ token_expiry: token.expiresAt, connection_status: 'connected', last_error: null, last_verified_at: sentAt, updated_at: sentAt }).eq('user_id', hrisUser.auth_user_id);
+    const auditRecorded = await recordDeliveryAudit(client, { authUserId: hrisUser.auth_user_id, hrisUserId: hrisUser.id, userEmail: hrisUser.email, senderEmail, recipientEmail: to, subject, documentType: 'offer-welcome', documentId: offer.id, attemptedAt, sentAt, messageId: sent.messageId, threadId: sent.threadId, status: 'sent' });
+    return { ...sent, senderEmail, auditRecorded };
+  } catch (reason) {
+    const failure = reason instanceof GmailError ? reason : new GmailError('Unable to send the signed acceptance confirmation.', 500);
+    await client.from('gmail_connections').update({ connection_status: failure.reconnect ? 'error' : 'connected', last_error: failure.message, updated_at: new Date().toISOString() }).eq('user_id', hrisUser.auth_user_id);
+    await recordDeliveryAudit(client, { authUserId: hrisUser.auth_user_id, hrisUserId: hrisUser.id, userEmail: hrisUser.email, senderEmail, recipientEmail: to, subject, documentType: 'offer-welcome', documentId: offer.id, attemptedAt, status: 'failed', error: failure.message });
+    throw failure;
+  }
 };
 
 Deno.serve(async request => {
@@ -109,7 +106,7 @@ Deno.serve(async request => {
       const position = details.jobTitle || requisition?.title || 'the offered position';
       const businessUnit = details.businessUnit || 'The Nextperience';
       const senderName = details.welcomeEmail?.senderName || 'TNG Recruitment Team';
-      const senderEmail = details.welcomeEmail?.senderEmail || Deno.env.get('GOOGLE_GMAIL_FROM_EMAIL')?.trim() || Deno.env.get('GOOGLE_CALENDAR_ID')?.trim() || '';
+      const senderEmail = details.welcomeEmail?.senderEmail || details.emailDelivery?.senderEmail || '';
       const defaultSubject = `We received your signed acceptance — ${position} at ${businessUnit}`;
       const defaultMessage = `Hi ${firstName},\n\nWe have received your signed acceptance for the ${position} position at ${businessUnit}.\n\nThank you for accepting our offer. We will now proceed with the next steps, including contract signing and onboarding. Our team will contact you shortly with the details and requirements.\n\nStart date: ${offer.start_date ? new Date(`${offer.start_date}T00:00:00`).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' }) : 'To be confirmed'}\nLocation: ${details.workLocation || 'To be confirmed'}\nMonthly compensation: ${peso(details.grossMonthlySalary ?? offer.base_pay)}\n\nWe look forward to welcoming you to ${businessUnit}!\n\nBest regards,\n\n${senderName}\n${businessUnit}${senderEmail ? `\n${senderEmail}` : ''}`;
       const replaceValues = (value: string) => value.replace(/{{\s*candidate_first_name\s*}}/gi, firstName).replace(/{{\s*candidate_full_name\s*}}/gi, fullName).replace(/{{\s*position_title\s*}}/gi, position).replace(/{{\s*business_unit\s*}}/gi, businessUnit).replace(/{{\s*start_date\s*}}/gi, offer.start_date || 'To be confirmed').replace(/{{\s*location\s*}}/gi, details.workLocation || 'To be confirmed').replace(/{{\s*monthly_compensation\s*}}/gi, peso(details.grossMonthlySalary ?? offer.base_pay)).replace(/{{\s*sender_name\s*}}/gi, senderName).replace(/{{\s*sender_email\s*}}/gi, senderEmail);
@@ -118,8 +115,8 @@ Deno.serve(async request => {
       const recipient = String(offer.recipient_email || candidate?.email || '').trim();
       let confirmationEmail: any = { subject: emailSubject, message: emailMessage, recipient, senderName, senderEmail, attemptedAt: respondedAt, status: 'sending' };
       try {
-        const sent = await sendGoogleEmail(recipient, emailSubject, emailMessage);
-        confirmationEmail = { ...confirmationEmail, status: 'sent', sentAt: new Date().toISOString(), provider: 'google-gmail', messageId: sent.id };
+        const sent = await sendConnectedOfferEmail(client, offer, recipient, emailSubject, emailMessage, senderName);
+        confirmationEmail = { ...confirmationEmail, senderEmail: sent.senderEmail, status: 'sent', sentAt: new Date().toISOString(), provider: 'google-gmail', messageId: sent.messageId, threadId: sent.threadId, auditRecorded: sent.auditRecorded };
       } catch (emailError) {
         confirmationEmail = { ...confirmationEmail, status: 'failed', error: emailError instanceof Error ? emailError.message : 'Unable to send the signed acceptance confirmation.' };
       }

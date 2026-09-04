@@ -206,6 +206,10 @@ const Header: React.FC = () => {
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
                                         My Profile
                                     </RouterNavLink>
+                                    <RouterNavLink to="/integrations" onClick={() => setProfileMenuOpen(false)} className="flex min-h-11 w-full items-center px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-slate-100 dark:hover:bg-slate-700">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h8m-4-4v8M7 4h10a3 3 0 013 3v10a3 3 0 01-3 3H7a3 3 0 01-3-3V7a3 3 0 013-3z" /></svg>
+                                        Integrations
+                                    </RouterNavLink>
                                     <div className="border-y border-slate-100 px-4 py-3 dark:border-slate-700">
                                         <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-300">Appearance</p>
                                         <div className="grid grid-cols-2 gap-2" role="group" aria-label="Appearance">

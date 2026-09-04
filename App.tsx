@@ -29,6 +29,7 @@ const ApprovalCenter = React.lazy(() => import('./pages/ApprovalCenter'));
 const MyRequests = React.lazy(() => import('./pages/MyRequests'));
 const NotFound = React.lazy(() => import('./pages/NotFound'));
 const Notifications = React.lazy(() => import('./pages/Notifications'));
+const Integrations = React.lazy(() => import('./pages/Integrations'));
 
 // New Employee Pages
 const EmployeeList = React.lazy(() => import('./pages/employees/EmployeeList'));
@@ -295,6 +296,7 @@ const AppRoutes: React.FC = () => {
         <Route path="my-requests" element={<ProtectedRoute><MyRequests /></ProtectedRoute>} />
         <Route path="my-profile" element={<ProtectedRoute><EmployeeProfile/></ProtectedRoute>} />
         <Route path="notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
+        <Route path="integrations" element={<ProtectedRoute><Integrations /></ProtectedRoute>} />
         <Route path="users/:userId" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
         <Route path="submit-resignation" element={<ProtectedRoute><SubmitResignation /></ProtectedRoute>} />
         
