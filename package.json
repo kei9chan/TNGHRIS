@@ -54,7 +54,8 @@
     "test:offer-employment-pdf": "node tests/offerEmploymentTermsAndInterviewPdfSmokeTest.mjs",
     "test:incident-nte-focused-fix": "node tests/incidentNteFocusedFixSmokeTest.mjs",
     "test:nte-mobile-review": "node tests/nteMobileReviewSmokeTest.mjs",
-    "test:gmail-sending": "node tests/gmailSendingConnectionSmokeTest.mjs"
+    "test:gmail-sending": "node tests/gmailSendingConnectionSmokeTest.mjs",
+    "test:asset-approvals": "node tests/assetRequestApprovalWorkflowSmokeTest.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.84.0",

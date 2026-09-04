@@ -11,6 +11,7 @@ import OTRequestModal from '../components/payroll/OTRequestModal';
 import WFHReviewModal from '../components/payroll/WFHReviewModal';
 import ManpowerReviewModal from '../components/payroll/ManpowerReviewModal';
 import OfferApprovalReviewModal from '../components/recruitment/OfferApprovalReviewModal';
+import AssetRequestApprovalModal from '../components/employees/AssetRequestApprovalModal';
 import { useSettings } from '../context/SettingsContext';
 import { ApprovalRequestKind, getApprovalRequestId, getApprovalReviewUrl } from '../services/approvalDeepLinks';
 import {
@@ -49,9 +50,10 @@ const KIND_META: Record<Kind, { title: string; badge: string; rule: string }> = 
   manpower: { title: 'Manpower', badge: 'bg-teal-100 text-teal-800', rule: 'Manpower requests within your permitted approval scope.' },
   award: { title: 'Awards', badge: 'bg-amber-100 text-amber-800', rule: 'Award nominations awaiting your required approval before certificate issuance.' },
   offer: { title: 'Offer Approval', badge: 'bg-violet-100 text-violet-800', rule: 'Hiring packets awaiting your configured offer approval.' },
+  asset: { title: 'Asset Requests', badge: 'bg-cyan-100 text-cyan-800', rule: 'Asset requests awaiting direct-manager or BOD review under the configured workflow.' },
 };
 
-const GROUP_ORDER: Kind[] = ['nte', 'pan', 'award', 'offer', 'wfh', 'leave', 'overtime', 'requisition', 'manpower'];
+const GROUP_ORDER: Kind[] = ['nte', 'pan', 'award', 'offer', 'asset', 'wfh', 'leave', 'overtime', 'requisition', 'manpower'];
 const BULK_KINDS = new Set<Kind>(['leave', 'wfh', 'overtime']);
 const TIME_KINDS = new Set<Kind>(['leave', 'wfh', 'overtime']);
 const TIME_DESKTOP_HEADINGS = ['Select', 'Request / Employee', 'Business unit / Department', 'Request details', 'Submitted / Pending', 'Approval step', 'Eligibility', 'Action'];
@@ -186,6 +188,7 @@ export default function ApprovalCenter() {
       ...approvals.pendingOtApprovals.map(row => row.employeeId), ...approvals.pendingManpowerApprovals.map(row => row.requestedBy),
       ...additional.pendingNTEApprovals.map(row => row.employeeId), ...additional.pendingPANApprovals.map(row => row.employeeId),
       ...additional.pendingAwardApprovals.map(row => row.employeeId),
+      ...additional.pendingAssetApprovals.map(row => row.employeeId),
     ].filter(Boolean))) as string[];
     if (!ids.length) return setEmployeeMeta({});
     supabase.from('hris_users').select('id,employee_id,business_unit_id,business_unit,department_id,department,status').in('id', ids).then(({ data, error }) => {
@@ -197,7 +200,7 @@ export default function ApprovalCenter() {
         active: String(row.status || 'active').toLowerCase() === 'active',
       }])));
     });
-  }, [approvals.pendingLeaveApprovals, approvals.pendingWfhApprovals, approvals.pendingOtApprovals, approvals.pendingManpowerApprovals, additional.pendingNTEApprovals, additional.pendingPANApprovals, additional.pendingAwardApprovals, businessUnitLabels, departmentLabels]);
+  }, [approvals.pendingLeaveApprovals, approvals.pendingWfhApprovals, approvals.pendingOtApprovals, approvals.pendingManpowerApprovals, additional.pendingNTEApprovals, additional.pendingPANApprovals, additional.pendingAwardApprovals, additional.pendingAssetApprovals, businessUnitLabels, departmentLabels]);
 
   const items = useMemo<ApprovalItem[]>(() => {
     const metaFor = (id?: string) => employeeMeta[id || ''] || { businessUnit: 'Not assigned', department: 'Not assigned', active: true };
@@ -260,8 +263,36 @@ export default function ApprovalCenter() {
       bulkSelectable: false,
       reviewUrl: getApprovalReviewUrl('offer', row.id),
     }));
+    const assetItems: ApprovalItem[] = additional.pendingAssetApprovals.map(row => {
+      const meta = metaFor(row.employeeId);
+      return {
+        id: row.id,
+        canonicalKey: row.canonicalKey,
+        kind: 'asset',
+        reference: `ASSET-${String(row.id).slice(0, 8).toUpperCase()}`,
+        employeeId: row.employeeId,
+        employee: row.employeeName,
+        employeeCode: meta.employeeId,
+        businessUnitId: row.businessUnitId || meta.businessUnitId,
+        businessUnit: businessUnitLabels[row.businessUnitId || ''] || meta.businessUnit,
+        departmentId: row.departmentId || meta.departmentId,
+        department: departmentLabels[row.departmentId || ''] || meta.department,
+        start: row.createdAt,
+        end: row.createdAt,
+        duration: row.approvalProgress,
+        status: row.viewerActionStatus === 'Approved' ? 'Approved by you' : row.isActionable ? 'Pending action' : 'Read-only',
+        currentStep: row.currentStep,
+        approvalStep: row.currentStep,
+        details: row.assetDescription,
+        reason: row.isActionable ? 'This approval is assigned to you.' : row.currentStep,
+        exception: row.approvalIssue,
+        bulkSelectable: false,
+        route: row.approvalStage === 'BOD' ? 'BOD_REQUIRED' : 'MANAGER_ONLY',
+        reviewUrl: getApprovalReviewUrl('asset', row.id),
+      };
+    });
     const canonical = new Map<string, ApprovalItem>();
-    [...ntes, ...pans, ...awardItems, ...offerItems, ...wfh, ...leave, ...overtime, ...requisitions, ...manpower].forEach(item => { if (!canonical.has(item.canonicalKey)) canonical.set(item.canonicalKey, item); });
+    [...ntes, ...pans, ...awardItems, ...offerItems, ...assetItems, ...wfh, ...leave, ...overtime, ...requisitions, ...manpower].forEach(item => { if (!canonical.has(item.canonicalKey)) canonical.set(item.canonicalKey, item); });
     return Array.from(canonical.values());
   }, [approvals, additional, employeeMeta, businessUnitLabels, departmentLabels]);
 
@@ -318,7 +349,7 @@ export default function ApprovalCenter() {
   return <div className="space-y-5 pb-12 text-slate-900 dark:text-slate-100">
     <div className="flex flex-wrap items-end justify-between gap-3"><div><h1 className="text-3xl font-bold text-slate-900 dark:text-white">Approval Center</h1><p className="mt-1 text-slate-500 dark:text-slate-300">The single queue for every approval requiring your action.</p></div><Link to="/dashboard" className="font-semibold text-indigo-600 dark:text-indigo-300">← Dashboard</Link></div>
     {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-800"><b>Some approval data could not be loaded.</b> {error}</div>}
-    {requestedItem && requestedType !== 'offer' && !approvals.approvalsLoading && !items.some(item => item.id === requestedItem) && !error && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"><b>This request is no longer awaiting your action.</b> It may already be processed, reassigned, or outside your authorized scope.</div>}
+    {requestedItem && !['offer', 'asset'].includes(requestedType || '') && !approvals.approvalsLoading && !items.some(item => item.id === requestedItem) && !error && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"><b>This request is no longer awaiting your action.</b> It may already be processed, reassigned, or outside your authorized scope.</div>}
     {!approverConfigs.conditionalTimeApprovals.valid && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900"><b>Conditional approval routing needs an Admin.</b> {approverConfigs.conditionalTimeApprovals.invalid_reason || 'At least one active BOD approver must be selected.'}</div>}
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">{[['Pending approvals', filtered.length, 'bg-blue-50 text-blue-700'], ['Manager only', managerOnlyCount, 'bg-emerald-50 text-emerald-700'], ['BOD required', bodRequiredCount, 'bg-violet-50 text-violet-700'], ['Due today', dueTodayCount, 'bg-orange-50 text-orange-700'], ['Overdue', overdueCount, 'bg-red-50 text-red-700'], ['High risk / exceptions', exceptionCount, 'bg-amber-50 text-amber-700']].map(([label, value, color]) => <div key={String(label)} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-600 dark:bg-slate-800 sm:p-5"><div className={`inline-flex rounded-lg px-3 py-1 text-2xl font-bold ${color}`}>{value}</div><p className="mt-2 text-sm text-slate-600 dark:text-slate-200">{label}</p></div>)}</div>
     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-600 dark:bg-slate-800">
@@ -439,6 +470,12 @@ export default function ApprovalCenter() {
     <OfferApprovalReviewModal
       isOpen={requestedType === 'offer' && Boolean(requestedItem)}
       requestId={requestedType === 'offer' ? requestedItem : null}
+      onClose={closeRequestedReview}
+      onProcessed={() => { void additional.refreshAdditionalApprovals(); }}
+    />
+    <AssetRequestApprovalModal
+      isOpen={requestedType === 'asset' && Boolean(requestedItem)}
+      requestId={requestedType === 'asset' ? requestedItem : null}
       onClose={closeRequestedReview}
       onProcessed={() => { void additional.refreshAdditionalApprovals(); }}
     />

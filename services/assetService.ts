@@ -50,6 +50,12 @@ type AssetRequestRow = {
   employee_proof_url?: string | null;
   employee_submitted_at?: string | null;
   rejection_reason?: string | null;
+  approval_stage?: 'DIRECT_MANAGER' | 'BOD' | 'COMPLETED' | 'REJECTED' | null;
+  required_bod_approvals?: number | null;
+  bod_approval_count?: number | null;
+  manager_approved_by?: string | null;
+  manager_approved_at?: string | null;
+  approval_issue?: string | null;
 };
 
 type AssetRepairRow = {
@@ -110,6 +116,12 @@ const mapAssetRequest = (row: AssetRequestRow): AssetRequest => ({
   employeeProofUrl: row.employee_proof_url || undefined,
   employeeSubmittedAt: row.employee_submitted_at ? new Date(row.employee_submitted_at) : undefined,
   rejectionReason: row.rejection_reason || undefined,
+  approvalStage: row.approval_stage || undefined,
+  requiredBodApprovals: row.required_bod_approvals ? Number(row.required_bod_approvals) as 1 | 2 : undefined,
+  bodApprovalCount: row.bod_approval_count == null ? undefined : Number(row.bod_approval_count),
+  managerApprovedBy: row.manager_approved_by || undefined,
+  managerApprovedAt: row.manager_approved_at ? new Date(row.manager_approved_at) : undefined,
+  approvalIssue: row.approval_issue || undefined,
 });
 
 const mapAssetRepair = (row: AssetRepairRow): AssetRepair => ({
@@ -201,7 +213,6 @@ export const saveAssetRequest = async (request: Partial<AssetRequest>, user: Use
     justification: request.justification || '',
     status: request.status || AssetRequestStatus.Pending,
     requested_at: new Date().toISOString(),
-    manager_id: request.managerId || user.managerId || user.reportsTo || '',
     asset_id: request.assetId || null,
   };
 

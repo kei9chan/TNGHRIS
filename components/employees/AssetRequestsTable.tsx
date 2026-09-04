@@ -54,6 +54,7 @@ const AssetRequestsTable: React.FC<AssetRequestsTableProps> = ({ requests, onRev
                                 <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(req.status)}`}>
                                     {req.status}
                                 </span>
+                                {req.requestType === 'Request' && req.approvalStage && <div className="mt-1 max-w-52 whitespace-normal text-xs text-gray-500 dark:text-gray-300">{req.approvalStage === 'DIRECT_MANAGER' ? 'Waiting for Direct Manager Approval' : req.approvalStage === 'BOD' ? `${req.bodApprovalCount || 0} of ${req.requiredBodApprovals || 2} BOD approvals` : req.approvalStage === 'COMPLETED' ? 'Approval completed' : 'Rejected'}</div>}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm">{new Date(req.requestedAt).toLocaleDateString()}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
