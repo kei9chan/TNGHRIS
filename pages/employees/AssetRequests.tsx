@@ -1,6 +1,6 @@
 // Phase 2 Migration: mockBusinessUnits removed — BUs fetched from Supabase
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AssetRequest, AssetRequestStatus, Permission, AssetStatus, NotificationType, EnrichedAssetRequest, User, Asset, AssetAssignment } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
@@ -16,6 +16,7 @@ import AssetReturnSubmissionModal from '../../components/employees/AssetReturnSu
 import AssetRejectionModal from '../../components/employees/AssetRejectionModal';
 import AssetReturnRequestModal from '../../components/employees/AssetReturnRequestModal';
 import AssetRequestModal from '../../components/employees/AssetRequestModal';
+import AssetRequestApprovalModal from '../../components/employees/AssetRequestApprovalModal';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { createNotification } from '../../services/notificationService';
@@ -40,6 +41,12 @@ type AssetRequestRow = {
     employee_proof_url?: string | null;
     employee_submitted_at?: string | null;
     rejection_reason?: string | null;
+    approval_stage?: 'DIRECT_MANAGER' | 'BOD' | 'COMPLETED' | 'REJECTED' | null;
+    required_bod_approvals?: number | null;
+    bod_approval_count?: number | null;
+    manager_approved_by?: string | null;
+    manager_approved_at?: string | null;
+    approval_issue?: string | null;
 };
 
 const mapRequestRow = (row: AssetRequestRow): AssetRequest => ({
@@ -61,6 +68,12 @@ const mapRequestRow = (row: AssetRequestRow): AssetRequest => ({
     employeeProofUrl: row.employee_proof_url ?? undefined,
     employeeSubmittedAt: row.employee_submitted_at ? new Date(row.employee_submitted_at) : undefined,
     rejectionReason: row.rejection_reason ?? undefined,
+    approvalStage: row.approval_stage ?? undefined,
+    requiredBodApprovals: row.required_bod_approvals ? Number(row.required_bod_approvals) as 1 | 2 : undefined,
+    bodApprovalCount: row.bod_approval_count == null ? undefined : Number(row.bod_approval_count),
+    managerApprovedBy: row.manager_approved_by ?? undefined,
+    managerApprovedAt: row.manager_approved_at ? new Date(row.manager_approved_at) : undefined,
+    approvalIssue: row.approval_issue ?? undefined,
 });
 
 type AssignmentRow = {
@@ -108,7 +121,24 @@ const AssetRequests: React.FC = () => {
     const [isRejectionViewModalOpen, setIsRejectionViewModalOpen] = useState(false);
     const [isReturnRequestModalOpen, setIsReturnRequestModalOpen] = useState(false);
     const [isRequestAssetModalOpen, setIsRequestAssetModalOpen] = useState(false);
+    const [assetApprovalRequestId, setAssetApprovalRequestId] = useState<string | null>(null);
     const [selectedRequest, setSelectedRequest] = useState<EnrichedAssetRequest | null>(null);
+
+    const loadRequests = useCallback(async () => {
+        try {
+            let query = supabase
+                .from('asset_requests')
+                .select('*')
+                .order('requested_at', { ascending: false });
+            if (!canManage && user?.id) query = query.eq('employee_id', user.id);
+            const { data, error } = await query;
+            if (error) throw error;
+            setRequests((data as AssetRequestRow[] | null)?.map(mapRequestRow) || []);
+        } catch (err) {
+            console.error('Failed to load asset requests', err);
+            setRequests([]);
+        }
+    }, [canManage, user?.id]);
 
     useEffect(() => {
         if (location.state?.openRequestAsset) {
@@ -116,6 +146,11 @@ const AssetRequests: React.FC = () => {
             navigate(location.pathname, { replace: true, state: {} });
         }
     }, [location.pathname, location.state, navigate]);
+
+    useEffect(() => {
+        const requestId = new URLSearchParams(location.search).get('requestId');
+        if (requestId) setAssetApprovalRequestId(requestId);
+    }, [location.search]);
 
     useEffect(() => {
         const loadEmployees = async () => {
@@ -162,21 +197,6 @@ const AssetRequests: React.FC = () => {
                 setAssets([]);
             }
         };
-        const loadRequests = async () => {
-            try {
-                let query = supabase
-                    .from('asset_requests')
-                    .select('*')
-                    .order('requested_at', { ascending: false });
-                if (!canManage && user?.id) query = query.eq('employee_id', user.id);
-                const { data, error } = await query;
-                if (error) throw error;
-                setRequests((data as AssetRequestRow[] | null)?.map(mapRequestRow) || []);
-            } catch (err) {
-                console.error('Failed to load asset requests', err);
-                setRequests([]);
-            }
-        };
         const loadAssignments = async () => {
             try {
                 const { data, error } = await supabase.from('asset_assignments').select('*');
@@ -194,7 +214,7 @@ const AssetRequests: React.FC = () => {
         supabase.from('business_units').select('id, name').order('name').then(({ data }) => {
             if (data) setDbBus(data.map((d: any) => ({ id: d.id, name: d.name })));
         });
-    }, [canManage, user?.id]);
+    }, [loadRequests]);
 
     const [filters, setFilters] = useState({
         searchTerm: '',
@@ -255,6 +275,10 @@ const AssetRequests: React.FC = () => {
 
     const handleReview = (request: EnrichedAssetRequest) => {
         setSelectedRequest(request);
+        if (request.requestType === 'Request') {
+            setAssetApprovalRequestId(request.id);
+            return;
+        }
         if (user?.id === request.employeeId) { // It's the returnee
             if (request.status === AssetRequestStatus.Pending && request.requestType === 'Return') {
                 setIsSubmissionModalOpen(true);
@@ -413,17 +437,6 @@ const AssetRequests: React.FC = () => {
             const saved = await saveAssetRequest(request, user);
             setRequests(prev => [saved, ...prev]);
             logActivity(user, 'CREATE', 'AssetRequest', saved.id, `Requested asset: ${saved.assetDescription}`);
-
-            if (saved.managerId && saved.managerId !== user.id) {
-                createNotification({
-                    userId: saved.managerId,
-                    type: NotificationType.ASSET_REQUEST_SUBMITTED,
-                    title: 'New Asset Request',
-                    message: `${user.name} requested a ${saved.assetDescription}.`,
-                    link: '/employees/asset-management/asset-requests',
-                    relatedEntityId: saved.id,
-                }).catch(e => console.warn('Failed to send asset request notification', e));
-            }
 
             alert('Asset request submitted.');
             setIsRequestAssetModalOpen(false);
@@ -616,6 +629,16 @@ const AssetRequests: React.FC = () => {
                     onSave={handleSaveAssetRequest}
                 />
             )}
+
+            <AssetRequestApprovalModal
+                isOpen={Boolean(assetApprovalRequestId)}
+                requestId={assetApprovalRequestId}
+                onClose={() => {
+                    setAssetApprovalRequestId(null);
+                    if (new URLSearchParams(location.search).has('requestId')) navigate(location.pathname, { replace: true });
+                }}
+                onProcessed={() => { void loadRequests(); }}
+            />
         </div>
     );
 };

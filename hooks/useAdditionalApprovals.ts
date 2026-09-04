@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { User } from '../types';
 import { fetchOfferApprovalPackage, fetchPendingOfferApprovalIds } from '../services/offerApprovalService';
+import { fetchMyAssetApprovalQueue } from '../services/assetApprovalService';
 
 type PendingStep = {
   userId?: string;
@@ -84,6 +85,24 @@ export type PendingOfferApproval = {
   canonicalKey: string;
 };
 
+export type PendingAssetApproval = {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  assetDescription: string;
+  businessUnitId?: string;
+  departmentId?: string;
+  status: string;
+  approvalStage: string;
+  createdAt: Date;
+  currentStep: string;
+  approvalProgress: string;
+  isActionable: boolean;
+  viewerActionStatus?: string;
+  approvalIssue?: string;
+  canonicalKey: string;
+};
+
 const isPending = (status?: string) => String(status || '').trim().toLowerCase() === 'pending';
 const AWARD_PENDING_STATUSES = ['PendingApproval', 'Pending Approval'] as const;
 
@@ -105,6 +124,7 @@ export function useAdditionalApprovals(user: User | null) {
   const [pendingRequisitionApprovals, setPendingRequisitionApprovals] = useState<PendingRequisitionApproval[]>([]);
   const [pendingAwardApprovals, setPendingAwardApprovals] = useState<PendingAwardApproval[]>([]);
   const [pendingOfferApprovals, setPendingOfferApprovals] = useState<PendingOfferApproval[]>([]);
+  const [pendingAssetApprovals, setPendingAssetApprovals] = useState<PendingAssetApproval[]>([]);
   const [additionalApprovalError, setAdditionalApprovalError] = useState<string | null>(null);
 
   const refreshAdditionalApprovals = useCallback(async () => {
@@ -114,6 +134,7 @@ export function useAdditionalApprovals(user: User | null) {
       setPendingRequisitionApprovals([]);
       setPendingAwardApprovals([]);
       setPendingOfferApprovals([]);
+      setPendingAssetApprovals([]);
       setAdditionalApprovalError(null);
       return;
     }
@@ -123,7 +144,12 @@ export function useAdditionalApprovals(user: User | null) {
       offerLoadError = error;
       return [] as Awaited<ReturnType<typeof fetchPendingOfferApprovalIds>>;
     });
-    const [nteResult, [panResult, requisitionResult, awardResult], offerIds] = await Promise.all([
+    let assetLoadError: any = null;
+    const assetQueuePromise = fetchMyAssetApprovalQueue().catch((error: any) => {
+      assetLoadError = error;
+      return [] as Awaited<ReturnType<typeof fetchMyAssetApprovalQueue>>;
+    });
+    const [nteResult, [panResult, requisitionResult, awardResult], offerIds, assetQueue] = await Promise.all([
       supabase.rpc('get_my_pending_nte_approvals'),
       Promise.all([
       supabase
@@ -140,6 +166,7 @@ export function useAdditionalApprovals(user: User | null) {
         .order('submitted_at', { ascending: false }),
       ]),
       offerIdsPromise,
+      assetQueuePromise,
     ]);
 
     const offerPackageErrors: any[] = [];
@@ -151,7 +178,7 @@ export function useAdditionalApprovals(user: User | null) {
     }));
 
     const nteRows = nteResult.data || [];
-    const errors = [nteResult.error, panResult.error, requisitionResult.error, awardResult.error, offerLoadError, ...offerPackageErrors].filter(Boolean);
+    const errors = [nteResult.error, panResult.error, requisitionResult.error, awardResult.error, offerLoadError, assetLoadError, ...offerPackageErrors].filter(Boolean);
     setAdditionalApprovalError(errors.length ? errors.map(error => error!.message).join(' · ') : null);
 
     setPendingNTEApprovals(nteRows.map((row: any) => {
@@ -249,6 +276,24 @@ export function useAdditionalApprovals(user: User | null) {
         canonicalKey: `offer:${pkg.request.id}:${pkg.request.approvalStage}`,
       }];
     }));
+
+    setPendingAssetApprovals(assetQueue.map(row => ({
+      id: row.requestId,
+      employeeId: row.employeeId,
+      employeeName: row.employeeName,
+      assetDescription: row.assetDescription,
+      businessUnitId: row.businessUnitId,
+      departmentId: row.departmentId,
+      status: 'Pending',
+      approvalStage: row.approvalStage,
+      createdAt: row.requestedAt,
+      currentStep: row.currentStep,
+      approvalProgress: row.approvalProgress,
+      isActionable: row.isActionable,
+      viewerActionStatus: row.viewerActionStatus,
+      approvalIssue: row.approvalIssue,
+      canonicalKey: `asset:${row.requestId}:${row.approvalStage}:${row.viewerActionStatus || 'READ_ONLY'}`,
+    })));
   }, [user?.id]);
 
   useEffect(() => {
@@ -256,8 +301,26 @@ export function useAdditionalApprovals(user: User | null) {
     const interval = window.setInterval(() => {
       if (document.visibilityState === 'visible') void refreshAdditionalApprovals();
     }, 30000);
-    return () => window.clearInterval(interval);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') void refreshAdditionalApprovals();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [refreshAdditionalApprovals]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const channel = supabase
+      .channel(`asset-approval-queue-${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'asset_requests' }, () => {
+        void refreshAdditionalApprovals();
+      })
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [refreshAdditionalApprovals, user?.id]);
 
   return {
     pendingNTEApprovals,
@@ -265,6 +328,7 @@ export function useAdditionalApprovals(user: User | null) {
     pendingRequisitionApprovals,
     pendingAwardApprovals,
     pendingOfferApprovals,
+    pendingAssetApprovals,
     additionalApprovalError,
     refreshAdditionalApprovals,
   };

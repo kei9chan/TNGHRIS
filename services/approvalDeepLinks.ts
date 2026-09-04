@@ -7,7 +7,8 @@ export type ApprovalRequestKind =
   | 'pan'
   | 'requisition'
   | 'award'
-  | 'offer';
+  | 'offer'
+  | 'asset';
 
 const approvalPaths: Record<ApprovalRequestKind, string> = {
   leave: '/payroll/leave',
@@ -19,6 +20,7 @@ const approvalPaths: Record<ApprovalRequestKind, string> = {
   requisition: '/recruitment/requisitions',
   award: '/evaluation/awards',
   offer: '/approvals',
+  asset: '/approvals',
 };
 
 /** Build a direct link to one request, never merely to a module landing page. */
@@ -30,6 +32,7 @@ export const getApprovalReviewUrl = (kind: ApprovalRequestKind, requestId: strin
   }
   if (kind === 'manpower') return `/approvals?type=manpower&item=${encodedId}`;
   if (kind === 'offer') return `/approvals?type=offer&item=${encodedId}`;
+  if (kind === 'asset') return `/approvals?type=asset&item=${encodedId}`;
   return `${approvalPaths[kind]}?review=${encodedId}`;
 };
 

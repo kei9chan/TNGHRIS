@@ -11,6 +11,7 @@ import ActionItemCard from './ActionItemCard';
 import UpcomingEventsWidget from './UpcomingEventsWidget';
 import QuickLinks from './QuickLinks';
 import MyRequestsWidget from './MyRequestsWidget';
+import ApprovalWidget from './ApprovalWidget';
 import { isCentralizedApprovalActionItem } from '../../utils/approvalCenterRouting';
 import ManpowerReviewModal from '../payroll/ManpowerReviewModal';
 import WFHReviewModal from '../payroll/WFHReviewModal';
@@ -1219,6 +1220,7 @@ const BODDashboard: React.FC = () => {
     return (
         <div className="space-y-6">
             <QuickLinks hideCOE />
+            <ApprovalWidget />
             <MyRequestsWidget />
             <UpcomingEventsWidget />
 
@@ -1263,8 +1265,8 @@ const BODDashboard: React.FC = () => {
             ) : (
                 <Card>
                     <div className="text-center py-8">
-                        <h3 className="text-lg font-medium text-gray-900 dark:text-white">You're all caught up!</h3>
-                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">There are no pending actions for you.</p>
+                        <h3 className="text-lg font-medium text-gray-900 dark:text-white">No other action items</h3>
+                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Approval requests requiring review are shown in the approval queue above.</p>
                     </div>
                 </Card>
             )}

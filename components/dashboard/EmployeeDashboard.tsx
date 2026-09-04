@@ -1804,7 +1804,7 @@ const EmployeeDashboard: React.FC = () => {
                             />
                         ))
                     ) : (
-                        <p className="text-gray-500 dark:text-gray-400 text-center py-4">You're all caught up!</p>
+                        <p className="text-gray-500 dark:text-gray-400 text-center py-4">No other action items. Approval requests are shown in the queue above.</p>
                     )}
                 </div>
             </Card>

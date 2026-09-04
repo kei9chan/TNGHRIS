@@ -15,7 +15,7 @@ export const MyRequestsList: React.FC<{ requests: MyRequestSummary[] }> = ({ req
   <div className="divide-y divide-slate-100 dark:divide-slate-700">
     {requests.map(request => (
       <div key={`${request.requestType}-${request.id}`} className="grid gap-2 py-4 sm:grid-cols-[1.35fr,1fr,auto,auto] sm:items-center sm:gap-4">
-        <p className="font-semibold text-slate-800 dark:text-slate-100">{request.requestType}</p>
+        <div><p className="font-semibold text-slate-800 dark:text-slate-100">{request.requestType}</p>{request.currentStage && <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-300">{request.currentStage}{request.progressLabel ? ` · ${request.progressLabel}` : ''}</p>}</div>
         <p className="text-sm text-slate-600 dark:text-slate-300 sm:whitespace-nowrap">
           {request.submittedAt.toLocaleDateString()}
         </p>

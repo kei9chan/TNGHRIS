@@ -805,6 +805,12 @@ export interface AssetRequest {
   employeeProofUrl?: string;
   employeeSubmittedAt?: Date;
   rejectionReason?: string;
+  approvalStage?: 'DIRECT_MANAGER' | 'BOD' | 'COMPLETED' | 'REJECTED';
+  requiredBodApprovals?: 1 | 2;
+  bodApprovalCount?: number;
+  managerApprovedBy?: string;
+  managerApprovedAt?: Date;
+  approvalIssue?: string;
 }
 
 // =================================================================================

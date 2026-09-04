@@ -16,6 +16,7 @@ import { useSettings } from '../../context/SettingsContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { CURRENCIES } from '../../constants';
 import { supabase } from '../../services/supabaseClient';
+import { fetchAssetApprovalConfig, saveAssetApprovalConfig } from '../../services/assetApprovalService';
 
 interface UserOption {
     id: string;
@@ -66,6 +67,19 @@ const Settings: React.FC = () => {
     const [conditionalChangeNote, setConditionalChangeNote] = useState('');
     const [conditionalMsg, setConditionalMsg] = useState('');
     const [conditionalSaving, setConditionalSaving] = useState(false);
+    const [assetRequiredBodApprovals, setAssetRequiredBodApprovals] = useState<1 | 2>(2);
+    const [activeAssetBodCount, setActiveAssetBodCount] = useState(0);
+    const [assetApprovalSaving, setAssetApprovalSaving] = useState(false);
+    const [assetApprovalMsg, setAssetApprovalMsg] = useState('');
+
+    useEffect(() => {
+        fetchAssetApprovalConfig().then(config => {
+            setAssetRequiredBodApprovals(config.requiredBodApprovals);
+            setActiveAssetBodCount(config.activeBodCount);
+        }).catch((error: any) => {
+            setAssetApprovalMsg(`Error: ${error?.message || 'Failed to load Asset Request approval settings'}`);
+        });
+    }, []);
 
     // Load all users for the dropdowns
     useEffect(() => {
@@ -233,6 +247,20 @@ const Settings: React.FC = () => {
         }
     };
 
+    const handleSaveAssetApprovalRouting = async () => {
+        setAssetApprovalSaving(true);
+        setAssetApprovalMsg('');
+        try {
+            const config = await saveAssetApprovalConfig(assetRequiredBodApprovals);
+            setActiveAssetBodCount(config.activeBodCount);
+            setAssetApprovalMsg(`Asset Request routing saved. New requests will require ${config.requiredBodApprovals} distinct BOD approval${config.requiredBodApprovals === 1 ? '' : 's'}.`);
+        } catch (error: any) {
+            setAssetApprovalMsg(`Error: ${error?.message || 'Failed to save Asset Request approval settings'}`);
+        } finally {
+            setAssetApprovalSaving(false);
+        }
+    };
+
 
     return (
         <div className="space-y-6">
@@ -252,6 +280,27 @@ const Settings: React.FC = () => {
                         </div>
                     </label>
                 </div>
+            </Card>
+
+            <Card title="Asset Request Approval Routing">
+                <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+                    Every Asset Request goes to the employee's direct reporting manager first, then to the configured number of distinct active BOD users. Changes apply only to new requests; in-flight requests keep their original requirement.
+                </p>
+                <label htmlFor="asset-required-bod-approvals" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Required BOD approvals
+                </label>
+                <select
+                    id="asset-required-bod-approvals"
+                    value={assetRequiredBodApprovals}
+                    onChange={event => setAssetRequiredBodApprovals(Number(event.target.value) as 1 | 2)}
+                    className="block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-base focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white sm:text-sm"
+                >
+                    <option value={1}>1 BOD approval</option>
+                    <option value={2}>2 BOD approvals (default)</option>
+                </select>
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Active BOD users currently available: <strong>{activeAssetBodCount}</strong>. The same BOD user cannot approve the same request twice.</p>
+                {assetApprovalMsg && <p role={assetApprovalMsg.startsWith('Error') ? 'alert' : 'status'} className={`mt-3 text-sm ${assetApprovalMsg.startsWith('Error') ? 'text-red-600' : 'text-green-600'}`}>{assetApprovalMsg}</p>}
+                {isSuperAdmin() && <Button className="mt-4" onClick={handleSaveAssetApprovalRouting} isLoading={assetApprovalSaving} variant="secondary">Save Asset Request Routing</Button>}
             </Card>
 
             <Card title="COE Approval Routing">
