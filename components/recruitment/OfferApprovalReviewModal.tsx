@@ -37,6 +37,7 @@ const OfferApprovalReviewModal: React.FC<OfferApprovalReviewModalProps> = ({ isO
   const [selectedRating, setSelectedRating] = useState<InterviewRatingRecord | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [openingDocumentId, setOpeningDocumentId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [comments, setComments] = useState('');
   const [success, setSuccess] = useState('');
@@ -55,13 +56,25 @@ const OfferApprovalReviewModal: React.FC<OfferApprovalReviewModalProps> = ({ isO
   const packageDocuments = useMemo(() => pkg ? getApprovalPackageDocuments(pkg) : [], [pkg]);
   const packageCandidateName = pkg ? candidateName(pkg.candidate) : 'Candidate';
 
+  const openDocument = async (document: ReturnType<typeof getApprovalPackageDocuments>[number]) => {
+    if (!pkg) return;
+    setOpeningDocumentId(document.id); setError('');
+    try {
+      await openOfferPackageDocument(document, { candidate: pkg.candidate, offer: pkg.offer, ratings: pkg.ratings });
+    } catch (reason: any) {
+      setError(reason?.message || `Unable to open ${document.fileName}. Request a refreshed document link and try again.`);
+    } finally { setOpeningDocumentId(null); }
+  };
+
   const decide = async (decision: 'approve' | 'return' | 'reject') => {
     if (!requestId) return;
     if ((decision === 'return' || decision === 'reject') && !comments.trim()) { setError('Add comments before returning or rejecting this package.'); return; }
     setBusy(true); setError('');
     try {
       const result = await processOfferApproval(requestId, decision, comments);
-      setSuccess(decision === 'approve' ? (String(result.approvalStage || '') === 'BOD_GM' ? 'Approved and advanced to BOD / GM.' : 'Offer approval completed.') : decision === 'return' ? 'Package returned for revision.' : 'Package rejected.');
+      setSuccess(decision === 'approve'
+        ? (String(result.status || '') === 'Approved' ? 'Offer approval completed.' : 'Approved and advanced to BOD / GM.')
+        : decision === 'return' ? 'Package returned for revision.' : 'Package rejected.');
       onProcessed?.();
       if (decision === 'approve' && String(result.status) === 'Approved') window.setTimeout(onClose, 500);
     } catch (reason: any) { setError(reason?.message || 'Unable to process this approval.'); }
@@ -78,7 +91,7 @@ const OfferApprovalReviewModal: React.FC<OfferApprovalReviewModalProps> = ({ isO
           <div className="rounded-xl border border-violet-200 bg-violet-50 p-4 dark:border-violet-900 dark:bg-violet-950/30"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><div><p className="text-xs font-bold uppercase text-slate-500">Candidate</p><p className="mt-1 font-bold">{packageCandidateName}</p></div><div><p className="text-xs font-bold uppercase text-slate-500">Position</p><p className="mt-1 font-bold">{pkg.offer.offerDetails?.jobTitle || pkg.application.roleTitleSnapshot || 'Position not recorded'}</p></div><div><p className="text-xs font-bold uppercase text-slate-500">Business unit</p><p className="mt-1 font-bold">{pkg.offer.offerDetails?.businessUnit || 'Business unit not recorded'}</p></div><div><p className="text-xs font-bold uppercase text-slate-500">Approval stage</p><p className="mt-1 font-bold">{pkg.request.approvalStage === 'BOD_GM' ? 'BOD / GM Approval' : 'HR Manager Approval'}</p></div></div></div>
           <InterviewSummaryPanel summary={summary} />
           <div className="grid gap-5 lg:grid-cols-2">
-            <section className="rounded-xl border border-slate-200 p-4 dark:border-slate-700"><div className="flex items-center justify-between gap-3"><h2 className="text-lg font-bold">Hiring packet documents</h2><span className="text-xs text-slate-500">{packageDocuments.length} attached</span></div><div className="mt-3 space-y-2">{packageDocuments.map(document => <div key={`${document.id}-${document.sourceId}`} className="flex items-center gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-700"><div className="min-w-0 flex-1"><p className="truncate font-semibold">{document.fileName}</p><p className="text-xs text-slate-500">{document.documentType}{document.reviewerName ? ` · ${document.reviewerName}` : ''}</p></div><Button size="sm" variant="secondary" onClick={() => void openOfferPackageDocument(document, { candidate: pkg.candidate, offer: pkg.offer, ratings: pkg.ratings })}>Preview / Download</Button></div>)}</div></section>
+            <section className="rounded-xl border border-slate-200 p-4 dark:border-slate-700"><div className="flex items-center justify-between gap-3"><h2 className="text-lg font-bold">Hiring packet documents</h2><span className="text-xs text-slate-500">{packageDocuments.length} attached</span></div><div className="mt-3 space-y-2">{packageDocuments.map(document => <div key={`${document.id}-${document.sourceId}`} className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-700"><div className="min-w-48 flex-1"><p className="break-words font-semibold">{document.fileName}</p><p className="text-xs text-slate-500">{document.documentType}{document.reviewerName ? ` · ${document.reviewerName}` : ''}</p></div><Button size="sm" variant="secondary" onClick={() => void openDocument(document)} isLoading={openingDocumentId === document.id} disabled={openingDocumentId !== null}>Preview / Download</Button></div>)}</div></section>
             <section className="rounded-xl border border-slate-200 p-4 dark:border-slate-700"><h2 className="text-lg font-bold">Reviewer recommendations</h2><div className="mt-3 space-y-2">{summary.reviewers.map(reviewer => <div key={reviewer.id} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-bold">{reviewer.name}</p><p className="text-sm text-slate-500">{reviewer.position || 'Position not recorded'} · {reviewer.submittedAt?.toLocaleString() || 'No submission date'}</p></div><button type="button" onClick={() => setSelectedRating(pkg.ratings.find(rating => rating.id === reviewer.id) || null)} className="text-sm font-semibold text-indigo-600 hover:underline dark:text-indigo-300">View rating</button></div><div className="mt-2 grid grid-cols-3 gap-2 text-xs"><span>Further: <b>{reviewer.recommendations.further_interview}</b></span><span>Pool: <b>{reviewer.recommendations.active_pool}</b></span><span>Offer: <b>{reviewer.recommendations.job_offer}</b></span></div></div>)}</div></section>
           </div>
           <section className="rounded-xl border border-slate-200 p-4 dark:border-slate-700"><h2 className="text-lg font-bold">Approval trail</h2><div className="mt-3 divide-y dark:divide-slate-700">{pkg.approvalTrail.length ? pkg.approvalTrail.map(entry => <div key={entry.id} className="flex flex-wrap justify-between gap-3 py-3 text-sm"><div><p className="font-semibold">{entry.approverName} · {entry.approverRole}</p><p className="text-slate-500">{entry.action} · {entry.statusBefore || '—'} → {entry.statusAfter || '—'}{entry.comments ? ` · ${entry.comments}` : ''}</p>{entry.documentsReviewed?.length ? <p className="mt-1 text-xs text-slate-500">Documents reviewed: {entry.documentsReviewed.join(', ')}</p> : null}</div><time className="text-slate-500">{entry.createdAt.toLocaleString()}</time></div>) : <p className="py-4 text-sm text-slate-500">No approval actions recorded yet.</p>}</div></section>

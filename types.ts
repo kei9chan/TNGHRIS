@@ -2533,6 +2533,8 @@ export interface OfferApprovalRequestSummary {
   offerId: string;
   applicationId: string;
   candidateId: string;
+  jobPostId?: string;
+  requisitionId?: string;
   status: OfferApprovalStatus;
   approvalStage: string;
   revision: number;

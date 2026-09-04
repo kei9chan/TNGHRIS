@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient';
-import { Evaluation, EvaluationSubmission, EvaluationTimeline, QuestionSet, EvaluationQuestion, EvaluatorConfig, EvaluatorType } from '../types';
+import { Evaluation, EvaluationSubmission, EvaluationTimeline, QuestionSet, EvaluationQuestion, EvaluatorConfig, EvaluatorType, RaterGroup, User } from '../types';
+import { formatEmployeeName } from './formatEmployeeName';
 
 // ---------------------------------------------------------------------------
 // Row Types
@@ -138,8 +139,127 @@ export type CreateEvaluationCycleInput = {
 export const resolveCurrentHrisUserId = async (fallbackId?: string | null): Promise<string> => {
   const { data, error } = await supabase.rpc('current_hris_user_id');
   if (!error && data) return String(data);
-  if (fallbackId) return fallbackId;
+  // An auth.users UUID is not interchangeable with hris_users.id. Keep the
+  // optional argument for existing callers, but never persist or query it as
+  // an evaluator profile ID when canonical resolution fails.
+  void fallbackId;
   throw new Error(error?.message || 'Unable to resolve the active HRIS account.');
+};
+
+export interface EvaluationWorkspaceAssignment {
+  id: string;
+  evaluationId: string;
+  employeeId: string;
+  timelineId?: string;
+  dueDate?: Date;
+  status: 'Pending' | 'In Progress' | 'Completed' | 'Cancelled';
+}
+
+export interface EvaluationWorkspace {
+  evaluation: Evaluation;
+  questions: EvaluationQuestion[];
+  targetUsers: User[];
+  submissions: EvaluationSubmission[];
+  assignments: EvaluationWorkspaceAssignment[];
+  raterProfileId: string;
+}
+
+/**
+ * Loads one canonical evaluator workspace. The RPC resolves auth.uid() to the
+ * HRIS profile ID and returns only the minimal profile fields for employees the
+ * current user is actually assigned to review.
+ */
+export const fetchMyEvaluationWorkspace = async (evaluationId: string): Promise<EvaluationWorkspace> => {
+  const { data, error } = await supabase.rpc('get_my_evaluation_workspace', { p_evaluation_id: evaluationId });
+  if (error) throw new Error(error.message || 'Failed to load the assigned evaluation.');
+  const payload = Array.isArray(data) ? data[0] : data;
+  if (!payload?.evaluation || !payload?.raterProfileId) {
+    throw new Error('The assigned evaluation workspace is unavailable.');
+  }
+
+  const evaluatorRows = Array.isArray(payload.evaluators) ? payload.evaluators : [];
+  const evaluators: EvaluatorConfig[] = evaluatorRows.map((row: any, index: number) => ({
+    id: row.id || `${evaluationId}-${row.user_id || 'group'}-${index}`,
+    type: String(row.type || '').toLowerCase() === 'group' ? EvaluatorType.Group : EvaluatorType.Individual,
+    weight: Number(row.weight || 0),
+    userId: row.user_id || undefined,
+    groupFilter: row.business_unit_id || row.department_id ? {
+      businessUnitId: row.business_unit_id || undefined,
+      departmentId: row.department_id || undefined,
+    } : undefined,
+    isAnonymous: !!row.is_anonymous,
+    excludeSubject: row.exclude_subject ?? true,
+  }));
+
+  const row = payload.evaluation;
+  const evaluation: Evaluation = {
+    id: row.id,
+    name: row.name,
+    timelineId: row.timeline_id || '',
+    targetBusinessUnitIds: Array.isArray(row.target_business_unit_ids) ? row.target_business_unit_ids : [],
+    targetEmployeeIds: Array.isArray(row.target_employee_ids) ? row.target_employee_ids : [],
+    questionSetIds: Array.isArray(row.question_set_ids) ? row.question_set_ids : [],
+    evaluators,
+    status: row.status || 'InProgress',
+    createdAt: row.created_at ? new Date(row.created_at) : new Date(),
+    updatedAt: row.updated_at ? new Date(row.updated_at) : undefined,
+    dueDate: row.due_date ? new Date(`${String(row.due_date).slice(0, 10)}T00:00:00`) : undefined,
+    isEmployeeVisible: !!row.is_employee_visible,
+    acknowledgedBy: Array.isArray(row.acknowledged_by) ? row.acknowledged_by : [],
+  };
+
+  const questions: EvaluationQuestion[] = (Array.isArray(payload.questions) ? payload.questions : []).map((question: any) => ({
+    id: question.id,
+    questionSetId: question.question_set_id,
+    title: question.title,
+    description: question.description || '',
+    questionType: question.question_type,
+    isArchived: !!question.is_archived,
+    targetEmployeeLevels: Array.isArray(question.target_employee_levels) ? question.target_employee_levels : [],
+    targetEvaluatorRoles: Array.isArray(question.target_evaluator_roles) ? question.target_evaluator_roles : [],
+  }));
+
+  const targetUsers: User[] = (Array.isArray(payload.targetUsers) ? payload.targetUsers : []).map((profile: any) => ({
+    id: profile.id,
+    name: formatEmployeeName(profile.full_name || 'Unknown employee'),
+    email: '',
+    role: profile.role as User['role'],
+    department: profile.department || '',
+    businessUnit: profile.business_unit || '',
+    departmentId: profile.department_id || undefined,
+    businessUnitId: profile.business_unit_id || undefined,
+    status: String(profile.status || '').toLowerCase() === 'active' ? 'Active' : 'Inactive',
+    position: profile.position || '',
+    isPhotoEnrolled: false,
+  }));
+
+  const submissions: EvaluationSubmission[] = (Array.isArray(payload.submissions) ? payload.submissions : []).map((submission: any) => ({
+    id: submission.id,
+    evaluationId: submission.evaluation_id,
+    subjectEmployeeId: submission.subject_employee_id,
+    raterId: submission.rater_id,
+    raterGroup: (submission.rater_group as RaterGroup) || RaterGroup.DirectSupervisor,
+    scores: Array.isArray(submission.scores) ? submission.scores : [],
+    submittedAt: submission.submitted_at ? new Date(submission.submitted_at) : new Date(),
+  }));
+
+  const assignments: EvaluationWorkspaceAssignment[] = (Array.isArray(payload.assignmentRecords) ? payload.assignmentRecords : []).map((assignment: any) => ({
+    id: assignment.id,
+    evaluationId: assignment.evaluation_id,
+    employeeId: assignment.employee_id,
+    timelineId: assignment.timeline_id || undefined,
+    dueDate: assignment.due_date ? new Date(`${String(assignment.due_date).slice(0, 10)}T00:00:00`) : undefined,
+    status: assignment.status,
+  }));
+
+  return {
+    evaluation,
+    questions,
+    targetUsers,
+    submissions,
+    assignments,
+    raterProfileId: String(payload.raterProfileId),
+  };
 };
 
 /**

@@ -25,6 +25,24 @@ import {
 import { createInterviewRatingSummary } from './interviewRatingSummary';
 import { downloadOfferPdf } from '../components/recruitment/offerPdf';
 import { mapJobOfferRow } from './jobOfferMapper';
+import {
+  CANDIDATE_DOCUMENT_MIME_BY_EXTENSION,
+  dedupeOfferPackageDocuments,
+  getDefaultOfferPackageDocumentIds,
+  normalizeOfferPackageDocumentType,
+  parseSupabaseStorageUrl,
+  resolveRecruitmentResumeStorageLocation,
+  resolveCandidateDocumentMimeType,
+} from './offerApprovalDocuments';
+
+export {
+  dedupeOfferPackageDocuments,
+  getDefaultOfferPackageDocumentIds,
+  normalizeOfferPackageDocumentType,
+  parseSupabaseStorageUrl,
+  resolveRecruitmentResumeStorageLocation,
+  resolveCandidateDocumentMimeType,
+} from './offerApprovalDocuments';
 
 export { mapJobOfferRow as mapApprovalOfferRow } from './jobOfferMapper';
 
@@ -105,7 +123,7 @@ const mapCandidateDocument = (row: any): OfferPackageDocument => ({
   id: row.id,
   candidateId: row.candidate_id,
   applicationId: row.application_id || undefined,
-  documentType: row.document_type as OfferPackageDocumentType,
+  documentType: normalizeOfferPackageDocumentType(row.document_type),
   fileName: row.file_name,
   mimeType: row.mime_type || 'application/octet-stream',
   source: 'candidate_document',
@@ -122,7 +140,7 @@ const mapSnapshotDocument = (row: any): OfferPackageDocument => ({
   id: row.id || `${row.source || 'document'}:${row.sourceId || crypto.randomUUID()}`,
   candidateId: row.candidateId || row.candidate_id || '',
   applicationId: row.applicationId || row.application_id || undefined,
-  documentType: row.documentType || row.document_type,
+  documentType: normalizeOfferPackageDocumentType(row.documentType || row.document_type),
   fileName: row.fileName || row.file_name || 'Package document',
   mimeType: row.mimeType || row.mime_type || 'application/octet-stream',
   source: row.source,
@@ -179,36 +197,62 @@ export const fetchCandidatePackageDocuments = async (
   offer: Offer,
   ratings: InterviewRatingRecord[],
 ): Promise<OfferPackageDocument[]> => {
-  const { data, error } = await supabase
-    .from('job_candidate_documents')
-    .select('*')
-    .eq('candidate_id', candidate.id)
-    .is('archived_at', null)
-    .order('uploaded_at', { ascending: false });
-  if (error) throw error;
+  const submittedRatings = ratings.filter(rating => isInterviewRatingSubmitted(rating.status));
+  const [documentResult, applicationResult, attachmentGroups] = await Promise.all([
+    supabase
+      .from('job_candidate_documents')
+      .select('*')
+      .eq('candidate_id', candidate.id)
+      .is('archived_at', null)
+      .order('is_primary', { ascending: false })
+      .order('uploaded_at', { ascending: false }),
+    supabase
+      .from('job_applications')
+      .select('id, candidate_id, resume_file_url, resume_file_path, resume_link, resume_url')
+      .eq('id', application.id)
+      .eq('candidate_id', candidate.id)
+      .maybeSingle(),
+    Promise.all(submittedRatings.map(async rating => ({
+      rating,
+      attachments: await fetchInterviewRatingAttachments(rating.id),
+    }))),
+  ]);
+  if (documentResult.error) throw documentResult.error;
+  if (applicationResult.error) throw applicationResult.error;
 
   const documents: OfferPackageDocument[] = [];
-  const resumeUrl = application.resumeFileUrl || application.resumeLink;
-  if (application.resumeFilePath || resumeUrl) {
+  const currentApplication = applicationResult.data;
+  const resumeFilePath = currentApplication?.resume_file_path || application.resumeFilePath;
+  const resumeUrl = currentApplication?.resume_file_url
+    || currentApplication?.resume_link
+    || currentApplication?.resume_url
+    || application.resumeFileUrl
+    || application.resumeLink;
+  const resumeStorage = resumeFilePath
+    ? { bucket: 'recruitment-uploads', path: resumeFilePath }
+    : resolveRecruitmentResumeStorageLocation(resumeUrl);
+  if (resumeStorage || resumeUrl) {
+    const resumeNameSource = resumeStorage?.path || resumeUrl || '';
+    const encodedFileName = resumeNameSource.split('/').pop()?.split('?')[0] || '';
+    let resumeFileName = encodedFileName || 'Candidate resume';
+    try { resumeFileName = decodeURIComponent(resumeFileName); } catch { /* retain the stored name */ }
     documents.push({
       id: `resume:${application.id}`,
       candidateId: candidate.id,
       applicationId: application.id,
       documentType: 'Resume',
-      fileName: 'Candidate resume',
-      mimeType: 'application/pdf',
+      fileName: resumeFileName,
+      mimeType: CANDIDATE_DOCUMENT_MIME_BY_EXTENSION[resumeFileName.split('.').pop()?.toLowerCase() || ''] || 'application/octet-stream',
       source: 'resume',
       sourceId: application.id,
-      externalUrl: resumeUrl,
-      storageBucket: application.resumeFilePath ? 'recruitment-uploads' : undefined,
-      storagePath: application.resumeFilePath,
+      externalUrl: resumeStorage ? undefined : resumeUrl,
+      storageBucket: resumeStorage?.bucket,
+      storagePath: resumeStorage?.path,
       isSelectable: true,
     });
   }
 
-  const submittedRatings = ratings.filter(rating => isInterviewRatingSubmitted(rating.status));
   documents.push(...submittedRatings.map(ratingDocument));
-  const attachmentGroups = await Promise.all(submittedRatings.map(async rating => ({ rating, attachments: await fetchInterviewRatingAttachments(rating.id) })));
   attachmentGroups.forEach(({ rating, attachments }) => documents.push(...attachments.map(attachment => ratingAttachmentDocument(rating, attachment))));
 
   documents.push({
@@ -223,56 +267,89 @@ export const fetchCandidatePackageDocuments = async (
     offerId: offer.id,
     isSelectable: true,
   });
-  documents.push(...(data || []).map(mapCandidateDocument));
-  return documents;
+  documents.push(...(documentResult.data || []).map(mapCandidateDocument));
+  return dedupeOfferPackageDocuments(documents);
 };
 
-const openBlob = (blob: Blob) => {
+const beginDocumentPreview = (): Window => {
+  const previewWindow = window.open('about:blank', '_blank');
+  if (!previewWindow) throw new Error('The document could not be opened. Allow pop-ups and try again.');
+  previewWindow.opener = null;
+  try { previewWindow.document.title = 'Loading document…'; } catch { /* navigation may already have started */ }
+  return previewWindow;
+};
+
+const openBlob = (blob: Blob, previewWindow: Window) => {
   const url = URL.createObjectURL(blob);
-  const opened = window.open(url, '_blank', 'noopener,noreferrer');
-  if (!opened) throw new Error('The document could not be opened. Allow pop-ups and try again.');
+  previewWindow.location.replace(url);
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+};
+
+const openDocumentUrl = (value: string, previewWindow: Window) => {
+  let url: URL;
+  try {
+    url = new URL(value, window.location.origin);
+  } catch {
+    throw new Error('The document link is invalid.');
+  }
+  if (!['https:', 'http:', 'blob:'].includes(url.protocol)) {
+    throw new Error('The document link uses an unsupported protocol.');
+  }
+  previewWindow.location.replace(url.toString());
 };
 
 export const openOfferPackageDocument = async (
   document: OfferPackageDocument,
   context: { candidate: Candidate; offer: Offer; ratings: InterviewRatingRecord[] },
 ): Promise<void> => {
-  if (document.source === 'rating') {
-    const rating = context.ratings.find(item => item.id === document.sourceId) || await fetchInterviewRating(document.sourceId);
-    openBlob(await downloadInterviewRatingPdf(rating, context.candidate, false));
-    return;
+  // Open synchronously from the click event. Mobile browsers otherwise block
+  // the tab after the signed-URL or PDF-generation await completes.
+  const previewWindow = beginDocumentPreview();
+  try {
+    if (document.source === 'rating') {
+      const rating = context.ratings.find(item => item.id === document.sourceId) || await fetchInterviewRating(document.sourceId);
+      openBlob(await downloadInterviewRatingPdf(rating, context.candidate, false), previewWindow);
+      return;
+    }
+    if (document.source === 'rating_attachment') {
+      const url = await getInterviewRatingAttachmentUrl(document.storagePath || '');
+      openDocumentUrl(url, previewWindow);
+      return;
+    }
+    if (document.source === 'offer') {
+      const details: OfferBuilderDetails = {
+        currency: 'PHP',
+        grossMonthlySalary: context.offer.basePay,
+        grossAnnualizedSalary: context.offer.basePay * 12,
+        jobTitle: context.offer.offerDetails?.jobTitle || '',
+        rolePurpose: context.offer.jobDescription || '',
+        reportingManager: context.offer.reportingTo,
+        ...context.offer.offerDetails,
+      };
+      const pdf = await downloadOfferPdf(context.offer, details, `${context.candidate.firstName} ${context.candidate.lastName}`.trim(), details.businessUnit || 'The Nextperience', false, undefined, false);
+      openBlob(pdf.output('blob'), previewWindow);
+      return;
+    }
+    const legacyStorageLocation = document.source === 'resume'
+      ? resolveRecruitmentResumeStorageLocation(document.externalUrl)
+      : parseSupabaseStorageUrl(document.externalUrl);
+    const storageBucket = document.storageBucket || legacyStorageLocation?.bucket;
+    const storagePath = document.storagePath || legacyStorageLocation?.path;
+    if (storagePath && storageBucket) {
+      const { data, error } = await supabase.storage.from(storageBucket).createSignedUrl(storagePath, 5 * 60);
+      if (error || !data?.signedUrl) throw error || new Error('Unable to create a secure document link.');
+      openDocumentUrl(data.signedUrl, previewWindow);
+      return;
+    }
+    if (document.externalUrl) {
+      openDocumentUrl(document.externalUrl, previewWindow);
+      return;
+    }
+    throw new Error('This package document has no previewable file.');
+  } catch (error) {
+    previewWindow.close();
+    throw error;
   }
-  if (document.source === 'rating_attachment') {
-    const url = await getInterviewRatingAttachmentUrl(document.storagePath || '');
-    window.open(url, '_blank', 'noopener,noreferrer');
-    return;
-  }
-  if (document.source === 'offer') {
-    const details: OfferBuilderDetails = {
-      currency: 'PHP',
-      grossMonthlySalary: context.offer.basePay,
-      grossAnnualizedSalary: context.offer.basePay * 12,
-      jobTitle: context.offer.offerDetails?.jobTitle || '',
-      rolePurpose: context.offer.jobDescription || '',
-      reportingManager: context.offer.reportingTo,
-      ...context.offer.offerDetails,
-    };
-    const pdf = await downloadOfferPdf(context.offer, details, `${context.candidate.firstName} ${context.candidate.lastName}`.trim(), details.businessUnit || 'The Nextperience', false, undefined, false);
-    openBlob(pdf.output('blob'));
-    return;
-  }
-  if (document.storagePath && document.storageBucket) {
-    const { data, error } = await supabase.storage.from(document.storageBucket).createSignedUrl(document.storagePath, 60 * 60);
-    if (error || !data?.signedUrl) throw error || new Error('Unable to create a secure document link.');
-    window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
-    return;
-  }
-  if (document.externalUrl) {
-    window.open(document.externalUrl, '_blank', 'noopener,noreferrer');
-    return;
-  }
-  throw new Error('This package document has no previewable file.');
 };
 
 export const uploadCandidateDocument = async (
@@ -281,12 +358,11 @@ export const uploadCandidateDocument = async (
   file: File,
   documentType: OfferPackageDocumentType = 'Other Supporting Document',
 ): Promise<OfferPackageDocument> => {
-  const allowed = ['application/pdf', 'image/jpeg', 'image/png', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-  if (!allowed.includes(file.type)) throw new Error('Upload a PDF, JPG, PNG, DOC, or DOCX document.');
+  const mimeType = resolveCandidateDocumentMimeType(file);
   if (file.size < 1 || file.size > 20 * 1024 * 1024) throw new Error('Candidate documents must be 20 MB or smaller.');
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
   const path = `candidate-documents/${candidateId}/${crypto.randomUUID()}-${safeName}`;
-  const { error: uploadError } = await supabase.storage.from(CANDIDATE_DOCUMENT_BUCKET).upload(path, file, { contentType: file.type, upsert: false });
+  const { error: uploadError } = await supabase.storage.from(CANDIDATE_DOCUMENT_BUCKET).upload(path, file, { contentType: mimeType, upsert: false });
   if (uploadError) throw uploadError;
   const { data, error } = await supabase.rpc('upload_job_candidate_document', {
     p_candidate_id: candidateId,
@@ -295,7 +371,7 @@ export const uploadCandidateDocument = async (
     p_file_name: file.name,
     p_storage_bucket: CANDIDATE_DOCUMENT_BUCKET,
     p_storage_path: path,
-    p_mime_type: file.type,
+    p_mime_type: mimeType,
     p_file_size: file.size,
   });
   if (error || !data) {
@@ -306,11 +382,21 @@ export const uploadCandidateDocument = async (
 };
 
 export const removeCandidateDocument = async (document: OfferPackageDocument): Promise<void> => {
-  await supabase.rpc('remove_job_candidate_document', { p_document_id: document.sourceId });
-  if (document.storageBucket && document.storagePath) {
-    const { error } = await supabase.storage.from(document.storageBucket).remove([document.storagePath]);
-    if (error) throw error;
-  }
+  const { error } = await supabase.rpc('remove_job_candidate_document', { p_document_id: document.sourceId });
+  if (error) throw error;
+};
+
+export const updateCandidateDocumentType = async (
+  document: OfferPackageDocument,
+  documentType: OfferPackageDocumentType,
+): Promise<OfferPackageDocument> => {
+  if (document.source !== 'candidate_document') throw new Error('Only candidate-library documents can be reclassified.');
+  const { data, error } = await supabase.rpc('update_job_candidate_document_type', {
+    p_document_id: document.sourceId,
+    p_document_type: documentType,
+  });
+  if (error || !data) throw error || new Error('The candidate document could not be reclassified.');
+  return mapCandidateDocument(data);
 };
 
 export const createOfferApprovalRequest = async (input: {
@@ -324,7 +410,17 @@ export const createOfferApprovalRequest = async (input: {
   overrideReason?: string;
 }): Promise<string> => {
   const summary = createInterviewRatingSummary(input.ratings);
+  const documents = dedupeOfferPackageDocuments(input.documents);
+  if (documents.length === 0) throw new Error('Select the approval package documents before submitting.');
+  if (documents.some(document => document.candidateId !== input.candidate.id)) {
+    throw new Error('Every selected document must belong to this candidate.');
+  }
   const packageSnapshot = {
+    offerId: input.offerId,
+    applicationId: input.application.id,
+    candidateId: input.candidate.id,
+    jobPostId: input.application.jobPostId,
+    requisitionId: input.application.requisitionId,
     candidateName: `${input.candidate.firstName} ${input.candidate.lastName}`.trim(),
     position: input.offer.offerDetails?.jobTitle || input.application.roleTitleSnapshot || '',
     businessUnit: input.offer.offerDetails?.businessUnit || '',
@@ -338,7 +434,7 @@ export const createOfferApprovalRequest = async (input: {
       quickRecommendation: summary.quickRecommendation,
     },
   };
-  const attachmentSnapshot = input.documents.map(document => ({
+  const attachmentSnapshot = documents.map(document => ({
     id: document.id,
     candidateId: document.candidateId,
     applicationId: document.applicationId,
@@ -369,6 +465,8 @@ const mapApprovalRequest = (row: any): OfferApprovalRequestSummary => ({
   offerId: row.offer_id,
   applicationId: row.application_id,
   candidateId: row.candidate_id,
+  jobPostId: row.job_post_id || undefined,
+  requisitionId: row.requisition_id || undefined,
   requesterUserId: row.requester_user_id,
   status: row.status as OfferApprovalStatus,
   approvalStage: row.approval_stage,
@@ -430,10 +528,20 @@ export const getApprovalPackageDocuments = (pkg: OfferApprovalPackageData): Offe
   const ratings = new Map(pkg.ratings.map(rating => [rating.id, rating]));
   const attachments = new Map(pkg.ratingAttachments.map(attachment => [attachment.id, attachment]));
   const candidateName = `${pkg.candidate.firstName} ${pkg.candidate.lastName}`.trim();
-  return (pkg.request.attachmentSnapshot || []).flatMap(snapshot => {
+  const documents = (pkg.request.attachmentSnapshot || []).flatMap(snapshot => {
     if (snapshot.source === 'candidate_document') {
       const document = manualDocuments.get(snapshot.sourceId);
-      return document ? [{ ...snapshot, ...document, id: snapshot.id }] : [];
+      return [{
+        ...(document || {}),
+        ...snapshot,
+        id: snapshot.id,
+        candidateId: pkg.candidate.id,
+        applicationId: snapshot.applicationId || document?.applicationId || pkg.application.id,
+        storageBucket: document?.storageBucket || snapshot.storageBucket,
+        storagePath: document?.storagePath || snapshot.storagePath,
+        externalUrl: document?.externalUrl || snapshot.externalUrl,
+        isSelectable: true,
+      } as OfferPackageDocument];
     }
     if (snapshot.source === 'rating') {
       const rating = ratings.get(snapshot.sourceId);
@@ -445,13 +553,22 @@ export const getApprovalPackageDocuments = (pkg: OfferApprovalPackageData): Offe
       return attachment && rating ? [ratingAttachmentDocument(rating, attachment)] : [];
     }
     if (snapshot.source === 'resume') {
-      return [{ ...snapshot, candidateId: pkg.candidate.id, applicationId: pkg.application.id, fileName: snapshot.fileName || 'Candidate resume', storageBucket: pkg.application.resumeFilePath ? 'recruitment-uploads' : undefined, storagePath: pkg.application.resumeFilePath, externalUrl: pkg.application.resumeFileUrl || pkg.application.resumeLink }];
+      return [{
+        ...snapshot,
+        candidateId: pkg.candidate.id,
+        applicationId: pkg.application.id,
+        fileName: snapshot.fileName || 'Candidate resume',
+        storageBucket: pkg.application.resumeFilePath ? 'recruitment-uploads' : snapshot.storageBucket,
+        storagePath: pkg.application.resumeFilePath || snapshot.storagePath,
+        externalUrl: pkg.application.resumeFileUrl || pkg.application.resumeLink || snapshot.externalUrl,
+      }];
     }
     if (snapshot.source === 'offer') {
       return [{ ...snapshot, candidateId: pkg.candidate.id, applicationId: pkg.application.id, offerId: pkg.offer.id, fileName: snapshot.fileName || `${pkg.offer.offerNumber || 'Offer'} · Offer PDF`, mimeType: 'application/pdf' }];
     }
     return [];
   }).map(document => ({ ...document, description: document.description || `${candidateName} package document` }));
+  return dedupeOfferPackageDocuments(documents);
 };
 
 export const fetchPendingOfferApprovalIds = async (): Promise<Array<{ requestId: string; offerId: string; approvalStage: string; assignedAt: Date }>> => {

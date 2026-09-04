@@ -3,14 +3,12 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import { Evaluation, User, EvaluationSubmission, RaterGroup, EvaluationQuestion, EvaluatorConfig, EvaluatorType } from '../../types';
+import { Evaluation, User, EvaluationSubmission, RaterGroup, EvaluationQuestion } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
-import { usePermissions } from '../../hooks/usePermissions';
 import Textarea from '../../components/ui/Textarea';
 import { logActivity } from '../../services/auditService';
 import { supabase } from '../../services/supabaseClient';
-import { formatEmployeeName } from '../../services/formatEmployeeName';
-import { resolveCurrentHrisUserId } from '../../services/evaluationService';
+import { fetchMyEvaluationWorkspace } from '../../services/evaluationService';
 import { hasEvaluationOversightAccess, isEvaluationSubject } from '../../utils/evaluationAccess';
 
 // Icons
@@ -21,7 +19,6 @@ const CheckCircleIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className=
 const PerformEvaluation: React.FC = () => {
     const { evaluationId } = useParams<{ evaluationId: string }>();
     const { user } = useAuth();
-    const { isUserEligibleEvaluator } = usePermissions();
     const navigate = useNavigate();
 
     const [evaluation, setEvaluation] = useState<Evaluation | null>(null);
@@ -36,198 +33,49 @@ const PerformEvaluation: React.FC = () => {
     const [scores, setScores] = useState<Record<string, number | string>>({});
 
     useEffect(() => {
-        if (!user) return;
-        let active = true;
-        const resolveRaterProfileId = async () => {
-            try {
-                const resolvedId = await resolveCurrentHrisUserId(user.id);
-                if (active) setRaterProfileId(resolvedId);
-            } catch (profileError: any) {
-                if (active) {
-                    setRaterProfileId(user.id || null);
-                    setLoadError(profileError?.message || 'Unable to resolve your HRIS account.');
-                }
-            }
-        };
-        resolveRaterProfileId();
-        return () => {
-            active = false;
-        };
-    }, [user]);
-
-    useEffect(() => {
-        if (!evaluationId) return;
+        if (!evaluationId || !user) {
+            setIsLoading(false);
+            return;
+        }
         let active = true;
         const loadEvaluation = async () => {
             setIsLoading(true);
             setLoadError(null);
             try {
-                const [{ data: evalRow, error: evalErr }, { data: evalers, error: evalerErr }] = await Promise.all([
-                    supabase
-                        .from('evaluations')
-                        .select('id, name, timeline_id, target_business_unit_ids, target_employee_ids, question_set_ids, status, created_at, due_date, is_employee_visible, acknowledged_by')
-                        .eq('id', evaluationId)
-                        .maybeSingle(),
-                    supabase
-                        .from('evaluation_evaluators')
-                        .select('id, evaluation_id, type, user_id, weight, business_unit_id, department_id, is_anonymous, exclude_subject')
-                        .eq('evaluation_id', evaluationId),
-                ]);
-                if (evalErr) throw evalErr;
-                if (!evalRow) {
-                    if (active) {
-                        setEvaluation(null);
-                        setLoadError('This evaluation is unavailable or is not assigned to your account.');
-                    }
-                    return;
-                }
-                if (evalerErr) throw evalerErr;
-
-                const evaluators: EvaluatorConfig[] = (evalers || []).map((row: any, index: number) => {
-                    const normalizedType = String(row.type || '').toLowerCase();
-                    return {
-                        id: row.id || `${evaluationId}-${row.user_id || 'group'}-${index}`,
-                        type: normalizedType === 'group' ? EvaluatorType.Group : EvaluatorType.Individual,
-                        weight: row.weight || 0,
-                        userId: row.user_id || undefined,
-                        groupFilter: row.business_unit_id || row.department_id ? {
-                            businessUnitId: row.business_unit_id || undefined,
-                            departmentId: row.department_id || undefined,
-                        } : undefined,
-                        isAnonymous: !!row.is_anonymous,
-                        excludeSubject: row.exclude_subject ?? true,
-                    };
-                });
-
-                const mappedEvaluation: Evaluation = {
-                    id: evalRow.id,
-                    name: evalRow.name,
-                    timelineId: evalRow.timeline_id || '',
-                    targetBusinessUnitIds: evalRow.target_business_unit_ids || [],
-                    targetEmployeeIds: evalRow.target_employee_ids || [],
-                    questionSetIds: evalRow.question_set_ids || [],
-                    evaluators,
-                    status: evalRow.status || 'InProgress',
-                    createdAt: evalRow.created_at ? new Date(evalRow.created_at) : new Date(),
-                    dueDate: evalRow.due_date ? new Date(evalRow.due_date) : undefined,
-                    isEmployeeVisible: !!evalRow.is_employee_visible,
-                    acknowledgedBy: evalRow.acknowledged_by || [],
-                };
-
-                const questionSetIds = mappedEvaluation.questionSetIds || [];
-                const [{ data: questionRows, error: questionErr }, { data: employeeRows, error: empErr }] = await Promise.all([
-                    questionSetIds.length > 0
-                        ? supabase
-                              .from('evaluation_questions')
-                              .select('*')
-                              .in('question_set_id', questionSetIds)
-                        : Promise.resolve({ data: [], error: null }),
-                    mappedEvaluation.targetEmployeeIds.length > 0
-                        ? supabase
-                              .from('hris_users')
-                              .select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position')
-                              .in('id', mappedEvaluation.targetEmployeeIds)
-                        : Promise.resolve({ data: [], error: null }),
-                ]);
-                if (questionErr) throw questionErr;
-                if (empErr) throw empErr;
-
-                const mappedQuestions: EvaluationQuestion[] =
-                    (questionRows || []).map((q: any) => ({
-                        id: q.id,
-                        questionSetId: q.question_set_id,
-                        title: q.title,
-                        description: q.description || '',
-                        questionType: q.question_type,
-                        isArchived: !!q.is_archived,
-                        targetEmployeeLevels: q.target_employee_levels || [],
-                        targetEvaluatorRoles: q.target_evaluator_roles || [],
-                    })) || [];
-
-                const mappedEmployees: User[] =
-                    (employeeRows || []).map((u: any) => ({
-                        id: u.id,
-                        name: formatEmployeeName(u.full_name || 'Unknown'),
-                        email: u.email || '',
-                        role: u.role,
-                        department: u.department || '',
-                        businessUnit: u.business_unit || '',
-                        departmentId: u.department_id || undefined,
-                        businessUnitId: u.business_unit_id || undefined,
-                        status: u.status || 'Active',
-                        employmentStatus: undefined,
-                        isPhotoEnrolled: false,
-                        dateHired: new Date(),
-                        position: u.position || '',
-                        managerId: undefined,
-                        activeDeviceId: undefined,
-                        isGoogleConnected: false,
-                        profilePictureUrl: undefined,
-                        signatureUrl: undefined,
-                    } as User)) || [];
-
+                const workspace = await fetchMyEvaluationWorkspace(evaluationId);
                 if (!active) return;
-                setEvaluation(mappedEvaluation);
-                setQuestions(mappedQuestions.filter(q => !q.isArchived));
-                setTargetUsers(mappedEmployees);
+                setEvaluation(workspace.evaluation);
+                setQuestions(workspace.questions);
+                setTargetUsers(workspace.targetUsers);
+                setSubmissions(workspace.submissions);
+                setRaterProfileId(workspace.raterProfileId);
+                setSelectedEmployeeId(null);
             } catch (err) {
-                console.error('Failed to load evaluation', err);
+                console.error('Failed to load assigned evaluation workspace', err);
                 if (active) {
                     setEvaluation(null);
-                    setLoadError((err as any)?.message || 'Failed to load this evaluation.');
+                    setQuestions([]);
+                    setTargetUsers([]);
+                    setSubmissions([]);
+                    setLoadError((err as any)?.message || 'This evaluation is unavailable or is not assigned to your account.');
                 }
             } finally {
                 if (active) setIsLoading(false);
             }
         };
-        loadEvaluation();
+        void loadEvaluation();
         return () => {
             active = false;
         };
-    }, [evaluationId]);
-
-    useEffect(() => {
-        if (!evaluationId || !raterProfileId) return;
-        let active = true;
-        const loadSubmissions = async () => {
-            try {
-                const { data, error } = await supabase
-                    .from('evaluation_submissions')
-                    .select('*')
-                    .eq('evaluation_id', evaluationId)
-                    .eq('rater_id', raterProfileId);
-                if (error) throw error;
-                if (!active) return;
-                const mapped =
-                    (data || []).map((row: any) => ({
-                        id: row.id,
-                        evaluationId: row.evaluation_id,
-                        subjectEmployeeId: row.subject_employee_id,
-                        raterId: row.rater_id,
-                        raterGroup: (row.rater_group as RaterGroup) || RaterGroup.DirectSupervisor,
-                        scores: row.scores || [],
-                        submittedAt: row.submitted_at ? new Date(row.submitted_at) : new Date(),
-                    })) || [];
-                setSubmissions(mapped);
-            } catch (err) {
-                console.error('Failed to load evaluation submissions', err);
-                if (active) setSubmissions([]);
-            }
-        };
-        loadSubmissions();
-        return () => {
-            active = false;
-        };
-    }, [evaluationId, raterProfileId]);
+    }, [evaluationId, user?.id]);
 
     const eligibleTargets = useMemo(() => {
-        if (!evaluation || !user) return [];
-        const effectiveUser = { ...user, id: raterProfileId || user.id };
-        return targetUsers.filter(u =>
-            evaluation.targetEmployeeIds.includes(u.id) &&
-            isUserEligibleEvaluator(effectiveUser, evaluation, u.id)
-        );
-    }, [evaluation, user, raterProfileId, targetUsers, isUserEligibleEvaluator]);
+        if (!evaluation || !raterProfileId) return [];
+        // The assignment-scoped RPC has already resolved direct and group
+        // membership from canonical database profile fields. Reapplying stale
+        // client role/BU/department filters here can only hide valid targets.
+        return targetUsers.filter(user => evaluation.targetEmployeeIds.includes(user.id));
+    }, [evaluation, raterProfileId, targetUsers]);
 
     // Effect: Select first user or ensure valid selection
     useEffect(() => {
@@ -240,7 +88,8 @@ const PerformEvaluation: React.FC = () => {
     // Effect: Load existing data when employee changes
     useEffect(() => {
         if (selectedEmployeeId && user) {
-            const raterId = raterProfileId || user.id;
+            if (!raterProfileId) return;
+            const raterId = raterProfileId;
             const existingSubmission = submissions.find(s => s.subjectEmployeeId === selectedEmployeeId && s.raterId === raterId);
             
             if (existingSubmission) {
@@ -294,7 +143,7 @@ const PerformEvaluation: React.FC = () => {
     
     if (eligibleTargets.length === 0) {
         const canInspectReadOnly = hasEvaluationOversightAccess(user)
-            && !isEvaluationSubject(raterProfileId || user.id, evaluation.targetEmployeeIds);
+            && !isEvaluationSubject(raterProfileId || '', evaluation.targetEmployeeIds);
 
         return (
             <div className="space-y-6">
@@ -352,6 +201,10 @@ const PerformEvaluation: React.FC = () => {
     };
 
     const handleSubmit = async () => {
+        if (!raterProfileId) {
+            alert('Your HRIS evaluator profile could not be resolved. Refresh and try again.');
+            return;
+        }
         if (Object.keys(scores).length !== questions.length) {
             alert('Please answer all questions before submitting.');
             return;
@@ -360,7 +213,7 @@ const PerformEvaluation: React.FC = () => {
 
         setIsSubmitting(true);
         try {
-            const raterId = raterProfileId || user.id;
+            const raterId = raterProfileId;
             const existingIndex = submissions.findIndex(
                 submission => submission.subjectEmployeeId === selectedEmployeeId && submission.raterId === raterId
             );

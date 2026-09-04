@@ -29,8 +29,15 @@ const Evaluations: React.FC = () => {
     const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
     const [evaluatorsByEval, setEvaluatorsByEval] = useState<Record<string, EvaluatorConfig[]>>({});
     const [submissionsByEval, setSubmissionsByEval] = useState<Record<string, Set<string>>>({});
+    const [assignmentRows, setAssignmentRows] = useState<Array<{
+        evaluationId: string;
+        employeeId: string;
+        evaluatorUserIds: string[];
+        status: string;
+    }>>([]);
     const [error, setError] = useState<string | null>(null);
     const [employeeProfileId, setEmployeeProfileId] = useState<string | null>(null);
+    const [profileLoading, setProfileLoading] = useState(true);
     const [isLoading, setIsLoading] = useState(true);
 
     // Compliance Modal State
@@ -58,7 +65,11 @@ const Evaluations: React.FC = () => {
 
                 const evaluationRows = evalData || [];
                 const evaluationIds = evaluationRows.map((evaluation: any) => evaluation.id);
-                const [{ data: evalersData, error: evErr }, { data: submissionsData, error: subErr }] = evaluationIds.length > 0
+                const [
+                    { data: evalersData, error: evErr },
+                    { data: submissionsData, error: subErr },
+                    { data: assignmentsData, error: assignmentsErr },
+                ] = evaluationIds.length > 0
                     ? await Promise.all([
                         supabase
                             .from('evaluation_evaluators')
@@ -68,13 +79,18 @@ const Evaluations: React.FC = () => {
                             .from('evaluation_submissions')
                             .select('evaluation_id, rater_id, subject_employee_id')
                             .in('evaluation_id', evaluationIds),
+                        supabase
+                            .from('evaluation_assignments')
+                            .select('evaluation_id, employee_id, evaluator_user_ids, status')
+                            .in('evaluation_id', evaluationIds),
                     ])
                     : [
                         { data: [], error: null },
                         { data: [], error: null },
+                        { data: [], error: null },
                     ];
 
-                if (evErr || subErr) throw evErr || subErr;
+                if (evErr || subErr || assignmentsErr) throw evErr || subErr || assignmentsErr;
                 if (!active) return;
 
                 setBusinessUnits((buData || []).map((b:any)=>({id:b.id,name:b.name||'Unknown BU'})));
@@ -106,6 +122,12 @@ const Evaluations: React.FC = () => {
                     submissionMap[row.evaluation_id].add(`${row.rater_id}:${row.subject_employee_id}`);
                 });
                 setSubmissionsByEval(submissionMap);
+                setAssignmentRows((assignmentsData || []).map((row: any) => ({
+                    evaluationId: row.evaluation_id,
+                    employeeId: row.employee_id,
+                    evaluatorUserIds: Array.isArray(row.evaluator_user_ids) ? row.evaluator_user_ids : [],
+                    status: row.status || 'Pending',
+                })));
 
                 setEvaluations(evaluationRows.map((e:any)=>({
                     id: e.id,
@@ -128,6 +150,7 @@ const Evaluations: React.FC = () => {
                 setEvaluations([]);
                 setEvaluatorsByEval({});
                 setSubmissionsByEval({});
+                setAssignmentRows([]);
             } finally {
                 if (active) setIsLoading(false);
             }
@@ -141,22 +164,40 @@ const Evaluations: React.FC = () => {
     useEffect(() => {
         if (!user) {
             setEmployeeProfileId(null);
+            setProfileLoading(false);
             return;
         }
         let active = true;
         const resolveProfileId = async () => {
+            setProfileLoading(true);
             try {
                 const resolvedId = await resolveCurrentHrisUserId(user.id);
                 if (active) setEmployeeProfileId(resolvedId);
-            } catch {
-                if (active) setEmployeeProfileId(user.id || null);
+            } catch (profileError: any) {
+                if (active) {
+                    setEmployeeProfileId(null);
+                    setError(current => current || profileError?.message || 'Unable to resolve your HRIS evaluator profile.');
+                }
+            } finally {
+                if (active) setProfileLoading(false);
             }
         };
         resolveProfileId();
         return () => {
             active = false;
         };
-    }, [user]);
+    }, [user?.id]);
+
+    const assignedTargetIdsByEvaluation = useMemo(() => {
+        const result: Record<string, Set<string>> = {};
+        if (!employeeProfileId) return result;
+        assignmentRows.forEach(assignment => {
+            if (!assignment.evaluatorUserIds.includes(employeeProfileId) || assignment.status === 'Cancelled') return;
+            if (!result[assignment.evaluationId]) result[assignment.evaluationId] = new Set<string>();
+            result[assignment.evaluationId].add(assignment.employeeId);
+        });
+        return result;
+    }, [assignmentRows, employeeProfileId]);
 
     const yearOptions = useMemo(() => {
         const years = new Set<number>();
@@ -189,8 +230,8 @@ const Evaluations: React.FC = () => {
     };
 
     const viewableEvaluations = React.useMemo(() => {
-        if (!user) return [];
-        const evaluatorUser = { ...user, id: employeeProfileId || user.id };
+        if (!user || !employeeProfileId) return [];
+        const evaluatorUser = { ...user, id: employeeProfileId };
 
         const filteredByDateAndBU = evaluations.filter(evaluation => {
             const evalDate = evaluation.createdAt ? new Date(evaluation.createdAt) : null;
@@ -218,13 +259,11 @@ const Evaluations: React.FC = () => {
 
         return filteredByDateAndBU.filter(evaluation => {
             if (evaluation.status === 'InProgress') {
-                const canEvaluateSomeone = evaluation.targetEmployeeIds.some(targetId => 
-                    isUserEligibleEvaluator(evaluatorUser, evaluation, targetId)
-                );
+                const canEvaluateSomeone = (assignedTargetIdsByEvaluation[evaluation.id]?.size || 0) > 0;
                 if (canEvaluateSomeone) return true;
             }
 
-            const isTarget = evaluation.targetEmployeeIds.includes(employeeProfileId || user.id);
+            const isTarget = evaluation.targetEmployeeIds.includes(employeeProfileId);
             if (isTarget && evaluation.status === 'InProgress') {
                 return true;
             }
@@ -234,7 +273,7 @@ const Evaluations: React.FC = () => {
 
             return false;
         });
-    }, [user, employeeProfileId, evaluations, yearFilter, monthFilter, buFilter, canManage, isEvaluationOversight, isUserEligibleEvaluator]);
+    }, [user, employeeProfileId, evaluations, yearFilter, monthFilter, buFilter, canManage, isEvaluationOversight, assignedTargetIdsByEvaluation]);
 
     const handleViewCompliance = async (evaluation: Evaluation) => {
         setSelectedEvaluationForCompliance(evaluation);
@@ -361,7 +400,7 @@ const Evaluations: React.FC = () => {
     const isAdminView = canManage || isEvaluationOversight;
     const filterBusinessUnits = canManage || isEvaluationOversight ? accessibleBus : businessUnits;
 
-    if (isLoading || (!canView && assignmentAccessLoading)) {
+    if (isLoading || profileLoading || (!canView && assignmentAccessLoading)) {
         return (
             <div className="flex min-h-64 items-center justify-center">
                 <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-200 border-b-indigo-600" />
@@ -422,11 +461,11 @@ const Evaluations: React.FC = () => {
                     {viewableEvaluations.map(evaluation => {
                         const { completed, total, percentage, configurationIncomplete } = calculateProgress(evaluation);
                         const isOverdue = evaluation.dueDate && new Date() > new Date(evaluation.dueDate) && percentage < 100;
-                        const evaluatorUser = { ...user!, id: employeeProfileId || user!.id };
+                        const evaluatorUser = { ...user!, id: employeeProfileId! };
                         const isTarget = isEvaluationSubject(evaluatorUser.id, evaluation.targetEmployeeIds);
                         const canEvaluate = evaluation.status === 'InProgress'
                             && !configurationIncomplete
-                            && evaluation.targetEmployeeIds.some(targetId => isUserEligibleEvaluator(evaluatorUser, evaluation, targetId));
+                            && (assignedTargetIdsByEvaluation[evaluation.id]?.size || 0) > 0;
                         const canInspectAsOversight = isEvaluationOversight && !isTarget;
                         const canOpenEvaluation = canEvaluate || canInspectAsOversight;
                         const evaluationPath = canEvaluate
