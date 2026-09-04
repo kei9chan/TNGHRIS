@@ -68,16 +68,6 @@ DROP POLICY IF EXISTS "admin_all_ntes" ON public.ntes;
 CREATE POLICY "admin_all_ntes" ON public.ntes
   FOR ALL USING (public.is_admin()) WITH CHECK (public.is_admin());
 
--- disciplinary_cases
-DROP POLICY IF EXISTS "admin_all_disciplinary_cases" ON public.disciplinary_cases;
-CREATE POLICY "admin_all_disciplinary_cases" ON public.disciplinary_cases
-  FOR ALL USING (public.is_admin()) WITH CHECK (public.is_admin());
-
--- coaching_logs
-DROP POLICY IF EXISTS "admin_all_coaching_logs" ON public.coaching_logs;
-CREATE POLICY "admin_all_coaching_logs" ON public.coaching_logs
-  FOR ALL USING (public.is_admin()) WITH CHECK (public.is_admin());
-
 -- pans
 DROP POLICY IF EXISTS "admin_all_pans" ON public.pans;
 CREATE POLICY "admin_all_pans" ON public.pans
@@ -91,11 +81,6 @@ CREATE POLICY "admin_all_coe_requests" ON public.coe_requests
 -- evaluations
 DROP POLICY IF EXISTS "admin_all_evaluations" ON public.evaluations;
 CREATE POLICY "admin_all_evaluations" ON public.evaluations
-  FOR ALL USING (public.is_admin()) WITH CHECK (public.is_admin());
-
--- evaluation_responses
-DROP POLICY IF EXISTS "admin_all_evaluation_responses" ON public.evaluation_responses;
-CREATE POLICY "admin_all_evaluation_responses" ON public.evaluation_responses
   FOR ALL USING (public.is_admin()) WITH CHECK (public.is_admin());
 
 -- manpower_requests
@@ -123,21 +108,6 @@ DROP POLICY IF EXISTS "admin_all_announcements" ON public.announcements;
 CREATE POLICY "admin_all_announcements" ON public.announcements
   FOR ALL USING (public.is_admin()) WITH CHECK (public.is_admin());
 
--- payroll_staging
-DROP POLICY IF EXISTS "admin_all_payroll_staging" ON public.payroll_staging;
-CREATE POLICY "admin_all_payroll_staging" ON public.payroll_staging
-  FOR ALL USING (public.is_admin()) WITH CHECK (public.is_admin());
-
--- payslips
-DROP POLICY IF EXISTS "admin_all_payslips" ON public.payslips;
-CREATE POLICY "admin_all_payslips" ON public.payslips
-  FOR ALL USING (public.is_admin()) WITH CHECK (public.is_admin());
-
--- loans
-DROP POLICY IF EXISTS "admin_all_loans" ON public.loans;
-CREATE POLICY "admin_all_loans" ON public.loans
-  FOR ALL USING (public.is_admin()) WITH CHECK (public.is_admin());
-
 -- notifications
 DROP POLICY IF EXISTS "admin_all_notifications" ON public.notifications;
 CREATE POLICY "admin_all_notifications" ON public.notifications
@@ -157,11 +127,6 @@ CREATE POLICY "admin_all_onboarding_checklists" ON public.onboarding_checklists
 DROP POLICY IF EXISTS "admin_all_pulse_surveys" ON public.pulse_surveys;
 CREATE POLICY "admin_all_pulse_surveys" ON public.pulse_surveys
   FOR ALL USING (public.is_admin()) WITH CHECK (public.is_admin());
-
--- audit_log (read-only for admin)
-DROP POLICY IF EXISTS "admin_select_audit_log" ON public.audit_log;
-CREATE POLICY "admin_select_audit_log" ON public.audit_log
-  FOR SELECT USING (public.is_admin());
 
 -- ============================================================
 -- Verification (run after applying):
