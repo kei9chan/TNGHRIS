@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const read = path => readFile(path, 'utf8');
-const [builder, employment, document, offerPdf, table, detail, applicants, mapper, workspace, interviewPdf, migration] = await Promise.all([
+const [builder, employment, document, offerPdf, table, detail, applicants, mapper, workspace, interviewPdf, migration, constraintFix] = await Promise.all([
   read('components/recruitment/OfferCreationDrawer.tsx'),
   read('components/recruitment/offerEmployment.ts'),
   read('components/recruitment/OfferDocument.tsx'),
@@ -14,6 +14,7 @@ const [builder, employment, document, offerPdf, table, detail, applicants, mappe
   read('services/jobOfferWorkspaceService.ts'),
   read('services/interviewRatingService.ts'),
   read('supabase/migrations/20260903073000_offer_employment_terms_and_revisions.sql'),
+  read('supabase/migrations/20260904081427_fix_job_offer_employment_type_constraint.sql'),
 ]);
 
 for (const employmentType of ['Regular', 'Probationary', 'Seasonal / Fixed-Term', 'Consultant / Contractor', 'Custom']) {
@@ -44,5 +45,12 @@ assert.match(migration, /security invoker/);
 assert.match(migration, /supersedes_offer_id/);
 assert.match(migration, /offer_details - 'candidateResponse' - 'emailDelivery' - 'welcomeEmail'/);
 assert.doesNotMatch(migration, /disable row level security|truncate|delete from public\.job_offers/i);
+
+assert.match(constraintFix, /drop constraint if exists job_offers_employment_type_check/);
+for (const employmentType of ['Regular', 'Probationary', 'Seasonal / Fixed-Term', 'Consultant / Contractor', 'Custom', 'Full-Time', 'Part-Time', 'Contract']) {
+  assert.ok(constraintFix.includes(`'${employmentType}'`), `Database constraint missing employment type: ${employmentType}`);
+}
+assert.match(constraintFix, /validate constraint job_offers_employment_type_check/);
+assert.doesNotMatch(constraintFix, /disable row level security|truncate|delete from public\.job_offers/i);
 
 console.log('Offer employment terms and interview PDF smoke test passed.');
