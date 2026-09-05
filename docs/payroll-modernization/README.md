@@ -1,4 +1,4 @@
-# TNG HRIS Payroll Modernization — Phase 0, Phase 1A, Phase 1B, Phase 1C, Phase 1D, Phase 1E, Phase 1F, and Phase 1G
+# TNG HRIS Payroll Modernization — Phase 0 through Phase 1G, plus staging test fixtures
 
 **Assessment date:** 2026-09-04
 
@@ -31,6 +31,7 @@ The immediate objective is therefore containment and source-of-truth recovery—
 | Phase 1E effective-dated holiday calendar | [PHASE-1E-HOLIDAY-CALENDAR.md](./PHASE-1E-HOLIDAY-CALENDAR.md) | Applied to `payroll-staging` only; calendars and holiday dates remain empty |
 | Phase 1F raw time-event ingestion foundation | [PHASE-1F-RAW-TIME-INGESTION.md](./PHASE-1F-RAW-TIME-INGESTION.md) | Applied to `payroll-staging` only; ingestion batches and raw events remain empty |
 | Phase 1G attendance rules, interpretations, and exceptions | [PHASE-1G-ATTENDANCE-INTERPRETATION.md](./PHASE-1G-ATTENDANCE-INTERPRETATION.md) | Applied to `payroll-staging` only; rule sets, interpretations, inputs, and exceptions remain empty |
+| Staging payroll test fixture | [PHASE-1G-TEST-FIXTURE.md](./PHASE-1G-TEST-FIXTURE.md) | Applied to `payroll-staging` only; synthetic records are clearly labeled and must never be merged to production |
 
 ## Stop-ship findings
 
