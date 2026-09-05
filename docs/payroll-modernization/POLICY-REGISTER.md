@@ -6,6 +6,50 @@ This is the Phase 0 discovery register. Every entry is `Draft`; no value in this
 
 The future system of record must store each approved row as an immutable version. Superseding a rule creates a new version and closes the prior version's effective range; it never overwrites the prior version.
 
+## 1A. TNG policy inputs received on 2026-09-05
+
+The following company-policy inputs were supplied for the payroll modernization design. They are captured as **Draft / awaiting formal HR, Finance, and applicable Legal approval**. They must not be activated by frontend defaults or hardcoded calculation logic.
+
+### Payroll calendar
+
+| Cutoff | Scheduled pay date | Example |
+|---|---|---|
+| 11th through 25th | 5th of the following month | 2026-08-11 through 2026-08-25 → 2026-09-05 |
+| 26th through 10th | 20th of the month containing the 10th | 2026-08-26 through 2026-09-10 → 2026-09-20 |
+
+The exact inclusive boundary, weekend/holiday movement rule, attendance-closing date, adjustment deadline, and bank-release cutoff remain to be confirmed. The payroll business timezone is `Asia/Manila`.
+
+### Attendance, leave, overtime, and offset inputs
+
+| Policy area | Captured company input | Still requiring explicit rule metadata |
+|---|---|---|
+| Tardiness | 5-minute grace period | Whether the grace affects attendance status, pay deduction, or both; rounding order; exceptions |
+| Lunch break | 1-hour break; movable according to the prescribed schedule, targeted around the halfway point of the shift | Paid/unpaid treatment, actual-versus-scheduled handling, missed/extended-break treatment, and overnight/split-shift behavior |
+| Leave credits | 5 VL and 5 SL | Leave-year basis, accrual/posting date, eligibility/proration, carryover, expiry, conversion, and insufficient-balance handling |
+| Manager offsetting | Managers may offset only against extra hours worked on rest days and/or holidays | Legal/company eligibility, conversion rate, approval, expiry, use window, and whether the extra hours are payable or converted; no weekday offset and no accumulation of excess hours by day or week |
+| Overtime | Minimum of 1 hour may be considered; fractions of 30 minutes thereafter may be considered | Whether less than 1 hour is ineligible or requires an exception, actual-time reconciliation, rounding, premium calculation, and approval deadline |
+
+### HR and Finance payroll workflow
+
+The required approval sequence is:
+
+1. HR finalizes timekeeping records.
+2. HR submits finalized timekeeping to Finance.
+3. Finance prepares and encodes the Payroll Register (PR).
+4. HR reviews and validates all payroll details.
+5. HR endorses the payroll for approval.
+6. HR authorizes the payroll.
+7. Finance authorizes the payroll.
+8. The Board of Directors gives final approval.
+9. Finance processes payroll disbursement.
+10. Payslips are generated and distributed to employees.
+
+Each step must be represented by a durable status/approval record with actor, timestamp, reason, and the exact payroll snapshot or checksum approved. The same user must not perform incompatible maker/checker steps, and no user or role may be hardcoded as the only approver.
+
+### Baseline sample status
+
+The requested approved, closed payroll sample for the 2026-08-11 through 2026-08-25 cutoff was not available to the repository/library inspection on 2026-09-05. Baseline reconciliation remains blocked until the PR and, where available, its attendance/DTR, OT/leave, deductions, and control totals are reattached or made available.
+
 ## 2. Required record shape
 
 Each rule version must contain all of the following:
