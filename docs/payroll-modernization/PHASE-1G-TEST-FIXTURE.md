@@ -3,6 +3,7 @@
 **Status:** Applied to `payroll-staging` only  
 **Supabase project:** `suxncpnerzfkjhkhjwbd`  
 **Migration:** `20260905131600_payroll_staging_test_fixture.sql`  
+**Visibility repair:** `20260905133500_payroll_staging_fixture_business_unit_mapping.sql`
 **Production status:** Not applied and must not be merged to `main`
 
 ## Purpose
@@ -20,6 +21,7 @@ The fixture includes:
 - 9 dated schedules for the attendance test period
 - 19 immutable raw time events, including one duplicate punch and one offline-sync example
 - 1 staging-only attendance rule using a five-minute grace period and one-hour moveable meal break
+- 1 legacy business-unit mapping so the existing Phase 4A screen can see the fixture workers
 - 1 draft payroll period for August 11–25, 2026 with pay date September 5, 2026
 
 ## Scenarios
@@ -49,7 +51,7 @@ The consultant fee for scenario 9 is intentionally not stored in employee compen
 6. Review `PAYROLL-TEST-07` and confirm that its basic-pay history has a version ending August 15 and a second version beginning August 15.
 7. Review `PAYROLL-TEST-09` and confirm that only its employee-payroll basic salary is in compensation history; its consultant side is recorded only as a separate test expectation.
 
-At this point the fixture validates the Phase 1 foundation and data controls. Automatic late-minute, undertime, absence, no-show, and payroll-amount calculation are the next Phase 1H package, so a payslip should not yet be expected from these rows.
+At this point the fixture validates the Phase 1 foundation and data controls. The visibility repair is required only because the existing Phase 4A screen still reads the legacy `business_units` catalog. Automatic late-minute, undertime, absence, no-show, and payroll-amount calculation are the next Phase 1H package, so a payslip should not yet be expected from these rows.
 
 ## Safety
 
