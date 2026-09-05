@@ -48,7 +48,18 @@ Each step must be represented by a durable status/approval record with actor, ti
 
 ### Baseline sample status
 
-The requested approved, closed payroll sample for the 2026-08-11 through 2026-08-25 cutoff was not available to the repository/library inspection on 2026-09-05. Baseline reconciliation remains blocked until the PR and, where available, its attendance/DTR, OT/leave, deductions, and control totals are reattached or made available.
+The approved, closed payroll baseline package was received on 2026-09-05 through two uploaded workbooks (the workbooks are controlled evidence and are not copied into Git):
+
+- Payroll Register: `SAMPLE PR for Aug 11 to 25, 2026 (09.05)(1).xlsx`
+- Supporting attendance/DTR: `1_StandardReport THE DESSERT MUSEUM (AUGUST 11- 25, 2026)(1).xlsx`
+
+Initial read-only validation confirms that both cover 2026-08-11 through 2026-08-25 and that the PR lists a 2026-09-05 payout date. The PR contains summary payroll, detailed inputs, deductions/contributions, timekeeping, and journal-entry tabs; the supporting workbook contains schedule, attendance, attendance-log, and exception reports. Employee-level and control-total reconciliation remains in progress. No row-level payroll data is stored in Git.
+
+Initial quality findings requiring validation before the workbooks are used as calculation truth:
+
+- Some auxiliary PR tabs contain broken `#REF!`/`#N/A` references.
+- Some tabs contain mixed or legacy cutoff/date labels, including a legacy adjustment tab.
+- The journal-entry view requires a formal tie-out to the PR summary and control totals.
 
 ## 2. Required record shape
 
