@@ -1,4 +1,4 @@
-# TNG HRIS Payroll Modernization — Phase 0, Phase 1A, Phase 1B, and Phase 1C
+# TNG HRIS Payroll Modernization — Phase 0, Phase 1A, Phase 1B, Phase 1C, and Phase 1D
 
 **Assessment date:** 2026-09-04
 
@@ -27,6 +27,7 @@ The immediate objective is therefore containment and source-of-truth recovery—
 | Phase 1A payroll period foundation | [PHASE-1A-PAYROLL-PERIOD-FOUNDATION.md](./PHASE-1A-PAYROLL-PERIOD-FOUNDATION.md) | Applied to `payroll-staging` only; no rows seeded |
 | Phase 1B effective-dated worker/classification foundation | [PHASE-1B-WORKER-ASSIGNMENTS.md](./PHASE-1B-WORKER-ASSIGNMENTS.md) | Applied to `payroll-staging` only; catalogs and assignments remain empty |
 | Phase 1C compensation components and history | [PHASE-1C-COMPENSATION-HISTORY.md](./PHASE-1C-COMPENSATION-HISTORY.md) | Applied to `payroll-staging` only; components and compensation history remain empty |
+| Phase 1D shift presets and canonical employee roster | [PHASE-1D-SHIFT-ROSTER.md](./PHASE-1D-SHIFT-ROSTER.md) | Applied to `payroll-staging` only; presets, rules, and schedules remain empty |
 
 ## Stop-ship findings
 
