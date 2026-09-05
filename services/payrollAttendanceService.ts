@@ -69,6 +69,27 @@ export type PayrollAttendanceExceptionAction =
   | 'waive'
   | 'reopen';
 
+export type PayrollAttendanceCorrectionRequest = {
+  id: string;
+  exceptionId: string;
+  attendanceInterpretationId: string;
+  employeeId: string;
+  workDate: string;
+  requestedByUserId: string;
+  requestedClockInAt: string | null;
+  requestedClockOutAt: string | null;
+  reason: string;
+  sourceDocumentRef: string | null;
+  status: string;
+  reviewedByUserId: string | null;
+  reviewedAt: string | null;
+  reviewNote: string | null;
+  appliedInterpretationId: string | null;
+  appliedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type PayrollAttendanceInterpretationRow = {
   id: string;
   employee_id: string;
@@ -236,6 +257,136 @@ export const resolvePayrollAttendanceException = async ({
   if (error) {
     if (error.code === 'PGRST202' || error.message.toLowerCase().includes('schema cache')) {
       throw new Error('The staging API has not refreshed its payroll workflow schema yet. Refresh the page and retry.');
+    }
+    throw new Error(error.message);
+  }
+  return (data || {}) as Record<string, unknown>;
+};
+
+type PayrollAttendanceCorrectionRequestRow = {
+  id: string;
+  exception_id: string;
+  attendance_interpretation_id: string;
+  employee_id: string;
+  work_date: string;
+  requested_by_user_id: string;
+  requested_clock_in_at: string | null;
+  requested_clock_out_at: string | null;
+  reason: string;
+  source_document_ref: string | null;
+  status: string;
+  reviewed_by_user_id: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  applied_interpretation_id: string | null;
+  applied_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+const mapCorrectionRequest = (row: PayrollAttendanceCorrectionRequestRow): PayrollAttendanceCorrectionRequest => ({
+  id: row.id,
+  exceptionId: row.exception_id,
+  attendanceInterpretationId: row.attendance_interpretation_id,
+  employeeId: row.employee_id,
+  workDate: row.work_date,
+  requestedByUserId: row.requested_by_user_id,
+  requestedClockInAt: row.requested_clock_in_at,
+  requestedClockOutAt: row.requested_clock_out_at,
+  reason: row.reason,
+  sourceDocumentRef: row.source_document_ref,
+  status: row.status,
+  reviewedByUserId: row.reviewed_by_user_id,
+  reviewedAt: row.reviewed_at,
+  reviewNote: row.review_note,
+  appliedInterpretationId: row.applied_interpretation_id,
+  appliedAt: row.applied_at,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+
+export const fetchPayrollAttendanceCorrectionRequests = async (
+  startDate: string,
+  endDate: string
+): Promise<PayrollAttendanceCorrectionRequest[]> => {
+  const { data, error } = await supabase
+    .from('payroll_attendance_correction_requests')
+    .select(`
+      id,
+      exception_id,
+      attendance_interpretation_id,
+      employee_id,
+      work_date,
+      requested_by_user_id,
+      requested_clock_in_at,
+      requested_clock_out_at,
+      reason,
+      source_document_ref,
+      status,
+      reviewed_by_user_id,
+      reviewed_at,
+      review_note,
+      applied_interpretation_id,
+      applied_at,
+      created_at,
+      updated_at
+    `)
+    .gte('work_date', startDate)
+    .lte('work_date', endDate)
+    .order('created_at', { ascending: false });
+
+  if (error) throw new Error(error.message);
+  return ((data || []) as PayrollAttendanceCorrectionRequestRow[]).map(mapCorrectionRequest);
+};
+
+export const submitPayrollAttendanceCorrectionRequest = async ({
+  exceptionId,
+  clockInAt,
+  clockOutAt,
+  reason,
+  sourceDocumentRef,
+}: {
+  exceptionId: string;
+  clockInAt?: string | null;
+  clockOutAt?: string | null;
+  reason: string;
+  sourceDocumentRef?: string | null;
+}) => {
+  const { data, error } = await supabase.rpc('submit_payroll_attendance_correction_request', {
+    p_exception_id: exceptionId,
+    p_clock_in_at: clockInAt || null,
+    p_clock_out_at: clockOutAt || null,
+    p_reason: reason,
+    p_source_document_ref: sourceDocumentRef || null,
+  });
+
+  if (error) {
+    if (error.code === 'PGRST202' || error.message.toLowerCase().includes('schema cache')) {
+      throw new Error('The staging API has not refreshed the attendance correction workflow yet. Refresh the page and retry.');
+    }
+    throw new Error(error.message);
+  }
+  return (data || {}) as Record<string, unknown>;
+};
+
+export const reviewPayrollAttendanceCorrectionRequest = async ({
+  requestId,
+  action,
+  reviewNote,
+}: {
+  requestId: string;
+  action: 'approve' | 'reject' | 'cancel';
+  reviewNote?: string | null;
+}) => {
+  const { data, error } = await supabase.rpc('review_payroll_attendance_correction_request', {
+    p_request_id: requestId,
+    p_action: action,
+    p_review_note: reviewNote || null,
+  });
+
+  if (error) {
+    if (error.code === 'PGRST202' || error.message.toLowerCase().includes('schema cache')) {
+      throw new Error('The staging API has not refreshed the attendance correction workflow yet. Refresh the page and retry.');
     }
     throw new Error(error.message);
   }
