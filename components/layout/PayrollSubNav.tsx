@@ -34,6 +34,7 @@ const iconMap: { [key: string]: React.FC<{className?: string}> } = {
     'Leave Credits': SunIcon,
     'Loan Application System': CreditCardIcon,
     'Exceptions': ShieldExclamationIcon,
+    'Schedule Requests': ClipboardDocumentCheckIcon,
     'Payroll Prep': CalculatorIcon,
     'Payroll Staging': BanknotesIcon,
     'Payslips': DocumentTextIcon,
@@ -66,7 +67,7 @@ const PayrollSubNav: React.FC = () => {
         return [
             {
                 name: 'Timekeeping & Attendance',
-                links: subLinks.filter(link => ['Timekeeping', 'Manpower Planning', 'Workforce Planning', 'Daily Time Review', 'Clock-in/Out', 'Overtime Requests', 'WFH Requests', 'Leave', 'Leave Credits', 'Exceptions', 'Clock Log'].includes(link.name))
+                links: subLinks.filter(link => ['Timekeeping', 'Manpower Planning', 'Workforce Planning', 'Daily Time Review', 'Clock-in/Out', 'Clock Log', 'Overtime Requests', 'WFH Requests', 'Leave', 'Leave Credits', 'Exceptions', 'Schedule Requests'].includes(link.name))
             },
             {
                 name: 'Payroll',

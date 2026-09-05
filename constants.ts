@@ -105,6 +105,7 @@ export const NAV_LINKS: NavLink[] = [
             { name: 'Leave', path: '/payroll/leave', requiredPermission: { resource: 'Leave', permission: Permission.View } },
             { name: 'Leave Credits', path: '/payroll/leave-credits', requiredPermission: { resource: 'Employees', permission: Permission.Edit } },
             { name: 'Exceptions', path: '/payroll/exceptions', requiredPermission: { resource: 'Exceptions', permission: Permission.View } },
+            { name: 'Schedule Requests', path: '/payroll/schedule-requests', requiredPermission: { resource: 'Timekeeping', permission: Permission.View } },
             { name: 'Payroll Prep', path: '/payroll/payroll-prep', requiredPermission: { resource: 'PayrollPrep', permission: Permission.View } },
             { name: 'Payroll Staging', path: '/payroll/staging', requiredPermission: { resource: 'PayrollStaging', permission: Permission.View } },
             // { name: 'Payslips', path: '/payroll/payslips', requiredPermission: { resource: 'Payslips', permission: Permission.View } }, // TEMPORARILY DISABLED

@@ -53,6 +53,7 @@
     "test:direct-manager-approvals": "node tests/directManagerTimeApprovalSmokeTest.mjs",
     "test:payroll-attendance-resolution": "node tests/payrollAttendanceExceptionResolutionSmokeTest.mjs",
     "test:payroll-attendance-correction": "node tests/payrollAttendanceCorrectionSmokeTest.mjs",
+    "test:payroll-schedule-workflows": "node tests/payrollScheduleWorkflowSmokeTest.mjs",
     "test:offer-employment-pdf": "node tests/offerEmploymentTermsAndInterviewPdfSmokeTest.mjs",
     "test:incident-nte-focused-fix": "node tests/incidentNteFocusedFixSmokeTest.mjs",
     "test:nte-mobile-review": "node tests/nteMobileReviewSmokeTest.mjs",
