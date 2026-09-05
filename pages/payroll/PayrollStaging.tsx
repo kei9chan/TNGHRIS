@@ -24,6 +24,9 @@ const PencilIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 
 const CheckIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>;
 const XIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>;
 
+const STAGING_FIXTURE_START_DATE = '2026-08-11';
+const STAGING_FIXTURE_END_DATE = '2026-08-25';
+
 const formatAttendanceTime = (value: string | null): string => {
     if (!value) return '—';
     return new Intl.DateTimeFormat('en-PH', {
@@ -71,6 +74,9 @@ const PayrollStaging: React.FC = () => {
     const [attendanceInterpretations, setAttendanceInterpretations] = useState<PayrollAttendanceInterpretation[]>([]);
     const [attendanceExceptions, setAttendanceExceptions] = useState<PayrollAttendanceException[]>([]);
     const [attendanceRunSummary, setAttendanceRunSummary] = useState<PayrollAttendanceRunSummary | null>(null);
+
+    const isFixturePeriod = startDate === STAGING_FIXTURE_START_DATE && endDate === STAGING_FIXTURE_END_DATE;
+    const fixtureRangeIsOutsideSelection = endDate < STAGING_FIXTURE_START_DATE || startDate > STAGING_FIXTURE_END_DATE;
 
     const canManage = can('PayrollStaging', Permission.Manage);
     const canEdit = can('PayrollStaging', Permission.Edit);
@@ -165,7 +171,9 @@ const PayrollStaging: React.FC = () => {
 
                 // Derive Hourly Rate based on Employee Rate Type
                 let hourlyRate = 0;
-                if (employee.rateType === RateType.Daily) {
+                if (employee.rateType === RateType.Hourly) {
+                    hourlyRate = employee.rateAmount || 0;
+                } else if (employee.rateType === RateType.Daily) {
                     hourlyRate = (employee.rateAmount || 0) / 8;
                 } else {
                     // Monthly Rate / 176 hours (Standard 22 days * 8 hours)
@@ -218,6 +226,13 @@ const PayrollStaging: React.FC = () => {
             setIsInterpreting(false);
         }
     }, [canManage, startDate, endDate, generatePayrollData]);
+
+    const loadStagingFixture = useCallback(() => {
+        setStartDate(STAGING_FIXTURE_START_DATE);
+        setEndDate(STAGING_FIXTURE_END_DATE);
+        setAttendanceRunSummary(null);
+        setError(null);
+    }, []);
 
     useEffect(() => {
         if (!isLoading && allUsers.length >= 0) {
@@ -347,6 +362,24 @@ const PayrollStaging: React.FC = () => {
                     )}
                 </div>
             </Card>
+
+            <div className="flex flex-col gap-3 rounded-md border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-950 dark:border-violet-900/60 dark:bg-violet-950/30 dark:text-violet-100 md:flex-row md:items-center md:justify-between">
+                <div>
+                    <p className="font-semibold">Staging test fixture</p>
+                    <p className="mt-1 text-violet-800 dark:text-violet-200">
+                        The 10 synthetic payroll employees have schedules and punches only for Aug 11–25, 2026. They are staging data and do not represent real employees.
+                    </p>
+                </div>
+                <Button type="button" size="sm" variant="secondary" onClick={loadStagingFixture} disabled={isLoading || isInterpreting}>
+                    {isFixturePeriod ? 'Fixture period loaded' : 'Load Aug 11–25 fixture'}
+                </Button>
+            </div>
+
+            {fixtureRangeIsOutsideSelection && !isLoading && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+                    No synthetic attendance is expected for {startDate} to {endDate}. Load the Aug 11–25 fixture period to see interpreted hours and review exceptions.
+                </div>
+            )}
 
             {attendanceRunSummary && (
                 <div className="rounded-md border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-200">

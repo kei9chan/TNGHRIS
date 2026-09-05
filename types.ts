@@ -616,6 +616,7 @@ export interface SalaryBreakdown {
 export enum RateType {
   Monthly = 'Monthly',
   Daily = 'Daily',
+  Hourly = 'Hourly',
 }
 
 export enum TaxStatus {
