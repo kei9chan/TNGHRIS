@@ -1,138 +1,161 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { AttendanceExceptionRecord, ExceptionType, Role, Permission } from '../../types';
-import { useAuth } from '../../hooks/useAuth';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Permission, User } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
+import { fetchUsers } from '../../services/userService';
+import {
+    fetchPayrollAttendanceExceptions,
+    PayrollAttendanceException,
+    PayrollAttendanceExceptionAction,
+    resolvePayrollAttendanceException,
+} from '../../services/payrollAttendanceService';
+import { formatEmployeeName } from '../../services/formatEmployeeName';
 import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
-import ExceptionsTable from '../../components/payroll/ExceptionsTable';
-import { supabase } from '../../services/supabaseClient';
-import { formatEmployeeName } from '../../services/formatEmployeeName';
+import Button from '../../components/ui/Button';
+import Modal from '../../components/ui/Modal';
+
+type ResolutionAction = 'resolve' | 'reject' | 'waive';
+
+const exceptionTypeLabel = (value: string) => value.replaceAll('_', ' ');
+
+const dateLabel = (value: string) => new Intl.DateTimeFormat('en-PH', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+}).format(new Date(`${value}T00:00:00+08:00`));
+
+const statusClasses = (status: string) => {
+    if (status === 'open' || status === 'reopened') return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300';
+    if (status === 'acknowledged') return 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300';
+    if (status === 'resolved') return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300';
+    if (status === 'waived') return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300';
+    return 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
+};
+
+const severityClasses = (severity: string) => {
+    if (severity === 'blocking') return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300';
+    if (severity === 'warning') return 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300';
+    return 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
+};
 
 const AttendanceExceptions: React.FC = () => {
-    const { user } = useAuth();
-    const { getVisibleEmployeeIds, can } = usePermissions();
+    const { can } = usePermissions();
     const canView = can('Exceptions', Permission.View);
     const canManage = can('Exceptions', Permission.Manage);
-    
-    const [exceptions, setExceptions] = useState<AttendanceExceptionRecord[]>([]);
-    const [employees, setEmployees] = useState<{ id: string; name: string; role: Role }[]>([]);
 
-    // Dynamic generation of exceptions based on current logs and schedule
-    useEffect(() => {
-        const load = async () => {
-            if (!canView) {
-                setExceptions([]);
-                return;
-            }
-            const [{ data: userData }, { data: eventsData }, { data: shiftsData }] = await Promise.all([
-                supabase.from('hris_users').select('id, full_name, role'),
-                supabase.from('time_events').select('*, hris_users:employee_id(full_name)').order('timestamp', { ascending: false }).limit(2000),
-                supabase.from('shift_assignments').select('*').order('date', { ascending: false }).limit(2000),
-            ]);
-
-            const visibleIds = getVisibleEmployeeIds();
-            const employeeMap = new Map(
-                (userData || []).map((u: any) => [
-                    u.id,
-                    { id: u.id, name: formatEmployeeName(u.full_name || 'Unknown'), role: u.role as Role },
-                ])
-            );
-            // Capture names from joined events if not present in hris_users
-            (eventsData || []).forEach((ev: any) => {
-                const joinedName = ev.hris_users?.full_name;
-                if (joinedName && (!employeeMap.has(ev.employee_id) || employeeMap.get(ev.employee_id)?.name === 'Unknown')) {
-                    employeeMap.set(ev.employee_id, { id: ev.employee_id, name: joinedName, role: Role.Employee });
-                }
-            });
-            setEmployees(Array.from(employeeMap.values()));
-
-            const filteredEvents = (eventsData || []).filter((e: any) => canManage || visibleIds.includes(e.employee_id));
-            const eventsByDay = new Map<string, any[]>();
-            filteredEvents.forEach((e: any) => {
-                const day = e.timestamp ? e.timestamp.slice(0, 10) : null;
-                if (!day) return;
-                const key = `${e.employee_id}|${day}`; // use pipe to avoid UUID hyphen collisions
-                if (!eventsByDay.has(key)) eventsByDay.set(key, []);
-                eventsByDay.get(key)!.push(e);
-            });
-
-            const shiftByEmpDay = new Map<string, any>();
-            (shiftsData || []).forEach((s: any) => {
-                const key = `${s.employee_id}-${s.date}`;
-                shiftByEmpDay.set(key, s);
-            });
-
-            const derived: AttendanceExceptionRecord[] = [];
-            eventsByDay.forEach((evs, key) => {
-                const [empId, day] = key.split('|');
-                const sorted = evs.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-                const firstIn = sorted.find(ev => (ev.type || '').toLowerCase().includes('in'));
-                const lastOut = [...sorted].reverse().find(ev => (ev.type || '').toLowerCase().includes('out'));
-                const dateObj = day ? new Date(`${day}T00:00:00`) : new Date();
-
-                const pushEx = (type: ExceptionType, details: string, sourceId: string) => {
-                    derived.push({
-                        id: `${empId}-${day}-${type}`,
-                        employeeId: empId,
-                        employeeName: employeeMap.get(empId)?.name || evs[0]?.hris_users?.full_name || empId,
-                        date: dateObj,
-                        type,
-                        details,
-                        status: 'Pending',
-                        sourceEventId: sourceId,
-                    });
-                };
-
-                if (!firstIn) pushEx(ExceptionType.MissingIn, 'No clock-in found for this day.', evs[0]?.id || '');
-                if (!lastOut) pushEx(ExceptionType.MissingOut, 'No clock-out found for this day.', evs[evs.length - 1]?.id || '');
-
-                const anyOutside = evs.some(ev => (ev.anomaly_tags || []).some((t: string) => t.toLowerCase().includes('outside')));
-                if (anyOutside) pushEx(ExceptionType.OutsideFence, 'Clock recorded outside geofence.', evs.find(ev => (ev.anomaly_tags || []).length)?.id || evs[0]?.id || '');
-
-                const doubleLog = sorted.filter(ev => (ev.type || '').toLowerCase().includes('in')).length > 1;
-                if (doubleLog) pushEx(ExceptionType.DoubleLog, 'Multiple clock-ins detected.', firstIn?.id || evs[0]?.id || '');
-
-                // Missing break/extended break detection skipped for now without break events
-            });
-
-            setExceptions(derived);
-        };
-        load();
-    }, [canView, canManage, getVisibleEmployeeIds]);
-
+    const [exceptions, setExceptions] = useState<PayrollAttendanceException[]>([]);
+    const [employees, setEmployees] = useState<User[]>([]);
+    const [isLoading, setIsLoading] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [message, setMessage] = useState<string | null>(null);
     const [filters, setFilters] = useState({
-        startDate: '',
-        endDate: '',
+        startDate: '2026-08-11',
+        endDate: '2026-08-25',
         employeeId: '',
         type: '',
-        status: 'Pending',
+        status: '',
     });
+    const [selectedException, setSelectedException] = useState<PayrollAttendanceException | null>(null);
+    const [pendingAction, setPendingAction] = useState<ResolutionAction | null>(null);
+    const [resolutionCode, setResolutionCode] = useState('corrected_punch');
+    const [resolutionNote, setResolutionNote] = useState('');
+    const [resolutionDocumentRef, setResolutionDocumentRef] = useState('');
 
-    const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        setFilters(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    const employeeMap = useMemo(
+        () => new Map(employees.map(employee => [employee.id, employee])),
+        [employees]
+    );
+
+    const load = useCallback(async () => {
+        if (!canView) return;
+        setIsLoading(true);
+        setError(null);
+        try {
+            const [exceptionRows, userRows] = await Promise.all([
+                fetchPayrollAttendanceExceptions(filters.startDate, filters.endDate),
+                fetchUsers(),
+            ]);
+            setExceptions(exceptionRows);
+            setEmployees(userRows);
+        } catch (err: any) {
+            setError(err.message || 'Failed to load normalized attendance exceptions.');
+        } finally {
+            setIsLoading(false);
+        }
+    }, [canView, filters.startDate, filters.endDate]);
+
+    useEffect(() => {
+        load();
+    }, [load]);
+
+    const filteredExceptions = useMemo(() => exceptions.filter(exception => {
+        if (filters.employeeId && exception.employeeId !== filters.employeeId) return false;
+        if (filters.type && exception.exceptionType !== filters.type) return false;
+        if (filters.status && exception.status !== filters.status) return false;
+        return true;
+    }), [exceptions, filters.employeeId, filters.status, filters.type]);
+
+    const resetModal = () => {
+        setSelectedException(null);
+        setPendingAction(null);
+        setResolutionCode('corrected_punch');
+        setResolutionNote('');
+        setResolutionDocumentRef('');
     };
 
-    const handleAcknowledge = (exceptionId: string) => {
-        setExceptions(prev => prev.map(ex => 
-            ex.id === exceptionId ? { ...ex, status: 'Acknowledged' } : ex
-        ));
+    const closeModal = () => {
+        if (isSaving) return;
+        resetModal();
     };
 
-    const filteredExceptions = useMemo(() => {
-        return exceptions.filter(ex => {
-            const exDate = new Date(ex.date);
-            if (filters.startDate && exDate < new Date(filters.startDate)) return false;
-            if (filters.endDate) {
-                const endOfDay = new Date(filters.endDate);
-                endOfDay.setHours(23, 59, 59, 999);
-                if (exDate > endOfDay) return false;
-            }
-            if (filters.employeeId && ex.employeeId !== filters.employeeId) return false;
-            if (filters.type && ex.type !== filters.type) return false;
-            if (filters.status && ex.status !== filters.status) return false;
-            return true;
-        }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [filters, exceptions]);
+    const executeAction = async (
+        exception: PayrollAttendanceException,
+        action: PayrollAttendanceExceptionAction,
+        details?: { code?: string; note?: string; documentRef?: string }
+    ) => {
+        setIsSaving(true);
+        setError(null);
+        setMessage(null);
+        try {
+            await resolvePayrollAttendanceException({
+                exceptionId: exception.id,
+                action,
+                resolutionCode: details?.code,
+                resolutionNote: details?.note,
+                resolutionDocumentRef: details?.documentRef,
+            });
+            await load();
+            setMessage(`Attendance exception ${action}d successfully. The action was recorded in the workflow history.`);
+            resetModal();
+        } catch (err: any) {
+            setError(err.message || `Failed to ${action} the attendance exception.`);
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleSimpleAction = (exception: PayrollAttendanceException, action: 'acknowledge' | 'reopen') => {
+        void executeAction(exception, action);
+    };
+
+    const openResolution = (exception: PayrollAttendanceException, action: ResolutionAction) => {
+        setSelectedException(exception);
+        setPendingAction(action);
+        setResolutionCode(action === 'waive' ? 'waived_after_review' : 'corrected_punch');
+        setResolutionNote('');
+        setResolutionDocumentRef('');
+    };
+
+    const submitResolution = () => {
+        if (!selectedException || !pendingAction) return;
+        void executeAction(selectedException, pendingAction, {
+            code: resolutionCode,
+            note: resolutionNote,
+            documentRef: resolutionDocumentRef,
+        });
+    };
 
     if (!canView) {
         return (
@@ -148,41 +171,159 @@ const AttendanceExceptions: React.FC = () => {
 
     return (
         <div className="space-y-6">
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Attendance Exceptions</h1>
-            <p className="text-gray-600 dark:text-gray-400">Review and resolve flagged attendance records to ensure payroll accuracy.</p>
+            <div>
+                <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Attendance Exceptions (Phase 1I)</h1>
+                <p className="mt-1 text-gray-600 dark:text-gray-400">
+                    Review server-interpreted attendance exceptions. Evidence and raw punches are read-only; workflow actions are recorded separately.
+                </p>
+            </div>
+
+            {error && (
+                <div className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-300">
+                    {error}
+                </div>
+            )}
+            {message && (
+                <div className="rounded-md border border-green-300 bg-green-50 px-4 py-3 text-green-700 dark:border-green-700 dark:bg-green-900/20 dark:text-green-300">
+                    {message}
+                </div>
+            )}
 
             <Card>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 p-4">
-                    <Input label="Start Date" type="date" name="startDate" value={filters.startDate} onChange={handleFilterChange} />
-                    <Input label="End Date" type="date" name="endDate" value={filters.endDate} onChange={handleFilterChange} />
+                <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-3 lg:grid-cols-5">
+                    <Input label="Start date" type="date" value={filters.startDate} onChange={e => setFilters(previous => ({ ...previous, startDate: e.target.value }))} />
+                    <Input label="End date" type="date" value={filters.endDate} onChange={e => setFilters(previous => ({ ...previous, endDate: e.target.value }))} />
                     <div>
-                        <label htmlFor="employeeId" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Employee</label>
-                        <select name="employeeId" id="employeeId" value={filters.employeeId} onChange={handleFilterChange} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                            <option value="">All</option>
-                            {employees.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                        <label htmlFor="exception-employee" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Employee</label>
+                        <select id="exception-employee" value={filters.employeeId} onChange={e => setFilters(previous => ({ ...previous, employeeId: e.target.value }))} className="mt-1 block w-full rounded-md border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white">
+                            <option value="">All employees</option>
+                            {employees.map(employee => <option key={employee.id} value={employee.id}>{formatEmployeeName(employee.name)}</option>)}
                         </select>
                     </div>
-                     <div>
-                        <label htmlFor="type" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
-                        <select name="type" id="type" value={filters.type} onChange={handleFilterChange} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                            <option value="">All</option>
-                            {Object.values(ExceptionType).map(t => <option key={t} value={t}>{t.replace(/([A-Z])/g, ' $1').trim()}</option>)}
+                    <div>
+                        <label htmlFor="exception-type" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
+                        <select id="exception-type" value={filters.type} onChange={e => setFilters(previous => ({ ...previous, type: e.target.value }))} className="mt-1 block w-full rounded-md border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white">
+                            <option value="">All types</option>
+                            {Array.from(new Set(exceptions.map(exception => exception.exceptionType))).map(type => <option key={type} value={type}>{exceptionTypeLabel(type)}</option>)}
                         </select>
                     </div>
-                     <div>
-                        <label htmlFor="status" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
-                        <select name="status" id="status" value={filters.status} onChange={handleFilterChange} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                            <option value="">All</option>
-                            <option value="Pending">Pending</option>
-                            <option value="Acknowledged">Acknowledged</option>
+                    <div>
+                        <label htmlFor="exception-status" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
+                        <select id="exception-status" value={filters.status} onChange={e => setFilters(previous => ({ ...previous, status: e.target.value }))} className="mt-1 block w-full rounded-md border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white">
+                            <option value="">All statuses</option>
+                            <option value="open">Open</option>
+                            <option value="acknowledged">Acknowledged</option>
+                            <option value="resolved">Resolved</option>
+                            <option value="rejected">Rejected</option>
+                            <option value="waived">Waived</option>
+                            <option value="reopened">Reopened</option>
                         </select>
                     </div>
                 </div>
             </Card>
 
             <Card>
-                <ExceptionsTable exceptions={filteredExceptions} onAcknowledge={handleAcknowledge} />
+                <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-700">
+                    <div>
+                        <h2 className="font-semibold text-gray-900 dark:text-white">Normalized exception queue</h2>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">{filteredExceptions.length} record(s) in the selected range.</p>
+                    </div>
+                    <Button size="sm" variant="secondary" onClick={() => void load()} isLoading={isLoading}>Refresh</Button>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead className="bg-gray-50 dark:bg-gray-700">
+                            <tr>
+                                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Employee / date</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Exception</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Evidence</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Status</th>
+                                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
+                            {filteredExceptions.map(exception => {
+                                const employee = employeeMap.get(exception.employeeId);
+                                const canResolve = canManage && ['open', 'acknowledged', 'reopened'].includes(exception.status);
+                                const canAcknowledge = canManage && ['open', 'reopened'].includes(exception.status);
+                                const canReopen = canManage && ['resolved', 'rejected', 'waived'].includes(exception.status);
+                                const canWaive = canManage && exception.status === 'resolved';
+                                return (
+                                    <tr key={exception.id}>
+                                        <td className="whitespace-nowrap px-4 py-4 text-sm">
+                                            <div className="font-medium text-gray-900 dark:text-white">{employee?.name || exception.employeeId}</div>
+                                            <div className="text-gray-500 dark:text-gray-400">{dateLabel(exception.workDate)}</div>
+                                        </td>
+                                        <td className="px-4 py-4 text-sm">
+                                            <div className="font-medium capitalize text-gray-900 dark:text-white">{exceptionTypeLabel(exception.exceptionType)}</div>
+                                            <span className={`mt-1 inline-flex rounded-full px-2 py-1 text-xs font-semibold capitalize ${severityClasses(exception.severity)}`}>{exception.severity}</span>
+                                        </td>
+                                        <td className="max-w-md px-4 py-4 text-sm text-gray-600 dark:text-gray-300">
+                                            <div>{exception.details}</div>
+                                            {exception.resolutionNote && <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">Resolution: {exception.resolutionNote}</div>}
+                                        </td>
+                                        <td className="whitespace-nowrap px-4 py-4 text-sm">
+                                            <span className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold capitalize ${statusClasses(exception.status)}`}>{exception.status}</span>
+                                        </td>
+                                        <td className="px-4 py-4 text-right text-sm">
+                                            <div className="flex flex-wrap justify-end gap-2">
+                                                {canAcknowledge && <Button size="sm" variant="secondary" onClick={() => handleSimpleAction(exception, 'acknowledge')} isLoading={isSaving}>Acknowledge</Button>}
+                                                {canResolve && <Button size="sm" onClick={() => openResolution(exception, 'resolve')}>Resolve</Button>}
+                                                {canResolve && <Button size="sm" variant="danger" onClick={() => openResolution(exception, 'reject')}>Reject</Button>}
+                                                {canWaive && <Button size="sm" variant="secondary" onClick={() => openResolution(exception, 'waive')}>Waive</Button>}
+                                                {canReopen && <Button size="sm" variant="secondary" onClick={() => handleSimpleAction(exception, 'reopen')} isLoading={isSaving}>Reopen</Button>}
+                                                {!canAcknowledge && !canResolve && !canWaive && !canReopen && <span className="text-xs text-gray-400">No action available</span>}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                            {filteredExceptions.length === 0 && (
+                                <tr>
+                                    <td colSpan={5} className="px-4 py-12 text-center text-gray-500 dark:text-gray-400">
+                                        {isLoading ? 'Loading normalized exceptions…' : 'No normalized exceptions match the selected filters.'}
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
             </Card>
+
+            <Modal
+                isOpen={Boolean(selectedException && pendingAction)}
+                onClose={closeModal}
+                title={`${pendingAction ? pendingAction[0].toUpperCase() + pendingAction.slice(1) : ''} attendance exception`}
+                footer={(
+                    <div className="flex justify-end gap-3">
+                        <Button variant="secondary" onClick={closeModal} disabled={isSaving}>Cancel</Button>
+                        <Button onClick={submitResolution} isLoading={isSaving} disabled={!resolutionNote.trim()}>
+                            {pendingAction === 'waive' ? 'Submit waiver' : pendingAction === 'reject' ? 'Reject exception' : 'Resolve exception'}
+                        </Button>
+                    </div>
+                )}
+            >
+                <p className="text-sm text-gray-600 dark:text-gray-300">
+                    {selectedException && `${exceptionTypeLabel(selectedException.exceptionType)} for ${employeeMap.get(selectedException.employeeId)?.name || selectedException.employeeId} on ${dateLabel(selectedException.workDate)}.`}
+                </p>
+                <div>
+                    <label htmlFor="resolution-code" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Resolution code</label>
+                    <select id="resolution-code" value={resolutionCode} onChange={e => setResolutionCode(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white">
+                        <option value="corrected_punch">Corrected punch</option>
+                        <option value="approved_leave">Approved leave</option>
+                        <option value="approved_schedule_change">Approved schedule change</option>
+                        <option value="approved_wfh">Approved work from home</option>
+                        <option value="unpaid_absence">Unpaid absence</option>
+                        <option value="other">Other</option>
+                        {pendingAction === 'waive' && <option value="waived_after_review">Waived after review</option>}
+                    </select>
+                </div>
+                <div>
+                    <label htmlFor="resolution-note" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Required note</label>
+                    <textarea id="resolution-note" value={resolutionNote} onChange={e => setResolutionNote(e.target.value)} rows={4} placeholder="Explain the evidence and decision." className="mt-1 block w-full rounded-md border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white" />
+                </div>
+                <Input label="Supporting document reference (optional)" value={resolutionDocumentRef} onChange={e => setResolutionDocumentRef(e.target.value)} placeholder="Document or approval reference" />
+            </Modal>
         </div>
     );
 };

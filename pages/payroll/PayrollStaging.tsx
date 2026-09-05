@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { PayrollStagingRecord, Role, PayslipRecord, Permission, RateType, User, BusinessUnit } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -370,9 +371,14 @@ const PayrollStaging: React.FC = () => {
                         The 10 synthetic payroll employees have schedules and punches only for Aug 11–25, 2026. They are staging data and do not represent real employees.
                     </p>
                 </div>
-                <Button type="button" size="sm" variant="secondary" onClick={loadStagingFixture} disabled={isLoading || isInterpreting}>
-                    {isFixturePeriod ? 'Fixture period loaded' : 'Load Aug 11–25 fixture'}
-                </Button>
+                <div className="flex flex-wrap items-center gap-3">
+                    <Link to="/payroll/exceptions" className="text-sm font-semibold text-violet-700 underline underline-offset-2 hover:text-violet-900 dark:text-violet-200 dark:hover:text-white">
+                        Review attendance exceptions
+                    </Link>
+                    <Button type="button" size="sm" variant="secondary" onClick={loadStagingFixture} disabled={isLoading || isInterpreting}>
+                        {isFixturePeriod ? 'Fixture period loaded' : 'Load Aug 11–25 fixture'}
+                    </Button>
+                </div>
             </div>
 
             {fixtureRangeIsOutsideSelection && !isLoading && (
