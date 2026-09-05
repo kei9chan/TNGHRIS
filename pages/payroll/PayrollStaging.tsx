@@ -5,6 +5,14 @@ import { usePermissions } from '../../hooks/usePermissions';
 import { logActivity } from '../../services/auditService';
 import { fetchUsers, fetchBusinessUnits } from '../../services/userService';
 import { fetchAttendanceRecords } from '../../services/timekeepingService';
+import {
+    fetchPayrollAttendanceExceptions,
+    fetchPayrollAttendanceInterpretations,
+    runPayrollAttendanceInterpretations,
+    PayrollAttendanceException,
+    PayrollAttendanceInterpretation,
+    PayrollAttendanceRunSummary,
+} from '../../services/payrollAttendanceService';
 import { savePayslip } from '../../services/payrollService';
 import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
@@ -15,6 +23,23 @@ const LockOpenIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-
 const PencilIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L15.232 5.232z" /></svg>;
 const CheckIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>;
 const XIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>;
+
+const formatAttendanceTime = (value: string | null): string => {
+    if (!value) return '—';
+    return new Intl.DateTimeFormat('en-PH', {
+        timeZone: 'Asia/Manila',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+    }).format(new Date(value));
+};
+
+const attendanceStatusClasses = (status: string): string => {
+    if (status === 'present') return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300';
+    if (status === 'absent') return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300';
+    if (status === 'partial') return 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300';
+    return 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
+};
 
 // Extended type to include hourly rate for display
 interface ExtendedPayrollStagingRecord extends PayrollStagingRecord {
@@ -36,12 +61,16 @@ const PayrollStaging: React.FC = () => {
     const [editData, setEditData] = useState<Partial<PayrollStagingRecord>>({});
     const [payslipsGenerated, setPayslipsGenerated] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+    const [isInterpreting, setIsInterpreting] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     // Live data state
     const [allUsers, setAllUsers] = useState<User[]>([]);
     const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
+    const [attendanceInterpretations, setAttendanceInterpretations] = useState<PayrollAttendanceInterpretation[]>([]);
+    const [attendanceExceptions, setAttendanceExceptions] = useState<PayrollAttendanceException[]>([]);
+    const [attendanceRunSummary, setAttendanceRunSummary] = useState<PayrollAttendanceRunSummary | null>(null);
 
     const canManage = can('PayrollStaging', Permission.Manage);
     const canEdit = can('PayrollStaging', Permission.Edit);
@@ -50,6 +79,22 @@ const PayrollStaging: React.FC = () => {
         () => getAccessibleBusinessUnits(businessUnits),
         [getAccessibleBusinessUnits, businessUnits]
     );
+
+    const usersById = useMemo(
+        () => new Map(allUsers.map(employee => [employee.id, employee])),
+        [allUsers]
+    );
+
+    const exceptionsByInterpretation = useMemo(() => {
+        const grouped = new Map<string, PayrollAttendanceException[]>();
+        attendanceExceptions.forEach(exception => {
+            if (!exception.attendanceInterpretationId) return;
+            const existing = grouped.get(exception.attendanceInterpretationId) || [];
+            existing.push(exception);
+            grouped.set(exception.attendanceInterpretationId, existing);
+        });
+        return grouped;
+    }, [attendanceExceptions]);
 
     // Load users and BUs on mount
     useEffect(() => {
@@ -83,17 +128,40 @@ const PayrollStaging: React.FC = () => {
                 accessibleBuNames.has(u.businessUnit)
             );
 
-            const attendanceRecords = await fetchAttendanceRecords();
+            // Phase 1H is the source for normalized attendance when results
+            // exist. The legacy table remains a compatibility fallback for
+            // employees not yet on the new schedule/interpretation model.
+            const [normalizedAttendance, normalizedExceptions] = await Promise.all([
+                fetchPayrollAttendanceInterpretations(startDate, endDate),
+                fetchPayrollAttendanceExceptions(startDate, endDate),
+            ]);
+            setAttendanceInterpretations(normalizedAttendance);
+            setAttendanceExceptions(normalizedExceptions);
+
+            const attendanceRecords = normalizedAttendance.length === 0
+                ? await fetchAttendanceRecords()
+                : [];
+            const interpretationsByEmployee = new Map<string, PayrollAttendanceInterpretation[]>();
+            normalizedAttendance.forEach(record => {
+                const existing = interpretationsByEmployee.get(record.employeeId) || [];
+                existing.push(record);
+                interpretationsByEmployee.set(record.employeeId, existing);
+            });
 
             const data: ExtendedPayrollStagingRecord[] = relevantUsers.map(employee => {
+                const interpretedAttendance = interpretationsByEmployee.get(employee.id) || [];
                 const attendance = attendanceRecords.filter(r =>
                     r.employeeId === employee.id &&
                     new Date(r.date) >= start &&
                     new Date(r.date) <= end
                 );
 
-                // PHASE 4A: Base Salary Engine (Regular Hours Only)
-                const regularHours = attendance.reduce((sum, r) => sum + ((r as any).totalWorkMinutes || ((r as any).hoursWorked || 0) * 60), 0) / 60;
+                // Phase 1H: use server-interpreted paid work minutes. The
+                // legacy browser calculation is used only when no normalized
+                // interpretation exists for that employee.
+                const regularHours = interpretedAttendance.length > 0
+                    ? interpretedAttendance.reduce((sum, r) => sum + r.actualWorkMinutes, 0) / 60
+                    : attendance.reduce((sum, r) => sum + ((r as any).totalWorkMinutes || ((r as any).hoursWorked || 0) * 60), 0) / 60;
 
                 // Derive Hourly Rate based on Employee Rate Type
                 let hourlyRate = 0;
@@ -131,6 +199,25 @@ const PayrollStaging: React.FC = () => {
             setError(err.message || 'Failed to generate payroll data.');
         }
     }, [startDate, endDate, accessibleBus, allUsers]);
+
+    const handleRecalculate = useCallback(async () => {
+        if (!canManage) return;
+        setIsInterpreting(true);
+        setError(null);
+        try {
+            const summary = await runPayrollAttendanceInterpretations({
+                startDate,
+                endDate,
+                requestKey: `payroll-staging-${startDate}-${endDate}-${Date.now()}`,
+            });
+            setAttendanceRunSummary(summary);
+            await generatePayrollData();
+        } catch (err: any) {
+            setError(err.message || 'Failed to interpret attendance.');
+        } finally {
+            setIsInterpreting(false);
+        }
+    }, [canManage, startDate, endDate, generatePayrollData]);
 
     useEffect(() => {
         if (!isLoading && allUsers.length >= 0) {
@@ -219,9 +306,9 @@ const PayrollStaging: React.FC = () => {
         <div className="space-y-6">
              <div className="flex justify-between items-center">
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Payroll Staging (Phase 4A)</h1>
+                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Payroll Staging (Phase 1H)</h1>
                     <p className="text-gray-600 dark:text-gray-400 mt-1">
-                        Base Salary Engine: Regular Hours x Hourly Rate.
+                        Server-interpreted attendance feeds the staging preview. Payroll tax, premium, and statutory calculations are not active yet.
                     </p>
                 </div>
             </div>
@@ -236,7 +323,9 @@ const PayrollStaging: React.FC = () => {
                  <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-5 gap-4 p-4 items-end">
                     <Input label="Pay Period Start" type="date" name="startDate" value={startDate} onChange={e => setStartDate(e.target.value)} />
                     <Input label="Pay Period End" type="date" name="endDate" value={endDate} onChange={e => setEndDate(e.target.value)} />
-                    <Button onClick={generatePayrollData} className="w-full" disabled={isLoading}>Recalculate</Button>
+                    <Button onClick={handleRecalculate} className="w-full" disabled={isLoading || isInterpreting || !canManage}>
+                        {isInterpreting ? 'Interpreting...' : 'Interpret attendance'}
+                    </Button>
                      {canManage && (
                         <div className="flex items-center justify-center">
                             <label htmlFor="lock-toggle" className="flex items-center cursor-pointer">
@@ -252,12 +341,87 @@ const PayrollStaging: React.FC = () => {
                         </div>
                     )}
                     {isLocked && canManage && (
-                        <Button onClick={handleGeneratePayslips} disabled={payslipsGenerated || isSaving} className="w-full">
-                            {isSaving ? 'Saving...' : payslipsGenerated ? 'Payslips Generated' : 'Generate Payslips'}
-                        </Button>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 text-center">
+                            Payslip generation is disabled until the approved gross-to-net engine is implemented.
+                        </div>
                     )}
                 </div>
             </Card>
+
+            {attendanceRunSummary && (
+                <div className="rounded-md border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-200">
+                    Attendance interpretation completed: {attendanceRunSummary.interpretations_created ?? 0} created, {attendanceRunSummary.existing_interpretations_skipped ?? 0} already present, {attendanceRunSummary.no_show_count ?? 0} no-show, and {attendanceRunSummary.exceptions_created ?? 0} review exception(s).
+                </div>
+            )}
+
+            {attendanceInterpretations.length > 0 && (
+                <Card>
+                    <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Attendance interpretation review</h2>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                            Source events remain preserved. Review exceptions before any future payroll calculation is allowed to use these results.
+                        </p>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                            <thead className="bg-gray-50 dark:bg-gray-700">
+                                <tr>
+                                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Employee / Date</th>
+                                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Clock window</th>
+                                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Scheduled / Actual</th>
+                                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Late / Undertime</th>
+                                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
+                                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Review flags</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                {attendanceInterpretations.map(record => {
+                                    const employee = usersById.get(record.employeeId);
+                                    const flags = exceptionsByInterpretation.get(record.id) || [];
+                                    return (
+                                        <tr key={record.id}>
+                                            <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                                <div className="font-medium text-gray-900 dark:text-white">{employee?.name || record.employeeId}</div>
+                                                <div className="text-gray-500 dark:text-gray-400">{record.workDate}</div>
+                                            </td>
+                                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
+                                                {formatAttendanceTime(record.firstClockInAt)} – {formatAttendanceTime(record.lastClockOutAt)}
+                                            </td>
+                                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
+                                                {(record.scheduledWorkMinutes / 60).toFixed(2)}h / {(record.actualWorkMinutes / 60).toFixed(2)}h
+                                            </td>
+                                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
+                                                {record.lateMinutes}m / {record.undertimeMinutes}m
+                                            </td>
+                                            <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                                <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${attendanceStatusClasses(record.absenceStatus)}`}>
+                                                    {record.absenceStatus}
+                                                </span>
+                                                {(record.missingClockIn || record.missingClockOut) && (
+                                                    <div className="mt-1 text-xs text-red-600 dark:text-red-300">missing punch</div>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
+                                                {flags.length > 0 ? (
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {flags.map(flag => (
+                                                            <span key={flag.id} title={flag.details} className={`rounded px-2 py-1 text-xs ${flag.severity === 'blocking' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'}`}>
+                                                                {flag.exceptionType.replaceAll('_', ' ')}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-gray-400">None</span>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </Card>
+            )}
 
              <Card>
                 <div className="overflow-x-auto relative">
