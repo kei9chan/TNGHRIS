@@ -1,4 +1,4 @@
-# TNG HRIS Payroll Modernization — Phase 0 and Phase 1A
+# TNG HRIS Payroll Modernization — Phase 0, Phase 1A, and Phase 1B
 
 **Assessment date:** 2026-09-04
 
@@ -25,6 +25,7 @@ The immediate objective is therefore containment and source-of-truth recovery—
 | Production/repository migration name comparison | [MIGRATION-DRIFT-APPENDIX.md](./MIGRATION-DRIFT-APPENDIX.md) | Name-level triage complete; content-level crosswalk remains a prerequisite |
 | Baseline payroll and reconciliation design | [BASELINE-RECONCILIATION.md](./BASELINE-RECONCILIATION.md) | Baseline workbooks received; employee and control-total reconciliation pending |
 | Phase 1A payroll period foundation | [PHASE-1A-PAYROLL-PERIOD-FOUNDATION.md](./PHASE-1A-PAYROLL-PERIOD-FOUNDATION.md) | Applied to `payroll-staging` only; no rows seeded |
+| Phase 1B effective-dated worker/classification foundation | [PHASE-1B-WORKER-ASSIGNMENTS.md](./PHASE-1B-WORKER-ASSIGNMENTS.md) | Applied to `payroll-staging` only; catalogs and assignments remain empty |
 
 ## Stop-ship findings
 
@@ -49,6 +50,7 @@ Do not begin production payroll DDL, authoritative payroll behavior, or calculat
 - Prototype payroll generation, configuration save, final-pay approval, biometric import, and government-file generation are disabled or visibly marked non-production.
 - A non-production Supabase branch or isolated project is available for migration rehearsal and anonymized reconciliation.
 - The calculation acceptance suite and maker-checker authority matrix are approved.
+- The worker-classification, legal-engagement, employment-status, and pay-basis vocabularies are approved before any employee crosswalk is loaded.
 
 ## Source authorities consulted
 
