@@ -2,7 +2,11 @@
 
 ## 1. Baseline status
 
-**Authoritative payroll baseline: BLOCKED — not present in Supabase and not supplied with the repository.**
+**Baseline package: RECEIVED — not yet formally reconciled or approved by Finance.**
+
+The supplied baseline consists of an approved/closed Payroll Register workbook and its supporting attendance/DTR workbook for the 2026-08-11 through 2026-08-25 cutoff, with a 2026-09-05 payout date. The files remain controlled evidence outside Git. The employee-level, attendance-to-payroll, and control-total tie-out is still pending.
+
+Initial read-only validation found broken references in some auxiliary PR tabs, mixed/legacy date labels, and a journal-entry view requiring tie-out to the PR summary. These are baseline-quality findings to resolve or document; they are not values to silently copy into the new payroll engine.
 
 This is a Phase 0 evidence finding, not a failure to calculate. The live database has zero raw time events, zero interpreted attendance records, and no payroll run/payslip/result tables. Running the prototype would produce an incomplete browser calculation and would not be a valid baseline.
 

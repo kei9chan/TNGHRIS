@@ -1,4 +1,4 @@
-# TNG HRIS Payroll Modernization — Phase 0
+# TNG HRIS Payroll Modernization — Phase 0 and Phase 1A
 
 **Assessment date:** 2026-09-04
 
@@ -7,7 +7,7 @@
 **Database assessed:** connected production Supabase project, read-only inspection
 **Decision:** **NO-GO for production payroll processing**
 
-This directory contains discovery and control-design deliverables only. Phase 0 did not add a table, apply a migration, alter production data, change an RLS policy, or change payroll behavior.
+This directory contains the discovery, control-design, and staging-only foundation work. Production payroll behavior remains unchanged and the existing payroll prototype remains **NO-GO** for production use.
 
 ## Executive outcome
 
@@ -23,7 +23,8 @@ The immediate objective is therefore containment and source-of-truth recovery—
 | Effective-dated policy and rule register | [POLICY-REGISTER.md](./POLICY-REGISTER.md) | Draft register created; business decisions remain unapproved |
 | Migration, rollback, feature-flag, parallel-run, and implementation sequence | [MIGRATION-AND-ROLLBACK-PLAN.md](./MIGRATION-AND-ROLLBACK-PLAN.md) | Plan only; no migration executed |
 | Production/repository migration name comparison | [MIGRATION-DRIFT-APPENDIX.md](./MIGRATION-DRIFT-APPENDIX.md) | Name-level triage complete; content-level crosswalk remains a prerequisite |
-| Baseline payroll and reconciliation design | [BASELINE-RECONCILIATION.md](./BASELINE-RECONCILIATION.md) | Technical snapshot complete; authoritative closed-payroll baseline blocked pending Finance source files |
+| Baseline payroll and reconciliation design | [BASELINE-RECONCILIATION.md](./BASELINE-RECONCILIATION.md) | Baseline workbooks received; employee and control-total reconciliation pending |
+| Phase 1A payroll period foundation | [PHASE-1A-PAYROLL-PERIOD-FOUNDATION.md](./PHASE-1A-PAYROLL-PERIOD-FOUNDATION.md) | Applied to `payroll-staging` only; no rows seeded |
 
 ## Stop-ship findings
 
@@ -40,10 +41,10 @@ The immediate objective is therefore containment and source-of-truth recovery—
 
 ## Required authorization gates
 
-Do not begin payroll DDL or calculation work until all of the following are signed off:
+Do not begin production payroll DDL, authoritative payroll behavior, or calculation work until all of the following are signed off:
 
 - HR, Finance, Legal/Compliance, Data Protection, and IT Security approve the policy decisions in the register.
-- Finance supplies a formally approved closed-payroll baseline and its source extracts.
+- Finance approves the supplied closed-payroll baseline and its source extracts.
 - Production migration drift is reconciled into a reproducible schema-only baseline.
 - Prototype payroll generation, configuration save, final-pay approval, biometric import, and government-file generation are disabled or visibly marked non-production.
 - A non-production Supabase branch or isolated project is available for migration rehearsal and anonymized reconciliation.
