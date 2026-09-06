@@ -2,4 +2,4 @@
 // These prototype components must not mount before the payroll engine is ready.
 export const isStaffPayrollRoute = (path: string) =>
   /^\/payroll\/(payroll-prep|staging|payslips|government-reports|report-templates|final-pay|configuration)(\/|$)/.test(path);
-export const isPayrollAccessRoute = (path: string) => ['/payroll/access', '/payroll/pay-packages', '/payroll/attendance-readiness', '/payroll/gross-pay'].includes(path);
+export const isPayrollAccessRoute = (path: string) => ['/payroll/access', '/payroll/pay-packages', '/payroll/attendance-readiness', '/payroll/gross-pay', '/payroll/net-pay'].includes(path);
