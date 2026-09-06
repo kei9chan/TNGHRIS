@@ -1,0 +1,13 @@
+import React,{useEffect,useState} from 'react';
+import Card from '../../components/ui/Card';
+import Button from '../../components/ui/Button';
+import {useAuth} from '../../hooks/useAuth';
+import {listMyPayslips,getMyPayslip} from './approvals';
+import type {Payslip} from './approvals';
+export default function MyPayslipsPage(){
+ const {user}=useAuth();const [list,setList]=useState<Awaited<ReturnType<typeof listMyPayslips>>>([]);const [slip,setSlip]=useState<Payslip|null>(null);const [error,setError]=useState('');const [busy,setBusy]=useState(false);
+ useEffect(()=>{let active=true;setList([]);setSlip(null);setError('');void listMyPayslips().then(d=>{if(active)setList(d);}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[user?.id]);
+ async function open(id:string){setBusy(true);setSlip(null);setError('');try{setSlip(await getMyPayslip(id));}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+ return <div className="space-y-6"><h1 className="text-3xl font-bold">My Payslips</h1><p>Only your payslips released after confirmed payment appear here.</p>{error&&<p role="alert" className="text-red-700">{error}</p>}<Card title="Released payslips">{list.length===0?<p>No released payslips yet.</p>:list.map(s=><div key={s.id} className="flex flex-wrap items-center justify-between gap-3 border-b py-3"><p>{s.from}–{s.to} · PHP {s.net}</p><Button variant="secondary" disabled={busy} onClick={()=>void open(s.id)}>View payslip</Button></div>)}</Card>
+ {slip&&<Card title={`Payslip · ${slip.employeeName}`}><p>{slip.from}–{slip.to} · Paid {slip.payDate}</p><div className="my-4 grid gap-4 sm:grid-cols-3">{[['Gross',slip.gross],['Deductions',slip.deductions],['Take-home pay',slip.net]].map(([label,value])=><div key={label}><p>{label}</p><strong>PHP {value}</strong></div>)}</div><h2 className="font-semibold">Earnings</h2>{slip.lines?.map((l,i)=><p key={i} className="flex justify-between gap-3 py-1"><span>{l.label}</span><span>PHP {l.amount}</span></p>)}<h2 className="mt-4 font-semibold">Employee deductions</h2>{slip.contributions?.filter(c=>c.label.endsWith('EE')).map(c=><p key={c.label} className="flex justify-between py-1"><span>{c.label}</span><span>PHP {c.amount}</span></p>)}<p className="flex justify-between py-1"><span>Withholding tax</span><span>PHP {slip.tax}</span></p>{slip.loans?.map(l=><p key={l.account} className="flex justify-between py-1"><span>Loan · {l.account}</span><span>PHP {l.amount}</span></p>)}{slip.otherDeductions?.map((d,i)=><p key={i} className="flex justify-between py-1"><span>{d.label}</span><span>PHP {d.amount}</span></p>)}<p className="mt-4 border-t pt-3">Questions or corrections: {slip.contact}</p></Card>}</div>;
+}

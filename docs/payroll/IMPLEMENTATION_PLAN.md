@@ -381,7 +381,8 @@ not automatic proof that every future cutoff is ready.
 | 4 — Gross pay | Implemented; staff walkthrough pending real inputs | Waiting for approved methods/rates and checked comparisons |
 | 5 — Take-home pay | Implemented; staff walkthrough pending real inputs | Waiting for Finance-reviewed batch workbook, opening balances, contribution allocation and checked comparisons |
 | 6 — Special pay / corrections | Implemented; staff walkthrough pending real inputs | Waiting for three reviewed examples, earlier settlements and independent Finance comparisons |
-| 7–9 | Not started | Not started |
+| 7 — Approvals / private payslips | Implemented; staff walkthrough pending real inputs | Waiting for eligible assignees and one complete shadow approval walkthrough |
+| 8–9 | Not started | Not started |
 
 The server prepares a BU batch only from the latest current HR-submitted complete
 cutoff. It uses existing dated employee pay packages and existing calendar records;
@@ -448,7 +449,6 @@ fix. Frontend rollback target is Phase 3 main `2f7f9a0`, production deployment
 
 ## Remaining phases (not implemented here)
 
-7. Ordered approvals and private released payslips.
 8. Payment/reporting outputs and recorded payment outcomes.
 9. Reconciled activation for the approved employee groups.
 
@@ -678,3 +678,150 @@ references. Build, arithmetic and access checks passed. Real staff preparation/r
 remains pending actual duty assignments and records. No team completion or live
 processing is enabled by publication. Verify the production deployment reaches READY
 before reporting this release live.
+
+
+## Phase 7 — Ordered approvals and private payslips (2026-09-06)
+
+Delivery: **Payroll Approvals**, `/payroll/approvals`, linked from saved Take-home
+Pay / Special Pay versions. A dashboard notice identifies actionable payroll
+approvals using current scope/roles. **My Payslips**, `/payroll/payslips`, is available
+from the dashboard and payroll navigation without assigning staff payroll duties.
+The employee endpoint returns only that account's released payslips.
+
+Regular submission requires current net pay and the existing complete timekeeping
+version submitted by HR. Special-pay submission requires the current independent
+Finance check. Finance submits the exact saved version with a reference and an
+employee correction contact. The fixed approval sequence is HR validation, HR
+endorsement, HR Manager authorization, independent Finance authorization, BOD A,
+BOD B. Both the scoped payroll duty and the actual existing HR/Finance/BOD role are
+required; another department's grant cannot substitute for the stage. BOD A and B
+must be different employee identities. Stage rows and source versions are immutable.
+
+Preparers, submitters and material PR editors (gross/net creators and net-input
+reviewers) cannot approve that version. Special-pay payees cannot approve their own
+case. Ordinary batch payees retain Phase 5's independent own-row review; this does
+not make a batch preparer eligible to approve the batch. Finance must provide an
+eligible authorizer independent of preparation and material inputs. This may require
+another existing Finance user; the implementation never grants or changes roles.
+
+Return for revision ends that workflow. A changed source needs a new payroll version
+and a fresh sequence. Opening or acting on a run rechecks its sources and current
+access; changed timekeeping/other sources invalidate its actionable approval state,
+including previously recorded BOD decisions. Historical actions remain visible.
+An advisory transaction lock serializes actions, the submitted expected step rejects
+stale requests, and database uniqueness prevents repeated stages and the same BOD
+occupying both final approval positions. Only the second final approval yields
+Approved / Locked; shadow mode is always labeled and cannot become a paid version.
+
+### Payment boundary and private release
+
+The full-payment receipt function requires a live workflow, the existing live
+release gate, a current fully approved version, independent scoped Finance release,
+a source-supported actual date on/after the reviewed payday, and the exact approved
+net amount. There is no automatic bank transfer. One logical regular-pay entitlement
+can have only one confirmed receipt; retries must match the identical receipt.
+
+In that same transaction, authorized loan debits are recorded once per actual
+receipt/employee/account against the immutable opening snapshot. Existing loan
+reconciliation locks are reused and current actual debits must match the approved
+projected starting balance. Opening records are never rewritten. A mismatch blocks
+release. Private payslips are created only after that confirmed receipt and include
+earnings, employee deductions, net and a correction contact. No public storage URL
+or employee-wide payslip listing is exposed. Historical released payslips remain
+immutable after subsequent source changes.
+
+All nine scopes remain off and the existing off/shadow constraint still prohibits
+live activation. Shadow approvals can neither record payment nor post loans nor
+release employee payslips. Partial/failed/returned/reissued payments, explicit
+accounting reversals and special-pay cross-case settlement require Phase 8;
+special-pay disbursement is explicitly blocked here. Phase 9 must create/reconcile
+actual live versions, not promote prior shadow approvals into payment authority.
+No later-phase bank files, reports, payment outcomes or activation were implemented.
+
+### Payroll identity dependency correction
+
+Read-only production inspection found all 150 linked accounts have different Auth
+IDs and HRIS employee IDs. Seven Phase 5/6 callers incorrectly used the Auth ID for
+employee audit foreign keys or own-pay comparisons. This prevented intended saves
+and weakened own-pay checks. This migration changes only those new payroll callers
+to use `current_hris_user_id()` where an employee ID is required. It preserves
+`payroll_actor_id()` for active-login/access authorization, all shared roles, RLS,
+login/bootstrap functions and earlier auth-ID-based time/gross audit writers.
+There were zero Phase 5/6 run records to repair. No employee identity was rewritten.
+
+### Validation and team checklist
+
+Applied migration: `20260906062342_payroll_approval_phase7`. An initial attempt
+rolled back on a quoting error; only the successful ledger version is authoritative.
+The local CLI-created filename was aligned to that version. The previously verified
+physical backup in this release session is 2026-09-05 16:54:58 UTC; no restore ran.
+
+Build and existing dashboard-auth/RBAC/direct-manager checks passed. TypeScript has
+the same 15 unrelated baseline errors and no new payroll/dashboard errors. Tests
+use the installed pure stage guard and temporary copies of approval constraints:
+ordered steps, out-of-order BOD attempt, stale repeated click, denied actor/state,
+final-stage closure, same-BOD uniqueness and duplicate-stage uniqueness. Temporary
+rows roll back and reference no real employee or grant. Read-only tests check the
+actual distinct Auth/employee mapping, management-only denial, unknown/foreign
+payslip denial, payment denial, RLS, and anonymous/private execution restrictions.
+
+The five new tables are RPC-only, with RLS and no raw client grants. Security notices
+for intentional guarded SECURITY DEFINER endpoints and RLS-without-raw-policies were
+reviewed using [RPC execution guidance](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable)
+and [RLS guidance](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy).
+Pre/post hashes of existing roles, user roles, RLS policies and salary/end-date
+records match. There are zero new workflow, payment, loan-posting or payslip records.
+
+The actual multi-user staff flow, simultaneous BOD sessions, positive disbursement
+retry/loan posting, two employees reading real private releases and revision of real
+submitted inputs are NOT claimed verified. They need real approved duty assignments,
+source records and the corresponding activation/payment prerequisites. Constraint
+and access tests do not replace this operational acceptance gate.
+
+Your team's Phase 7 tasks:
+1. Confirm and assign the real HR reviewer/endorser, HR Manager, independent Finance
+   authorizer and two distinct BODs, preserving their existing HRIS roles. Resolve
+   any preparer/material-editor conflict before submitting the PR.
+2. Use one complete real cutoff in shadow. Submit from the saved net version; each
+   assignee opens Payroll Approvals (actionable items also appear on the dashboard).
+   Follow the six steps; verify BOD A leaves 1/2 and BOD B completes 2/2. Payment
+   must remain blocked in shadow. Try an out-of-order action and repeated BOD click.
+3. Return another version, make the authorized source correction, rebuild it and
+   verify approvals start again. Test concurrent BOD actions with the real accounts.
+4. Record comparison references and actual task completion in the maintained
+   checklist. Keep the payment/private-release acceptance tasks pending Phase 8/9
+   prerequisites. Do not create fake employees, live test grants or fake receipts.
+
+Release the reviewed source through main's required PR; verify production READY
+before calling it live. Prior compatible frontend: Phase 6 main `5322566`.
+Recovery keeps scopes off and immutable history intact and uses a forward fix;
+a frontend rollback does not undo the database additions or identity correction.
+
+
+### Phase 7 release-duty read access — approved and applied
+
+User explicitly approved both Phase 7 public publication/deployment and the scoped
+Finance release-read extension on 2026-09-06, after automatic approval review had
+blocked these actions. Applied migration: `20260906063928_payroll_release_scope_read`.
+The earlier reviewed proposal is retained under `docs/payroll/proposals/` for history;
+the matching file under `supabase/migrations/` is the authoritative applied version.
+
+An explicitly scoped **Release and disburse** grantee can read the corresponding
+payroll/source freshness information only with an active existing **Finance Staff**
+role, existing HRIS salary-view and Timekeeping-view permissions, and existing
+employee/BU scope access. This changes no HRIS roles, existing sensitive permission
+assignments, payroll duty assignments or processing modes. It includes intentional
+organization-level grants, subject to those same restrictions.
+
+Post-application inspection verified both guarded function definitions, zero active
+release grants, zero approval runs and zero payments. Actual operational acceptance
+remains pending the team's assignees and real inputs. All scopes remain off.
+
+### Phase 7 publication
+
+The user approved publishing the prepared Phase 7 source, applied migrations, tests
+and documentation to public `kei9chan/TNGHRIS` on `main` and deploying production.
+The software checklist marks Phases 1–7 implemented; team readiness remains separate
+and requires actual completion evidence. The release uses main's required PR and
+the existing Vercel production integration. Verify the merged commit is READY before
+reporting the deployment complete. Phase 8/9 work and live activation are deferred.

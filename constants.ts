@@ -97,6 +97,7 @@ export const NAV_LINKS: NavLink[] = [
             { name: 'Payroll Access', path: '/payroll/access', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
             { name: 'Pay Packages', path: '/payroll/pay-packages', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
             { name: 'Gross Pay Review', path: '/payroll/gross-pay', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
+            { name: 'Payroll Approvals', path: '/payroll/approvals', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
             { name: 'Take-home Pay Review', path: '/payroll/net-pay', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
             { name: 'Attendance Readiness', path: '/payroll/attendance-readiness', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
             { name: 'Timekeeping', path: '/payroll/timekeeping', requiredPermission: { resource: 'Timekeeping', permission: Permission.View } },
@@ -112,7 +113,7 @@ export const NAV_LINKS: NavLink[] = [
             { name: 'Exceptions', path: '/payroll/exceptions', requiredPermission: { resource: 'Exceptions', permission: Permission.View } },
             { name: 'Payroll Prep', path: '/payroll/payroll-prep', requiredPermission: { resource: 'PayrollPrep', permission: Permission.View } },
             { name: 'Payroll Staging', path: '/payroll/staging', requiredPermission: { resource: 'PayrollStaging', permission: Permission.View } },
-            // { name: 'Payslips', path: '/payroll/payslips', requiredPermission: { resource: 'Payslips', permission: Permission.View } }, // TEMPORARILY DISABLED
+            { name: 'Payslips', path: '/payroll/payslips', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
             { name: 'Government Reports', path: '/payroll/government-reports', requiredPermission: { resource: 'GovernmentReports', permission: Permission.View } },
             { name: 'Report Templates', path: '/payroll/report-templates', requiredPermission: { resource: 'ReportTemplates', permission: Permission.View } },
             { name: 'Loan Application System', path: '/payroll/loans', requiredPermission: { resource: 'Loans', permission: Permission.View } },

@@ -70,7 +70,7 @@ const PayrollSubNav: React.FC = () => {
             },
             {
                 name: 'Payroll',
-                links: subLinks.filter(link => ['Payroll Access', 'Pay Packages', 'Gross Pay Review', 'Take-home Pay Review', 'Payroll Prep', 'Payroll Staging', 'Payslips', 'Loan Application System', 'Special Pay & Corrections'].includes(link.name))
+                links: subLinks.filter(link => ['Payroll Access', 'Payroll Approvals', 'Pay Packages', 'Gross Pay Review', 'Take-home Pay Review', 'Payroll Prep', 'Payroll Staging', 'Payslips', 'Loan Application System', 'Special Pay & Corrections'].includes(link.name))
             },
             {
                 name: 'Compliance & Reports',
