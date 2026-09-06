@@ -71,6 +71,7 @@ const Leave = React.lazy(() => import('./pages/payroll/Leave'));
 const LeaveCredits = React.lazy(() => import('./pages/payroll/LeaveCredits'));
 const Loans = React.lazy(() => import('./pages/payroll/Loans'));
 const AttendanceExceptions = React.lazy(() => import('./pages/payroll/AttendanceExceptions'));
+const ClockingExceptions = React.lazy(() => import('./pages/payroll/ClockingExceptions'));
 const PayrollReports = React.lazy(() => import('./pages/payroll/PayrollReports'));
 const DailyTimeSummary = React.lazy(() => import('./pages/payroll/reports/DailyTimeSummary'));
 const ExceptionsReport = React.lazy(() => import('./pages/payroll/reports/ExceptionsReport'));
@@ -379,6 +380,7 @@ const AppRoutes: React.FC = () => {
             <Route path="loans" element={<ProtectedRoute><Loans /></ProtectedRoute>} />
             <Route path="payroll-prep" element={<ProtectedRoute><PayrollAccessPage staffOnly /></ProtectedRoute>} />
             <Route path="exceptions" element={<ProtectedRoute><AttendanceExceptions /></ProtectedRoute>} />
+            <Route path="clocking-exceptions" element={<ProtectedRoute><ClockingExceptions /></ProtectedRoute>} />
             <Route path="reports" element={<ProtectedRoute><PayrollReports /></ProtectedRoute>} />
             <Route path="reports/time-summary" element={<ProtectedRoute><DailyTimeSummary /></ProtectedRoute>} />
             <Route path="reports/exceptions" element={<ProtectedRoute><ExceptionsReport /></ProtectedRoute>} />
