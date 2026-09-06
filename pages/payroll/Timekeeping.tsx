@@ -1,3 +1,4 @@
+import {DayStatus,DayTag,dateKey,getDayStatuses,setDayStatus,statusPresets,leaveForDay} from '../../services/scheduleStatuses';
 import {mapShiftTemplate} from '../../services/shiftService';
 import {scheduleLabel} from '../../services/schedulePolicy';
 import {getScheduleWeek,publishScheduleWeek,reviewScheduleOverride} from '../../services/schedulePublicationService';
@@ -99,6 +100,10 @@ const Timekeeping: React.FC = () => {
     
     const [assignments, setAssignments] = useState<ShiftAssignment[]>([]);
     const [templates, setTemplates] = useState<ShiftTemplate[]>([]);
+    const [flaggedEmployees,setFlaggedEmployees]=useState<string[]>([]);
+    const [dayStatuses,setDayStatuses]=useState<DayStatus[]>([]);
+    const [selectedStatus,setSelectedStatus]=useState<DayTag|null>(null);
+    const [statusRefresh,setStatusRefresh]=useState(0);
     const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
     const [businessUnits, setBusinessUnits] = useState<{ id: string; name?: string; code?: string; color?: string }[]>([]);
     const [departments, setDepartments] = useState<{ id: string; name: string; businessUnitId: string }[]>([]);
@@ -350,7 +355,7 @@ const Timekeeping: React.FC = () => {
 
             const leaveQuery = supabase
                 .from('leave_requests')
-                .select('id, employee_id, start_date, end_date, status')
+                .select('id, employee_id, start_date, end_date, start_time, end_time, status, leave_type_id, leave_types(name,paid), approver_configuration_required')
                 .eq('status', LeaveRequestStatus.Approved)
                 .lte('start_date', toDateOnly(rangeEnd))
                 .gte('end_date', toDateOnly(rangeStart));
@@ -379,21 +384,23 @@ const Timekeeping: React.FC = () => {
             }
 
             if (!leaveRes.error && leaveRes.data) {
-                setLeaves(leaveRes.data.map((row: any) => ({
+                setLeaves(leaveRes.data.filter((row:any)=>!row.approver_configuration_required).map((row: any) => ({
                     id: row.id,
                     employeeId: row.employee_id,
                     employeeName: '',
-                    leaveTypeId: '',
-                    startDate: new Date(row.start_date),
-                    endDate: new Date(row.end_date),
-                    durationDays: 0,
+                    leaveTypeId: row.leave_type_id, paid:row.leave_types?.paid, leaveTypeName:row.leave_types?.name, startTime:row.start_time||undefined, endTime:row.end_time||undefined,
+                    startDate: new Date(row.start_date+'T00:00:00'),
+                    endDate: new Date(row.end_date+'T00:00:00'),
+                    durationDays: 0, approverChain:[],historyLog:[],
                     reason: '',
                     status: row.status as LeaveRequestStatus,
                 } as LeaveRequest)));
             }
         };
 
-        loadScheduleData();
+        void loadScheduleData();
+        const timer=setInterval(()=>{if(document.visibilityState==='visible')void loadScheduleData();},30000);
+        return()=>clearInterval(timer);
     }, [selectedBuId, weekStart, accessibleBus]);
 
     // --- GAP ANALYSIS ENGINE (New in Phase 3) ---
@@ -607,9 +614,12 @@ const Timekeeping: React.FC = () => {
     }, [operatingHours, weekDates, assignments, templates]);
 
 
+    useEffect(()=>{let active=true;getDayStatuses(employeesInBU.map(e=>e.id),toDateOnly(addDays(weekStart,-7)),toDateOnly(addDays(weekStart,6))).then(rows=>{if(active)setDayStatuses(rows);}).catch(e=>{if(active)setToastInfo({show:true,message:e.message});});return()=>{active=false;};},[employeesInBU,weekStart,statusRefresh]);
+    const applyDayStatus=async(employee:User,date:Date,tag:DayTag|null)=>{if(!isScheduleEditable)return;try{await setDayStatus(employee.id,toDateOnly(date),tag);setStatusRefresh(v=>v+1);setPublicationRefresh(v=>v+1);setToastInfo({show:true,message:'Day status saved. Publish the reviewed week to make it effective.'});}catch(e){setToastInfo({show:true,message:(e as Error).message});}};
+    useEffect(()=>{let active=true;const load=async()=>{const {data}=await supabase.rpc('get_attendance_review');if(active&&data)setFlaggedEmployees([...new Set<string>((data.flags??[]).filter((f:any)=>f.status==='review').map((f:any)=>f.employee_id))]);};void load();const t=setInterval(()=>{if(document.visibilityState==='visible')void load();},60000);return()=>{active=false;clearInterval(t);};},[user?.id]);
     const handleOpenDrawer = (employee: User, date: Date) => {
         if (!isScheduleEditable) return;
-        
+        if(selectedStatus){void applyDayStatus(employee,date,selectedStatus);return;}
         // Special Check: If user is a manager (and lacks global edit rights), they can only edit their own team
         if (isTeamManager && !can('Timekeeping', Permission.Edit) && user && employee.department !== user.department && employee.reportsTo !== user.id) {
             setToastInfo({ show: true, message: `You can only manage schedules for your direct team or department.` });
@@ -638,6 +648,7 @@ const Timekeeping: React.FC = () => {
     const rejectLegacyCopy = () => setToastInfo({show:true,message:'This schedule uses a retired shared preset. Create the BU presets and assign the week before copying it.'});
 
     const handleSaveShift = async (employeeId: string, date: Date, templateId: string) => {
+        const leave=leaveForDay(leaves,employeeId,date);if(leave&&!leave.startTime&&!leave.endTime){setToastInfo({show:true,message:'Approved leave covers this day. Use the existing leave workflow to change it.'});return;}
         if (!hasScopedPreset(employeeId, templateId)) { rejectLegacyCopy(); return; }
         const existing = assignments.find(
             a => a.employeeId === employeeId && new Date(a.date).toDateString() === date.toDateString()
@@ -799,178 +810,12 @@ const Timekeeping: React.FC = () => {
         handleCloseDetailModal();
     };
 
-    const handleCopyLastWeekSchedule = async (employeeId: string) => {
-        if (!user) return;
-        if (!window.confirm("This will copy the employee's entire schedule from last week, overwriting any shifts in the current week. Proceed?")) {
-            return;
-        }
-        
-        const prevWeekStart = addDays(weekStart, -7);
-        const prevWeekAssignments = assignments.filter(a => {
-            if (a.employeeId === employeeId) {
-                const assignmentDate = new Date(a.date);
-                const assignmentWeekStart = getStartOfWeek(assignmentDate);
-                return assignmentWeekStart.toDateString() === prevWeekStart.toDateString();
-            }
-            return false;
-        });
-
-        if (prevWeekAssignments.length === 0) {
-            setToastInfo({ show: true, message: 'No schedule found for last week.' });
-            return;
-        }
-
-        if (prevWeekAssignments.some(a => !hasScopedPreset(a.employeeId, a.shiftTemplateId))) { rejectLegacyCopy(); return; }
-        const newAssignmentsForCurrentWeek = prevWeekAssignments.map(a => ({
-            ...a,
-            id: `SA-COPY-${Date.now()}-${a.id}`,
-            date: addDays(new Date(a.date), 7),
-        }));
-
-        const currentWeekEnd = addDays(weekStart, 6);
-        await supabase
-            .from('shift_assignments')
-            .delete()
-            .eq('employee_id', employeeId)
-            .gte('date', toDateOnly(weekStart))
-            .lte('date', toDateOnly(currentWeekEnd));
-
-        const payloads = newAssignmentsForCurrentWeek.map(a => {
-            const emp = employees.find(e => e.id === a.employeeId);
-            const resolvedBuId = resolveAssignmentBuId(a.employeeId);
-            return {
-                employee_id: a.employeeId,
-                shift_template_id: a.shiftTemplateId,
-                date: toDateOnly(a.date),
-                business_unit_id: resolvedBuId,
-                department_id: emp?.departmentId || null,
-                assigned_area_id: a.assignedAreaId || null,
-                created_by: user.id,
-            };
-        });
-
-        const { data, error } = await supabase
-            .from('shift_assignments')
-            .insert(payloads)
-            .select('id, employee_id, shift_template_id, date, assigned_area_id');
-
-        if (!error && data) {
-            const inserted = data.map((row: any) => ({
-                id: row.id,
-                employeeId: row.employee_id,
-                shiftTemplateId: row.shift_template_id,
-                date: row.date ? new Date(row.date) : new Date(),
-                locationId: 'OFFICE-MAIN',
-                assignedAreaId: row.assigned_area_id || undefined,
-            }));
-            setAssignments(prev => {
-                const filtered = prev.filter(a => {
-                    if (a.employeeId !== employeeId) return true;
-                    const assignmentWeekStart = getStartOfWeek(new Date(a.date));
-                    return assignmentWeekStart.toDateString() !== weekStart.toDateString();
-                });
-                return [...filtered, ...inserted];
-            });
-        }
-        setScheduleStatus('dirty');
-        setToastInfo({ show: true, message: 'Last week\'s schedule copied!' });
-        logActivity(user, 'CREATE', 'ShiftAssignment', 'batch', `Copied last week's schedule for employee ${employeeId}`);
-        handleCloseDrawer();
-    };
-
-    const handleCopyPreviousWeekAll = async () => {
-        if (!isScheduleEditable) return;
-
-        const prevWeekStart = addDays(weekStart, -7);
-        const prevWeekEnd = addDays(prevWeekStart, 6);
-        prevWeekEnd.setHours(23, 59, 59, 999);
-        
-        const prevWeekStartStr = prevWeekStart.toLocaleDateString();
-        const currentWeekStartStr = weekStart.toLocaleDateString();
-
-        if (!window.confirm(`Copy schedule from week of ${prevWeekStartStr} to current week (${currentWeekStartStr})? \n\nThis will overwrite existing shifts for all displayed employees.`)) {
-            return;
-        }
-
-        // Special check for restricted managers: only copy for their team
-        const targetEmployees = isTeamManager && !can('Timekeeping', Permission.Edit) && user 
-            ? employeesInBU.filter(e => e.department === user.department || e.reportsTo === user.id)
-            : employeesInBU;
-
-        const displayedEmployeeIds = targetEmployees.map(e => e.id);
-        
-        const sourceAssignments = assignments.filter(a => {
-            const d = new Date(a.date);
-            return displayedEmployeeIds.includes(a.employeeId) &&
-                   d >= prevWeekStart && 
-                   d <= prevWeekEnd;
-        });
-
-        if (sourceAssignments.length === 0) {
-            setToastInfo({ show: true, message: 'No shifts found in the previous week for the selected employees.' });
-            return;
-        }
-
-        const currentWeekEnd = addDays(weekStart, 6);
-        currentWeekEnd.setHours(23, 59, 59, 999);
-
-        if (sourceAssignments.some(a => !hasScopedPreset(a.employeeId, a.shiftTemplateId))) { rejectLegacyCopy(); return; }
-        const newAssignments = sourceAssignments.map(a => ({
-            ...a,
-            id: `SA-COPY-ALL-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            date: addDays(new Date(a.date), 7),
-        }));
-
-        await supabase
-            .from('shift_assignments')
-            .delete()
-            .in('employee_id', displayedEmployeeIds)
-            .gte('date', toDateOnly(weekStart))
-            .lte('date', toDateOnly(currentWeekEnd));
-
-        const payloads = newAssignments.map(a => {
-            const emp = employees.find(e => e.id === a.employeeId);
-            const resolvedBuId = resolveAssignmentBuId(a.employeeId);
-            return {
-                employee_id: a.employeeId,
-                shift_template_id: a.shiftTemplateId,
-                date: toDateOnly(a.date),
-                business_unit_id: resolvedBuId,
-                department_id: emp?.departmentId || null,
-                assigned_area_id: a.assignedAreaId || null,
-                created_by: user?.id || null,
-            };
-        });
-
-        const { data, error } = await supabase
-            .from('shift_assignments')
-            .insert(payloads)
-            .select('id, employee_id, shift_template_id, date, assigned_area_id');
-
-        if (!error && data) {
-            const inserted = data.map((row: any) => ({
-                id: row.id,
-                employeeId: row.employee_id,
-                shiftTemplateId: row.shift_template_id,
-                date: row.date ? new Date(row.date) : new Date(),
-                locationId: 'OFFICE-MAIN',
-                assignedAreaId: row.assigned_area_id || undefined,
-            }));
-            setAssignments(prev => {
-                const filtered = prev.filter(a => {
-                    const d = new Date(a.date);
-                    const isTargetEmployee = displayedEmployeeIds.includes(a.employeeId);
-                    const isInCurrentWeek = d >= weekStart && d <= currentWeekEnd;
-                    return !(isTargetEmployee && isInCurrentWeek);
-                });
-                return [...filtered, ...inserted];
-            });
-        }
-
-        setScheduleStatus('dirty');
-        setToastInfo({ show: true, message: `Successfully copied ${newAssignments.length} shifts from previous week.` });
-        logActivity(user!, 'CREATE', 'ShiftAssignment', 'batch', `Copied previous week schedule for employees.`);
-    };
+    const copyWeek=async(ids:string[])=>{try{const {error}=await supabase.rpc('copy_schedule_week_with_statuses',{p_employees:ids,p_week:toDateOnly(weekStart)});if(error)throw error;
+      const {data,error:readError}=await supabase.from('shift_assignments').select('id,employee_id,shift_template_id,date,assigned_area_id').in('employee_id',ids).gte('date',toDateOnly(weekStart)).lte('date',toDateOnly(addDays(weekStart,6)));if(readError)throw readError;
+      setAssignments(prev=>[...prev.filter(a=>!ids.includes(a.employeeId)||toDateOnly(new Date(a.date))<toDateOnly(weekStart)||toDateOnly(new Date(a.date))>toDateOnly(addDays(weekStart,6))),...(data??[]).map(r=>({id:r.id,employeeId:r.employee_id,shiftTemplateId:r.shift_template_id,date:new Date(r.date+'T00:00:00'),assignedAreaId:r.assigned_area_id||undefined,locationId:'OFFICE-MAIN'}))]);setStatusRefresh(v=>v+1);setPublicationRefresh(v=>v+1);setScheduleStatus('dirty');handleCloseDrawer();setToastInfo({show:true,message:'Week copied with Rest Day and Skeletal tags. Approved leave stays on its approved dates. Publish after review.'});
+    }catch(e){setToastInfo({show:true,message:(e as Error).message});}};
+    const handleCopyLastWeekSchedule=async(employeeId:string)=>{if(isScheduleEditable&&window.confirm('Copy last week’s shifts and recurring status tags over this employee’s current draft week?'))await copyWeek([employeeId]);};
+    const handleCopyPreviousWeekAll=async()=>{if(isScheduleEditable&&window.confirm('Copy last week’s shifts and recurring status tags over the displayed employees’ current draft week?'))await copyWeek(employeesInBU.map(e=>e.id));};
 
     const handleSaveTemplate = async (templateData: ShiftTemplate) => {
         const resolvedBuId = templateData.businessUnitId && templateData.businessUnitId !== 'all'
@@ -1347,7 +1192,7 @@ const Timekeeping: React.FC = () => {
             />
 
             {isScheduleEditable && (
-                <LiveShiftStatusDashboard
+                <LiveShiftStatusDashboard flaggedEmployees={flaggedEmployees}
                     selectedBuId={selectedBuId}
                     actions={dropdowns}
                     employees={employeesInBU}
@@ -1363,8 +1208,9 @@ const Timekeeping: React.FC = () => {
 
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">WeeklyShiftRoster</h1>
             
-            {isScheduleEditable && (
-                <Card title="Shift Presets">
+            {isScheduleEditable && (<>
+                <Card title="Status Presets" className="mb-4"><div className="flex flex-wrap gap-3">{statusPresets.map(p=><button key={p.tag} draggable={isScheduleEditable} disabled={!isScheduleEditable} onDragStart={e=>e.dataTransfer.setData('application/x-tng-status',p.tag)} onClick={()=>setSelectedStatus(selectedStatus===p.tag?null:p.tag)} aria-pressed={selectedStatus===p.tag} className={`min-h-12 rounded-lg border px-4 font-semibold ${p.color} ${selectedStatus===p.tag?'ring-2 ring-violet-600':''}`}>{p.label}</button>)}</div><p className="mt-3 text-sm">{selectedStatus?'Select an employee day to apply this status, or click the selected status to cancel.':'Drag a status onto a day, or select it and tap the day. Skeletal and Absence keep the expected working hours. Approved paid/unpaid leave appears automatically.'}</p><a className="mt-3 inline-block min-h-11 underline" href="/payroll/attendance-review">Attendance flags & review settings</a></Card>
+            <Card title="Shift Presets">
                     <p className="text-sm text-slate-600 dark:text-slate-300">{selectedBuId === 'all' ? 'Choose a business unit to create or view its presets.' : presetTemplates.length === 0 ? 'No presets for this business unit yet. Its manager can create presets and prepare the weekly schedule.' : 'Presets for this business unit only.'}</p>
                     <div className="flex flex-wrap gap-x-2 gap-y-4 pt-8">
                         {presetTemplates.map(template => {
@@ -1397,7 +1243,7 @@ const Timekeeping: React.FC = () => {
                             + Add New Preset
                         </Button>
                     </div>
-                </Card>
+                </Card></>
             )}
 
             <Card>
@@ -1457,11 +1303,12 @@ const Timekeeping: React.FC = () => {
                         assignments={assignments}
                         templates={templates}
                         operatingHours={operatingHours}
+                        leaves={leaves} dayStatuses={dayStatuses} onStatus={applyDayStatus}
                         onOpenDrawer={handleOpenDrawer}
                         isEditable={isScheduleEditable}
                     />
                 ) : (
-                    <RoleViewTable 
+                    <RoleViewTable selectedStatus={selectedStatus}
                         view={view as 'grid' | 'role' | 'area'}
                         employeesByRole={employeesByRole}
                         employeesByArea={employeesByArea}
@@ -1471,7 +1318,7 @@ const Timekeeping: React.FC = () => {
                         validationStatus={validationStatus}
                         assignments={assignments}
                         suggestedAssignments={suggestedAssignments}
-                        leaves={leaves}
+                        leaves={leaves} dayStatuses={dayStatuses} onStatus={applyDayStatus}
                         templates={templates}
                         shiftColorClasses={shiftColorClasses}
                         onOpenDetailModal={handleOpenDetailModal}
@@ -1481,7 +1328,8 @@ const Timekeeping: React.FC = () => {
                 )}
             </Card>
 
-            <ShiftAssignmentDrawer 
+            <ShiftAssignmentDrawer onStatus={(tag)=>{if(drawerState.employee&&drawerState.date)void applyDayStatus(drawerState.employee,drawerState.date,tag);handleCloseDrawer();}}
+
                 isOpen={drawerState.open}
                 onClose={handleCloseDrawer}
                 employee={drawerState.employee}
