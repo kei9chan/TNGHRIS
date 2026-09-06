@@ -1,3 +1,4 @@
+import ApprovalEmailSettings from '../../components/admin/ApprovalEmailSettings';
 import React, { useEffect, useState, useCallback } from 'react';
 import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
@@ -266,6 +267,7 @@ const Settings: React.FC = () => {
         <div className="space-y-6">
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">System Settings</h1>
 
+            <ApprovalEmailSettings />
             <Card title="Feature Toggles">
                 <div className="flex items-center justify-between">
                     <div>
