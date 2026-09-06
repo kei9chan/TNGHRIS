@@ -3,7 +3,7 @@ import {Link} from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import {useAuth} from '../../hooks/useAuth';
-import PhaseChecklist from './PhaseChecklist';
+import SetupChecklistLink from './SetupChecklistLink';
 import {listApprovals} from './approvals';
 import type {ApprovalSummary} from './approvals';
 import {setShadow} from './grossPay';
@@ -21,7 +21,7 @@ export default function PilotPage(){
  async function perform(work:()=>Promise<unknown>,message:string){setBusy(true);setError('');setNotice('');try{await work();setW(await pilotWorkspace(scopeId||null));setNotice(message);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
  async function load(id:string){setRunId(id);setTemplate(null);setUpload(null);if(id)await perform(async()=>setTemplate(await comparisonTemplate(id)),'Comparison source loaded.');}
  const refOK=reference.trim().length>=3;
- return <div className="space-y-6"><h1 className="text-3xl font-bold">Compare & Pilot</h1><p>Compare two real cutoffs, agree the handover, then activate one business unit. The first live cutoff must be paid and reviewed before continuing.</p><PhaseChecklist/>
+ return <div className="space-y-6"><h1 className="text-3xl font-bold">Compare & Pilot</h1><p>Compare two real cutoffs, agree the handover, then activate one business unit. The first live cutoff must be paid and reviewed before continuing.</p><SetupChecklistLink/>
  {error&&<p role="alert" className="rounded border border-red-300 bg-red-50 p-3 text-red-800">{error}</p>}{notice&&<p role="status" className="rounded bg-green-50 p-3 text-green-800">{notice}</p>}
  <Card title="Business unit"><label>Choose business unit<select disabled={busy} className={input} value={scopeId} onChange={e=>setScopeId(e.target.value)}><option value="">Select…</option>{w?.scopes.map(s=><option key={s.id} value={s.id}>{s.name} · {s.mode}</option>)}</select></label>{!w?.scopes.length&&!busy&&<p className="mt-3">Your scoped Payroll Access assignment is needed. <Link className="text-indigo-600" to="/payroll/access">Manage Payroll Access</Link></p>}{scope&&<p className="mt-3 font-medium">Processing: {scope.mode}. Other business units keep their own processing setting.</p>}{w?.blockedReason&&<p className="mt-3">{w.blockedReason}</p>}</Card>
  {scope&&<><Card title="Team readiness"><ol className="list-decimal space-y-2 pl-5"><li>Assign actual HR, Finance and two BOD reviewers in <Link to="/payroll/access" className="text-indigo-600">Payroll Access</Link>. Existing HRIS permissions still apply.</li><li>Complete schedules, punches, approved leave/OT, reviewed pay and policy inputs. Use retained actual cutoffs or complete upcoming cutoffs.</li><li>Prepare and approve two consecutive shadow cutoffs covering one contribution month. HR and Finance accept each comparison. Accepted comparisons available: {accepted.length}.</li><li>Assign all eight existing bank, tax, agency and special-pay processes in <Link to="/payroll/payments" className="text-indigo-600">Payments & Reports</Link>. Recorded process types: {w?.processCount??0}/8.</li><li>Finance documents opening balances, legacy payroll ownership and the first live cutoff; two BODs approve. Kay or another scoped access manager activates that BU.</li></ol><p className="mt-3 text-sm">Checklist status alone never enables processing. Unsupported special-pay settlements and unvalidated submission formats remain with the assigned existing process.</p></Card>
