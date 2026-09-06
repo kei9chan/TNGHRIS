@@ -95,7 +95,7 @@ const ClipboardIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h
 
 const Timekeeping: React.FC = () => {
     const { user } = useAuth();
-    const { can, getAccessibleBusinessUnits } = usePermissions();
+    const { can, isSuperAdmin, getAccessibleBusinessUnits } = usePermissions();
     
     const [assignments, setAssignments] = useState<ShiftAssignment[]>([]);
     const [templates, setTemplates] = useState<ShiftTemplate[]>([]);
@@ -250,13 +250,13 @@ const Timekeeping: React.FC = () => {
 
     const isScheduleEditable = useMemo(() => {
         if (!user) return false;
-        if (can('Timekeeping', Permission.Edit)) return true;
+        if (isSuperAdmin() || can('Timekeeping', Permission.Edit)) return true;
         // Fallback for BUM who might not have generic 'Edit' perm on global Timekeeping but owns their BU
         if (canEditOwnBU && selectedBuId === userBuId) return true;
         // Allow team managers to edit
         if (isTeamManager) return true;
         return false;
-    }, [user, userBuId, canEditOwnBU, selectedBuId, can, isTeamManager]);
+    }, [user, userBuId, canEditOwnBU, selectedBuId, can, isSuperAdmin, isTeamManager]);
     // --- End Permission Logic ---
 
     // Business Hours state
@@ -1144,6 +1144,7 @@ const Timekeeping: React.FC = () => {
     };
 
     const handlePublishSchedule = async () => {
+        if(publicationReason.trim().length<3){setToastInfo({show:true,message:'Enter a publication reason below the week controls, then click Publish Week.'});return;}
         const currentWeekKey = weekStart.toISOString().split('T')[0];
         const suggestionsToConfirm = suggestedAssignments.filter(sa => 
             getStartOfWeek(new Date(sa.date)).toISOString().split('T')[0] === currentWeekKey
@@ -1419,7 +1420,7 @@ const Timekeeping: React.FC = () => {
                                     </Button>
 
                                     {scheduleStatus === 'dirty' ? (
-                                        <Button disabled={publicationBusy||publicationReason.trim().length<3} onClick={handlePublishSchedule}>
+                                        <Button disabled={publicationBusy} onClick={handlePublishSchedule}>
                                             Publish Week
                                         </Button>
                                     ) : (
@@ -1434,7 +1435,8 @@ const Timekeeping: React.FC = () => {
                     </div>
                 </div>
                 <div className="px-3">{isScheduleEditable&&<label className="mb-3 block text-sm">Publication reason / override review reference<input className="mt-1 block w-full rounded border p-2 dark:bg-slate-800" value={publicationReason} maxLength={1000} onChange={e=>setPublicationReason(e.target.value)} placeholder="Why this week is being published or changed"/></label>}
-                <SchedulePublicationStatus rows={publicationRows} names={Object.fromEntries(employeesInBU.map(e=>[e.id,e.name]))} onReview={handleReviewSchedule} busy={publicationBusy}/></div>
+                <p className="mb-3 text-sm">Saved shifts appear on the employee dashboard after publication. Enter a reason, then Publish Week. To publish one employee without publishing everyone else, open Schedule versions below.</p>
+                <SchedulePublicationStatus onPublish={isScheduleEditable?async(employeeId:string)=>{if(publicationReason.trim().length<3){setToastInfo({show:true,message:'Enter a publication reason first.'});return;}setPublicationBusy(true);try{await publishScheduleWeek([employeeId],toDateOnly(weekStart),publicationReason,publicationRows);setPublicationRefresh(v=>v+1);setToastInfo({show:true,message:'Employee week published or submitted for the required override review.'});}catch(e){setToastInfo({show:true,message:(e as Error).message});}finally{setPublicationBusy(false);}}:undefined} rows={publicationRows} names={Object.fromEntries(employeesInBU.map(e=>[e.id,e.name]))} onReview={handleReviewSchedule} busy={publicationBusy}/></div>
                 {view === 'timeline' ? (
                     <TimelineView 
                         weekDates={weekDates}

@@ -1,0 +1,1 @@
+do $$declare ddl text;begin ddl:=pg_get_functiondef('public.record_my_attendance_verified(text,uuid,integer,date,jsonb)'::regprocedure);execute replace(ddl,'or acc not between 0 and 100','or lat is null or lon is null or acc is null or acc not between 0 and 100');end $$;notify pgrst,'reload schema';

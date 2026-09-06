@@ -1,0 +1,1 @@
+do $$declare ddl text;begin ddl:=pg_get_functiondef('public.record_my_attendance_verified(text,uuid,integer,date,jsonb)'::regprocedure);execute replace(ddl,'from public.attendance_channel_evidence where challenge_id=q.id and detail->>','from public.attendance_channel_evidence e where e.challenge_id=q.id and e.detail->>');end $$;notify pgrst,'reload schema';

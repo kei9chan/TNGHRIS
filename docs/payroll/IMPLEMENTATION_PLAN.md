@@ -1155,3 +1155,56 @@ blocked local file previews and the production session is at sign-in. This is no
 claimed as a completed authenticated device/browser test.
 
 Security advisor notices for the four RPC-only tables ([RLS without raw policies](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)) and six guarded endpoints ([authenticated definer functions](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable)) were reviewed. Direct table access is denied; active identity and scoped HR authority are checked in the endpoints.
+
+
+## Attendance channels and schedule publishing — 2026-09-06
+
+The requested account now has all eight organization-scoped payroll duties through
+an audited, account-specific operation. Existing HRIS roles, access policies,
+independent approvals and payroll processing activation remain unchanged.
+
+The existing roster now explains publication requirements and offers **Publish
+employee week** inside Schedule versions. This publishes a complete selected
+employee week without requiring unrelated employees to have complete drafts.
+A reason is still required; finalized versions still require approved overrides.
+
+| Delivery | Software status | Team status / next action |
+| --- | --- | --- |
+| Web/mobile clock | Implemented; shared server record and duplicate protection retained | Publish actual employee schedules; test on actual devices |
+| GPS clock | Implemented; server checks enabled site, radius and reported accuracy | Enter actual coordinates/radius in existing Admin Sites; enable GPS in Attendance device setup; verify at the location |
+| QR kiosk | Implemented; dedicated signed-out paired display, rotating 60-second codes and replay protection | Register a QR device, enable QR and open the eight-hour pairing link on the kiosk; verify with a signed-in employee phone |
+| Biometric export upload | Implemented; CSV/TSV/text DAT/XLSX parsing, explicit columns, punch meanings and employee-code mapping; preview then atomic commit | Supply actual machine brand/model and export; configure mappings and validate real records with HR |
+| Direct machine synchronization | Pending device-specific information; not claimed live | Confirm vendor API/export capabilities and network setup |
+
+GPS uses device-reported location; it is not proof against location spoofing. QR
+attendance requires the employee's own authenticated account and an enabled kiosk
+in their business unit. Pairing does not expose an HR session. Physical device and
+phone-camera tests remain pending; no GPS sites, production kiosk devices or
+biometric mappings were invented or enabled. Defaults retain web clocking.
+
+Imports retain normalized source rows, hashes, importer/time audit and actual
+device timestamps. They reject unknown/stale mappings, missing/unpublished
+schedules, invalid action order and conflicts with existing/HR-corrected days.
+Repeated batches are idempotent and repeated device events are skipped. No break
+or clock-out time is invented. HR corrections continue through the existing
+versioned review workflow. Payroll rules and scheduling data are preserved.
+
+Applied additive migrations: `20260906134501_attendance_verified_channels.sql`,
+`20260906134649_attendance_kiosk_pairing.sql`, and
+`20260906135611_attendance_channel_guard_fix.sql` and
+`20260906140403_attendance_gps_required_fields.sql`. New tables are RPC-only with
+RLS enabled; existing RLS policies are unchanged.
+
+Verification: native production database checks in a rollback transaction passed
+GPS boundary rejection, authenticated own-account lifecycle, disabled web bypass,
+invalid/replayed QR rejection, anonymous token-only kiosk display, unauthorized
+configuration/pairing rejection, mapped biometric imports, batch retries, duplicate
+files and unknown code rejection. Parser tests cover delimited exports, leading
+zero codes, explicit date order, AM/PM, invalid dates/times and unmapped actions.
+No fixture attendance, sites, devices, configuration or mappings remain. Production
+build passes. Repository-wide type checking retains 15 unrelated baseline errors.
+
+Security advisor review: expected RPC-only RLS/no-policy information and intentional
+SECURITY DEFINER execute warnings. The only new anonymous RPC serves an expiring
+opaque kiosk display capability; it neither reads employee attendance nor submits
+a punch. See [Supabase linter guidance](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable).
