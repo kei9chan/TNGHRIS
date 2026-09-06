@@ -1,3 +1,4 @@
+import {COMPANY_GRACE_MINUTES} from '../../services/schedulePolicy';
 import React, { useState, useEffect } from 'react';
 import { TimeEvent, TimeEventType, ShiftAssignment, TimeEventSource, Site, DeviceSecurityProfile, AnomalyTag, TimeEventExtra } from '../../types';
 import Button from '../ui/Button';
@@ -124,8 +125,8 @@ const GpsClock: React.FC<GpsClockProps> = ({ clockInStatus, addTimeEvent, todays
         if (todaysShift && nextType === TimeEventType.ClockIn) {
             const shiftTemplate = shiftTemplates.find(st => st.id === todaysShift.shiftTemplateId);
             const site = sites.find(s => s.id === todaysShift.locationId);
-            if (shiftTemplate) {
-                const gracePeriod = site?.gracePeriodMinutes ?? shiftTemplate.gracePeriodMinutes;
+            if (shiftTemplate && !shiftTemplate.isFlexible && (shiftTemplate.scheduleKind ?? 'work') === 'work') {
+                const gracePeriod = COMPANY_GRACE_MINUTES;
                 const [hours, minutes] = shiftTemplate.startTime.split(':').map(Number);
                 const shiftStart = new Date(todaysShift.date);
                 shiftStart.setHours(hours, minutes + gracePeriod, 0, 0);

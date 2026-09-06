@@ -1,3 +1,4 @@
+import {COMPANY_GRACE_MINUTES} from '../../services/schedulePolicy';
 // Phase 2 Migration: mock imports removed (shift data passed via todaysShift prop)
 import React, { useState, useRef, useCallback } from 'react';
 import { TimeEvent, TimeEventType, ShiftAssignment, TimeEventSource, DeviceSecurityProfile, AnomalyTag, TimeEventExtra } from '../../types';
@@ -88,8 +89,8 @@ const PhotoClock: React.FC<PhotoClockProps> = ({ clockInStatus, addTimeEvent, to
         if (todaysShift && nextType === TimeEventType.ClockIn) {
             const shiftTemplate = shiftTemplates.find(st => st.id === todaysShift.shiftTemplateId);
             const site = sites.find(s => s.id === todaysShift.locationId);
-            if(shiftTemplate) {
-                const gracePeriod = site?.gracePeriodMinutes ?? shiftTemplate.gracePeriodMinutes;
+            if (shiftTemplate && !shiftTemplate.isFlexible && (shiftTemplate.scheduleKind ?? 'work') === 'work') {
+                const gracePeriod = COMPANY_GRACE_MINUTES;
                 const [hours, minutes] = shiftTemplate.startTime.split(':').map(Number);
                 const shiftStart = new Date(todaysShift.date);
                 shiftStart.setHours(hours, minutes + gracePeriod, 0, 0);

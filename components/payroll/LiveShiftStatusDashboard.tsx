@@ -1,3 +1,4 @@
+import {COMPANY_GRACE_MINUTES} from '../../services/schedulePolicy';
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, TimeEventType, ShiftAssignment, ShiftTemplate } from '../../types';
 import Card from '../ui/Card';
@@ -139,12 +140,12 @@ const LiveShiftStatusDashboard: React.FC<LiveShiftStatusDashboardProps> = ({ sel
 
                 if (todaysShiftAssignment) {
                     const shiftTemplate = templates.find(t => t.id === todaysShiftAssignment.shiftTemplateId);
-                    if (shiftTemplate && shiftTemplate.startTime && shiftTemplate.startTime !== '00:00') {
+                    if (shiftTemplate && !shiftTemplate.isFlexible && (shiftTemplate.scheduleKind ?? 'work') === 'work' && shiftTemplate.startTime) {
                         const [hours, minutes] = shiftTemplate.startTime.split(':').map(Number);
                         const shiftStartTime = new Date();
                         shiftStartTime.setHours(hours, minutes, 0, 0);
 
-                        const gracePeriod = shiftTemplate.gracePeriodMinutes || 15;
+                        const gracePeriod = COMPANY_GRACE_MINUTES;
                         const graceTime = new Date(shiftStartTime.getTime() + gracePeriod * 60000);
 
                         if (new Date() > graceTime) {

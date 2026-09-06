@@ -1,3 +1,4 @@
+import {scheduleLabel} from '../../services/schedulePolicy';
 import React from 'react';
 import { ShiftTemplate, ShiftAssignment, User, OperatingHours } from '../../types';
 
@@ -21,6 +22,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({ weekDates, employees, assig
     const hours = Array.from({ length: 24 }, (_, i) => i); // 0 to 23
 
     const getShiftStyle = (shift: ShiftTemplate) => {
+        if (shift.isFlexible || (shift.scheduleKind ?? 'work') !== 'work') return {left: '0%', width: '100%'};
         const startPercent = timeToPercent(shift.startTime);
         const endPercent = timeToPercent(shift.endTime);
         let widthPercent = endPercent - startPercent;
@@ -29,7 +31,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({ weekDates, employees, assig
         }
         return {
             left: `${startPercent}%`,
-            width: `${widthPercent}%`,
+            width: `${Math.min(widthPercent,100-startPercent)}%`,
         };
     };
 
@@ -90,12 +92,13 @@ const TimelineView: React.FC<TimelineViewProps> = ({ weekDates, employees, assig
                                     {hours.slice(1).map(hour => (
                                         <div key={hour} className="absolute h-full border-l border-dashed border-gray-200 dark:border-gray-700" style={{ left: `${(hour / 24) * 100}%` }}></div>
                                     ))}
+                                    {!template && <span className="absolute top-5 left-3 text-xs text-amber-700">Missing Schedule</span>}
                                     {template && (
                                         <div 
                                             className={`absolute top-2 bottom-2 rounded-md flex items-center px-2 text-xs font-bold overflow-hidden ${shiftColorClasses[template.color]} ${isEditable ? 'cursor-pointer' : 'cursor-default'}`} 
-                                            style={getShiftStyle(template)}
+                                            style={getShiftStyle(template)} title={`${template.name} · ${scheduleLabel(template)}`}
                                         >
-                                            <span className="truncate">{template.name}</span>
+                                            <span className="truncate">{template.name}<br/>{scheduleLabel(template)}</span>
                                         </div>
                                     )}
                                 </div>

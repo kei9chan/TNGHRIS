@@ -1,3 +1,4 @@
+import {scheduleLabel} from '../../services/schedulePolicy';
 
 import React from 'react';
 import { ShiftTemplate, ShiftAssignment, User, LeaveRequest, LeaveRequestStatus, OperatingHours } from '../../types';
@@ -53,7 +54,7 @@ const RoleViewTable: React.FC<RoleViewTableProps> = ({
                     return (
                         <td key={date.toISOString()} className="px-2 py-2 align-top">
                             <button onClick={() => onOpenDetailModal(assignment)} className={`w-full h-full p-2 rounded-md border text-left text-xs ${shiftColorClasses[template?.color || 'gray']}`}>
-                                <p className="font-bold">{template?.name}</p>
+                                <p className="font-bold">{template?.name}</p>{template&&<p>{scheduleLabel(template)}</p>}
                             </button>
                         </td>
                     );
@@ -61,9 +62,9 @@ const RoleViewTable: React.FC<RoleViewTableProps> = ({
                 if(leave) {
                         return (
                         <td key={date.toISOString()} className="px-2 py-2 align-top">
-                            <div className={`w-full h-full p-2 rounded-md border text-left text-xs ${shiftColorClasses['cyan']}`}>
-                                <p className="font-bold">ON LEAVE</p>
-                            </div>
+                            <button onClick={isEditable ? () => onOpenDrawer(employee, date) : undefined} disabled={!isEditable} className={`w-full h-full p-2 rounded-md border text-left text-xs ${shiftColorClasses['cyan']}`}>
+                                <p className="font-bold">Leave / No Schedule</p><p>Approved leave · planned schedule required for payroll</p>
+                            </button>
                         </td>
                     );
                 }
@@ -72,7 +73,7 @@ const RoleViewTable: React.FC<RoleViewTableProps> = ({
                     return (
                         <td key={date.toISOString()} className="px-2 py-2 align-top">
                             <button onClick={isEditable ? () => onOpenDrawer(employee, date) : undefined} disabled={!isEditable} className={`w-full h-full p-2 rounded-md border-2 border-dashed text-left text-xs opacity-60 hover:opacity-100 transition-opacity ${shiftColorClasses[template?.color || 'gray']} disabled:cursor-not-allowed`}>
-                                <p className="font-bold">{template?.name}</p>
+                                <p className="font-bold">{template?.name}</p>{template&&<p>{scheduleLabel(template)}</p>}
                                 <p className="text-xs italic">Suggested</p>
                             </button>
                         </td>
@@ -80,7 +81,7 @@ const RoleViewTable: React.FC<RoleViewTableProps> = ({
                 }
                 return (
                     <td key={date.toISOString()} className="px-2 py-2 align-top text-center">
-                        <button onClick={isEditable ? () => onOpenDrawer(employee, date) : undefined} disabled={!isEditable} className="w-full h-12 text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-md flex items-center justify-center text-2xl disabled:cursor-not-allowed disabled:hover:bg-transparent dark:disabled:hover:bg-transparent">+</button>
+                        <button onClick={isEditable ? () => onOpenDrawer(employee, date) : undefined} disabled={!isEditable} className="w-full h-12 text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-md flex items-center justify-center text-2xl disabled:cursor-not-allowed disabled:hover:bg-transparent dark:disabled:hover:bg-transparent" aria-label={`Missing Schedule for ${employee.name}`}>+</button><span className="text-xs text-amber-700">Missing Schedule</span>
                     </td>
                 );
             })}

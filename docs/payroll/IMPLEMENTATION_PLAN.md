@@ -1063,3 +1063,49 @@ payroll/payment/reissue journey and production stop/concurrency behavior still n
 the named team's real operational evidence. These are not claimed verified by
 static, pure-function or denied-access tests. Verify the exact merged commit's
 production deployment is READY before reporting the release complete.
+
+
+## Scheduling payroll-readiness fixes — 2026-09-06
+
+The existing Payroll → Timekeeping roster remains authoritative. Presets, employee/day
+grid, copy-week, publish control and Grid/Role/Area/Timeline views remain in place.
+No replacement scheduler, HRIS role, payroll grant or operational schedule was seeded.
+
+| Item | Software status | Team action / status |
+|---|---|---|
+| Five-minute company grace and unpaid 60-minute lunch | Implemented; all clock lateness consumers use five minutes | Confirm actual lunch punches / existing worked-lunch approvals |
+| Work / Rest Day / Leave-No Schedule / Missing Schedule | Implemented; a blank cell is never a rest day or assumed absence | BU managers must enter actual day types; awaiting source completion |
+| Overnight and flexible presets | Explicit next-day validation and required paid hours implemented | Review saved times (some existing names disagree with stored times), confirm overnight end and flex paid hours; pending |
+| Effective-dated published versions | Immutable employee/week versions with audit reference; repeat publication is idempotent | Publish actual reviewed weeks; old local-only Published badges are not publication evidence |
+| HR freeze and approved override | Finalization references immutable schedule versions; subsequent publication waits for an independent scoped HR Manager | Assign actual payroll duties and complete a real authorized override review when required; pending |
+| Missing/unpublished payroll exclusion | Enforced in database source review and downstream current-source checks | Resolve blockers before HR finalization |
+
+Applied bounded migration `20260906112648_payroll_schedule_versions.sql`. All existing
+assignment rows and original preset fields match their pre-change hashes; all
+existing RLS policies, HRIS roles and role assignments match their baseline hashes.
+Old stored grace values are retained as historical source data; current consumers,
+new preset writes and published payroll snapshots enforce the five-minute company
+rule. Existing presets are not relabeled or inferred from job titles. Working preset
+validation requires the unpaid lunch and explicit overnight/flexible metadata.
+
+`tests/payrollScheduleReadiness.sql` passed against the installed interpreter in a
+read-only transaction: normal 8 paid hours, 09:06 → 1 late minute, overnight next-day
+split, flexible hours and missing-hours denial, rest day, explicit non-working day,
+leave valuation, missing/unpublished denial and retained exact 75-minute OT.
+`tests/payrollScheduleFreezeRollback.sql` passed: existing schedule permissions,
+stale-preview rejection, publication idempotency, unpublished-change rejection,
+submission freeze trigger, frozen-source stability after draft changes, pending
+override isolation, publisher/unassigned reviewer denial, approved-source invalidation
+and immutable history. All transaction fixtures rolled back. Positive approval by
+an actually assigned HR Manager remains a team acceptance check; no test grants were
+created. Approved overrides require HR to save/finalize a linked timekeeping version
+before changed inputs can feed Finance; prior results remain immutable.
+
+Production build passes. Type checking retains the same 15 unrelated baseline errors;
+none occurs in these modified files. Security review confirms the three new tables
+are RLS-protected and have no direct authenticated/anonymous access; only the three
+guarded RPCs are exposed. The advisor's expected [RPC-only table notice](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)
+and [guarded definer-function notice](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable)
+are intentional, matching the existing payroll pattern. Processing modes and actual
+team completion evidence remain unchanged. Recover with a compatible frontend and
+bounded forward fixes; preserve published/frozen audit history.

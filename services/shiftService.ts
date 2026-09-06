@@ -1,3 +1,4 @@
+import { COMPANY_GRACE_MINUTES } from './schedulePolicy';
 import { supabase } from './supabaseClient';
 import { ShiftTemplate, ShiftAssignment, Site } from '../types';
 
@@ -5,6 +6,9 @@ import { ShiftTemplate, ShiftAssignment, Site } from '../types';
 // Row Types
 // ---------------------------------------------------------------------------
 type ShiftTemplateRow = {
+  end_day_offset?: 0 | 1 | null;
+  paid_minutes?: number | null;
+  schedule_kind?: 'work' | 'rest' | 'no_schedule';
   id: string;
   name: string;
   start_time: string;
@@ -41,13 +45,16 @@ type SiteRow = {
 // ---------------------------------------------------------------------------
 // Mappers
 // ---------------------------------------------------------------------------
-const mapShiftTemplate = (row: ShiftTemplateRow): ShiftTemplate => ({
+export const mapShiftTemplate = (row: ShiftTemplateRow): ShiftTemplate => ({
   id: row.id,
   name: row.name,
   startTime: row.start_time,
   endTime: row.end_time,
   breakMinutes: row.break_minutes,
-  gracePeriodMinutes: row.grace_period_minutes,
+  gracePeriodMinutes: COMPANY_GRACE_MINUTES,
+  endDayOffset: row.end_day_offset ?? undefined,
+  paidMinutes: row.paid_minutes ?? undefined,
+  scheduleKind: row.schedule_kind ?? 'work',
   businessUnitId: row.business_unit_id,
   color: row.color,
   isFlexible: row.is_flexible ?? undefined,
@@ -101,7 +108,10 @@ export const saveShiftTemplate = async (template: Partial<ShiftTemplate>): Promi
     start_time: template.startTime,
     end_time: template.endTime,
     break_minutes: template.breakMinutes ?? 60,
-    grace_period_minutes: template.gracePeriodMinutes ?? 15,
+    grace_period_minutes: COMPANY_GRACE_MINUTES,
+    end_day_offset: template.endDayOffset ?? null,
+    paid_minutes: template.paidMinutes ?? null,
+    schedule_kind: template.scheduleKind ?? 'work',
     business_unit_id: template.businessUnitId,
     color: template.color || '#3B82F6',
     is_flexible: template.isFlexible ?? false,

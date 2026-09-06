@@ -1,3 +1,8 @@
+import {mapShiftTemplate} from '../../services/shiftService';
+import {scheduleLabel} from '../../services/schedulePolicy';
+import {getScheduleWeek,publishScheduleWeek,reviewScheduleOverride} from '../../services/schedulePublicationService';
+import type {SchedulePublication} from '../../services/schedulePublicationService';
+import SchedulePublicationStatus from '../../components/payroll/SchedulePublicationStatus';
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth';
@@ -103,7 +108,11 @@ const Timekeeping: React.FC = () => {
     
     const [viewDate, setViewDate] = useState(new Date());
     const [view, setView] = useState<'grid' | 'role' | 'area' | 'timeline'>('grid');
-    const [scheduleStatus, setScheduleStatus] = useState<'published' | 'dirty'>('published');
+    const [scheduleStatus, setScheduleStatus] = useState<'published' | 'dirty'>('dirty');
+    const [publicationRows,setPublicationRows]=useState<SchedulePublication[]>([]);
+    const [publicationReason,setPublicationReason]=useState('');
+    const [publicationBusy,setPublicationBusy]=useState(false);
+    const [publicationRefresh,setPublicationRefresh]=useState(0);
     const [toastInfo, setToastInfo] = useState<{ show: boolean; message: string }>({ show: false, message: '' });
 
     useEffect(() => {
@@ -112,7 +121,7 @@ const Timekeeping: React.FC = () => {
                 supabase.from('business_units').select('id, name, code, color'),
                 supabase.from('departments').select('id, name, business_unit_id'),
                 supabase.from('hris_users').select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position, date_hired, reports_to'),
-                supabase.from('shift_templates').select('id, name, start_time, end_time, break_minutes, business_unit_id, is_night_shift'),
+                supabase.from('shift_templates').select('*'),
             ]);
 
             if (!buRes.error && buRes.data) {
@@ -151,17 +160,7 @@ const Timekeeping: React.FC = () => {
             }
 
             if (!templateRes.error && templateRes.data) {
-                setTemplates(templateRes.data.map((row: any) => ({
-                    id: row.id,
-                    name: row.name,
-                    startTime: row.start_time,
-                    endTime: row.end_time,
-                    breakMinutes: row.break_minutes ?? 0,
-                    gracePeriodMinutes: 0,
-                    businessUnitId: row.business_unit_id || '',
-                    color: 'blue',
-                    isFlexible: false,
-                })));
+                setTemplates(templateRes.data.map(mapShiftTemplate));
             }
 
         };
@@ -416,7 +415,7 @@ const Timekeeping: React.FC = () => {
                     const isRole = emp?.position === req.role;
                     // Check if assignment is linked to area (or assume if role matches it counts)
                     // For strictness: a.assignedAreaId === req.areaId. For MVP: role match.
-                    return isDate && isRole; 
+                    return isDate && isRole && (templates.find(t=>t.id===a.shiftTemplateId)?.scheduleKind??'work')==='work';
                 }).length;
 
                 if (scheduledCount < req.minCount) {
@@ -436,7 +435,7 @@ const Timekeeping: React.FC = () => {
         });
 
         return calculatedGaps;
-    }, [selectedBuId, weekDates, assignments, staffingRequirements, serviceAreas, employees]);
+    }, [selectedBuId, weekDates, assignments, staffingRequirements, serviceAreas, employees, templates]);
 
 
     // Smart Carry-Over Logic
@@ -513,6 +512,16 @@ const Timekeeping: React.FC = () => {
         }
         return filtered.sort((a,b) => a.name.localeCompare(b.name));
     }, [selectedBuId, departmentFilter, employees, user]);
+
+    const publicationEmployeeKey=employeesInBU.map(e=>e.id).sort().join(',');
+    useEffect(()=>{let active=true;setScheduleStatus('dirty');setPublicationRows([]);setPublicationBusy(true);
+      const ids=publicationEmployeeKey?publicationEmployeeKey.split(','):[];
+      getScheduleWeek(ids,toDateOnly(weekStart)).then(rows=>{if(active){setPublicationRows(rows);setScheduleStatus(rows.length===ids.length&&rows.length>0&&rows.every(r=>r.published)?'published':'dirty');}}).catch(e=>{if(active)setToastInfo({show:true,message:e.message});}).finally(()=>{if(active)setPublicationBusy(false);});return()=>{active=false;};
+    },[publicationEmployeeKey,weekStart,assignments,templates,publicationRefresh,user?.id]);
+    const handleReviewSchedule=async(id:string,approve:boolean)=>{
+      if(publicationReason.trim().length<3){setToastInfo({show:true,message:'Enter the override review reference above Publish Week.'});return;}
+      setPublicationBusy(true);try{await reviewScheduleOverride(id,approve,publicationReason);setPublicationRefresh(v=>v+1);setToastInfo({show:true,message:approve?'Override approved. HR must submit the linked timekeeping version.':'Override rejected; the effective version is retained.'});}catch(e){setToastInfo({show:true,message:(e as Error).message});}finally{setPublicationBusy(false);}
+    };
 
      const employeesByRole = useMemo(() => {
       const grouped: Record<string, User[]> = {};
@@ -946,12 +955,11 @@ const Timekeeping: React.FC = () => {
             ? templateData.businessUnitId
             : (selectedBuId && selectedBuId !== 'all' ? selectedBuId : null);
         const payload = {
-            name: templateData.name,
-            start_time: templateData.startTime,
-            end_time: templateData.endTime,
-            break_minutes: templateData.breakMinutes ?? 0,
-            business_unit_id: resolvedBuId,
-            is_night_shift: false,
+            name: templateData.name,start_time:templateData.startTime,end_time:templateData.endTime,
+            break_minutes:templateData.scheduleKind==='rest'||templateData.scheduleKind==='no_schedule'?0:60,
+            grace_period_minutes:5,business_unit_id:resolvedBuId,color:templateData.color,
+            is_flexible:templateData.isFlexible??false,min_hours_per_day:templateData.minHoursPerDay??null,min_days_per_week:templateData.minDaysPerWeek??null,
+            end_day_offset:templateData.endDayOffset??null,paid_minutes:templateData.paidMinutes??null,schedule_kind:templateData.scheduleKind??'work',
         };
 
         if (templateData.id) {
@@ -959,50 +967,30 @@ const Timekeeping: React.FC = () => {
                 .from('shift_templates')
                 .update(payload)
                 .eq('id', templateData.id)
-                .select('id, name, start_time, end_time, break_minutes, business_unit_id, is_night_shift')
+                .select('*')
                 .single();
 
             if (error || !data) {
-                setToastInfo({ show: true, message: 'Failed to update shift preset.' });
+                setToastInfo({ show: true, message: error?.message||'Failed to update shift preset.' });
                 return;
             }
 
-            const updated: ShiftTemplate = {
-                id: data.id,
-                name: data.name,
-                startTime: data.start_time,
-                endTime: data.end_time,
-                breakMinutes: data.break_minutes ?? 0,
-                gracePeriodMinutes: templateData.gracePeriodMinutes ?? 15,
-                businessUnitId: data.business_unit_id || '',
-                color: templateData.color || 'blue',
-                isFlexible: false,
-            };
+            const updated: ShiftTemplate = mapShiftTemplate(data);
 
             setTemplates(prev => prev.map(t => t.id === updated.id ? updated : t));
         } else {
             const { data, error } = await supabase
                 .from('shift_templates')
                 .insert(payload)
-                .select('id, name, start_time, end_time, break_minutes, business_unit_id, is_night_shift')
+                .select('*')
                 .single();
 
             if (error || !data) {
-                setToastInfo({ show: true, message: 'Failed to create shift preset.' });
+                setToastInfo({ show: true, message: error?.message||'Failed to create shift preset.' });
                 return;
             }
 
-            const created: ShiftTemplate = {
-                id: data.id,
-                name: data.name,
-                startTime: data.start_time,
-                endTime: data.end_time,
-                breakMinutes: data.break_minutes ?? 0,
-                gracePeriodMinutes: templateData.gracePeriodMinutes ?? 15,
-                businessUnitId: data.business_unit_id || '',
-                color: templateData.color || 'blue',
-                isFlexible: false,
-            };
+            const created: ShiftTemplate = mapShiftTemplate(data);
             setTemplates(prev => [...prev, created]);
         }
 
@@ -1095,7 +1083,7 @@ const Timekeeping: React.FC = () => {
 
              if (availableEmployee && gap.shiftTime) {
                  // Find or create a matching template
-                 let template = templates.find(t => t.startTime === gap.shiftTime?.start && t.endTime === gap.shiftTime?.end);
+                 let template = templates.filter(t=>(t.scheduleKind??'work')==='work').find(t => t.startTime === gap.shiftTime?.start && t.endTime === gap.shiftTime?.end);
                  
                  // For demo simplicity, if no exact template, use the first one or fallback
                  if (!template && templates.length > 0) template = templates[0];
@@ -1200,14 +1188,20 @@ const Timekeeping: React.FC = () => {
             }
         }
 
-        setScheduleStatus('published');
-        setToastInfo({ show: true, message: 'Schedule for the week has been published!' });
+        setPublicationBusy(true);
+        try{
+          const ids=employeesInBU.map(e=>e.id);
+          const reviewed=suggestionsToConfirm.length?await getScheduleWeek(ids,toDateOnly(weekStart)):publicationRows;
+          const result=await publishScheduleWeek(ids,toDateOnly(weekStart),publicationReason,reviewed);
+          setPublicationRefresh(v=>v+1);
+          setToastInfo({show:true,message:result.some((r:any)=>r.approval_required)?'Version recorded. Finalized schedules require independent HR Manager override approval.':'Week published with dated schedule versions. Missing days still block payroll.'});
+        }catch(e){setToastInfo({show:true,message:(e as Error).message});return;}finally{setPublicationBusy(false);}
         logActivity(user!, 'UPDATE', 'Schedule', currentWeekKey, `Published schedule for week of ${weekStart.toLocaleDateString()}`);
     };
 
-    const handlePrevWeek = () => { setViewDate(prev => addDays(prev, -7)); setScheduleStatus('published'); };
-    const handleNextWeek = () => { setViewDate(prev => addDays(prev, 7)); setScheduleStatus('published'); };
-    const handleToday = () => { setViewDate(new Date()); setScheduleStatus('published'); };
+    const handlePrevWeek = () => { setViewDate(prev => addDays(prev, -7)); setScheduleStatus('dirty'); };
+    const handleNextWeek = () => { setViewDate(prev => addDays(prev, 7)); setScheduleStatus('dirty'); };
+    const handleToday = () => { setViewDate(new Date()); setScheduleStatus('dirty'); };
 
     const shiftColorClasses: Record<string, string> = {
         blue: 'bg-blue-100 border-blue-400 text-blue-800 dark:bg-blue-900/50 dark:border-blue-700 dark:text-blue-200',
@@ -1370,7 +1364,7 @@ const Timekeeping: React.FC = () => {
                                     className={`group relative px-3 py-1.5 rounded-full text-sm font-semibold flex items-center ${shiftColorClasses[template.color]}`}
                                     title={tooltip}
                                 >
-                                    {template.name}
+                                    <span>{template.name}<small className="block font-normal">{scheduleLabel(template)}</small></span>
                                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-1 bg-white dark:bg-slate-900 p-1 rounded-md shadow-lg z-10 border border-gray-200 dark:border-gray-700">
                                         <button onClick={() => setTemplateModalState({ open: true, template })} className="p-1.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-md" title="Edit Preset">
                                             <PencilIcon />
@@ -1425,7 +1419,7 @@ const Timekeeping: React.FC = () => {
                                     </Button>
 
                                     {scheduleStatus === 'dirty' ? (
-                                        <Button onClick={handlePublishSchedule}>
+                                        <Button disabled={publicationBusy||publicationReason.trim().length<3} onClick={handlePublishSchedule}>
                                             Publish Week
                                         </Button>
                                     ) : (
@@ -1439,6 +1433,8 @@ const Timekeeping: React.FC = () => {
                         </div>
                     </div>
                 </div>
+                <div className="px-3">{isScheduleEditable&&<label className="mb-3 block text-sm">Publication reason / override review reference<input className="mt-1 block w-full rounded border p-2 dark:bg-slate-800" value={publicationReason} maxLength={1000} onChange={e=>setPublicationReason(e.target.value)} placeholder="Why this week is being published or changed"/></label>}
+                <SchedulePublicationStatus rows={publicationRows} names={Object.fromEntries(employeesInBU.map(e=>[e.id,e.name]))} onReview={handleReviewSchedule} busy={publicationBusy}/></div>
                 {view === 'timeline' ? (
                     <TimelineView 
                         weekDates={weekDates}
