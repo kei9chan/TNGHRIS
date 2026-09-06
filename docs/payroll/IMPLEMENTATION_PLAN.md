@@ -1208,3 +1208,37 @@ Security advisor review: expected RPC-only RLS/no-policy information and intenti
 SECURITY DEFINER execute warnings. The only new anonymous RPC serves an expiring
 opaque kiosk display capability; it neither reads employee attendance nor submits
 a punch. See [Supabase linter guidance](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable).
+
+
+## BU-specific schedule presets — 2026-09-06
+
+Resolved the inconsistent lists: the preset card filtered by BU while the assignment
+drawer included all unscoped presets. All 19 existing presets were unscoped. They
+are now removed from new choices, while their existing assignments and publications
+remain intact. New presets require a BU; assignment choices follow the selected
+employee's BU even from All BUs. Empty lists ask the manager to prepare presets.
+Auto-assignment no longer falls back to an unrelated first template. Copy-week
+validates old shared references before deleting any current-week rows.
+
+Additive migration `20260906204156_scoped_schedule_presets.sql` fixes the actual
+Business Unit Manager role-name mismatch and supports assignment/publication for
+all employees in that manager's own BU. Managers can create presets for their own
+BU or a BU containing a direct report; edit/delete access added only for their own
+presets. New assignment/preset guards prevent unscoped or mismatched BU reuse.
+Existing policies and broad HR/Admin rights are retained; no employee roles,
+reporting relationships or saved schedules were changed. Existing legacy department
+permissions remain; a stricter department-head delegation model is a policy decision.
+
+Recommendation: BU managers own BU rosters; shared-service department heads use
+direct reports across BUs, with explicit delegation for exceptions. Working at a BU
+is not a reason to grant access to its entire team. No new weekly shifts were
+invented or automatically published.
+
+Focused native rollback checks: BU-manager preset creation/editing and assignment,
+unrelated-BU preset rejection and retired shared-preset rejection. Cross-BU
+direct-report assignment remains blocked when existing directory RLS hides that
+employee. Automatic review rejected the proposed roster endpoint; it was not
+applied. A narrowly scoped scheduling-only roster requires a separate access
+decision. Build passes; repository typecheck
+retains its 15 unrelated baseline errors. Team checklist updated; actual BU presets
+and weekly rosters remain the managers' pending work.
