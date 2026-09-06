@@ -21,6 +21,7 @@ import { hasEvaluationOversightAccess } from './utils/evaluationAccess';
 import Layout from './components/layout/Layout';
 import { isPayrollAccessRoute, isStaffPayrollRoute } from './modules/payroll/routes';
 const PayrollAccessPage = React.lazy(() => import('./modules/payroll/PayrollAccessPage'));
+const PayPackagesPage = React.lazy(() => import('./modules/payroll/PayPackagesPage'));
 const Login = React.lazy(() => import('./pages/Login'));
 const SignUp = React.lazy(() => import('./pages/SignUp'));
 const RegistrationSuccess = React.lazy(() => import('./pages/RegistrationSuccess'));
@@ -349,6 +350,7 @@ const AppRoutes: React.FC = () => {
         {/* Payroll Section */}
         <Route path="payroll" element={<Outlet />}>
             <Route path="access" element={<ProtectedRoute><PayrollAccessPage /></ProtectedRoute>} />
+            <Route path="pay-packages" element={<ProtectedRoute><PayPackagesPage /></ProtectedRoute>} />
             <Route index element={<Navigate to="timekeeping" replace />} />
             <Route path="timekeeping" element={<ProtectedRoute><Timekeeping /></ProtectedRoute>} />
             <Route path="manpower-planning" element={<ProtectedRoute><ManpowerPlanning /></ProtectedRoute>} />
