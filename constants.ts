@@ -97,6 +97,7 @@ export const NAV_LINKS: NavLink[] = [
             { name: 'Payroll Access', path: '/payroll/access', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
             { name: 'Pay Packages', path: '/payroll/pay-packages', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
             { name: 'Gross Pay Review', path: '/payroll/gross-pay', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
+            { name: 'Payments & Reports', path: '/payroll/payments', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
             { name: 'Payroll Approvals', path: '/payroll/approvals', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
             { name: 'Take-home Pay Review', path: '/payroll/net-pay', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
             { name: 'Attendance Readiness', path: '/payroll/attendance-readiness', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },

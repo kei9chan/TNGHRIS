@@ -382,7 +382,8 @@ not automatic proof that every future cutoff is ready.
 | 5 — Take-home pay | Implemented; staff walkthrough pending real inputs | Waiting for Finance-reviewed batch workbook, opening balances, contribution allocation and checked comparisons |
 | 6 — Special pay / corrections | Implemented; staff walkthrough pending real inputs | Waiting for three reviewed examples, earlier settlements and independent Finance comparisons |
 | 7 — Approvals / private payslips | Implemented; staff walkthrough pending real inputs | Waiting for eligible assignees and one complete shadow approval walkthrough |
-| 8–9 | Not started | Not started |
+| 8 — Payments / reports | Implemented; external formats use assigned existing processes | Waiting for Finance owners, approved bank specification, report comparisons and real outcome acceptance |
+| 9 — Compare / activate | Not started | Waiting for two accepted cutoff comparisons and pilot authorization |
 
 The server prepares a BU batch only from the latest current HR-submitted complete
 cutoff. It uses existing dated employee pay packages and existing calendar records;
@@ -825,3 +826,142 @@ The software checklist marks Phases 1–7 implemented; team readiness remains se
 and requires actual completion evidence. The release uses main's required PR and
 the existing Vercel production integration. Verify the merged commit is READY before
 reporting the deployment complete. Phase 8/9 work and live activation are deferred.
+
+
+## Phase 8 — Payments and reporting outputs (2026-09-06)
+
+The user explicitly authorized implementation, public publication to main and
+production deployment. No further confirmation is required by the project workflow.
+
+### Delivered scope
+
+Payroll → Payments & Reports (`/payroll/payments`) reuses the Phase 7 approval
+version, existing bank verification, full-payment receipt, original loan postings
+and private payslips. The Government Reports entry opens this guarded workspace;
+legacy time reports and unrelated modules remain unchanged.
+
+- One open payment batch reserves each regular-pay entitlement across versions.
+  An unused batch can close only with no pending or ever-confirmed transfers and
+  no receipt. Correcting a payroll needs a fresh approved version; closing never
+  erases history or removes paid obligations.
+- Employee attempts record exact decimal amounts, schedule dates, unique scope-wide
+  transfer references, current bank-verification references and optional reissue
+  links. Pending attempts reserve funds. New attempts cannot exceed approved net
+  minus confirmed and pending amounts. A repeated reference returns the identical
+  attempt; using it for different instructions is rejected.
+- Actual outcomes are append-only: pending → confirmed / failed / cancelled;
+  confirmed → returned. Expected event IDs prevent stale actions, request UUIDs
+  protect retries and unique constraints prohibit duplicate outcomes. Return means
+  the entire individual attempt returned. Individual partial payments use separate
+  amounts/attempts; an uncertain or partial return requires the existing Finance
+  reconciliation process before declaring a full return. No automatic transfer,
+  bank callback, future assumed receipt or negative payment is generated.
+- A reissue links the same employee/batch failed, cancelled or returned attempt.
+  Both its parent amount and the current unreserved unpaid balance cap the reissue.
+  Payroll locks serialize attempts/outcomes so two requests cannot reserve the same
+  money. Future actual concurrent bank journeys still require operational acceptance.
+- First full-batch reconciliation invokes the original Phase 7 settlement logic.
+  Every employee must equal approved net with no pending attempts. Actual confirmation
+  dates determine the receipt date. Initial partial batches do not release payslips
+  or post loans, preserving the Phase 7 release trigger. All live writes remain
+  gated by existing Finance release authority, independent preparation, six approval
+  steps, the reviewed payday and current live mode. Processing stays off.
+- Returns retain original receipt and payslip amounts, append explicit reversal
+  entries to the employee's original loan postings and show outstanding payment
+  status in approval history and the employee's private payslip. Full reissue
+  reconciliation restores each reversal once, using the existing account lock and
+  actual balance check. New opening-ledger revisions or insufficient balances block
+  restoration for Finance reconciliation. Neither old openings nor paid results
+  are overwritten. Accounting reversals do not claim a statutory refund/remittance.
+- Finance exports include register, gross/deductions/net/employer totals, earnings,
+  payment balances/attempts, withholding and tax-treatment sources, imported/YTD
+  snapshots, SSS/MPF/EC/PhilHealth/Pag-IBIG employee/employer shares, contribution-month
+  allocation and recorded filing owners. Every generated artifact stores the exact
+  immutable payload, source/version fingerprint and generation attribution. Download
+  requests are recorded separately; this does not prove the browser saved a file.
+- Authorized schedules require complete live approvals and current verified bank
+  details under existing bank-view permission. Only bank name/account suffix appears;
+  full account and statutory identifiers remain in their existing protected records.
+  Changes to bank verification, payment balances, attempts or approval freshness
+  block re-downloading an obsolete authorized schedule. Workpaper snapshots remain
+  review history with their generation-time status, never proof of payment.
+
+### Official-output boundary and assigned existing processes
+
+No actual approved bank specification/sample was supplied. No bank-specific upload
+format is invented. All workbook sheets explicitly identify internal/shadow review
+or an authorized schedule for the existing verified payment process, not a validated
+bank/agency file. The database separately records the current real Finance owner and
+approved procedure reference for bank payments, BIR 1601-C, 1604-C/alphalist, 2316,
+SSS, PhilHealth, Pag-IBIG and special-pay settlements. An active scoped Finance
+**authorizer** records these references; this assigns process responsibility without
+changing HRIS roles, payroll duties or system permissions. Missing references remain
+Waiting on Finance and must be resolved before Phase 9 acceptance.
+
+Regular-pay snapshots provide tax and contribution source workpapers, not complete
+employer returns or annual certificates. Annual/YTD snapshots must not be added
+across cutoffs; reconcile imported balances, previous employers, special cases and
+all periods in the assigned existing filing process. No filing deadlines or new
+statutory rates were invented. References checked for this boundary:
+[BIR forms](https://www.bir.gov.ph/bir-forms),
+[BIR alphalist downloads/validation](https://www.bir.gov.ph/Downloadables),
+[SSS employer forms](https://www.sss.gov.ph/download-forms-and-electronic-applications/),
+[PhilHealth payment/reporting procedures](https://www.philhealth.gov.ph/partners/employers/pay_procedures.php).
+The guarded function/RLS pattern follows
+[Supabase function security guidance](https://supabase.com/docs/guides/database/functions).
+
+Phase 6 special-pay source workpapers are exportable after submission, but new-engine
+special-pay settlement remains blocked: its manually reviewed source keys/settled
+amounts are not yet a validated cross-case entitlement ledger. Use the explicitly
+assigned existing special-pay process and retain its settlement references. Do not
+claim that changing a case key authorizes another payment. This is the plan's explicit
+existing-process fallback for unsupported special cases, not silent finalization.
+
+### Team checklist and acceptance
+
+1. Complete actual payroll duty assignments, schedules, reviewed pay/tax/loan inputs
+   and the Phase 7 shadow approval walkthrough.
+2. Finance authorizer records the named owner and current procedure for all eight
+   output/process entries for the pilot BU; obtain the actual bank file specification
+   only if a bank upload generator is desired.
+3. Compare the register and Finance totals to source payroll. Reconcile both monthly
+   contribution cutoffs and annual/imported tax data to the existing filing process.
+   Confirm that every sheet is clearly a workpaper and download changes no payment.
+4. Once Phase 9 prerequisites permit actual live use, reconcile real pending, failed,
+   returned and linked reissue outcomes. Verify retries cannot duplicate payment,
+   loan reversals/restoration remain once-only, and other employees cannot read the
+   payslip. Do not create fake receipts, active employees or live test grants.
+5. Record actual completion evidence in the maintained BU checklist. Software delivery
+   is distinct from these team tasks; no unconfirmed team row is marked Done.
+
+Applied migration: `20260906071358_payroll_payments_reports_phase8`. SQL and PL/pgSQL
+parser checks passed before application. The production build, exact-decimal/literal
+workbook round trip and existing dashboard-auth/RBAC/direct-manager checks passed.
+Project-wide TypeScript still has the same 15 unrelated baseline errors and no new
+Phase 8 errors. Database checks passed for partial/pending/full/zero-net totals,
+overpayment denial, valid outcome order, repeated/out-of-order outcome denial and
+request/outcome uniqueness using temporary rollback-only constraint copies. Actual
+read-only authenticated checks passed for management-only denial, protected exports,
+RLS, private-helper and anonymous restrictions and processing off.
+
+Existing roles, user-role assignments and RLS-policy hashes match before/after.
+All nine scopes remain off. There are zero new payment batches, attempts or receipts.
+No real employees, role grants, bank data or fake payroll/payment evidence were
+created. The full positive Finance/bank journey, actual concurrent retries,
+return/restoration with real loan openings, and live cross-account payslip checks
+remain operational acceptance tasks. These are not claimed passed by the unit or
+access checks. The software status is ready for the authorized main release; verify
+its exact Vercel production commit is READY before reporting deployment complete.
+
+The
+previously verified production backup in this release session is 2026-09-05
+16:54:58 UTC. Recovery uses a compatible frontend plus additive forward fixes;
+never delete payment evidence or restore the entire HRIS for a routine UI issue.
+
+
+Security advisors were reviewed after application. The eight new RPC-only tables
+have RLS and no raw client grants; the ten authenticated SECURITY DEFINER endpoints
+intentionally enforce active identity, payroll scope and existing HRIS permissions.
+No anonymous endpoint or private helper grant was added. The expected notices are
+[RLS with no raw policies](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)
+and [intentional guarded RPC execution](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable).
