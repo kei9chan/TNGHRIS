@@ -10,10 +10,11 @@ bounded additive migrations, compatible application releases and forward fixes.
 Do not create fake employees, sample payroll, payments or live test grants.
 
 New processing is disabled until the corresponding phase is complete and activated.
-Phase 1 includes a database constraint that permits only `off`. Keep `shadow` and
-`live` in the mode vocabulary for later phases; enabling them requires a reviewed
-forward migration and the corresponding server-side operation gates. Access
-administration works while processing is off.
+Phase 4 replaces the Phase 1 off-only constraint with an off/shadow constraint.
+All scopes remain off after deployment. An explicit scoped access manager can
+enable shadow for the organization master gate and a selected BU, with an audit
+reason. The existing operation gate still denies calculations if a parent is off.
+Live mode is prohibited in the database; access administration works while off.
 
 ## Phase 0 findings (2026-09-05)
 
@@ -357,9 +358,94 @@ The same checklist is available in Attendance Readiness and linked from Payroll 
 Missing schedules and the pending assignee list do not block deployment of Phase 3.
 They do block the affected staff review/submission until the real inputs are present.
 
+## Phase 4 — Gross pay and maintained checklist (2026-09-06)
+
+Delivery: `/payroll/gross-pay`, linked as **Gross Pay Review**, plus the reusable
+checklist in that page and Attendance Readiness. Implementation status is separate
+from team completion. Access managers record BU-specific Waiting / In progress /
+Done confirmations with a reference and date; prior confirmations are immutable.
+Changing checklist status never grants permission or clears calculation blockers.
+
+**Maintain this checklist at every subsequent phase:** update both this document
+and the software status in `PhaseChecklist.tsx`. Mark software implemented only
+after its checks and deployment. Record team tasks done only from actual completion
+evidence; otherwise keep Waiting / In progress. Reopen a team task when its inputs
+change. Team records in `payroll_phase_progress` are authoritative confirmations,
+not automatic proof that every future cutoff is ready.
+
+| Phase | Software | Team status at this release |
+| --- | --- | --- |
+| 1 — Access | Implemented | Waiting for assignee list / scoped duties |
+| 2 — Pay packages | Implemented | Waiting for reviewed salary versions and calendar |
+| 3 — Attendance | Implemented | Waiting for dated schedules, punches, approvals and HR submission |
+| 4 — Gross pay | Implemented; staff walkthrough pending real inputs | Waiting for approved methods/rates and checked comparisons |
+| 5–9 | Not started | Not started |
+
+The server prepares a BU batch only from the latest current HR-submitted complete
+cutoff. It uses existing dated employee pay packages and existing calendar records;
+all employees must be within the caller's existing salary and attendance scope.
+It stores immutable snapshots, `gross-v1`, numeric gross, source hash, prior version,
+and explanations showing source, quantity, rate, factor, exact intermediate amount
+and rounding. Per-scope serialization plus unique source/version keys make retries
+idempotent. Opening a saved PR rechecks current source/pay/rule versions and scope.
+Changed inputs require a linked recalculation; no approval or payment is produced.
+
+Actual work is partitioned at punches, breaks, schedule/OT boundaries, midnight
+and the approved night window. Scheduled intervals are not assumed to be worked.
+Monthly calendar or earned-minute proration, daily/hourly base, reviewed recurring
+allowances and one-time gross additions reuse Phase 2. Flat component treatment
+fields are respected. Monetary arithmetic stays Postgres numeric and the client
+displays decimal strings without calculating money.
+
+**No policy values were activated.** HR must record source-backed divisor/hours,
+monthly and allowance proration, line/employee rounding, night boundaries and an
+explicit premium matrix for the BU/dates. Night columns are additional base-hourly
+multipliers, not a second implicit stacking percentage. Rates follow the shift
+date; grace is base-only; approved offsets are excluded from cash. Those choices
+require explicit confirmation in the form. Unsupported alternatives remain blocked.
+Unworked holiday eligibility, unreviewed/non-proratable recurring components,
+unreconciled leave/offset patterns and separate professional-fee calculations are
+not silently assigned zero or imported into employee gross. Signed adjustments,
+tax/deductions, payment, approval and released payslips remain in later phases.
+
+Applied migrations: `20260906033117_payroll_gross_phase4` and
+`20260906033550_payroll_gross_component_treatment`. Four new RPC-only tables have
+RLS and no direct client grants; all eight public RPCs explicitly authorize their
+caller and have an empty search path. New advisor notices for intentional guarded
+SECURITY DEFINER RPCs / no raw-table policies were reviewed. Existing RLS and salary
+hashes remain unchanged; there are no new saved payroll runs, policies, grants or
+team completion claims. All nine scopes remain off.
+
+Checks passed: fixture-only normal monthly salary, mid-cutoff version change,
+recurring/one-time amounts, overnight holiday/night boundaries, 75-minute OT,
+deterministic replay and missing/mismatched inputs. Read-only authenticated checks
+verified management visibility without salary rights, denied preparation/read,
+off-mode gates, and raw/anonymous access denial. Build and the three existing
+auth/RBAC/direct-manager smoke checks passed. TypeScript still reports the 15
+previous unrelated errors; none are in the new payroll module.
+
+Automatic approval review rejected a broader rollback test because it temporarily
+changed real salary/employment records, schedules and grants. It did not execute;
+the retained test uses read-only checks. Therefore a successful staff preparation,
+saved-run retry and persisted-source revision walkthrough remain unverified until
+the actual approved inputs and staff duties exist. Do not claim that gate completed.
+
+Simple team check when ready:
+1. Assign intended duties, review dated pay/calendar/rules and have HR submit one
+   complete cutoff. Enable shadow only for the chosen BU and master scope.
+2. Finance prepares the gross PR and compares normal, mid-cutoff and holiday/night/OT
+   explanations with independently checked examples. Repeating preparation should
+   open the same version, without another payroll record.
+3. After an authorized source correction, reopening the prior PR must show changed
+   inputs; submit the corrected attendance if needed and prepare a linked version.
+   Record the completed comparison reference in the checklist.
+
+Recovery: switch affected scopes off, retain immutable versions and use a forward
+fix. Frontend rollback target is Phase 3 main `2f7f9a0`, production deployment
+`dpl_G6m7bJmhxPYjCFeFMDPNZHoE8pjr`; frontend rollback does not undo migrations.
+
 ## Remaining phases (not implemented here)
 
-4. Server-side gross pay and versioned calculation explanations.
 5. Take-home pay, current statutory rules and loan/deduction balances.
 6. Linked corrections, 13th-month and final pay.
 7. Ordered approvals and private released payslips.
