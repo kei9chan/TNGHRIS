@@ -1,4 +1,5 @@
 import React from 'react';
+import AttendanceMission from '../components/attendance/AttendanceMission';
 import { useAuth } from '../hooks/useAuth';
 import HRDashboard from '../components/dashboard/HRDashboard';
 import ManagerDashboard from '../components/dashboard/ManagerDashboard';
@@ -29,6 +30,7 @@ const Dashboard: React.FC = () => {
   return (
     <div>
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-6">Welcome back, {user?.name}!</h1>
+        <AttendanceMission />
         <AlertBanner />
         <PayrollApprovalNotice />
         <Link to="/payroll/payslips" className="mb-4 inline-block text-indigo-600 dark:text-indigo-300">My payslips</Link>

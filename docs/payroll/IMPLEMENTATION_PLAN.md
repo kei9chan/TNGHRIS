@@ -1109,3 +1109,49 @@ and [guarded definer-function notice](https://supabase.com/docs/guides/database/
 are intentional, matching the existing payroll pattern. Processing modes and actual
 team completion evidence remain unchanged. Recover with a compatible frontend and
 bounded forward fixes; preserve published/frozen audit history.
+
+
+## Employee attendance dashboard — 2026-09-06
+
+Implemented friendly mission/shift/progress/actions/day cards above the existing
+dashboard features and Quick Links. Existing navigation, scheduler and payroll rules
+are retained. Responsive cards stack below desktop width; clock targets are at least
+56px high. Shift times and state come from the authenticated server clock using
+Asia/Manila and the existing published schedule. Unpublished days cannot start a
+clock session. Open overnight sessions retain their original work date.
+
+The additive attendance ledger serializes each employee's actions and checks the
+observed revision and request identifier. The server chooses employee identity and
+timestamps. Ten-second foreground refresh, focus/online refresh and immediate local
+refresh keep devices consistent. Existing time_events receive a server-owned mirror;
+raw client inserts/updates/deletes are blocked by an additive trigger with all existing
+RLS policies unchanged. Legacy raw batch imports and invented auto-close timestamps
+are rejected; verified corrections use the additive HR review workflow.
+
+HR/Admin can add, revise, expire and audit scoped, dated clocking exceptions through
+Dashboard → Manage clocking exceptions & attendance review. Default clocking is
+required. No employee, email or role automatically grants exemption. Original punches
+and prior correction/exception versions remain immutable. Schedule-based attendance
+is labeled for HR payroll review; it does not synthesize punches or skip approval.
+
+| Item | Software | Team status / next action |
+|---|---|---|
+| Dashboard and secure clock states | Implemented | Employees use their existing accounts on their devices |
+| Published shift source | Reused | BU managers must complete and publish actual schedules; pending actual evidence |
+| Clocking exceptions | Implemented | HR/Admin supplies the approved dated exception list; none seeded |
+| Attendance corrections and payroll review | Implemented | HR reviews real missing/incorrect punches and exempt attendance |
+| Payroll duties and live activation | Existing controls retained | Actual assignee list and Phase 9 acceptance remain team-owned prerequisites |
+
+Applied migration `20260906125934_employee_attendance_dashboard.sql`. Essential
+rollback checks cover normal clock/break/end/finish, repeated request IDs, stale
+second-device actions and matching second-device reads, duplicate breaks, completed
+day lock, exemption visibility and payroll input, versioned expiry/audit, missing
+published schedule, and unauthorized attendance/exception/direct writes. No fixture
+attendance, exception or role assignment remains after verification. Rendered-component
+checks cover action visibility for all states and exclusion of policy-heavy employee
+copy. Production build passes; TypeScript retains the 15 unrelated baseline errors.
+Browser visual verification of desktop/mobile remains incomplete: the cloud browser
+blocked local file previews and the production session is at sign-in. This is not
+claimed as a completed authenticated device/browser test.
+
+Security advisor notices for the four RPC-only tables ([RLS without raw policies](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)) and six guarded endpoints ([authenticated definer functions](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable)) were reviewed. Direct table access is denied; active identity and scoped HR authority are checked in the endpoints.

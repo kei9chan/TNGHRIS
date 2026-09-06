@@ -1,4 +1,5 @@
 
+import {AttendanceMissionView} from '../../components/attendance/AttendanceMission';
 import React, { useState, useEffect } from 'react';
 import { useTimeClock } from '../../hooks/useTimeClock';
 import { DeviceSecurityProfile, Role, Permission } from '../../types';
@@ -32,7 +33,7 @@ const ClockInOut: React.FC = () => {
     const [isManagerAuthorized, setIsManagerAuthorized] = useState(false);
     const [isDeviceRooted, setIsDeviceRooted] = useState(false);
     
-    const { isLoading, clockInStatus, lastEvent, todaysShift, addTimeEvent, isRetrying, retryCount, autoCloseStaleShifts } = useTimeClock();
+    const { attendance, isLoading, clockInStatus, lastEvent, todaysShift, addTimeEvent, isRetrying, retryCount, autoCloseStaleShifts } = useTimeClock();
     const canView = can('Clock', Permission.View);
 
     useEffect(() => {
@@ -84,6 +85,8 @@ const ClockInOut: React.FC = () => {
 
             {securityProfile && <DeviceSecurityBanner profile={securityProfile} />}
 
+            <AttendanceMissionView day={attendance.day} elapsed={attendance.elapsed} busy={attendance.busy} error={attendance.error} onAction={attendance.act} onRefresh={attendance.refresh}/>
+            {attendance.day?.requiresClock && attendance.day.schedule.published && ['not_started','working'].includes(attendance.day.state) && <>
             {/* Input Method Selector */}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
                 <button 
@@ -197,17 +200,9 @@ const ClockInOut: React.FC = () => {
                 )}
             </div>
             
-            {/* Debug Footer */}
-            <div className="mt-8 pt-4 border-t dark:border-gray-700 text-center text-xs text-gray-400">
-                <button onClick={() => setIsDeviceRooted(!isDeviceRooted)} className="underline hover:text-gray-300">
-                    Toggle Root/Jailbreak Simulation
-                </button>
-                <span className="mx-2">|</span>
-                <button onClick={async () => { await autoCloseStaleShifts(12); alert('Ran stale shift cleaner'); }} className="underline hover:text-gray-300">
-                    Run Auto-Close
-                </button>
-            </div>
-        </div>
+
+         </>}
+</div>
     );
 };
 
