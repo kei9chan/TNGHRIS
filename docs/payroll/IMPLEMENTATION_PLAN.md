@@ -380,7 +380,8 @@ not automatic proof that every future cutoff is ready.
 | 3 — Attendance | Implemented | Waiting for dated schedules, punches, approvals and HR submission |
 | 4 — Gross pay | Implemented; staff walkthrough pending real inputs | Waiting for approved methods/rates and checked comparisons |
 | 5 — Take-home pay | Implemented; staff walkthrough pending real inputs | Waiting for Finance-reviewed batch workbook, opening balances, contribution allocation and checked comparisons |
-| 6–9 | Not started | Not started |
+| 6 — Special pay / corrections | Implemented; staff walkthrough pending real inputs | Waiting for three reviewed examples, earlier settlements and independent Finance comparisons |
+| 7–9 | Not started | Not started |
 
 The server prepares a BU batch only from the latest current HR-submitted complete
 cutoff. It uses existing dated employee pay packages and existing calendar records;
@@ -447,7 +448,6 @@ fix. Frontend rollback target is Phase 3 main `2f7f9a0`, production deployment
 
 ## Remaining phases (not implemented here)
 
-6. Linked corrections, 13th-month and final pay.
 7. Ordered approvals and private released payslips.
 8. Payment/reporting outputs and recorded payment outcomes.
 9. Reconciled activation for the approved employee groups.
@@ -561,3 +561,120 @@ Earlier automatic review blocks were resolved by the user's explicit instruction
 changes for the existing public `kei9chan/TNGHRIS` main and production database.
 Publish through the repository's required PR and verify the resulting production
 commit/deployment; no additional sign-in or permission request is needed.
+
+
+## Phase 6 — Corrections, 13th-month and final pay (2026-09-06)
+
+Prepared frontend: **Special Pay & Corrections**, `/payroll/special-pay`; existing
+`/payroll/final-pay` opens the same reviewed workspace. The old unreachable final-pay
+prototype is not reused for its assumed 261 divisor, months-times-current-salary
+formula or unsaved approval button. Existing employee offboarding, end dates,
+checklists and document workflows remain authoritative. No new HRIS roles or salary,
+leave, document, loan-balance or offboarding writer was introduced.
+
+Each employee case retains immutable versions and line explanations. Corrected
+entitlement/liability minus actual settled amounts produces the remaining earning
+or deduction. Original net runs can be linked, including stale originals being
+corrected; their stored result and hash are preserved. External legacy payroll uses
+explicit source and actual-settlement references. A prior shadow run never counts
+as payment. Revisions require the latest expected case version; identical retries
+return that version. Source item keys cannot be reused in a different case.
+
+13th-month pay uses reviewed actual basic earnings by calendar period / 12, less
+actual earlier payments. Eligibility, completeness, more favorable policy benefits
+and the annual benefit-exemption usage require reviewed records. Mixed monthly and
+cutoff totals, duplicate periods and prior payments exceeding entitlement block.
+A second final/13th case cannot reserve another unpaid 13th-month balance while the
+other case still reserves one. Reconcile the actual prior settlement first.
+
+Final pay matches the employee's canonical HRIS end date. Approved leave conversion,
+reviewed lawful accountabilities, already-settled amounts and offboarding references
+are required, including explicitly confirmed none. Existing supporting documents
+may be linked. No automatic clearance hold, leave conversion divisor or deduction
+policy was added. Changes to salary history, employee/end-date information, linked
+documents, checklists or recorded loan balances flag saved versions for review.
+
+Annualized withholding uses actual current-year taxable earnings plus previous
+employer taxable earnings, less both employers' prior withholding net of earlier
+refunds. It applies to final pay or December year-end cases under the reviewed 2026
+rule set. Negative tax is retained as a refund. Ordinary corrections/supplements
+can retain a source-backed Finance calculation instead of inventing a tax treatment.
+Taxable contribution adjustments are limited to the signed employee mandatory
+contribution lines. Employer costs remain separate. Negative remaining net is saved
+for explanation but cannot receive the independent Finance check.
+
+Preparation requires scoped Prepare PR, existing salary/employee access, an active
+HRIS account, another preparer for one's own pay, and BU/parent shadow gates. A
+separate scoped Finance authorizer with existing salary-edit rights checks the
+exact current version; neither its preparer nor its payee may do that check. This
+is an input/calculation review, not the Phase 7 ordered payroll approval sequence.
+No payroll approval, loan posting, payslip release, tax filing or payment is created.
+
+Applied migration: `20260906055056_payroll_special_phase6`. The migration filename was aligned to the successful production ledger version.
+The CLI created empty draft files before its trailing network check failed; those
+empty drafts were removed after confirming the one applied migration.
+The last successful physical backup verified earlier in this release session was
+2026-09-05 16:54:58 UTC. A fresh dashboard revisit returned 404, so it does not
+constitute a second backup verification.
+
+Checks: isolated temporary-function arithmetic with rollback, then the installed
+pure calculator: correction delta, deterministic replay, 13th less actual prior
+payments, separated-employee annualization including previous employer, tax refund,
+annual bracket anchors, duplicate sources, overpayment, final-tax-method and NaN
+rejection. Read-only authenticated checks confirm management does not grant salary
+access or special-pay preparation/review, raw-table access is denied, RLS is on and
+anonymous/private calculator execution is denied. Existing auth/RBAC/direct-manager
+smoke checks pass. Production build passes. TypeScript retains the 15 unrelated
+baseline errors and no new payroll error. No real fixture rows or grants were made.
+
+Security notices for the two RPC-only tables and four guarded authenticated
+SECURITY DEFINER endpoints were reviewed against the same
+[RLS guidance](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)
+and [RPC guidance](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable)
+as earlier phases. Public wrappers validate the current actor, scope and existing
+sensitive permissions; private helpers and raw tables are not client-accessible.
+
+### Team's simple Phase 6 check — still pending
+
+1. Finish actual scoped duties and prerequisite salary/attendance/Finance reviews.
+   Supply a real past salary correction, complete actual basic-pay history and
+   earlier 13th payments, and a separated-employee case with its HRIS end date.
+2. HR/Finance reconcile leave balance/rate/conversion authority, lawful deductions,
+   prior payments/refunds and current/previous-employer tax records. Confirm each
+   supported tax treatment; retain unsupported cases in the documented existing
+   process. No policy values are inferred from a job title or HRIS role.
+3. For each of the three cases, enable only the selected shadow scope, prepare,
+   compare against independently checked records and have another Finance reviewer
+   check that exact version. Verify remaining amounts exclude actual settlements,
+   a retry creates no duplicate, and a source change requires a new linked version.
+   Earlier results, loan balances and released payslips must stay unchanged.
+4. Record the comparison references in the team checklist. Team tasks remain Waiting
+   until actual completion evidence is recorded. Successful staff save/retry/review,
+   concurrent case preparation and real-source revision walkthroughs are unverified
+   while real duty assignments and inputs remain absent.
+
+The release checklist includes Phases 1–6. All nine processing scopes remain off.
+No Phase 6 production case or Finance review was seeded. Phase 7 will add the ordered
+HR → Finance → two-BOD approval and private payslip sequence; Phases 8–9 cover
+payment/reporting and reconciled activation. Do not treat these shadow reservations
+as a settled-payment ledger. Actual cross-system settlement/loan posting and final
+approval gates must be enforced in those phases before live payment is available.
+
+Release: merge only the reviewed Phase 6 source to main; confirm production READY
+before calling it live. Recovery: keep affected scopes off, retain immutable history
+and use a forward fix. Prior compatible main is `fb8ce31` (Phase 5); a frontend revert
+does not undo the database addition. No whole-database restore for a UI issue.
+
+
+### Phase 6 publication — explicitly approved
+
+The user explicitly approved publishing Phase 6 to public `kei9chan/TNGHRIS` on
+`main` and deploying it. This resolves the earlier automatic-review publication
+block. The database migration is already applied and must not be reapplied.
+
+This release includes the special-pay page/client, exact applied migration, focused
+SQL checks, navigation/routes, maintained checklist and payroll implementation/statutory
+references. Build, arithmetic and access checks passed. Real staff preparation/review
+remains pending actual duty assignments and records. No team completion or live
+processing is enabled by publication. Verify the production deployment reaches READY
+before reporting this release live.
