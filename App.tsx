@@ -19,6 +19,8 @@ import { usePermissionsContext } from './context/PermissionsContext';
 import { NavLink, Permission, Resource } from './types';
 import { hasEvaluationOversightAccess } from './utils/evaluationAccess';
 import Layout from './components/layout/Layout';
+import { isPayrollAccessRoute, isStaffPayrollRoute } from './modules/payroll/routes';
+const PayrollAccessPage = React.lazy(() => import('./modules/payroll/PayrollAccessPage'));
 const Login = React.lazy(() => import('./pages/Login'));
 const SignUp = React.lazy(() => import('./pages/SignUp'));
 const RegistrationSuccess = React.lazy(() => import('./pages/RegistrationSuccess'));
@@ -59,18 +61,10 @@ import WFHRequests from './pages/payroll/WFHRequests'; // NEW
 const Leave = React.lazy(() => import('./pages/payroll/Leave'));
 const LeaveCredits = React.lazy(() => import('./pages/payroll/LeaveCredits'));
 const Loans = React.lazy(() => import('./pages/payroll/Loans'));
-const PayrollPrep = React.lazy(() => import('./pages/payroll/PayrollPrep'));
 const AttendanceExceptions = React.lazy(() => import('./pages/payroll/AttendanceExceptions'));
 const PayrollReports = React.lazy(() => import('./pages/payroll/PayrollReports'));
 const DailyTimeSummary = React.lazy(() => import('./pages/payroll/reports/DailyTimeSummary'));
 const ExceptionsReport = React.lazy(() => import('./pages/payroll/reports/ExceptionsReport'));
-const PayrollStaging = React.lazy(() => import('./pages/payroll/PayrollStaging'));
-const Payslips = React.lazy(() => import('./pages/payroll/Payslips'));
-const GovernmentReports = React.lazy(() => import('./pages/payroll/GovernmentReports'));
-const GovernmentReportDetail = React.lazy(() => import('./pages/payroll/reports/GovernmentReportDetail'));
-const GovernmentReportTemplates = React.lazy(() => import('./pages/payroll/GovernmentReportTemplates'));
-const FinalPayCalculator = React.lazy(() => import('./pages/payroll/FinalPayCalculator'));
-const PayrollConfiguration = React.lazy(() => import('./pages/payroll/PayrollConfiguration'));
 const Evaluations = React.lazy(() => import('./pages/evaluation/Evaluations'));
 const NewEvaluation = React.lazy(() => import('./pages/evaluation/NewEvaluation'));
 const QuestionBank = React.lazy(() => import('./pages/evaluation/QuestionBank'));
@@ -233,6 +227,10 @@ const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }
     );
   }
 
+  // This module has independent database permissions. Legacy money prototypes
+  // never mount; clock/leave/OT/WFH continue through their existing guards.
+  if (isPayrollAccessRoute(location.pathname) || isStaffPayrollRoute(location.pathname)) return children;
+
   const required = routePermissions.find(([prefix]) => location.pathname.startsWith(prefix));
   const isEvaluationReadRoute = location.pathname === '/evaluation/reviews'
     || location.pathname.startsWith('/evaluation/report/')
@@ -350,6 +348,7 @@ const AppRoutes: React.FC = () => {
 
         {/* Payroll Section */}
         <Route path="payroll" element={<Outlet />}>
+            <Route path="access" element={<ProtectedRoute><PayrollAccessPage /></ProtectedRoute>} />
             <Route index element={<Navigate to="timekeeping" replace />} />
             <Route path="timekeeping" element={<ProtectedRoute><Timekeeping /></ProtectedRoute>} />
             <Route path="manpower-planning" element={<ProtectedRoute><ManpowerPlanning /></ProtectedRoute>} />
@@ -364,18 +363,18 @@ const AppRoutes: React.FC = () => {
             <Route path="leave" element={<ProtectedRoute><Leave /></ProtectedRoute>} />
             <Route path="leave-credits" element={<ProtectedRoute><LeaveCredits /></ProtectedRoute>} />
             <Route path="loans" element={<ProtectedRoute><Loans /></ProtectedRoute>} />
-            <Route path="payroll-prep" element={<ProtectedRoute><PayrollPrep /></ProtectedRoute>} />
+            <Route path="payroll-prep" element={<ProtectedRoute><PayrollAccessPage staffOnly /></ProtectedRoute>} />
             <Route path="exceptions" element={<ProtectedRoute><AttendanceExceptions /></ProtectedRoute>} />
             <Route path="reports" element={<ProtectedRoute><PayrollReports /></ProtectedRoute>} />
             <Route path="reports/time-summary" element={<ProtectedRoute><DailyTimeSummary /></ProtectedRoute>} />
             <Route path="reports/exceptions" element={<ProtectedRoute><ExceptionsReport /></ProtectedRoute>} />
-            <Route path="staging" element={<ProtectedRoute><PayrollStaging /></ProtectedRoute>} />
-            <Route path="payslips" element={<ProtectedRoute><Payslips /></ProtectedRoute>} />
-            <Route path="government-reports" element={<ProtectedRoute><GovernmentReports /></ProtectedRoute>} />
-            <Route path="government-reports/:reportId" element={<ProtectedRoute><GovernmentReportDetail /></ProtectedRoute>} />
-            <Route path="report-templates" element={<ProtectedRoute><GovernmentReportTemplates /></ProtectedRoute>} />
-            <Route path="final-pay" element={<ProtectedRoute><FinalPayCalculator /></ProtectedRoute>} />
-            <Route path="configuration" element={<ProtectedRoute><PayrollConfiguration /></ProtectedRoute>} />
+            <Route path="staging" element={<ProtectedRoute><PayrollAccessPage staffOnly /></ProtectedRoute>} />
+            <Route path="payslips" element={<ProtectedRoute><PayrollAccessPage staffOnly /></ProtectedRoute>} />
+            <Route path="government-reports" element={<ProtectedRoute><PayrollAccessPage staffOnly /></ProtectedRoute>} />
+            <Route path="government-reports/:reportId" element={<ProtectedRoute><PayrollAccessPage staffOnly /></ProtectedRoute>} />
+            <Route path="report-templates" element={<ProtectedRoute><PayrollAccessPage staffOnly /></ProtectedRoute>} />
+            <Route path="final-pay" element={<ProtectedRoute><PayrollAccessPage staffOnly /></ProtectedRoute>} />
+            <Route path="configuration" element={<ProtectedRoute><PayrollAccessPage staffOnly /></ProtectedRoute>} />
         </Route>
 
         {/* Evaluation Section */}

@@ -26,6 +26,7 @@ import EmployeeAssetsCard from '../../components/employees/EmployeeAssetsCard';
 import Card from '../../components/ui/Card';
 import MemoViewModal from '../../components/feedback/MemoViewModal';
 import Button from '../../components/ui/Button';
+import PayrollAccessCard from '../../modules/payroll/PayrollAccessCard';
 
 const EmployeeProfile: React.FC = () => {
     const { employeeId, userId } = useParams<{ employeeId?: string; userId?: string }>();
@@ -491,6 +492,7 @@ const EmployeeProfile: React.FC = () => {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 space-y-6">
                     <EmploymentDetailsCard user={userToView} />
+                    <PayrollAccessCard key={userToView.id} employeeId={userToView.id} />
                     
                     <EmployeeAssetsCard employeeId={userToView.id} isMyProfile={isMyProfile} />
 
