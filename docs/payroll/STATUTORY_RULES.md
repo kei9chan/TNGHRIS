@@ -46,3 +46,27 @@ monthly bases, coverage and tax/benefit treatment before an internal calculation
 
 Amounts use PostgreSQL numeric and explicit cent rounding. Browser/workbook code
 displays or imports decimal strings and does not calculate payroll money.
+
+
+## Phase 6 — 2026 special-pay review
+
+- [DOLE 13th-month guidance](https://dole.gov.ph/no-delays-allowed-on-13th-month-pay-dole1/):
+  reviewed actual basic salary earned in the year divided by 12; prior settlements
+  are deducted. The engine requires eligibility and complete earnings evidence.
+- [RA 10963, Section 24 annual rates from 2023](https://www.lawphil.net/statutes/repacts/ra2017/ra_10963_2017.html):
+  0 / 15 / 20 / 25 / 30 / 35 percent brackets; aggregate 13th-month/other-benefit
+  exemption capped at PHP 90,000 with reviewed prior usage across employers.
+- [BIR RR 11-2018, annualized withholding](https://bir-cdn.bir.gov.ph/local/pdf/Digest%20RR%2011-2018.pdf),
+  pages 27–29: actual taxable earnings through separation or December year-end,
+  including previous employment, reconciled to prior withholding. Negative
+  differences remain refunds. No projection through December for a September exit.
+- [DOLE final-pay guidance](https://dole.gov.ph/final-pay-coe-must-be-released-on-time-dole/):
+  unpaid wages and applicable benefits are reconciled through existing offboarding.
+  This phase adds no automatic clearance hold, payment scheduler or inferred leave
+  conversion policy. Actual release is part of later payment phases.
+
+Limited to reviewed 2026 employment-income cases. Tax coverage, exempt portions,
+more favorable benefits, authorized leave conversion and recoveries are evidence
+inputs, not deductions inferred from labels. Consultant fees, unsupported tax or
+benefit cases and historical-year corrections remain with the documented existing
+process. Non-final/non-year-end withholding is explicitly reviewed by Finance.

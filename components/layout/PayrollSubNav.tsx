@@ -40,7 +40,7 @@ const iconMap: { [key: string]: React.FC<{className?: string}> } = {
     'Government Reports': BuildingLibraryIcon,
     'Report Templates': DocumentDuplicateIcon,
     'Reports': ChartBarIcon,
-    'Final Pay Calculator': ArchiveBoxXMarkIcon,
+    'Special Pay & Corrections': ArchiveBoxXMarkIcon,
     'Clock Log': DocumentMagnifyingGlassIcon,
     'Daily Time Review': ClipboardDocumentCheckIcon,
     'Manpower Planning': UserGroupIcon,
@@ -70,7 +70,7 @@ const PayrollSubNav: React.FC = () => {
             },
             {
                 name: 'Payroll',
-                links: subLinks.filter(link => ['Payroll Access', 'Pay Packages', 'Gross Pay Review', 'Take-home Pay Review', 'Payroll Prep', 'Payroll Staging', 'Payslips', 'Loan Application System', 'Final Pay Calculator'].includes(link.name))
+                links: subLinks.filter(link => ['Payroll Access', 'Pay Packages', 'Gross Pay Review', 'Take-home Pay Review', 'Payroll Prep', 'Payroll Staging', 'Payslips', 'Loan Application System', 'Special Pay & Corrections'].includes(link.name))
             },
             {
                 name: 'Compliance & Reports',
