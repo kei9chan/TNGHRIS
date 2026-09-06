@@ -36,9 +36,9 @@ export default function PayrollAccessPage({ staffOnly = false }: { staffOnly?: b
   return <div className="space-y-6">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div><h1 className="text-2xl font-bold text-gray-900 dark:text-white">Payroll Access</h1><p className="mt-1 text-gray-600 dark:text-slate-300">Assign payroll duties and control who can work with each business unit or group.</p></div>
-      <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-medium text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">Payroll processing off</span>
+      <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-medium text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">Live payroll disabled</span>
     </div>
-    {staffOnly && <Card><p className="text-gray-700 dark:text-slate-200">Payroll processing is off. Your assigned duties are shown below; calculations, approvals and payment releases are unavailable.</p></Card>}
+    {staffOnly && <Card><p className="text-gray-700 dark:text-slate-200">Your assigned duties are shown below. Internal gross calculations are available in <Link className="text-indigo-600" to="/payroll/gross-pay">Gross Pay Review</Link> once its shadow scope and inputs are ready. Approvals and payment releases remain unavailable.</p></Card>}
     <PayrollAccessCard />
     <Card title="Waiting for the payroll assignee list?"><p className="text-sm text-gray-700 dark:text-slate-200">Your team can prepare actual schedules and source records now. <Link className="font-medium text-indigo-600 dark:text-indigo-300" to="/payroll/attendance-readiness">Open the per-phase setup checklist →</Link></p></Card>
     {canManage && <>

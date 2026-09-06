@@ -22,6 +22,7 @@ import Layout from './components/layout/Layout';
 import { isPayrollAccessRoute, isStaffPayrollRoute } from './modules/payroll/routes';
 const PayrollAccessPage = React.lazy(() => import('./modules/payroll/PayrollAccessPage'));
 const PayPackagesPage = React.lazy(() => import('./modules/payroll/PayPackagesPage'));
+const GrossPayPage = React.lazy(() => import('./modules/payroll/GrossPayPage'));
 const AttendanceReadinessPage = React.lazy(() => import('./modules/payroll/AttendanceReadinessPage'));
 const Login = React.lazy(() => import('./pages/Login'));
 const SignUp = React.lazy(() => import('./pages/SignUp'));
@@ -352,6 +353,7 @@ const AppRoutes: React.FC = () => {
         <Route path="payroll" element={<Outlet />}>
             <Route path="access" element={<ProtectedRoute><PayrollAccessPage /></ProtectedRoute>} />
             <Route path="pay-packages" element={<ProtectedRoute><PayPackagesPage /></ProtectedRoute>} />
+            <Route path="gross-pay" element={<ProtectedRoute><GrossPayPage /></ProtectedRoute>} />
             <Route path="attendance-readiness" element={<ProtectedRoute><AttendanceReadinessPage /></ProtectedRoute>} />
             <Route index element={<Navigate to="timekeeping" replace />} />
             <Route path="timekeeping" element={<ProtectedRoute><Timekeeping /></ProtectedRoute>} />
