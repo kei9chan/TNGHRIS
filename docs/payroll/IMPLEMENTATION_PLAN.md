@@ -383,7 +383,7 @@ not automatic proof that every future cutoff is ready.
 | 6 — Special pay / corrections | Implemented; staff walkthrough pending real inputs | Waiting for three reviewed examples, earlier settlements and independent Finance comparisons |
 | 7 — Approvals / private payslips | Implemented; staff walkthrough pending real inputs | Waiting for eligible assignees and one complete shadow approval walkthrough |
 | 8 — Payments / reports | Implemented; external formats use assigned existing processes | Waiting for Finance owners, approved bank specification, report comparisons and real outcome acceptance |
-| 9 — Compare / activate | Not started | Waiting for two accepted cutoff comparisons and pilot authorization |
+| 9 — Compare / activate | Implemented; operational acceptance pending | Waiting for assigned reviewers, two accepted real cutoff comparisons, pilot handover authorization and first live reconciliation |
 
 The server prepares a BU batch only from the latest current HR-submitted complete
 cutoff. It uses existing dated employee pay packages and existing calendar records;
@@ -965,3 +965,101 @@ intentionally enforce active identity, payroll scope and existing HRIS permissio
 No anonymous endpoint or private helper grant was added. The expected notices are
 [RLS with no raw policies](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)
 and [intentional guarded RPC execution](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable).
+
+## Phase 9 — Whole-cutoff comparison and controlled pilot (2026-09-06)
+
+Software implemented in **Payroll → Compare & Pilot**. Team readiness remains
+**Waiting on team**. Deployment does not activate payroll, assign duties, approve
+comparisons or create payment evidence. The prior repeated authorization to publish
+to `main` applies; the rollout continues through the repository's required merge
+mechanism and existing production deployment.
+
+### What the software does
+
+- Downloads one workbook for the entire saved regular shadow cutoff. It contains
+  exact-decimal gross, deduction, net, tax and employer totals plus every earnings,
+  statutory-share, loan and other-deduction line. Finance supplies actual legacy
+  amounts, the complete legacy employee roster and register/coverage references.
+  Missing, additional or duplicate employees/rows, blank amounts, changed source
+  columns, formulas and excessive precision are rejected. A component mapping or
+  aggregation against the legacy register must be documented in coverage evidence;
+  the app cannot discover an omitted legacy component from a missing source file.
+- Imports locally for review, then records an immutable comparison revision.
+  Every nonzero difference requires an explanation and approved policy/source
+  reference. The newest comparison must still match current source inputs, cover
+  a completed real cutoff and have all six shadow approval steps before acceptance.
+  Assigned HR Manager and Finance authorizer accept independently; the comparison
+  preparer cannot accept, and one person cannot supply both acceptances.
+- Finance proposes one BU's first live cutoff after two consecutive accepted
+  comparisons spanning a contribution month. The second must link the first net
+  version. Handover evidence names sole payroll ownership/legacy stop, tax/YTD,
+  employee/employer contributions, loans, in-flight legacy payments and supported
+  versus existing-process cases. All eight output processes need an active Finance
+  owner. Two distinct BODs approve the exact evidence; changed evidence needs a
+  fresh proposal. A scoped access manager then deliberately activates that BU.
+- Live mode requires an immutable pilot certificate. An organization or payroll
+  group cannot be made live. The parent gate must already permit processing; all
+  other BUs retain their own settings. The first live cutoff is the only live
+  regular cutoff allowed until monitoring is accepted. A reviewed calculation may
+  be reused when still current, but live submission creates a separate approval
+  workflow: no shadow approval is copied into it. Existing HR/Finance/two-BOD
+  ordering, material-editor exclusions, settlement uniqueness, bank verification,
+  payment outcome rules and private employee payslips remain enforced.
+- After actual full-batch payment, independent HR and Finance review the first live
+  cutoff. Pending/unpaid/returned amounts or unrestored loan postings block this
+  review. Reviews bind to payment evidence; changed evidence requires a fresh
+  review revision. The scoped access manager may then continue subsequent cutoffs
+  and allow the next BU's pilot, one BU at a time. Stop/resume controls retain the
+  original handover and audit history. A transaction lock coordinates processing
+  stops with approval/payment writes. Stopping HRIS does not cancel instructions
+  already sent through an external bank process.
+
+### Team checklist and current status
+
+| Owner | Required action | Status at deployment |
+|---|---|---|
+| Kay / HR / Finance | Supply and assign actual scoped payroll duties, including separate reviewers and two BODs | Waiting; only organization access management assigned |
+| BU managers / HR | Enter real schedules/rest days and punches; complete leave, WFH, OT and timekeeping approvals | Team confirmation/source completion pending |
+| HR / Finance | Confirm approved pay, policy inputs, statutory/YTD and loan evidence for the selected real cutoffs | Team review pending |
+| Finance | Produce two consecutive real shadow cutoffs and fill one comparison workbook per cutoff | Waiting; no saved payroll runs yet |
+| HR Manager / independent Finance | Review every difference, its policy evidence and complete legacy roster/components; accept both comparisons | Waiting for comparisons and six-step shadow approvals |
+| Finance | Name all eight output-process owners and their existing procedures | Waiting for assignments and references |
+| Finance / Kay / two BODs | Agree the first live BU/cutoff, legacy ownership stop, reconciled openings and in-flight payments; approve and activate | Blocked until evidence is complete; all nine scopes off |
+| HR / Finance / Kay | Reconcile first actual live payment, loans and payslips; record two independent reviews before continuation/next BU | Not yet applicable |
+
+Use retained authentic source records or complete upcoming actual cutoffs. Do not
+invent historical schedules, attendance, approvals or receipts to pass readiness.
+Before the first live calculation, Finance must reconcile imported openings and
+any prior-run chain to the actual handover; shadow projections alone are not proof
+of settlement. Legacy engine ownership is a documented team action: this app
+cannot disable an external payroll product. Special-pay settlement remains with
+its named existing process until cross-case reconciliation is separately validated.
+The payment/agency workpapers are not validated upload or filing formats.
+
+### Verification and release evidence
+
+Applied only `20260906074753_payroll_comparison_pilot_phase9.sql` through the bounded
+migration endpoint. The application build and exact-decimal workbook round trip
+passed, including formula, source-fingerprint, missing-value and roster rejection.
+The installed PostgreSQL checks passed for exact differences, unresolved blockers,
+invalid/missing/duplicate inputs, cutoff boundaries, uncertified live denial,
+separate shadow/live workflow uniqueness and distinct HR/Finance acceptance.
+Constraint checks used disposable temporary tables rolled back in the same
+transaction, with no real payroll fixtures.
+
+Read-only checks under the existing management-only identity passed: salary
+comparisons remain hidden, unauthorized proposal/activation/monitoring fail, raw
+table access and private helper execution are denied, anonymous access is denied,
+and all nine scopes remain off with no comparison or activation records. Existing
+role, user-role and RLS-policy hashes match before/after. Existing dashboard auth,
+RBAC and direct-manager approval smoke checks passed. Full-project TypeScript has
+the same 15 unrelated baseline errors, with no new Phase 9 errors.
+
+Security advisors were reviewed: seven new RPC-only tables intentionally have RLS
+without raw client policies; nine authenticated definer RPCs enforce active
+identity, scoped duties and existing HRIS permissions. No anonymous or private
+helper access was added. Actual positive multi-account acceptance, the first live
+payroll/payment/reissue journey and production stop/concurrency behavior still need
+the named team's real operational evidence. These are not claimed verified by
+static, pure-function or denied-access tests. Verify the exact merged commit's
+production deployment is READY before reporting the release complete.
