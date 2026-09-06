@@ -11,6 +11,7 @@ import AlertBanner from '../components/dashboard/AlertBanner';
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
+  const greetingName = (user?.name?.includes(',') ? user.name.split(',')[1] : user?.name)?.trim().split(/\s+/)[0];
 
   const renderDashboard = () => {
     switch (user?.dashboardType) {
@@ -29,7 +30,7 @@ const Dashboard: React.FC = () => {
 
   return (
     <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-6">Welcome back, {user?.name}!</h1>
+        <h1 className="text-lg sm:text-xl font-semibold text-white mb-3">Welcome back{greetingName ? `, ${greetingName}` : ''}!</h1>
         <AttendanceMission />
         <AlertBanner />
         <PayrollApprovalNotice />
