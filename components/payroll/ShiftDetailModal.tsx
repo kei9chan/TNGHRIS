@@ -1,3 +1,4 @@
+import {scheduleLabel} from '../../services/schedulePolicy';
 import React from 'react';
 import { ShiftAssignment, User, ShiftTemplate, ShiftRotationTemplate } from '../../types';
 import Modal from '../ui/Modal';
@@ -64,7 +65,7 @@ const ShiftDetailModal: React.FC<ShiftDetailModalProps> = ({ isOpen, onClose, on
                 <DetailItem label="Employee">{employee.name}</DetailItem>
                 <DetailItem label="Date">{new Date(assignment.date).toLocaleDateString()}</DetailItem>
                 <DetailItem label="Shift">{shift.name}</DetailItem>
-                <DetailItem label="Time">{shift.startTime} - {shift.endTime}</DetailItem>
+                <DetailItem label="Schedule / paid hours">{scheduleLabel(shift)}</DetailItem>
                 <div className="sm:col-span-2">
                     <DetailItem label="Source of Assignment">
                         {rotation ? (

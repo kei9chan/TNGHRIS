@@ -1236,6 +1236,9 @@ export interface Site {
 }
 
 export interface ShiftTemplate {
+  scheduleKind?: 'work' | 'rest' | 'no_schedule';
+  endDayOffset?: 0 | 1;
+  paidMinutes?: number;
   id: string;
   name: string;
   startTime: string;

@@ -1,3 +1,4 @@
+import {COMPANY_GRACE_MINUTES} from '../../services/schedulePolicy';
 // Phase 2 Migration: mock imports removed (shift data passed via todaysShift prop)
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -132,8 +133,8 @@ const MobileCheckIn: React.FC<MobileCheckInProps> = ({ clockInStatus, addTimeEve
         if (todaysShift && nextType === TimeEventType.ClockIn) {
              const shiftTemplate = shiftTemplates.find(st => st.id === todaysShift.shiftTemplateId);
              const site = sites.find(s => s.id === todaysShift.locationId);
-             if (shiftTemplate) {
-                 const grace = site?.gracePeriodMinutes ?? shiftTemplate.gracePeriodMinutes;
+             if (shiftTemplate && !shiftTemplate.isFlexible && (shiftTemplate.scheduleKind ?? 'work') === 'work') {
+                 const grace = COMPANY_GRACE_MINUTES;
                  const [h, m] = shiftTemplate.startTime.split(':').map(Number);
                  const start = new Date(todaysShift.date);
                  start.setHours(h, m + grace, 0, 0);

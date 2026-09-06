@@ -1,3 +1,4 @@
+import {COMPANY_GRACE_MINUTES} from './schedulePolicy';
 import { ShiftAssignment, TimeEvent, ShiftTemplate, Site, AttendanceExceptionRecord, ExceptionType, TimeEventType, User, AttendanceRecord, AttendanceStatus, AttendanceException } from '../types';
 
 // Helper to get minutes from "HH:MM" string
@@ -54,7 +55,7 @@ export const generateDailyRecords = (
             status: AttendanceStatus.Pending
         };
 
-        if (template && template.name !== 'OFF') {
+        if (template && !template.isFlexible && (template.scheduleKind ?? 'work') === 'work' && template.name !== 'OFF') {
             const shiftStartMinutes = getMinutes(template.startTime);
             const shiftEndMinutes = getMinutes(template.endTime);
             const isOvernight = shiftEndMinutes < shiftStartMinutes;
@@ -81,7 +82,7 @@ export const generateDailyRecords = (
         // Exception Logic (Re-using logic conceptually)
         if (record.scheduledStart) {
             if (record.firstIn) {
-                const graceThreshold = new Date(record.scheduledStart.getTime() + (template?.gracePeriodMinutes || 0) * 60000);
+                const graceThreshold = new Date(record.scheduledStart.getTime() + COMPANY_GRACE_MINUTES * 60000);
                 if (record.firstIn > graceThreshold) record.exceptions.push(AttendanceException.Late);
             } else if (new Date() > record.scheduledEnd!) {
                 record.exceptions.push(AttendanceException.Absent); // Or Missing In
@@ -160,7 +161,7 @@ export const generateAttendanceExceptions = (
 
     assignments.forEach(assignment => {
         const template = templates.find(t => t.id === assignment.shiftTemplateId);
-        if (!template || template.name === 'OFF' || template.startTime === '00:00') return;
+        if (!template || template.isFlexible || (template.scheduleKind ?? 'work') !== 'work' || template.name === 'OFF') return;
 
         // Get logs for this specific shift/day
         // Logic: Find logs that occurred on the assignment date (simplification for prototype)
@@ -186,11 +187,11 @@ export const generateAttendanceExceptions = (
 
         // --- LATE IN ---
         if (clockIn) {
-            const gracePeriod = template.gracePeriodMinutes || 0;
+            const gracePeriod = COMPANY_GRACE_MINUTES;
             const lateThreshold = new Date(shiftStart.getTime() + gracePeriod * 60000);
 
             if (new Date(clockIn.timestamp) > lateThreshold) {
-                const diffMins = Math.floor((new Date(clockIn.timestamp).getTime() - shiftStart.getTime()) / 60000);
+                const diffMins = Math.floor((new Date(clockIn.timestamp).getTime() - lateThreshold.getTime()) / 60000);
                 exceptions.push({
                     id: `EX-LATE-${assignment.id}`,
                     employeeId: assignment.employeeId,
