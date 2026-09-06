@@ -1,4 +1,5 @@
 import React from 'react';
+import {uniqueShifts} from '../../services/attendanceExperience';
 import {Link} from 'react-router-dom';
 import {useAttendanceClock} from '../../hooks/useAttendanceClock';
 import type {AttendanceDay,ClockAction} from '../../services/employeeAttendance';
@@ -7,9 +8,9 @@ const duration=(seconds:number)=>{const minutes=Math.floor(seconds/60);return `$
 const time=(value:string,zone:string)=>new Intl.DateTimeFormat('en-PH',{timeZone:zone,hour:'numeric',minute:'2-digit'}).format(new Date(value));
 const shiftTime=(day:string,value:string,zone:string)=>time(`${day}T${value.slice(0,8)}+08:00`,zone);
 const status={not_started:'READY WHEN YOU ARE',working:'ON THE CLOCK',on_break:'RECHARGING',completed:'DAY COMPLETE'};
-export function AttendanceMissionView({day,elapsed,busy,error,onAction,onRefresh}:{day:AttendanceDay|null;elapsed:number;busy:boolean;error:string;onAction:(action:ClockAction)=>void;onRefresh:()=>void}){
+export function AttendanceMissionView({day,elapsed,busy,error,onAction,onRefresh,exceptionActions}:{day:AttendanceDay|null;elapsed:number;busy:boolean;error:string;onAction:(action:ClockAction)=>void;onRefresh:()=>void;exceptionActions?:React.ReactNode}){
  const working=day?.state==='working',onBreak=day?.state==='on_break',done=day?.state==='completed';
- const schedule=day?.schedule,entries=schedule?.entries??[];
+ const schedule=day?.schedule,entries=uniqueShifts(schedule?.entries??[]);
  const canStart=!!day&&day.requiresClock&&schedule?.published&&entries.length>0&&entries.every(s=>s.kind==='work');
  const events=day?.events??[];const started=events.find(e=>e.type==='CLOCK_IN'),breaks=events.filter(e=>e.type==='START_BREAK'),back=events.filter(e=>e.type==='END_BREAK'),finish=events.find(e=>e.type==='CLOCK_OUT');
  const paid=entries.reduce((total,s)=>{if(s.kind!=='work')return total;if(s.flexible)return total+(s.paidMinutes??0);const mins=(t:string)=>Number(t.slice(0,2))*60+Number(t.slice(3,5));return total+Math.max(0,mins(s.end)-mins(s.start)+(s.endDayOffset??0)*1440-60);},0);
@@ -32,6 +33,7 @@ export function AttendanceMissionView({day,elapsed,busy,error,onAction,onRefresh
      {(working||onBreak||canStart)&&<button disabled={busy} onClick={()=>onAction(onBreak?'END_BREAK':working?'START_BREAK':'CLOCK_IN')} className={`min-h-14 rounded-xl bg-violet-600 px-4 py-3 text-base font-bold text-white shadow-sm hover:bg-violet-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600 disabled:opacity-50 ${!working?'col-span-full':''}`}>{busy?'Saving…':onBreak?'End Break':working?'Take a Break':'Clock In'}</button>}
      {working&&<button disabled={busy} onClick={()=>onAction('CLOCK_OUT')} className="min-h-14 rounded-xl border border-violet-300 bg-white px-4 py-3 text-base font-bold text-violet-700 hover:bg-violet-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600 disabled:opacity-50 dark:bg-slate-800 dark:text-violet-200">Clock Out</button>}
     </div>}
+    {exceptionActions}
     <p className="mt-4 text-sm text-violet-700 dark:text-violet-200">{done?'Your day is recorded. See you next time!':onBreak?'A little recharge goes a long way.':'Keep your day moving — you’ve got this.'}</p>
     <Link to="/payroll/timekeeping" className="mt-4 inline-block text-sm font-semibold text-violet-700 underline dark:text-violet-200">View schedule</Link>
    </div>

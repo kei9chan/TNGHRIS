@@ -1,0 +1,30 @@
+begin;set local lock_timeout='2s';set local statement_timeout='40s';
+do $$declare emp uuid;authid uuid;mgr uuid;mauth uuid;hr uuid;hauth uuid;rid uuid;key uuid:=gen_random_uuid();dt date:=(now() at time zone 'Asia/Manila')::date-2;denied boolean;rows jsonb;bu uuid;wk date;begin
+ select h.id,h.auth_user_id,private.punch_direct_manager(h.id),h.business_unit_id into strict emp,authid,mgr,bu from public.hris_users h where lower(h.status)='active' and h.auth_user_id is not null and private.punch_direct_manager(h.id) is not null and not exists(select 1 from public.attendance_clock_sessions where employee_id=h.id) limit 1;
+ select auth_user_id into mauth from public.hris_users where id=mgr;
+ select h.id,h.auth_user_id into strict hr,hauth from public.hris_users h join public.user_roles ur on ur.user_id=h.id where ur.role_id='Admin' and ur.is_active and lower(h.status)='active' and h.auth_user_id is not null limit 1;
+ perform set_config('request.jwt.claims',jsonb_build_object('sub',authid,'role','authenticated')::text,true);set local role authenticated;
+ rid:=public.submit_missed_punch(dt,'CLOCK_IN',(dt::text||'T09:00:00+08:00')::timestamptz,null,'Rollback actual arrival',key);
+ if public.submit_missed_punch(dt,'CLOCK_IN',(dt::text||'T09:00:00+08:00')::timestamptz,null,'Rollback actual arrival',key)<>rid then raise exception 'Retry duplicated request';end if;
+ denied:=false;begin perform public.review_missed_punch(rid,true,'Self approval attempt');exception when insufficient_privilege then denied:=true;end;if not denied then raise exception 'Self approval allowed';end if;
+ denied:=false;begin perform public.submit_missed_punch(dt,'CLOCK_OUT',now()+interval '1 day',null,'Future time',gen_random_uuid());exception when raise_exception then denied:=true;end;if not denied then raise exception 'Future time accepted';end if;
+ reset role;perform set_config('request.jwt.claims',jsonb_build_object('sub',mauth,'role','authenticated')::text,true);set local role authenticated;
+ rows:=public.get_missed_punches();if not exists(select 1 from jsonb_array_elements(rows) r where r->>'id'=rid::text and (r->>'canApprove')::boolean) then raise exception 'Manager request missing';end if;
+ perform public.review_missed_punch(rid,true,'Confirmed actual arrival');
+ reset role;perform set_config('request.jwt.claims',jsonb_build_object('sub',hauth,'role','authenticated')::text,true);set local role authenticated;
+ denied:=false;begin perform public.complete_missed_punch(rid);exception when raise_exception then denied:=true;end;if not denied then raise exception 'Unapplied correction marked complete';end if;
+ reset role;
+ -- HR correction timestamps use transaction time; backdate only this rollback fixture to model separate employee/HR transactions.
+ update public.attendance_punch_requests set created_at=now()-interval '1 minute' where id=rid;
+ wk:=date_trunc('week',dt)::date;
+ insert into public.payroll_schedule_publications(employee_id,business_unit_id,effective_from,effective_to,version,source_hash,snapshot,approval_required,published_by,reference) values(emp,bu,wk,wk+6,coalesce((select max(version)+1 from public.payroll_schedule_publications where employee_id=emp),1),md5(private.payroll_schedule_draft(emp,wk)::text),jsonb_build_array(jsonb_build_object('id',gen_random_uuid(),'employeeId',emp,'date',dt,'kind','work','start','09:00:00','end','18:00:00','breakMinutes',60,'flexible',false,'endDayOffset',0)),false,hr,'Rollback publication');
+ set local role authenticated;
+ perform public.correct_attendance_day(emp,dt,0,jsonb_build_array(jsonb_build_object('type','CLOCK_IN','timestamp',dt::text||'T09:00:00+08:00'),jsonb_build_object('type','CLOCK_OUT','timestamp',dt::text||'T18:00:00+08:00')),'Approved missed punch rollback review');
+ perform public.complete_missed_punch(rid);
+ rows:=public.get_missed_punches();if not exists(select 1 from jsonb_array_elements(rows) r where r->>'id'=rid::text and r->>'status'='applied') then raise exception 'Applied request missing';end if;
+ reset role;set local role anon;
+ denied:=false;begin perform public.get_missed_punches();exception when insufficient_privilege then denied:=true;end;if not denied then raise exception 'Anonymous read allowed';end if;
+ reset role;
+end $$;
+select 'PASS: submission/retry, own approval denial, future-time denial, manager approval, required HR correction and linked applied audit, anonymous denial. Fixtures rolled back.' as result;
+rollback;

@@ -136,7 +136,8 @@ const OvertimeRequests: React.FC = () => {
     // Handle Quick Link state — also auto-switch to Team Approvals for BOD notification links
     useEffect(() => {
         if (location.state?.openNewOTModal) {
-            setSelectedRequest(null);
+            const seed=location.state.attendanceOt;
+            setSelectedRequest(seed&&user?{employeeId:user.id,employeeName:user.name,date:new Date(seed.date+'T12:00:00+08:00'),startTime:seed.startTime,endTime:seed.endTime,reason:'',otType:'Paid',paidOtType:'Regular Overtime',status:OTStatus.Draft,historyLog:[]} as OTRequest:null);
             setIsModalOpen(true);
             navigate(location.pathname, { replace: true, state: {} });
         }

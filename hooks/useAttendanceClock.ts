@@ -15,7 +15,7 @@ export function useAttendanceClock(){
  const act=useCallback(async(action:ClockAction,evidence?:ClockEvidence)=>{if(!day||inFlight.current)return false;inFlight.current=true;setBusy(true);setError('');const stamp=++generation.current;
  // Same request identifier survives the one network retry. The server also compares
  // the observed revision, so another device's action cannot create a duplicate.
- const request=crypto.randomUUID();try{let value:AttendanceDay;try{value=await recordMyAttendance(action,request,day,evidence);}catch(first){if(/fetch|network|timeout/i.test((first as Error).message))value=await recordMyAttendance(action,request,day,evidence);else throw first;}if(stamp!==generation.current)return false;accept(value);window.dispatchEvent(new Event('attendance-updated'));return true;}
+ const request=crypto.randomUUID();try{let value:AttendanceDay;try{value=await recordMyAttendance(action,request,day,evidence);}catch(first){if(/fetch|network|timeout/i.test((first as Error).message))value=await recordMyAttendance(action,request,day,evidence);else throw first;}if(stamp!==generation.current)return false;accept(value);window.dispatchEvent(new Event('attendance-updated'));return value;}
  catch(e){const message=(e as Error).message;await refresh();setError(message);return false;}finally{inFlight.current=false;setBusy(false);}},[day,accept,refresh]);
  return{day,elapsed,busy,error,loading,refresh,act};
 }
