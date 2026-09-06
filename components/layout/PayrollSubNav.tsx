@@ -66,7 +66,7 @@ const PayrollSubNav: React.FC = () => {
         return [
             {
                 name: 'Timekeeping & Attendance',
-                links: subLinks.filter(link => ['Timekeeping', 'Manpower Planning', 'Workforce Planning', 'Daily Time Review', 'Clock-in/Out', 'Overtime Requests', 'WFH Requests', 'Leave', 'Leave Credits', 'Exceptions', 'Clock Log'].includes(link.name))
+                links: subLinks.filter(link => ['Timekeeping', 'Attendance Readiness', 'Manpower Planning', 'Workforce Planning', 'Daily Time Review', 'Clock-in/Out', 'Overtime Requests', 'WFH Requests', 'Leave', 'Leave Credits', 'Exceptions', 'Clock Log'].includes(link.name))
             },
             {
                 name: 'Payroll',
