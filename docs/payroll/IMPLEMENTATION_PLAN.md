@@ -379,7 +379,8 @@ not automatic proof that every future cutoff is ready.
 | 2 — Pay packages | Implemented | Waiting for reviewed salary versions and calendar |
 | 3 — Attendance | Implemented | Waiting for dated schedules, punches, approvals and HR submission |
 | 4 — Gross pay | Implemented; staff walkthrough pending real inputs | Waiting for approved methods/rates and checked comparisons |
-| 5–9 | Not started | Not started |
+| 5 — Take-home pay | Implemented; staff walkthrough pending real inputs | Waiting for Finance-reviewed batch workbook, opening balances, contribution allocation and checked comparisons |
+| 6–9 | Not started | Not started |
 
 The server prepares a BU batch only from the latest current HR-submitted complete
 cutoff. It uses existing dated employee pay packages and existing calendar records;
@@ -446,10 +447,117 @@ fix. Frontend rollback target is Phase 3 main `2f7f9a0`, production deployment
 
 ## Remaining phases (not implemented here)
 
-5. Take-home pay, current statutory rules and loan/deduction balances.
 6. Linked corrections, 13th-month and final pay.
 7. Ordered approvals and private released payslips.
 8. Payment/reporting outputs and recorded payment outcomes.
 9. Reconciled activation for the approved employee groups.
 
 Stop after the current phase; do not rebuild working HRIS features.
+
+## Phase 5 — Take-home pay and reviewed opening balances (2026-09-06)
+
+Delivery: **Take-home Pay Review**, `/payroll/net-pay`, using the immutable current
+Phase 4 gross version. The database is applied and the frontend is included in this
+release to main. Verify the production deployment reaches READY before reporting
+this release live. The shared checklist marks software Phases 1–5 implemented.
+Team status remains Waiting until an authorized manager records actual evidence.
+No team task was marked done by this release. Existing salary/PAN writers, login,
+roles, permissions, unrelated RLS and on-call routing are unchanged by Phase 5.
+
+Finance downloads one review workbook for the entire gross version. It includes
+employee monthly contribution bases/coverage, each gross line's tax allocation,
+YTD and prior-employer openings, imported first-cutoff contributions where needed,
+and authorized additional deductions. Import previews the file and saves nothing.
+Formula cells, foreign gross versions, missing/duplicate lines and unknown employees
+are rejected. Optional loan opening/reconciliation rows are recorded separately
+with per-row success/failure, prior balance history, installment and authorization.
+
+Scoped Authorize Finance plus existing salary-edit and attendance access records
+the review; scoped Prepare PR plus existing salary/attendance access prepares net
+pay only when BU and parent shadow gates permit it. Management alone grants no
+salary access. Own pay is left pending another Finance reviewer, or retains an
+unchanged approval from a different reviewer; changing the own row or shared review
+policy removes that carried approval. Own-loan opening changes remain prohibited.
+
+The server uses PostgreSQL numeric for SSS/MPF/EC, PhilHealth, mandatory Pag-IBIG,
+BIR semi-monthly and cumulative-average withholding, employer shares, authorized
+deductions and capped loan projections. See [source review and exact limits](STATUTORY_RULES.md).
+Monthly contributions reconcile separately for EE and ER across the first/second
+cutoffs. A recorded first cutoff must be linked; imported first-cutoff balances
+need explicit review when no saved first cutoff exists. Competing contribution
+month/cutoff mappings, over-deductions and stale prior sources block preparation.
+
+Net versions preserve gross/review/prior-run references, source fingerprints,
+explanations, creator and reason. Identical retries return the same saved run;
+changed inputs create a linked version. Opening a run checks gross, statutory
+HRIS fields, latest Finance review, loan openings and prior-cutoff lineage again.
+Loan balances are never reduced by a shadow run. No payslip release, payment,
+filing, consultant-fee calculation or later-phase annual settlement was installed.
+Three new tables are immutable and RPC-only, with RLS and no raw client grants.
+
+Applied only `20260906043821_payroll_net_phase5` and
+`20260906044348_payroll_net_review_guards`. The first attempt at the former rolled
+back on a SQL expression syntax error; the successful ledger versions above are
+authoritative. All nine scopes remain off; production contains zero Phase 5 reviews,
+loan balances and net runs at release. No real salary, attendance, loan, role or
+access fixture was introduced for testing.
+
+Validation: complete arithmetic reconciliation; two-cutoff employee/employer totals;
+SSS/PH/HDMF floors, boundaries and ceilings; official BIR bracket anchors and
+supplementary-pay handling; midyear YTD; documented exemption allocation; final loan
+installment smaller than regular installment; approved deferral/blocking; deterministic
+replay; independent Finance review attribution; read-only management/own-loan/raw-table/
+anonymous denials; batch workbook round-trip and invalid-import rejection. Production
+build and existing dashboard-auth/RBAC/direct-manager checks passed. Full TypeScript
+checking retains the 15 unrelated baseline errors, with no new payroll-module error.
+
+Security advisor notices for intentional guarded SECURITY DEFINER RPCs and
+RPC-only tables without raw policies were reviewed against [RPC execution guidance](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable)
+and [RLS-without-policy guidance](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy).
+Successful authenticated staff save/prepare/retry/source-change journeys are still
+pending actual approved duties and inputs. Pure fixtures and access-denial tests
+do not establish that operational acceptance gate.
+
+### Team's simple Phase 5 check
+
+1. Finish actual duties, pay/attendance/rule reviews and one submitted complete
+   cutoff. Confirm the monthly contribution split and insufficient-net policy.
+2. Finance completes/imports the batch workbook from independently checked records,
+   records actual loan openings if applicable, and reviews all employee rows with
+   a second reviewer for anyone's own pay. Prepare shadow net pay for the pilot BU.
+3. Compare gross − employee deductions = net; employer costs stay separate. Link
+   the second cutoff and verify each agency's monthly EE/ER total and a smaller final
+   loan installment. Actual loan balances must remain unchanged. Record the checked
+   comparison reference in the team's checklist; do not mark this gate done early.
+
+Recovery: turn affected shadow scopes off, preserve review/history records and use a
+forward fix. The prior compatible frontend is Phase 4 main `5049b90`, production
+deployment `dpl_3sRDbDBvx1dXi5ooSD116rzYXeAu`. A Git revert does not undo the database.
+
+### On-call routing fix — approved and applied
+
+After explicit user approval to publish and apply, migration
+`20260906050452_manpower_manager_direct_bod_gm` was applied to production.
+Same-BU requests start at BOD/GM for an active BU Manager, or an active Manager
+whose recorded supervisor is an active GM/BOD. The supervisor lookup uses the
+existing text reporting-line field with the referenced HRIS UUID, safely ignoring
+nonmatching values. Shared HRIS roles, RLS and the existing one-BOD-or-GM on-call
+completion rule are preserved. This is separate from payroll's two-BOD requirement.
+
+Both matching undecided pending requests were moved to BOD_GM. Immediately after
+repair each had three pending eligible pool assignments, zero pending BU-manager
+assignments, zero self-assignments and no configuration issue. The migration kept
+both Pending and recorded no approval. Subsequent read-only verification showed
+both completed by an existing BOD account through the live approval workflow;
+their other pool assignments were cancelled as expected. Normal submissions retain BU-manager review. The approval RPC rejects
+requester self-approval and rechecks the assigned approver's current stage role.
+Shared roles and user-role assignment hashes are unchanged. All nine payroll
+processing scopes remain off.
+
+### Publication authorization
+
+Earlier automatic review blocks were resolved by the user's explicit instruction:
+“Yes approved publish and apply.” This authorizes the prepared Phase 5 and on-call
+changes for the existing public `kei9chan/TNGHRIS` main and production database.
+Publish through the repository's required PR and verify the resulting production
+commit/deployment; no additional sign-in or permission request is needed.
