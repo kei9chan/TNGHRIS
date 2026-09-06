@@ -1,3 +1,4 @@
+import { fetchActionableApprovalTasks } from '../services/actionableApprovalService';
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { createNotification } from '../services/notificationService';
@@ -13,10 +14,8 @@ import {
 import { getTimeApprovalReason } from '../utils/approvalPresentation';
 import {
     approveManpowerRequest,
-    fetchMyPendingManpowerApprovalIds,
     rejectManpowerRequest,
 } from '../services/manpowerService';
-import { fetchMyPendingTimeApprovalAssignments } from '../services/timeApprovalService';
 
 interface UseApprovalsOptions {
     user: User | null;
@@ -76,8 +75,8 @@ export function useApprovals({ user }: UseApprovalsOptions) {
         // Leave/WFH/OT are scoped to direct reports plus explicit escalation
         // assignments. A broad BOD or HR role no longer creates a global queue.
         const [timeAssignments, manpowerAssignments] = await Promise.all([
-            fetchMyPendingTimeApprovalAssignments(user.id).then(data => ({ data, error: null as any })).catch(error => ({ data: [], error })),
-            fetchMyPendingManpowerApprovalIds(user.id).then(data => ({ data, error: null as any })).catch(error => ({ data: [], error })),
+            fetchActionableApprovalTasks(user.id).then(data => ({ data, error: null as any })).catch(error => ({ data: [], error })),
+            fetchActionableApprovalTasks(user.id).then(rows => rows.filter(r => r.request_type === 'manpower').map(r => r.request_id)).then(data => ({ data, error: null as any })).catch(error => ({ data: [], error })),
         ]);
         const assignmentRows = timeAssignments.data;
         const assignmentError = timeAssignments.error;

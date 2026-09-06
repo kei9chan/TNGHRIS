@@ -1,3 +1,4 @@
+import { fetchActionableApprovalTasks } from '../services/actionableApprovalService';
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { User } from '../types';
@@ -149,7 +150,7 @@ export function useAdditionalApprovals(user: User | null) {
       assetLoadError = error;
       return [] as Awaited<ReturnType<typeof fetchMyAssetApprovalQueue>>;
     });
-    const [nteResult, [panResult, requisitionResult, awardResult], offerIds, assetQueue] = await Promise.all([
+    const [nteResult, [panResult, requisitionResult, awardResult], offerIds, assetQueue, taskResult] = await Promise.all([
       supabase.rpc('get_my_pending_nte_approvals'),
       Promise.all([
       supabase
@@ -167,6 +168,7 @@ export function useAdditionalApprovals(user: User | null) {
       ]),
       offerIdsPromise,
       assetQueuePromise,
+      fetchActionableApprovalTasks(user.id).then(data => ({ data, error: null as any })).catch(error => ({ data: [], error })),
     ]);
 
     const offerPackageErrors: any[] = [];
@@ -177,8 +179,9 @@ export function useAdditionalApprovals(user: User | null) {
       }
     }));
 
-    const nteRows = nteResult.data || [];
-    const errors = [nteResult.error, panResult.error, requisitionResult.error, awardResult.error, offerLoadError, assetLoadError, ...offerPackageErrors].filter(Boolean);
+    const actionable = (type: string, id: string) => taskResult.data.some(t => t.request_type === type && t.request_id === id);
+    const nteRows = (nteResult.data || []).filter((r: any) => actionable('nte', r.id));
+    const errors = [taskResult.error, nteResult.error, panResult.error, requisitionResult.error, awardResult.error, offerLoadError, assetLoadError, ...offerPackageErrors].filter(Boolean);
     setAdditionalApprovalError(errors.length ? errors.map(error => error!.message).join(' · ') : null);
 
     setPendingNTEApprovals(nteRows.map((row: any) => {
@@ -204,6 +207,7 @@ export function useAdditionalApprovals(user: User | null) {
     }));
 
     setPendingPANApprovals((panResult.data || []).flatMap((row: any) => {
+      if (!actionable('pan', row.id)) return [];
       const steps: PendingStep[] = Array.isArray(row.routing_steps) ? row.routing_steps : [];
       const stepIndex = steps.findIndex(step => step.userId === user.id && isPending(step.status));
       if (stepIndex < 0) return [];
@@ -223,6 +227,7 @@ export function useAdditionalApprovals(user: User | null) {
     }));
 
     setPendingRequisitionApprovals((requisitionResult.data || []).flatMap((row: any) => {
+      if (!actionable('requisition', row.id)) return [];
       return [{
         id: row.id,
         title: row.title,
@@ -237,6 +242,7 @@ export function useAdditionalApprovals(user: User | null) {
     }));
 
     setPendingAwardApprovals((awardResult.data || []).flatMap((row: any) => {
+      if (!actionable('award', row.id)) return [];
       const steps: PendingStep[] = Array.isArray(row.approver_steps) ? row.approver_steps : [];
       const stepIndex = steps.findIndex(step => step.userId === user.id && isPending(step.status));
       const isAssignedLegacyApprover = row.approver_id === user.id;
@@ -258,7 +264,7 @@ export function useAdditionalApprovals(user: User | null) {
     }));
 
     setPendingOfferApprovals(offerPackages.flatMap((pkg, index) => {
-      if (!pkg) return [];
+      if (!pkg || !actionable('offer', pkg.request.id)) return [];
       const queue = offerIds[index];
       const candidateName = `${pkg.candidate.firstName} ${pkg.candidate.lastName}`.trim() || 'Candidate';
       return [{
@@ -289,7 +295,7 @@ export function useAdditionalApprovals(user: User | null) {
       createdAt: row.requestedAt,
       currentStep: row.currentStep,
       approvalProgress: row.approvalProgress,
-      isActionable: row.isActionable,
+      isActionable: row.isActionable && actionable('asset', row.requestId),
       viewerActionStatus: row.viewerActionStatus,
       approvalIssue: row.approvalIssue,
       canonicalKey: `asset:${row.requestId}:${row.approvalStage}:${row.viewerActionStatus || 'READ_ONLY'}`,
