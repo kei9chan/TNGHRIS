@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { User } from '../../types';
 import Card from '../ui/Card';
 import { useSettings } from '../../context/SettingsContext';
+import { Link } from 'react-router-dom';
 
 // FIX: Inlined DetailItem component to remove dependency on a non-existent file.
 const DetailItem: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
@@ -36,8 +37,9 @@ const CompensationCard: React.FC<CompensationCardProps> = ({ user }) => {
                 <DetailItem label="Tax Status" value={taxStatus || 'N/A'} />
                 <DetailItem label="Deminimis" value={formatCurrency(salary?.deminimis)} />
                 <DetailItem label="Reimbursable" value={formatCurrency(salary?.reimbursable)} />
-                <DetailItem label="Total Monthly Compensation" value={<strong>{formatCurrency(totalSalary)}</strong>} />
+                {rateType === 'Monthly' && <DetailItem label="Total Monthly Compensation" value={<strong>{formatCurrency(totalSalary)}</strong>} />}
             </dl>
+            <Link className="mt-4 inline-block text-sm text-indigo-600 dark:text-indigo-300" to={`/payroll/pay-packages?employee=${user.id}`}>View dated pay packages and salary history →</Link>
         </Card>
     );
 };

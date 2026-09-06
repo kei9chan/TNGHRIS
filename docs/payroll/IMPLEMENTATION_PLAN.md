@@ -130,9 +130,109 @@ necessary, preserve access/audit records, and repair with a forward migration.
 A Git revert does not undo database changes. Do not restore the entire database for
 a routine payroll UI issue.
 
+## Phase 2 — Pay packages and salary history (2026-09-06)
+
+### Scope and compensation authority
+
+Existing HRIS profile updates and the approved PAN workflow remain the sole writers
+of base pay and the existing de minimis/reimbursable fields. Phase 2 records reviewed,
+dated snapshots of those sources; it owns only additional components and separately
+documented professional-fee engagements. Approval never updates HRIS salary fields.
+Later source changes or conflicting positive basic/rate fields flag the applicable
+snapshot for reconciliation before payroll use. No scheduler or second salary editor
+was installed. Existing leave policies and balances remain authoritative; the 5 VL/5 SL
+accrual/regularization interpretation and source linkage belong to Phase 3 readiness.
+
+An initial migration proposal was rejected by automatic approval review because it
+changed shared salary/PAN security functions and introduced scheduled writes. None
+of that proposal was applied. The accepted design is isolated to the new module,
+preserving all existing salary/PAN writers, triggers and RLS policies.
+
+Production source review found 150 employees, 109 nonzero rate amounts and no nonzero
+legacy basic amounts. The import preview uses the recorded rate when present; zero
+legacy basic is not interpreted as zero pay. Missing units/dates require source
+review. No current completed salary PAN meets the approved workflow-v2 import gate;
+that path has not been verified against a real completed salary PAN. No salary data
+was bulk imported or guessed. Earlier staging concepts for effective dates, precision,
+immutable history and policy references were reused without importing its schema,
+role-based permissions or fixtures.
+
+### Delivered behavior
+
+- Payroll → **Pay Packages**, `/payroll/pay-packages`, and the employee Compensation
+  card link show authorized history. Employees can see their own approved history.
+- Scoped Prepare PR plus existing compensation-edit permission prepares drafts;
+  scoped Authorize HR plus existing compensation-edit permission approves them.
+  Access management alone grants no salary access. Own-salary editing/approval is
+  prohibited. Group access cannot claim arbitrary employees from its parent BU.
+- Current HRIS or completed approved salary PAN preview, source fingerprints,
+  explicit effective dates, reviewer attribution and stale-preview rejection.
+  Employee base and existing allowances must match the chosen source on approval.
+- Immutable approved versions, linked same-date corrections, separate engagement
+  streams and derived end dates prevent overlapping approved base pay. The date
+  lookup flags missing coverage; historical approval does not create payments.
+- Only entered recurring/one-time components are stored, with explicit tax,
+  contribution, 13th-month and proration classifications. Unreviewed remains
+  unreviewed; names never imply tax exemption. Amounts retain six-decimal precision.
+- Finance verification references the existing bank master and supporting document.
+  Only the account suffix is returned here; a bank change invalidates verification.
+  Existing bank permissions and scoped Finance authorization remain required.
+- Dated calendar versions record the two supplied cutoffs and an approved policy
+  reference. Pay-month values are a preview until explicitly recorded; weekend/
+  holiday handling defaults to unconfirmed. No calculation rules were activated.
+- Professional fees require a distinct engagement and reviewed tax/document
+  reference. No vendor purchasing or payment process is replaced.
+
+Kay's explicitly authorized active Admin account completed the one-time setup and
+holds the single permanent organization `manage_access` grant. No permanent preparer,
+reviewer or Finance duty was assigned by Phase 2. All nine scopes remain `off`.
+
+### Focused production verification
+
+`tests/payrollPhase2Rollback.sql` runs authenticated RPC assertions in a transaction
+that rolls back. Passed: unauthorized and cross-BU denial, direct-table-write denial,
+source preview and approval enforcement, conflicting salary fields, six-decimal
+component precision and unreviewed treatment, immutable history, future boundaries,
+duplicate-date prevention, linked corrections, stale previews, bank permission and
+masking, bank-change invalidation, and processing-off enforcement. No test grants,
+packages, audit rows, verifications or employee changes remained after rollback.
+
+Salary-field and existing RLS-policy hashes matched their pre-change values after
+all tests. The four new tables use RLS with all direct client access revoked;
+authenticated access is through six guarded RPCs with fixed empty search paths.
+Advisor notices for RPC-only tables without policies and intentional authenticated
+SECURITY DEFINER RPCs were reviewed. No anonymous RPC access is granted.
+
+The production build and existing dashboard-auth, RBAC-repair and direct-manager
+time-approval smoke checks pass. Full TypeScript checking still reports pre-existing
+errors outside this phase; it is not a clean project-wide typecheck. Signed-in HRIS
+browser role journeys have not been claimed as tested.
+
+### User check and release
+
+1. As the access manager, assign the actual preparer and HR authorizer their intended
+   BU duties in Payroll Access. Their existing HRIS compensation permissions must
+   already permit the work; do not change HRIS roles to grant Payroll Access.
+2. In Pay Packages, review one simple salary and one allowance package against the
+   approved source, select the real effective date, and have the authorizer approve.
+3. Review a source-supported mid-cutoff change and use the date lookup on both sides
+   of its effective date. Earlier approved history remains visible; processing stays
+   off. Use a documented separate engagement only if one actually exists.
+
+Production physical backup 2026-09-05 16:54:58 UTC was reverified before migration.
+Applied migrations: `20260906004943_payroll_pay_packages_phase2.sql` and
+`20260906005513_payroll_pay_source_conflict_guard.sql`. Apply only these specific
+forward migrations, never a blanket historical migration push. GitHub requires a
+PR to update main; merging that PR deploys directly to existing production. No test
+environment is used for acceptance.
+
+Recovery: keep processing off, restore the preceding compatible frontend if needed
+(Phase 1 main `3290c37`, Vercel `dpl_DAt6XxsWiQYZbmLBUUtjvM75WZa8`), retain the new
+history and audit records, and apply a narrow forward fix. A frontend rollback does
+not undo the database migration. Do not restore the whole database for a UI issue.
+
 ## Remaining phases (not implemented here)
 
-2. Dated pay packages and salary history, with one authoritative writer.
 3. Payroll-ready attendance and only missing source/policy controls.
 4. Server-side gross pay and versioned calculation explanations.
 5. Take-home pay, current statutory rules and loan/deduction balances.
