@@ -24,6 +24,7 @@ const PayrollAccessPage = React.lazy(() => import('./modules/payroll/PayrollAcce
 const PayPackagesPage = React.lazy(() => import('./modules/payroll/PayPackagesPage'));
 const GrossPayPage = React.lazy(() => import('./modules/payroll/GrossPayPage'));
 const NetPayPage = React.lazy(() => import('./modules/payroll/NetPayPage'));
+const PayrollPaymentsPage = React.lazy(() => import('./modules/payroll/PaymentsPage'));
 const PayrollApprovalsPage = React.lazy(() => import('./modules/payroll/ApprovalsPage'));
 const MyPayrollPayslipsPage = React.lazy(() => import('./modules/payroll/MyPayslipsPage'));
 const SpecialPayPage = React.lazy(() => import('./modules/payroll/SpecialPayPage'));
@@ -297,7 +298,8 @@ const AppRoutes: React.FC = () => {
       >
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
-        <Route path="approvals" element={<ProtectedRoute><ApprovalCenter /></ProtectedRoute>} />
+        <Route path="payments" element={<ProtectedRoute><PayrollPaymentsPage /></ProtectedRoute>} />
+            <Route path="approvals" element={<ProtectedRoute><ApprovalCenter /></ProtectedRoute>} />
         <Route path="my-requests" element={<ProtectedRoute><MyRequests /></ProtectedRoute>} />
         <Route path="my-profile" element={<ProtectedRoute><EmployeeProfile/></ProtectedRoute>} />
         <Route path="notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
@@ -381,8 +383,9 @@ const AppRoutes: React.FC = () => {
             <Route path="reports/exceptions" element={<ProtectedRoute><ExceptionsReport /></ProtectedRoute>} />
             <Route path="staging" element={<ProtectedRoute><PayrollAccessPage staffOnly /></ProtectedRoute>} />
             <Route path="payslips" element={<ProtectedRoute><MyPayrollPayslipsPage /></ProtectedRoute>} />
+            <Route path="payments" element={<ProtectedRoute><PayrollPaymentsPage /></ProtectedRoute>} />
             <Route path="approvals" element={<ProtectedRoute><PayrollApprovalsPage /></ProtectedRoute>} />
-            <Route path="government-reports" element={<ProtectedRoute><PayrollAccessPage staffOnly /></ProtectedRoute>} />
+            <Route path="government-reports" element={<ProtectedRoute><PayrollPaymentsPage /></ProtectedRoute>} />
             <Route path="government-reports/:reportId" element={<ProtectedRoute><PayrollAccessPage staffOnly /></ProtectedRoute>} />
             <Route path="report-templates" element={<ProtectedRoute><PayrollAccessPage staffOnly /></ProtectedRoute>} />
             <Route path="final-pay" element={<ProtectedRoute><SpecialPayPage /></ProtectedRoute>} />
