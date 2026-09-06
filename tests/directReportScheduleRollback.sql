@@ -1,0 +1,23 @@
+begin;set local lock_timeout='2s';set local statement_timeout='30s';
+do $$declare actor uuid;authid uuid;bu uuid;emp uuid;preset uuid;roster jsonb;denied boolean;begin
+ select a.id,a.auth_user_id,t.business_unit_id,t.id into strict actor,authid,bu,emp from public.hris_users t join public.hris_users a on t.reports_to=a.id::text join public.user_roles ur on ur.user_id=a.id join public.roles r on r.id=ur.role_id where ur.role_id='Manager' and ur.is_active and r.is_active and lower(a.status)='active' and a.auth_user_id is not null and t.business_unit_id<>a.business_unit_id limit 1;
+ perform set_config('request.jwt.claims',jsonb_build_object('sub',authid,'role','authenticated')::text,true);
+ if not private.payroll_schedule_can_edit(emp) then raise exception 'Cross-BU direct report publication access missing';end if;
+ set local role authenticated;
+ roster:=public.get_schedule_roster_people();
+ if not exists(select 1 from jsonb_array_elements(roster) x where x->>'id'=emp::text) then raise exception 'Direct report absent';end if;
+ if exists(select 1 from jsonb_array_elements(roster) x where x->>'id'<>actor::text and x->>'reports_to' is distinct from actor::text) then raise exception 'Unrelated employee exposed';end if;
+ if exists(select 1 from jsonb_array_elements(roster) x where x ?| array['email','salary','date_hired','auth_user_id','bank_account']) then raise exception 'Non-scheduling data exposed';end if;
+ insert into public.shift_templates(name,business_unit_id,start_time,end_time,break_minutes,grace_period_minutes,end_day_offset,paid_minutes,schedule_kind,is_flexible) values('Rollback direct team preset',bu,'09:00','18:00',60,5,0,480,'work',false) returning id into preset;
+ insert into public.shift_assignments(employee_id,shift_template_id,date,business_unit_id,created_by) values(emp,preset,'2099-01-05',bu,actor);
+ if not exists(select 1 from public.shift_assignments where employee_id=emp and date='2099-01-05') then raise exception 'Cross-BU assignment unreadable';end if;
+ reset role;
+ select h.auth_user_id into strict authid from public.hris_users h join public.user_roles ur on ur.user_id=h.id where ur.role_id='Employee' and ur.is_active and h.auth_user_id is not null and lower(h.status)='active' and not exists(select 1 from public.user_roles r where r.user_id=h.id and r.role_id='Manager' and r.is_active) limit 1;
+ perform set_config('request.jwt.claims',jsonb_build_object('sub',authid,'role','authenticated')::text,true);set local role authenticated;
+ denied:=false;begin perform public.get_schedule_roster_people();exception when insufficient_privilege then denied:=true;end;if not denied then raise exception 'Employee accessed team roster';end if;
+ reset role;set local role anon;
+ denied:=false;begin perform public.get_schedule_roster_people();exception when insufficient_privilege then denied:=true;end;if not denied then raise exception 'Anonymous accessed team roster';end if;
+ reset role;
+end $$;
+select 'PASS: cross-BU direct report roster and assignment, unrelated/non-scheduling data excluded, employee/anonymous denied. Fixtures rolled back.' as result;
+rollback;
