@@ -34,7 +34,6 @@ const Dashboard: React.FC = () => {
         <AttendanceMission />
         <AlertBanner />
         <PayrollApprovalNotice />
-        <Link to="/payroll/payslips" className="mb-4 inline-block text-indigo-600 dark:text-indigo-300">My payslips</Link>
         {renderDashboard()}
     </div>
   );

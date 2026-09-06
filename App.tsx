@@ -27,6 +27,7 @@ const NetPayPage = React.lazy(() => import('./modules/payroll/NetPayPage'));
 const PayrollPilotPage = React.lazy(() => import('./modules/payroll/PilotPage'));
 const PayrollPaymentsPage = React.lazy(() => import('./modules/payroll/PaymentsPage'));
 const PayrollApprovalsPage = React.lazy(() => import('./modules/payroll/ApprovalsPage'));
+const MyPayrollIssuesPage = React.lazy(() => import('./modules/payroll/MyPayrollIssuesPage'));
 const MyPayrollPayslipsPage = React.lazy(() => import('./modules/payroll/MyPayslipsPage'));
 const SpecialPayPage = React.lazy(() => import('./modules/payroll/SpecialPayPage'));
 const AttendanceReadinessPage = React.lazy(() => import('./modules/payroll/AttendanceReadinessPage'));
@@ -393,6 +394,7 @@ const AppRoutes: React.FC = () => {
             <Route path="reports/time-summary" element={<ProtectedRoute><DailyTimeSummary /></ProtectedRoute>} />
             <Route path="reports/exceptions" element={<ProtectedRoute><ExceptionsReport /></ProtectedRoute>} />
             <Route path="staging" element={<ProtectedRoute><PayrollAccessPage staffOnly /></ProtectedRoute>} />
+            <Route path="my-issues" element={<ProtectedRoute><MyPayrollIssuesPage /></ProtectedRoute>} />
             <Route path="payslips" element={<ProtectedRoute><MyPayrollPayslipsPage /></ProtectedRoute>} />
             <Route path="payments" element={<ProtectedRoute><PayrollPaymentsPage /></ProtectedRoute>} />
             <Route path="approvals" element={<ProtectedRoute><PayrollApprovalsPage /></ProtectedRoute>} />
