@@ -231,9 +231,134 @@ Recovery: keep processing off, restore the preceding compatible frontend if need
 history and audit records, and apply a narrow forward fix. A frontend rollback does
 not undo the database migration. Do not restore the whole database for a UI issue.
 
+## Phase 3 — Attendance readiness (2026-09-06)
+
+### Delivered scope
+
+- Payroll → Timekeeping & Attendance → **Attendance Readiness** at
+  `/payroll/attendance-readiness`. The team checklist is readable with an active
+  HRIS login while staff payroll assignments are pending. Access management alone
+  does not grant employee attendance or salary work.
+- Reuses `shift_assignments`, BU/shared `shift_templates`, `time_events`, approved
+  leave, WFH and OT records, existing holiday records and leave policies. No source
+  writer, shared role, authentication function or unrelated RLS policy was changed.
+- Scoped Finalize and submit timekeeping plus existing Timekeeping/employee scope
+  access saves and submits a BU's bounded date range. Finance and authorized payroll
+  reviewers can read the saved/submitted version. All employees in that period's BU
+  coverage must be within the viewer's existing HRIS scope; no partial silent export.
+- The server retains input snapshots and deterministic interpreted results. Missing
+  shifts are missing schedules, never absences. Missing/duplicate punches, ambiguous
+  adjacent shifts, incomplete approvals and unresolved rules block submission.
+- Asia/Manila overnight day boundaries are retained for later premium calculation.
+  Split segments retain the unpaid gap without subtracting it twice. Unsupported
+  short/flexible/partial-leave patterns stay blocked rather than being guessed.
+- Five-minute grace is excluded (09:06 → one late minute); actual worked minutes are
+  preserved. Requested, approved and actual OT remain distinct. A 75-minute approved
+  and worked interval stays 75; unmatched or below-one-hour cases need review.
+- One unpaid movable hour is checked against break logs. Worked lunch requires a
+  recorded prescribed meal window and the existing direct-manager approval for
+  that hour. No request is rerouted to a different approver by this module.
+- Dated HR-authorized rule references identify explicit rest-day presets, prescribed
+  meals, reviewed holiday coverage and unresolved leave/offset policy references.
+  Missing BU/local holiday classifications can be recorded as linked versions;
+  a local version takes precedence over the existing global date for that BU.
+- Offset work must be verified as eligible rest-day/holiday work. New append-only
+  review records require HR Manager → existing GeneralManager role → two distinct
+  BOD users, with no self-approval or repeated approver. These are time/offset
+  authorities and grant no salary access. Changed source data requires a new review.
+- Approval records verified offset minutes; it does not post a second leave balance.
+  The existing conversion must be reconciled to an approved policy before payroll
+  readiness. Offset-leave consumption remains blocked until its balance/source can
+  be reconciled. No undocumented hours-to-days or premium conversion is activated.
+- Saved timekeeping versions are immutable; a source change creates a linked next
+  version and marks earlier inputs out of date. Submission is idempotent. Missing
+  inputs, an incomplete period or an overlapping submitted date range prevent
+  submission. Later payroll phases must bind to and recheck the submitted version;
+  no PR engine or downstream PR approval record exists in Phase 3 to invalidate yet.
+
+### Actual source gaps and deliberate limits
+
+At inspection there were 209 assignments, 19 shared presets, zero clock punches,
+79 leave requests, 248 OT requests, one holiday and one leave policy. Existing roster
+“Published” is a local screen state; it is not a saved payroll timekeeping approval.
+Managers should enter actual shifts/rest days through the existing roster, then HR
+uses Attendance Readiness to review and submit a version.
+
+Many employment start/end dates also need review. Unknown inactive employment
+coverage is flagged rather than silently excluded from the BU. The current leave
+policy says accrual `none` and does not establish the confirmed probation accrual,
+locked availability and prorated regularization unlock. Paid leave remains blocked
+where that source is unsupported. This phase does not silently alter balances,
+install accrual jobs, decide year basis/rounding, or rebuild the leave balance system.
+Keep approved policy interpretations and balance reconciliation as team prerequisites.
+
+The existing HR Manager, General Manager and two BOD accounts are present. The GM
+role's stored ID is `GeneralManager`, while its display name has a space; the new
+offset check explicitly reuses that existing ID. No HRIS role was added or changed.
+
+### Verification and recovery
+
+- `tests/payrollPhase3Interpretation.sql`: pure SQL fixtures, no employee rows;
+  normal day, grace, exact OT, mismatch blocking, missing/duplicate punches,
+  overnight holiday boundaries, split shifts, worked lunch and leave readiness.
+- `tests/payrollPhase3AccessRollback.sql`: authenticated access-manager restriction,
+  cross-BU denial, missing-source blocking, retry, denied submission, table denial,
+  stale previews, linked revisions, immutability and revocation.
+- `tests/payrollPhase3OffsetRollback.sql`: existing HR, GM and two BOD identities;
+  skipped-stage and duplicate-BOD denial, completed approval and immutable actions.
+- `tests/payrollPhase3SubmissionRollback.sql`: successful save and HR submission,
+  repeated submission once, immutable results and source-change invalidation.
+  Temporary schedules/employment-date fixtures and grants are fully rolled back.
+- Production build and existing dashboard-auth/RBAC/direct-manager smoke checks
+  pass. Full TypeScript checking still has the same unrelated baseline errors;
+  no new payroll-module error remains. Signed-in browser staff journeys are not
+  claimed as tested. All six Phase 3 tables are RPC-only with RLS and no direct
+  client privileges; intentional SECURITY DEFINER advisor notices were reviewed.
+
+No test data remains. Payroll access still has only the user's authorized initial
+manager grant; all nine scopes are off. Existing salary, shift and leave row hashes,
+and existing RLS-policy hashes matched after rollback. Live OT records can change
+independently during delivery; no migration or test writes OT source rows.
+
+The 2026-09-05 16:54:58 UTC physical backup was reverified before migration.
+Applied only these additive Phase 3 migrations:
+
+- `20260906021209_payroll_attendance_readiness_phase3.sql`
+- `20260906021940_payroll_attendance_readiness_guards.sql`
+- `20260906022456_payroll_offset_existing_gm_role.sql`
+- `20260906022912_payroll_time_shared_shift_presets.sql`
+
+The first migration attempt rolled back on a SQL variable-name conflict before any
+schema was committed; the successful ledger versions above are authoritative.
+Forward fixes remain confined to the new Phase 3 functions. Do not blanket-push the
+drifted historical migration directory. Main is delivered through GitHub's required
+PR and existing production deployment, with no test environment used for acceptance.
+
+Recovery: keep processing off, restore the compatible Phase 2 frontend (`78f370a`,
+Vercel `dpl_9qkZnoW8ubBNXnyRwCdKsseVA6zU`) if needed, retain saved history and use a
+small forward database fix. A frontend rollback does not undo these migrations.
+
+## Team checklist by phase
+
+The same checklist is available in Attendance Readiness and linked from Payroll Access.
+
+| Phase | Your team's next task |
+| --- | --- |
+| 1 — Access | Name each HR/Finance/BOD handler and their BU coverage; assign the actual payroll duties. Ordinary pay recipients need no staff grant. |
+| 2 — Pay packages | Review salary, allowances, actual effective dates, any separate fees, bank details and payday calendar against approved records. |
+| 3 — Attendance | Managers enter actual shifts/rest days; supply punches; finish leave/WFH/OT approvals; HR reviews holidays, lunch, employment dates and unresolved leave/offset sources, then submits timekeeping to Finance. |
+| 4 — Gross pay | Confirm divisor applicability, proration and rounding; provide checked normal, mid-cutoff and holiday/night/OT examples. |
+| 5 — Take-home pay | Review statutory/tax details, YTD/opening balances and loans/deductions; provide a checked full payroll and a contribution month's two cutoffs. |
+| 6 — Special pay | Provide real correction, 13th-month and final-pay examples with prior payments, leave conversion and accountabilities. |
+| 7 — Approvals | Confirm actual workflow assignees and payslip release timing; verify the HR → Finance → two-BOD sequence on one PR version. |
+| 8 — Payment/reporting | Provide the current bank specification and reporting process; agree how paid, failed and reissued payments are recorded. |
+| 9 — Activation | Choose the pilot BU/handover cutoff and accept two reconciled cutoff comparisons before live payroll. |
+
+Missing schedules and the pending assignee list do not block deployment of Phase 3.
+They do block the affected staff review/submission until the real inputs are present.
+
 ## Remaining phases (not implemented here)
 
-3. Payroll-ready attendance and only missing source/policy controls.
 4. Server-side gross pay and versioned calculation explanations.
 5. Take-home pay, current statutory rules and loan/deduction balances.
 6. Linked corrections, 13th-month and final pay.

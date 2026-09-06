@@ -40,6 +40,7 @@ export default function PayrollAccessPage({ staffOnly = false }: { staffOnly?: b
     </div>
     {staffOnly && <Card><p className="text-gray-700 dark:text-slate-200">Payroll processing is off. Your assigned duties are shown below; calculations, approvals and payment releases are unavailable.</p></Card>}
     <PayrollAccessCard />
+    <Card title="Waiting for the payroll assignee list?"><p className="text-sm text-gray-700 dark:text-slate-200">Your team can prepare actual schedules and source records now. <Link className="font-medium text-indigo-600 dark:text-indigo-300" to="/payroll/attendance-readiness">Open the per-phase setup checklist →</Link></p></Card>
     {canManage && <>
       <Card title="Assign payroll duties">
         {recipientError ? <p role="alert" className="text-red-700 dark:text-red-300">{recipientError}</p> : <label htmlFor="payroll-recipient" className="text-sm font-medium text-gray-700 dark:text-slate-200">Employee
