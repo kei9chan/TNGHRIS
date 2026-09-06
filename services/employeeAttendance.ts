@@ -1,3 +1,4 @@
+import type {ClockEvidence} from './attendanceChannels';
 import {supabase} from './supabaseClient';
 export type ClockAction='CLOCK_IN'|'START_BREAK'|'END_BREAK'|'CLOCK_OUT';
 export type ClockState='not_started'|'working'|'on_break'|'completed';
@@ -8,7 +9,7 @@ export type ClockException={id:string;record_id:string;revision:number;employee_
 export type ExceptionAdmin={today:string;employees:{id:string;name:string}[];records:ClockException[]};
 async function rpc<T>(name:string,args:Record<string,unknown>={}):Promise<T>{const {data,error}=await supabase.rpc(name,args);if(error)throw new Error(error.message);return data as T;}
 export const getMyAttendance=()=>rpc<AttendanceDay>('get_my_attendance');
-export const recordMyAttendance=(action:ClockAction,requestId:string,day:AttendanceDay)=>rpc<AttendanceDay>('record_my_attendance',{p_action:action,p_request_id:requestId,p_expected_revision:day.revision,p_work_date:day.workDate});
+export const recordMyAttendance=(action:ClockAction,requestId:string,day:AttendanceDay,evidence?:ClockEvidence)=>rpc<AttendanceDay>(evidence?'record_my_attendance_verified':'record_my_attendance',{p_action:action,p_request_id:requestId,p_expected_revision:day.revision,p_work_date:day.workDate,...(evidence?{p_evidence:evidence}:{})});
 export const getExceptionAdmin=()=>rpc<ExceptionAdmin>('get_attendance_exception_admin');
 export const saveClockException=(input:{employee:string;recordId:string|null;revision:number;type:string;requiresClock:boolean;from:string;to:string|null;reason:string})=>rpc<string>('save_attendance_exception',{p_employee:input.employee,p_record_id:input.recordId,p_expected_revision:input.revision,p_type:input.type,p_requires_clock:input.requiresClock,p_from:input.from,p_to:input.to,p_reason:input.reason});
 export const getHrAttendanceDay=(employee:string,date:string)=>rpc<AttendanceDay>('get_hr_attendance_day',{p_employee:employee,p_date:date});

@@ -1,5 +1,5 @@
 import React from 'react';
-import AttendanceMission from '../components/attendance/AttendanceMission';
+import AttendanceMission from '../components/attendance/AttendanceClock';
 import { useAuth } from '../hooks/useAuth';
 import HRDashboard from '../components/dashboard/HRDashboard';
 import ManagerDashboard from '../components/dashboard/ManagerDashboard';
