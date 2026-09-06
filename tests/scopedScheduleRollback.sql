@@ -1,0 +1,21 @@
+begin;set local lock_timeout='2s';set local statement_timeout='30s';
+do $$declare actor uuid;authid uuid;bu uuid;otherbu uuid;emp uuid;preset uuid;legacy uuid;denied boolean;begin
+ select h.id,h.auth_user_id,h.business_unit_id into strict actor,authid,bu from public.hris_users h join public.user_roles ur on ur.user_id=h.id join public.roles r on r.id=ur.role_id where ur.role_id='Business Unit Manager' and ur.is_active and r.is_active and h.auth_user_id is not null and lower(h.status)='active' limit 1;
+ select id into strict emp from public.hris_users where business_unit_id=bu and id<>actor limit 1;
+ select id into strict otherbu from public.business_units where id<>bu limit 1;
+ select id into strict legacy from public.shift_templates where business_unit_id is null limit 1;
+ perform set_config('request.jwt.claims',jsonb_build_object('sub',authid,'role','authenticated')::text,true);
+ if not private.schedule_team_can_manage(emp) or not private.payroll_schedule_can_edit(emp) then raise exception 'BU manager cannot schedule own BU';end if;
+ if private.schedule_team_can_use_bu(otherbu) then raise exception 'BU manager received unrelated BU access';end if;
+ set local role authenticated;
+ insert into public.shift_templates(name,business_unit_id,start_time,end_time,break_minutes,grace_period_minutes,end_day_offset,paid_minutes,schedule_kind,is_flexible) values('Rollback BU preset',bu,'09:00','18:00',60,5,0,480,'work',false) returning id into preset;
+ insert into public.shift_assignments(employee_id,shift_template_id,date,business_unit_id,created_by) values(emp,preset,'2099-01-05',bu,actor);
+ update public.shift_templates set name='Rollback edited BU preset' where id=preset;
+ if not exists(select 1 from public.shift_templates where id=preset and name='Rollback edited BU preset') then raise exception 'Own preset editing failed';end if;
+ denied:=false;begin insert into public.shift_templates(name,business_unit_id,start_time,end_time,break_minutes,grace_period_minutes,end_day_offset,paid_minutes,schedule_kind,is_flexible) values('Rollback unrelated preset',otherbu,'09:00','18:00',60,5,0,480,'work',false);exception when insufficient_privilege then denied:=true;end;if not denied then raise exception 'Unrelated BU preset accepted';end if;
+ denied:=false;begin insert into public.shift_assignments(employee_id,shift_template_id,date,business_unit_id,created_by) values(emp,legacy,'2099-01-06',bu,actor);exception when raise_exception then denied:=true;end;if not denied then raise exception 'Retired shared preset accepted';end if;
+ delete from public.shift_assignments where employee_id=emp and date='2099-01-05';delete from public.shift_templates where id=preset;
+ reset role;
+end $$;
+select 'PASS: BU manager creates/edits presets, schedules own BU, unrelated BU denied, shared preset reuse blocked. All fixtures rolled back.' as result;
+rollback;

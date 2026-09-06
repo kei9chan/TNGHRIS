@@ -133,6 +133,7 @@ const ShiftAssignmentDrawer: React.FC<ShiftAssignmentDrawerProps> = ({ isOpen, o
                         </div>
                         <div className="my-2 border-t border-gray-200 dark:border-gray-600"></div>
                         <ul className="space-y-1 pb-4">
+                            {templates.length === 0 && <p className="p-4 text-sm text-slate-500">No presets for this employee’s business unit yet. Close this panel, select their BU, then add its presets before assigning shifts.</p>}
                             {templates.map(template => {
                                 const isHighlighted = highlightedTemplateId === template.id;
                                 return (

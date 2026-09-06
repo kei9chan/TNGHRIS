@@ -501,7 +501,9 @@ const Timekeeping: React.FC = () => {
                 Role.BusinessUnitManager,
             ]);
 
-            if (user.role === Role.Manager) {
+            if (user.role === Role.BusinessUnitManager) {
+                filtered = filtered.filter(u => u.businessUnitId === user.businessUnitId);
+            } else if (user.role === Role.Manager) {
                 filtered = filtered.filter(u => u.id === user.id || u.reportsTo === user.id);
             } else if (user.role === Role.Employee) {
                 filtered = filtered.filter(u => u.id === user.id);
@@ -621,7 +623,14 @@ const Timekeeping: React.FC = () => {
         return employee?.businessUnitId || null;
     };
 
+    const hasScopedPreset = (employeeId: string, templateId: string) => {
+        const buId = employees.find(e => e.id === employeeId)?.businessUnitId;
+        return !!buId && templates.some(t => t.id === templateId && t.businessUnitId === buId);
+    };
+    const rejectLegacyCopy = () => setToastInfo({show:true,message:'This schedule uses a retired shared preset. Create the BU presets and assign the week before copying it.'});
+
     const handleSaveShift = async (employeeId: string, date: Date, templateId: string) => {
+        if (!hasScopedPreset(employeeId, templateId)) { rejectLegacyCopy(); return; }
         const existing = assignments.find(
             a => a.employeeId === employeeId && new Date(a.date).toDateString() === date.toDateString()
         );
@@ -634,6 +643,7 @@ const Timekeeping: React.FC = () => {
                 .update({ shift_template_id: templateId, business_unit_id: resolvedBuId })
                 .eq('id', existing.id);
 
+            if (error) { setToastInfo({show:true,message:error.message}); return; }
             if (!error) {
                 setAssignments(prev => prev.map(a => a.id === existing.id ? { ...a, shiftTemplateId: templateId } : a));
                 logActivity(user, 'UPDATE', 'ShiftAssignment', existing.id, `Updated shift assignment for employee ${employeeId} on ${date.toDateString()}`);
@@ -654,6 +664,7 @@ const Timekeeping: React.FC = () => {
                 .select('id')
                 .single();
 
+            if (error || !data) { setToastInfo({show:true,message:error?.message || 'Shift was not saved.'}); return; }
             if (!error && data) {
                 const newAssignment: ShiftAssignment = {
                     id: data.id,
@@ -719,6 +730,7 @@ const Timekeeping: React.FC = () => {
     
     const handleCopyWeek = async (assignmentToCopy: ShiftAssignment) => {
         const { employeeId, shiftTemplateId, date } = assignmentToCopy;
+        if (!hasScopedPreset(employeeId, shiftTemplateId)) { rejectLegacyCopy(); return; }
         const startDate = new Date(date);
         const dayOfWeek = startDate.getDay();
         const weekDayIndex = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
@@ -800,6 +812,7 @@ const Timekeeping: React.FC = () => {
             return;
         }
 
+        if (prevWeekAssignments.some(a => !hasScopedPreset(a.employeeId, a.shiftTemplateId))) { rejectLegacyCopy(); return; }
         const newAssignmentsForCurrentWeek = prevWeekAssignments.map(a => ({
             ...a,
             id: `SA-COPY-${Date.now()}-${a.id}`,
@@ -893,6 +906,7 @@ const Timekeeping: React.FC = () => {
         const currentWeekEnd = addDays(weekStart, 6);
         currentWeekEnd.setHours(23, 59, 59, 999);
 
+        if (sourceAssignments.some(a => !hasScopedPreset(a.employeeId, a.shiftTemplateId))) { rejectLegacyCopy(); return; }
         const newAssignments = sourceAssignments.map(a => ({
             ...a,
             id: `SA-COPY-ALL-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -954,7 +968,9 @@ const Timekeeping: React.FC = () => {
         const resolvedBuId = templateData.businessUnitId && templateData.businessUnitId !== 'all'
             ? templateData.businessUnitId
             : (selectedBuId && selectedBuId !== 'all' ? selectedBuId : null);
+        if (!resolvedBuId) { setToastInfo({show:true,message:'Select a business unit before creating a preset.'}); return; }
         const payload = {
+            created_by: user?.id,
             name: templateData.name,start_time:templateData.startTime,end_time:templateData.endTime,
             break_minutes:templateData.scheduleKind==='rest'||templateData.scheduleKind==='no_schedule'?0:60,
             grace_period_minutes:5,business_unit_id:resolvedBuId,color:templateData.color,
@@ -965,7 +981,7 @@ const Timekeeping: React.FC = () => {
         if (templateData.id) {
             const { data, error } = await supabase
                 .from('shift_templates')
-                .update(payload)
+                .update(Object.fromEntries(Object.entries(payload).filter(([key]) => key !== 'created_by')))
                 .eq('id', templateData.id)
                 .select('*')
                 .single();
@@ -1083,10 +1099,9 @@ const Timekeeping: React.FC = () => {
 
              if (availableEmployee && gap.shiftTime) {
                  // Find or create a matching template
-                 let template = templates.filter(t=>(t.scheduleKind??'work')==='work').find(t => t.startTime === gap.shiftTime?.start && t.endTime === gap.shiftTime?.end);
+                 let template = templates.filter(t=>t.businessUnitId===availableEmployee.businessUnitId && (t.scheduleKind??'work')==='work').find(t => t.startTime === gap.shiftTime?.start && t.endTime === gap.shiftTime?.end);
                  
-                 // For demo simplicity, if no exact template, use the first one or fallback
-                 if (!template && templates.length > 0) template = templates[0];
+                 // Leave unconfigured shifts for the manager to prepare explicitly.
 
                  if (template) {
                      newAssignments.push({
@@ -1222,22 +1237,11 @@ const Timekeeping: React.FC = () => {
     }, [detailModalState.assignment, templates]);
 
     const templatesForDrawer = useMemo(() => {
-        if (selectedBuId === 'all') return templates;
-        return templates.filter(t => t.businessUnitId === selectedBuId || !t.businessUnitId);
-    }, [templates, selectedBuId]);
-    
-    const presetTemplates = useMemo(() => {
-        if (selectedBuId !== 'all') {
-            return templates.filter(t => t.businessUnitId === selectedBuId);
-        }
-        const seen = new Set<string>();
-        return templates.filter(template => {
-            const key = `${template.name}|${template.startTime}|${template.endTime}`;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        });
-    }, [templates, selectedBuId]);
+        const buId = drawerState.employee?.businessUnitId;
+        return buId ? templates.filter(t => t.businessUnitId === buId) : [];
+    }, [templates, drawerState.employee]);
+
+    const presetTemplates = useMemo(() => selectedBuId === 'all' ? [] : templates.filter(t => t.businessUnitId === selectedBuId), [templates, selectedBuId]);
 
     const buNameForModal = businessUnits.find(b => b.id === selectedBuId)?.name;
     
@@ -1353,6 +1357,7 @@ const Timekeeping: React.FC = () => {
             
             {isScheduleEditable && (
                 <Card title="Shift Presets">
+                    <p className="text-sm text-slate-600 dark:text-slate-300">{selectedBuId === 'all' ? 'Choose a business unit to create or view its presets.' : presetTemplates.length === 0 ? 'No presets for this business unit yet. Its manager can create presets and prepare the weekly schedule.' : 'Presets for this business unit only.'}</p>
                     <div className="flex flex-wrap gap-x-2 gap-y-4 pt-8">
                         {presetTemplates.map(template => {
                             const tooltip = template.isFlexible
@@ -1380,7 +1385,7 @@ const Timekeeping: React.FC = () => {
                         })}
                     </div>
                     <div className="mt-4">
-                        <Button onClick={() => setTemplateModalState({ open: true, template: null })}>
+                        <Button disabled={selectedBuId === 'all'} onClick={() => setTemplateModalState({ open: true, template: null })}>
                             + Add New Preset
                         </Button>
                     </div>
