@@ -1,9 +1,11 @@
+import {DayStatus,DayTag,dateKey,statusPresets,leaveForDay,leaveLabel} from '../../services/scheduleStatuses';
 import {scheduleLabel} from '../../services/schedulePolicy';
 
 import React from 'react';
 import { ShiftTemplate, ShiftAssignment, User, LeaveRequest, LeaveRequestStatus, OperatingHours } from '../../types';
 
 interface RoleViewTableProps {
+    selectedStatus?:DayTag|null;dayStatuses:DayStatus[]; onStatus:(employee:User,date:Date,tag:DayTag|null)=>void;
     view: 'grid' | 'role' | 'area';
     employeesByRole: Record<string, User[]>;
     employeesByArea: Record<string, User[]>;
@@ -34,7 +36,7 @@ const WarningIcon: React.FC<{ tooltip: string }> = ({ tooltip }) => (
 
 const RoleViewTable: React.FC<RoleViewTableProps> = ({
     view, employeesByRole, employeesByArea, employees, weekDates, operatingHours, validationStatus, assignments,
-    suggestedAssignments, leaves, templates, shiftColorClasses, onOpenDetailModal, onOpenDrawer, isEditable
+    suggestedAssignments, leaves, selectedStatus,dayStatuses,onStatus,templates, shiftColorClasses, onOpenDetailModal, onOpenDrawer, isEditable
 }) => {
     const renderEmployeeRow = (employee: User) => (
         <tr key={employee.id}>
@@ -47,13 +49,16 @@ const RoleViewTable: React.FC<RoleViewTableProps> = ({
             {weekDates.map(date => {
                 const assignment = assignments.find(a => a.employeeId === employee.id && new Date(a.date).toDateString() === date.toDateString());
                 const suggestion = suggestedAssignments.find(a => a.employeeId === employee.id && new Date(a.date).toDateString() === date.toDateString());
-                const leave = leaves.find(l => l.employeeId === employee.id && l.status === LeaveRequestStatus.Approved && date >= new Date(l.startDate) && date <= new Date(l.endDate));
+                const leave=leaveForDay(leaves,employee.id,date);
+                const ds=dayStatuses.find(s=>s.employee_id===employee.id&&s.work_date===dateKey(date));
+                const drop={onDragOver:(e:React.DragEvent)=>{if(isEditable)e.preventDefault();},onDrop:(e:React.DragEvent)=>{e.preventDefault();const tag=e.dataTransfer.getData('application/x-tng-status') as DayTag;if(isEditable&&statusPresets.some(s=>s.tag===tag))onStatus(employee,date,tag);}};
+                if(leave||ds?.tag){const preset=statusPresets.find(s=>s.tag===ds?.tag);const template=assignment?templates.find(t=>t.id===assignment.shiftTemplateId):null;return <td {...drop} key={date.toISOString()} className="px-2 py-2 align-top"><div className={`rounded-lg border p-2 text-xs ${leave?( (leave as any).paid?'bg-green-100 text-green-900':'bg-amber-100 text-amber-900'):preset?.color}`}><p className="font-bold">{leave?leaveLabel(leave):preset?.label}</p>{!leave&&isEditable&&<button className="min-h-11 underline" onClick={()=>onOpenDrawer(employee,date)}>Change status</button>}{leave&&<p>{(leave as any).leaveTypeName} · approved{leave.startTime?` · ${leave.startTime}–${leave.endTime}`:''}</p>}{template&&((leave&&(leave.startTime||leave.endTime))||!leave&&['skeletal','absence'].includes(ds?.tag??''))&&<p>{scheduleLabel(template)}</p>}{!leave&&isEditable&&<button className="min-h-11 underline" onClick={()=>onStatus(employee,date,null)}>Restore shift</button>}{leave&&assignment&&<button className="min-h-11 underline" onClick={()=>onOpenDetailModal(assignment)}>Original shift</button>}</div></td>;}
 
                 if (assignment) {
                     const template = templates.find(t => t.id === assignment.shiftTemplateId);
                     return (
-                        <td key={date.toISOString()} className="px-2 py-2 align-top">
-                            <button onClick={() => onOpenDetailModal(assignment)} className={`w-full h-full p-2 rounded-md border text-left text-xs ${shiftColorClasses[template?.color || 'gray']}`}>
+                        <td {...drop} key={date.toISOString()} className="px-2 py-2 align-top">
+                            <button onClick={() => selectedStatus?onOpenDrawer(employee,date):onOpenDetailModal(assignment)} className={`w-full h-full p-2 rounded-md border text-left text-xs ${shiftColorClasses[template?.color || 'gray']}`}>
                                 <p className="font-bold">{template?.name}</p>{template&&<p>{scheduleLabel(template)}</p>}
                             </button>
                         </td>
@@ -61,7 +66,7 @@ const RoleViewTable: React.FC<RoleViewTableProps> = ({
                 }
                 if(leave) {
                         return (
-                        <td key={date.toISOString()} className="px-2 py-2 align-top">
+                        <td {...drop} key={date.toISOString()} className="px-2 py-2 align-top">
                             <button onClick={isEditable ? () => onOpenDrawer(employee, date) : undefined} disabled={!isEditable} className={`w-full h-full p-2 rounded-md border text-left text-xs ${shiftColorClasses['cyan']}`}>
                                 <p className="font-bold">Leave / No Schedule</p><p>Approved leave · planned schedule required for payroll</p>
                             </button>
@@ -71,7 +76,7 @@ const RoleViewTable: React.FC<RoleViewTableProps> = ({
                 if (suggestion) {
                     const template = templates.find(t => t.id === suggestion.shiftTemplateId);
                     return (
-                        <td key={date.toISOString()} className="px-2 py-2 align-top">
+                        <td {...drop} key={date.toISOString()} className="px-2 py-2 align-top">
                             <button onClick={isEditable ? () => onOpenDrawer(employee, date) : undefined} disabled={!isEditable} className={`w-full h-full p-2 rounded-md border-2 border-dashed text-left text-xs opacity-60 hover:opacity-100 transition-opacity ${shiftColorClasses[template?.color || 'gray']} disabled:cursor-not-allowed`}>
                                 <p className="font-bold">{template?.name}</p>{template&&<p>{scheduleLabel(template)}</p>}
                                 <p className="text-xs italic">Suggested</p>
@@ -80,7 +85,7 @@ const RoleViewTable: React.FC<RoleViewTableProps> = ({
                     );
                 }
                 return (
-                    <td key={date.toISOString()} className="px-2 py-2 align-top text-center">
+                    <td {...drop} key={date.toISOString()} className="px-2 py-2 align-top text-center">
                         <button onClick={isEditable ? () => onOpenDrawer(employee, date) : undefined} disabled={!isEditable} className="w-full h-12 text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-md flex items-center justify-center text-2xl disabled:cursor-not-allowed disabled:hover:bg-transparent dark:disabled:hover:bg-transparent" aria-label={`Missing Schedule for ${employee.name}`}>+</button><span className="text-xs text-amber-700">Missing Schedule</span>
                     </td>
                 );

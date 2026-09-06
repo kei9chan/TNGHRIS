@@ -1,10 +1,11 @@
-import {COMPANY_GRACE_MINUTES} from '../../services/schedulePolicy';
 import React, { useState, useEffect, useMemo } from 'react';
-import { User, TimeEventType, ShiftAssignment, ShiftTemplate } from '../../types';
+import { User, ShiftAssignment, ShiftTemplate } from '../../types';
 import Card from '../ui/Card';
+import EmployeePhoto from '../employees/EmployeePhoto';
 import { supabase } from '../../services/supabaseClient';
 
 interface LiveShiftStatusDashboardProps {
+  flaggedEmployees?:string[];
   selectedBuId: string;
   actions?: React.ReactNode;
   employees: User[];
@@ -24,11 +25,7 @@ const StatusIndicator: React.FC<{ status: 'in' | 'late' | 'break' }> = ({ status
 
 const EmployeeStatusCard: React.FC<{ employee: User, status: 'in' | 'late' | 'break' }> = ({ employee, status }) => (
     <div className="flex items-center space-x-3 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-slate-700/50">
-        <img 
-            src={employee.profilePictureUrl || `https://i.pravatar.cc/150?u=${employee.id}`} 
-            alt={employee.name} 
-            className="h-10 w-10 rounded-full object-cover" 
-        />
+        <EmployeePhoto employeeId={employee.id} name={employee.name}/>
         <div className="flex-1 min-w-0">
             <p className="font-medium text-sm truncate text-gray-800 dark:text-gray-200">{employee.name}</p>
             <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{employee.position}</p>
@@ -58,122 +55,12 @@ const StatusColumn: React.FC<{ title: string; data: Record<string, User[]>; stat
 };
 
 
-const LiveShiftStatusDashboard: React.FC<LiveShiftStatusDashboardProps> = ({ selectedBuId, actions, employees, assignments, templates }) => {
-    const [events, setEvents] = useState<{ employeeId: string; type: TimeEventType; timestamp: Date }[]>([]);
-
-    const mapTypeFromDb = (type?: string): TimeEventType => {
-        const t = (type || '').toLowerCase();
-        if (t.includes('out')) return TimeEventType.ClockOut;
-        if (t.includes('start')) return TimeEventType.StartBreak;
-        if (t.includes('end')) return TimeEventType.EndBreak;
-        return TimeEventType.ClockIn;
-    };
-
-    useEffect(() => {
-        const loadEvents = async () => {
-            if (!employees.length) {
-                setEvents([]);
-                return;
-            }
-            const start = new Date();
-            start.setHours(0, 0, 0, 0);
-            const end = new Date();
-            end.setHours(23, 59, 59, 999);
-
-            const employeeIds = employees.map(e => e.id);
-            const { data, error } = await supabase
-                .from('time_events')
-                .select('employee_id, timestamp, type')
-                .in('employee_id', employeeIds)
-                .gte('timestamp', start.toISOString())
-                .lte('timestamp', end.toISOString());
-
-            if (error) {
-                console.error('Failed to load time events', error);
-                setEvents([]);
-                return;
-            }
-
-            setEvents((data || []).map((row: any) => ({
-                employeeId: row.employee_id,
-                type: mapTypeFromDb(row.type),
-                timestamp: new Date(row.timestamp),
-            })));
-        };
-
-        loadEvents();
-    }, [employees, selectedBuId]);
-
-    const { clockedIn, scheduledLate, onBreak } = useMemo(() => {
-        const categorized = {
-            clockedIn: {} as Record<string, User[]>,
-            scheduledLate: {} as Record<string, User[]>,
-            onBreak: {} as Record<string, User[]>,
-        };
-
-        const addToGroup = (group: Record<string, User[]>, employee: User) => {
-            const dept = employee.department || 'No Department';
-            if (!group[dept]) {
-                group[dept] = [];
-            }
-            group[dept].push(employee);
-        };
-
-        const todayKey = new Date().toDateString();
-        const eventsByEmployee = new Map<string, { type: TimeEventType; timestamp: Date }>();
-        events.forEach(event => {
-            if (event.timestamp.toDateString() !== todayKey) return;
-            const existing = eventsByEmployee.get(event.employeeId);
-            if (!existing || event.timestamp > existing.timestamp) {
-                eventsByEmployee.set(event.employeeId, event);
-            }
-        });
-
-        for (const employee of employees) {
-            const latestEventToday = eventsByEmployee.get(employee.id);
-
-            if (!latestEventToday) {
-                const todaysShiftAssignment = assignments.find(a =>
-                    a.employeeId === employee.id &&
-                    new Date(a.date).toDateString() === todayKey
-                );
-
-                if (todaysShiftAssignment) {
-                    const shiftTemplate = templates.find(t => t.id === todaysShiftAssignment.shiftTemplateId);
-                    if (shiftTemplate && !shiftTemplate.isFlexible && (shiftTemplate.scheduleKind ?? 'work') === 'work' && shiftTemplate.startTime) {
-                        const [hours, minutes] = shiftTemplate.startTime.split(':').map(Number);
-                        const shiftStartTime = new Date();
-                        shiftStartTime.setHours(hours, minutes, 0, 0);
-
-                        const gracePeriod = COMPANY_GRACE_MINUTES;
-                        const graceTime = new Date(shiftStartTime.getTime() + gracePeriod * 60000);
-
-                        if (new Date() > graceTime) {
-                            addToGroup(categorized.scheduledLate, employee);
-                        }
-                    }
-                }
-            } else {
-                if (latestEventToday.type === TimeEventType.StartBreak) {
-                    addToGroup(categorized.onBreak, employee);
-                } else if (latestEventToday.type === TimeEventType.ClockIn || latestEventToday.type === TimeEventType.EndBreak) {
-                    addToGroup(categorized.clockedIn, employee);
-                }
-            }
-        }
-
-        for (const dept in categorized.clockedIn) {
-            categorized.clockedIn[dept].sort((a, b) => a.name.localeCompare(b.name));
-        }
-        for (const dept in categorized.scheduledLate) {
-            categorized.scheduledLate[dept].sort((a, b) => a.name.localeCompare(b.name));
-        }
-        for (const dept in categorized.onBreak) {
-            categorized.onBreak[dept].sort((a, b) => a.name.localeCompare(b.name));
-        }
-
-        return categorized;
-    }, [employees, assignments, templates, events]);
+const LiveShiftStatusDashboard: React.FC<LiveShiftStatusDashboardProps> = ({ flaggedEmployees=[],selectedBuId, actions, employees, assignments, templates }) => {
+    const [live,setLive]=useState<{employeeId:string;status:'in'|'late'|'break'}[]>([]);
+    const [loadError,setLoadError]=useState('');
+    const employeeKey=employees.map(e=>e.id).sort().join(',');
+    useEffect(()=>{let active=true;const load=async()=>{if(!employeeKey){setLive([]);return;}const {data,error}=await supabase.rpc('get_live_shift_status',{p_employees:employeeKey.split(',')});if(!active)return;if(error){setLoadError(error.message);return;}setLoadError('');setLive(data??[]);};void load();const timer=setInterval(()=>{if(document.visibilityState==='visible')void load();},30000);return()=>{active=false;clearInterval(timer);};},[employeeKey]);
+    const {clockedIn,scheduledLate,onBreak}=useMemo(()=>{const groups={clockedIn:{} as Record<string,User[]>,scheduledLate:{} as Record<string,User[]>,onBreak:{} as Record<string,User[]>};const byId=new Map<string,User>(employees.map(e=>[e.id,e] as [string,User]));for(const item of live){const employee=byId.get(item.employeeId);if(!employee)continue;const group=item.status==='in'?groups.clockedIn:item.status==='break'?groups.onBreak:groups.scheduledLate;const dept=employee.department||'No Department';(group[dept]??=[]).push(employee);}return groups;},[employees,live]);
 
     const clockedInCount = Object.values(clockedIn).flat().length;
     const lateCount = Object.values(scheduledLate).flat().length;
@@ -181,11 +68,11 @@ const LiveShiftStatusDashboard: React.FC<LiveShiftStatusDashboardProps> = ({ sel
 
     return (
         <Card title="Who's On Shift - Live Status" className="mb-6" actions={actions}>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>{loadError&&<p role="alert" className="mb-3 text-sm text-amber-700">Live attendance could not refresh: {loadError}</p>}{employees.filter(e=>flaggedEmployees.includes(e.id)).map(e=><a key={e.id} href="/payroll/attendance-review" className="mb-3 mr-3 inline-block rounded bg-amber-100 px-3 py-2 text-sm text-amber-900">⚠ {e.name} · attendance review</a>)}<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <StatusColumn title="Clocked In" data={clockedIn} status="in" count={clockedInCount} colorClass="text-green-600 dark:text-green-400" />
                 <StatusColumn title="Scheduled (Late)" data={scheduledLate} status="late" count={lateCount} colorClass="text-yellow-500 dark:text-yellow-400" />
                 <StatusColumn title="On Break" data={onBreak} status="break" count={onBreakCount} colorClass="text-blue-500 dark:text-blue-400" />
-            </div>
+            </div></div>
         </Card>
     );
 };

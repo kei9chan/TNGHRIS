@@ -1,0 +1,1 @@
+do $$declare ddl text;begin ddl:=pg_get_functiondef('private.scan_attendance_review()'::regprocedure);ddl:=replace(ddl,'on conflict(employee_id,work_date,kind) do nothing','on conflict do nothing');execute ddl;end $$;

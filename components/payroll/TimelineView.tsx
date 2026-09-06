@@ -1,8 +1,10 @@
+import {DayStatus,DayTag,dateKey,statusPresets,leaveForDay,leaveLabel} from '../../services/scheduleStatuses';
 import {scheduleLabel} from '../../services/schedulePolicy';
 import React from 'react';
-import { ShiftTemplate, ShiftAssignment, User, OperatingHours } from '../../types';
+import { ShiftTemplate, ShiftAssignment, User, OperatingHours, LeaveRequest } from '../../types';
 
 interface TimelineViewProps {
+    dayStatuses:DayStatus[];leaves:LeaveRequest[];onStatus:(employee:User,date:Date,tag:DayTag|null)=>void;
     weekDates: Date[];
     employees: User[];
     assignments: ShiftAssignment[];
@@ -17,7 +19,7 @@ const timeToPercent = (time: string): number => {
     return ((hours * 60 + minutes) / (24 * 60)) * 100;
 };
 
-const TimelineView: React.FC<TimelineViewProps> = ({ weekDates, employees, assignments, templates, operatingHours, onOpenDrawer, isEditable }) => {
+const TimelineView: React.FC<TimelineViewProps> = ({ dayStatuses,leaves,onStatus,weekDates, employees, assignments, templates, operatingHours, onOpenDrawer, isEditable }) => {
 
     const hours = Array.from({ length: 24 }, (_, i) => i); // 0 to 23
 
@@ -80,20 +82,24 @@ const TimelineView: React.FC<TimelineViewProps> = ({ weekDates, employees, assig
                         {/* Shift Rows */}
                         {employees.map(employee => {
                             const assignment = assignments.find(a => a.employeeId === employee.id && new Date(a.date).toDateString() === date.toDateString());
+                            const leave=leaveForDay(leaves,employee.id,date);
+                            const ds=dayStatuses.find(s=>s.employee_id===employee.id&&s.work_date===dateKey(date));
                             const template = assignment ? templates.find(t => t.id === assignment.shiftTemplateId) : null;
                             
                             return (
                                 <div 
-                                    key={employee.id} 
+                                    key={employee.id}
+                                    onDragOver={e=>{if(isEditable)e.preventDefault();}} onDrop={e=>{e.preventDefault();const tag=e.dataTransfer.getData('application/x-tng-status') as DayTag;if(isEditable&&statusPresets.some(s=>s.tag===tag))onStatus(employee,date,tag);}}
                                     className={`h-16 relative border-b border-r dark:border-gray-700 bg-gray-50 dark:bg-slate-800/50 ${isEditable ? 'cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700/50' : ''}`}
                                     onClick={isEditable ? () => onOpenDrawer(employee, date) : undefined}
                                 >
+                                    {(leave||ds?.tag)&&<div className="absolute inset-2 z-10 rounded bg-violet-100 p-2 text-xs text-violet-900"><b>{leave?leaveLabel(leave):statusPresets.find(p=>p.tag===ds?.tag)?.label}</b>{template&&<p>{scheduleLabel(template)}</p>}{!leave&&isEditable&&<button className="ml-2 underline" onClick={e=>{e.stopPropagation();onStatus(employee,date,null);}}>Restore shift</button>}</div>}
                                     {/* Hour grid lines */}
                                     {hours.slice(1).map(hour => (
                                         <div key={hour} className="absolute h-full border-l border-dashed border-gray-200 dark:border-gray-700" style={{ left: `${(hour / 24) * 100}%` }}></div>
                                     ))}
-                                    {!template && <span className="absolute top-5 left-3 text-xs text-amber-700">Missing Schedule</span>}
-                                    {template && (
+                                    {!template&&!leave&&!ds?.tag && <span className="absolute top-5 left-3 text-xs text-amber-700">Missing Schedule</span>}
+                                    {!leave&&!ds?.tag&&template && (
                                         <div 
                                             className={`absolute top-2 bottom-2 rounded-md flex items-center px-2 text-xs font-bold overflow-hidden ${shiftColorClasses[template.color]} ${isEditable ? 'cursor-pointer' : 'cursor-default'}`} 
                                             style={getShiftStyle(template)} title={`${template.name} · ${scheduleLabel(template)}`}
