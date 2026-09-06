@@ -3,7 +3,7 @@ import {Link} from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import {useAuth} from '../../hooks/useAuth';
-import PhaseChecklist from './PhaseChecklist';
+import SetupChecklistLink from './SetupChecklistLink';
 import {grossContext,grossRuns,getGrossRun,prepareGross,setShadow,saveGrossRules,GrossScope,GrossRun,RunSummary,GrossConfig} from './grossPay';
 const input='mt-1 block w-full rounded border border-gray-300 bg-white p-2 dark:bg-slate-800 dark:border-slate-600';
 const Field:React.FC<{label:string;value:string;onChange:(s:string)=>void;type?:string}>=({label,value,onChange,type='text'})=><label className="block text-sm">{label}<input className={input} value={value} onChange={e=>onChange(e.target.value)} type={type} required maxLength={1000} step={type==='number'?'any':undefined}/></label>;
@@ -14,7 +14,7 @@ export default function GrossPayPage(){
  async function act(action:()=>Promise<unknown>,open=false){const n=++seq.current;setBusy(true);setError('');setRun(null);try{const id=await action();const context=await grossContext();const list=scope?.canView?await grossRuns(scopeId):[];const details=open?await getGrossRun(String(id)):null;if(n===seq.current){setScopes(context.scopes);setRuns(list);setRun(details);}}catch(e){if(n===seq.current)setError(e instanceof Error?e.message:'The action could not be completed.');}finally{if(n===seq.current)setBusy(false);}}
  async function open(id:string){const n=++seq.current;setRun(null);setError('');setBusy(true);try{const d=await getGrossRun(id);if(n===seq.current)setRun(d);}catch(e){if(n===seq.current)setError(e instanceof Error?e.message:'Run unavailable.');}finally{if(n===seq.current)setBusy(false);}}
  return <div className="space-y-6 text-gray-800 dark:text-slate-200"><div><h1 className="text-2xl font-bold">Gross Pay Review</h1><p className="mt-1">Prepare an internal Payroll Register from HR-submitted attendance and reviewed dated pay. Live payroll is disabled.</p></div>
- <PhaseChecklist/>
+ <SetupChecklistLink/>
  {error&&<p role="alert" className="whitespace-pre-wrap rounded border border-red-300 p-3 text-red-700 dark:text-red-300">{error}</p>}
  <Card title="Business unit / shadow review"><label className="block">Scope<select className={input} value={scopeId} disabled={busy} onChange={e=>{setError('');setScopeId(e.target.value);}}><option value="">Choose a scope</option>{scopes.map(s=><option key={s.id} value={s.id}>{s.name} · {s.mode}</option>)}</select></label>
  {!scope?.canView&&<p className="mt-3">Salary work needs the assigned payroll duty and existing compensation and attendance permissions. <Link className="text-indigo-600" to="/payroll/access">Payroll Access</Link></p>}

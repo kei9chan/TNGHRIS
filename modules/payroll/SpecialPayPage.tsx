@@ -3,7 +3,7 @@ import {Link,useLocation} from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import {useAuth} from '../../hooks/useAuth';
-import PhaseChecklist from './PhaseChecklist';
+import SetupChecklistLink from './SetupChecklistLink';
 import {emptyLine,emptySpecial,specialEmployees,specialContext,getSpecialRun,prepareSpecial,reviewSpecial} from './specialPay';
 import type {SpecialEmployee,SpecialContext,SpecialInputs,SpecialRun,SpecialLine} from './specialPay';
 const input='mt-1 block w-full rounded border border-gray-300 p-2 dark:bg-slate-800 dark:border-slate-600';
@@ -22,7 +22,7 @@ export default function SpecialPayPage(){
  function lineChange(i:number,key:keyof SpecialLine,value:string){setP(old=>({...old,reviewedCoverage:false,lines:old.lines.map((l,j)=>i===j?{...l,[key]:value}:l)}));}
  return <div className="space-y-6">
   <div><h1 className="text-3xl font-bold">Special Pay & Corrections</h1><p className="mt-2">Review remaining amounts, preserve original payroll and keep each revision linked to its source.</p></div>
-  <PhaseChecklist/>
+  <SetupChecklistLink/>
   <Card title="Choose an employee"><label>Employee<select className={input} value={employee} disabled={busy||loading} onChange={e=>setEmployee(e.target.value)}><option value="">Choose</option>{employees.map(e=><option key={e.id} value={e.id}>{e.name} · {e.businessUnit}{e.endDate?` · ended ${e.endDate}`:''}</option>)}</select></label>
    {!loading&&employees.length===0&&<p className="mt-3">A scoped payroll duty and existing HRIS salary permission are required. <Link className="text-indigo-600" to="/payroll/access">Manage Payroll Access</Link>. The checklist remains available while assignments are pending.</p>}
    {context&&<><p className="mt-3">{context.canCalculate?'Shadow review enabled.':'Payroll processing is off. The access manager must enable shadow for the selected BU and parent scope before preparation.'}</p><p className="mt-2 text-sm">Recorded HRIS end date: {context.endDate||'Not recorded'}. <Link className="text-indigo-600" to={`/employees/view/${employee}`}>Open existing employee profile</Link> for offboarding and supporting documents.</p></>}

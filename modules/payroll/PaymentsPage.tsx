@@ -3,7 +3,7 @@ import {Link,useSearchParams} from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import {useAuth} from '../../hooks/useAuth';
-import PhaseChecklist from './PhaseChecklist';
+import SetupChecklistLink from './SetupChecklistLink';
 import {listApprovals} from './approvals';
 import type {ApprovalSummary} from './approvals';
 import {processCodes,outputKinds,getPaymentWorkspace,getOutputSetup,recordOutputProcess,createPaymentBatch,closePaymentBatch,preparePaymentAttempt,recordPaymentOutcome,completePaymentBatch,createOutput,downloadOutput} from './payments';
@@ -32,7 +32,7 @@ export default function PaymentsPage(){
  return <div className="space-y-6">
   <h1 className="text-3xl font-bold">Payments & Reports</h1>
   <p>Reconcile actual payment evidence against the approved payroll. This page does not transfer money or file agency returns.</p>
-  <PhaseChecklist/>
+  <SetupChecklistLink/>
   {error&&<p role="alert" className="rounded border border-red-300 bg-red-50 p-3 text-red-800">{error}</p>}
   {message&&<p role="status" className="rounded bg-green-50 p-3 text-green-800">{message}</p>}
   <Card title="Existing payment and filing processes">

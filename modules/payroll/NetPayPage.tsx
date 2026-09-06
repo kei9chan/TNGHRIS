@@ -3,7 +3,7 @@ import {Link} from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import {useAuth} from '../../hooks/useAuth';
-import PhaseChecklist from './PhaseChecklist';
+import SetupChecklistLink from './SetupChecklistLink';
 import {grossContext,grossRuns,GrossScope,RunSummary} from './grossPay';
 import {netWorkspace,saveNetReview,prepareNet,getNetRun,recordLoan,initialNetInputs,NetWorkspace,NetInputs,NetRun,Loan} from './netPay';
 import {downloadNetWorkbook,importNetWorkbook} from './netWorkbook';
@@ -16,7 +16,7 @@ export default function NetPayPage(){
  async function openGross(id:string){const n=++seq.current;setGrossId(id);setW(null);setRun(null);setError('');setNotice('');if(!id)return;setBusy(true);try{const d=await netWorkspace(id);if(n===seq.current)setW(d);}catch(e){if(n===seq.current)setError(e instanceof Error?e.message:'Review unavailable.');}finally{if(n===seq.current)setBusy(false);}}
  async function action(fn:()=>Promise<unknown>,openResult=false){const n=++seq.current;setBusy(true);setError('');setNotice('');setRun(null);try{const id=await fn();const d=await netWorkspace(grossId);const r=openResult?await getNetRun(String(id)):null;if(n===seq.current){setW(d);setRun(r);setNotice(openResult?'Shadow take-home-pay review saved. No payment or loan posting was made.':'Finance review recorded. Prepare net pay to check all inputs and reconcile amounts.');}}catch(e){if(n===seq.current)setError(e instanceof Error?e.message:'Action failed.');}finally{if(n===seq.current)setBusy(false);}}
  async function openRun(id:string){const n=++seq.current;setBusy(true);setError('');setRun(null);try{const r=await getNetRun(id);if(n===seq.current)setRun(r);}catch(e){if(n===seq.current)setError(e instanceof Error?e.message:'Review unavailable.');}finally{if(n===seq.current)setBusy(false);}}
- return <div className="space-y-6 text-gray-800 dark:text-slate-200"><div><h1 className="text-2xl font-bold">Take-home Pay Review</h1><p className="mt-1">Review statutory deductions, withholding, authorized deductions and loan projections from a current gross Payroll Register. Live payroll remains disabled.</p></div><PhaseChecklist/>
+ return <div className="space-y-6 text-gray-800 dark:text-slate-200"><div><h1 className="text-2xl font-bold">Take-home Pay Review</h1><p className="mt-1">Review statutory deductions, withholding, authorized deductions and loan projections from a current gross Payroll Register. Live payroll remains disabled.</p></div><SetupChecklistLink/>
  {error&&<p role="alert" className="whitespace-pre-wrap rounded border border-red-300 p-3 text-red-700 dark:text-red-300">{error}</p>}{notice&&<p role="status" className="rounded border border-green-300 p-3">{notice}</p>}
  <Card title="Choose the gross-pay version"><label>Business unit<select className={input} value={scopeId} disabled={busy} onChange={e=>{setScopeId(e.target.value);setError('');setNotice('');}}><option value="">Choose a scope</option>{scopes.filter(s=>s.canView||s.canManage).map(s=><option key={s.id} value={s.id}>{s.name} · {s.mode}</option>)}</select></label>
  {!scope?.canView&&<p className="mt-3">Salary review needs an assigned payroll duty and existing compensation/attendance permissions. <Link className="text-indigo-600" to="/payroll/access">Payroll Access</Link></p>}

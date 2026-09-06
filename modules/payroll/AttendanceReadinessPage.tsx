@@ -1,5 +1,5 @@
 import React,{useCallback,useEffect,useRef,useState} from 'react';
-import {Link} from 'react-router-dom';
+import {Link,useLocation} from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import {useAuth} from '../../hooks/useAuth';
@@ -11,6 +11,7 @@ const minutes=(value:number)=>Number(value).toLocaleString('en-PH',{maximumFract
 const TextField:React.FC<{label:string;value:string;change:(v:string)=>void;type?:string;required?:boolean}>=({label,value,change,type='text',required})=><label className="block text-sm font-medium">{label}<input className={inputClass} type={type} value={value} onChange={e=>change(e.target.value)} required={required} maxLength={1000}/></label>;
 
 export default function AttendanceReadinessPage(){
+ const location=useLocation();
  const {user}=useAuth();const [scopes,setScopes]=useState<TimeScope[]>([]);const [scopeId,setScopeId]=useState('');
  const [from,setFrom]=useState('');const [to,setTo]=useState('');const [preview,setPreview]=useState<TimePreview|null>(null);
  const [offsets,setOffsets]=useState<OffsetReview[]>([]);const [error,setError]=useState('');const [notice,setNotice]=useState('');const [busy,setBusy]=useState(false);const [reason,setReason]=useState('');const [showAll,setShowAll]=useState(false);
@@ -23,7 +24,7 @@ export default function AttendanceReadinessPage(){
  const rows=history?.result.rows||preview?.result.rows||[];const visible=showAll?rows:rows.filter(r=>!r.ready);
  return <div className="space-y-6 text-gray-800 dark:text-slate-200">
   <div className="flex flex-wrap justify-between gap-3"><div><h1 className="text-2xl font-bold">Attendance Readiness</h1><p className="mt-1 text-sm">Check existing time records, resolve missing inputs and submit a saved timekeeping version to Finance.</p></div><span className="self-start rounded-full bg-amber-100 px-3 py-1 text-sm text-amber-900">Live payroll disabled</span></div>
-  <PhaseChecklist/>
+  <details id="team-checklist" open={location.hash==='#team-checklist'?true:undefined} className="rounded-xl border border-gray-200 p-4 dark:border-slate-700"><summary className="cursor-pointer font-semibold">Team setup checklist · all payroll phases</summary><p className="my-3 text-sm">Track your team’s setup here. Check the current cutoff below to see attendance issues that need action.</p><PhaseChecklist/></details>
   {error&&<p role="alert" className="rounded border border-red-300 p-3 text-red-700 dark:text-red-300">{error}</p>}{notice&&<p role="status" className="text-green-700 dark:text-green-300">{notice}</p>}
   <Card title="Choose a business unit and cutoff"><div className="grid gap-4 sm:grid-cols-3"><label className="block text-sm font-medium">Business unit<select className={inputClass} value={scopeId} onChange={e=>{++seq.current;setScopeId(e.target.value);setPreview(null);setHistory(null);setBusy(false);}}><option value="">Choose a business unit</option>{scopes.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label><TextField label="From (inclusive)" type="date" value={from} change={v=>{++seq.current;setFrom(v);setPreview(null);setHistory(null);setBusy(false);}}/><TextField label="To (inclusive, maximum 31 days)" type="date" value={to} change={v=>{++seq.current;setTo(v);setPreview(null);setHistory(null);setBusy(false);}}/></div>
   {!scope?.canView?<p className="mt-4 text-sm">Attendance review needs an assigned payroll/timekeeping duty and your existing HRIS Timekeeping permission. Access management alone does not grant attendance or salary work. <Link className="font-medium text-indigo-600 dark:text-indigo-300" to="/payroll/access">Assign the intended staff in Payroll Access.</Link></p>:<Button className="mt-4" disabled={busy||!from||!to||to<from} onClick={()=>void refresh()}>Check attendance readiness</Button>}
