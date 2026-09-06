@@ -117,11 +117,12 @@ const Timekeeping: React.FC = () => {
 
     useEffect(() => {
         const loadReferenceData = async () => {
-            const [buRes, deptRes, usersRes, templateRes] = await Promise.all([
+            const [buRes, deptRes, usersRes, templateRes, teamRes] = await Promise.all([
                 supabase.from('business_units').select('id, name, code, color'),
                 supabase.from('departments').select('id, name, business_unit_id'),
                 supabase.from('hris_users').select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position, date_hired, reports_to'),
                 supabase.from('shift_templates').select('*'),
+                user?.role === Role.Manager ? supabase.rpc('get_schedule_roster_people') : Promise.resolve({data:[],error:null}),
             ]);
 
             if (!buRes.error && buRes.data) {
@@ -141,8 +142,10 @@ const Timekeeping: React.FC = () => {
                 })));
             }
 
-            if (!usersRes.error && usersRes.data) {
-                setEmployees(usersRes.data.map((row: any) => ({
+            if (teamRes.error) setToastInfo({show:true,message:teamRes.error.message});
+            const rosterPeople = Array.from(new Map([...(usersRes.data || []), ...(teamRes.data || [])].map((row:any) => [row.id,row])).values());
+            if (rosterPeople.length) {
+                setEmployees(rosterPeople.map((row: any) => ({
                     id: row.id,
                     name: formatEmployeeName(row.full_name || row.email || 'Unknown'),
                     email: row.email || '',
@@ -166,10 +169,15 @@ const Timekeeping: React.FC = () => {
         };
 
         loadReferenceData();
-    }, []);
+    }, [user?.id, user?.role]);
 
     // --- Permission Logic ---
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(businessUnits as any), [user, getAccessibleBusinessUnits, businessUnits]);
+    const accessibleBus = useMemo(() => {
+        const existing = getAccessibleBusinessUnits(businessUnits as any);
+        if (user?.role !== Role.Manager) return existing;
+        const teamBus = new Set(employees.filter(e => e.reportsTo === user.id || e.id === user.id).map(e => e.businessUnitId));
+        return businessUnits.filter(b => existing.some(x => x.id === b.id) || teamBus.has(b.id));
+    }, [user, getAccessibleBusinessUnits, businessUnits, employees]);
     const [selectedBuId, setSelectedBuId] = useState<string>('all');
     const [departmentFilter, setDepartmentFilter] = useState<string>('all');
 

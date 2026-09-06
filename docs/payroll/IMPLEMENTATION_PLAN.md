@@ -1242,3 +1242,27 @@ applied. A narrowly scoped scheduling-only roster requires a separate access
 decision. Build passes; repository typecheck
 retains its 15 unrelated baseline errors. Team checklist updated; actual BU presets
 and weekly rosters remain the managers' pending work.
+
+
+## Approved direct-report scheduling access — 2026-09-06
+
+The user approved a narrower scheduling-only cross-BU roster. Implemented
+`get_schedule_roster_people` for active Manager users, returning only self and
+employees whose reports_to equals the manager employee ID. The new endpoint
+returns scheduling labels only; no salary, email, bank, auth or personal HR fields.
+It does not grant directory access or change employee roles/reporting lines.
+Timekeeping combines this roster with existing permitted data, keeps the manager
+grid limited to self/direct reports and includes their BUs in the selector.
+Presets continue to belong to the employee's BU.
+
+Migration `20260906205246_direct_report_schedule_roster.sql` also repairs the
+new team assignment policy's BU check: an authorized matching-BU check no longer
+fails merely because the employee directory hides a cross-BU direct report.
+Other existing policies remain unchanged.
+
+Passed focused rollback checks: cross-BU report appears; unrelated employees
+and non-scheduling fields excluded; cross-BU preset and assignment save/read
+succeed; employee and anonymous access denied. No fixtures retained. Build passes.
+The earlier blocked broad endpoint was not applied; this narrower approved
+implementation replaces that pending work. Team task: confirm each department
+head's Manager designation and accurate Direct Reporting To links.
