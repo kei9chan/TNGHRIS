@@ -177,12 +177,14 @@ const Timekeeping: React.FC = () => {
     }, [user?.id, user?.role]);
 
     // --- Permission Logic ---
+    const isHrPresetEditor = !!user && [user.role, ...(user.roles ?? [])].some(role => role === Role.HRStaff || role === Role.HRManager);
     const accessibleBus = useMemo(() => {
+        if (isHrPresetEditor) return businessUnits;
         const existing = getAccessibleBusinessUnits(businessUnits as any);
         if (user?.role !== Role.Manager) return existing;
         const teamBus = new Set(employees.filter(e => e.reportsTo === user.id || e.id === user.id).map(e => e.businessUnitId));
         return businessUnits.filter(b => existing.some(x => x.id === b.id) || teamBus.has(b.id));
-    }, [user, getAccessibleBusinessUnits, businessUnits, employees]);
+    }, [user, isHrPresetEditor, getAccessibleBusinessUnits, businessUnits, employees]);
     const [selectedBuId, setSelectedBuId] = useState<string>('all');
     const [departmentFilter, setDepartmentFilter] = useState<string>('all');
 
@@ -270,6 +272,7 @@ const Timekeeping: React.FC = () => {
         if (isTeamManager) return true;
         return false;
     }, [user, userBuId, canEditOwnBU, selectedBuId, can, isSuperAdmin, isTeamManager]);
+    const isPresetEditable = isHrPresetEditor || isScheduleEditable;
     // --- End Permission Logic ---
 
     // Business Hours state
@@ -818,6 +821,7 @@ const Timekeeping: React.FC = () => {
     const handleCopyPreviousWeekAll=async()=>{if(isScheduleEditable&&window.confirm('Copy last week’s shifts and recurring status tags over the displayed employees’ current draft week?'))await copyWeek(employeesInBU.map(e=>e.id));};
 
     const handleSaveTemplate = async (templateData: ShiftTemplate) => {
+        if (!isPresetEditable) return;
         const resolvedBuId = templateData.businessUnitId && templateData.businessUnitId !== 'all'
             ? templateData.businessUnitId
             : (selectedBuId && selectedBuId !== 'all' ? selectedBuId : null);
@@ -1208,10 +1212,11 @@ const Timekeeping: React.FC = () => {
 
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">WeeklyShiftRoster</h1>
             
-            {isScheduleEditable && (<>
+            {isScheduleEditable && (
                 <Card title="Status Presets" className="mb-4"><div className="flex flex-wrap gap-3">{statusPresets.map(p=><button key={p.tag} draggable={isScheduleEditable} disabled={!isScheduleEditable} onDragStart={e=>e.dataTransfer.setData('application/x-tng-status',p.tag)} onClick={()=>setSelectedStatus(selectedStatus===p.tag?null:p.tag)} aria-pressed={selectedStatus===p.tag} className={`min-h-12 rounded-lg border px-4 font-semibold ${p.color} ${selectedStatus===p.tag?'ring-2 ring-violet-600':''}`}>{p.label}</button>)}</div><p className="mt-3 text-sm">{selectedStatus?'Select an employee day to apply this status, or click the selected status to cancel.':'Drag a status onto a day, or select it and tap the day. Skeletal and Absence keep the expected working hours. Approved paid/unpaid leave appears automatically.'}</p><a className="mt-3 inline-block min-h-11 underline" href="/payroll/attendance-review">Attendance flags & review settings</a></Card>
-            <Card title="Shift Presets">
-                    <p className="text-sm text-slate-600 dark:text-slate-300">{selectedBuId === 'all' ? 'Choose a business unit to create or view its presets.' : presetTemplates.length === 0 ? 'No presets for this business unit yet. Its manager can create presets and prepare the weekly schedule.' : 'Presets for this business unit only.'}</p>
+            )}
+            {isPresetEditable && (<Card title="Shift Presets">
+                    <p className="text-sm text-slate-600 dark:text-slate-300">{selectedBuId === 'all' ? 'Choose a business unit to create or view its presets.' : presetTemplates.length === 0 ? 'No presets for this business unit yet. HR Staff, HR Managers or its BU manager can create presets here.' : 'Presets for this business unit only.'}</p>
                     <div className="flex flex-wrap gap-x-2 gap-y-4 pt-8">
                         {presetTemplates.map(template => {
                             const tooltip = template.isFlexible
@@ -1243,7 +1248,7 @@ const Timekeeping: React.FC = () => {
                             + Add New Preset
                         </Button>
                     </div>
-                </Card></>
+                </Card>
             )}
 
             <Card>
