@@ -420,3 +420,9 @@ export const fetchPipelineStages = async (): Promise<PipelineStage[]> => {
     code: row.code,
   }));
 };
+
+export const fetchNTEIncidentContext = async (nteId: string): Promise<IncidentReport> => {
+  const {data,error}=await supabase.rpc('get_nte_incident_context',{p_nte_id:nteId});
+  if(error) throw new Error(error.message);
+  return mapRow(data as IncidentReportRow);
+};

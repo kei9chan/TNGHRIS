@@ -9,7 +9,7 @@ import { NTE, IncidentReport, User, ChatMessage, NTEStatus, Permission, Resoluti
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { useAuth } from '../../hooks/useAuth';
-import NotFound from '../NotFound';
+
 import Textarea from '../../components/ui/Textarea';
 import Input from '../../components/ui/Input';
 import SignaturePad, { SignaturePadRef } from '../../components/ui/SignaturePad';
@@ -20,7 +20,7 @@ import RejectReasonModal from '../../components/feedback/RejectReasonModal';
 import HearingSchedulerModal from '../../components/feedback/HearingSchedulerModal';
 import { logActivity } from '../../services/auditService';
 import { fetchNTEById, processNTEApproval, updateNTE } from '../../services/nteService';
-import { fetchIncidentReportById, addIncidentReportMessage, saveIncidentReport } from '../../services/incidentReportService';
+import { fetchNTEIncidentContext, addIncidentReportMessage, saveIncidentReport } from '../../services/incidentReportService';
 import { fetchResolutionsByIncidentReportId, createResolution, updateResolution } from '../../services/resolutionService';
 import { formatIRDisplayId, formatNTEDisplayId } from '../../utils/formatCaseId';
 import { formatExternalUrl } from '../../utils/urlUtils';
@@ -73,6 +73,9 @@ const NTEDetail: React.FC = () => {
     const [users, setUsers] = useState<User[]>([]);
     const [disciplineEntries, setDisciplineEntries] = useState<DisciplineEntry[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [loadError,setLoadError]=useState('');
+    const [reload,setReload]=useState(0);
+    const approvalLock=useRef(false);
     const [isApprovalActionBusy, setIsApprovalActionBusy] = useState(false);
     const [approvalActionMessage, setApprovalActionMessage] = useState<string | null>(null);
 
@@ -91,15 +94,18 @@ const NTEDetail: React.FC = () => {
         const load = async () => {
             if (!nteId) { setIsLoading(false); return; }
             setIsLoading(true);
+            setLoadError('');
+            setNte(null);setIncidentReport(null);
             try {
                 const nteData = await fetchNTEById(nteId);
-                if (!nteData) { setIsLoading(false); return; }
+                if (!nteData) { throw new Error('This NTE is unavailable for your account. Return to approvals or ask HR to check the assignment.'); }
                 setNte(nteData);
-                const [irData, resData, usersData, disciplineData] = await Promise.all([
-                    fetchIncidentReportById(nteData.incidentReportId),
-                    fetchResolutionsByIncidentReportId(nteData.incidentReportId),
-                    fetchUsers(),
-                    fetchCodeOfDiscipline()
+                const irData=await fetchNTEIncidentContext(nteData.id);
+                setIncidentReport(irData);
+                const [resData, usersData, disciplineData] = await Promise.all([
+                    fetchResolutionsByIncidentReportId(nteData.incidentReportId).catch(()=>[]),
+                    fetchUsers().catch(()=>[]),
+                    fetchCodeOfDiscipline().catch(()=>({entries:[]}))
                 ]);
                 setIncidentReport(irData);
                 const resForEmployee = resData.find(r => r.employeeId === nteData.employeeId) || null;
@@ -107,13 +113,13 @@ const NTEDetail: React.FC = () => {
                 setUsers(usersData);
                 setDisciplineEntries(disciplineData.entries);
             } catch (err) {
-                console.error('Failed to load NTE detail:', err);
+                setLoadError(err instanceof Error?err.message:'Unable to load this NTE. Please retry.');
             } finally {
                 setIsLoading(false);
             }
         };
         load();
-    }, [nteId]);
+    }, [nteId,reload]);
 
     const currentUserStep = useMemo(() => {
         if (!user || !nte || nte.status !== NTEStatus.PendingApproval) return null;
@@ -127,6 +133,8 @@ const NTEDetail: React.FC = () => {
             setApprovalActionMessage('This approval is no longer assigned to you or has already been processed. Refresh the approval queue.');
             return;
         }
+        if(approvalLock.current)return;
+        approvalLock.current=true;
         setIsApprovalActionBusy(true);
         setApprovalActionMessage('Recording your approval…');
         try {
@@ -139,13 +147,16 @@ const NTEDetail: React.FC = () => {
             setApprovalActionMessage(message);
             alert(message);
         } finally {
+            approvalLock.current=false;
             setIsApprovalActionBusy(false);
         }
     };
 
     const handleConfirmReject = async (reason: string) => {
         if (!user || !nte || !currentUserStep) return;
-        if (!approvalOutcome) return;
+        if (!approvalOutcome || approvalLock.current) return;
+        approvalLock.current=true;
+        setIsApprovalActionBusy(true);
         try {
             const saved = await processNTEApproval(nte.id, approvalOutcome, reason);
             setNte(saved);
@@ -155,6 +166,9 @@ const NTEDetail: React.FC = () => {
             navigate('/feedback/cases');
         } catch (err: any) {
             alert(err?.message || 'Failed to process the NTE decision.');
+        } finally {
+            approvalLock.current=false;
+            setIsApprovalActionBusy(false);
         }
     };
 
@@ -341,7 +355,7 @@ const NTEDetail: React.FC = () => {
     }
 
     if (!nte || !incidentReport) {
-        return <NotFound />;
+        return <div className="p-6 space-y-4" role="alert"><h1 className="text-xl font-bold">NTE review unavailable</h1><p>{loadError||'The linked NTE or incident report could not be loaded.'}</p><button className="min-h-12 rounded bg-violet-600 px-5 text-white" onClick={()=>setReload(x=>x+1)}>Retry</button><Link className="block underline" to="/approvals">Return to pending approvals</Link></div>;
     }
 
     const references = nte.disciplineCodeIds.map(id => disciplineEntries.find(e => e.id === id)).filter(Boolean);
