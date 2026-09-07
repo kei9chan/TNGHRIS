@@ -1,3 +1,4 @@
+import {CompensableWorkPanel} from '../../modules/payroll/ConfirmedPolicyPanels';
 import {DayStatus,DayTag,dateKey,getDayStatuses,setDayStatus,statusPresets,leaveForDay} from '../../services/scheduleStatuses';
 import {mapShiftTemplate} from '../../services/shiftService';
 import {scheduleLabel} from '../../services/schedulePolicy';
@@ -1188,7 +1189,7 @@ const Timekeeping: React.FC = () => {
 
     return (
         <div className="space-y-6">
-             <Toast
+            <Toast
                 show={toastInfo.show}
                 onClose={() => setToastInfo({ show: false, message: '' })}
                 title="Success"
@@ -1210,6 +1211,7 @@ const Timekeeping: React.FC = () => {
 
             {gapBar}
 
+            <CompensableWorkPanel employees={employeesInBU}/>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">WeeklyShiftRoster</h1>
             
             {isScheduleEditable && (

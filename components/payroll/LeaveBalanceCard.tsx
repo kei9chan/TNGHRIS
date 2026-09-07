@@ -15,7 +15,7 @@ const LeaveBalanceCard: React.FC<LeaveBalanceCardProps> = ({ balance }) => {
       <div className="flex justify-between items-start relative z-10">
         <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">{balance.name}</h3>
         <div className={`text-3xl font-bold ${isLowBalance ? 'text-red-500' : 'text-indigo-600 dark:text-indigo-400'}`}>
-          {balance.available.toFixed(1)}
+          {balance.available.toFixed(3)}
         </div>
       </div>
       
@@ -37,11 +37,11 @@ const LeaveBalanceCard: React.FC<LeaveBalanceCardProps> = ({ balance }) => {
         </div>
         <div className="text-center">
             <span className="block text-[10px] uppercase tracking-wider text-gray-400">Accrued</span>
-            <span className="font-medium text-sm">{balance.accrued.toFixed(1)}</span>
+            <span className="font-medium text-sm">{balance.accrued.toFixed(3)}</span>
         </div>
         <div className="text-right">
              <span className="block text-[10px] uppercase tracking-wider text-gray-400">Used</span>
-             <span className="font-medium text-sm">{balance.used.toFixed(1)}</span>
+             <span className="font-medium text-sm">{balance.used.toFixed(3)}</span>
         </div>
       </div>
     </div>

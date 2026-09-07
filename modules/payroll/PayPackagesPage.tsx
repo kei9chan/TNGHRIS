@@ -1,3 +1,4 @@
+import {EmployeePolicyPanel} from './ConfirmedPolicyPanels';
 import React, {useCallback,useEffect,useId,useRef,useState} from 'react';
 import {Link,useSearchParams} from 'react-router-dom';
 import Card from '../../components/ui/Card';
@@ -41,6 +42,7 @@ const PackageWorkspace:React.FC<{data:PayContext;busy:boolean;run:(fn:()=>Promis
   setComponents(p?p.components.map(c=>({...c})):[]);if(!p||p.stream==='employee_payroll')selectSource(p?.source_pan_id||'');};
  const visiblePackages=asOf?data.packages.filter(p=>p.status==='approved'&&p.effective_from<=asOf&&(!p.effective_until||asOf<p.effective_until)):data.packages;
  return <>
+ <EmployeePolicyPanel key={data.employeeId} employeeId={data.employeeId} canApprove={data.canApprove}/>
  <Card title="Current HRIS record"><dl className="grid gap-4 sm:grid-cols-3"><div><dt className="text-sm text-gray-500">Recorded rate</dt><dd>{money(data.legacy.rateAmount)} / {data.legacy.rateType||'unit missing'}</dd></div><div><dt className="text-sm text-gray-500">Legacy basic field</dt><dd>{money(data.legacy.salaryBasic)}</dd></div><div><dt className="text-sm text-gray-500">Salary source</dt><dd>Existing HRIS / approved PAN</dd></div></dl>
  <p className="mt-4 text-sm">Use the existing HRIS/PAN workflow to change base salary or its existing allowances. This page records reviewed snapshots and additional payroll components, preserving one writer for each amount.</p>
  {data.sourceMatches===false&&<p role="alert" className="mt-3 text-sm text-amber-800 dark:text-amber-300">The current HRIS pay differs from the latest applicable package. Reconcile a new dated snapshot before using it for payroll.</p>}
