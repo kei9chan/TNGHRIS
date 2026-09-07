@@ -14,8 +14,9 @@ const date = (s?: string) => s ? new Date(s).toLocaleString('en-PH', { timeZone:
 export default function ApprovalEmailSettings() {
   const [data, setData] = useState<any>(null), [message, setMessage] = useState(''), [busy, setBusy] = useState(false), [denied, setDenied] = useState(false);
   const testId = useRef<string | null>(null);
-  const load = useCallback(async () => {
-    try { setData(await request()); } catch (e: any) { if (e.status === 403) setDenied(true); else setMessage(e.message); }
+  const load = useCallback(async (notice = false) => {
+    if (notice) setMessage('Refreshing status…');
+    try { setData(await request()); if (notice) setMessage('Status refreshed'); } catch (e: any) { if (e.status === 403) setDenied(true); else setMessage(e.message); }
   }, []);
   useEffect(() => { void load(); }, [load]);
   const update = async (test: boolean) => {
@@ -38,7 +39,7 @@ export default function ApprovalEmailSettings() {
         ['Server connection', data.appConfigured && data.cronConfigured && data.databaseConfigured ? 'Configured' : 'Not Configured'],
         ['Last successful reminder run', date(data.lastSuccessfulRun)], ['Emails sent during the last run', data.lastRun?.sent ?? '—'], ['Failed emails during the last run', data.lastRun?.failed ?? '—'],
       ].map(([label, value]) => <div key={label}><dt className="text-gray-500 dark:text-gray-400">{label}</dt><dd className="mt-1 font-medium text-gray-900 dark:text-white">{value}</dd></div>)}</dl>
-      <div className="flex flex-wrap gap-3"><Button disabled={busy} onClick={() => void update(true)}>Send Test Email</Button><Button variant="secondary" disabled={busy} onClick={() => void load()}>Refresh status</Button></div>
+      <div className="flex flex-wrap gap-3"><Button disabled={busy} onClick={() => void update(true)}>Send Test Email</Button><Button variant="secondary" disabled={busy} onClick={() => void load(true)}>Refresh status</Button></div>
       <p className="text-sm text-gray-500 dark:text-gray-400">The test goes only to your logged-in Admin account. Reminders contain approval counts and a link to HRIS.</p>
       <details><summary className="cursor-pointer font-medium text-indigo-600 dark:text-indigo-300">Delivery failures and run details</summary>
         {data.lastRun && <p className="my-3 text-sm">Latest run: {data.lastRun.status} · {date(data.lastRun.started_at)}{data.lastRun.error_summary ? ` · ${data.lastRun.error_summary}` : ''}</p>}
