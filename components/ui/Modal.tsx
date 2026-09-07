@@ -1,3 +1,4 @@
+import { ApprovalDialogNavigation } from '../approvals/ApprovalNavigation';
 
 import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
@@ -79,6 +80,7 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer,
         {/* Body - Scrollable */}
         <div className="flex-1 min-h-0 overflow-x-hidden overflow-y-auto p-3 custom-scrollbar sm:p-6">
             <div className="space-y-4">
+                <ApprovalDialogNavigation onClose={onClose} />
                 {children}
             </div>
         </div>

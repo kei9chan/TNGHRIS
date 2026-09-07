@@ -1,3 +1,4 @@
+import { decisionSaved } from '../../services/approvalNavigation';
 import { DisciplineEntry } from '../../types';
 import { fetchUsers } from '../../services/userService';
 import { fetchCodeOfDiscipline } from '../../services/disciplineService';
@@ -141,7 +142,7 @@ const NTEDetail: React.FC = () => {
             const saved = await processNTEApproval(nte.id, 'approve');
             setNte(saved);
             setApprovalActionMessage(saved.status === NTEStatus.Issued ? 'Approved and issued to the employee.' : 'Your approval was recorded.');
-            alert(saved.status === NTEStatus.Issued ? 'All required approvers have approved. The NTE is now issued.' : 'Your required approval was recorded.');
+            decisionSaved(saved.status === NTEStatus.Issued ? 'All required approvals are saved. The NTE is issued.' : 'Your approval was recorded. Other required approvals remain pending.');
         } catch (err: any) {
             const message = err?.message || 'Failed to approve NTE.';
             setApprovalActionMessage(message);
@@ -162,8 +163,7 @@ const NTEDetail: React.FC = () => {
             setNte(saved);
             setIsRejectModalOpen(false);
             setApprovalOutcome(null);
-            alert(approvalOutcome === 'return' ? 'NTE returned for revision.' : 'NTE rejected.');
-            navigate('/feedback/cases');
+            decisionSaved(approvalOutcome === 'return' ? 'NTE returned for revision.' : 'NTE rejected.');
         } catch (err: any) {
             alert(err?.message || 'Failed to process the NTE decision.');
         } finally {

@@ -1,3 +1,4 @@
+import { decisionSaved } from '../../services/approvalNavigation';
 
 import React from 'react';
 import { getApprovalRequestId } from '../../services/approvalDeepLinks';
@@ -375,6 +376,7 @@ const Awards: React.FC = () => {
         if (!user) return;
         try {
             const updated = await processEmployeeAwardApproval(award.id, true);
+            decisionSaved(`Your award approval was recorded. Status: ${updated.status}. Issuance is tracked separately.`);
             const nextStatus = updated.status;
             setEmployeeAwards(previous => previous.map(item => item.id === award.id ? {
               ...item,
@@ -406,6 +408,7 @@ const Awards: React.FC = () => {
         if (!user || !awardToReject) return;
         try {
             const updated = await processEmployeeAwardApproval(awardToReject.id, false, reason);
+            decisionSaved('Award rejection was recorded.');
             setEmployeeAwards(prev =>
                 prev.map(a =>
                     a.id === awardToReject.id

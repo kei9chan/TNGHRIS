@@ -1,4 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { approvalViewKey, readApprovalView } from '../services/approvalNavigation';
+import { ApprovalOutcome } from '../components/approvals/ApprovalNavigation';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../services/supabaseClient';
 import { useAuth } from '../hooks/useAuth';
@@ -130,15 +132,35 @@ export default function ApprovalCenter() {
   const [businessUnitLabels, setBusinessUnitLabels] = useState<Record<string, string>>({});
   const [departmentLabels, setDepartmentLabels] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [expanded, setExpanded] = useState<Kind | null>(null);
+  const restored = useRef(readApprovalView(user?.id || ''));
+  const [expanded, setExpanded] = useState<Kind | null>(() => GROUP_ORDER.includes(restored.current?.expanded) ? restored.current.expanded : null);
+  const [decisionMessage, setDecisionMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState<{ kind: Kind; ids: string[] } | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const [filters, setFilters] = useState(() => Object.fromEntries(Object.entries(DEFAULT_FILTERS).map(([key, value]) => [key, typeof restored.current?.filters?.[key] === 'string' ? restored.current.filters[key].slice(0, 500) : value])) as typeof DEFAULT_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
+  useEffect(() => {
+    if (!user?.id) return;
+    const save = () => { try { sessionStorage.setItem(approvalViewKey(user.id), JSON.stringify({ filters, expanded, scroll: window.scrollY, savedAt: Date.now() })); } catch {} };
+    window.addEventListener('pagehide', save);
+    window.addEventListener('scroll', save, { passive: true });
+    save();
+    return () => { save(); window.removeEventListener('pagehide', save); window.removeEventListener('scroll', save); };
+  }, [user?.id, filters, expanded]);
+  useEffect(() => {
+    const y = Math.max(0, Math.min(Number(restored.current?.scroll) || 0, 100000));
+    if (!y) return;
+    const restore = () => window.scrollTo(0, y);
+    const observer = new ResizeObserver(restore);
+    observer.observe(document.body);
+    restore();
+    const timer = window.setTimeout(() => observer.disconnect(), 1500);
+    return () => { observer.disconnect(); window.clearTimeout(timer); };
+  }, []);
   const approvals = useApprovals({ user, isHR: roles.has(Role.HRStaff), reporteeIds });
   const additional = useAdditionalApprovals(user);
   const requestedItem = getApprovalRequestId(searchParams);
@@ -347,6 +369,7 @@ export default function ApprovalCenter() {
   const error = approvals.approvalError || additional.additionalApprovalError || loadError;
   const controlClasses = 'rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:border-slate-500 dark:bg-slate-700 dark:text-white dark:placeholder:text-slate-300 dark:focus:border-indigo-400 dark:focus:ring-indigo-900';
   return <div className="space-y-5 pb-12 text-slate-900 dark:text-slate-100">
+    {decisionMessage && <ApprovalOutcome message={decisionMessage} onReturn={() => { setDecisionMessage(''); closeRequestedReview(); }} />}
     <div className="flex flex-wrap items-end justify-between gap-3"><div><h1 className="text-3xl font-bold text-slate-900 dark:text-white">Approval Center</h1><p className="mt-1 text-slate-500 dark:text-slate-300">The single queue for every approval requiring your action.</p></div><Link to="/dashboard" className="font-semibold text-indigo-600 dark:text-indigo-300">← Dashboard</Link></div>
     {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-800"><b>Some approval data could not be loaded.</b> {error}</div>}
     {requestedItem && !['offer', 'asset'].includes(requestedType || '') && !approvals.approvalsLoading && !items.some(item => item.id === requestedItem) && !error && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"><b>This request is no longer awaiting your action.</b> It may already be processed, reassigned, or outside your authorized scope.</div>}
@@ -423,6 +446,7 @@ export default function ApprovalCenter() {
       onSave={() => {}}
       onApprove={async (request, approved, notes) => {
         await approvals.handleLeaveApproval(request, approved, notes);
+        setDecisionMessage((approved ? 'Your leave approval was recorded.' : 'Your leave rejection was recorded.') + ' Any other required decisions remain pending.');
         closeRequestedReview();
       }}
     />
@@ -432,10 +456,12 @@ export default function ApprovalCenter() {
       request={requestedWfh}
       onApprove={async requestId => {
         await approvals.handleApproveWFH(requestId);
+        setDecisionMessage(('Your WFH approval was recorded.') + ' Any other required decisions remain pending.');
         closeRequestedReview();
       }}
       onReject={async (requestId, reason) => {
         await approvals.handleRejectWFH(requestId, reason);
+        setDecisionMessage(('Your WFH rejection was recorded.') + ' Any other required decisions remain pending.');
         closeRequestedReview();
       }}
     />
@@ -450,6 +476,7 @@ export default function ApprovalCenter() {
       onSave={() => {}}
       onApproveOrReject={async (request, status, details) => {
         await approvals.handleApproveRejectOT(request, status as OTStatus.Approved | OTStatus.Rejected, details);
+        setDecisionMessage((`Your overtime decision (${status}) was recorded.`) + ' Any other required decisions remain pending.');
         closeRequestedReview();
       }}
     />
@@ -459,10 +486,12 @@ export default function ApprovalCenter() {
       request={requestedManpower}
       onApprove={async (requestId, comments) => {
         await approvals.handleApproveManpower(requestId, comments);
+        setDecisionMessage(('Your manpower approval was recorded.') + ' Any other required decisions remain pending.');
         closeRequestedReview();
       }}
       onReject={async (requestId, reason) => {
         await approvals.handleRejectManpower(requestId, reason);
+        setDecisionMessage(('Your manpower rejection was recorded.') + ' Any other required decisions remain pending.');
         closeRequestedReview();
       }}
       canApprove={Boolean(requestedManpower)}

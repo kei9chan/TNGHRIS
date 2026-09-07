@@ -1,3 +1,4 @@
+import ApprovalNavigation from '../approvals/ApprovalNavigation';
 
 import React from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
@@ -50,6 +51,7 @@ const Layout: React.FC = () => {
 
       <main className="relative z-0">
         <div className="max-w-screen-2xl mx-auto py-6 px-4 sm:px-6 xl:px-10">
+          <ApprovalNavigation />
           <Outlet />
         </div>
       </main>

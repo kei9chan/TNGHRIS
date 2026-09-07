@@ -1,3 +1,4 @@
+import { decisionSaved } from '../../services/approvalNavigation';
 // Phase D complete: mockDataCompat removed from Requisitions
 
 import React, { useState, useMemo, useEffect } from 'react';
@@ -197,6 +198,7 @@ const Requisitions: React.FC = () => {
 
         try {
             const saved = await processJobRequisitionApproval(requisitionId, 'approve');
+            decisionSaved(`Your approval was recorded. Request status: ${saved.status}.`);
             logActivity(user, 'APPROVE', 'JobRequisition', requisitionId, `Approved assigned requisition step.`);
             setRequisitions(prev => {
                 const rest = prev.filter(r => r.id !== saved.id);
@@ -224,6 +226,7 @@ const Requisitions: React.FC = () => {
 
         try {
             const saved = await processJobRequisitionApproval(selectedRequisition.id, 'reject', reason);
+            decisionSaved(`Your rejection was recorded. Request status: ${saved.status}.`);
             logActivity(user, 'REJECT', 'JobRequisition', selectedRequisition.id, `Rejected assigned requisition step. Reason: ${reason}`);
             setRequisitions(prev => {
                 const rest = prev.filter(r => r.id !== saved.id);

@@ -1,3 +1,4 @@
+import { decisionSaved } from '../../services/approvalNavigation';
 // Phase E: mockDataCompat removed from PersonnelActionNotice
 import React, { useEffect, useMemo, useState } from 'react';
 import { getApprovalRequestId } from '../../services/approvalDeepLinks';
@@ -353,6 +354,7 @@ const PersonnelActionNotice: React.FC = () => {
       alert(error?.message || 'Failed to approve this PAN.');
       return;
     }
+    decisionSaved('Your PAN approval was recorded. Any other required decisions remain pending.');
     setRecords(prev => prev.map(r => (r.id === panForApproval.id ? mapPanRow(data) : r)));
     setIsApproveModalOpen(false);
     setPanForApproval(null);
@@ -371,6 +373,7 @@ const PersonnelActionNotice: React.FC = () => {
       alert(error?.message || 'Failed to reject this PAN.');
       return;
     }
+    decisionSaved('PAN rejection was recorded.');
     setRecords(prev => prev.map(r => (r.id === panForAction.id ? mapPanRow(data) : r)));
     setIsRejectModalOpen(false);
     setPanForAction(null);
