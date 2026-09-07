@@ -1,10 +1,24 @@
+import { allRows, reportProfiles } from '../server/approvalEmailReports.js';
 import { configuration, configured, deliver, emailPayload, manilaTime, requireAdmin, rpc, serviceClient, validEmail } from '../server/approvalEmail.js';
 export default async function handler(req: any, res: any) {
   res.setHeader('Cache-Control', 'no-store');
   if (!['GET', 'POST'].includes(req.method)) return res.status(405).json({ error: 'Method not allowed' });
   try {
     const { client, admin } = await requireAdmin(req);
-    if (req.method === 'GET') return res.status(200).json({ ...admin, ...configuration() });
+    if (req.method === 'GET') {
+      if (!configuration().databaseConfigured) return res.status(200).json({ ...admin, ...configuration(), runs: [] });
+      const service = serviceClient();
+      const runId = req.query?.run;
+      if (runId !== undefined) {
+        if (typeof runId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(runId)) return res.status(400).json({ error: 'Invalid run' });
+        const run = await service.from('approval_email_runs').select('id,scheduled_date,started_at,finished_at,status,sent,failed,skipped,error_summary').eq('id', runId).single();
+        if (run.error) return res.status(404).json({ error: 'Run not found' });
+        const deliveries = await allRows(() => service.from('approval_email_deliveries').select('id,run_id,notification_type,scheduled_date,recipient_user_id,recipient_email,pending_count,status,resend_message_id,attempted_at,sent_at,error_summary').eq('run_id', runId).order('id'));
+        return res.status(200).json({ run: run.data, deliveries: await reportProfiles(service, deliveries) });
+      }
+      const runs = await allRows(() => service.from('approval_email_runs').select('id,scheduled_date,started_at,status,sent,failed,skipped,error_summary').order('started_at', { ascending: false }).order('id'));
+      return res.status(200).json({ ...admin, ...configuration(), runs, deliveries: await reportProfiles(service, admin.deliveries || []) });
+    }
     if (req.body?.action === 'enabled' && typeof req.body.enabled === 'boolean') {
       if (req.body.enabled && !configured()) return res.status(409).json({ error: 'Configure the server email settings before enabling reminders' });
       // requireAdmin has already verified the caller's active Admin status. Use
