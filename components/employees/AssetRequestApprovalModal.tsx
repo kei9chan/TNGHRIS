@@ -1,3 +1,4 @@
+import { ApprovalReturn, ApprovalOutcome } from '../approvals/ApprovalNavigation';
 import React, { useEffect, useState } from 'react';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
@@ -81,7 +82,7 @@ const AssetRequestApprovalModal: React.FC<Props> = ({ isOpen, requestId, onClose
     <div className="space-y-5">
       {loading && <p className="rounded-xl bg-slate-50 p-8 text-center text-sm text-slate-500 dark:bg-slate-900/50">Loading Asset Request approval…</p>}
       {error && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200">{error}</p>}
-      {success && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">{success}</p>}
+      {success && <ApprovalOutcome message={success} onReturn={onClose} />}
       {request && <>
         <section className="rounded-xl border border-violet-200 bg-violet-50 p-4 dark:border-violet-900 dark:bg-violet-950/30">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

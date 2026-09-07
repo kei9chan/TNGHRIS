@@ -1,3 +1,4 @@
+import { ApprovalReturn, ApprovalOutcome } from '../approvals/ApprovalNavigation';
 import OfferApprovalSummary from './OfferApprovalSummary';
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { Candidate, InterviewRatingRecord } from '../../types';
@@ -80,7 +81,6 @@ const OfferApprovalReviewModal: React.FC<OfferApprovalReviewModalProps> = ({ isO
         : decision === 'return' ? 'Package returned for revision.' : 'Package rejected.');
       setPkg(await fetchOfferApprovalPackage(requestId));
       onProcessed?.();
-      if (decision === 'approve' && String(result.status) === 'Approved') window.setTimeout(onClose, 500);
     } catch (reason: any) { setError(reason?.message || 'Unable to process this approval.'); }
     finally { decisionLock.current = false; setBusy(false); }
   };
@@ -90,7 +90,7 @@ const OfferApprovalReviewModal: React.FC<OfferApprovalReviewModalProps> = ({ isO
       <div className="space-y-5">
         {loading && <p className="rounded-xl bg-slate-50 p-8 text-center text-sm text-slate-500 dark:bg-slate-900/50">Loading the complete hiring package…</p>}
         {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-700 dark:bg-rose-950/30 dark:text-rose-200">{error}</p>}
-        {success && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-200">{success}</p>}
+        {success && <ApprovalOutcome message={success} onReturn={onClose} />}
         {pkg && <>
           <div className="rounded-xl border border-violet-200 bg-violet-50 p-4 dark:border-violet-900 dark:bg-violet-950/30"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><div><p className="text-xs font-bold uppercase text-slate-500">Candidate</p><p className="mt-1 font-bold">{packageCandidateName}</p></div><div><p className="text-xs font-bold uppercase text-slate-500">Position</p><p className="mt-1 font-bold">{pkg.offer.offerDetails?.jobTitle || pkg.application.roleTitleSnapshot || 'Position not recorded'}</p></div><div><p className="text-xs font-bold uppercase text-slate-500">Business unit</p><p className="mt-1 font-bold">{pkg.offer.offerDetails?.businessUnit || 'Business unit not recorded'}</p></div><div><p className="text-xs font-bold uppercase text-slate-500">Approval stage</p><p className="mt-1 font-bold">{pkg.request.approvalStage === 'BOD_GM' ? 'BOD Approval · Two required' : 'HR Manager Approval'}</p></div></div></div>
           <OfferApprovalSummary offer={pkg.offer} />

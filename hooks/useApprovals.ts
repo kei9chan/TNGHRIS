@@ -283,7 +283,7 @@ export function useApprovals({ user }: UseApprovalsOptions) {
     // ===================================================================
 
     const handleLeaveApproval = async (request: Partial<LeaveRequest>, approved: boolean, notes?: string) => {
-        if (!user || !request.id) return;
+        if (!user || !request.id) throw new Error('Approval is unavailable. Refresh the queue.');
         const result: any = await processTimeRequestApproval('leave', request.id, approved ? 'approve' : 'reject', notes);
         if (result?.notifyEscalation) sendConditionalApprovalEmails('leave', request.id).catch(error => console.error('Approval email failed', error));
         if (request.employeeId) createNotification({
@@ -297,9 +297,9 @@ export function useApprovals({ user }: UseApprovalsOptions) {
     };
 
     const handleApproveWFH = async (requestId: string) => {
-        if (!user) return;
+        if (!user) throw new Error('Sign in again to record your decision.');
         const request = pendingWfhApprovals.find(r => r.id === requestId);
-        if (!request) return;
+        if (!request) throw new Error('This request is no longer awaiting your action. Refresh the queue.');
         
         try {
             const result: any = await processTimeRequestApproval('wfh', requestId, 'approve');
@@ -319,7 +319,7 @@ export function useApprovals({ user }: UseApprovalsOptions) {
     };
 
     const handleRejectWFH = async (requestId: string, reason: string) => {
-        if (!user) return;
+        if (!user) throw new Error('Sign in again to record your decision.');
         const request = pendingWfhApprovals.find(r => r.id === requestId);
         try {
             await processTimeRequestApproval('wfh', requestId, 'reject', reason);
@@ -347,7 +347,7 @@ export function useApprovals({ user }: UseApprovalsOptions) {
         newStatus: OTStatus.Approved | OTStatus.Rejected,
         details: { approvedHours?: number; managerNote?: string }
     ) => {
-        if (!request.id) return;
+        if (!request.id) throw new Error('Request is unavailable. Refresh the queue.');
         try {
             const result: any = await processTimeRequestApproval('overtime', request.id, newStatus === OTStatus.Approved ? 'approve' : 'reject', details.managerNote);
             if (result?.notifyEscalation) sendConditionalApprovalEmails('overtime', request.id).catch(error => console.error('Approval email failed', error));
@@ -367,7 +367,7 @@ export function useApprovals({ user }: UseApprovalsOptions) {
     };
 
     const handleApproveManpower = async (requestId: string, comments?: string) => {
-        if (!user) return;
+        if (!user) throw new Error('Sign in again to record your decision.');
         try {
             await approveManpowerRequest(requestId, user.id, comments);
             setPendingManpowerApprovals(prev => prev.filter(r => r.id !== requestId));
@@ -378,7 +378,7 @@ export function useApprovals({ user }: UseApprovalsOptions) {
     };
 
     const handleRejectManpower = async (requestId: string, reason: string) => {
-        if (!user) return;
+        if (!user) throw new Error('Sign in again to record your decision.');
         try {
             await rejectManpowerRequest(requestId, user.id, reason);
             setPendingManpowerApprovals(prev => prev.filter(r => r.id !== requestId));
