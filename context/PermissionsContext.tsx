@@ -47,6 +47,15 @@ const emptyEffective = (diagnostic: string): EffectiveRbac => ({
 });
 
 export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+    const { user } = useAuth();
+    // Start authorization in the loading state on the very first signed-in
+    // render, before effects run. Never reuse another account's access state.
+    return <SessionPermissionsProvider key={user?.authUserId || user?.id || 'signed-out'}>
+        {children}
+    </SessionPermissionsProvider>;
+};
+
+const SessionPermissionsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const { user, refreshUser } = useAuth();
     const [effectiveRbac, setEffectiveRbac] = useState<EffectiveRbac | null>(null);
     const [loadingPermissions, setLoadingPermissions] = useState(true);
