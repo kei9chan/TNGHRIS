@@ -1,3 +1,4 @@
+import { panPayload, panSaveError } from '../../services/panPersistence';
 import { decisionSaved } from '../../services/approvalNavigation';
 // Phase E: mockDataCompat removed from PersonnelActionNotice
 import React, { useEffect, useMemo, useState } from 'react';
@@ -108,10 +109,10 @@ const PersonnelActionNotice: React.FC = () => {
       appliedAt: p.applied_at ? new Date(p.applied_at) : undefined,
       templateId: p.template_id || undefined,
       businessUnitId: p.business_unit_id || undefined,
-      templateVersion: p.template_version ?? undefined,
-      templateName: p.template_name || undefined,
-      templateSnapshot: p.template_snapshot || undefined,
-      actionType: p.action_type || getPANActionType(p.action_taken),
+      templateVersion: p.template_version ?? p.particulars?.panTemplate?.version ?? undefined,
+      templateName: p.template_name ?? p.particulars?.panTemplate?.name ?? undefined,
+      templateSnapshot: p.template_snapshot ?? p.particulars?.panTemplate?.snapshot ?? undefined,
+      actionType: p.action_type || p.particulars?.panTemplate?.actionType || getPANActionType(p.action_taken),
     };
   };
 
@@ -248,83 +249,48 @@ const PersonnelActionNotice: React.FC = () => {
     };
   }, [searchParams, user?.id]);
 
-  const upsertPan = async (recordToSave: Partial<PAN>, status: PANStatus) => {
-    if (!user || !recordToSave.employeeId) return null;
-    const payload: any = {
-      employee_id: recordToSave.employeeId,
-      employee_name: recordToSave.employeeName || '',
-      effective_date: recordToSave.effectiveDate ? new Date(recordToSave.effectiveDate).toISOString().split('T')[0] : null,
-      status,
-      action_taken: recordToSave.actionTaken || { ...emptyActions },
-      particulars: recordToSave.particulars || { from: {}, to: {} },
-      tenure: recordToSave.tenure || '',
-      notes: recordToSave.notes || '',
-      routing_steps: recordToSave.routingSteps || [],
-      signed_at: recordToSave.signedAt || null,
-      signature_data_url: recordToSave.signatureDataUrl || null,
-      signature_name: recordToSave.signatureName || null,
-      logo_url: recordToSave.logoUrl || null,
-      pdf_hash: recordToSave.pdfHash || null,
-      preparer_name: recordToSave.preparerName || null,
-      preparer_signature_url: recordToSave.preparerSignatureUrl || null,
-      template_id: (recordToSave as any).templateId || null,
-      business_unit_id: recordToSave.businessUnitId || recordToSave.particulars?.from?.businessUnitId || null,
-      template_version: recordToSave.templateVersion || null,
-      template_name: recordToSave.templateName || null,
-      template_snapshot: recordToSave.templateSnapshot || null,
-      action_type: recordToSave.actionType || getPANActionType(recordToSave.actionTaken),
-      salary_from: recordToSave.particulars?.from?.salary || null,
-      updated_at: new Date().toISOString(),
-    };
-    if (recordToSave.id) {
-      payload.id = recordToSave.id;
-    } else {
-      payload.created_by_user_id = user.id;
-    }
+  const upsertPan = async (recordToSave: Partial<PAN>) => {
+    if (!user) throw new Error('Sign in again before saving a PAN.');
+    if (recordToSave.status && ![PANStatus.Draft, PANStatus.Declined, PANStatus.ReturnedForEdits].includes(recordToSave.status)) throw new Error(`This PAN is ${recordToSave.status} and cannot be saved as a new draft.`);
+    const payload = panPayload(recordToSave, user.id);
     const { data, error } = await supabase.from('pans').upsert(payload).select('*').single();
-    if (error) {
-      console.error('Failed to save PAN', error);
-      alert('Failed to save PAN');
-      return null;
-    }
-    return data;
+    if (error || !data) throw panSaveError(error, 'PAN draft save');
+    setRecords(prev => [mapPanRow(data), ...prev.filter(p => p.id !== data.id)]);
+    return mapPanRow(data);
   };
 
   const handleSaveDraft = async (recordToSave: Partial<PAN>) => {
-    if (!recordToSave.employeeId) {
-      alert('Please select an employee.');
-      return;
-    }
-    const saved = await upsertPan(recordToSave, PANStatus.Draft);
-    if (saved) {
-      setRecords(prev => [mapPanRow(saved), ...prev.filter(p => p.id !== saved.id)]);
-      setIsModalOpen(false);
-      logActivity(user!, 'CREATE', 'PAN', saved.id, `Saved PAN draft for ${recordToSave.employeeName || ''}.`);
-    }
+    const saved = await upsertPan(recordToSave);
+    logActivity(user!, 'CREATE', 'PAN', saved.id, 'Saved PAN draft.');
+    return saved;
   };
 
   const handleSendForAcknowledgement = async (panToSend: Partial<PAN>) => {
-    if (!panToSend.employeeId) {
-      alert('Please select an employee before sending.');
-      return;
+    if (!panToSend.routingSteps?.length) throw new Error('Approval routing: add at least one approver.');
+    if (new Set(panToSend.routingSteps.map(step => step.userId)).size !== panToSend.routingSteps.length) throw new Error('Approval routing: select each approver only once.');
+    if (getPANActionType(panToSend.actionTaken) === 'general') throw new Error('Select at least one personnel action before sending for approval.');
+    if (panToSend.id) {
+      const { data: existing, error: readError } = await supabase.from('pans').select('*').eq('id', panToSend.id).maybeSingle();
+      if (readError) throw panSaveError(readError, 'PAN status check');
+      if (existing && ![PANStatus.Draft, PANStatus.Declined, PANStatus.ReturnedForEdits].includes(existing.status)) return mapPanRow(existing);
     }
-    if (!panToSend.routingSteps || panToSend.routingSteps.length === 0) {
-      alert('Please add at least one routing step/approver.');
-      return;
+    const draft = await upsertPan(panToSend);
+    try {
+      const { data, error } = await supabase.rpc('submit_pan', { p_pan_id: draft.id });
+      if (error || !data) throw error || new Error('The server did not confirm submission.');
+      const saved = mapPanRow(data);
+      setRecords(prev => [saved, ...prev.filter(p => p.id !== saved.id)]);
+      return saved;
+    } catch (error) {
+      // A lost response can follow a committed submission. Read it back; never submit again here.
+      const { data: stored } = await supabase.from('pans').select('*').eq('id', draft.id).maybeSingle();
+      if (stored && ![PANStatus.Draft, PANStatus.Declined, PANStatus.ReturnedForEdits].includes(stored.status)) {
+        const saved = mapPanRow(stored);
+        setRecords(prev => [saved, ...prev.filter(p => p.id !== saved.id)]);
+        return saved;
+      }
+      throw Object.assign(panSaveError(error, 'PAN saved, but it could not be sent for approval'), { savedPan: draft });
     }
-    if (getPANActionType(panToSend.actionTaken) === 'general') {
-      alert('Select at least one personnel action before sending for approval.');
-      return;
-    }
-    const draft = await upsertPan(panToSend, PANStatus.Draft);
-    if (!draft) return;
-    const { data, error } = await supabase.rpc('submit_pan', { p_pan_id: draft.id });
-    if (error || !data) {
-      alert(error?.message || 'Failed to submit PAN for approval.');
-      return;
-    }
-    setRecords(prev => [mapPanRow(data), ...prev.filter(p => p.id !== data.id)]);
-    setIsModalOpen(false);
   };
 
   const handleAcknowledge = async (panId: string, signatureDataUrl: string, signatureName: string) => {
