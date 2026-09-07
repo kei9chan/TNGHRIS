@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import OfferApprovalSummary from './OfferApprovalSummary';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { Candidate, InterviewRatingRecord } from '../../types';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
@@ -36,6 +37,7 @@ const OfferApprovalReviewModal: React.FC<OfferApprovalReviewModalProps> = ({ isO
   const [pkg, setPkg] = useState<OfferApprovalPackageData | null>(null);
   const [selectedRating, setSelectedRating] = useState<InterviewRatingRecord | null>(null);
   const [loading, setLoading] = useState(false);
+  const decisionLock = useRef(false);
   const [busy, setBusy] = useState(false);
   const [openingDocumentId, setOpeningDocumentId] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -67,18 +69,20 @@ const OfferApprovalReviewModal: React.FC<OfferApprovalReviewModalProps> = ({ isO
   };
 
   const decide = async (decision: 'approve' | 'return' | 'reject') => {
-    if (!requestId) return;
+    if (!requestId || decisionLock.current) return;
     if ((decision === 'return' || decision === 'reject') && !comments.trim()) { setError('Add comments before returning or rejecting this package.'); return; }
+    decisionLock.current = true;
     setBusy(true); setError('');
     try {
       const result = await processOfferApproval(requestId, decision, comments);
       setSuccess(decision === 'approve'
-        ? (String(result.status || '') === 'Approved' ? 'Offer approval completed.' : 'Approved and advanced to BOD / GM.')
+        ? (String(result.status || '') === 'Approved' ? 'Offer approval completed.' : 'Your approval was recorded. Two distinct BOD approvals are required to complete final review.')
         : decision === 'return' ? 'Package returned for revision.' : 'Package rejected.');
+      setPkg(await fetchOfferApprovalPackage(requestId));
       onProcessed?.();
       if (decision === 'approve' && String(result.status) === 'Approved') window.setTimeout(onClose, 500);
     } catch (reason: any) { setError(reason?.message || 'Unable to process this approval.'); }
-    finally { setBusy(false); }
+    finally { decisionLock.current = false; setBusy(false); }
   };
 
   return <>
@@ -88,7 +92,8 @@ const OfferApprovalReviewModal: React.FC<OfferApprovalReviewModalProps> = ({ isO
         {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm font-semibold text-rose-700 dark:bg-rose-950/30 dark:text-rose-200">{error}</p>}
         {success && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-200">{success}</p>}
         {pkg && <>
-          <div className="rounded-xl border border-violet-200 bg-violet-50 p-4 dark:border-violet-900 dark:bg-violet-950/30"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><div><p className="text-xs font-bold uppercase text-slate-500">Candidate</p><p className="mt-1 font-bold">{packageCandidateName}</p></div><div><p className="text-xs font-bold uppercase text-slate-500">Position</p><p className="mt-1 font-bold">{pkg.offer.offerDetails?.jobTitle || pkg.application.roleTitleSnapshot || 'Position not recorded'}</p></div><div><p className="text-xs font-bold uppercase text-slate-500">Business unit</p><p className="mt-1 font-bold">{pkg.offer.offerDetails?.businessUnit || 'Business unit not recorded'}</p></div><div><p className="text-xs font-bold uppercase text-slate-500">Approval stage</p><p className="mt-1 font-bold">{pkg.request.approvalStage === 'BOD_GM' ? 'BOD / GM Approval' : 'HR Manager Approval'}</p></div></div></div>
+          <div className="rounded-xl border border-violet-200 bg-violet-50 p-4 dark:border-violet-900 dark:bg-violet-950/30"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><div><p className="text-xs font-bold uppercase text-slate-500">Candidate</p><p className="mt-1 font-bold">{packageCandidateName}</p></div><div><p className="text-xs font-bold uppercase text-slate-500">Position</p><p className="mt-1 font-bold">{pkg.offer.offerDetails?.jobTitle || pkg.application.roleTitleSnapshot || 'Position not recorded'}</p></div><div><p className="text-xs font-bold uppercase text-slate-500">Business unit</p><p className="mt-1 font-bold">{pkg.offer.offerDetails?.businessUnit || 'Business unit not recorded'}</p></div><div><p className="text-xs font-bold uppercase text-slate-500">Approval stage</p><p className="mt-1 font-bold">{pkg.request.approvalStage === 'BOD_GM' ? 'BOD Approval · Two required' : 'HR Manager Approval'}</p></div></div></div>
+          <OfferApprovalSummary offer={pkg.offer} />
           <InterviewSummaryPanel summary={summary} />
           <div className="grid gap-5 lg:grid-cols-2">
             <section className="rounded-xl border border-slate-200 p-4 dark:border-slate-700"><div className="flex items-center justify-between gap-3"><h2 className="text-lg font-bold">Hiring packet documents</h2><span className="text-xs text-slate-500">{packageDocuments.length} attached</span></div><div className="mt-3 space-y-2">{packageDocuments.map(document => <div key={`${document.id}-${document.sourceId}`} className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-700"><div className="min-w-48 flex-1"><p className="break-words font-semibold">{document.fileName}</p><p className="text-xs text-slate-500">{document.documentType}{document.reviewerName ? ` · ${document.reviewerName}` : ''}</p></div><Button size="sm" variant="secondary" onClick={() => void openDocument(document)} isLoading={openingDocumentId === document.id} disabled={openingDocumentId !== null}>Preview / Download</Button></div>)}</div></section>

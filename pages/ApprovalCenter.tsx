@@ -91,7 +91,7 @@ const ApprovalMobileCard: React.FC<{
 
   return <article className={`rounded-xl border p-4 shadow-sm ${requested ? 'border-indigo-400 bg-indigo-50 ring-1 ring-indigo-300 dark:bg-indigo-950' : 'border-slate-200 bg-white dark:border-slate-600 dark:bg-slate-800'}`}>
     <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${KIND_META[item.kind].badge}`}>{KIND_META[item.kind].title}</span><p className="mt-2 text-xs font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">{item.reference}</p><h3 className="break-words text-base font-bold text-slate-900 dark:text-white">{item.employee}</h3></div>
+      <div className="min-w-0"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${KIND_META[item.kind].badge}`}>{KIND_META[item.kind].title}</span><p className="mt-2 text-xs font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">{item.reference}</p><h3 className="break-words text-base font-bold text-slate-900 dark:text-white">{item.employee}</h3>{item.kind === 'offer' && <p className="mt-1 text-sm font-bold text-violet-700 dark:text-violet-300">Hiring for: {item.details || 'Position not recorded'}</p>}</div>
       {item.bulkSelectable && <label className="flex min-h-11 flex-shrink-0 items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-200"><input type="checkbox" aria-label={`Select ${item.reference} for bulk approval`} checked={selected} onChange={event => onSelect(event.target.checked)} /> Select</label>}
     </div>
     <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.businessUnit} · {item.department}</p>
@@ -389,7 +389,7 @@ export default function ApprovalCenter() {
                 const week = getOvertimeWeekDetails(item.approvalContext);
                 return <tr id={`approval-${item.id}`} key={item.canonicalKey} className={`border-t border-slate-200 align-top dark:border-slate-600 ${requestedItem === item.id ? 'bg-indigo-50 ring-1 ring-inset ring-indigo-300 dark:bg-indigo-950' : ''}`}>
                   <td className="px-4 py-4">{item.bulkSelectable && <input type="checkbox" aria-label={`Select ${item.reference} for bulk approval`} checked={selected.has(item.canonicalKey)} onChange={event => { const next = new Set(selected); event.target.checked ? next.add(item.canonicalKey) : next.delete(item.canonicalKey); setSelected(next); }} />}</td>
-                  <td className="px-4 py-4 font-semibold"><div className="text-xs font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">{item.reference}</div>{item.employee}<div className="text-xs font-normal text-slate-500 dark:text-slate-300">{item.employeeCode || 'No employee ID'}</div></td>
+                  <td className="px-4 py-4 font-semibold"><div className="text-xs font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">{item.reference}</div>{item.employee}<div className="text-xs font-normal text-slate-500 dark:text-slate-300">{item.kind === 'offer' ? `Hiring for: ${item.details || 'Position not recorded'}` : item.employeeCode || 'No employee ID'}</div></td>
                   <td className="px-4 py-4">{item.businessUnit}<div className="text-xs text-slate-500 dark:text-slate-300">{item.department}</div></td>
                   {isTimeGroup ? <>
                     <td className="min-w-48 px-4 py-4">

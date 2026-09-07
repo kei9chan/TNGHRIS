@@ -73,6 +73,8 @@ const OfferTable: React.FC<OfferTableProps> = ({ offers, onViewDetails, onEditDr
                                 <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(offer.status)}`}>
                                     {offerStatusLabel(offer.status)}
                                 </span>
+                                <span className="block mt-1 text-xs text-violet-700 dark:text-violet-300">Approval: {offer.approvalStatus || 'Not Requested'}</span>
+                                {offer.approvalStatus === 'Pending Approval' && <span className="block text-xs text-gray-500 dark:text-gray-300">HR review, then two BOD approvals</span>}
                                 {isPublishedOffer(offer) && offer.secureToken && <span className="ml-2 inline-flex items-center gap-1 text-xs font-semibold text-emerald-700"><span className="h-2 w-2 rounded-full bg-emerald-500"/>Live</span>}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{offer.offerTemplateName || '—'}</td>
