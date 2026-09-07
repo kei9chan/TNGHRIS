@@ -140,20 +140,9 @@ const Leave: React.FC = () => {
     loadLeaveRequests();
     
     if (user) {
-      supabase
-        .from('hris_users')
-        .select('leave_quota_vacation, leave_quota_sick, leave_quota_offset')
-        .eq('id', user.id)
-        .single()
-        .then(({ data }) => {
-          if (data) {
-            setLiveQuotas({ 
-              vacation: data.leave_quota_vacation || 0, 
-              sick: data.leave_quota_sick || 0,
-              offset: data.leave_quota_offset || 0
-            });
-          }
-        });
+      supabase.rpc('get_confirmed_leave_ledger').then(({data,error}) => {
+        if (data && !error) setLiveQuotas({vacation:Number(data.vacation),sick:Number(data.sick),offset:Number(data.offset)});
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, reporteeIds.join(',')]);
@@ -363,36 +352,7 @@ const Leave: React.FC = () => {
     }
 
     if (!error && request.employeeId) {
-      if (approved && result?.status === LeaveRequestStatus.Approved) {
-        // Deduct from leave quota
-        const leaveType = leaveTypes.find(lt => lt.id === request.leaveTypeId);
-        if (leaveType) {
-          const isVacation = leaveType.name.toLowerCase().includes('vacation');
-          const isSick = leaveType.name.toLowerCase().includes('sick');
-          const isOffset = leaveType.name.toLowerCase().includes('offset');
-          
-          if (isVacation || isSick || isOffset) {
-            const { data: userData } = await supabase
-              .from('hris_users')
-              .select('leave_quota_vacation, leave_quota_sick, leave_quota_offset')
-              .eq('id', request.employeeId)
-              .single();
-              
-            if (userData) {
-              const fieldToUpdate = isVacation ? 'leave_quota_vacation' : isSick ? 'leave_quota_sick' : 'leave_quota_offset';
-              const currentQuota = userData[fieldToUpdate] || 0;
-              const deduction = request.durationDays || 1;
-              const newQuota = currentQuota - deduction; // Allow actual subtraction in case of negative balance
-              
-              await supabase
-                .from('hris_users')
-                .update({ [fieldToUpdate]: newQuota })
-                .eq('id', request.employeeId);
-            }
-          }
-        }
-      }
-
+      // Approved usage is recorded atomically in the server leave ledger.
       // Notify the requester
       createNotification({
         userId: request.employeeId,
