@@ -7,7 +7,14 @@ export default async function handler(req: any, res: any) {
     if (req.method === 'GET') return res.status(200).json({ ...admin, ...configuration() });
     if (req.body?.action === 'enabled' && typeof req.body.enabled === 'boolean') {
       if (req.body.enabled && !configured()) return res.status(409).json({ error: 'Configure the server email settings before enabling reminders' });
-      await rpc(client, 'set_approval_email_enabled', { p_enabled: req.body.enabled });
+      // requireAdmin has already verified the caller's active Admin status. Use
+      // the server-side client for the settings write so production RLS cannot
+      // make an otherwise authorized toggle appear to do nothing.
+      const service = serviceClient();
+      const { error } = await service.from('approval_email_settings')
+        .update({ enabled: req.body.enabled, updated_by: admin.id, updated_at: new Date().toISOString() })
+        .eq('singleton', true);
+      if (error) throw new Error('Reminder setting could not be saved');
       return res.status(200).json({ ok: true });
     }
     if (req.body?.action !== 'test' || !/^[0-9a-f-]{36}$/i.test(req.body.requestId || '')) return res.status(400).json({ error: 'Invalid action' });
