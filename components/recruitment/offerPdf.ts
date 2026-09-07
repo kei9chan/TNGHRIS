@@ -1,3 +1,4 @@
+import { offerServiceChargeTerms } from './serviceChargeTerms';
 import { Offer, OfferBuilderDetails } from '../../types';
 import { mergeAppearance } from './offerBranding';
 import { formatPHP } from './offerCurrency';
@@ -227,6 +228,12 @@ export const buildOfferPdf = async (
   card(77.5, 55, 'Annualized', money(annual, annualSpecified), 'annualized salary', tint(accent, 0.93));
   card(139, 55, 'Work location', details.workLocation || 'Not specified', employmentLabel, [246, 248, 252]);
   y += 41;
+  const serviceChargeTerms = offerServiceChargeTerms(details);
+  if (serviceChargeTerms.length) {
+    heading('Service charge');
+    serviceChargeTerms.forEach(term => paragraph(term, { size: 10, gap: 4 }));
+    y += 3;
+  }
   heading('Your Role');
   twoColumnRows([
     ['Job title', details.jobTitle || 'Not specified'],
