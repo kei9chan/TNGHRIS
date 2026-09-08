@@ -15,6 +15,7 @@ import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { useUsers, useBusinessUnits } from '../../hooks/useHRData';
 import { formatDateOnly as formatEmploymentDateOnly } from '../../services/employeeProfile';
+import { isBod } from '../../modules/employeeSnapshot/model';
 
 const EmployeeList: React.FC = () => {
   const navigate = useNavigate();
@@ -345,6 +346,7 @@ const EmployeeList: React.FC = () => {
   return (
     <div className="space-y-6">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Employee Management</h1>
+        {isBod(currentUser) && <button onClick={() => navigate('/employee-snapshot?mode=browse')} className="rounded-xl bg-violet-600 px-4 py-3 font-semibold text-white">Open Employee Snapshot · BOD only</button>}
         
         <div className="border-b border-gray-200 dark:border-gray-700">
             <nav className="-mb-px flex space-x-8" aria-label="Tabs">
