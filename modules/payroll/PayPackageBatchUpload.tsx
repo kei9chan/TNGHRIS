@@ -22,8 +22,11 @@ const PayPackageBatchUpload:React.FC<{directory:{id:string;name:string;employeeC
     for(let r=2;r<=sheet.rowCount;r++){const values=Object.fromEntries(headers.map((h,i)=>[h,cell(r,i+1)]));if(Object.values(values).some(Boolean))result.push({row:r,values});}
     return result;
    }
-   const packages=read('Packages',packageHeaders);const components=read('Components',componentHeaders);
-   if(!packages.length||packages.length>100)throw new Error('Include between 1 and 100 packages per upload.');
+   const exampleKey=(key:string)=>key.trim().toUpperCase().startsWith('EXAMPLE-');
+   const packages=read('Packages',packageHeaders).filter(p=>!exampleKey(p.values['Package key']));
+   const components=read('Components',componentHeaders).filter(c=>!exampleKey(c.values['Package key']));
+   if(!packages.length)throw new Error('No upload rows found. Example rows are ignored; add at least one real package row.');
+   if(packages.length>100)throw new Error('Include between 1 and 100 packages per upload.');
    const keys=new Set<string>();const engagements=new Set<string>();
    for(const p of packages){const key=p.values['Package key'];if(!key||keys.has(key))throw new Error(`Row ${p.row}: package keys must be unique and nonempty.`);keys.add(key);
     const v=p.values;const identity=[v['Employee code'],v['Pay stream']==='employee_payroll'?'employee':v['Engagement reference'],v['Effective from']].join('|');if(engagements.has(identity))throw new Error(`Row ${p.row}: duplicate employee, engagement and date.`);engagements.add(identity);}
@@ -48,7 +51,7 @@ const PayPackageBatchUpload:React.FC<{directory:{id:string;name:string;employeeC
    catch(e){next[i]={...next[i],status:'Check before retry',error:e instanceof Error?e.message:'Save failed.'};setRows([...next]);setError('Stopped at the first failed row. Earlier saved drafts remain saved. Refresh and check the employee’s packages before uploading remaining rows.');break;}
   }}finally{saving.current=false;if(active.current){setBusy(false);onSaved();}}
  }
- return <Card title="Batch upload pay packages"><p className="text-sm mb-3">Fill the Packages sheet (one row per package) and Components sheet (one row per allowance). Use the employee codes shown below. Upload up to 100 packages, review the preview, then save drafts for HR authorization.</p>
+ return <Card title="Batch upload pay packages"><p className="text-sm mb-3">Fill the Packages sheet (one row per package) and Components sheet (one row per allowance). Use the employee codes shown below. Upload up to 100 packages, review the preview, then save drafts for HR authorization. Rows whose Package key starts with <code>EXAMPLE-</code> are ignored automatically.</p>
   <div className="flex flex-wrap items-center gap-3"><a className="text-indigo-600 underline dark:text-indigo-300" href="/templates/Pay-Packages-Batch-Template.xlsx" download>Download Excel template</a><label className="text-sm">Upload completed template <input className="block mt-1" type="file" accept=".xlsx" disabled={busy} onChange={e=>{const f=e.target.files?.[0];if(f)void upload(f);e.target.value='';}}/></label></div>
   <details className="mt-3 text-sm"><summary>Employee codes you can access</summary><div className="max-h-48 overflow-auto">{directory.map(e=><p key={e.id}>{e.employeeCode||'No employee code — update HRIS first'} · {e.name}</p>)}</div></details>
   <p className="mt-3 text-sm">Amounts must match the selected HRIS or approved PAN source. Existing packages on the same date must be reviewed individually. Treatments remain unreviewed; uploading does not approve packages or release payments.</p>
