@@ -2,12 +2,58 @@ import type {PayContext} from './payPackages';
 
 export const packageHeaders=['Package key','Employee code','Business unit / payroll group','Pay stream','Effective from','Amount unit','Basic pay / fee amount','PAN ID (optional)','Source reference','Reason','Engagement reference','Tax profile reference'];
 export const componentHeaders=['Package key','Component name','Amount','Frequency','Payable date','Legacy field'];
+export const simpleHeaders=['Employee code','Business unit','Pay type','Effective date','Amount unit','Approved basic pay / fee','Existing de minimis','Existing reimbursable',
+ 'Salary arrangement','Agreed net amount','Arrangement document','Tax treatment','Exemption / tax basis',
+ ...[1,2,3].flatMap(i=>[`Extra ${i} name`,`Extra ${i} amount`,`Extra ${i} frequency`,`Extra ${i} payable date`]),
+ 'Salary source','PAN ID (if applicable)','Source document / note','Reason for this record','Consultant agreement','Consultant tax document'];
+export const arrangements={'Gross salary':'gross','Net - company covers tax':'net_tax','Net - company covers tax and employee shares':'net_all','Custom - needs review':'custom_review'} as const;
+// Enable only after the reviewed production net-arrangement migration is applied.
+export const NET_ARRANGEMENTS_LIVE=true;
+export function assertArrangementLive(basis:string='gross'){
+ if(!NET_ARRANGEMENTS_LIVE&&basis!=='gross')throw new Error('Net/custom salary arrangements are not live yet. The production payroll-engine update needs approval. This row has not been saved; do not relabel it as Gross.');
+}
+export function simpleImportRows(input:{row:number;values:Record<string,string>}[]):ImportRow[]{
+ return input.map(({row,values:v})=>{
+  const get=(k:string)=>v[k]?.trim()||'';
+  const values=Object.fromEntries(packageHeaders.map(k=>[k,'']));
+  Object.assign(values,{'Package key':`ROW-${row}`,'Employee code':get('Employee code'),'Business unit / payroll group':get('Business unit'),
+   'Pay stream':({'Employee salary':'employee_payroll','Consultant fee':'professional_fee'} as Record<string,string>)[get('Pay type')]||get('Pay type'),
+   'Effective from':get('Effective date'),'Amount unit':get('Amount unit'),'Basic pay / fee amount':get('Approved basic pay / fee'),
+   'PAN ID (optional)':get('PAN ID (if applicable)'), 'Source reference':get('Source document / note')||get('Salary source'),
+   Reason:get('Reason for this record'),'Engagement reference':get('Consultant agreement'),'Tax profile reference':get('Consultant tax document'),
+   'Salary arrangement':get('Salary arrangement')||'Gross salary','Agreed net amount':get('Agreed net amount'),
+   'Arrangement document':get('Arrangement document'),'Tax treatment':get('Tax treatment')||'Standard - Finance reviews',
+   'Exemption / tax basis':get('Exemption / tax basis')});
+  if(get('Salary source')==='Approved PAN'&&!get('PAN ID (if applicable)'))throw new Error(`Row ${row}: Approved PAN needs its PAN ID.`);
+  const components:Record<string,string>[]=[];
+  for(const [header,name,key] of [['Existing de minimis','Existing HRIS de minimis','deminimis'],['Existing reimbursable','Existing HRIS reimbursable','reimbursable']]){
+   if(get(header))components.push({'Component name':name,Amount:get(header),Frequency:'recurring','Payable date':'','Legacy field':key});
+  }
+  for(const i of [1,2,3]){
+   if(['name','amount','frequency','payable date'].some(k=>get(`Extra ${i} ${k}`))){
+    const frequency=get(`Extra ${i} frequency`)||'Recurring';
+    components.push({'Component name':get(`Extra ${i} name`),Amount:get(`Extra ${i} amount`),Frequency:({'Recurring':'recurring','One time':'one_time'} as Record<string,string>)[frequency]||frequency,'Payable date':get(`Extra ${i} payable date`),'Legacy field':''});
+   }
+  }
+  return {row,values,components};
+ });
+}
 export type ImportRow={row:number;values:Record<string,string>;components:Record<string,string>[]};
 const treatment=()=>Object.fromEntries(['tax','sss','philhealth','pagibig','thirteenthMonth','proration'].map(k=>[k,'unreviewed']));
 const date=(s:string)=>/^\d{4}-\d{2}-\d{2}$/.test(s)&&!isNaN(Date.parse(s))&&new Date(s).toISOString().slice(0,10)===s;
 const amount=(s:string)=>/^\d+(\.\d{1,6})?$/.test(s)&&Number.isFinite(Number(s));
 export function prepareImport(row:ImportRow,context:PayContext){
  const v=row.values;const fail=(message:string):never=>{throw new Error(message);};
+ const basis=v['Salary arrangement']?(arrangements as Record<string,string>)[v['Salary arrangement']]:'gross';
+ if(!basis)fail('Choose a listed salary arrangement; put special terms under Custom - needs review.');
+ const target=v['Agreed net amount']||'';
+ const agreement=v['Arrangement document']||'';
+ if(basis!.startsWith('net_')&&(!/^\d+([.]\d{1,2})?$/.test(target)||Number(target)<=0||Number(target)>999999999||agreement.trim().length<3))fail('Net arrangements need the agreed net amount (positive PHP, at most 2 decimals) and approved arrangement document.');
+ if(basis==='gross'&&target)fail('Leave agreed net amount blank for Gross salary.');
+ if(basis==='custom_review'&&agreement.trim().length<3)fail('Custom arrangements need documented terms for review.');
+ const taxMode=v['Tax treatment']||'Standard - Finance reviews';
+ if(!['Standard - Finance reviews','Exemption requested - evidence required','Custom - needs review'].includes(taxMode))fail('Choose a listed tax treatment; explain custom treatment in Exemption / tax basis.');
+ if(taxMode!=='Standard - Finance reviews'&&(v['Exemption / tax basis']||'').trim().length<3)fail('Exemption/custom tax treatment requires the legal basis and supporting evidence. Net salary is not a tax exemption.');
  const scope=context.scopes.find(s=>s.name===v[packageHeaders[2]]&&s.canEdit);
  if(!scope||!context.sourceHash)fail('No edit access to the selected payroll scope.');
  const stream=v['Pay stream'];if(!['employee_payroll','professional_fee'].includes(stream))fail('Invalid pay stream.');
@@ -37,5 +83,5 @@ export function prepareImport(row:ImportRow,context:PayContext){
    if(matching.length>1||Number(matching[0]?.amount||0)!==Number(source![k]||0))fail(`${k} component must match the approved source exactly.`);
   }
  }
- return {employeeId:context.employeeId,scopeId:scope!.id,hash:context.sourceHash!,payload:{effectiveFrom:v['Effective from'],rateType:v['Amount unit'],baseAmount:v['Basic pay / fee amount'],stream,engagementKey:engagement,taxProfileRef:v['Tax profile reference'],sourcePanId:stream==='employee_payroll'?v['PAN ID (optional)']||null:null,sourceRef:v['Source reference'],reason:v.Reason,components,treatment:treatment(),replacesId:null}};
+ return {employeeId:context.employeeId,scopeId:scope!.id,hash:context.sourceHash!,payload:{effectiveFrom:v['Effective from'],rateType:v['Amount unit'],baseAmount:v['Basic pay / fee amount'],stream,engagementKey:engagement,taxProfileRef:v['Tax profile reference'],sourcePanId:stream==='employee_payroll'?v['PAN ID (optional)']||null:null,sourceRef:v['Source reference'],reason:v.Reason,components,treatment:{...treatment(),payBasis:basis!,netTarget:target,arrangementRef:agreement,taxRequest:taxMode,taxBasisRef:v['Exemption / tax basis']||''},replacesId:null}};
 }
