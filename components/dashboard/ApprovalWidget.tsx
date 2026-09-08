@@ -16,6 +16,7 @@ export default function ApprovalWidget() {
   const wfhExceptions=approvals.pendingWfhApprovals.filter(r=>{const start=new Date(r.date),end=new Date(r.endDate||r.date),days=Math.floor((end.getTime()-start.getTime())/86400000)+1;const overlap=approvals.pendingLeaveApprovals.some(l=>l.employeeId===r.employeeId&&new Date(l.startDate)<=end&&new Date(l.endDate)>=start);return r.approvalRoute==='BOD_REQUIRED'||end<start||days>31||overlap||String(r.status)==='WFH_FOR_TIMEKEEPING';}).length;
   const overtimeExceptions=approvals.pendingOtApprovals.filter(r=>r.approvalRoute==='BOD_REQUIRED'||!String(r.reason||'').trim()).length;
   const queues=useMemo(()=>[
+    {name:'Benefits',slug:'benefit',count:additional.pendingBenefitApprovals.length,exceptions:0,ages:additional.pendingBenefitApprovals.map(r=>ageDays(r.submissionDate)),tone:'bg-pink-100 text-pink-800'},
     {name:'NTE',slug:'nte',count:additional.pendingNTEApprovals.length,exceptions:0,ages:additional.pendingNTEApprovals.map(r=>ageDays(r.createdAt)),tone:'bg-red-100 text-red-800'},
     {name:'PAN',slug:'pan',count:additional.pendingPANApprovals.length,exceptions:0,ages:additional.pendingPANApprovals.map(r=>ageDays(r.createdAt)),tone:'bg-purple-100 text-purple-800'},
     {name:'Awards',slug:'award',count:additional.pendingAwardApprovals.length,exceptions:0,ages:additional.pendingAwardApprovals.map(r=>ageDays(r.createdAt)),tone:'bg-amber-100 text-amber-800'},
@@ -26,7 +27,7 @@ export default function ApprovalWidget() {
     {name:'Overtime',slug:'overtime',count:approvals.pendingOtApprovals.length,exceptions:overtimeExceptions,ages:approvals.pendingOtApprovals.map(r=>ageDays(r.submittedAt||r.date)),tone:'bg-orange-100 text-orange-800'},
     {name:'Job Requisitions',slug:'requisition',count:additional.pendingRequisitionApprovals.length,exceptions:0,ages:additional.pendingRequisitionApprovals.map(r=>ageDays(r.createdAt)),tone:'bg-indigo-100 text-indigo-800'},
     {name:'Manpower',slug:'manpower',count:approvals.pendingManpowerApprovals.length,exceptions:0,ages:approvals.pendingManpowerApprovals.map(r=>ageDays(r.createdAt)),tone:'bg-teal-100 text-teal-800'},
-  ],[approvals.pendingLeaveApprovals,approvals.pendingWfhApprovals,approvals.pendingOtApprovals,approvals.pendingManpowerApprovals,additional.pendingNTEApprovals,additional.pendingPANApprovals,additional.pendingAwardApprovals,additional.pendingOfferApprovals,additional.pendingAssetApprovals,additional.pendingRequisitionApprovals,leaveExceptions,wfhExceptions,overtimeExceptions]);
+],[approvals.pendingLeaveApprovals,approvals.pendingWfhApprovals,approvals.pendingOtApprovals,approvals.pendingManpowerApprovals,additional.pendingBenefitApprovals,additional.pendingNTEApprovals,additional.pendingPANApprovals,additional.pendingAwardApprovals,additional.pendingOfferApprovals,additional.pendingAssetApprovals,additional.pendingRequisitionApprovals,leaveExceptions,wfhExceptions,overtimeExceptions]);
   const activeQueues=queues.filter(q=>q.count>0);
   const ages=activeQueues.flatMap(q=>q.ages), total=activeQueues.reduce((s,q)=>s+q.count,0), due=ages.filter(a=>a===0).length, overdue=ages.filter(a=>a>=3).length;
   const exceptionCount=activeQueues.reduce((sum,q)=>sum+q.exceptions,0);
