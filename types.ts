@@ -996,6 +996,8 @@ export interface HearingDetails {
 }
 
 export interface NTE {
+  receiptRecordedAt?: string;
+  responseStage?: string;
   id: string;
   incidentReportId: string;
   employeeId: string;

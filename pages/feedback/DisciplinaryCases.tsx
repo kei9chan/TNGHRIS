@@ -13,6 +13,7 @@ import Button from '../../components/ui/Button';
 import IncidentReportModal from '../../components/feedback/IncidentReportModal';
 import NTEModal from '../../components/feedback/NTEModal';
 import ResolutionModal from '../../components/feedback/ResolutionModal';
+import NTEDeadlineQueue from '../../modules/nte/NTEDeadlineQueue';
 import Card from '../../components/ui/Card';
 import PrintableIncidentReport from '../../components/feedback/PrintableIncidentReport';
 import CaseListTable from '../../components/feedback/CaseListTable';
@@ -410,7 +411,7 @@ const DisciplinaryCases: React.FC = () => {
   const stats = useMemo(() => {
     const activeCases = reports.length;
     const newIRs = reports.filter(r => r.pipelineStage === 'ir-review').length;
-    const overdueNTEs = ntes.filter(nte => nte.status === NTEStatus.Issued && new Date(nte.deadline) < new Date()).length;
+    const overdueNTEs = ntes.filter(nte => nte.receiptRecordedAt && nte.status === NTEStatus.Issued && new Date(nte.deadline) < new Date()).length;
     const forResolution = reports.filter(r => r.pipelineStage === 'resolution').length;
     return { activeCases, newIRs, overdueNTEs, forResolution };
   }, [reports, ntes]);
@@ -458,6 +459,11 @@ const DisciplinaryCases: React.FC = () => {
 
     const resolutionForReport = resolutions.find(r => r.incidentReportId === originalReportId && (!clickedEmployeeId || r.employeeId === clickedEmployeeId));
 
+    const workflowNte = ntes.find(n=>n.incidentReportId===originalReportId&&n.employeeId===clickedEmployeeId);
+    if(workflowNte && ['resolution','bod-gm-approval','hr-review-response'].includes(report.pipelineStage||'')) {
+      navigate(`/feedback/nte/${workflowNte.id}`);
+      return;
+    }
     if (report.pipelineStage === 'hr-review-response' && resolutionForReport?.status === ResolutionStatus.Rejected) {
       setResolutionModalOpen(true);
     } else if (report.pipelineStage === 'ir-review' || report.pipelineStage === 'hr-review-response') {
@@ -920,6 +926,7 @@ const DisciplinaryCases: React.FC = () => {
           <Button onClick={handleOpenNewReportModal}>+ File New IR</Button>
         )}
       </div>
+      <NTEDeadlineQueue />
 
       {specialFilter === 'pending_my_approval' && (
         <div className="p-4 rounded-md bg-blue-50 dark:bg-blue-900/40 border border-blue-400 dark:border-blue-800 flex justify-between items-center">

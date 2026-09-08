@@ -123,7 +123,7 @@ export default function MyNTEs() {
                         {new Date(nte.issuedDate).toLocaleDateString()}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                        {new Date(nte.deadline).toLocaleDateString()}
+                        {nte.receiptRecordedAt ? new Date(nte.deadline).toLocaleString('en-PH',{timeZone:'Asia/Manila'})+' PHT' : 'Starts from documented receipt'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200">

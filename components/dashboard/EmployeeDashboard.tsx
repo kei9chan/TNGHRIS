@@ -649,7 +649,7 @@ const EmployeeDashboard: React.FC = () => {
             if (!responseRes.error && responseRes.data) setSurveyResponses(responseRes.data.map((r: any) => ({ ...r, surveyId: r.survey_id, respondentId: r.respondent_id })));
             if (!coachRes.error && coachRes.data) setCoachingSessions(coachRes.data.map((r: any) => ({ ...r, employeeId: r.employee_id, coachName: r.coach_name || '', date: r.date ? new Date(r.date) : new Date() })));
             if (!envRes.error && envRes.data) setEnvelopes(envRes.data.map((r: any) => ({ ...r, createdAt: r.created_at ? new Date(r.created_at) : new Date(), routingSteps: r.routing_steps || [], employeeName: r.employee_name || '' })));
-            if (!nteRes.error && nteRes.data) setNTEs(nteRes.data.map((r: any) => ({ ...r, employeeId: r.employee_id, issuedDate: r.issued_date ? new Date(r.issued_date) : new Date(), deadline: r.deadline ? new Date(r.deadline) : new Date(), incidentReportId: r.incident_report_id, hearingDetails: r.hearing_details || undefined })));
+            if (!nteRes.error && nteRes.data) setNTEs(nteRes.data.map((r: any) => ({ ...r, receiptRecordedAt:r.receipt_recorded_at, employeeId: r.recipient_employee_id||r.recipients?.[0], issuedDate: new Date(r.created_at), deadline: r.response_deadline ? new Date(r.response_deadline) : new Date(), incidentReportId: r.incident_report_id, hearingDetails: r.hearing_details || undefined })));
         };
         load();
         return () => { active = false; };
@@ -1091,12 +1091,12 @@ const EmployeeDashboard: React.FC = () => {
         // 0. NTE Responses
         const myPendingNTEs = ntes.filter(n => n.employeeId === user.id && n.status === NTEStatus.Issued);
         myPendingNTEs.forEach(nte => {
-            const isOverdue = new Date(nte.deadline) < new Date();
+            const isOverdue = !!nte.receiptRecordedAt && new Date(nte.deadline) < new Date();
             items.push({
                 id: `nte-response-${nte.id}`,
                 icon: <DocumentTextIcon {...iconProps} />,
                 title: "Response Required: Notice to Explain",
-                subtitle: isOverdue ? `OVERDUE! Deadline passed.` : `Deadline: ${getCountdownString(new Date(nte.deadline))}`,
+                subtitle: !nte.receiptRecordedAt ? 'Acknowledge receipt to start the response period' : isOverdue ? 'Response period ended — management review' : `Deadline: ${getCountdownString(new Date(nte.deadline))}`,
                 date: new Date(nte.issuedDate).toLocaleDateString(),
                 link: `/feedback/nte/${nte.id}`,
                 colorClass: isOverdue ? 'bg-red-600 animate-pulse' : 'bg-red-500',

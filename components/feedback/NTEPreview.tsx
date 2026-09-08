@@ -108,8 +108,8 @@ const NTEPreview: React.FC<NTEPreviewProps> = ({ template, employeeName, employe
             '{{employee_name}}': employeeName || '[Employee Name]',
             '{{employee}}': employeeName || '[Employee Name]',
             '{{nte_number}}': nteNumber || '[NTE Number]',
-            '{{response_deadline_days}}': numToWord(diffDays),
-            '{{response_deadline}}': deadlineDate.toLocaleString(),
+            '{{response_deadline_days}}': 'five (5) calendar days from documented receipt',
+            '{{response_deadline}}': '11:59 PM Philippine time on the fifth calendar day after documented receipt',
             '{{evidence_url}}': evidenceUrl || '[Supporting link]',
         };
 

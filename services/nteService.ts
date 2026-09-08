@@ -4,6 +4,10 @@ import { NTE, NTEStatus, ApproverStep, ApproverStatus, User } from '../types';
 // Compatibility mapper for the legacy NTE row plus its canonical recipient and
 // normalized approval snapshot.
 type NTERow = {
+  receipt_recorded_at?: string | null;
+  response_stage?: string | null;
+  memo_ids?: string[] | null;
+  discipline_code_ids?: string[] | null;
   id: string;
   incident_report_id: string;
   template_id?: string | null;
@@ -51,6 +55,8 @@ const mapRow = (row: NTERow): NTE => {
   }));
   return {
     id: row.id,
+    receiptRecordedAt: row.receipt_recorded_at || undefined,
+    responseStage: row.response_stage || undefined,
     incidentReportId: row.incident_report_id,
     employeeId,
     employeeName,
@@ -63,8 +69,8 @@ const mapRow = (row: NTERow): NTE => {
     employeeResponseEvidenceUrl: row.employee_response_evidence_url || undefined,
     employeeResponseSignatureUrl: row.employee_response_signature_url || undefined,
     responseDate: row.response_date ? new Date(row.response_date) : undefined,
-    memoIds: [],
-    disciplineCodeIds: [],
+    memoIds: row.memo_ids || [],
+    disciplineCodeIds: row.discipline_code_ids || [],
     evidenceUrl: row.evidence_link || undefined,
     issuedByUserId: row.issued_by_user_id || '',
     approverSteps,
