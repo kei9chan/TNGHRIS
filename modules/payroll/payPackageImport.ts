@@ -6,7 +6,7 @@ export const simpleHeaders=['Employee code','Business unit','Pay type','Effectiv
  'Salary arrangement','Agreed net amount','Arrangement document','Tax treatment','Exemption / tax basis',
  ...[1,2,3].flatMap(i=>[`Extra ${i} name`,`Extra ${i} amount`,`Extra ${i} frequency`,`Extra ${i} payable date`]),
  'Salary source','PAN ID (if applicable)','Source document / note','Reason for this record','Consultant agreement','Consultant tax document'];
-export const arrangements={'Gross salary':'gross','Net - company covers tax':'net_tax','Net - company covers tax and employee shares':'net_all','Custom - needs review':'custom_review'} as const;
+export const arrangements={'Gross salary':'gross','Company pays income tax':'net_tax','Company pays income tax and employee contributions':'net_all','Net - company covers tax':'net_tax','Net - company covers tax and employee shares':'net_all','Custom - needs review':'custom_review'} as const;
 // Enable only after the reviewed production net-arrangement migration is applied.
 export const NET_ARRANGEMENTS_LIVE=true;
 export function assertArrangementLive(basis:string='gross'){
@@ -48,14 +48,17 @@ export function prepareImport(row:ImportRow,context:PayContext){
  if(!basis)fail('Choose a listed salary arrangement; put special terms under Custom - needs review.');
  const target=v['Agreed net amount']||'';
  const agreement=v['Arrangement document']||'';
- if(basis!.startsWith('net_')&&(!/^\d+([.]\d{1,2})?$/.test(target)||Number(target)<=0||Number(target)>999999999||agreement.trim().length<3))fail('Net arrangements need the agreed net amount (positive PHP, at most 2 decimals) and approved arrangement document.');
+ if(basis!.startsWith('net_')&&(!/^\d+([.]\d{1,2})?$/.test(target)||Number(target)<=0||Number(target)>999999999))fail('Agreed net amount: enter the approved target amount, greater than zero, with at most 2 decimals. Keep it separate from basic pay.');
+ if(basis!.startsWith('net_')&&agreement.trim().length<3)fail('Arrangement document: enter the reference/title and date of the approved JO, PAN or agreement that explicitly confirms the net terms. A JO is acceptable if it states what the company covers.');
  if(basis==='gross'&&target)fail('Leave agreed net amount blank for Gross salary.');
  if(basis==='custom_review'&&agreement.trim().length<3)fail('Custom arrangements need documented terms for review.');
- const taxMode=v['Tax treatment']||'Standard - Finance reviews';
+ const taxMode=(!v['Tax treatment']||v['Tax treatment']==='Normal tax calculation')?'Standard - Finance reviews':v['Tax treatment'];
  if(!['Standard - Finance reviews','Exemption requested - evidence required','Custom - needs review'].includes(taxMode))fail('Choose a listed tax treatment; explain custom treatment in Exemption / tax basis.');
  if(taxMode!=='Standard - Finance reviews'&&(v['Exemption / tax basis']||'').trim().length<3)fail('Exemption/custom tax treatment requires the legal basis and supporting evidence. Net salary is not a tax exemption.');
- const scope=context.scopes.find(s=>s.name===v[packageHeaders[2]]&&s.canEdit);
- if(!scope||!context.sourceHash)fail('No edit access to the selected payroll scope.');
+ const scope=context.scopes.find(s=>s.name===v[packageHeaders[2]]);
+ if(!scope)fail(`Business unit: choose an exact payroll-group name available for this employee: ${context.scopes.map(s=>s.name).join(', ')||'none available'}.`);
+ if(!scope?.canEdit)fail('Pay-package editing is not allowed for this employee and business unit. HR Manager needs scoped HR authorization and compensation-edit access; own-package edits are blocked.');
+ if(!context.sourceHash)fail('The current salary source could not be loaded. Refresh and revalidate this employee.');
  const stream=v['Pay stream'];if(!['employee_payroll','professional_fee'].includes(stream))fail('Invalid pay stream.');
  if(!date(v['Effective from']))fail('Effective from must be a real YYYY-MM-DD date.');
  if(!['Monthly','Daily','Hourly'].includes(v['Amount unit']))fail('Amount unit must be Monthly, Daily or Hourly.');
