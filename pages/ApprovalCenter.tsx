@@ -53,9 +53,10 @@ const KIND_META: Record<Kind, { title: string; badge: string; rule: string }> = 
   award: { title: 'Awards', badge: 'bg-amber-100 text-amber-800', rule: 'Award nominations awaiting your required approval before certificate issuance.' },
   offer: { title: 'Offer Approval', badge: 'bg-violet-100 text-violet-800', rule: 'Hiring packets awaiting your configured offer approval.' },
   asset: { title: 'Asset Requests', badge: 'bg-cyan-100 text-cyan-800', rule: 'Asset requests awaiting direct-manager or BOD review under the configured workflow.' },
+  benefit: { title: 'Benefit Requests', badge: 'bg-emerald-100 text-emerald-800', rule: 'Benefit requests awaiting HR Manager or final BOD / General Manager approval.' },
 };
 
-const GROUP_ORDER: Kind[] = ['nte', 'pan', 'award', 'offer', 'asset', 'wfh', 'leave', 'overtime', 'requisition', 'manpower'];
+const GROUP_ORDER: Kind[] = ['nte', 'pan', 'benefit', 'award', 'offer', 'asset', 'wfh', 'leave', 'overtime', 'requisition', 'manpower'];
 const BULK_KINDS = new Set<Kind>(['leave', 'wfh', 'overtime']);
 const TIME_KINDS = new Set<Kind>(['leave', 'wfh', 'overtime']);
 const TIME_DESKTOP_HEADINGS = ['Select', 'Request / Employee', 'Business unit / Department', 'Request details', 'Submitted / Pending', 'Approval step', 'Eligibility', 'Action'];
@@ -211,6 +212,7 @@ export default function ApprovalCenter() {
       ...additional.pendingNTEApprovals.map(row => row.employeeId), ...additional.pendingPANApprovals.map(row => row.employeeId),
       ...additional.pendingAwardApprovals.map(row => row.employeeId),
       ...additional.pendingAssetApprovals.map(row => row.employeeId),
+      ...additional.pendingBenefitApprovals.map(row => row.employeeId),
     ].filter(Boolean))) as string[];
     if (!ids.length) return setEmployeeMeta({});
     supabase.from('hris_users').select('id,employee_id,business_unit_id,business_unit,department_id,department,status').in('id', ids).then(({ data, error }) => {
@@ -222,7 +224,7 @@ export default function ApprovalCenter() {
         active: String(row.status || 'active').toLowerCase() === 'active',
       }])));
     });
-  }, [approvals.pendingLeaveApprovals, approvals.pendingWfhApprovals, approvals.pendingOtApprovals, approvals.pendingManpowerApprovals, additional.pendingNTEApprovals, additional.pendingPANApprovals, additional.pendingAwardApprovals, additional.pendingAssetApprovals, businessUnitLabels, departmentLabels]);
+  }, [approvals.pendingLeaveApprovals, approvals.pendingWfhApprovals, approvals.pendingOtApprovals, approvals.pendingManpowerApprovals, additional.pendingNTEApprovals, additional.pendingPANApprovals, additional.pendingAwardApprovals, additional.pendingAssetApprovals, additional.pendingBenefitApprovals, businessUnitLabels, departmentLabels]);
 
   const items = useMemo<ApprovalItem[]>(() => {
     const metaFor = (id?: string) => employeeMeta[id || ''] || { businessUnit: 'Not assigned', department: 'Not assigned', active: true };
@@ -313,8 +315,35 @@ export default function ApprovalCenter() {
         reviewUrl: getApprovalReviewUrl('asset', row.id),
       };
     });
+    const benefitItems: ApprovalItem[] = additional.pendingBenefitApprovals.map(row => {
+      const meta = metaFor(row.employeeId);
+      return {
+        id: row.id,
+        canonicalKey: row.canonicalKey,
+        kind: 'benefit',
+        reference: `BEN-${String(row.id).slice(0, 8).toUpperCase()}`,
+        employeeId: row.employeeId,
+        employee: row.employeeName,
+        employeeCode: meta.employeeId,
+        businessUnitId: meta.businessUnitId,
+        businessUnit: meta.businessUnit,
+        departmentId: meta.departmentId,
+        department: meta.department,
+        start: row.submissionDate,
+        end: row.dateNeeded,
+        duration: `Needed ${fmtDate(row.dateNeeded)}`,
+        status: row.status,
+        currentStep: row.currentStep,
+        approvalStep: row.currentStep,
+        details: row.benefitTypeName,
+        reason: row.details,
+        bulkSelectable: false,
+        route: row.status === 'Pending Board Approval' ? 'BOD_REQUIRED' : 'MANAGER_ONLY',
+        reviewUrl: getApprovalReviewUrl('benefit', row.id),
+      };
+    });
     const canonical = new Map<string, ApprovalItem>();
-    [...ntes, ...pans, ...awardItems, ...offerItems, ...assetItems, ...wfh, ...leave, ...overtime, ...requisitions, ...manpower].forEach(item => { if (!canonical.has(item.canonicalKey)) canonical.set(item.canonicalKey, item); });
+    [...ntes, ...pans, ...benefitItems, ...awardItems, ...offerItems, ...assetItems, ...wfh, ...leave, ...overtime, ...requisitions, ...manpower].forEach(item => { if (!canonical.has(item.canonicalKey)) canonical.set(item.canonicalKey, item); });
     return Array.from(canonical.values());
   }, [approvals, additional, employeeMeta, businessUnitLabels, departmentLabels]);
 

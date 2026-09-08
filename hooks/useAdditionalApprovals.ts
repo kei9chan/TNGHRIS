@@ -4,6 +4,8 @@ import { supabase } from '../services/supabaseClient';
 import { User } from '../types';
 import { fetchOfferApprovalPackage, fetchPendingOfferApprovalIds } from '../services/offerApprovalService';
 import { fetchMyAssetApprovalQueue } from '../services/assetApprovalService';
+import { fetchMyPendingBenefitApprovals } from '../services/benefitApprovalService';
+import type { PendingBenefitApproval } from '../services/benefitApprovalService';
 
 type PendingStep = {
   userId?: string;
@@ -126,6 +128,7 @@ export function useAdditionalApprovals(user: User | null) {
   const [pendingAwardApprovals, setPendingAwardApprovals] = useState<PendingAwardApproval[]>([]);
   const [pendingOfferApprovals, setPendingOfferApprovals] = useState<PendingOfferApproval[]>([]);
   const [pendingAssetApprovals, setPendingAssetApprovals] = useState<PendingAssetApproval[]>([]);
+  const [pendingBenefitApprovals, setPendingBenefitApprovals] = useState<PendingBenefitApproval[]>([]);
   const [additionalApprovalError, setAdditionalApprovalError] = useState<string | null>(null);
 
   const refreshAdditionalApprovals = useCallback(async () => {
@@ -136,6 +139,7 @@ export function useAdditionalApprovals(user: User | null) {
       setPendingAwardApprovals([]);
       setPendingOfferApprovals([]);
       setPendingAssetApprovals([]);
+      setPendingBenefitApprovals([]);
       setAdditionalApprovalError(null);
       return;
     }
@@ -150,7 +154,12 @@ export function useAdditionalApprovals(user: User | null) {
       assetLoadError = error;
       return [] as Awaited<ReturnType<typeof fetchMyAssetApprovalQueue>>;
     });
-    const [nteResult, [panResult, requisitionResult, awardResult], offerIds, assetQueue, taskResult] = await Promise.all([
+    let benefitLoadError: any = null;
+    const benefitQueuePromise = fetchMyPendingBenefitApprovals().catch((error: any) => {
+      benefitLoadError = error;
+      return [] as Awaited<ReturnType<typeof fetchMyPendingBenefitApprovals>>;
+    });
+    const [nteResult, [panResult, requisitionResult, awardResult], offerIds, assetQueue, benefitQueue, taskResult] = await Promise.all([
       supabase.rpc('get_my_pending_nte_approvals'),
       Promise.all([
       supabase
@@ -168,6 +177,7 @@ export function useAdditionalApprovals(user: User | null) {
       ]),
       offerIdsPromise,
       assetQueuePromise,
+      benefitQueuePromise,
       fetchActionableApprovalTasks(user.id).then(data => ({ data, error: null as any })).catch(error => ({ data: [], error })),
     ]);
 
@@ -181,7 +191,7 @@ export function useAdditionalApprovals(user: User | null) {
 
     const actionable = (type: string, id: string) => taskResult.data.some(t => t.request_type === type && t.request_id === id);
     const nteRows = (nteResult.data || []).filter((r: any) => actionable('nte', r.id));
-    const errors = [taskResult.error, nteResult.error, panResult.error, requisitionResult.error, awardResult.error, offerLoadError, assetLoadError, ...offerPackageErrors].filter(Boolean);
+    const errors = [taskResult.error, nteResult.error, panResult.error, requisitionResult.error, awardResult.error, offerLoadError, assetLoadError, benefitLoadError, ...offerPackageErrors].filter(Boolean);
     setAdditionalApprovalError(errors.length ? errors.map(error => error!.message).join(' · ') : null);
 
     setPendingNTEApprovals(nteRows.map((row: any) => {
@@ -300,6 +310,7 @@ export function useAdditionalApprovals(user: User | null) {
       approvalIssue: row.approvalIssue,
       canonicalKey: `asset:${row.requestId}:${row.approvalStage}:${row.viewerActionStatus || 'READ_ONLY'}`,
     })));
+    setPendingBenefitApprovals(benefitQueue);
   }, [user?.id]);
 
   useEffect(() => {
@@ -324,6 +335,9 @@ export function useAdditionalApprovals(user: User | null) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'asset_requests' }, () => {
         void refreshAdditionalApprovals();
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'benefit_requests' }, () => {
+        void refreshAdditionalApprovals();
+      })
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
   }, [refreshAdditionalApprovals, user?.id]);
@@ -335,6 +349,7 @@ export function useAdditionalApprovals(user: User | null) {
     pendingAwardApprovals,
     pendingOfferApprovals,
     pendingAssetApprovals,
+    pendingBenefitApprovals,
     additionalApprovalError,
     refreshAdditionalApprovals,
   };

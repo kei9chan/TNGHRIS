@@ -14,10 +14,8 @@ interface BenefitApprovalsTableProps {
 const CheckIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>;
 const XIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>;
 
-const BenefitApprovalsTable: React.FC<BenefitApprovalsTableProps> = ({ requests, benefitTypes, onApprove, onReject }) => {
+const BenefitApprovalsTable: React.FC<BenefitApprovalsTableProps> = ({ requests, onApprove, onReject }) => {
     const { settings } = useSettings();
-
-    const getBenefitType = (id: string) => benefitTypes.find(bt => bt.id === id);
 
     const getStatusBadge = (status: BenefitRequestStatus) => {
         switch (status) {
@@ -45,8 +43,6 @@ const BenefitApprovalsTable: React.FC<BenefitApprovalsTableProps> = ({ requests,
                 </thead>
                 <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                     {requests.map(req => {
-                        const benefitType = getBenefitType(req.benefitTypeId);
-                        const requiresBod = benefitType?.requiresBodApproval;
                         const isPending = req.status === BenefitRequestStatus.PendingHR;
 
                         return (
@@ -70,8 +66,8 @@ const BenefitApprovalsTable: React.FC<BenefitApprovalsTableProps> = ({ requests,
                                             <Button size="sm" variant="danger" onClick={() => onReject(req)} title="Reject">
                                                 <XIcon />
                                             </Button>
-                                            <Button size="sm" variant="success" onClick={() => onApprove(req)} title={requiresBod ? "Endorse to Board" : "Approve Request"}>
-                                                <CheckIcon /> {requiresBod ? 'Endorse' : 'Approve'}
+                                            <Button size="sm" variant="success" onClick={() => onApprove(req)} title="Approve and route automatically">
+                                                <CheckIcon /> Approve
                                             </Button>
                                         </div>
                                     ) : (
