@@ -18,6 +18,8 @@ import { usePermissions } from './hooks/usePermissions';
 import { usePermissionsContext } from './context/PermissionsContext';
 import { NavLink, Permission, Resource } from './types';
 import { hasEvaluationOversightAccess } from './utils/evaluationAccess';
+import { isBod } from './modules/employeeSnapshot/model';
+const EmployeeSnapshotPage = React.lazy(() => import('./modules/employeeSnapshot/EmployeeSnapshotPage'));
 import Layout from './components/layout/Layout';
 import { isPayrollAccessRoute, isStaffPayrollRoute } from './modules/payroll/routes';
 const PayrollAccessPage = React.lazy(() => import('./modules/payroll/PayrollAccessPage'));
@@ -242,6 +244,8 @@ const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }
     );
   }
 
+  if (location.pathname === '/employee-snapshot') return isBod(user) ? children : <p role="alert">Access denied. Employee Snapshot requires the BOD role.</p>;
+
   // This module has independent database permissions. Legacy money prototypes
   // never mount; clock/leave/OT/WFH continue through their existing guards.
   if (isPayrollAccessRoute(location.pathname) || isStaffPayrollRoute(location.pathname)) return children;
@@ -308,6 +312,7 @@ const AppRoutes: React.FC = () => {
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="payments" element={<ProtectedRoute><PayrollPaymentsPage /></ProtectedRoute>} />
             <Route path="approvals" element={<ProtectedRoute><ApprovalCenter /></ProtectedRoute>} />
+            <Route path="employee-snapshot" element={<ProtectedRoute><EmployeeSnapshotPage /></ProtectedRoute>} />
         <Route path="my-requests" element={<ProtectedRoute><MyRequests /></ProtectedRoute>} />
         <Route path="my-profile" element={<ProtectedRoute><EmployeeProfile/></ProtectedRoute>} />
         <Route path="notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />

@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import {createRequire} from 'node:module';
+import Module from 'node:module';
+import {build} from 'esbuild';
+import React from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+import {MemoryRouter} from 'react-router-dom';
+const root=new URL('../',import.meta.url).pathname;
+const source=await fs.readFile(root+'modules/employeeSnapshot/EmployeeSnapshotPage.tsx','utf8');
+const result=await build({stdin:{contents:source+'\nexport {Package,Detail};',resolveDir:root+'modules/employeeSnapshot',loader:'tsx'},bundle:true,platform:'node',format:'cjs',write:false,external:['react','react-router-dom'],plugins:[{name:'isolated-fixtures',setup(b){b.onResolve({filter:/hooks\/useAuth$|hooks\/usePermissions$|^\.\/api$/},a=>({path:a.path,namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const useAuth=()=>({user:null});export const usePermissions=()=>({can:()=>false});export const directory=()=>{};export const filters=()=>{};export const snapshot=()=>{};',loader:'js'}));}}]});
+const compiled=new Module(root+'tests/snapshot-render.cjs');compiled.filename=root+'tests/snapshot-render.cjs';compiled.paths=Module._nodeModulePaths(root);compiled._compile(result.outputFiles[0].text,compiled.filename);
+const {Package,Detail}=compiled.exports;
+const pkg=(unit='Monthly',tax='Gross')=>({state:'available',amount:100,unit,tax,shares:'Employee share deducted from pay',reason:'Isolated fixture only',packages:[{id:'fixture',stream:'employee_payroll',effectiveFrom:'2026-01-01',unit,base:100,payBasis:'gross',netTarget:null,components:[]}]});
+const render=node=>renderToStaticMarkup(React.createElement(MemoryRouter,null,node));
+for(const unit of ['Monthly','Daily','Hourly']){const html=render(React.createElement(Package,{pay:pkg(unit)}));assert(html.includes('/ '+unit.toLowerCase()));if(unit!=='Monthly')assert(!html.includes('/ monthly'));}
+assert(render(React.createElement(Package,{pay:pkg('Monthly','Net of tax')})).includes('Company shoulders the employee’s income tax'));
+assert(render(React.createElement(Package,{pay:{...pkg(),state:'missing',amount:null,referenceAmount:0}})).includes('Not an approved total package'));
+assert(render(React.createElement(Package,{pay:{...pkg(),state:'conflict',amount:null}})).includes('Needs review'));
+const split={...pkg(),amount:null,unit:'Split arrangement'};split.packages.push({...split.packages[0],id:'consultant',stream:'professional_fee',unit:'Hourly'});
+const splitHtml=render(React.createElement(Package,{pay:split}));assert(splitHtml.includes('Employee salary'));assert(splitHtml.includes('Consultant fee'));assert(splitHtml.includes('Split arrangement'));
+const detail={identity:{id:'fixture',name:'Isolated fixture',status:'Active',hired:'2024-01-01',asOf:'2026-09-08'},pay:pkg(),cost:{amount:null,reason:'Missing reviewed forecast'},serviceCharge:{eligibility:'Not configured',reason:'No payout does not mean ineligible'},evaluation:{state:'missing',score:null,reason:'No finalized evaluation recorded'},attendance:{state:'unavailable',reason:'Attendance summary unavailable for this period'},cases:{state:'error',reason:'Case query failed; counts unavailable'},updatedAt:'2026-09-08T00:00:00Z'};
+const html=render(React.createElement(Detail,{data:detail}));assert(html.includes('Company cost estimate unavailable'));assert(html.includes('Case query failed'));assert(!html.includes('0 open'));assert(!html.includes('No issued NTEs recorded'));assert(html.includes('Attendance summary unavailable'));
+detail.cases={state:'available',open:1,closed:0,items:[{id:'case',subject:'Fixture allegation',status:'Awaiting explanation — no finding yet',summary:'Allegation only',outcome:null}]};
+assert(render(React.createElement(Detail,{data:detail})).includes('An allegation is not a finding'));
+console.log('PASS: isolated monthly/daily/hourly/net/missing/conflict/split rendering; error vs zero and allegation language. No network or production fixtures.');
