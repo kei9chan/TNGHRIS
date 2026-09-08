@@ -1,0 +1,11 @@
+import React,{useEffect,useState} from 'react';
+import Button from '../../components/ui/Button';
+import {workflowRpc} from './workflow';
+import type {NetInputs} from '../payroll/netPay';
+export default function PayrollATDQueue({grossId,inputs,onChange}:{grossId:string;inputs:NetInputs;onChange:(p:NetInputs)=>void}){
+ const[rows,setRows]=useState<any[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false),[version,setVersion]=useState(0);
+ useEffect(()=>{let live=true;workflowRpc('get_payroll_atd_queue',{p_gross_id:grossId}).then(v=>{if(live)setRows(v);}).catch(e=>{if(live)setError(e.message);});return()=>{live=false;};},[grossId,version]);
+ async function approve(id:string){setBusy(true);setError('');try{await workflowRpc('approve_payroll_atd',{p_gross_id:grossId,p_resolution_id:id});setVersion(x=>x+1);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+ function include(row:any){setError('');if(!inputs.payDate||inputs.payDate<row.firstDate||inputs.payDate>row.finalDate){setError('Set a reviewed payday within the authorized deduction dates first.');return;}onChange({...inputs,employees:inputs.employees.map(e=>e.employeeId===row.employeeId?{...e,deductions:[...e.deductions.filter(x=>x.sourceRef!==row.reference),{label:'Authorized salary deduction',sourceRef:row.reference,amount:String(Math.min(Number(row.remaining),Number(row.perCutoff))),kind:'voluntary',carryForward:false}]}:e)});}
+ return <details className="my-4 rounded-lg border p-3"><summary className="cursor-pointer font-semibold">Signed Authorities to Deduct — HR verified</summary>{error&&<p role="alert" className="text-red-600">{error}</p>}{!rows.length&&!error&&<p className="mt-2">No signed, HR-verified ATDs for this payroll roster.</p>}{rows.map(r=><div key={r.id} className="mt-3 space-y-2 border-t pt-3"><p className="font-semibold">{r.employeeName}</p><p>{r.basis}</p><p>PHP {r.perCutoff} per cutoff · PHP {r.remaining} remaining · {r.firstDate} to {r.finalDate}</p>{!r.financeApprovedAt?<Button disabled={busy} onClick={()=>approve(r.id)}>Finance: approve signed ATD</Button>:Number(r.remaining)>0?<Button disabled={busy} onClick={()=>include(r)}>Include authorized installment in this review</Button>:<p>Fully posted</p>}</div>)}</details>;
+}

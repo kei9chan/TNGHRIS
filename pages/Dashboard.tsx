@@ -1,4 +1,5 @@
 import ApprovalFollowupCard from '../components/dashboard/ApprovalFollowupCard';
+import NTEDeadlineQueue from '../modules/nte/NTEDeadlineQueue';
 import React from 'react';
 import AttendanceMission from '../components/attendance/AttendanceClock';
 import { useAuth } from '../hooks/useAuth';
@@ -36,6 +37,7 @@ const Dashboard: React.FC = () => {
         <AlertBanner />
         <PayrollApprovalNotice />
         <ApprovalFollowupCard />
+        <NTEDeadlineQueue />
         {renderDashboard()}
     </div>
   );

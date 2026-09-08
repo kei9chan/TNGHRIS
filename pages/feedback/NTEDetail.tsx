@@ -1,4 +1,5 @@
 import { decisionSaved } from '../../services/approvalNavigation';
+import NTEWorkflowPanel from '../../modules/nte/NTEWorkflowPanel';
 import { DisciplineEntry } from '../../types';
 import { fetchUsers } from '../../services/userService';
 import { fetchCodeOfDiscipline } from '../../services/disciplineService';
@@ -92,6 +93,7 @@ const NTEDetail: React.FC = () => {
     }, [incidentReport?.chatThread]);
 
     useEffect(() => {
+        let active = true;
         const load = async () => {
             if (!nteId) { setIsLoading(false); return; }
             setIsLoading(true);
@@ -99,35 +101,40 @@ const NTEDetail: React.FC = () => {
             setNte(null);setIncidentReport(null);
             try {
                 const nteData = await fetchNTEById(nteId);
+                if (!active) return;
                 if (!nteData) { throw new Error('This NTE is unavailable for your account. Return to approvals or ask HR to check the assignment.'); }
                 setNte(nteData);
                 const irData=await fetchNTEIncidentContext(nteData.id);
+                if (!active) return;
                 setIncidentReport(irData);
                 const [resData, usersData, disciplineData] = await Promise.all([
                     fetchResolutionsByIncidentReportId(nteData.incidentReportId).catch(()=>[]),
                     fetchUsers().catch(()=>[]),
                     fetchCodeOfDiscipline().catch(()=>({entries:[]}))
                 ]);
+                if (!active) return;
                 setIncidentReport(irData);
                 const resForEmployee = resData.find(r => r.employeeId === nteData.employeeId) || null;
                 setResolution(resForEmployee);
                 setUsers(usersData);
                 setDisciplineEntries(disciplineData.entries);
             } catch (err) {
+                if (!active) return;
                 setLoadError(err instanceof Error?err.message:'Unable to load this NTE. Please retry.');
             } finally {
-                setIsLoading(false);
+                if (active) setIsLoading(false);
             }
         };
         load();
-    }, [nteId,reload]);
+        return () => { active = false; };
+    }, [nteId,reload,user?.id]);
 
     const currentUserStep = useMemo(() => {
         if (!user || !nte || nte.status !== NTEStatus.PendingApproval) return null;
         return nte.approverSteps?.find(step => step.userId === user.id && step.status === ApproverStatus.Pending);
     }, [nte, user]);
     const rejectionStep = useMemo(() => nte?.approverSteps?.find(step => step.status === ApproverStatus.Rejected) || null, [nte]);
-    const isEmployeeAcknowledgeNeeded = user?.id === nte?.employeeId && resolution?.status === ResolutionStatus.PendingAcknowledgement;
+    const isEmployeeAcknowledgeNeeded = false; // Receipt and ATD use the protected workflow panel.
 
     const handleApprove = async () => {
         if (!user || !nte || !currentUserStep) {
@@ -360,12 +367,12 @@ const NTEDetail: React.FC = () => {
 
     const references = nte.disciplineCodeIds.map(id => disciplineEntries.find(e => e.id === id)).filter(Boolean);
 
-    const isAwaitingEmployeeResponse = user?.id === nte.employeeId && nte.status === NTEStatus.Issued;
-    const hasEmployeeResponded = nte.status !== NTEStatus.Draft && nte.status !== NTEStatus.Issued && nte.status !== NTEStatus.PendingApproval && nte.status !== NTEStatus.Rejected;
-    const canResolve = can('Feedback', Permission.Edit);
+    const isAwaitingEmployeeResponse = false; // The protected receipt-based panel owns submissions.
+    const hasEmployeeResponded = false;
+    const canResolve = false; // Decisions use the protected server workflow below.
 
     // Can schedule hearing if response submitted or issued (but not closed), and user is admin/HR
-    const canScheduleHearing = canResolve && nte.status !== NTEStatus.Closed && nte.status !== NTEStatus.Draft && nte.status !== NTEStatus.PendingApproval && nte.status !== NTEStatus.Rejected;
+    const canScheduleHearing = can('Feedback', Permission.Edit) && user?.id !== nte.employeeId && nte.status !== NTEStatus.Closed && nte.status !== NTEStatus.Draft && nte.status !== NTEStatus.PendingApproval && nte.status !== NTEStatus.Rejected;
 
     const userHasAcknowledgedHearing = nte.hearingDetails?.acknowledgments?.some(ack => ack.userId === user?.id);
     const isHearingParticipant = user && (user.id === nte.employeeId || nte.hearingDetails?.panelIds.includes(user.id));
@@ -382,7 +389,7 @@ const NTEDetail: React.FC = () => {
                 <div className="flex flex-wrap justify-between items-start gap-2">
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white">NTE: {formatNTEDisplayId(nte.nteNumber) || nte.id}</h1>
                     <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${nte.status === NTEStatus.Issued ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                        {nte.status}
+                        {nte.status===NTEStatus.Closed?'Case Closed':nte.responseStage||nte.status}
                     </span>
                 </div>
                 <p className="text-lg text-gray-600 dark:text-gray-400">{incidentReport.category}</p>
@@ -398,11 +405,12 @@ const NTEDetail: React.FC = () => {
                     </div>
                     <div className="sm:col-span-2">
                         <dt className="font-medium text-gray-500 dark:text-gray-400">Response Deadline</dt>
-                        <dd className="mt-1 text-gray-900 dark:text-white font-semibold">{new Date(nte.deadline).toLocaleString()}</dd>
+                        <dd className="mt-1 text-gray-900 dark:text-white font-semibold">Five calendar days from documented receipt. See the receipt and explanation panel below.</dd>
                     </div>
                 </dl>
             </div>
-
+            <NTEWorkflowPanel key={nte.id} nte={nte} onChanged={()=>setReload(x=>x+1)}/>
+            {canScheduleHearing&&<Button variant="secondary" onClick={()=>setIsHearingModalOpen(true)}>Schedule administrative hearing</Button>}
             {currentUserStep && (
                 <Card title="Your NTE Approval Is Required" className="border-yellow-400 bg-yellow-50 dark:bg-yellow-900/40">
                     <p className="text-sm">Review the notice below, then record your decision. Approval is not submitted until you press Approve.</p>

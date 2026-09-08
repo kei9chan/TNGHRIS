@@ -158,8 +158,8 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
           : available[0]?.id;
         setSelectedEmployeeIds(initialRecipientId ? [initialRecipientId] : []);
 
-        const threeDaysFromNow = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
-        setDeadline(threeDaysFromNow.toISOString().slice(0, 16));
+        // Compatibility payload only; the actual deadline is recorded from receipt.
+        setDeadline(new Date(Date.now()+5*24*60*60*1000).toISOString().slice(0,16));
 
         setAllegations(incidentReport.description);
         setMemoIds([]);
@@ -425,7 +425,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
               value={manualNteNumber} 
               onChange={e => setManualNteNumber(e.target.value)} 
             />
-            <Input label="Response Deadline" id="deadline" type="datetime-local" value={deadline} onChange={e => setDeadline(e.target.value)} />
+            <p className="rounded-lg bg-violet-50 p-3 text-violet-950 dark:bg-violet-950 dark:text-violet-100">The response deadline is five calendar days after documented receipt, at 11:59 PM Philippine time. Drafting or sending does not start the countdown.</p>
             <Textarea label="NTE Details / Allegations" value={allegations} onChange={e => setAllegations(e.target.value)} rows={5} />
             <Input
               label="Additional Evidence/Support Link"
@@ -573,7 +573,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
           <div><strong>Employee:</strong> {nte.employeeName}</div>
           <div><strong>Status:</strong> {nte.status}</div>
           <div><strong>Issued:</strong> {new Date(nte.issuedDate).toLocaleDateString()}</div>
-          <div><strong>Deadline:</strong> {new Date(nte.deadline).toLocaleDateString()}</div>
+          <div><strong>Deadline:</strong> Five calendar days from documented receipt, at 11:59 PM Philippine time.</div>
         </div>
 
         <Textarea

@@ -1036,12 +1036,12 @@ const ManagerDashboard: React.FC = () => {
         // 0. NTE Responses for ME (Manager as Employee)
         const myPendingNTEs = ntes.filter(n => n.employeeId === user.id && n.status === NTEStatus.Issued);
         myPendingNTEs.forEach(nte => {
-            const isOverdue = new Date(nte.deadline) < new Date();
+            const isOverdue = !!nte.receiptRecordedAt && new Date(nte.deadline) < new Date();
             items.push({
                 id: `nte-response-${nte.id}`,
                 icon: <DocumentTextIcon {...iconProps} />,
                 title: "Response Required: Notice to Explain",
-                subtitle: isOverdue ? `OVERDUE! Deadline passed.` : `Deadline: ${getCountdownString(new Date(nte.deadline))}`,
+                subtitle: !nte.receiptRecordedAt ? 'Acknowledge receipt to start the response period' : isOverdue ? 'Response period ended — management review' : `Deadline: ${getCountdownString(new Date(nte.deadline))}`,
                 date: new Date(nte.issuedDate).toLocaleDateString(),
                 link: `/feedback/nte/${nte.id}`,
                 colorClass: isOverdue ? 'bg-red-600 animate-pulse' : 'bg-red-500',
