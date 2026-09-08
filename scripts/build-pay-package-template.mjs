@@ -3,9 +3,10 @@ import {Workbook,SpreadsheetFile} from '@oai/artifact-tool';
 const out=process.argv[2];if(!out)throw new Error('Pass the output directory. Run with CODEX_PRIMARY_RUNTIME_NODE from an artifact-tool-enabled temporary directory.');
 const headers=['Employee code','Business unit','Pay type','Effective date','Amount unit','Approved basic pay / fee','Existing de minimis','Existing reimbursable','Salary arrangement','Agreed net amount','Arrangement document','Tax treatment','Exemption / tax basis',...[1,2,3].flatMap(i=>[`Extra ${i} name`,`Extra ${i} amount`,`Extra ${i} frequency`,`Extra ${i} payable date`]),'Salary source','PAN ID (if applicable)','Source document / note','Reason for this record','Consultant agreement','Consultant tax document'];
 const wb=Workbook.create();const input=wb.worksheets.add('Pay Input'),examples=wb.worksheets.add('Examples'),guide=wb.worksheets.add('Guide');
-const mode=['Gross salary','Net - company covers tax','Net - company covers tax and employee shares','Custom - needs review'];
-const tax=['Standard - Finance reviews','Exemption requested - evidence required','Custom - needs review'];
+const mode=['Gross salary','Company pays income tax','Company pays income tax and employee contributions','Custom - needs review'];
+const tax=['Normal tax calculation','Exemption requested - evidence required','Custom - needs review'];
 const bus=['The Fun Roof','The Dessert Museum','Gootopia SM North Edsa','Bakebe - S Maison','Bakebe - SM Aura','Gootopia - SM MOA','Inflatable Island Beach Club','TNG (Corporation)'];
+const fields=wb.worksheets.add('Field Guide');
 const extra=['Meal allowance','Transportation allowance','Communication allowance','Project completion fee'];
 const date=new Date('2026-09-01T00:00:00Z');
 function sample(code,type,base,arrangement,target,extraName='',extraAmount=null){return [code,'The Fun Roof',type,date,'Monthly',base,0,0,arrangement,target,arrangement===mode[0]?'':'Approved agreement / sample only',tax[0],'',extraName,extraAmount,extraName?'Recurring':'','',...Array(8).fill(''),type==='Consultant fee'?'Approved consultant agreement':'Current HRIS record','','Replace with actual document','Example only - replace with approved facts',type==='Consultant fee'?'CONSULTING-SAMPLE-003':'',type==='Consultant fee'?'REVIEWED-TAX-SAMPLE-003':''];}
@@ -28,9 +29,37 @@ for(const s of [input,examples]){
 }
 examples.getRangeByIndexes(1,0,rows.length,headers.length).values=rows;
 examples.getRangeByIndexes(1,0,rows.length,headers.length).format={fill:'#FEF3C7',font:{color:'#92400E'},rowHeight:62,wrapText:true};
+const fieldHelp={
+'Employee code':['Required','Copy from Employee codes you can access on the upload page. Do not invent an ID. Missing employee? Register in HRIS first.','TNG-EXAMPLE-001 (example only)'],
+'Business unit':['Required dropdown','Choose the employee payroll group exactly as listed.','The Fun Roof'],
+'Pay type':['Required dropdown','Employee salary; a separate consulting engagement needs another row.','Employee salary'],
+'Effective date':['Required date','Actual approved start date of this pay arrangement, not automatically the hire date.','2026-09-01'],
+'Amount unit':['Required dropdown','Basis of the approved amount. Daily/hourly is not monthly salary.','Monthly'],
+'Approved basic pay / fee':['Required amount','Copy approved basic pay from HRIS/PAN. Do not replace it with guessed gross-up.','25000'],
+'Existing de minimis':['If recorded in HRIS','Must exactly match the existing approved allowance; do not repeat under Extras.','1500 (example only)'],
+'Existing reimbursable':['If recorded in HRIS','Must exactly match HRIS/PAN; blank means none in this upload.','1000 (example only)'],
+'Salary arrangement':['Required dropdown','Gross salary = employee deductions apply. Company pays income tax = tax covered only. Company pays income tax and employee contributions = both covered.','Choose the approved arrangement'],
+'Agreed net amount':['Net arrangements only','Approved target for this payment unit. Tax-only target is before employee contributions; tax-plus-contributions target is after both, before loans/other deductions.','30000 (example only)'],
+'Arrangement document':['Net/custom only','Approved JO, PAN or signed agreement explicitly stating net terms. Enter title/reference and date. A generic JO without net terms is insufficient.','Approved JO for [employee], [date], section [x] confirming tax coverage'],
+'Tax treatment':['Dropdown; blank = normal','Choose Normal tax calculation even when company pays tax. Exemption requires a genuine separate basis and evidence.','Normal tax calculation'],
+'Exemption / tax basis':['Only exemption/custom','Actual supporting basis and document; do not use net salary as the basis.','Leave blank for normal tax calculation'],
+'Salary source':['Required dropdown','Where approved salary comes from.','Current HRIS record'],
+'PAN ID (if applicable)':['Approved PAN only','Copy actual PAN record ID from HRIS; otherwise leave blank.','Leave blank for Current HRIS record'],
+'Source document / note':['Optional descriptive text','Actual source reference. Blank uses Salary source.','Current HRIS record checked on [date]'],
+'Reason for this record':['Required dropdown or text','Why this package is being recorded.','Initial setup'],
+'Consultant agreement':['Consultant row only','Actual distinct consulting engagement reference, not employee salary agreement.','Signed consulting agreement [reference/date]'],
+'Consultant tax document':['Consultant row only','Actual reviewed consultant withholding/tax-profile reference.','Finance-reviewed tax profile [reference]']
+};
+for(const i of [1,2,3]){fieldHelp[`Extra ${i} name`]=['Optional dropdown or custom','Name an additional approved component. Do not repeat existing allowances.','Meal allowance'];fieldHelp[`Extra ${i} amount`]=['When Extra name is filled','Approved component amount.','1000 (example only)'];fieldHelp[`Extra ${i} frequency`]=['Dropdown','Recurring uses the package amount unit. One time requires a payable date.','Recurring'];fieldHelp[`Extra ${i} payable date`]=['One time only','Approved payment date. Leave blank for recurring.','2026-12-15'];}
+const fieldRows=[['Field name','When to fill','What to enter','Example / choice'],...headers.map(h=>[h,...fieldHelp[h]])];
+fields.getRange(`A1:D${fieldRows.length}`).values=fieldRows;
+fields.getRange(`A1:D${fieldRows.length}`).format={rowHeight:76,wrapText:true,font:{name:'Calibri',size:11}};
+for(const [col,width] of [['A',30],['B',24],['C',75],['D',48]])fields.getRange(`${col}1:${col}${fieldRows.length}`).format.columnWidth=width;
+fields.getRange('A1:D1').format={fill:'#3730A3',font:{bold:true,color:'#FFFFFF'}};
+fields.freezePanes.freezeRows(1);
 const info=[
  ['PAY INPUT — FILL ONE TAB ONLY','How to use this workbook'],
- ['START HERE','Fill Pay Input only. Use Examples as a guide; replace sample details with approved facts. Upload on Payroll → Pay Packages, review the preview, then save drafts. Never relabel a net agreement as Gross.'],
+ ['START HERE','Fill Pay Input only. Field Guide explains EVERY field and gives exact choices/examples. Use Examples as a guide; replace sample details with approved facts. Upload on Payroll → Pay Packages, review the preview, then save drafts. Never relabel a net agreement as Gross.'],
  ['1. Use Pay Input','One continuous row contains employee, salary, net/gross agreement and allowances. No package keys. Examples and this Guide are NOT imported.'],
  ['2. Approved basic pay / fee','Copy the amount and unit from Current HRIS / approved PAN or consultant agreement. Do not change approved basic salary to a guessed gross-up.'],
  ['3. Existing allowances','Enter the existing HRIS de minimis and reimbursable amounts in their own columns. They must match the source; a de minimis name alone does not make it tax exempt.'],
@@ -52,7 +81,7 @@ const info=[
  ['PhilHealth employer procedure','https://www.philhealth.gov.ph/partners/employers/pay_procedures.php']];
 guide.getRange(`A1:B${info.length}`).values=info;guide.getRange(`A1:B${info.length}`).format={rowHeight:56,wrapText:true,font:{name:'Calibri',size:11}};guide.getRange(`A1:A${info.length}`).format.columnWidth=32;guide.getRange(`B1:B${info.length}`).format.columnWidth=110;guide.getRange('A1:B1').format={fill:'#3730A3',font:{bold:true,color:'#FFFFFF'}};
 await fs.mkdir(out,{recursive:true});
-for(const [s,ranges] of [[input,['A1:H5','I1:M5','N1:Q5','Z1:AE5']],[examples,['A1:H6','I1:M6','N1:Q6','Z1:AE6']],[guide,[`A1:B${info.length}`]]])for(const [n,range] of ranges.entries()){const blob=await wb.render({sheetName:s.name,range,scale:1});await fs.writeFile(`${out}/easy-${s.name.replaceAll(' ','-')}-${n}.png`,new Uint8Array(await blob.arrayBuffer()));}
+for(const [s,ranges] of [[input,['A1:H5','I1:M5','N1:Q5','Z1:AE5']],[examples,['A1:H6','I1:M6','N1:Q6','Z1:AE6']],[guide,[`A1:B${info.length}`]],[fields,['A1:D12','A13:D24','A25:D32']]])for(const [n,range] of ranges.entries()){const blob=await wb.render({sheetName:s.name,range,scale:1});await fs.writeFile(`${out}/easy-${s.name.replaceAll(' ','-')}-${n}.png`,new Uint8Array(await blob.arrayBuffer()));}
 console.log((await wb.inspect({kind:'table',range:'Examples!A1:M6',tableMaxRows:6,tableMaxCols:13,maxChars:2400})).ndjson);
 console.log((await wb.inspect({kind:'match',searchTerm:'#REF!|#DIV/0!|#VALUE!|#NAME\\?|#N/A',options:{useRegex:true,maxResults:20},summary:'Error scan'})).ndjson);
 const xlsx=await SpreadsheetFile.exportXlsx(wb);await xlsx.save(`${out}/Pay-Packages-Batch-Template.xlsx`);
