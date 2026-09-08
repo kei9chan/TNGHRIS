@@ -203,7 +203,6 @@ const Header: React.FC = () => {
                         </Link>
                         <div className="hidden min-w-0 flex-1 lg:block">
                             <div className="flex items-baseline space-x-4 overflow-x-auto scrollbar-hide">
-                                {isBod(user) && <RouterNavLink to="/employee-snapshot" className="whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium text-violet-200 hover:bg-slate-700">Employee Snapshot</RouterNavLink>}
                                 {NAV_LINKS.map((link) => (
                                     <NavItem key={link.name} link={link} hasEvaluationAccess={hasEvaluationAccess} />
                                 ))}
@@ -280,7 +279,6 @@ const Header: React.FC = () => {
                         </div>
                         <nav className="flex-1 overflow-y-auto overscroll-contain px-4 py-4" aria-label="Mobile navigation">
                             <RouterNavLink to="/approvals" onClick={() => setMobileMenuOpen(false)} className={({ isActive }) => `mb-4 flex min-h-11 items-center rounded-xl px-3 py-2.5 text-sm font-bold ${isActive ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-200'}`}>Approval Center</RouterNavLink>
-                            {isBod(user) && <Link to="/employee-snapshot" onClick={() => setMobileMenuOpen(false)} className="mb-3 block rounded-lg bg-violet-100 p-3 font-semibold text-violet-900">Employee Snapshot · BOD only</Link>}
                             <MobileNavTree links={visibleMobileLinks} onNavigate={() => setMobileMenuOpen(false)} />
                         </nav>
                     </aside>

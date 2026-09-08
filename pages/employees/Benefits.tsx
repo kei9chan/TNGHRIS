@@ -4,13 +4,13 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
-import { BenefitType, BenefitRequest, Permission, Role, BenefitRequestStatus, User, NotificationType } from '../../types';
+import { BenefitType, BenefitRequest, Permission, Role, BenefitRequestStatus, NotificationType } from '../../types';
 import { logActivity } from '../../services/auditService';
+import { reviewBenefitRequest } from '../../services/benefitApprovalService';
 import { useSettings } from '../../context/SettingsContext';
 import { supabase } from '../../services/supabaseClient';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import Modal from '../../components/ui/Modal';
 import BenefitTypeTable from '../../components/employees/BenefitTypeTable';
 import BenefitTypeModal from '../../components/employees/BenefitTypeModal';
 import BenefitRequestModal from '../../components/employees/BenefitRequestModal';
@@ -20,7 +20,6 @@ import BenefitFulfillmentTable from '../../components/employees/BenefitFulfillme
 import FulfillmentModal from '../../components/employees/FulfillmentModal';
 import RejectReasonModal from '../../components/feedback/RejectReasonModal';
 import EditableDescription from '../../components/ui/EditableDescription';
-import EmployeeMultiSelect from '../../components/feedback/EmployeeMultiSelect';
 
 const getStatusColor = (status: BenefitRequestStatus) => {
     switch (status) {
@@ -143,19 +142,10 @@ const Benefits: React.FC = () => {
     const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
     const [requestToReject, setRequestToReject] = useState<BenefitRequest | null>(null);
 
-    // Endorsement Modal State
-    const [isEndorseModalOpen, setIsEndorseModalOpen] = useState(false);
-    const [requestToEndorse, setRequestToEndorse] = useState<BenefitRequest | null>(null);
-    const [selectedApprovers, setSelectedApprovers] = useState<User[]>([]);
-
     const canManage = can('Benefits', Permission.Manage);
-    // Assuming HR/Admin can manage and approve
+    const isHRManager = user?.role === Role.HRManager;
     const isAdminOrHR = user?.role === Role.Admin || user?.role === Role.HRManager || user?.role === Role.HRStaff;
     const isBOD = user?.role === Role.BOD || user?.role === Role.GeneralManager;
-
-    const bodApproverPool = useMemo(() => {
-        return [] as User[];
-    }, []);
 
     // Load benefit types from DB
     useEffect(() => {
@@ -291,37 +281,6 @@ const Benefits: React.FC = () => {
                 .single();
             if (error) throw error;
             const mapped = mapRequestRow(data as BenefitRequestRow);
-            const approverRoles = [Role.Admin, Role.HRManager, Role.HRStaff];
-            let approverIds: string[] = [];
-
-            try {
-                const { data: approverRows } = await supabase
-                    .from('hris_users')
-                    .select('id, role')
-                    .in('role', approverRoles);
-                approverIds = (approverRows || [])
-                    .map((row: any) => row?.id)
-                    .filter(Boolean);
-            } catch (err) {
-                console.warn('Failed to load benefit approvers from DB.', err);
-            }
-
-            if (approverIds.length > 0) {
-                const createdAt = new Date();
-                const notifRows = approverIds.map(approverId => ({
-                    user_id: approverId,
-                    type: NotificationType.BENEFIT_REQUEST_SUBMITTED,
-                    title: 'Benefit Approval Required',
-                    message: `${mapped.employeeName} submitted a benefit request for ${mapped.benefitTypeName}.`,
-                    link: '/employees/benefits?tab=approvals',
-                    is_read: false,
-                    created_at: createdAt.toISOString(),
-                    related_entity_id: mapped.id,
-                }));
-                supabase.from('notifications').insert(notifRows).then(({ error }) => {
-                    if (error) console.error('Failed to insert benefit-request notifications', error);
-                });
-            }
             setAllRequests(prev => [mapped, ...prev]);
             setMyRequests(prev => [mapped, ...prev]);
             logActivity(user, 'CREATE', 'BenefitRequest', mapped.id, `Requested ${mapped.benefitTypeName}`);
@@ -372,163 +331,35 @@ const Benefits: React.FC = () => {
             .sort((a, b) => new Date(b.fulfilledAt || b.submissionDate).getTime() - new Date(a.fulfilledAt || a.submissionDate).getTime());
     }, [allRequests]);
 
-    const handleHRApprove = (request: BenefitRequest) => {
+    const applyReviewedRequest = (updated: BenefitRequest) => {
+        setAllRequests(prev => prev.map(request => request.id === updated.id ? updated : request));
+        setMyRequests(prev => prev.map(request => request.id === updated.id ? updated : request));
+    };
+
+    const handleHRApprove = async (request: BenefitRequest) => {
         if (!user) return;
-
-        const benefitType = benefitTypes.find(bt => bt.id === request.benefitTypeId);
-
-        if (benefitType?.requiresBodApproval) {
-            // Open Endorsement Modal
-            setRequestToEndorse(request);
-            setSelectedApprovers([]); // Reset selection
-            setIsEndorseModalOpen(true);
-        } else {
-            // Direct Approval
-            const approve = async () => {
-                try {
-                    const { data, error } = await supabase.from('benefit_requests')
-                        .update({
-                            status: BenefitRequestStatus.Approved,
-                            hr_endorsed_by: user.id,
-                            hr_endorsed_at: new Date().toISOString(),
-                            updated_at: new Date().toISOString()
-                        })
-                        .eq('id', request.id)
-                        .select('*')
-                        .single();
-                    if (error) throw error;
-                    const mapped = mapRequestRow(data as BenefitRequestRow);
-                    setAllRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
-                    setMyRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
-                    supabase.from('notifications').insert({
-                        user_id: request.employeeId,
-                        type: NotificationType.AWARD_RECEIVED,
-                        title: 'Benefit Approved',
-                        message: `Your request for ${request.benefitTypeName} has been approved by HR.`,
-                        link: '/employees/benefits',
-                        is_read: false,
-                        created_at: new Date().toISOString(),
-                        related_entity_id: request.id,
-                    }).then(({ error }) => { if (error) console.error('Notification insert failed', error); });
-                    logActivity(user, 'APPROVE', 'BenefitRequest', request.id, `HR approved request for ${request.benefitTypeName}`);
-                    alert(`Request approved successfully.`);
-                } catch (err) {
-                    console.error('Failed to approve request', err);
-                    alert('Failed to approve request. Please try again.');
-                }
-            };
-            approve();
+        try {
+            const updated = await reviewBenefitRequest(request.id, true);
+            applyReviewedRequest(updated);
+            logActivity(user, 'APPROVE', 'BenefitRequest', request.id, `HR Manager approved ${request.benefitTypeName}; routed automatically to BOD / General Manager.`);
+            alert('HR review recorded. The request is now available to any BOD or General Manager for final approval.');
+        } catch (err: any) {
+            console.error('Failed to approve benefit request', err);
+            alert(err?.message || 'Failed to approve request. Please try again.');
         }
     };
 
-    const handleConfirmEndorse = () => {
-        if (!user || !requestToEndorse) return;
-
-        if (selectedApprovers.length === 0) {
-            alert("Please select at least one Board Member.");
-            return;
-        }
-
-        const endorse = async () => {
-            try {
-                const { data, error } = await supabase.from('benefit_requests')
-                    .update({
-                        status: BenefitRequestStatus.PendingBOD,
-                        hr_endorsed_by: user.id,
-                        hr_endorsed_at: new Date().toISOString(),
-                        updated_at: new Date().toISOString()
-                    })
-                    .eq('id', requestToEndorse.id)
-                    .select('*')
-                    .single();
-                if (error) throw error;
-                const mapped = mapRequestRow(data as BenefitRequestRow);
-                setAllRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
-                setMyRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
-                const notifRows = selectedApprovers.map(approver => ({
-                    user_id: approver.id,
-                    type: NotificationType.AWARD_APPROVAL_REQUEST,
-                    title: 'Benefit Approval Required',
-                    message: `HR has endorsed a benefit request from ${requestToEndorse.employeeName} for your approval.`,
-                    link: '/employees/benefits?tab=approvals',
-                    is_read: false,
-                    created_at: new Date().toISOString(),
-                    related_entity_id: requestToEndorse.id,
-                }));
-                supabase.from('notifications').insert(notifRows).then(({ error }) => { if (error) console.error('Endorsement notification failed', error); });
-                logActivity(user, 'APPROVE', 'BenefitRequest', requestToEndorse.id, `HR endorsed request for ${requestToEndorse.benefitTypeName} to Board.`);
-                alert(`Request endorsed to ${selectedApprovers.length} board member(s).`);
-            } catch (err) {
-                console.error('Failed to endorse request', err);
-                alert('Failed to endorse request. Please try again.');
-            } finally {
-                setIsEndorseModalOpen(false);
-                setRequestToEndorse(null);
-            }
-        };
-        endorse();
-    };
-
-    const handleBODApprove = (request: BenefitRequest) => {
+    const handleBODApprove = async (request: BenefitRequest) => {
         if (!user) return;
-
-        const bodApprove = async () => {
-            try {
-                const { data, error } = await supabase.from('benefit_requests')
-                    .update({
-                        status: BenefitRequestStatus.Approved,
-                        bod_approved_by: user.id,
-                        bod_approved_at: new Date().toISOString(),
-                        updated_at: new Date().toISOString()
-                    })
-                    .eq('id', request.id)
-                    .select('*')
-                    .single();
-                if (error) throw error;
-                const mapped = mapRequestRow(data as BenefitRequestRow);
-                setAllRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
-                setMyRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
-
-                supabase.from('notifications').insert({
-                    user_id: request.employeeId,
-                    type: NotificationType.AWARD_RECEIVED,
-                    title: 'Benefit Approved',
-                    message: `Your request for ${request.benefitTypeName} has been approved by the Board.`,
-                    link: '/employees/benefits',
-                    is_read: false,
-                    created_at: new Date().toISOString(),
-                    related_entity_id: request.id,
-                }).then(({ error }) => { if (error) console.error('BOD approval notification failed', error); });
-
-                // Notify HR fulfillment team
-                supabase.from('hris_users')
-                    .select('id')
-                    .in('role', [Role.Admin, Role.HRManager, Role.HRStaff])
-                    .then(({ data: hrRows }) => {
-                        if (!hrRows?.length) return;
-                        const hrNotifs = hrRows.map((hr: any) => ({
-                            user_id: hr.id,
-                            type: NotificationType.AWARD_APPROVAL_REQUEST,
-                            title: 'Benefit Ready for Fulfillment',
-                            message: `Board approved benefit for ${request.employeeName}. Please fulfill.`,
-                            link: '/employees/benefits?tab=fulfillment',
-                            is_read: false,
-                            created_at: new Date().toISOString(),
-                            related_entity_id: request.id,
-                        }));
-                        supabase.from('notifications').insert(hrNotifs).then(({ error }) => {
-                            if (error) console.error('HR fulfillment notification failed', error);
-                        });
-                    });
-
-                logActivity(user, 'APPROVE', 'BenefitRequest', request.id, `Board approved request for ${request.benefitTypeName}`);
-                alert("Request approved by Board. HR has been notified for fulfillment.");
-            } catch (err) {
-                console.error('Failed to record board approval', err);
-                alert('Failed to approve request. Please try again.');
-            }
-        };
-        bodApprove();
+        try {
+            const updated = await reviewBenefitRequest(request.id, true);
+            applyReviewedRequest(updated);
+            logActivity(user, 'APPROVE', 'BenefitRequest', request.id, `Final benefit approval recorded for ${request.benefitTypeName}.`);
+            alert('Final approval recorded. HR has been notified for fulfillment.');
+        } catch (err: any) {
+            console.error('Failed to record final benefit approval', err);
+            alert(err?.message || 'Failed to approve request. Please try again.');
+        }
     };
 
     const handleReject = (request: BenefitRequest) => {
@@ -541,35 +372,12 @@ const Benefits: React.FC = () => {
 
         const rejectReq = async () => {
             try {
-                const { data, error } = await supabase.from('benefit_requests')
-                    .update({
-                        status: BenefitRequestStatus.Rejected,
-                        rejection_reason: reason,
-                        updated_at: new Date().toISOString()
-                    })
-                    .eq('id', requestToReject.id)
-                    .select('*')
-                    .single();
-                if (error) throw error;
-                const mapped = mapRequestRow(data as BenefitRequestRow);
-                setAllRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
-                setMyRequests(prev => prev.map(r => r.id === mapped.id ? mapped : r));
-
-                supabase.from('notifications').insert({
-                    user_id: requestToReject.employeeId,
-                    type: NotificationType.TICKET_UPDATE_REQUESTER,
-                    title: 'Benefit Request Rejected',
-                    message: `Your request for ${requestToReject.benefitTypeName} was rejected. Reason: ${reason}`,
-                    link: '/employees/benefits',
-                    is_read: false,
-                    created_at: new Date().toISOString(),
-                    related_entity_id: requestToReject.id,
-                }).then(({ error }) => { if (error) console.error('Rejection notification failed', error); });
-
+                const mapped = await reviewBenefitRequest(requestToReject.id, false, reason);
+                applyReviewedRequest(mapped);
                 logActivity(user, 'REJECT', 'BenefitRequest', requestToReject.id, `Rejected request. Reason: ${reason}`);
-            } catch (err) {
+            } catch (err: any) {
                 console.error('Failed to reject request', err);
-                alert('Failed to reject request. Please try again.');
+                alert(err?.message || 'Failed to reject request. Please try again.');
             } finally {
                 setIsRejectModalOpen(false);
                 setRequestToReject(null);
@@ -647,10 +455,10 @@ const Benefits: React.FC = () => {
             <div className="flex space-x-2 border-b border-gray-200 dark:border-gray-700 pb-2 overflow-x-auto">
                 <button className={getTabClass('my_benefits')} onClick={() => handleTabChange('my_benefits')}>My Benefits</button>
 
-                {(isAdminOrHR || isBOD) && (
+                {(isHRManager || isBOD) && (
                     <button className={getTabClass('approvals')} onClick={() => handleTabChange('approvals')}>
                         Approvals
-                        {isAdminOrHR && pendingHRRequests.length > 0 && (
+                        {isHRManager && pendingHRRequests.length > 0 && (
                             <span className="ml-2 bg-red-100 text-red-800 text-xs font-semibold px-2 py-0.5 rounded-full">{pendingHRRequests.length}</span>
                         )}
                         {isBOD && pendingBODRequests.length > 0 && (
@@ -773,7 +581,7 @@ const Benefits: React.FC = () => {
 
             {activeTab === 'approvals' && (
                 <div className="space-y-6">
-                    {isAdminOrHR && (
+                    {isHRManager && (
                         <>
                             <Card title="Pending HR Review">
                                 <BenefitApprovalsTable
@@ -841,35 +649,6 @@ const Benefits: React.FC = () => {
                     benefitType={requestingBenefit}
                     onSave={handleSubmitRequest}
                 />
-            )}
-
-            {/* Endorsement Modal for BOD Selection */}
-            {isEndorseModalOpen && requestToEndorse && (
-                <Modal
-                    isOpen={isEndorseModalOpen}
-                    onClose={() => setIsEndorseModalOpen(false)}
-                    title="Endorse to Board of Directors"
-                    footer={
-                        <div className="flex justify-end space-x-2 w-full">
-                            <Button variant="secondary" onClick={() => setIsEndorseModalOpen(false)}>Cancel</Button>
-                            <Button onClick={handleConfirmEndorse} disabled={selectedApprovers.length === 0}>Endorse & Notify</Button>
-                        </div>
-                    }
-                >
-                    <div className="space-y-4">
-                        <div className="p-4 bg-blue-50 dark:bg-blue-900/30 rounded-md text-blue-800 dark:text-blue-200 text-sm">
-                            <p className="font-semibold">Board Approval Required</p>
-                            <p>This benefit request requires approval from the Board of Directors. Please select the board members who should be notified to review this request.</p>
-                            <p className="mt-2">Only one approval is required to proceed, but all selected members will be notified.</p>
-                        </div>
-                        <EmployeeMultiSelect
-                            label="Request Approval From (at least one BOD required)"
-                            allUsers={bodApproverPool}
-                            selectedUsers={selectedApprovers}
-                            onSelectionChange={setSelectedApprovers}
-                        />
-                    </div>
-                </Modal>
             )}
 
             <FulfillmentModal
