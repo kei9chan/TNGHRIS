@@ -11,6 +11,16 @@ assert.throws(()=>m.validateLink('javascript:alert(1)'),/HTTPS/);
 assert.throws(()=>m.validateLink('https://user:password@example.com'),/credentials/);
 assert.match(m.deadlineLabel('2026-09-14T16:00:00Z'),/Sep 14, 2026.*11:59 PM PHT/i);
 const migration=await readFile('supabase/migrations/20260908111156_nte_receipt_response_decision_workflow.sql','utf8');
+assert.equal(m.normalizeWorkflow('get_nod_workflow',{decision:{id:null,review_fields:null,approver_steps:null}}).decision,null);
+assert.deepEqual(m.normalizeWorkflow('get_nod_workflow',{decision:{id:'decision',review_fields:null,approver_steps:null}}).decision,{id:'decision',review_fields:{},approver_steps:[]});
+assert.deepEqual(m.normalizeWorkflow('get_nte_response_workflow',{receipt:{nte_id:null},events:null}),{receipt:null,events:[]});
+const receipt={nte_id:'case',received_at:'2026-09-08T10:00:00Z',deadline_exclusive:'2026-09-13T16:00:00Z'};
+assert.deepEqual(m.normalizeWorkflow('get_nte_response_workflow',{receipt}).receipt,receipt);
+const implementation={resolution_id:'decision',status:'Pending Schedule'};
+assert.deepEqual(m.normalizeWorkflow('get_nod_workflow',{implementation}).implementation,implementation);
+for(const missing of [null,undefined,'','invalid']){assert.equal(m.phTime(missing),'Not recorded');assert.equal(m.deadlineLabel(missing),'Not recorded');}
+assert.doesNotMatch(await readFile('pages/Dashboard.tsx','utf8'),/NTEDeadlineQueue/);
+assert.match(await readFile('pages/feedback/DisciplinaryCases.tsx','utf8'),/<NTEDeadlineQueue/);
 const attachmentFunction=migration.match(/create function private\.nte_attachment_allowed[\s\S]*?end \$\$;/)?.[0]||'';
 const mutationGuard=migration.match(/create function private\.guard_nte_response_fields[\s\S]*?end \$\$;/)?.[0]||'';
 assert.doesNotMatch(attachmentFunction,/\b(?:tg_op|new\.|old\.)/i);
