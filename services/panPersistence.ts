@@ -17,7 +17,9 @@ export function panPayload(record: Partial<PAN>, creatorId: string) {
   const particulars: any = { ...record.particulars };
   for (const side of ['from', 'to'] as const) {
     const source = record.particulars?.[side];
-    particulars[side] = { ...source, salary: Object.fromEntries(['basic','deminimis','reimbursable'].map(field => [field, panAmount(source?.salary?.[field], `${side === 'from' ? 'Current' : 'New'} ${field}`)])) };
+    const payBasis = source?.salary?.payBasis || 'gross';
+    if (!['gross','net_tax'].includes(payBasis)) throw new Error(`${side === 'from' ? 'Current' : 'New'} salary basis: choose Gross or Net.`);
+    particulars[side] = { ...source, salary: { ...Object.fromEntries(['basic','deminimis','reimbursable'].map(field => [field, panAmount(source?.salary?.[field], `${side === 'from' ? 'Current' : 'New'} ${field}`)])), payBasis } };
   }
   // Production stores PAN particulars as JSON. Preserve template metadata here,
   // without depending on optional columns from a different schema version.

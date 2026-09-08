@@ -13,7 +13,7 @@ export type PayContext = {
  scopes: {id: string; name: string; canEdit: boolean; canApprove: boolean}[];
  legacy: {rateType: string | null; rateAmount: number | null; salaryBasic: number | null; deminimis: number | null; reimbursable: number | null; taxStatus: string | null};
  packages: PayPackage[];
- sources: {id:string|null;label:string;baseAmount:number|null;rateType:string|null;deminimis:number|null;reimbursable:number|null;effectiveFrom?:string;conflict:boolean}[];
+ sources: {id:string|null;label:string;baseAmount:number|null;rateType:string|null;deminimis:number|null;reimbursable:number|null;payBasis?:'gross'|'net_tax';effectiveFrom?:string;conflict:boolean}[];
  sourceMatches:boolean|null;
  settings: {id: string; effective_from: string; holiday_handling: string; policy_ref: string; calendar: {startDay:number;endDay:number;payDay:number;payMonthOffset:number}[]}[];
  bank: {bankName: string;accountLast4: string;accountType: string;fingerprint: string;canVerify:boolean;verified:boolean} | null;

@@ -607,10 +607,13 @@ export interface HolidayPolicy {
 // USER & AUTHENTICATION TYPES
 // =================================================================================
 
+export type SalaryPayBasis = 'gross' | 'net_tax';
+
 export interface SalaryBreakdown {
   basic: number;
   deminimis: number;
   reimbursable: number;
+  payBasis?: SalaryPayBasis;
 }
 
 export enum RateType {
