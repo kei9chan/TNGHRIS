@@ -23,8 +23,10 @@ const PayPackageBatchUpload:React.FC<{directory:{id:string;name:string;employeeC
     return result;
    }
    const exampleKey=(key:string)=>key.trim().toUpperCase().startsWith('EXAMPLE-');
-   const packages=read('Packages',packageHeaders).filter(p=>!exampleKey(p.values['Package key']));
-   const components=read('Components',componentHeaders).filter(c=>!exampleKey(c.values['Package key']));
+   const examplePackage=(p:{row:number;values:Record<string,string>})=>exampleKey(p.values['Package key'])&&p.values['Employee code'].trim().toUpperCase().startsWith('TNG-EXAMPLE-');
+   const allPackages=read('Packages',packageHeaders);const sampleKeys=new Set(allPackages.filter(examplePackage).map(p=>p.values['Package key']));
+   const packages=allPackages.filter(p=>!examplePackage(p));
+   const components=read('Components',componentHeaders).filter(c=>!sampleKeys.has(c.values['Package key']));
    if(!packages.length)throw new Error('No upload rows found. Example rows are ignored; add at least one real package row.');
    if(packages.length>100)throw new Error('Include between 1 and 100 packages per upload.');
    const keys=new Set<string>();const engagements=new Set<string>();
@@ -51,7 +53,7 @@ const PayPackageBatchUpload:React.FC<{directory:{id:string;name:string;employeeC
    catch(e){next[i]={...next[i],status:'Check before retry',error:e instanceof Error?e.message:'Save failed.'};setRows([...next]);setError('Stopped at the first failed row. Earlier saved drafts remain saved. Refresh and check the employee’s packages before uploading remaining rows.');break;}
   }}finally{saving.current=false;if(active.current){setBusy(false);onSaved();}}
  }
- return <Card title="Batch upload pay packages"><p className="text-sm mb-3"><strong>What is a package?</strong> One Packages row is one employee’s dated pay arrangement. Do not invent the salary or fee: copy it from Current HRIS, an approved PAN, or an approved consultant agreement. The Package key is only a unique internal label used to connect Components to that row (for example, <code>PKG-TNG-013-2026-09-01-EMP</code>). For a dual arrangement, use two rows with the same employee code—one <code>employee_payroll</code> and one <code>professional_fee</code>. Rows whose Package key starts with <code>EXAMPLE-</code> are ignored automatically.</p>
+ return <Card title="Batch upload pay packages"><p className="text-sm mb-3"><strong>What is a package?</strong> One Packages row is one employee’s dated pay arrangement. Do not invent the salary or fee: copy it from Current HRIS, an approved PAN, or an approved consultant agreement. The Package key is only a unique internal label used to connect Components to that row (for example, <code>PKG-TNG-013-2026-09-01-EMP</code>). For a dual arrangement, use two rows with the same employee code—one <code>employee_payroll</code> and one <code>professional_fee</code>. The template’s dummy rows use <code>TNG-EXAMPLE-...</code> employee codes and are ignored automatically; do not reuse those sample keys for real employees.</p>
   <div className="flex flex-wrap items-center gap-3"><a className="text-indigo-600 underline dark:text-indigo-300" href="/templates/Pay-Packages-Batch-Template.xlsx" download>Download Excel template</a><label className="text-sm">Upload completed template <input className="block mt-1" type="file" accept=".xlsx" disabled={busy} onChange={e=>{const f=e.target.files?.[0];if(f)void upload(f);e.target.value='';}}/></label></div>
   <details className="mt-3 text-sm"><summary>Employee codes you can access</summary><div className="max-h-48 overflow-auto">{directory.map(e=><p key={e.id}>{e.employeeCode||'No employee code — update HRIS first'} · {e.name}</p>)}</div></details>
   <p className="mt-3 text-sm">Amounts must match the selected HRIS or approved PAN source. Existing packages on the same date must be reviewed individually. Treatments remain unreviewed; uploading does not approve packages or release payments.</p>
