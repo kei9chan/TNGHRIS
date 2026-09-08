@@ -1,5 +1,6 @@
 import { approvalViewKey, readApprovalView } from '../services/approvalNavigation';
 import { ApprovalOutcome } from '../components/approvals/ApprovalNavigation';
+import RecentDecisions from '../components/approvals/RecentDecisions';
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../services/supabaseClient';
@@ -525,6 +526,7 @@ export default function ApprovalCenter() {
       }}
       canApprove={Boolean(requestedManpower)}
     />
+    <RecentDecisions userId={user.id} refreshKey={`${items.length}:${decisionMessage}:${JSON.stringify(result)}`} />
     <OfferApprovalReviewModal
       isOpen={requestedType === 'offer' && Boolean(requestedItem)}
       requestId={requestedType === 'offer' ? requestedItem : null}

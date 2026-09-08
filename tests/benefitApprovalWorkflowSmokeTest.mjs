@@ -10,6 +10,15 @@ const benefits = read('pages/employees/Benefits.tsx');
 const approvalsTable = read('components/employees/BenefitApprovalsTable.tsx');
 const header = read('components/layout/Header.tsx');
 const employeeList = read('pages/employees/EmployeeList.tsx');
+const widget = read('components/dashboard/ApprovalWidget.tsx');
+const quickLinks = read('components/dashboard/QuickLinks.tsx');
+const history = read('components/approvals/RecentDecisions.tsx');
+assert.match(widget, /slug:'benefit',count:additional.pendingBenefitApprovals.length/);
+assert.match(widget, /\],\[.*additional.pendingBenefitApprovals/);
+assert.match(quickLinks, /name: 'Approval Center', path: '\/approvals'.*allowed: Boolean\(user\)/);
+assert.match(center, /<RecentDecisions userId=\{user.id\}/);
+assert.match(history, /\.eq\('user_id', userId\)\.in\('action', \['APPROVE', 'REJECT'\]\)/);
+assert.match(history, /order\('created_at', \{ ascending: false \}\).*order\('id', \{ ascending: false \}\)\.limit\(20\)/);
 
 // Submission and queue visibility are owned by the database.
 assert.match(migration, /benefit_request_notify_hr_manager/);

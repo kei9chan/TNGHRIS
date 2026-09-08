@@ -45,6 +45,7 @@ const QuickLinkCard: React.FC<QuickLinkCardProps> = ({ name, path, state, icon }
 
 
 type QuickLinkId =
+  | 'approvals'
   | 'profile'
   | 'payslips'
   | 'oncall'
@@ -71,6 +72,9 @@ const QuickLinks: React.FC<QuickLinksProps> = ({ hideCOE = false }) => {
 
     const visibleLinks = useMemo(() => {
         const allQuickLinks: (QuickLinkCardProps & { id: QuickLinkId; allowed: boolean })[] = [
+            // Keep access available even after the last assigned request is processed.
+            // The center itself only loads the signed-in user's authorized queues.
+            { id: 'approvals', name: 'Approval Center', path: '/approvals', icon: <DocumentTextIcon />, allowed: Boolean(user) },
             { id: 'profile', name: 'My Profile', path: '/my-profile', icon: <UserCircleIcon />, allowed: Boolean(user) },
             { id: 'payslips', name: 'My Payslips', path: '/payroll/payslips', icon: <DocumentTextIcon />, allowed: Boolean(user) },
             { id: 'oncall', name: 'Request On-Call', path: '/dashboard', state: { openManpowerModal: true }, icon: <UserGroupIcon />, allowed: can('Manpower', Permission.Create) && workflowCan('Manpower', Permission.Submit) },
