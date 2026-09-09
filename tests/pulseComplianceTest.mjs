@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+const {outputFiles}=await build({entryPoints:['services/pulseCompliance.ts'],bundle:true,platform:'node',format:'esm',write:false});
+const {filterCompliance,emptyComplianceFilters,complianceCsv}=await import('data:text/javascript;base64,'+Buffer.from(outputFiles[0].text).toString('base64'));
+const rows=[{id:'1',name:'Ada',employeeNumber:'E1',businessUnit:'Unit A',department:'Ops',employmentStatus:'Regular',isManager:true,roles:['Manager'],complianceStatus:'Completed'},{id:'2',name:'Ben',employeeNumber:'E2',businessUnit:'Unit B',department:'Ops',employmentStatus:'Seasonal',isManager:false,complianceStatus:'Pending'},{id:'3',name:'Cal',employeeNumber:'E3',businessUnit:'Unit A',department:'Finance',employmentStatus:'Consultant',isManager:true,complianceStatus:'Overdue'},{id:'4',name:'Dan',employmentStatus:'Contractual',businessUnit:'Unit A',complianceStatus:'Pending'}];
+const f=(filters)=>filterCompliance(rows,{...emptyComplianceFilters(),...filters}).map(r=>r.id);
+assert.deepEqual(f({businessUnit:'Unit A',classification:'regular',level:'manager'}),['1']);
+assert.deepEqual(f({classification:'managers'}),['1','3']);
+assert.deepEqual(f({classification:'seasonal',businessUnit:'Unit B',status:'Pending'}),['2']);
+assert.deepEqual(f({classification:'consultants',department:'Finance'}),['3']);
+assert.deepEqual(f({classification:'nonRegular'}),['2','3','4']);
+assert.deepEqual(f({level:'role:Manager',search:' e1 '}),['1']);
+assert.deepEqual(f({classification:'regular',status:'Pending'}),[]);
+const csv=complianceCsv([rows[0]],'=test',{criteria:{preset:'managers'},published_at:'2026-09-09T00:00:00Z'});
+assert.ok(csv.includes("'=test"));assert.ok(csv.includes('Regular'));assert.ok(csv.includes('managers'));assert.ok(!csv.includes('Ben'));
+console.log('Combined classification, scope filters, search, status and filtered CSV tests passed.');
