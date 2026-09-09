@@ -1,4 +1,6 @@
 import {CompensableWorkPanel} from '../../modules/payroll/ConfirmedPolicyPanels';
+import {ScheduleTask} from '../../modules/scheduleCompliance';
+import {useSearchParams} from 'react-router-dom';
 import {DayStatus,DayTag,dateKey,getDayStatuses,setDayStatus,statusPresets,leaveForDay} from '../../services/scheduleStatuses';
 import {mapShiftTemplate} from '../../services/shiftService';
 import {scheduleLabel} from '../../services/schedulePolicy';
@@ -96,6 +98,9 @@ const RectangleGroupIcon = () => <svg xmlns="http://www.w3.org/2000/svg" classNa
 const ClipboardIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>;
 
 const Timekeeping: React.FC = () => {
+    const [scheduleParams] = useSearchParams();
+    const complianceManager = scheduleParams.get('manager') || undefined;
+    const requestedWeek = scheduleParams.get('week');
     const { user } = useAuth();
     const { can, isSuperAdmin, getAccessibleBusinessUnits } = usePermissions();
     
@@ -127,7 +132,8 @@ const Timekeeping: React.FC = () => {
     const [serviceAreas, setServiceAreas] = useState<ServiceArea[]>([]);
     const [staffingRequirements, setStaffingRequirements] = useState<StaffingRequirement[]>([]);
     
-    const [viewDate, setViewDate] = useState(new Date());
+    const [viewDate, setViewDate] = useState(() => requestedWeek && /^\d{4}-\d{2}-\d{2}$/.test(requestedWeek) && !Number.isNaN(Date.parse(requestedWeek)) ? new Date(requestedWeek+'T00:00:00') : new Date());
+    useEffect(()=>{if(requestedWeek&&/^\d{4}-\d{2}-\d{2}$/.test(requestedWeek)&&!Number.isNaN(Date.parse(requestedWeek)))setViewDate(new Date(requestedWeek+'T00:00:00'));},[requestedWeek]);
     const [view, setView] = useState<'grid' | 'role' | 'area' | 'timeline'>('grid');
     const [scheduleStatus, setScheduleStatus] = useState<'published' | 'dirty'>('dirty');
     const [publicationRows,setPublicationRows]=useState<SchedulePublication[]>([]);
@@ -384,7 +390,9 @@ const Timekeeping: React.FC = () => {
                 .lte('start_date', toDateOnly(rangeEnd))
                 .gte('end_date', toDateOnly(rangeStart));
 
-            if (selectedBuId === 'all') {
+            if (complianceManager) {
+                leaveQuery.in('employee_id', employees.filter(e=>e.reportsTo===complianceManager).map(e=>e.id));
+            } else if (selectedBuId === 'all') {
                 if (accessibleBuIds.length > 0) {
                     leaveQuery.in('business_unit_id', accessibleBuIds);
                 }
@@ -396,7 +404,8 @@ const Timekeeping: React.FC = () => {
                 const rows:any[]=[];
                 for(let offset=0;;offset+=500){
                     let query=makeAssignmentQuery().range(offset,offset+499);
-                    if(selectedBuId!=='all')query=query.eq('business_unit_id',selectedBuId);
+                    if(complianceManager)query=query.in('employee_id',employees.filter(e=>e.reportsTo===complianceManager).map(e=>e.id));
+                    else if(selectedBuId!=='all')query=query.eq('business_unit_id',selectedBuId);
                     else if(accessibleBuIds.length)query=query.in('business_unit_id',accessibleBuIds);
                     const {data,error}=await query;
                     if(error)return {data:null,error};
@@ -437,7 +446,7 @@ const Timekeeping: React.FC = () => {
         void loadScheduleData();
         const timer=setInterval(()=>{if(document.visibilityState==='visible')void loadScheduleData();},30000);
         return()=>{active=false;clearInterval(timer);};
-    }, [selectedBuId, weekStart, accessibleBus]);
+    }, [selectedBuId, weekStart, accessibleBus, complianceManager, employees]);
 
     // --- GAP ANALYSIS ENGINE (New in Phase 3) ---
     const gaps = useMemo<Gap[]>(() => {
@@ -534,6 +543,7 @@ const Timekeeping: React.FC = () => {
     }, [selectedBuId]);
 
     const employeesInBU = useMemo(() => {
+        if (complianceManager) return employees.filter(u=>u.status==='Active'&&u.reportsTo===complianceManager).sort((a,b)=>a.name.localeCompare(b.name));
         let filtered = selectedBuId === 'all'
             ? employees.filter(u => u.status === 'Active')
             : employees.filter(u => u.businessUnitId === selectedBuId && u.status === 'Active');
@@ -564,7 +574,7 @@ const Timekeeping: React.FC = () => {
             }
         }
         return filtered.sort((a,b) => a.name.localeCompare(b.name));
-    }, [selectedBuId, departmentFilter, employees, user]);
+    }, [selectedBuId, departmentFilter, employees, user, complianceManager]);
 
     const publicationEmployeeKey=employeesInBU.map(e=>e.id).sort().join(',');
     useEffect(()=>{let active=true;setScheduleStatus('dirty');setPublicationRows([]);setPublicationBusy(true);
@@ -1234,6 +1244,7 @@ const Timekeeping: React.FC = () => {
 
     return (
         <div className="space-y-6">
+            <ScheduleTask week={toDateOnly(weekStart)} manager={complianceManager} refresh={statusRefresh+publicationRefresh+scheduleMutation.current} details />
             {shiftSaveError && retryShift && <div role="alert" className="rounded border border-red-300 bg-red-50 p-4 text-red-900"><p>Shift not saved: {shiftSaveError}</p><button className="mt-2 underline" onClick={()=>void handleSaveShift(retryShift.employeeId,retryShift.date,retryShift.templateId)}>Retry save</button></div>}
             <Toast
                 show={toastInfo.show}

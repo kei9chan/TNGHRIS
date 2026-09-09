@@ -1,6 +1,7 @@
 import { GateRejectionNotice } from './modules/acknowledgments/Gate';
 const EmployeeAcknowledgments = React.lazy(() => import('./modules/acknowledgments/EmployeePage'));
 const AcknowledgmentAdmin = React.lazy(() => import('./modules/acknowledgments/AdminPage'));
+const ScheduleCompliance = React.lazy(() => import('./modules/scheduleCompliance'));
 
 
 
@@ -390,6 +391,7 @@ const AppRoutes: React.FC = () => {
             <Route path="attendance-readiness" element={<ProtectedRoute><AttendanceReadinessPage /></ProtectedRoute>} />
             <Route index element={<Navigate to="timekeeping" replace />} />
             <Route path="timekeeping" element={<ProtectedRoute><Timekeeping /></ProtectedRoute>} />
+            <Route path="schedule-compliance" element={<ProtectedRoute><ScheduleCompliance /></ProtectedRoute>} />
             <Route path="manpower-planning" element={<ProtectedRoute><ManpowerPlanning /></ProtectedRoute>} />
             <Route path="workforce-planning" element={<ProtectedRoute><WorkforcePlanning /></ProtectedRoute>} />
              <Route path="daily-review" element={<ProtectedRoute><DailyTimeReview /></ProtectedRoute>} />
