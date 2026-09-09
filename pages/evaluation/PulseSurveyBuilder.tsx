@@ -1,3 +1,5 @@
+import PulseAudienceEditor from '../../components/evaluation/PulseAudienceEditor';
+import { emptyAudience } from '../../services/pulseAudienceService';
 import PulseQuestionEditor from '../../components/evaluation/PulseQuestionEditor';
 import { mapPulseQuestion, validateQuestion } from '../../services/pulseQuestionRules';
 
@@ -41,6 +43,8 @@ const PulseSurveyBuilder: React.FC = () => {
         isAnonymous: true,
         sections: []
     });
+    const [audience, setAudience] = useState(emptyAudience);
+    const [audienceValid, setAudienceValid] = useState(false);
     const [loading, setLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -172,8 +176,9 @@ const PulseSurveyBuilder: React.FC = () => {
         const invalid = survey.sections.flatMap(s => s.questions).map(validateQuestion).find(Boolean);
         if (invalid) { setError(invalid); return; }
         if (!survey.startDate || (survey.endDate && survey.endDate < survey.startDate)) { setError('Enter a valid survey date range.'); return; }
+        if (!audience.preset || (survey.status === PulseSurveyStatus.Active && !audienceValid)) { setError('Select an audience with at least one eligible recipient before activation.'); return; }
         setLoading(true); setError(null);
-        const { error: saveError } = await supabase.rpc('save_pulse_survey_definition', { p_survey: {
+        const { error: saveError } = await supabase.rpc('save_pulse_survey_with_audience', { p_audience: audience, p_survey: {
             id: surveyId || survey.id || crypto.randomUUID(), title: survey.title, description: survey.description || '',
             start_date: survey.startDate.toISOString().slice(0,10), end_date: survey.endDate?.toISOString().slice(0,10) || null,
             status: survey.status, is_anonymous: survey.isAnonymous, sections: survey.sections,
@@ -264,6 +269,8 @@ const PulseSurveyBuilder: React.FC = () => {
                     </div>
                 </div>
             </Card>
+
+            <PulseAudienceEditor surveyId={surveyId} value={audience} onChange={setAudience} onValidity={setAudienceValid} />
 
             <div className="space-y-6">
                 <div className="flex justify-between items-center">
