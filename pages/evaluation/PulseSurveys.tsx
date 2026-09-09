@@ -1,15 +1,13 @@
-import { pulseAudienceRpc } from '../../services/pulseAudienceService';
 // Phase 2 Migration: mockNotifications removed — notifications inserted via Supabase
 
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import { PulseSurvey, PulseSurveyStatus, Permission, User, Role, NotificationType } from '../../types';
+import { PulseSurvey, PulseSurveyStatus, Permission } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
-import ComplianceModal from '../../components/evaluation/ComplianceModal';
+import PulseComplianceModal from '../../components/evaluation/PulseComplianceModal';
 import { supabase } from '../../services/supabaseClient';
-import { formatEmployeeName } from '../../services/formatEmployeeName';
 
 const PulseSurveys: React.FC = () => {
     const { can } = usePermissions();
@@ -19,14 +17,12 @@ const PulseSurveys: React.FC = () => {
     const [surveys, setSurveys] = useState<PulseSurvey[]>([]);
     const [sectionCounts, setSectionCounts] = useState<Record<string, number>>({});
     const [responsesBySurvey, setResponsesBySurvey] = useState<Record<string, Set<string>>>({});
-    const [users, setUsers] = useState<User[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState<boolean>(true);
     
     // Compliance Modal State
     const [isComplianceModalOpen, setIsComplianceModalOpen] = useState(false);
     const [selectedSurveyForCompliance, setSelectedSurveyForCompliance] = useState<PulseSurvey | null>(null);
-    const [missingRespondents, setMissingRespondents] = useState<{ user: User }[]>([]);
 
     const getStatusColor = (status: PulseSurveyStatus) => {
         switch (status) {
@@ -47,65 +43,26 @@ const PulseSurveys: React.FC = () => {
         setSurveys(prev => prev.filter(s => s.id !== id));
     };
 
-    const handleViewCompliance = async (survey: PulseSurvey) => {
-        let recipientIds: Set<string> | null = null;
-        try { const audience = await pulseAudienceRpc('get_pulse_audience', {p_survey: survey.id}); if (audience.published) recipientIds = new Set(audience.recipients.map((r:any) => r.id)); } catch (e) { setError((e as Error).message); return; }
-        // 1. Identify target employees (Active and non-admins)
-        let targets = users.filter(u => recipientIds ? recipientIds.has(u.id) : u.status === 'Active' && u.role !== Role.Admin);
-        if (!recipientIds && survey.targetDepartments && survey.targetDepartments.length > 0) {
-            targets = targets.filter(u => u.departmentId && survey.targetDepartments!.includes(u.departmentId));
-        }
-
-        // 2. Identify who has responded
-        const respondentIds = responsesBySurvey[survey.id] || new Set<string>();
-
-        // 3. Find missing
-        const missing = targets
-            .filter(u => !respondentIds.has(u.id))
-            .map(u => ({ user: u }));
-            
-        setMissingRespondents(missing);
+    const handleViewCompliance = (survey: PulseSurvey) => {
         setSelectedSurveyForCompliance(survey);
         setIsComplianceModalOpen(true);
-    };
-
-    const handleRemindAll = async () => {
-        if (!selectedSurveyForCompliance) return;
-        const createdAt = new Date().toISOString();
-        const rows = missingRespondents.filter(({ user }) => user.status === 'Active').map(({ user }) => ({
-            user_id: user.id,
-            type: NotificationType.PULSE_SURVEY_REMINDER,
-            title: 'Pulse Survey Reminder',
-            message: `Please complete the pulse survey "${selectedSurveyForCompliance.title}".`,
-            link: `/evaluation/pulse/take/${selectedSurveyForCompliance.id}`,
-            is_read: false,
-            created_at: createdAt,
-            related_entity_id: selectedSurveyForCompliance.id,
-        }));
-        if (rows.length > 0) {
-            const { error } = await supabase.from('notifications').insert(rows);
-            if (error) { alert(`Unable to send reminders: ${error.message}`); return; }
-        }
-        alert(`Reminders sent to ${rows.length} employees.`);
     };
 
     useEffect(() => {
         const loadData = async () => {
             setLoading(true);
             setError(null);
-            const [surveysRes, sectionsRes, responsesRes, usersRes] = await Promise.all([
+            const [surveysRes, sectionsRes, responsesRes] = await Promise.all([
                 supabase.from('pulse_surveys').select('*').order('created_at', { ascending: false }),
                 supabase.from('pulse_survey_sections').select('id, survey_id'),
                 supabase.from('pulse_survey_responses').select('survey_id, respondent_id'),
-                supabase.from('hris_users').select('id, full_name, first_name, last_name, email, role, status, department_id, business_unit_id'),
             ]);
 
-            if (surveysRes.error || sectionsRes.error || responsesRes.error || usersRes.error) {
+            if (surveysRes.error || sectionsRes.error || responsesRes.error) {
                 setError(
                     surveysRes.error?.message ||
                     sectionsRes.error?.message ||
                     responsesRes.error?.message ||
-                    usersRes.error?.message ||
                     'Failed to load surveys.'
                 );
                 setLoading(false);
@@ -124,19 +81,6 @@ const PulseSurveys: React.FC = () => {
                 respMap[r.survey_id].add(r.respondent_id);
             });
             setResponsesBySurvey(respMap);
-
-            setUsers((usersRes.data || []).map((u: any) => {
-                const composedName = u.full_name || [u.first_name, u.last_name].filter(Boolean).join(' ').trim();
-                return {
-                    id: u.id,
-                    name: formatEmployeeName(composedName || 'Unknown'),
-                    email: u.email || '',
-                    role: u.role || Role.Employee,
-                    status: u.status || 'Active',
-                    businessUnitId: u.business_unit_id || undefined,
-                    departmentId: u.department_id || undefined,
-                } as User;
-            }));
 
             setSurveys((surveysRes.data || []).map((s: any) => ({
                 id: s.id,
@@ -268,15 +212,10 @@ const PulseSurveys: React.FC = () => {
             </Card>
             )}
 
-            {selectedSurveyForCompliance && (
-                <ComplianceModal
-                    isOpen={isComplianceModalOpen}
+            {selectedSurveyForCompliance && isComplianceModalOpen && (
+                <PulseComplianceModal
+                    surveyId={selectedSurveyForCompliance.id}
                     onClose={() => setIsComplianceModalOpen(false)}
-                    title={`Missing Respondents: ${selectedSurveyForCompliance.title}`}
-                    dueDate={selectedSurveyForCompliance.endDate || new Date()}
-                    missingUsers={missingRespondents}
-                    type="Survey"
-                    onRemindAll={handleRemindAll}
                 />
             )}
         </div>

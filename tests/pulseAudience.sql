@@ -25,7 +25,12 @@ begin
  saved:=public.get_pulse_audience(sid);
  if not(saved->>'published')::boolean or saved#>>'{publication,criteria,preset}'<>'managers' then raise exception 'Activation snapshot missing';end if;
  if not exists(select 1 from jsonb_array_elements(saved->'audit')a where a->>'action'='activated' and jsonb_array_length(a->'recipients')>0) then raise exception 'Audit missing actual list';end if;
+ result:=public.get_pulse_compliance(sid);
+ if result#>>'{publication,criteria,preset}'<>'managers' then raise exception 'Compliance omitted publication criteria';end if;
+ bad:=false;begin perform public.remind_pulse_recipients(sid,array[outsider]);exception when insufficient_privilege then bad:=true;end;if not bad then raise exception 'Reminder accepted nonrecipient';end if;
  perform set_config('request.jwt.claim.sub',outside_auth::text,true);
+ bad:=false;begin perform public.get_pulse_compliance(sid);exception when insufficient_privilege then bad:=true;end;if not bad then raise exception 'Employee read compliance report';end if;
+ bad:=false;begin perform public.remind_pulse_recipients(sid,array[emp]);exception when insufficient_privilege then bad:=true;end;if not bad then raise exception 'Employee sent reminders';end if;
  if exists(select 1 from public.pulse_surveys where id=sid) or exists(select 1 from public.pulse_survey_sections where survey_id=sid) or exists(select 1 from public.pulse_survey_questions where id=q) then raise exception 'Unselected employee sees survey content';end if;
  bad:=false;begin insert into public.pulse_survey_responses(survey_id,respondent_id,answers) values(sid,outsider,jsonb_build_array(jsonb_build_object('questionId',q,'value','Yes')));exception when insufficient_privilege or raise_exception then bad:=true;end;if not bad then raise exception 'Outside recipient submitted';end if;
  bad:=false;begin perform public.get_pulse_audience(sid);exception when insufficient_privilege then bad:=true;end;if not bad then raise exception 'Recipient list exposed';end if;
@@ -49,6 +54,14 @@ begin
  perform set_config('request.jwt.claim.sub',outside_auth::text,true);
  if not exists(select 1 from public.pulse_surveys where id=sid) then raise exception 'New recipient not admitted';end if;
  perform set_config('request.jwt.claim.sub',admin_auth::text,true);
+ result:=public.get_pulse_compliance(sid);
+ if not exists(select 1 from jsonb_array_elements(result->'rows')r where r->>'id'=emp::text and r->>'employmentStatus'='Regular' and r->>'position'='Test Manager' and r->>'complianceStatus'='Completed' and (r->>'canRemind')::boolean=false) then raise exception 'Compliance history or completion is incorrect';end if;
+ if public.remind_pulse_recipients(sid,array[emp,outsider,outsider])<>1 then raise exception 'Reminder did not dedupe or skip completed';end if;
+ perform set_config('role','postgres',true);
+ if (select count(*) from public.notifications where related_entity_id=sid::text and title='Pulse Survey Reminder')<>1 then raise exception 'Incorrect reminder delivery count';end if;
+ update public.hris_users set status='Inactive' where id=outsider;
+ perform set_config('role','authenticated',true);
+ if public.remind_pulse_recipients(sid,array[outsider])<>0 then raise exception 'Inactive employee reminded';end if;
  -- Zero audience must not activate; a configured zero-recipient draft is allowed.
  cfg:=jsonb_set(cfg,'{preset}','"seasonal"');cfg:=jsonb_set(cfg,'{includeEmployees}','[]');
  definition:=jsonb_set(definition,'{id}',to_jsonb(sid2::text));definition:=jsonb_set(definition,'{sections,0,id}',to_jsonb(gen_random_uuid()::text));definition:=jsonb_set(definition,'{sections,0,questions,0,id}',to_jsonb(gen_random_uuid()::text));

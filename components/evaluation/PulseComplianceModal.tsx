@@ -1,0 +1,39 @@
+import React,{useEffect,useState} from 'react';
+import Modal from '../ui/Modal';
+import Button from '../ui/Button';
+import {pulseAudienceRpc,audiencePresets} from '../../services/pulseAudienceService';
+import {ComplianceRow,ComplianceFilters,emptyComplianceFilters,filterCompliance,complianceCsv} from '../../services/pulseCompliance';
+const input='w-full rounded border border-gray-300 bg-white p-2 text-gray-900 dark:border-gray-600 dark:bg-slate-800 dark:text-white';
+export default function PulseComplianceModal({surveyId,onClose}:{surveyId:string;onClose:()=>void}){
+ const [report,setReport]=useState<any>(null),[filters,setFilters]=useState(emptyComplianceFilters),[selected,setSelected]=useState<string[]>([]),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
+ useEffect(()=>{let active=true;pulseAudienceRpc('get_pulse_compliance',{p_survey:surveyId}).then(d=>{if(active)setReport(d);}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[surveyId]);
+ const rows:ComplianceRow[]=report?.rows||[];const filtered=filterCompliance(rows,filters);const selectedVisible=filtered.filter(r=>selected.includes(r.id));
+ const eligible=selectedVisible.filter(r=>r.canRemind);const update=(key:keyof ComplianceFilters,value:string)=>{setFilters({...filters,[key]:value});setSelected([]);setNotice('');};
+ const unique=(key:'businessUnit'|'department')=>[...new Set(rows.map(r=>r[key]).filter(Boolean))].sort() as string[];
+ const roles=[...new Set(rows.flatMap(r=>r.roles||[]))].sort();
+ async function remind(){setBusy(true);setError('');setNotice('');try{const n=await pulseAudienceRpc<number>('remind_pulse_recipients',{p_survey:surveyId,p_employees:eligible.map(r=>r.id)});setNotice(`Reminders sent to ${n} employees. Completed or inactive recipients are skipped.`);setSelected([]);setReport(await pulseAudienceRpc('get_pulse_compliance',{p_survey:surveyId}));}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+ const select=(label:string,key:keyof ComplianceFilters,options:[string,string][])=> <label className="text-sm font-medium">{label}<select className={input} value={filters[key]} onChange={e=>update(key,e.target.value)}><option value="">{key==='classification'?'All Employees':'All'}</option>{options.map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label>;
+ function download(){const url=URL.createObjectURL(new Blob(['\uFEFF'+complianceCsv(filtered,report.title,report.publication)],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='pulse-survey-compliance.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+ const criteria=report?.publication?.criteria;
+ const describe=(key:string,value:any)=>Array.isArray(value)?value.map(id=>{const r=(report?.rows||[]).find((r:any)=>key==='businessUnits'?r.businessUnitId===id:key==='departments'?r.departmentId===id:r.id===id);return key==='businessUnits'?r?.businessUnit||id:key==='departments'?r?.department||id:['includeEmployees','excludeEmployees'].includes(key)?r?.name||id:id;}).join(', ')||'None specified':typeof value==='boolean'?(value?'Yes':'No'):value;
+ return <Modal isOpen onClose={onClose} title="Pulse Survey Compliance Status" size="3xl" footer={<Button variant="secondary" onClick={onClose}>Close</Button>}><div className="space-y-4">
+ {error&&<p role="alert" className="text-red-600">{error}</p>}{notice&&<p role="status">{notice}</p>}
+ {!report&&!error&&<p>Loading recipient status…</p>}
+ {report&&<><h3 className="font-semibold">{report.title}</h3>
+ {!report.publication?<p role="alert">This survey has no saved publication audience. Historical employee classifications cannot be reconstructed accurately. Configure its audience in Edit Survey before using this report.</p>:<>
+ <p className="text-sm">Employee details below are preserved from publication, or from the date a recipient was added later. Filters are combined. Changes to current employee profiles do not change this report.</p>
+ <details><summary className="cursor-pointer font-semibold">Original published audience criteria</summary><p>Published: {new Date(report.publication.published_at).toLocaleString('en-PH',{timeZone:'Asia/Manila'})} (Asia/Manila)</p><p>{audiencePresets.find(p=>p[0]===criteria.preset)?.[1]||criteria.preset}</p><dl className="text-sm">{[['businessUnits','Business units'],['departments','Departments'],['positions','Positions'],['roles','Roles / managerial level'],['employmentStatuses','Employment classification'],['managersOnly','Managers only'],['includeEmployees','Specific additions'],['excludeEmployees','Excluded employees']].map(([key,label])=><div key={key} className="py-1"><dt className="font-medium">{label}</dt><dd>{describe(key,criteria[key])}</dd></div>)}</dl></details>
+ <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+ {select('Business Unit','businessUnit',unique('businessUnit').map(x=>[x,x]))}
+ {select('Department','department',unique('department').map(x=>[x,x]))}
+ {select('Managerial Level','level',[['manager','Managers'],['nonManager','Non-managers'],...roles.map(x=>['role:'+x,x] as [string,string])])}
+ {select('Employment Classification','classification',[['regular','Regular Employees'],['nonRegular','Non-Regular Employees'],['seasonal','Seasonal Employees'],['consultants','Consultants'],['managers','Managers Only']])}
+ {select('Compliance Status','status',[['Pending','Pending'],['Completed','Completed'],['Overdue','Overdue']])}
+ <label className="text-sm font-medium">Search Employee<input className={input} placeholder="Name or employee ID" value={filters.search} onChange={e=>update('search',e.target.value)}/></label>
+ </div><p aria-live="polite">{filtered.length} of {rows.length} recipients · {selectedVisible.length} selected · {eligible.length} eligible for a reminder</p>
+ <div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={()=>setSelected(filtered.map(r=>r.id))} disabled={!filtered.length||busy}>Select Filtered Employees</Button><Button variant="secondary" onClick={()=>setSelected([])} disabled={busy}>Clear Selection</Button><Button onClick={()=>void remind()} disabled={!eligible.length||busy} isLoading={busy}>Remind Selected ({eligible.length})</Button><Button variant="secondary" onClick={download} disabled={!filtered.length}>Export Filtered Report</Button></div>
+ <p className="text-xs">Reminders go only to selected recipients in the current results who have not responded and are still active. Closed or expired surveys cannot send reminders. Exports include all filtered rows.</p>
+ <div className="max-h-96 overflow-auto"><table className="w-full min-w-[950px] text-sm"><thead><tr>{['Select','Employee','Employee ID','Business Unit','Department','Position','Employment Classification','Managerial Level','Status','Date Added','Completed'].map(x=><th className="p-2 text-left" key={x}>{x}</th>)}</tr></thead><tbody>{filtered.map(r=><tr key={r.id} className="border-t"><td><input type="checkbox" aria-label={`Select ${r.name}`} disabled={busy} checked={selected.includes(r.id)} onChange={e=>setSelected(e.target.checked?[...selected,r.id]:selected.filter(id=>id!==r.id))}/></td>{[r.name,r.employeeNumber,r.businessUnit,r.department,r.position,r.employmentStatus,r.isManager?'Manager':'Non-manager',r.complianceStatus,r.addedAt?new Date(r.addedAt).toLocaleString('en-PH',{timeZone:'Asia/Manila'}):'',r.completedAt?new Date(r.completedAt).toLocaleString('en-PH',{timeZone:'Asia/Manila'}):''].map((v,i)=><td className="p-2" key={i}>{v||'—'}</td>)}</tr>)}</tbody></table>{!filtered.length&&<p className="p-4">No recipients match these filters.</p>}</div><p className="text-xs">Displayed dates use Asia/Manila. Exported dates retain the canonical server timestamp. No survey answers are included.</p>
+ </> }</>}
+ </div></Modal>;
+}
