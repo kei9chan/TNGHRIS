@@ -58,7 +58,6 @@ import { createCoeRequest, fetchCoeRequestById, fetchCoeRequests } from '../../s
 import { usePermissions } from '../../hooks/usePermissions';
 import { supabase } from '../../services/supabaseClient';
 import { mergePanParticulars } from '../../services/panUtils';
-import ApprovalWidget from './ApprovalWidget';
 import MyRequestsWidget from './MyRequestsWidget';
 import { isCentralizedApprovalActionItem } from '../../utils/approvalCenterRouting';
 import { fetchMyPendingTimeApprovalAssignments } from '../../services/timeApprovalService';
@@ -1788,7 +1787,6 @@ const EmployeeDashboard: React.FC = () => {
             <QuickLinks />
             <AnniversaryBanner />
 
-            <ApprovalWidget />
 
             <MyRequestsWidget />
 

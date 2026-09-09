@@ -1,45 +1,52 @@
-import React, { useMemo } from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useApprovals } from '../../hooks/useApprovals';
 import { useAdditionalApprovals } from '../../hooks/useAdditionalApprovals';
-import { Role } from '../../types';
+import { ApprovalRequestKind, getApprovalReviewUrl } from '../../services/approvalDeepLinks';
 
-const ageDays = (value: Date | string | undefined) => value ? Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 86400000)) : 0;
+type Item = { id: string; kind: ApprovalRequestKind; employee: string; details: string; submitted?: Date | string; relevantDate?: Date | string };
+const labels: Record<ApprovalRequestKind,string> = {leave:'Leave',wfh:'WFH',overtime:'Overtime',manpower:'On-call',nte:'NTE',pan:'PAN',requisition:'Job Requisition',award:'Award',offer:'Offer',asset:'Asset',benefit:'Benefit'};
+const dateText = (v?: Date | string) => v && Number.isFinite(new Date(v).getTime()) ? new Date(v).toLocaleDateString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric'}) : '';
+const dayKey = (v: Date | string) => new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(v));
+function urgency(item: Item) {
+  const age = item.submitted ? Math.max(0,Math.floor((Date.now()-new Date(item.submitted).getTime())/86400000)) : 0;
+  const upcoming = item.relevantDate && Number.isFinite(new Date(item.relevantDate).getTime()) && dayKey(item.relevantDate)>=dayKey(new Date()) && new Date(item.relevantDate).getTime()-Date.now()<3*86400000;
+  if(upcoming)return {group:'upcoming',label:'Request date '+dateText(item.relevantDate),color:'#f59e0b',text:'text-amber-700 dark:text-amber-300',priority:0};
+  if(age>=3)return {group:'waiting',label:'Waiting '+age+' days',color:'#fb7185',text:'text-rose-700 dark:text-rose-300',priority:1};
+  return {group:'all',label:'Awaiting review',color:'#a78bfa',text:'text-slate-500 dark:text-slate-300',priority:2};
+}
 
 export default function ApprovalWidget() {
-  const { user } = useAuth();
-  const roles = new Set([user?.role, ...(user?.roles || [])].filter(Boolean));
-  const approvals=useApprovals({user,isHR:roles.has(Role.HRStaff)});
-  const additional=useAdditionalApprovals(user);
-  const leaveExceptions=approvals.pendingLeaveApprovals.filter(r=>{const start=new Date(r.startDate),end=new Date(r.endDate),duration=Number(r.durationDays);return r.approvalRoute==='BOD_REQUIRED'||end<start||duration<=0||duration>30;}).length;
-  const wfhExceptions=approvals.pendingWfhApprovals.filter(r=>{const start=new Date(r.date),end=new Date(r.endDate||r.date),days=Math.floor((end.getTime()-start.getTime())/86400000)+1;const overlap=approvals.pendingLeaveApprovals.some(l=>l.employeeId===r.employeeId&&new Date(l.startDate)<=end&&new Date(l.endDate)>=start);return r.approvalRoute==='BOD_REQUIRED'||end<start||days>31||overlap||String(r.status)==='WFH_FOR_TIMEKEEPING';}).length;
-  const overtimeExceptions=approvals.pendingOtApprovals.filter(r=>r.approvalRoute==='BOD_REQUIRED'||!String(r.reason||'').trim()).length;
-  const queues=useMemo(()=>[
-    {name:'Benefits',slug:'benefit',count:additional.pendingBenefitApprovals.length,exceptions:0,ages:additional.pendingBenefitApprovals.map(r=>ageDays(r.submissionDate)),tone:'bg-pink-100 text-pink-800'},
-    {name:'NTE',slug:'nte',count:additional.pendingNTEApprovals.length,exceptions:0,ages:additional.pendingNTEApprovals.map(r=>ageDays(r.createdAt)),tone:'bg-red-100 text-red-800'},
-    {name:'PAN',slug:'pan',count:additional.pendingPANApprovals.length,exceptions:0,ages:additional.pendingPANApprovals.map(r=>ageDays(r.createdAt)),tone:'bg-purple-100 text-purple-800'},
-    {name:'Awards',slug:'award',count:additional.pendingAwardApprovals.length,exceptions:0,ages:additional.pendingAwardApprovals.map(r=>ageDays(r.createdAt)),tone:'bg-amber-100 text-amber-800'},
-    {name:'Offer Approvals',slug:'offer',count:additional.pendingOfferApprovals.length,exceptions:0,ages:additional.pendingOfferApprovals.map(r=>ageDays(r.createdAt)),tone:'bg-violet-100 text-violet-800'},
-    {name:'Asset Requests',slug:'asset',count:additional.pendingAssetApprovals.length,exceptions:additional.pendingAssetApprovals.filter(r=>Boolean(r.approvalIssue)).length,ages:additional.pendingAssetApprovals.map(r=>ageDays(r.createdAt)),tone:'bg-cyan-100 text-cyan-800'},
-    {name:'Leave',slug:'leave',count:approvals.pendingLeaveApprovals.length,exceptions:leaveExceptions,ages:approvals.pendingLeaveApprovals.map(r=>ageDays(r.startDate)),tone:'bg-yellow-100 text-yellow-800'},
-    {name:'WFH',slug:'wfh',count:approvals.pendingWfhApprovals.length,exceptions:wfhExceptions,ages:approvals.pendingWfhApprovals.map(r=>ageDays(r.createdAt)),tone:'bg-blue-100 text-blue-800'},
-    {name:'Overtime',slug:'overtime',count:approvals.pendingOtApprovals.length,exceptions:overtimeExceptions,ages:approvals.pendingOtApprovals.map(r=>ageDays(r.submittedAt||r.date)),tone:'bg-orange-100 text-orange-800'},
-    {name:'Job Requisitions',slug:'requisition',count:additional.pendingRequisitionApprovals.length,exceptions:0,ages:additional.pendingRequisitionApprovals.map(r=>ageDays(r.createdAt)),tone:'bg-indigo-100 text-indigo-800'},
-    {name:'Manpower',slug:'manpower',count:approvals.pendingManpowerApprovals.length,exceptions:0,ages:approvals.pendingManpowerApprovals.map(r=>ageDays(r.createdAt)),tone:'bg-teal-100 text-teal-800'},
-],[approvals.pendingLeaveApprovals,approvals.pendingWfhApprovals,approvals.pendingOtApprovals,approvals.pendingManpowerApprovals,additional.pendingBenefitApprovals,additional.pendingNTEApprovals,additional.pendingPANApprovals,additional.pendingAwardApprovals,additional.pendingOfferApprovals,additional.pendingAssetApprovals,additional.pendingRequisitionApprovals,leaveExceptions,wfhExceptions,overtimeExceptions]);
-  const activeQueues=queues.filter(q=>q.count>0);
-  const ages=activeQueues.flatMap(q=>q.ages), total=activeQueues.reduce((s,q)=>s+q.count,0), due=ages.filter(a=>a===0).length, overdue=ages.filter(a=>a>=3).length;
-  const exceptionCount=activeQueues.reduce((sum,q)=>sum+q.exceptions,0);
-  const buckets=[ages.filter(a=>a===0).length,ages.filter(a=>a>=1&&a<=6).length,ages.filter(a=>a>=7&&a<=29).length,ages.filter(a=>a>=30).length];
-  const recommended=activeQueues.slice().sort((a,b)=>b.count-a.count)[0];
-  const approvalError=approvals.approvalError||additional.additionalApprovalError;
-  if(!user||(!total&&!approvalError))return null;
-  if(!total&&approvalError)return <section className="rounded-xl border border-red-200 bg-red-50 p-5 text-red-800"><h2 className="font-bold">Approval workload could not be loaded</h2><p className="mt-1 text-sm">{approvalError}</p><button className="mt-3 font-semibold underline" onClick={()=>Promise.all([approvals.refreshApprovals(),additional.refreshAdditionalApprovals()])}>Retry</button></section>;
-  return <section className="space-y-4">
-    {approvalError&&<div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"><div className="min-w-0 flex-1"><h2 className="font-bold">Some approval queues could not be refreshed</h2><p className="mt-1 truncate text-sm">Available approval tasks are still shown below.</p></div><button className="font-semibold underline" onClick={()=>Promise.all([approvals.refreshApprovals(),additional.refreshAdditionalApprovals()])}>Retry</button></div>}
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[['Pending approvals',total,'text-indigo-700'],['Due today',due,'text-orange-600'],['Overdue',overdue,'text-red-600'],['Exceptions',exceptionCount,'text-amber-600']].map(([label,value,color])=><div key={String(label)} className="rounded-xl border bg-white p-5 shadow-sm dark:bg-slate-800"><div className={`text-3xl font-bold ${color}`}>{value}</div><div className="mt-1 text-sm text-slate-600 dark:text-slate-300">{label}</div></div>)}</div>
-    {recommended&&<div className="flex flex-wrap items-center gap-4 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-white p-5"><div className="grid h-12 w-12 place-items-center rounded-full bg-indigo-600 text-2xl text-white">✦</div><div className="flex-1"><h2 className="font-bold text-slate-900">Start with {recommended.count} {recommended.name} request{recommended.count===1?'':'s'}</h2><p className="text-sm text-slate-600">Largest current queue · Open the centralized record list</p></div><Link to={`/approvals?type=${recommended.slug}`} className="rounded-lg bg-indigo-600 px-5 py-2.5 font-semibold text-white">Start now →</Link></div>}
-    <div className="rounded-xl border bg-white p-5 shadow-sm dark:bg-slate-800"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-bold">Approval workload</h2><p className="text-sm text-slate-500 dark:text-slate-300">Only queues with pending tasks are shown</p></div><Link to="/approvals" className="font-semibold text-indigo-600 dark:text-indigo-300">Open Approval Center →</Link></div><div className="mt-6 grid grid-cols-4 items-end gap-2 border-b pb-2 sm:gap-4">{buckets.map((n,i)=>{const max=Math.max(...buckets,1);return <div key={i} className="text-center"><span className="text-sm font-bold">{n}</span><div style={{height:`${Math.max(8,n/max*100)}px`}} className={`mx-auto mt-2 w-8 rounded-t sm:w-10 ${['bg-red-400','bg-orange-400','bg-yellow-400','bg-blue-400'][i]}`}/><div className="mt-2 text-[11px] text-slate-500 sm:text-xs dark:text-slate-300">{['Today','1–6 days','7–29 days','30+ days'][i]}</div></div>})}</div><div className="mt-6"><h3 className="font-bold">Approval queues</h3></div><div className="mt-2 divide-y">{activeQueues.map(q=><div key={q.name} className="grid gap-3 py-4 sm:flex sm:flex-wrap sm:items-center"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-lg px-3 py-2 font-bold ${q.tone}`}>{q.name}</span><b>{q.count} pending</b><span className="text-sm text-amber-700 dark:text-amber-300">{q.exceptions} exceptions</span></div><span className="text-sm text-slate-500 sm:ml-auto dark:text-slate-300">Oldest {Math.max(...q.ages,0)} days</span><div className="flex flex-wrap gap-2">{q.exceptions>0&&<Link to={`/approvals?type=${q.slug}&review=exceptions`} className="inline-flex min-h-11 items-center font-semibold text-indigo-600 dark:text-indigo-300">Review exceptions</Link>}<Link to={`/approvals?type=${q.slug}`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg bg-indigo-600 px-3 py-2 text-center font-semibold text-white sm:flex-none">Review queue</Link></div></div>)}</div></div>
+  const {user}=useAuth();
+  const a=useApprovals({user});
+  const b=useAdditionalApprovals(user);
+  const [filter,setFilter]=useState('all');
+  const items: Item[] = [
+    ...a.pendingLeaveApprovals.map(r=>({id:r.id,kind:'leave' as const,employee:r.employeeName,details:'Leave · '+dateText(r.startDate)+'–'+dateText(r.endDate)+' · '+r.durationDays+' days',submitted:r.createdAt,relevantDate:r.startDate})),
+    ...a.pendingWfhApprovals.map(r=>({id:r.id,kind:'wfh' as const,employee:r.employeeName,details:'Work from home · '+dateText(r.date)+(r.endDate?'–'+dateText(r.endDate):''),submitted:r.createdAt,relevantDate:r.date})),
+    ...a.pendingOtApprovals.map(r=>({id:r.id,kind:'overtime' as const,employee:r.employeeName,details:dateText(r.date)+' · '+r.startTime+'–'+r.endTime,submitted:r.submittedAt,relevantDate:r.date})),
+    ...a.pendingManpowerApprovals.map(r=>({id:r.id,kind:'manpower' as const,employee:r.requesterName,details:'On-call coverage · '+(r.businessUnitName||''),submitted:r.createdAt})),
+    ...b.pendingNTEApprovals.map(r=>({id:r.id,kind:'nte' as const,employee:r.employeeName,details:r.reference+' · '+r.currentStep,submitted:r.createdAt})),
+    ...b.pendingPANApprovals.map(r=>({id:r.id,kind:'pan' as const,employee:r.employeeName,details:r.action+' · Effective '+dateText(r.effectiveDate),submitted:r.createdAt,relevantDate:r.effectiveDate})),
+    ...b.pendingBenefitApprovals.map(r=>({id:r.id,kind:'benefit' as const,employee:r.employeeName,details:r.benefitTypeName+' · '+dateText(r.dateNeeded),submitted:r.submissionDate,relevantDate:r.dateNeeded})),
+    ...b.pendingRequisitionApprovals.map(r=>({id:r.id,kind:'requisition' as const,employee:r.title,details:r.reference+' · '+r.currentStep,submitted:r.createdAt})),
+    ...b.pendingAwardApprovals.map(r=>({id:r.id,kind:'award' as const,employee:r.employeeName,details:r.awardTitle,submitted:r.createdAt})),
+    ...b.pendingOfferApprovals.map(r=>({id:r.id,kind:'offer' as const,employee:r.candidateName,details:r.jobTitle,submitted:r.createdAt})),
+    ...b.pendingAssetApprovals.map(r=>({id:r.id,kind:'asset' as const,employee:r.employeeName,details:r.assetDescription,submitted:r.createdAt})),
+  ];
+  const unique=[...new Map(items.map(r=>[r.kind+':'+r.id,r])).values()].sort((a,b)=>urgency(a).priority-urgency(b).priority||(new Date(a.submitted||0).getTime()-new Date(b.submitted||0).getTime()));
+  const visible=unique.filter(r=>filter==='all'||urgency(r).group===filter);
+  const error=a.approvalError||b.additionalApprovalError;
+  if(!user||(!items.length&&!error))return null;
+  return <section aria-labelledby="approval-inbox-title" className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800 sm:p-6">
+    <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 id="approval-inbox-title" className="text-2xl font-bold text-slate-900 dark:text-white">Needs your approval <span className="ml-2 inline-flex rounded-full bg-violet-600 px-3 py-1 text-base text-white">{unique.length}</span></h2><p className="mt-2 text-slate-500 dark:text-slate-300">Requests waiting for your decision</p></div><Link to="/approvals" className="hidden min-h-11 items-center rounded-lg border border-violet-500 px-4 font-semibold text-violet-700 dark:text-violet-300 sm:inline-flex">Open Approval Center →</Link></div>
+    {error&&<div role="alert" className="mt-4 text-amber-700 dark:text-amber-300">Some requests could not be loaded. <button className="min-h-11 underline" onClick={()=>Promise.all([a.refreshApprovals(),b.refreshAdditionalApprovals()])}>Retry</button></div>}
+    <div className="my-5 flex flex-wrap gap-2">{[['all','All'],['upcoming','Upcoming dates'],['waiting','Waiting 3+ days']].map(([value,label])=><button key={value} aria-pressed={filter===value} onClick={()=>setFilter(value)} className={'min-h-11 rounded-full px-4 text-sm font-semibold '+(filter===value?'bg-violet-600 text-white':'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200')}>{label}</button>)}</div>
+    <div className="space-y-3">{visible.slice(0,10).map(item=>{const u=urgency(item);return <article key={item.kind+':'+item.id} style={{borderLeftColor:u.color}} className="grid min-w-0 gap-3 rounded-xl border border-l-4 border-slate-200 bg-slate-50 p-4 dark:border-slate-600 dark:bg-slate-900/40 lg:grid-cols-[6rem_1fr_1.5fr_1fr_7rem] lg:items-center">
+      <span className="w-fit rounded-lg bg-violet-100 px-3 py-2 text-sm font-bold text-violet-900 dark:bg-violet-900 dark:text-violet-100">{labels[item.kind]}</span><h3 className="break-words font-bold text-slate-900 dark:text-white">{item.employee}</h3><p className="break-words text-sm text-slate-600 dark:text-slate-300">{item.details}</p><div className="text-sm">{dateText(item.submitted)&&<p className="text-slate-500 dark:text-slate-400">Submitted {dateText(item.submitted)}</p>}<p className={'font-semibold '+u.text}>{u.label}</p></div><Link aria-label={'Review '+labels[item.kind]+' for '+item.employee} to={getApprovalReviewUrl(item.kind,item.id)} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-violet-600 px-5 py-3 font-semibold text-white hover:bg-violet-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500">Review</Link>
+    </article>;})}</div>
+    {!visible.length&&<p className="py-5 text-slate-500 dark:text-slate-300">No requests match this filter.</p>}
+    <Link to="/approvals" className="mt-5 inline-flex min-h-11 items-center font-semibold text-violet-700 dark:text-violet-300">{visible.length>10?'Showing 10 of '+visible.length+' · ':''}Open Approval Center →</Link>
   </section>;
 }

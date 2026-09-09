@@ -10,11 +10,14 @@ const ClockIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="
 const UserCircleIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>);
 
 
+const ApprovalIcon: React.FC<{className?: string}> = ({className}) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6" strokeLinecap="round" strokeLinejoin="round"/></svg>;
+
 const MobileFooter: React.FC = () => {
     const { can } = usePermissions();
 
     const navItems = [
         { name: 'Dashboard', path: '/dashboard', icon: HomeIcon, permission: can('Dashboard', Permission.View) },
+        { name: 'Approvals', path: '/approvals', icon: ApprovalIcon, permission: true },
         { name: 'Employees', path: '/employees/list', icon: UsersIcon, permission: can('Employees', Permission.View) },
         { name: 'Clock-In', path: '/payroll/clock-in-out', icon: ClockIcon, permission: can('Clock', Permission.View) },
         { name: 'My Profile', path: '/my-profile', icon: UserCircleIcon, permission: true },
@@ -22,7 +25,7 @@ const MobileFooter: React.FC = () => {
 
 
     return (
-        <footer className="fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-700 z-30">
+        <footer aria-label="Mobile navigation" className="fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-700 z-30 md:hidden" style={{paddingBottom:'env(safe-area-inset-bottom)'}}>
             <div className="flex justify-around items-center h-16">
                 {navItems.map(item => (
                     <NavLink
