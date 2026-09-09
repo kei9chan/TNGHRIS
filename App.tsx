@@ -25,6 +25,7 @@ import { isBod } from './modules/employeeSnapshot/model';
 const EmployeeSnapshotPage = React.lazy(() => import('./modules/employeeSnapshot/EmployeeSnapshotPage'));
 import Layout from './components/layout/Layout';
 import AssignedPanAccess from './components/auth/AssignedPanAccess';
+import DirectReportScheduleAccess from './components/auth/DirectReportScheduleAccess';
 import { isPayrollAccessRoute, isStaffPayrollRoute } from './modules/payroll/routes';
 const PayrollAccessPage = React.lazy(() => import('./modules/payroll/PayrollAccessPage'));
 const PayPackagesPage = React.lazy(() => import('./modules/payroll/PayPackagesPage'));
@@ -261,6 +262,9 @@ const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }
   const canReadEvaluationAsOversight = isEvaluationReadRoute && hasEvaluationOversightAccess(user);
 
   if (required && !can(required[1], required[2]) && !canReadEvaluationAsOversight) {
+    if (location.pathname === '/payroll/timekeeping') {
+      return <DirectReportScheduleAccess key={user.id} userId={user.id}>{children}</DirectReportScheduleAccess>;
+    }
     if (location.pathname === '/employees/pan') {
       return <AssignedPanAccess key={`${user.id}:${legacyRequestId || ''}`} userId={user.id} requestId={legacyRequestId}>{children}</AssignedPanAccess>;
     }

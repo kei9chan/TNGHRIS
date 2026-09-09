@@ -6,7 +6,7 @@ import {getScheduleWeek,publishScheduleWeek,reviewScheduleOverride} from '../../
 import type {SchedulePublication} from '../../services/schedulePublicationService';
 import SchedulePublicationStatus from '../../components/payroll/SchedulePublicationStatus';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { ShiftTemplate, ShiftAssignment, User, LeaveRequest, LeaveRequestStatus, Permission, OperatingHours, Role, DayTypeTier, StaffingRequirement, ServiceArea } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -99,7 +99,22 @@ const Timekeeping: React.FC = () => {
     const { user } = useAuth();
     const { can, isSuperAdmin, getAccessibleBusinessUnits } = usePermissions();
     
-    const [assignments, setAssignments] = useState<ShiftAssignment[]>([]);
+    const [assignments, commitAssignments] = useState<ShiftAssignment[]>([]);
+    const scheduleMutation = useRef(0);
+    const setAssignments: React.Dispatch<React.SetStateAction<ShiftAssignment[]>> = value => {
+        scheduleMutation.current++;
+        commitAssignments(value);
+    };
+    const savingShift = useRef(false);
+    const [shiftSaveError, setShiftSaveError] = useState('');
+    const [retryShift, setRetryShift] = useState<{employeeId:string;date:Date;templateId:string}|null>(null);
+    useEffect(()=>{
+        if(!retryShift)return;
+        const warn=(event:BeforeUnloadEvent)=>{event.preventDefault();event.returnValue='';};
+        const navigate=(event:MouseEvent)=>{const anchor=(event.target as Element)?.closest?.('a[href]');if(anchor&&!window.confirm('A shift has not been saved. Leave without retrying?')){event.preventDefault();event.stopPropagation();}};
+        window.addEventListener('beforeunload',warn);document.addEventListener('click',navigate,true);
+        return()=>{window.removeEventListener('beforeunload',warn);document.removeEventListener('click',navigate,true);};
+    },[retryShift]);
     const [templates, setTemplates] = useState<ShiftTemplate[]>([]);
     const [flaggedEmployees,setFlaggedEmployees]=useState<string[]>([]);
     const [dayStatuses,setDayStatuses]=useState<DayStatus[]>([]);
@@ -128,7 +143,7 @@ const Timekeeping: React.FC = () => {
                 supabase.from('departments').select('id, name, business_unit_id'),
                 supabase.from('hris_users').select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position, date_hired, reports_to'),
                 supabase.from('shift_templates').select('*'),
-                user?.role === Role.Manager ? supabase.rpc('get_schedule_roster_people') : Promise.resolve({data:[],error:null}),
+                supabase.rpc('get_schedule_roster_people'),
             ]);
 
             if (!buRes.error && buRes.data) {
@@ -161,7 +176,7 @@ const Timekeeping: React.FC = () => {
                     departmentId: row.department_id || undefined,
                     businessUnitId: row.business_unit_id || undefined,
                     reportsTo: row.reports_to || undefined,
-                    status: row.status === 'Inactive' ? 'Inactive' : 'Active',
+                    status: String(row.status).toLowerCase() === 'active' ? 'Active' : 'Inactive',
                     isPhotoEnrolled: false,
                     dateHired: row.date_hired ? new Date(row.date_hired) : new Date(),
                     position: row.position || '',
@@ -182,7 +197,7 @@ const Timekeeping: React.FC = () => {
     const accessibleBus = useMemo(() => {
         if (isHrPresetEditor) return businessUnits;
         const existing = getAccessibleBusinessUnits(businessUnits as any);
-        if (user?.role !== Role.Manager) return existing;
+        if (!user) return existing;
         const teamBus = new Set(employees.filter(e => e.reportsTo === user.id || e.id === user.id).map(e => e.businessUnitId));
         return businessUnits.filter(b => existing.some(x => x.id === b.id) || teamBus.has(b.id));
     }, [user, isHrPresetEditor, getAccessibleBusinessUnits, businessUnits, employees]);
@@ -261,8 +276,8 @@ const Timekeeping: React.FC = () => {
     // Team Manager Logic
     const isTeamManager = useMemo(() => {
         if (!user) return false;
-        return user.role === Role.Manager;
-    }, [user]);
+        return user.role === Role.Manager || employees.some(e => e.status === 'Active' && e.reportsTo === user.id);
+    }, [user, employees]);
 
     const isScheduleEditable = useMemo(() => {
         if (!user) return false;
@@ -346,16 +361,21 @@ const Timekeeping: React.FC = () => {
             return;
         }
 
+        let active = true;
+        let sequence = 0;
         const loadScheduleData = async () => {
+            if (savingShift.current) return;
+            const request = ++sequence;
+            const mutation = scheduleMutation.current;
             const rangeStart = addDays(weekStart, -7);
             const rangeEnd = addDays(weekStart, 13);
             const accessibleBuIds = accessibleBus.map(bu => bu.id);
 
-            const assignmentQuery = supabase
+            const makeAssignmentQuery = () => supabase
                 .from('shift_assignments')
                 .select('id, employee_id, shift_template_id, date, business_unit_id, department_id, assigned_area_id, notes')
                 .gte('date', toDateOnly(rangeStart))
-                .lte('date', toDateOnly(rangeEnd));
+                .lte('date', toDateOnly(rangeEnd)).order('id');
 
             const leaveQuery = supabase
                 .from('leave_requests')
@@ -366,22 +386,34 @@ const Timekeeping: React.FC = () => {
 
             if (selectedBuId === 'all') {
                 if (accessibleBuIds.length > 0) {
-                    assignmentQuery.in('business_unit_id', accessibleBuIds);
                     leaveQuery.in('business_unit_id', accessibleBuIds);
                 }
             } else {
-                assignmentQuery.eq('business_unit_id', selectedBuId);
                 leaveQuery.eq('business_unit_id', selectedBuId);
             }
 
-            const [assignmentRes, leaveRes] = await Promise.all([assignmentQuery, leaveQuery]);
+            const loadAssignments = async () => {
+                const rows:any[]=[];
+                for(let offset=0;;offset+=500){
+                    let query=makeAssignmentQuery().range(offset,offset+499);
+                    if(selectedBuId!=='all')query=query.eq('business_unit_id',selectedBuId);
+                    else if(accessibleBuIds.length)query=query.in('business_unit_id',accessibleBuIds);
+                    const {data,error}=await query;
+                    if(error)return {data:null,error};
+                    rows.push(...(data||[]));
+                    if((data?.length||0)<500)return {data:rows,error:null};
+                }
+            };
+            const [assignmentRes, leaveRes] = await Promise.all([loadAssignments(), leaveQuery]);
+
+            if (!active || request !== sequence || mutation !== scheduleMutation.current || savingShift.current) return;
 
             if (!assignmentRes.error && assignmentRes.data) {
                 setAssignments(assignmentRes.data.map((row: any) => ({
                     id: row.id,
                     employeeId: row.employee_id,
                     shiftTemplateId: row.shift_template_id,
-                    date: row.date ? new Date(row.date) : new Date(),
+                    date: row.date ? new Date(row.date + 'T00:00:00') : new Date(),
                     locationId: 'OFFICE-MAIN',
                     assignedAreaId: row.assigned_area_id || undefined,
                 })));
@@ -404,7 +436,7 @@ const Timekeeping: React.FC = () => {
 
         void loadScheduleData();
         const timer=setInterval(()=>{if(document.visibilityState==='visible')void loadScheduleData();},30000);
-        return()=>clearInterval(timer);
+        return()=>{active=false;clearInterval(timer);};
     }, [selectedBuId, weekStart, accessibleBus]);
 
     // --- GAP ANALYSIS ENGINE (New in Phase 3) ---
@@ -521,14 +553,14 @@ const Timekeeping: React.FC = () => {
             ]);
 
             if (user.role === Role.BusinessUnitManager) {
-                filtered = filtered.filter(u => u.businessUnitId === user.businessUnitId);
+                filtered = filtered.filter(u => u.businessUnitId === user.businessUnitId || u.reportsTo === user.id);
             } else if (user.role === Role.Manager) {
                 filtered = filtered.filter(u => u.id === user.id || u.reportsTo === user.id);
             } else if (user.role === Role.Employee) {
-                filtered = filtered.filter(u => u.id === user.id);
+                filtered = filtered.filter(u => u.id === user.id || u.reportsTo === user.id);
             } else if (!broadViewRoles.has(user.role)) {
                 // Safety fallback for unknown roles: show only self.
-                filtered = filtered.filter(u => u.id === user.id);
+                filtered = filtered.filter(u => u.id === user.id || u.reportsTo === user.id);
             }
         }
         return filtered.sort((a,b) => a.name.localeCompare(b.name));
@@ -640,7 +672,6 @@ const Timekeeping: React.FC = () => {
     const handleCloseDrawer = () => setDrawerState({ open: false, employee: null, date: null });
 
     const resolveAssignmentBuId = (employeeId: string) => {
-        if (selectedBuId && selectedBuId !== 'all') return selectedBuId;
         const employee = employees.find(e => e.id === employeeId);
         return employee?.businessUnitId || null;
     };
@@ -652,8 +683,14 @@ const Timekeeping: React.FC = () => {
     const rejectLegacyCopy = () => setToastInfo({show:true,message:'This schedule uses a retired shared preset. Create the BU presets and assign the week before copying it.'});
 
     const handleSaveShift = async (employeeId: string, date: Date, templateId: string) => {
-        const leave=leaveForDay(leaves,employeeId,date);if(leave&&!leave.startTime&&!leave.endTime){setToastInfo({show:true,message:'Approved leave covers this day. Use the existing leave workflow to change it.'});return;}
-        if (!hasScopedPreset(employeeId, templateId)) { rejectLegacyCopy(); return; }
+        if (savingShift.current) return;
+        savingShift.current = true;
+        scheduleMutation.current++;
+        setShiftSaveError('');
+        setRetryShift({employeeId,date,templateId});
+        try {
+        const leave=leaveForDay(leaves,employeeId,date);if(leave&&!leave.startTime&&!leave.endTime)throw new Error('Approved leave covers this day. Use the existing leave workflow to change it.');
+        if (!hasScopedPreset(employeeId, templateId)) throw new Error('Select an active shift preset for this employee’s business unit.');
         const existing = assignments.find(
             a => a.employeeId === employeeId && new Date(a.date).toDateString() === date.toDateString()
         );
@@ -661,12 +698,12 @@ const Timekeeping: React.FC = () => {
         const resolvedBuId = resolveAssignmentBuId(employeeId);
 
         if (existing) {
-            const { error } = await supabase
+            const { data, error } = await supabase
                 .from('shift_assignments')
                 .update({ shift_template_id: templateId, business_unit_id: resolvedBuId })
-                .eq('id', existing.id);
+                .eq('id', existing.id).select('id').single();
 
-            if (error) { setToastInfo({show:true,message:error.message}); return; }
+            if (error || !data) throw new Error(error?.message || 'Shift was not saved.');
             if (!error) {
                 setAssignments(prev => prev.map(a => a.id === existing.id ? { ...a, shiftTemplateId: templateId } : a));
                 logActivity(user, 'UPDATE', 'ShiftAssignment', existing.id, `Updated shift assignment for employee ${employeeId} on ${date.toDateString()}`);
@@ -687,7 +724,7 @@ const Timekeeping: React.FC = () => {
                 .select('id')
                 .single();
 
-            if (error || !data) { setToastInfo({show:true,message:error?.message || 'Shift was not saved.'}); return; }
+            if (error || !data) throw new Error(error?.message || 'Shift was not saved.');
             if (!error && data) {
                 const newAssignment: ShiftAssignment = {
                     id: data.id,
@@ -702,7 +739,15 @@ const Timekeeping: React.FC = () => {
         }
 
         setScheduleStatus('dirty');
+        setPublicationRefresh(v=>v+1);
+        setRetryShift(null);
         handleCloseDrawer();
+        } catch (error) {
+            setShiftSaveError((error as Error).message || 'Shift was not saved. Please retry.');
+        } finally {
+            savingShift.current = false;
+            scheduleMutation.current++;
+        }
     };
 
     const handleOpenDetailModal = (assignment: ShiftAssignment) => {
@@ -1174,7 +1219,7 @@ const Timekeeping: React.FC = () => {
         </div>
     );
 
-    if (!canView) {
+    if (!canView && !isTeamManager) {
         return (
             <div className="p-6">
                 <Card>
@@ -1189,6 +1234,7 @@ const Timekeeping: React.FC = () => {
 
     return (
         <div className="space-y-6">
+            {shiftSaveError && retryShift && <div role="alert" className="rounded border border-red-300 bg-red-50 p-4 text-red-900"><p>Shift not saved: {shiftSaveError}</p><button className="mt-2 underline" onClick={()=>void handleSaveShift(retryShift.employeeId,retryShift.date,retryShift.templateId)}>Retry save</button></div>}
             <Toast
                 show={toastInfo.show}
                 onClose={() => setToastInfo({ show: false, message: '' })}
