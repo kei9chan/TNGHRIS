@@ -1,0 +1,62 @@
+-- Staging only: all fixtures, role assignments, surveys and notifications roll back.
+begin;
+do $$
+declare admin_id uuid;admin_auth uuid;emp uuid;emp_auth uuid;outsider uuid;outside_auth uuid;inactive uuid;bu uuid;other_bu uuid;candidate record;cfg jsonb;sid uuid:=gen_random_uuid();sid2 uuid:=gen_random_uuid();sec uuid:=gen_random_uuid();q uuid:=gen_random_uuid();definition jsonb;bad boolean;result jsonb;saved jsonb;receipt_count integer;rid uuid;
+begin
+ for candidate in select id,auth_user_id from public.hris_users where auth_user_id is not null and lower(status)='active' loop
+ perform set_config('request.jwt.claim.sub',candidate.auth_user_id::text,true);
+ if pulse_audience_private.manager() and public.current_data_scope()->>'type'='GLOBAL' then admin_id:=candidate.id;admin_auth:=candidate.auth_user_id;exit;end if;
+ end loop;
+ if admin_id is null then raise exception 'Staging publisher fixture missing';end if;
+ select id,auth_user_id,business_unit_id into strict emp,emp_auth,bu from public.hris_users where id<>admin_id and auth_user_id is not null and lower(status)='active' limit 1;
+ select id,auth_user_id into strict outsider,outside_auth from public.hris_users where id not in(admin_id,emp) and auth_user_id is not null and lower(status)='active' limit 1;
+ select id into inactive from public.hris_users where id not in(admin_id,emp,outsider) limit 1;
+ update public.hris_users set employment_status='Regular',position='Test Manager' where id=emp;
+ update public.hris_users set status='Inactive' where id=inactive;
+ insert into public.user_roles(user_id,role_id,scope_type,is_active) select h.id,h.role,'SELF',true from public.hris_users h join public.roles r on r.id=h.role where h.id in(emp,outsider) on conflict(user_id,role_id) do update set is_active=true;
+ cfg:=jsonb_build_object('preset','managers','businessUnits','[]'::jsonb,'departments','[]'::jsonb,'positions','[]'::jsonb,'roles','[]'::jsonb,'employmentStatuses',jsonb_build_array('Regular'),'includeEmployees',jsonb_build_array(emp,emp,inactive),'excludeEmployees',jsonb_build_array(admin_id,outsider),'managersOnly',true);
+ definition:=jsonb_build_object('id',sid,'title','Audience rollback fixture','start_date',current_date,'end_date',current_date+1,'status','Active','is_anonymous',true,'sections',jsonb_build_array(jsonb_build_object('id',sec,'title','Section','questions',jsonb_build_array(jsonb_build_object('id',q,'text','Yes or No','type','yes_no','required',true)))));
+ perform set_config('role','authenticated',true);
+ bad:=false;begin perform public.save_pulse_survey_with_audience(definition,null);exception when raise_exception then if sqlerrm not like '%Audience is required%' then raise;end if;bad:=true;end;if not bad then raise exception 'Missing audience activated';end if;
+ result:=public.preview_pulse_audience(cfg);
+ if (select count(*) from jsonb_array_elements(result->'recipients')x where x->>'id'=emp::text)<>1 then raise exception 'Duplicate recipient';end if;
+ if exists(select 1 from jsonb_array_elements(result->'recipients')x where x->>'id'=inactive::text) then raise exception 'Inactive recipient included';end if;
+ perform public.save_pulse_survey_with_audience(definition,cfg);
+ saved:=public.get_pulse_audience(sid);
+ if not(saved->>'published')::boolean or saved#>>'{publication,criteria,preset}'<>'managers' then raise exception 'Activation snapshot missing';end if;
+ if not exists(select 1 from jsonb_array_elements(saved->'audit')a where a->>'action'='activated' and jsonb_array_length(a->'recipients')>0) then raise exception 'Audit missing actual list';end if;
+ perform set_config('request.jwt.claim.sub',outside_auth::text,true);
+ if exists(select 1 from public.pulse_surveys where id=sid) or exists(select 1 from public.pulse_survey_sections where survey_id=sid) or exists(select 1 from public.pulse_survey_questions where id=q) then raise exception 'Unselected employee sees survey content';end if;
+ bad:=false;begin insert into public.pulse_survey_responses(survey_id,respondent_id,answers) values(sid,outsider,jsonb_build_array(jsonb_build_object('questionId',q,'value','Yes')));exception when insufficient_privilege or raise_exception then bad:=true;end;if not bad then raise exception 'Outside recipient submitted';end if;
+ bad:=false;begin perform public.get_pulse_audience(sid);exception when insufficient_privilege then bad:=true;end;if not bad then raise exception 'Recipient list exposed';end if;
+ perform set_config('request.jwt.claim.sub',emp_auth::text,true);
+ if not exists(select 1 from public.pulse_surveys where id=sid) or not exists(select 1 from public.pulse_survey_questions where id=q) then raise exception 'Recipient cannot read';end if;
+ insert into public.pulse_survey_responses(survey_id,respondent_id,answers) values(sid,emp,jsonb_build_array(jsonb_build_object('questionId',q,'value','Yes'))) returning id into rid;
+ bad:=false;begin insert into public.pulse_survey_responses(survey_id,respondent_id,answers) values(sid,outsider,jsonb_build_array(jsonb_build_object('questionId',q,'value','Yes')));exception when insufficient_privilege then bad:=true;end;if not bad then raise exception 'Impersonated recipient';end if;
+ -- Later personnel changes neither remove assignment nor modify recorded snapshot.
+ perform set_config('role','postgres',true);
+ update public.hris_users set employment_status='Contractual',position='Changed after publication' where id=emp;
+ if (select snapshot->>'employmentStatus' from pulse_audience_private.recipients where survey_id=sid and employee_id=emp)<>'Regular' then raise exception 'Historical snapshot changed';end if;
+ perform set_config('role','authenticated',true);
+ if not exists(select 1 from public.pulse_surveys where id=sid) then raise exception 'Personnel change removed fixed recipient';end if;
+ perform set_config('request.jwt.claim.sub',admin_auth::text,true);
+ bad:=false;begin perform public.configure_pulse_audience(sid,jsonb_set(cfg,'{preset}','"all"'));exception when raise_exception then if sqlerrm not like '%published audience is fixed%' then raise;end if;bad:=true;end;if not bad then raise exception 'Published audience replaced';end if;
+ bad:=false;begin perform public.add_pulse_recipients(sid,array[outsider],'');exception when raise_exception then if sqlerrm not like '%reason is required%' then raise;end if;bad:=true;end;if not bad then raise exception 'Addition without audit reason';end if;
+ if public.add_pulse_recipients(sid,array[outsider,outsider],'Added by HR for rollback verification')<>1 then raise exception 'Addition deduplication failed';end if;
+ if public.add_pulse_recipients(sid,array[outsider],'Retry existing addition')<>0 then raise exception 'Duplicate addition';end if;
+ result:=public.get_pulse_audience(sid);
+ if (select count(*) from jsonb_array_elements(result->'audit')a where a->>'action'='recipients_added')<>1 then raise exception 'Addition audit incorrect';end if;
+ perform set_config('request.jwt.claim.sub',outside_auth::text,true);
+ if not exists(select 1 from public.pulse_surveys where id=sid) then raise exception 'New recipient not admitted';end if;
+ perform set_config('request.jwt.claim.sub',admin_auth::text,true);
+ -- Zero audience must not activate; a configured zero-recipient draft is allowed.
+ cfg:=jsonb_set(cfg,'{preset}','"seasonal"');cfg:=jsonb_set(cfg,'{includeEmployees}','[]');
+ definition:=jsonb_set(definition,'{id}',to_jsonb(sid2::text));definition:=jsonb_set(definition,'{sections,0,id}',to_jsonb(gen_random_uuid()::text));definition:=jsonb_set(definition,'{sections,0,questions,0,id}',to_jsonb(gen_random_uuid()::text));
+ bad:=false;begin perform public.save_pulse_survey_with_audience(definition,cfg);exception when raise_exception then if sqlerrm not like '%Zero eligible recipients%' then raise;end if;bad:=true;end;if not bad then raise exception 'Zero audience activated';end if;
+ perform public.save_pulse_survey_with_audience(jsonb_set(definition,'{status}','"Draft"'),cfg);
+ bad:=false;begin update public.pulse_surveys set status='Active' where id=sid2;exception when raise_exception then if sqlerrm not like '%Zero eligible recipients%' then raise;end if;bad:=true;end;if not bad then raise exception 'Direct activation bypass';end if;
+ perform set_config('role','postgres',true);
+ bad:=false;begin delete from pulse_audience_private.recipients where survey_id=sid;exception when insufficient_privilege then bad:=true;end;if not bad then raise exception 'Recipient history mutable';end if;
+ if not exists(select 1 from public.pulse_survey_responses where id=rid) then raise exception 'Historical response lost';end if;
+end $$;
+rollback;

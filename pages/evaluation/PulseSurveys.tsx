@@ -1,3 +1,4 @@
+import { pulseAudienceRpc } from '../../services/pulseAudienceService';
 // Phase 2 Migration: mockNotifications removed — notifications inserted via Supabase
 
 import React, { useEffect, useState } from 'react';
@@ -46,10 +47,12 @@ const PulseSurveys: React.FC = () => {
         setSurveys(prev => prev.filter(s => s.id !== id));
     };
 
-    const handleViewCompliance = (survey: PulseSurvey) => {
+    const handleViewCompliance = async (survey: PulseSurvey) => {
+        let recipientIds: Set<string> | null = null;
+        try { const audience = await pulseAudienceRpc('get_pulse_audience', {p_survey: survey.id}); if (audience.published) recipientIds = new Set(audience.recipients.map((r:any) => r.id)); } catch (e) { setError((e as Error).message); return; }
         // 1. Identify target employees (Active and non-admins)
-        let targets = users.filter(u => u.status === 'Active' && u.role !== Role.Admin);
-        if (survey.targetDepartments && survey.targetDepartments.length > 0) {
+        let targets = users.filter(u => recipientIds ? recipientIds.has(u.id) : u.status === 'Active' && u.role !== Role.Admin);
+        if (!recipientIds && survey.targetDepartments && survey.targetDepartments.length > 0) {
             targets = targets.filter(u => u.departmentId && survey.targetDepartments!.includes(u.departmentId));
         }
 
@@ -69,7 +72,7 @@ const PulseSurveys: React.FC = () => {
     const handleRemindAll = async () => {
         if (!selectedSurveyForCompliance) return;
         const createdAt = new Date().toISOString();
-        const rows = missingRespondents.map(({ user }) => ({
+        const rows = missingRespondents.filter(({ user }) => user.status === 'Active').map(({ user }) => ({
             user_id: user.id,
             type: NotificationType.PULSE_SURVEY_REMINDER,
             title: 'Pulse Survey Reminder',
@@ -81,9 +84,9 @@ const PulseSurveys: React.FC = () => {
         }));
         if (rows.length > 0) {
             const { error } = await supabase.from('notifications').insert(rows);
-            if (error) console.warn('Failed to insert pulse survey reminders', error);
+            if (error) { alert(`Unable to send reminders: ${error.message}`); return; }
         }
-        alert(`Reminders sent to ${missingRespondents.length} employees.`);
+        alert(`Reminders sent to ${rows.length} employees.`);
     };
 
     useEffect(() => {
