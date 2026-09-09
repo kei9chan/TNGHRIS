@@ -349,7 +349,7 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
     };
 
     return (
-        <Modal
+        <Modal acknowledgmentRequestType={!requestToEdit || requestToEdit.status === OTStatus.Draft ? "Overtime" : undefined} acknowledgmentDraft={!!requestToEdit}
             isOpen={isOpen}
             onClose={onClose}
             title={requestToEdit ? `Overtime Request: ${requestToEdit.id}` : 'New Overtime Request'}

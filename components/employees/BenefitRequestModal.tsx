@@ -69,7 +69,7 @@ const BenefitRequestModal: React.FC<BenefitRequestModalProps> = ({ isOpen, onClo
   };
 
   return (
-    <Modal
+    <Modal acknowledgmentRequestType="Benefits"
       isOpen={isOpen}
       onClose={onClose}
       title={`Request Benefit: ${benefitType.name}`}

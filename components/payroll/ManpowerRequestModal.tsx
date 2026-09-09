@@ -305,7 +305,7 @@ const ManpowerRequestModal: React.FC<ManpowerRequestModalProps> = ({ isOpen, onC
   };
 
   return (
-    <Modal
+    <Modal acknowledgmentRequestType="Manpower"
       isOpen={isOpen}
       onClose={onClose}
       title="Request On-Call Coverage"

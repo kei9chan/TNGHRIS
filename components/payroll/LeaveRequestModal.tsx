@@ -124,7 +124,7 @@ const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({ isOpen, onClose, 
     };
     
     return (
-        <Modal
+        <Modal acknowledgmentRequestType={canEdit ? "Leave" : undefined} acknowledgmentDraft={!isNewRequest}
             isOpen={isOpen}
             onClose={onClose}
             title={isNewRequest ? 'Request Leave' : 'Leave Request Details'}

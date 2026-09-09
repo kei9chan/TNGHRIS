@@ -89,7 +89,7 @@ const RequestCOEModal: React.FC<RequestCOEModalProps> = ({ isOpen, onClose, onSa
     };
 
     return (
-        <Modal
+        <Modal acknowledgmentRequestType="COE"
             isOpen={isOpen}
             onClose={onClose}
             title="Request Certificate of Employment"

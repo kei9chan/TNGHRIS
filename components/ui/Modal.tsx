@@ -1,3 +1,4 @@
+import { GateMessage, useAcknowledgmentGate } from '../../modules/acknowledgments/Gate';
 import { ApprovalDialogNavigation } from '../approvals/ApprovalNavigation';
 
 import React, { useEffect } from 'react';
@@ -5,6 +6,8 @@ import { createPortal } from 'react-dom';
 
 interface ModalProps {
   isOpen: boolean;
+  acknowledgmentRequestType?: string;
+  acknowledgmentDraft?: boolean;
   onClose: () => void;
   title: string;
   children: React.ReactNode;
@@ -17,7 +20,9 @@ const CloseIcon = () => (
     <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
 )
 
-const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer, size = '2xl', centered = true }) => {
+const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer, size = '2xl', centered = true, acknowledgmentRequestType, acknowledgmentDraft = false }) => {
+  const gate = useAcknowledgmentGate(acknowledgmentRequestType, isOpen);
+  const gateHidesForm = !!acknowledgmentRequestType && !acknowledgmentDraft && (gate.blocked || gate.loading || !!gate.error);
   useEffect(() => {
     const handleEsc = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -81,12 +86,15 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer,
         <div className="flex-1 min-h-0 overflow-x-hidden overflow-y-auto p-3 custom-scrollbar sm:p-6">
             <div className="space-y-4">
                 <ApprovalDialogNavigation onClose={onClose} />
-                {children}
+                {acknowledgmentRequestType && gate.blocked && <GateMessage />}
+                {acknowledgmentRequestType && gate.loading && <p role="status">Checking required acknowledgments…</p>}
+                {acknowledgmentRequestType && gate.error && <p role="alert">Could not check acknowledgments: {gate.error}. Reopen this form to retry.</p>}
+                <div hidden={gateHidesForm}>{children}</div>
             </div>
         </div>
 
         {/* Footer - Fixed */}
-        {footer && (
+        {footer && !gateHidesForm && (
             <div className="max-h-[42dvh] flex-shrink-0 overflow-y-auto rounded-b-xl border-t border-gray-200 bg-gray-50 p-3 dark:border-slate-700 dark:bg-slate-800/50 sm:p-5">
                 {footer}
             </div>

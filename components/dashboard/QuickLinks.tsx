@@ -45,6 +45,7 @@ const QuickLinkCard: React.FC<QuickLinkCardProps> = ({ name, path, state, icon }
 
 
 type QuickLinkId =
+  | 'acknowledgments'
   | 'approvals'
   | 'profile'
   | 'payslips'
@@ -74,6 +75,7 @@ const QuickLinks: React.FC<QuickLinksProps> = ({ hideCOE = false }) => {
         const allQuickLinks: (QuickLinkCardProps & { id: QuickLinkId; allowed: boolean })[] = [
             // Keep access available even after the last assigned request is processed.
             // The center itself only loads the signed-in user's authorized queues.
+            { id: 'acknowledgments', name: 'Pending Acknowledgments', path: '/acknowledgments', icon: <DocumentTextIcon />, allowed: Boolean(user) },
             { id: 'approvals', name: 'Approval Center', path: '/approvals', icon: <DocumentTextIcon />, allowed: Boolean(user) },
             { id: 'profile', name: 'My Profile', path: '/my-profile', icon: <UserCircleIcon />, allowed: Boolean(user) },
             { id: 'payslips', name: 'My Payslips', path: '/payroll/payslips', icon: <DocumentTextIcon />, allowed: Boolean(user) },
