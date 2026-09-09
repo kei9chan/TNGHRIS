@@ -184,7 +184,14 @@ export enum PulseSurveyStatus {
 export interface PulseSurveyQuestion {
   id: string;
   text: string;
-  type: 'rating' | 'text'; // Rating is implicitly 1-5 Likert
+  type: 'rating' | 'text' | 'yes_no' | 'checkboxes' | 'date' | 'time';
+  required?: boolean;
+  choices?: { id: string; label: string }[];
+  minSelections?: number;
+  maxSelections?: number;
+  minDate?: string;
+  maxDate?: string;
+  timeFormat?: '12' | '24';
 }
 
 export interface SurveySection {
@@ -215,7 +222,7 @@ export interface SurveyResponse {
   submittedAt: Date;
   answers: {
     questionId: string;
-    value: number | string; // number for rating, string for text
+    value: number | string | string[];
   }[];
   comments?: string; // General comments for the survey
 }

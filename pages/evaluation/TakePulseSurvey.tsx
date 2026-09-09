@@ -1,3 +1,5 @@
+import PulseQuestionInput from '../../components/evaluation/PulseQuestionInput';
+import { mapPulseQuestion, PulseAnswer, validateAnswer } from '../../services/pulseQuestionRules';
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
@@ -15,7 +17,7 @@ const TakePulseSurvey: React.FC = () => {
     const { user } = useAuth();
     const navigate = useNavigate();
     
-    const [answers, setAnswers] = useState<Record<string, number | string>>({});
+    const [answers, setAnswers] = useState<Record<string, PulseAnswer>>({});
     const [comment, setComment] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [survey, setSurvey] = useState<PulseSurvey | null>(null);
@@ -95,11 +97,7 @@ const TakePulseSurvey: React.FC = () => {
                     (questionRows || []).forEach((q: any) => {
                         const container = sectionMap[q.section_id];
                         if (container) {
-                            container.questions.push({
-                                id: q.id,
-                                text: q.text,
-                                type: q.question_type,
-                            });
+                            container.questions.push(mapPulseQuestion(q));
                         }
                     });
 
@@ -182,33 +180,15 @@ const TakePulseSurvey: React.FC = () => {
     if (loadError) return <div>{loadError}</div>;
     if (!survey || !user) return <div>Survey not found.</div>;
 
-    const handleRatingChange = (questionId: string, rating: number) => {
-        setAnswers(prev => ({ ...prev, [questionId]: rating }));
-    };
-
-    const handleTextChange = (questionId: string, text: string) => {
-        setAnswers(prev => ({ ...prev, [questionId]: text }));
-    };
-
-    const isSubmitDisabled = () => {
-        // Check if all required questions are answered.
-        // For simplicity, assume all RATING questions are required. Text questions are optional unless specified.
-        for (const section of survey.sections) {
-            for (const question of section.questions) {
-                if (question.type === 'rating' && !answers[question.id]) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    };
+    const isSubmitDisabled = () => survey.sections.some(s => s.questions.some(q => Boolean(validateAnswer(q, answers[q.id]))));
 
     const handleSubmit = () => {
+        if (isSubmitting || isSubmitDisabled()) return;
         setIsSubmitting(true);
         
         const formattedAnswers = Object.entries(answers).map(([qId, val]) => ({
             questionId: qId,
-            value: val as string | number
+            value: val as PulseAnswer
         }));
 
         const response: SurveyResponse = {
@@ -271,42 +251,7 @@ const TakePulseSurvey: React.FC = () => {
                     <div className="space-y-8">
                         {section.questions.map((q) => (
                             <div key={q.id} className="border-b border-gray-100 dark:border-gray-700 pb-6 last:border-0 last:pb-0">
-                                <p className="text-lg font-medium text-gray-900 dark:text-white mb-4">{q.text}</p>
-                                {q.type === 'rating' ? (
-                                    <div className="flex justify-between items-center max-w-md mx-auto md:mx-0">
-                                        {[1, 2, 3, 4, 5].map((rating) => {
-                                            const isSelected = answers[q.id] === rating;
-                                            let colorClass = 'bg-gray-100 text-gray-500 hover:bg-gray-200';
-                                            if (isSelected) {
-                                                if (rating <= 2) colorClass = 'bg-red-500 text-white ring-2 ring-red-300';
-                                                else if (rating === 3) colorClass = 'bg-yellow-500 text-white ring-2 ring-yellow-300';
-                                                else colorClass = 'bg-green-500 text-white ring-2 ring-green-300';
-                                            }
-                                            
-                                            return (
-                                                <button
-                                                    key={rating}
-                                                    type="button"
-                                                    onClick={() => handleRatingChange(q.id, rating)}
-                                                    className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg transition-all duration-200 ${colorClass}`}
-                                                >
-                                                    {rating}
-                                                </button>
-                                            );
-                                        })}
-                                        <div className="hidden md:flex text-xs text-gray-400 ml-4 flex-col justify-center">
-                                            <span>1 - Strongly Disagree</span>
-                                            <span>5 - Strongly Agree</span>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <Textarea
-                                        label="Your Answer"
-                                        value={String(answers[q.id] || '')}
-                                        onChange={(e) => handleTextChange(q.id, e.target.value)}
-                                        rows={3}
-                                    />
-                                )}
+                                <PulseQuestionInput question={q} value={answers[q.id]} onChange={value => setAnswers(prev => ({...prev,[q.id]:value}))} />
                             </div>
                         ))}
                     </div>
