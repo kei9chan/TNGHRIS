@@ -14,6 +14,7 @@ import AnalyticsSubNav from './AnalyticsSubNav';
 import FaqBot from '../helpdesk/FaqBot';
 import AssetManagementSubNav from './AssetManagementSubNav';
 import COESubNav from './COESubNav';
+import MobileFooter from './MobileFooter';
 
 const Layout: React.FC = () => {
   const location = useLocation();
@@ -27,6 +28,7 @@ const Layout: React.FC = () => {
   const isAnalyticsSection = location.pathname.startsWith('/employees/analytics');
   const isHelpdeskSection = location.pathname.startsWith('/helpdesk');
   const isAdminSection = location.pathname.startsWith('/admin');
+  const showMobileFooter = location.pathname === '/dashboard' || location.pathname === '/approvals';
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-gray-100 dark:bg-slate-900">
@@ -49,13 +51,14 @@ const Layout: React.FC = () => {
         {isAdminSection && <AdminSubNav />}
       </div>
 
-      <main className="relative z-0">
+      <main className={showMobileFooter ? 'relative z-0 pb-24 md:pb-0' : 'relative z-0'}>
         <div className="max-w-screen-2xl mx-auto py-6 px-4 sm:px-6 xl:px-10">
           <ApprovalNavigation />
           <Outlet />
         </div>
       </main>
       <FaqBot />
+      {showMobileFooter && <MobileFooter />}
     </div>
   );
 };

@@ -1,6 +1,5 @@
 
-import React, { useMemo, useEffect, useState } from 'react';
-import { loadMyFamilyVisitSummary } from '../../services/familyVisitService';
+import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import Card from '../ui/Card';
 import { useAuth } from '../../hooks/useAuth';
@@ -72,12 +71,10 @@ const QuickLinks: React.FC<QuickLinksProps> = ({ hideCOE = false }) => {
     const { user } = useAuth();
     const { can, workflowCan, getIrAccess } = usePermissions();
     const irAccess = useMemo(() => getIrAccess(), [getIrAccess]);
-    const [visitSummary,setVisitSummary]=useState('View annual visits');
-    useEffect(()=>{let live=true;if(user)loadMyFamilyVisitSummary(user.id).then(({used,pending,unknown})=>{if(!live)return;setVisitSummary(user.employmentStatus&&String(user.employmentStatus).toLowerCase()!=='regular'?'Regular employees only':unknown?'Action required':used>=4?'All annual visits used':pending?`${pending} request${pending===1?'':'s'} pending`:`${4-used} visits remaining`);}).catch(()=>{if(live)setVisitSummary('Open to check visit status');});return()=>{live=false;};},[user?.id,user?.employmentStatus]);
 
     const visibleLinks = useMemo(() => {
         const allQuickLinks: (QuickLinkCardProps & { id: QuickLinkId; allowed: boolean })[] = [
-            { id: 'family-visits', name: `Family Visit Privilege · ${visitSummary}`, path: '/employees/benefits?tab=my_benefits#family-visits', icon: <TicketIcon />, allowed: Boolean(user) },
+            { id: 'family-visits', name: 'My Benefits', path: '/employees/benefits?tab=my_benefits', icon: <TicketIcon />, allowed: Boolean(user) },
             // Keep access available even after the last assigned request is processed.
             // The center itself only loads the signed-in user's authorized queues.
             { id: 'acknowledgments', name: 'Pending Acknowledgments', path: '/acknowledgments', icon: <DocumentTextIcon />, allowed: Boolean(user) },
@@ -101,7 +98,7 @@ const QuickLinks: React.FC<QuickLinksProps> = ({ hideCOE = false }) => {
         if (!user) return [];
         return allQuickLinks.filter(link => link.allowed);
 
-    }, [user, irAccess, can, workflowCan, hideCOE, visitSummary]);
+    }, [user, irAccess, can, workflowCan, hideCOE]);
 
     if (visibleLinks.length === 0) return null;
 

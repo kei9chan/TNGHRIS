@@ -11,7 +11,6 @@ import ActionItemCard from './ActionItemCard';
 import QuickAnalyticsPreview from './QuickAnalyticsPreview';
 import UpcomingEventsWidget from './UpcomingEventsWidget';
 import QuickLinks from './QuickLinks';
-import ApprovalWidget from './ApprovalWidget';
 import MyRequestsWidget from './MyRequestsWidget';
 import { isCentralizedApprovalActionItem } from '../../utils/approvalCenterRouting';
 import Button from '../ui/Button';
@@ -1557,7 +1556,6 @@ const ManagerDashboard: React.FC = () => {
     return (
         <div className="space-y-6">
             <QuickLinks />
-            <ApprovalWidget />
             <MyRequestsWidget />
             <UpcomingEventsWidget />
 
