@@ -90,7 +90,7 @@ const WFHRequestModal: React.FC<WFHRequestModalProps> = ({ isOpen, onClose, onSa
     };
 
     return (
-        <Modal
+        <Modal acknowledgmentRequestType={canEditDetails ? "WFH" : undefined} acknowledgmentDraft={!!request}
             isOpen={isOpen}
             onClose={onClose}
             title={getTitle()}

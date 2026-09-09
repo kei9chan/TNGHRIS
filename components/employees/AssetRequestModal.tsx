@@ -52,7 +52,7 @@ const AssetRequestModal: React.FC<AssetRequestModalProps> = ({ isOpen, onClose, 
     };
 
     return (
-        <Modal
+        <Modal acknowledgmentRequestType="AssetRequests"
             isOpen={isOpen}
             onClose={onClose}
             title="Request an Asset"

@@ -3,7 +3,16 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL!;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY!;
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  global: { fetch: async (input, init) => {
+    const response = await fetch(input, init);
+    if (!response.ok && typeof window !== 'undefined') {
+      const body = await response.clone().json().catch(() => null);
+      if (body?.message === 'ACKNOWLEDGMENT_REQUIRED') window.dispatchEvent(new Event('acknowledgment-required'));
+    }
+    return response;
+  } },
+});
 
 type SupabaseReadResult = { error?: unknown };
 

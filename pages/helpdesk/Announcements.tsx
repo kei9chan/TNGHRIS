@@ -173,6 +173,7 @@ const Announcements: React.FC = () => {
         <div className="space-y-6">
             <div className="flex justify-between items-center">
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Announcements</h1>
+                <a className="text-sm underline" href="/acknowledgments/manage">Mandatory acknowledgment publishing and report</a>
                 {canManage && <Button onClick={handleNewAnnouncement}>New Announcement</Button>}
             </div>
             {isEditingDesc ? (

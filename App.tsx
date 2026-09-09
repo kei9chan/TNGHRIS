@@ -1,3 +1,6 @@
+import { GateRejectionNotice } from './modules/acknowledgments/Gate';
+const EmployeeAcknowledgments = React.lazy(() => import('./modules/acknowledgments/EmployeePage'));
+const AcknowledgmentAdmin = React.lazy(() => import('./modules/acknowledgments/AdminPage'));
 
 
 
@@ -311,6 +314,8 @@ const AppRoutes: React.FC = () => {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="payments" element={<ProtectedRoute><PayrollPaymentsPage /></ProtectedRoute>} />
+            <Route path="acknowledgments" element={<ProtectedRoute><EmployeeAcknowledgments /></ProtectedRoute>} />
+            <Route path="acknowledgments/manage" element={<ProtectedRoute><AcknowledgmentAdmin /></ProtectedRoute>} />
             <Route path="approvals" element={<ProtectedRoute><ApprovalCenter /></ProtectedRoute>} />
             <Route path="employee-snapshot" element={<ProtectedRoute><EmployeeSnapshotPage /></ProtectedRoute>} />
         <Route path="my-requests" element={<ProtectedRoute><MyRequests /></ProtectedRoute>} />
@@ -488,6 +493,7 @@ const App: React.FC = () => {
         <SettingsProvider>
           <PermissionsProvider>
             <BrowserRouter>
+              <GateRejectionNotice />
               <AppRoutes />
             </BrowserRouter>
           </PermissionsProvider>

@@ -311,6 +311,7 @@ const MemoLibrary: React.FC = () => {
         <div className="space-y-6">
             <div className="flex justify-between items-center">
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Memo Library</h1>
+                <a className="text-sm underline" href="/acknowledgments/manage">Mandatory acknowledgment publishing and report</a>
                 {canManageMemos && (
                     <div className="flex gap-2">
                         <Button variant="secondary" onClick={() => setIsBatchMemoUploadOpen(true)}>Batch Upload Memos</Button>
