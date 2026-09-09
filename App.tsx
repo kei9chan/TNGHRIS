@@ -24,6 +24,7 @@ import { hasEvaluationOversightAccess } from './utils/evaluationAccess';
 import { isBod } from './modules/employeeSnapshot/model';
 const EmployeeSnapshotPage = React.lazy(() => import('./modules/employeeSnapshot/EmployeeSnapshotPage'));
 import Layout from './components/layout/Layout';
+import AssignedPanAccess from './components/auth/AssignedPanAccess';
 import { isPayrollAccessRoute, isStaffPayrollRoute } from './modules/payroll/routes';
 const PayrollAccessPage = React.lazy(() => import('./modules/payroll/PayrollAccessPage'));
 const PayPackagesPage = React.lazy(() => import('./modules/payroll/PayPackagesPage'));
@@ -260,6 +261,9 @@ const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }
   const canReadEvaluationAsOversight = isEvaluationReadRoute && hasEvaluationOversightAccess(user);
 
   if (required && !can(required[1], required[2]) && !canReadEvaluationAsOversight) {
+    if (location.pathname === '/employees/pan') {
+      return <AssignedPanAccess key={`${user.id}:${legacyRequestId || ''}`} userId={user.id} requestId={legacyRequestId}>{children}</AssignedPanAccess>;
+    }
     return (
       <div className="flex min-h-[60vh] items-center justify-center p-6">
         <div className="max-w-lg rounded-xl border border-amber-200 bg-white p-6 text-center shadow dark:border-amber-900 dark:bg-slate-900">

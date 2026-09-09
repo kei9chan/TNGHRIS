@@ -143,8 +143,8 @@ const PersonnelActionNotice: React.FC = () => {
     const loadAll = async () => {
       try {
         const [directoryResult, templateResult, panResult, unitResult] = await Promise.all([
-          supabase.rpc('get_pan_directory'),
-          supabase.from('pan_templates').select('*').order('updated_at', { ascending: false }),
+          canCreatePAN ? supabase.rpc('get_pan_directory') : Promise.resolve({ data: { employees: [], approvers: [] }, error: null }),
+          canCreatePAN || canViewTemplatesTab ? supabase.from('pan_templates').select('*').order('updated_at', { ascending: false }) : Promise.resolve({ data: [], error: null }),
           supabase.from('pans').select('*').order('updated_at', { ascending: false }),
           supabase.from('business_units').select('id,name').order('name'),
         ]);
@@ -212,7 +212,7 @@ const PersonnelActionNotice: React.FC = () => {
       }
     };
     loadAll();
-  }, []);
+  }, [user?.id, canCreatePAN, canViewTemplatesTab]);
 
   useEffect(() => {
     const requestedPanId = getApprovalRequestId(searchParams);
