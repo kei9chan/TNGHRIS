@@ -1,3 +1,5 @@
+import PulseQuestionEditor from '../../components/evaluation/PulseQuestionEditor';
+import { mapPulseQuestion, validateQuestion } from '../../services/pulseQuestionRules';
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
@@ -42,26 +44,9 @@ const PulseSurveyBuilder: React.FC = () => {
     const [loading, setLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
 
-    if (!canManage) {
-        return (
-            <div className="max-w-3xl mx-auto space-y-4">
-                <Card>
-                    <div className="p-6 text-center text-gray-600 dark:text-gray-300">
-                        You do not have permission to manage pulse surveys.
-                    </div>
-                </Card>
-                <div className="text-center">
-                    <Link to="/evaluation/pulse">
-                        <Button variant="secondary">Back to Pulse Surveys</Button>
-                    </Link>
-                </div>
-            </div>
-        );
-    }
-
     useEffect(() => {
         const loadExisting = async () => {
-            if (!surveyId) return;
+            if (!surveyId || !canManage) return;
             setLoading(true);
             setError(null);
             const { data: surveyData, error: surveyErr } = await supabase.from('pulse_surveys').select('*').eq('id', surveyId).single();
@@ -92,11 +77,7 @@ const PulseSurveyBuilder: React.FC = () => {
             (questionRows || []).forEach((q: any) => {
                 const container = sectionMap[q.section_id];
                 if (container) {
-                    container.questions.push({
-                        id: q.id,
-                        text: q.text,
-                        type: q.question_type,
-                    });
+                    container.questions.push(mapPulseQuestion(q));
                 }
             });
             setSurvey({
@@ -112,7 +93,7 @@ const PulseSurveyBuilder: React.FC = () => {
             setLoading(false);
         };
         loadExisting();
-    }, [surveyId, navigate]);
+    }, [surveyId, navigate, canManage]);
 
     const handleSurveyChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
         const { name, value, type } = e.target;
@@ -124,13 +105,13 @@ const PulseSurveyBuilder: React.FC = () => {
     };
 
     const handleDateChange = (name: string, value: string) => {
-        setSurvey(prev => ({ ...prev, [name]: new Date(value) }));
+        setSurvey(prev => ({ ...prev, [name]: value ? new Date(value) : undefined }));
     };
 
     // Section Handlers
     const addSection = () => {
         const newSection: SurveySection = {
-            id: `sec-${Date.now()}`,
+            id: crypto.randomUUID(),
             title: 'New Section',
             description: '',
             questions: []
@@ -154,7 +135,7 @@ const PulseSurveyBuilder: React.FC = () => {
     // Question Handlers
     const addQuestion = (sectionId: string) => {
         const newQuestion: PulseSurveyQuestion = {
-            id: `q-${Date.now()}`,
+            id: crypto.randomUUID(),
             text: '',
             type: 'rating'
         };
@@ -181,111 +162,43 @@ const PulseSurveyBuilder: React.FC = () => {
         }));
     };
 
-    const updateQuestion = (sectionId: string, questionId: string, field: keyof PulseSurveyQuestion, value: string) => {
-        setSurvey(prev => ({
-            ...prev,
-            sections: prev.sections?.map(s => {
-                if (s.id === sectionId) {
-                    return {
-                        ...s,
-                        questions: s.questions.map(q => q.id === questionId ? { ...q, [field]: value } : q)
-                    };
-                }
-                return s;
-            })
-        }));
-    };
+    const replaceQuestion = (sectionId: string, question: PulseSurveyQuestion) => setSurvey(prev => ({...prev, sections: prev.sections?.map(s => s.id === sectionId ? {...s,questions:s.questions.map(q => q.id === question.id ? question : q)} : s)}));
 
     const handleSave = async () => {
         if (!survey.title || !survey.sections || survey.sections.length === 0) {
             alert("Title and at least one section are required.");
             return;
         }
-        setLoading(true);
-        setError(null);
-        
-        // Insert/update survey
-        const surveyPayload = {
-            title: survey.title,
-            description: survey.description || '',
-            start_date: survey.startDate ? survey.startDate.toISOString().split('T')[0] : null,
-            end_date: survey.endDate ? survey.endDate.toISOString().split('T')[0] : null,
-            status: survey.status || PulseSurveyStatus.Draft,
-            is_anonymous: survey.isAnonymous ?? true,
-            created_by_user_id: user?.id || null,
-        };
-
-        let surveyRecordId = surveyId || survey.id;
-
-        if (surveyRecordId) {
-            const { error: updateErr } = await supabase.from('pulse_surveys').update(surveyPayload).eq('id', surveyRecordId);
-            if (updateErr) {
-                setError(updateErr.message);
-                setLoading(false);
-                return;
-            }
-            // Replace sections/questions to keep it simple
-            await supabase.from('pulse_survey_sections').delete().eq('survey_id', surveyRecordId);
-        } else {
-            const { data, error: insertErr } = await supabase.from('pulse_surveys').insert(surveyPayload).select('id').single();
-            if (insertErr || !data) {
-                setError(insertErr?.message || 'Failed to create survey.');
-                setLoading(false);
-                return;
-            }
-            surveyRecordId = data.id;
-        }
-
-        // Re-insert sections and questions letting Supabase generate UUIDs
-        const sectionPayloads = (survey.sections || []).map((s, idx) => ({
-            survey_id: surveyRecordId,
-            title: s.title || 'Untitled Section',
-            description: s.description || '',
-            sort_order: idx,
-        }));
-
-        if (sectionPayloads.length > 0) {
-            const { data: insertedSections, error: secErr } = await supabase
-                .from('pulse_survey_sections')
-                .insert(sectionPayloads)
-                .select('id, sort_order');
-            if (secErr) {
-                setError(secErr.message);
-                setLoading(false);
-                return;
-            }
-            const sectionIdByOrder: Record<number, string> = {};
-            (insertedSections || []).forEach((row: any) => {
-                sectionIdByOrder[row.sort_order] = row.id;
-            });
-
-            const questionPayloads: any[] = [];
-            (survey.sections || []).forEach((section, idx) => {
-                const sectionId = sectionIdByOrder[idx];
-                if (!sectionId) return;
-                (section.questions || []).forEach((q, qIdx) => {
-                    questionPayloads.push({
-                        section_id: sectionId,
-                        text: q.text,
-                        question_type: q.type,
-                        sort_order: qIdx,
-                    });
-                });
-            });
-
-            if (questionPayloads.length > 0) {
-                const { error: qErr } = await supabase.from('pulse_survey_questions').insert(questionPayloads);
-                if (qErr) {
-                    setError(qErr.message);
-                    setLoading(false);
-                    return;
-                }
-            }
-        }
-
+        const invalid = survey.sections.flatMap(s => s.questions).map(validateQuestion).find(Boolean);
+        if (invalid) { setError(invalid); return; }
+        if (!survey.startDate || (survey.endDate && survey.endDate < survey.startDate)) { setError('Enter a valid survey date range.'); return; }
+        setLoading(true); setError(null);
+        const { error: saveError } = await supabase.rpc('save_pulse_survey_definition', { p_survey: {
+            id: surveyId || survey.id || crypto.randomUUID(), title: survey.title, description: survey.description || '',
+            start_date: survey.startDate.toISOString().slice(0,10), end_date: survey.endDate?.toISOString().slice(0,10) || null,
+            status: survey.status, is_anonymous: survey.isAnonymous, sections: survey.sections,
+        }});
         setLoading(false);
+        if (saveError) { setError(saveError.message); return; }
         navigate('/evaluation/pulse');
     };
+
+    if (!canManage) {
+        return (
+            <div className="max-w-3xl mx-auto space-y-4">
+                <Card>
+                    <div className="p-6 text-center text-gray-600 dark:text-gray-300">
+                        You do not have permission to manage pulse surveys.
+                    </div>
+                </Card>
+                <div className="text-center">
+                    <Link to="/evaluation/pulse">
+                        <Button variant="secondary">Back to Pulse Surveys</Button>
+                    </Link>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6 max-w-5xl mx-auto">
@@ -382,27 +295,7 @@ const PulseSurveyBuilder: React.FC = () => {
                         
                         <div className="p-4 space-y-3">
                             {section.questions.map((question, qIndex) => (
-                                <div key={question.id} className="flex items-center gap-3">
-                                    <div className="flex-grow">
-                                        <Input 
-                                            label="" 
-                                            value={question.text} 
-                                            onChange={(e) => updateQuestion(section.id, question.id, 'text', e.target.value)} 
-                                            placeholder={`Question ${qIndex + 1}`}
-                                        />
-                                    </div>
-                                    <div className="w-40">
-                                        <select 
-                                            value={question.type} 
-                                            onChange={(e) => updateQuestion(section.id, question.id, 'type', e.target.value as any)}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-slate-700 dark:border-gray-600 dark:text-white text-sm"
-                                        >
-                                            <option value="rating">Rating (1-5)</option>
-                                            <option value="text">Free Text</option>
-                                        </select>
-                                    </div>
-                                    <button onClick={() => removeQuestion(section.id, question.id)} className="text-gray-400 hover:text-red-500 p-2"><TrashIcon /></button>
-                                </div>
+                                <div key={question.id}><PulseQuestionEditor question={question} onChange={q => replaceQuestion(section.id, q)} onDelete={() => removeQuestion(section.id, question.id)} /></div>
                             ))}
                             <div className="pt-2">
                                 <button onClick={() => addQuestion(section.id)} className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline flex items-center font-medium">

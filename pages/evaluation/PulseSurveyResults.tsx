@@ -1,3 +1,4 @@
+import { mapPulseQuestion, formatPulseAnswer, csvCell } from '../../services/pulseQuestionRules';
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import Card from '../../components/ui/Card';
@@ -14,17 +15,23 @@ const PulseSurveyResults: React.FC = () => {
     const [responses, setResponses] = useState<any[]>([]);
     const [userDeptMap, setUserDeptMap] = useState<Record<string, string>>({});
     const [isLoading, setIsLoading] = useState(true);
+    const [loadError, setLoadError] = useState('');
 
     useEffect(() => {
         if (!surveyId) return;
         const load = async () => {
             setIsLoading(true);
-            const [{ data: sv }, { data: resp }, { data: users }] = await Promise.all([
+            const [{ data: sv, error: svError }, { data: resp, error: respError }, { data: users }] = await Promise.all([
                 supabase.from('pulse_surveys').select('*').eq('id', surveyId).single(),
                 supabase.from('pulse_survey_responses').select('*').eq('survey_id', surveyId),
                 supabase.from('hris_users').select('id, department'),
             ]);
-            setSurvey(sv || null);
+            if (svError || respError) { setLoadError(svError?.message || respError?.message || 'Unable to load results'); setIsLoading(false); return; }
+            const {data: sections, error: sectionError} = await supabase.from('pulse_survey_sections').select('*').eq('survey_id',surveyId).order('sort_order');
+            const ids = (sections || []).map(s => s.id);
+            const {data: questions, error: questionError} = ids.length ? await supabase.from('pulse_survey_questions').select('*').in('section_id',ids).order('sort_order') : {data:[],error:null};
+            if (sectionError || questionError) { setLoadError('Could not load survey questions.'); setIsLoading(false); return; }
+            setSurvey(sv ? {...sv,sections:(sections || []).map(section => ({...section,questions:(questions || []).filter(q => q.section_id === section.id).map(mapPulseQuestion)}))} : null);
             setResponses(resp || []);
             const deptMap: Record<string, string> = {};
             (users || []).forEach((u: any) => { deptMap[u.id] = u.department || 'Unknown'; });
@@ -36,7 +43,8 @@ const PulseSurveyResults: React.FC = () => {
 
     // Helper to process data
     const { sectionScores, departmentData, overallAverage, responseCount, textComments } = useMemo(() => {
-        if (!survey) return { sectionScores: [], departmentData: [], overallAverage: 0, responseCount: 0, textComments: [] };
+        if (loadError) return <div role="alert">{loadError}</div>;
+    if (!survey) return { sectionScores: [], departmentData: [], overallAverage: 0, responseCount: 0, textComments: [] };
 
         const sectionMap: Record<string, { total: number, count: number, title: string }> = {};
         const deptMap: Record<string, Record<string, { total: number, count: number }>> = {};
@@ -58,7 +66,7 @@ const PulseSurveyResults: React.FC = () => {
             }
 
             if (response.comments) {
-                comments.push({ text: response.comments, department: dept, date: response.submittedAt });
+                comments.push({ text: response.comments, department: dept, date: new Date(response.submitted_at || response.submittedAt) });
             }
 
             response.answers.forEach(ans => {
@@ -87,7 +95,8 @@ const PulseSurveyResults: React.FC = () => {
         }));
 
         const overallSum = finalSectionScores.reduce((sum, s) => sum + s.score, 0);
-        const overallAvg = finalSectionScores.length > 0 ? overallSum / finalSectionScores.length : 0;
+        const rated = Object.values(sectionMap).reduce((acc,s) => ({total:acc.total+s.total,count:acc.count+s.count}),{total:0,count:0});
+        const overallAvg = rated.count ? rated.total / rated.count : 0;
 
         const finalDepartmentData = Object.entries(deptMap).map(([deptName, sections]) => {
             const scores: Record<string, number> = {};
@@ -109,6 +118,13 @@ const PulseSurveyResults: React.FC = () => {
     if (isLoading) return <div className="p-8 text-center text-gray-500 dark:text-gray-400">Loading survey results…</div>;
     if (!survey) return <div className="p-8 text-center text-gray-500 dark:text-gray-400">Survey not found.</div>;
 
+    const questions = survey.sections.flatMap(s => s.questions);
+    const exportReport = () => {
+        const rows = [['Response', 'Submitted at', ...questions.map(q => q.text), 'Additional comments'], ...responses.map((r,i) => [survey.is_anonymous ? `Anonymous ${i+1}` : r.respondent_id, r.submitted_at, ...questions.map(q => formatPulseAnswer(q,(r.answers || []).find(a => a.questionId === q.id)?.value)),r.comments || ''])];
+        const url = URL.createObjectURL(new Blob(['\uFEFF'+rows.map(row => row.map(v => csvCell(String(v ?? ''))).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}));
+        const a = document.createElement('a'); a.href=url; a.download='pulse-survey-results.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(url),1000);
+    };
+
     const getTabClass = (tabName: string) => `px-4 py-2 font-medium text-sm rounded-md transition-colors ${activeTab === tabName ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`;
 
     return (
@@ -124,6 +140,8 @@ const PulseSurveyResults: React.FC = () => {
                 </p>
             </div>
 
+            <button type="button" className="rounded bg-indigo-600 px-4 py-2 text-white" onClick={exportReport}>Download responses (CSV)</button>
+            <Card title="Responses by question"><div className="space-y-6">{questions.map(q => <section key={q.id}><h3 className="font-semibold">{q.text}</h3><p className="text-sm text-gray-500">{q.type.replace('_',' ')} · {responses.filter(r => formatPulseAnswer(q,(r.answers || []).find(a => a.questionId === q.id)?.value) !== '').length} answered</p><ul className="mt-2 space-y-2">{responses.map((r,i) => <li key={r.id} className="border-b py-2 break-words"><span className="text-sm">{survey.is_anonymous ? `Anonymous ${i+1}` : r.respondent_id}: </span>{formatPulseAnswer(q,(r.answers || []).find(a => a.questionId === q.id)?.value) || 'Not answered'}</li>)}</ul></section>)}</div></Card>
             <div className="flex space-x-2 border-b border-gray-200 dark:border-gray-700 pb-2">
                 <button className={getTabClass('overview')} onClick={() => setActiveTab('overview')}>Overview</button>
                 <button className={getTabClass('heatmap')} onClick={() => setActiveTab('heatmap')}>Department Heatmap</button>
