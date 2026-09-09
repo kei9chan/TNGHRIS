@@ -1,4 +1,5 @@
-import React, { createContext, useState, ReactNode, useContext, useCallback, useEffect } from 'react';
+import { useAuth } from '../hooks/useAuth';
+import React, { createContext, useState, ReactNode, useContext, useCallback, useEffect, useRef } from 'react';
 import {
   Settings,
   ApproverConfigs,
@@ -51,6 +52,11 @@ interface SettingsContextType {
 export const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
 
 export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const { user } = useAuth();
+  const accountId = user?.id;
+  const currentAccount = useRef(accountId);
+  currentAccount.current = accountId;
+  const requestGeneration = useRef(0);
   const [settings, setSettings] = useState<Settings>(defaultAppSettings);
   const [isRbacEnabled, setIsRbacEnabled] = useState(true);
   const [approverConfigs, setApproverConfigs] = useState<ApproverConfigs>(DEFAULT_APPROVER_CONFIGS);
@@ -59,18 +65,27 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
     setSettings(prev => ({ ...prev, ...newSettings }));
   }, []);
 
-  // Load approver configs on mount
+  // Private configuration is loaded only after authentication is established.
   const refreshApproverConfigs = useCallback(async () => {
+    const generation = ++requestGeneration.current;
+    if (!accountId) {
+      setApproverConfigs(DEFAULT_APPROVER_CONFIGS);
+      return;
+    }
     try {
       const configs = await fetchApproverConfigs();
-      setApproverConfigs(configs);
+      if (currentAccount.current === accountId && generation === requestGeneration.current) {
+        setApproverConfigs(configs);
+      }
     } catch (e) {
       console.warn('Failed to load approver configs', e);
     }
-  }, []);
+  }, [accountId]);
 
   useEffect(() => {
-    refreshApproverConfigs();
+    setApproverConfigs(DEFAULT_APPROVER_CONFIGS);
+    void refreshApproverConfigs();
+    return () => { requestGeneration.current++; };
   }, [refreshApproverConfigs]);
 
   const updateGMApprover = useCallback(async (config: GMApproverConfig) => {
