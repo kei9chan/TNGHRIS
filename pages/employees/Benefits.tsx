@@ -504,6 +504,7 @@ const Benefits: React.FC = () => {
             {activeTab === 'my_benefits' && (
                 <div className="space-y-8">
                     <FamilyVisitPanel mode="mine" />
+                    <div><h2 className="text-2xl font-bold text-gray-900 dark:text-white">Additional Benefits</h2><p className="mt-2 text-sm text-gray-600 dark:text-gray-300">Separate from your four annual free-entry visits. Discounts do not consume a free-visit credit.</p></div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {activeBenefitTypes.map(bt => (
                             <Card key={bt.id} className="flex flex-col h-full hover:shadow-lg transition-shadow duration-200">
