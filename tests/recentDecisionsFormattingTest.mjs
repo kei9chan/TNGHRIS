@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import { build } from 'esbuild';
+const result = await build({ entryPoints: ['utils/recentDecisionFormatting.ts'], bundle: true, write: false, platform: 'node', format: 'esm' });
+const module = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
+assert.equal(module.formatEntityName('ManpowerRequest'), 'Manpower request');
+assert.equal(module.formatEntityName('UnknownApproval'), 'Unknown Approval');
+assert.deepEqual(module.parseDecisionDetails('{"comments":null,"newStage":"COMPLETED","newStatus":"Approved","approvalStage":"BOD_GM","previousStatus":"Pending","singleApprovalPoolRule":true}'), { summary: 'Final approval completed.', stage: 'BOD / GM', transition: 'Pending → Approved', comment: '' });
+assert.deepEqual(module.parseDecisionDetails('Final benefit approval recorded.'), { summary: 'Final benefit approval recorded.', stage: '', transition: '', comment: '' });
+assert.equal(module.parseDecisionDetails('{"newStatus":"Rejected","reason":"Insufficient details"}').comment, 'Insufficient details');
+assert.match(module.formatDecisionTime('2026-09-09T13:10:19Z'), /Sep 9, 2026, 9:10 PM/);
+console.log('PASS: approval history formats JSON, legacy text, stages, transitions, comments, labels and Manila time.');
