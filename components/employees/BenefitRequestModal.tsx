@@ -23,6 +23,10 @@ const BenefitRequestModal: React.FC<BenefitRequestModalProps> = ({ isOpen, onClo
   const [dateNeeded, setDateNeeded] = useState(new Date().toISOString().split('T')[0]);
   const [details, setDetails] = useState('');
   const [error, setError] = useState('');
+  const isBakebeDiscount = benefitType.name === 'Bakebe — 20% Discount';
+  const isFoodDiscount = benefitType.name === 'Food & Drinks — 20% Discount';
+  const [booking, setBooking] = useState('');
+  const [site, setSite] = useState('');
 
   useEffect(() => {
     if (isOpen) {
@@ -30,6 +34,8 @@ const BenefitRequestModal: React.FC<BenefitRequestModalProps> = ({ isOpen, onClo
       setDateNeeded(new Date().toISOString().split('T')[0]);
       setDetails('');
       setError('');
+      setBooking('');
+      setSite('');
     }
   }, [isOpen, benefitType]);
 
@@ -37,6 +43,14 @@ const BenefitRequestModal: React.FC<BenefitRequestModalProps> = ({ isOpen, onClo
     setError('');
     if (!dateNeeded || !details) {
       setError('Please fill in all required fields.');
+      return;
+    }
+    if ((isBakebeDiscount || isFoodDiscount) && !site.trim()) {
+      setError('Enter the destination site / branch.');
+      return;
+    }
+    if (isBakebeDiscount && !booking.trim()) {
+      setError('Provide your prior booking reference or confirmation details. Approval is required before use.');
       return;
     }
 
@@ -60,7 +74,7 @@ const BenefitRequestModal: React.FC<BenefitRequestModalProps> = ({ isOpen, onClo
         employeeName: user?.name,
         amount: parsedAmount || undefined,
         dateNeeded: new Date(dateNeeded),
-        details: details,
+        details: (isBakebeDiscount || isFoodDiscount) ? `Site / branch: ${site.trim()}\n${isBakebeDiscount ? `Prior booking: ${booking.trim()}\n` : ''}${details}` : details,
         status: BenefitRequestStatus.PendingHR,
         submissionDate: new Date(),
     };
@@ -94,14 +108,16 @@ const BenefitRequestModal: React.FC<BenefitRequestModalProps> = ({ isOpen, onClo
 
         {error && <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-2 rounded">{error}</p>}
 
-        <Input 
+        {(isBakebeDiscount || isFoodDiscount) && <Input label="Destination site / branch" value={site} onChange={e => setSite(e.target.value)} required />}
+        {isBakebeDiscount && <Input label="Prior booking reference / confirmation details" value={booking} onChange={e => setBooking(e.target.value)} required />}
+        {!(isBakebeDiscount || isFoodDiscount) && <Input
             label="Amount (if applicable)" 
             type="number" 
             value={amount} 
             onChange={e => setAmount(e.target.value)} 
             placeholder="e.g. 1000"
             unit={settings.currency}
-        />
+        />}
 
         <Input 
             label="Date Needed" 
