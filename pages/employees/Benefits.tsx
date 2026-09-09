@@ -20,6 +20,8 @@ import BenefitFulfillmentTable from '../../components/employees/BenefitFulfillme
 import FulfillmentModal from '../../components/employees/FulfillmentModal';
 import RejectReasonModal from '../../components/feedback/RejectReasonModal';
 import EditableDescription from '../../components/ui/EditableDescription';
+import FamilyVisitPanel from '../../components/employees/FamilyVisitPanel';
+import { isFamilyVisit } from '../../services/familyVisitService';
 
 const getStatusColor = (status: BenefitRequestStatus) => {
     switch (status) {
@@ -179,7 +181,7 @@ const Benefits: React.FC = () => {
                     .order('submission_date', { ascending: false });
                 if (error) throw error;
                 if (data) {
-                    setAllRequests((data as BenefitRequestRow[]).map(mapRequestRow));
+                    setAllRequests((data as BenefitRequestRow[]).filter(row => !isFamilyVisit(row.benefit_type_name)).map(mapRequestRow));
                 }
             } catch (err) {
                 console.error('Failed to load benefit requests', err);
@@ -441,7 +443,7 @@ const Benefits: React.FC = () => {
     const getTabClass = (tabName: string) =>
         `px-4 py-2 text-sm font-medium rounded-md focus:outline-none transition-colors ${activeTab === tabName ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`;
 
-    const activeBenefitTypes = useMemo(() => benefitTypes.filter(bt => bt.isActive), [benefitTypes]);
+    const activeBenefitTypes = useMemo(() => benefitTypes.filter(bt => bt.isActive && !isFamilyVisit(bt.name)), [benefitTypes]);
 
     return (
         <div className="space-y-6">
@@ -454,6 +456,7 @@ const Benefits: React.FC = () => {
 
             <div className="flex space-x-2 border-b border-gray-200 dark:border-gray-700 pb-2 overflow-x-auto">
                 <button className={getTabClass('my_benefits')} onClick={() => handleTabChange('my_benefits')}>My Benefits</button>
+                <button className={getTabClass('family_visits')} onClick={() => handleTabChange('family_visits')}>Family Visits & Operations</button>
 
                 {(isHRManager || isBOD) && (
                     <button className={getTabClass('approvals')} onClick={() => handleTabChange('approvals')}>
@@ -481,6 +484,7 @@ const Benefits: React.FC = () => {
                 )}
             </div>
 
+            {['family_visits', 'approvals', 'fulfillment'].includes(activeTab) && <FamilyVisitPanel mode="all" />}
             {activeTab === 'configuration' && isAdminOrHR && (
                 <div className="space-y-6">
                     <EditableDescription descriptionKey="benefitsDesc" className="text-sm" />
@@ -499,6 +503,7 @@ const Benefits: React.FC = () => {
 
             {activeTab === 'my_benefits' && (
                 <div className="space-y-8">
+                    <FamilyVisitPanel mode="mine" />
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {activeBenefitTypes.map(bt => (
                             <Card key={bt.id} className="flex flex-col h-full hover:shadow-lg transition-shadow duration-200">
