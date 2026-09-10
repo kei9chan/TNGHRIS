@@ -34,7 +34,7 @@ interface QuickLinkCardProps {
 
 const QuickLinkCard: React.FC<QuickLinkCardProps> = ({ name, path, state, icon }) => (
   <Link to={path} state={state} className="block hover:no-underline group">
-    <div className="h-full bg-white dark:bg-slate-800 shadow-md rounded-lg p-4 transition-all duration-200 ease-in-out group-hover:shadow-xl group-hover:-translate-y-1">
+    <div className="h-full bg-white dark:bg-slate-800 shadow-md rounded-lg p-3 transition-all duration-200 ease-in-out group-hover:shadow-xl group-hover:-translate-y-1">
       <div className="flex flex-col items-center text-center">
         {icon}
         <h3 className="mt-2 text-sm font-semibold text-gray-700 dark:text-gray-300">{name}</h3>
@@ -106,8 +106,8 @@ const QuickLinks: React.FC<QuickLinksProps> = ({ hideCOE = false }) => {
 
     return (
         <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Quick Links</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-4">
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-3">Quick Links</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
             {visibleLinks.map(link => (
             <QuickLinkCard key={link.id} {...link} />
             ))}

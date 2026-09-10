@@ -17,7 +17,6 @@ import QuickAnalyticsPreview from './QuickAnalyticsPreview';
 import UpcomingEventsWidget from './UpcomingEventsWidget';
 import UnassignedTicketsWidget from './UnassignedTicketsWidget';
 import AssignedCasesWidget from './AssignedCasesWidget';
-import QuickLinks from './QuickLinks';
 import MyRequestsWidget from './MyRequestsWidget';
 import { isCentralizedApprovalActionItem } from '../../utils/approvalCenterRouting';
 import { fetchMyPendingTimeApprovalAssignments } from '../../services/timeApprovalService';
@@ -1492,7 +1491,6 @@ const HRDashboard: React.FC = () => {
 
     return (
         <div className="space-y-6">
-            <QuickLinks />
             <ApprovalWidget />
             <MyRequestsWidget />
 
