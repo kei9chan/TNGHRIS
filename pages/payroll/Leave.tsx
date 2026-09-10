@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -256,22 +256,26 @@ const Leave: React.FC = () => {
     setIsModalOpen(true);
   };
 
+  const submissionKey=useRef(crypto.randomUUID());
+  const submissionLock=useRef(false);
   const handleSave = async (requestToSave: Partial<LeaveRequest>, status: LeaveRequestStatus) => {
     if (!user) return;
 
+    if(submissionLock.current)return;submissionLock.current=true;
+    try {
     const finalStatus = status;
 
     let attachmentUrl: string | undefined = requestToSave.attachmentUrl;
 
     if (attachmentFile) {
-      const path = `${user.id}/leave/${Date.now()}-${attachmentFile.name}`;
+      const path = `${user.id}/leave/${submissionKey.current}-${attachmentFile.name}`;
       const { data: uploaded, error: uploadError } = await supabase.storage
         .from('leave-request-attachments')
         .upload(path, attachmentFile, { upsert: true });
       if (!uploadError && uploaded?.path) {
         attachmentUrl = uploaded.path;
       } else {
-        setToastInfo({ show: true, title: 'Upload failed', message: 'Could not upload attachment.' });
+        throw new Error('Could not upload attachment. Your leave request has not been submitted.');
       }
     }
 
@@ -302,42 +306,16 @@ const Leave: React.FC = () => {
       department_id: user.departmentId || null,
     };
 
-    let savedId = requestToSave.id;
-    if (requestToSave.id) {
-      const { error } = await supabase.from('leave_requests').update(payload).eq('id', requestToSave.id);
-      if (error) throw error;
-    } else {
-      const { data: inserted, error } = await supabase.from('leave_requests').insert(payload).select('id, status, approval_route, approval_reason, approval_context').single();
-      if (error) throw error;
-      savedId = inserted.id;
-    }
-
-    // Notify the approver (manager) when a leave request is submitted as Pending
-    if (status === LeaveRequestStatus.Pending && user.managerId) {
-      try {
-        const leaveTypeName = leaveTypes.find(lt => lt.id === requestToSave.leaveTypeId)?.name || 'Leave';
-        const { data: approvalDetails } = await supabase
-          .from('leave_requests')
-          .select('status, approval_route, approval_reason, approval_context')
-          .eq('id', savedId)
-          .maybeSingle();
-        const thresholdReason = getTimeApprovalReason('leave', approvalDetails?.approval_context, approvalDetails?.approval_reason, approvalDetails?.approval_route === 'BOD_REQUIRED');
-        await createNotification({
-          userId: user.managerId,
-          title: '📋 Leave Request Pending Approval',
-          message: `${user.name} submitted a ${leaveTypeName} request (${requestToSave.durationDays || 1} day${(requestToSave.durationDays || 1) !== 1 ? 's' : ''}). Status: ${getApprovalStatusLabel(approvalDetails?.status || finalStatus)}.${thresholdReason ? ` ${thresholdReason}` : ''}`,
-          type: NotificationType.LEAVE_REQUEST,
-          link: `/approvals?type=leave&item=${savedId}`,
-        });
-        if (savedId) sendConditionalApprovalEmails('leave', savedId).catch(error => console.error('Manager approval email failed', error));
-      } catch (e) {
-        console.error('Failed to send leave submission notification', e);
-      }
-    }
-
+    const {data: submission,error: saveError}=await supabase.rpc('submit_leave_request',{p_key:submissionKey.current,p_id:requestToSave.id||null,p_data:payload});
+    if(saveError)throw new Error(saveError.message);
+    const savedId=submission.request.id;
+    // The database trigger creates one deduplicated manager notification.
+    if(submission.created && status===LeaveRequestStatus.Pending)sendConditionalApprovalEmails('leave',savedId).catch(console.error);
     setIsModalOpen(false);
     setAttachmentFile(null);
-    loadLeaveRequests();
+    await loadLeaveRequests();
+    submissionKey.current=crypto.randomUUID();
+    } finally {submissionLock.current=false;}
   };
 
   const handleApproval = async (request: LeaveRequest, approved: boolean, notes: string) => {
@@ -351,14 +329,14 @@ const Leave: React.FC = () => {
       error = caught;
     }
 
-    if (!error && request.employeeId) {
+    if (!error && !result?.alreadyDecided && request.employeeId) {
       // Approved usage is recorded atomically in the server leave ledger.
       // Notify the requester
       createNotification({
         userId: request.employeeId,
         title: approved ? '✅ Leave Request Approved' : '❌ Leave Request Rejected',
         message: approved
-          ? (result?.route === 'BOD_REQUIRED' ? `Your leave request was recommended by ${user.name} and is pending BOD approval. ${getTimeApprovalReason('leave', result?.context, result?.context?.reason, true) || ''}` : `Your leave request (${request.durationDays} day${request.durationDays !== 1 ? 's' : ''}) has been approved by ${user.name}.`)
+          ? (result?.status === 'PendingBOD' ? `Your leave request was recommended by ${user.name} and is pending BOD approval. ${getTimeApprovalReason('leave', result?.context, result?.context?.reason, true) || ''}` : `Your leave request (${request.durationDays} day${request.durationDays !== 1 ? 's' : ''}) has been approved by ${user.name}.`)
           : `Your leave request has been rejected by ${user.name}${notes ? `: "${notes}"` : '.'}`,
         type: NotificationType.LEAVE_DECISION,
         link: `/approvals?type=leave&item=${request.id}`,
@@ -367,9 +345,9 @@ const Leave: React.FC = () => {
 
     if (error) {
       setToastInfo({ show: true, title: 'Approval failed', message: error.message || 'The request could not be processed.' });
-      return;
+      throw error;
     }
-    setToastInfo({ show: true, title: 'Success', message: result?.route === 'BOD_REQUIRED' && approved ? 'Manager approved; request routed for BOD final approval.' : `Request ${approved ? 'approved' : 'rejected'}.` });
+    setToastInfo({ show: true, title: 'Success', message: result?.status === 'PendingBOD' && approved ? 'Manager approved; request routed for BOD final approval.' : `Request ${approved ? 'approved' : 'rejected'}.` });
     setIsModalOpen(false);
     setSelectedRequest(null);
     setIsRejectModalOpen(false);
@@ -378,7 +356,8 @@ const Leave: React.FC = () => {
   };
 
   const handleQuickApprove = (request: LeaveRequest) => {
-    handleApproval(request, true, 'Quick approval from list');
+    if(request.status===LeaveRequestStatus.PendingBOD){handleOpenModal(request);return;}
+    void handleApproval(request, true, 'Quick approval from list');
   };
 
   const handleQuickReject = (request: LeaveRequest) => {

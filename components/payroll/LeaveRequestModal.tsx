@@ -22,7 +22,7 @@ interface LeaveRequestModalProps {
   onClose: () => void;
   request: LeaveRequest | null;
   leaveTypes: { id: string; name: string }[];
-  onSave: (request: Partial<LeaveRequest>, status: LeaveRequestStatus) => void;
+  onSave: (request: Partial<LeaveRequest>, status: LeaveRequestStatus) => void | Promise<void>;
   onApprove: (request: LeaveRequest, approved: boolean, notes: string) => void | Promise<void>;
 }
 
@@ -35,7 +35,7 @@ const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({ isOpen, onClose, 
     const decisionLock = useRef(false);
     useEffect(() => {
       let active=true; setDecisionError('');setProgress(null);
-      if (isOpen && request?.status === LeaveRequestStatus.PendingBOD) {
+      if (isOpen && request?.id) {
         supabase.rpc('get_time_approval_progress',{p_request_type:'leave',p_request_id:request.id}).then(({data,error})=>{if(active){if(error)setDecisionError(error.message);else setProgress(data);}});
       }
       return ()=>{active=false;};
@@ -43,10 +43,12 @@ const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({ isOpen, onClose, 
     const decide = async (approved:boolean) => {
       if (!request || decisionLock.current) return;
       decisionLock.current=true;setBusy(true);setDecisionError('');
-      try { await onApprove(request,approved,managerNotes); }
+      try { if(approved&&progress?.creditException&&request.status===LeaveRequestStatus.PendingBOD&&!window.confirm('This request exceeds the employee’s available earned credits. You are approving this as a BOD exception. No additional earned credits will be granted.'))return; await onApprove(request,approved,managerNotes); }
       catch(error:any){setDecisionError(error.message || 'Decision was not saved. Please retry.');}
       finally{decisionLock.current=false;setBusy(false);}
     };
+    const saveLock=useRef(false);
+    const save=async(status:LeaveRequestStatus)=>{if(saveLock.current)return;saveLock.current=true;setBusy(true);setDecisionError('');try{await onSave(current,status);}catch(e:any){setDecisionError(e.message||'Leave request was not saved. Your entry is retained; retry.');}finally{saveLock.current=false;setBusy(false);}};
     const [managerNotes, setManagerNotes] = useState('');
 
     const isNewRequest = !request;
@@ -117,10 +119,10 @@ const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({ isOpen, onClose, 
         if (isManagerView) {
             return (
                 <div className="flex w-full flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
-                    <Textarea label="Manager Notes (Required for Rejection)" value={managerNotes} onChange={e => setManagerNotes(e.target.value)} rows={1} />
+                    <Textarea label={request?.status===LeaveRequestStatus.PendingBOD?"BOD note (optional for approval; required for rejection)":"Manager Notes (Required for Rejection)"} value={managerNotes} onChange={e => setManagerNotes(e.target.value)} rows={1} />
                     <div className="flex space-x-2 ml-4">
                         <Button variant="danger" onClick={() => void decide(false)} disabled={busy || !managerNotes.trim() || progress?.alreadyApproved}>Reject</Button>
-                        <Button onClick={() => void decide(true)} disabled={busy || progress?.alreadyApproved} isLoading={busy}>{progress?.alreadyApproved ? 'Already approved by you' : 'Approve'}</Button>
+                        <Button onClick={() => void decide(true)} disabled={busy || progress?.alreadyApproved || (request?.status===LeaveRequestStatus.PendingBOD && !progress?.canAct)} isLoading={busy}>{progress?.alreadyApproved ? 'Already approved by you' : 'Approve'}</Button>
                     </div>
                 </div>
             );
@@ -128,13 +130,13 @@ const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({ isOpen, onClose, 
         if (canEdit) {
             return (
                 <div className="flex w-full justify-end space-x-2">
-                    <Button variant="secondary" onClick={onClose}>Cancel</Button>
-                    <Button onClick={() => onSave(current, LeaveRequestStatus.Draft)}>Save Draft</Button>
+                    <Button variant="secondary" disabled={busy} onClick={onClose}>Cancel</Button>
+                    <Button disabled={busy} onClick={() => void save(LeaveRequestStatus.Draft)}>Save Draft</Button>
                     <Button 
-                        onClick={() => onSave(current, LeaveRequestStatus.Pending)} 
+                        disabled={busy} onClick={() => void save(LeaveRequestStatus.Pending)}
                         variant="primary"
                     >
-                        Submit
+                        {busy ? 'Submitting leave request…' : 'Submit'}
                     </Button>
                 </div>
             )
@@ -147,12 +149,15 @@ const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({ isOpen, onClose, 
             isOpen={isOpen}
             onClose={busy ? () => {} : onClose}
             title={isNewRequest ? 'Request Leave' : 'Leave Request Details'}
-            size="3xl"
+            size="3xl" viewportFit
             footer={footer()}
         >
             <div className="space-y-4">
                 {decisionError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-red-800 dark:bg-red-950 dark:text-red-200">{decisionError}</p>}
                 {progress?.required > 0 && <p role="status">{progress.completed} of {progress.required} BOD approvals completed{progress.alreadyApproved ? ' · Already approved by you' : ''}</p>}
+                {progress?.creditException && <p className="rounded-lg bg-amber-50 p-3 text-amber-900 dark:bg-amber-950 dark:text-amber-100">Insufficient earned credits. This request requires BOD exception approval. An authorized BOD may approve or reject this request.</p>}
+                {progress?.creditTracked && <dl className="grid grid-cols-2 gap-3 rounded-xl border p-4">{[['Available earned credits',progress.availableCredits],['Requested days',progress.requestedCredits],['Credit shortfall',progress.creditShortfall],['Balance after this request',progress.remainingBalance],['Exception status',progress.creditOverrides?.length?'BOD exception recorded':progress.creditException?'BOD exception required':'Within available credits']].map(([label,value])=><div key={String(label)}><dt className="text-sm">{label}</dt><dd className="font-semibold">{String(value)}</dd></div>)}</dl>}
+                {progress?.creditOverrides?.map((o:any)=><p key={o.approver_id} className="text-sm">BOD credit exception · {new Date(o.created_at).toLocaleString('en-PH')} · {o.note||'No approval note'} · Approver {o.approver_id}</p>)}
                 {request && (
                     <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-600 dark:bg-slate-800">
                         <p><span className="font-semibold">Employee:</span> {request.employeeName}</p>

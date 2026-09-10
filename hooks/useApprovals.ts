@@ -102,7 +102,7 @@ export function useApprovals({ user }: UseApprovalsOptions) {
 
         let leaveQuery = supabase
             .from('leave_requests')
-            .select('id, employee_id, employee_name, leave_type_id, start_date, end_date, start_time, end_time, duration_days, reason, status, history_log, attachment_url, approver_id, business_unit_id, department_id, approval_route, approval_reason, approval_context');
+            .select('id, employee_id, employee_name, leave_type_id, start_date, end_date, start_time, end_time, duration_days, reason, status, history_log, attachment_url, approver_id, business_unit_id, department_id, approval_route, approval_reason, approval_context').is('duplicate_of', null);
         let wfhQuery = supabase
             .from('wfh_requests')
             .select('id, employee_id, employee_name, date, end_date, reason, status, report_link, approved_by, approved_at, rejection_reason, created_at, approval_route, approval_reason, approval_context');
