@@ -1,0 +1,10 @@
+import React,{useEffect,useState} from 'react';
+import Modal from '../ui/Modal';
+import {AttendanceHistory as History,getMyAttendanceHistory} from '../../services/employeeAttendance';
+import {duration,shiftLabel} from './AttendanceMission';
+export default function AttendanceHistory({onClose}:{onClose:()=>void}){
+ const [week,setWeek]=useState(new Date(Date.now()+8*3600000).toISOString().slice(0,10));
+ const [data,setData]=useState<History|null>(null),[error,setError]=useState(''),[retry,setRetry]=useState(0);
+ useEffect(()=>{let active=true;setData(null);setError('');getMyAttendanceHistory(week).then(d=>{if(active)setData(d);}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[week,retry]);
+ return <Modal isOpen viewportFit onClose={onClose} title="My attendance history" size="lg"><div className="space-y-4 p-4"><label className="block">Choose a date in the week<input type="date" className="ml-2 rounded border bg-transparent p-2" value={week} onChange={e=>{if(e.target.value)setWeek(e.target.value);}}/></label><p className="text-xs">Recorded working time excluding logged breaks. Payroll treatment is reviewed separately.</p>{error?<p role="alert">{error} <button className="min-h-11 underline" onClick={()=>setRetry(n=>n+1)}>Retry</button></p>:!data?<p>Loading your history…</p>:data.days.map(d=><article key={d.workDate} className="rounded-xl border border-slate-200 p-3 dark:border-slate-600"><h3 className="font-semibold">{d.workDate} · {duration(d.elapsedSeconds)}</h3><p className="text-sm">{shiftLabel(d)}</p><p className="text-sm">{d.state==='completed'?'Clock-out recorded':d.state==='working'?'On the clock':d.state==='on_break'?'On break':'No clock-in recorded'}</p><dl className="mt-2 text-sm">{d.events.map((e,i)=><div className="flex flex-wrap justify-between gap-2" key={e.id||i}><dt>{e.type.replaceAll('_',' ')}</dt><dd>{new Date(e.timestamp).toLocaleTimeString('en-PH',{timeZone:d.timezone,hour:'numeric',minute:'2-digit'})}</dd></div>)}</dl></article>)}</div></Modal>;
+}

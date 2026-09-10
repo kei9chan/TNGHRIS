@@ -2,6 +2,7 @@ import React,{useEffect,useRef,useState} from 'react';
 import {supabase} from '../../services/supabaseClient';
 import {AttendanceIssue,attendanceChanged,issueLabels,issueRpc,todayManila,manila} from '../../services/attendanceIssues';
 import Modal from '../ui/Modal';
+import {getMyAttendance} from '../../services/employeeAttendance';
 const field='mt-1 min-h-12 w-full rounded-xl border border-slate-300 bg-white p-3 text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-white';
 export default function AttendanceIssueForm({onClose,onSaved,initial}:{onClose:()=>void;onSaved:(id:string)=>void;initial?:AttendanceIssue}){
  const [kind,setKind]=useState<keyof typeof issueLabels>(initial?.kind||'absence');const [date,setDate]=useState(initial?.work_date||todayManila());
@@ -10,6 +11,7 @@ export default function AttendanceIssueForm({onClose,onSaved,initial}:{onClose:(
  useEffect(()=>{const warn=(e:BeforeUnloadEvent)=>{if(dirty){e.preventDefault();e.returnValue='';}};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[dirty]);
  const close=()=>{if(!busy&&(!dirty||window.confirm('Discard your unsaved attendance report?')))onClose();};
  const submit=async(e:React.FormEvent)=>{e.preventDefault();if(uploading.current)return;uploading.current=true;setBusy(true);setError('');try{
+ if(kind==='absence'&&date===todayManila()){const current=await getMyAttendance();if(['working','on_break'].includes(current.state)&&!window.confirm('You are currently clocked in. If you are leaving work, please confirm whether you are reporting an absence for the rest of today.'))return;}
  if(file&&!path.current){if(file.size>10*1024*1024||!['application/pdf','image/jpeg','image/png','image/webp'].includes(file.type))throw new Error('Attach a PDF, JPG, PNG, or WebP file up to 10 MB.');const auth=await supabase.auth.getUser();if(!auth.data.user)throw new Error('Sign in again to upload your attachment.');const p=`${auth.data.user.id}/${key.current}/${crypto.randomUUID()}`;const result=await supabase.storage.from('attendance-issue-files').upload(p,file,{contentType:file.type});if(result.error)throw result.error;path.current=p;}
  const day=nextDay?new Date(Date.parse(date+'T00:00:00Z')+86400000).toISOString().slice(0,10):date;
  const id=await issueRpc<string>('submit_attendance_issue',{p_key:key.current,p_id:initial?.id||null,p_revision:initial?.revision||null,p_data:{kind,date,time:kind==='absence'?null:`${day}T${time}:00+08:00`,punch,category,explanation:note,confirmed,changesConfirmed,attachment:path.current||null}});

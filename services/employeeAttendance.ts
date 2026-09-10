@@ -14,3 +14,6 @@ export const getExceptionAdmin=()=>rpc<ExceptionAdmin>('get_attendance_exception
 export const saveClockException=(input:{employee:string;recordId:string|null;revision:number;type:string;requiresClock:boolean;from:string;to:string|null;reason:string})=>rpc<string>('save_attendance_exception',{p_employee:input.employee,p_record_id:input.recordId,p_expected_revision:input.revision,p_type:input.type,p_requires_clock:input.requiresClock,p_from:input.from,p_to:input.to,p_reason:input.reason});
 export const getHrAttendanceDay=(employee:string,date:string)=>rpc<AttendanceDay>('get_hr_attendance_day',{p_employee:employee,p_date:date});
 export const correctAttendanceDay=(employee:string,date:string,revision:number,events:ClockEvent[],reason:string)=>rpc<AttendanceDay>('correct_attendance_day',{p_employee:employee,p_date:date,p_expected_revision:revision,p_events:events,p_reason:reason});
+
+export type AttendanceHistory={weekStart:string;days:AttendanceDay[];needsClarification:boolean};
+export const getMyAttendanceHistory=(week?:string)=>rpc<AttendanceHistory>('get_my_attendance_history',{p_week:week||null});
