@@ -129,6 +129,7 @@ const Timekeeping: React.FC = () => {
     const [businessUnits, setBusinessUnits] = useState<{ id: string; name?: string; code?: string; color?: string }[]>([]);
     const [departments, setDepartments] = useState<{ id: string; name: string; businessUnitId: string }[]>([]);
     const [employees, setEmployees] = useState<User[]>([]);
+    const [clockingExemptEmployeeIds, setClockingExemptEmployeeIds] = useState<string[]>([]);
     const [serviceAreas, setServiceAreas] = useState<ServiceArea[]>([]);
     const [staffingRequirements, setStaffingRequirements] = useState<StaffingRequirement[]>([]);
     
@@ -320,6 +321,31 @@ const Timekeeping: React.FC = () => {
     
     const weekStart = useMemo(() => getStartOfWeek(viewDate), [viewDate]);
     const weekDates = Array.from({ length: 7 }).map((_, i) => addDays(weekStart, i));
+
+    // Clocking exemptions that cover the complete displayed week also do not
+    // require a schedule in the weekly roster. Keep this as a scoped RPC so
+    // managers never need direct read access to exemption records.
+    useEffect(() => {
+        let active = true;
+        const ids = employees.map(employee => employee.id);
+        if (!ids.length) {
+            setClockingExemptEmployeeIds([]);
+            return () => { active = false; };
+        }
+        supabase.rpc('get_schedule_clocking_exemptions', {
+            p_employees: ids,
+            p_week: toDateOnly(weekStart),
+        }).then(({ data, error }) => {
+            if (!active) return;
+            if (error) {
+                setClockingExemptEmployeeIds([]);
+                setToastInfo({ show: true, message: error.message });
+                return;
+            }
+            setClockingExemptEmployeeIds(Array.isArray(data) ? data.filter((id): id is string => typeof id === 'string') : []);
+        });
+        return () => { active = false; };
+    }, [employees, weekStart, user?.id]);
 
     // Fetch operating hours for the selected BU
     useEffect(() => {
@@ -542,7 +568,7 @@ const Timekeeping: React.FC = () => {
         setDepartmentFilter('all');
     }, [selectedBuId]);
 
-    const employeesInBU = useMemo(() => {
+    const scopedEmployees = useMemo(() => {
         if (complianceManager) return employees.filter(u=>u.status==='Active'&&u.reportsTo===complianceManager).sort((a,b)=>a.name.localeCompare(b.name));
         let filtered = selectedBuId === 'all'
             ? employees.filter(u => u.status === 'Active')
@@ -575,6 +601,11 @@ const Timekeeping: React.FC = () => {
         }
         return filtered.sort((a,b) => a.name.localeCompare(b.name));
     }, [selectedBuId, departmentFilter, employees, user, complianceManager]);
+
+    const employeesInBU = useMemo(() => {
+        const exemptIds = new Set(clockingExemptEmployeeIds);
+        return scopedEmployees.filter(employee => !exemptIds.has(employee.id));
+    }, [scopedEmployees, clockingExemptEmployeeIds]);
 
     const publicationEmployeeKey=employeesInBU.map(e=>e.id).sort().join(',');
     useEffect(()=>{let active=true;setScheduleStatus('dirty');setPublicationRows([]);setPublicationBusy(true);
@@ -1281,7 +1312,7 @@ const Timekeeping: React.FC = () => {
                 <LiveShiftStatusDashboard flaggedEmployees={flaggedEmployees}
                     selectedBuId={selectedBuId}
                     actions={dropdowns}
-                    employees={employeesInBU}
+                    employees={scopedEmployees}
                     assignments={assignments}
                     templates={templates}
                 />
@@ -1292,7 +1323,7 @@ const Timekeeping: React.FC = () => {
 
             {gapBar}
 
-            <CompensableWorkPanel employees={employeesInBU}/>
+            <CompensableWorkPanel employees={scopedEmployees}/>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">WeeklyShiftRoster</h1>
             
             {isScheduleEditable && (
