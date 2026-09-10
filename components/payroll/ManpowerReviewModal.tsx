@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ManpowerApprovalStage, ManpowerRequest, ManpowerRequestItem, ManpowerRequestStatus } from '../../types';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
@@ -48,6 +48,15 @@ const statusClasses = (label: string) => label === 'Approved'
     : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200';
 
 const ManpowerReviewModal: React.FC<ManpowerReviewModalProps> = ({ isOpen, onClose, request, onApprove, onReject, canApprove = false }) => {
+  const actionLock = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState('');
+  const runAction = async (action: () => void | Promise<void>) => {
+    if (actionLock.current) return;
+    actionLock.current = true; setBusy(true); setActionError('');
+    try { await action(); } catch (error) { setActionError(error instanceof Error ? error.message : 'Unable to save decision. Please retry.'); }
+    finally { actionLock.current = false; setBusy(false); }
+  };
   const [rejectReason, setRejectReason] = useState('');
   const [approvalComment, setApprovalComment] = useState('');
   const [isRejecting, setIsRejecting] = useState(false);
@@ -62,6 +71,7 @@ const ManpowerReviewModal: React.FC<ManpowerReviewModalProps> = ({ isOpen, onClo
   if (!request) return null;
 
   const currentStage = stageLabel(request);
+  const directRouting = request.approvalTrail?.some(entry => /manager stage not required|Routing corrected/.test(entry.action));
   const canAct = canApprove
     && request.status === ManpowerRequestStatus.Pending
     && (request.approvalStage === ManpowerApprovalStage.BusinessUnitManager || request.approvalStage === ManpowerApprovalStage.BodGm);
@@ -70,7 +80,7 @@ const ManpowerReviewModal: React.FC<ManpowerReviewModalProps> = ({ isOpen, onClo
 
   const handleApprove = () => {
     if (window.confirm(`Approve this on-call request with ${totalNeeded} on-call FTE and an estimated cost of ₱${request.grandTotal?.toLocaleString()}?`)) {
-      void onApprove(request.id, approvalComment.trim() || undefined);
+      void runAction(() => onApprove(request.id, approvalComment.trim() || undefined));
     }
   };
 
@@ -79,7 +89,7 @@ const ManpowerReviewModal: React.FC<ManpowerReviewModalProps> = ({ isOpen, onClo
       alert('Please provide a reason for rejection.');
       return;
     }
-    void onReject(request.id, rejectReason.trim());
+    void runAction(() => onReject(request.id, rejectReason.trim()));
     setIsRejecting(false);
     setRejectReason('');
   };
@@ -89,8 +99,8 @@ const ManpowerReviewModal: React.FC<ManpowerReviewModalProps> = ({ isOpen, onClo
       <Button variant="secondary" onClick={onClose}>Close</Button>
       {canAct && (
         <>
-          <Button variant="danger" onClick={() => setIsRejecting(true)}>Reject</Button>
-          <Button variant="success" onClick={handleApprove}>Approve</Button>
+          <Button variant="danger" disabled={busy} onClick={() => setIsRejecting(true)}>Reject</Button>
+          <Button variant="success" disabled={busy} onClick={handleApprove}>{busy ? 'Saving…' : 'Approve'}</Button>
         </>
       )}
     </div>
@@ -99,6 +109,8 @@ const ManpowerReviewModal: React.FC<ManpowerReviewModalProps> = ({ isOpen, onClo
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={`On-Call Request · ${request.businessUnitName}`} size="5xl" footer={footer}>
       <div className="space-y-6 text-slate-900 dark:text-slate-100">
+        {actionError && <p role="alert" className="rounded-lg bg-red-950 p-3 text-red-100">{actionError}</p>}
+        {directRouting && <p className="rounded-lg bg-indigo-950/40 p-3 text-sm">Routed directly to BOD / GM approval. One eligible BOD or GM approval is required.</p>}
         <div className="grid grid-cols-2 gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-4 dark:border-slate-600 dark:bg-slate-900/40">
           <div><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Date needed</p><p className="mt-1 font-semibold">{new Date(request.date).toLocaleDateString()}</p></div>
           <div><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Forecasted PAX</p><p className="mt-1 font-semibold">{request.forecastedPax}</p></div>
@@ -110,7 +122,7 @@ const ManpowerReviewModal: React.FC<ManpowerReviewModalProps> = ({ isOpen, onClo
         <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-600">
           <p className="mb-3 text-sm font-bold">Approval progress</p>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-            {['Pending Business Unit Manager', 'Pending BOD / GM Approval', 'Approved'].map((step, index) => {
+            {(directRouting ? ['Submitted', 'Pending BOD / GM Approval', 'Approved'] : ['Pending Business Unit Manager', 'Pending BOD / GM Approval', 'Approved']).map((step, index) => {
               const complete = (currentStage === 'Approved') || (currentStage === 'Pending BOD / GM Approval' && index === 0);
               const active = currentStage === step;
               return <div key={step} className={`rounded-lg border px-3 py-2 text-sm ${active ? 'border-indigo-400 bg-indigo-50 font-bold text-indigo-800 dark:bg-indigo-950 dark:text-indigo-100' : complete ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-100' : 'border-slate-200 text-slate-500 dark:border-slate-600 dark:text-slate-400'}`}><span className="mr-2">{complete ? '✓' : index + 1}</span>{step}</div>;
@@ -151,7 +163,7 @@ const ManpowerReviewModal: React.FC<ManpowerReviewModalProps> = ({ isOpen, onClo
         {!!request.approvalTrail?.length && (
           <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-600">
             <h3 className="text-lg font-bold">Approval trail</h3>
-            <div className="mt-3 space-y-3">{request.approvalTrail.map((entry, index) => <div key={`${entry.timestamp}-${index}`} className="flex gap-3 border-l-2 border-indigo-200 pl-4 dark:border-indigo-800"><div className="min-w-0"><p className="font-semibold">{entry.action} · {entry.stage === ManpowerApprovalStage.BodGm ? 'BOD / GM Approval' : entry.stage === ManpowerApprovalStage.BusinessUnitManager ? 'Business Unit Manager' : entry.stage}</p><p className="text-sm text-slate-600 dark:text-slate-300">{entry.approverName} · {entry.approverRole} · {new Date(entry.timestamp).toLocaleString()}</p>{entry.comments && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{entry.comments}</p>}</div></div>)}</div>
+            <div className="mt-3 space-y-3">{request.approvalTrail.map((entry, index) => <div key={`${entry.timestamp}-${index}`} className="flex gap-3 border-l-2 border-indigo-200 pl-4 dark:border-indigo-800"><div className="min-w-0"><p className="font-semibold">{/manager stage not required|Routing corrected/.test(entry.action) ? 'Submitted for BOD / GM approval' : entry.action} · {/manager stage not required|Routing corrected/.test(entry.action) ? 'Direct routing' : entry.stage === ManpowerApprovalStage.BodGm ? 'BOD / GM Approval' : entry.stage === ManpowerApprovalStage.BusinessUnitManager ? 'Business Unit Manager' : entry.stage}</p><p className="text-sm text-slate-600 dark:text-slate-300">{entry.approverName} · {entry.approverRole} · {new Date(entry.timestamp).toLocaleString()}</p>{entry.comments && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{/manager stage not required|Routing corrected/.test(entry.action) ? 'This requester proceeds directly to BOD / GM review.' : entry.comments}</p>}</div></div>)}</div>
           </div>
         )}
       </div>

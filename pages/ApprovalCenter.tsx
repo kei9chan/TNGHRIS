@@ -91,7 +91,7 @@ const ApprovalMobileCard: React.FC<{
   const requestLeaveDays = approvalContextNumber(item.approvalContext, 'requestDays');
   const threshold = approvalContextNumber(item.approvalContext, 'threshold');
   const month = item.approvalContext?.month ? String(item.approvalContext.month) : undefined;
-  const statusLabel = getApprovalStatusLabel(item.status);
+  const statusLabel = item.kind === 'manpower' ? item.currentStep : getApprovalStatusLabel(item.status);
   const isTimeRequest = TIME_KINDS.has(item.kind);
   const detail = isTimeRequest ? item.details : item.reason || item.details;
 
@@ -433,8 +433,8 @@ export default function ApprovalCenter() {
             <button aria-label={`Toggle ${displayTitle}`} onClick={() => setExpanded(expanded === group.kind ? null : group.kind)} className="inline-flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg text-xl text-slate-700 hover:bg-slate-100 dark:text-white dark:hover:bg-slate-700">{expanded === group.kind ? '⌄' : '›'}</button>
             <span className={`rounded-full px-3 py-1 text-sm font-bold ${KIND_META[group.kind].badge}`}>{KIND_META[group.kind].title}</span>
             <div className="min-w-0 flex-[1_1_15rem]"><h2 className="font-bold text-slate-900 dark:text-white">{displayTitle} — {group.items.length} pending</h2><p className="text-sm text-slate-500 dark:text-slate-300">{KIND_META[group.kind].rule}</p><p className="mt-1 text-xs text-slate-500 dark:text-slate-300">Oldest {dayAge(oldest.start)} days · {new Set(group.items.map(item => item.employeeId).filter(Boolean)).size} employees</p></div>
-            {!!exceptions.length && <button onClick={() => { setExpanded(group.kind); setFilters({ ...filters, quick: 'exceptions' }); }} className="min-h-11 font-semibold text-indigo-600 dark:text-indigo-300">Review exceptions ({exceptions.length})</button>}
-            {individualOnly ? <button onClick={() => setExpanded(group.kind)} className="min-h-11 rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white">Review queue</button> : <Button variant="success" disabled={!selectableRequests.length} onClick={() => openConfirm(group.kind, selectableRequests.map(item => item.id))}>Approve all pending — {selectableRequests.length}</Button>}
+            {!!exceptions.length && <button onClick={() => navigate(exceptions[0].reviewUrl)} className="min-h-11 font-semibold text-indigo-600 dark:text-indigo-300">Review exceptions ({exceptions.length})</button>}
+            {individualOnly ? <button onClick={() => navigate(group.items[0].reviewUrl)} className="min-h-11 rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white">Review queue</button> : <Button variant="success" disabled={!selectableRequests.length} onClick={() => openConfirm(group.kind, selectableRequests.map(item => item.id))}>Approve all pending — {selectableRequests.length}</Button>}
           </div>
           {expanded === group.kind && <div className="border-t border-slate-200 dark:border-slate-600">
             {!individualOnly && <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 px-4 py-3 text-sm dark:bg-slate-700 dark:text-slate-100"><label className="flex min-h-11 items-center gap-2"><input type="checkbox" checked={selectableRequests.length > 0 && checked.length === selectableRequests.length} onChange={event => { const next = new Set(selected); selectableRequests.forEach(item => event.target.checked ? next.add(item.canonicalKey) : next.delete(item.canonicalKey)); setSelected(next); }} /> Select all pending requests ({selectableRequests.length})</label><Button size="sm" disabled={!checked.length} onClick={() => openConfirm(group.kind, checked.map(item => item.id))}>Approve selected — {checked.length}</Button></div>}
@@ -460,7 +460,7 @@ export default function ApprovalCenter() {
                   </> : <>
                     <td className="whitespace-nowrap px-4 py-4">{fmtDate(item.start)}<div className={`text-xs ${dayAge(item.start) >= 3 ? 'font-semibold text-red-600 dark:text-red-300' : 'text-slate-500 dark:text-slate-300'}`}>{dayAge(item.start)} day{dayAge(item.start) === 1 ? '' : 's'} pending · {item.duration}</div></td>
                     <td className="px-4 py-4 font-medium">{item.currentStep}</td>
-                    <td className="px-4 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${isBodApprovalStatus(item.status) ? 'bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-200' : 'bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200'}`}>{getApprovalStatusLabel(item.status)}</span></td>
+                    <td className="px-4 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${isBodApprovalStatus(item.status) ? 'bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-200' : 'bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200'}`}>{item.kind === 'manpower' ? item.currentStep : getApprovalStatusLabel(item.status)}</span></td>
                     <td className="max-w-xs px-4 py-4"><div className={`rounded-lg border px-3 py-2 text-sm ${reasonTone(item)}`}><span aria-hidden="true" className="mr-2">{needsIndividualReview(item) ? '⚠' : '✓'}</span>{reason}</div></td>
                   </>}
                   <td className="sticky right-0 z-10 bg-white px-4 py-4 shadow-[-10px_0_12px_-12px_rgba(15,23,42,0.45)] dark:bg-slate-800"><Link className="inline-flex min-h-11 whitespace-nowrap items-center font-semibold text-indigo-600 dark:text-indigo-300" to={item.reviewUrl}>Review request →</Link></td>
