@@ -1,3 +1,4 @@
+import GCMessage from '../../components/attendance/GCMessage';
 import React,{useEffect,useRef,useState} from 'react';
 import {Link,useSearchParams} from 'react-router-dom';
 import AttendanceIssueForm from '../../components/attendance/AttendanceIssueForm';
@@ -20,6 +21,7 @@ export default function AttendanceRequests(){const data=useAttendanceIssues();co
  {r.status==='details'&&<div className="my-4 rounded-xl border border-amber-400 p-4"><strong>Action Required: Update Attendance Request</strong><p className="whitespace-pre-wrap">{r.clarification_message||r.audit.filter(a=>a.action==='details').at(-1)?.reason}</p><p>Returned: {r.reviewed_at&&manila(r.reviewed_at)} · Needs Clarification</p></div>}
  {r.status==='rejected'&&!r.hrState?.startsWith('closed')&&<div className="my-4 rounded-xl border border-amber-400 p-4"><strong>Attendance Request Not Approved – HR Review Pending</strong><p>{r.rejection_category}</p><p className="whitespace-pre-wrap">{r.rejection_comments}</p><p>Rejection does not establish a violation. HR will review the facts.</p></div>}
  <dl className="my-4 grid gap-3 sm:grid-cols-2">{[['Scheduled shift',shiftText(r.schedule)],['Reason',r.category],['Explanation',r.explanation],['Approver',r.approverName||'HR fallback — reporting relationship needs review'],['Submitted',manila(r.submitted_at)],['Response due',manila(r.due_at)],...(r.requested_time?[[r.kind==='punch'?String(r.punch_type).replaceAll('_',' '):'Requested time',manila(r.requested_time)]]:[])].map(([k,v])=><div key={k}><dt className="text-sm text-slate-500 dark:text-slate-400">{k}</dt><dd className="break-words">{v}</dd></div>)}</dl>
+ <GCMessage request={r}/>
  {r.attachment&&<button className={button} onClick={()=>void attachment(r)}>Open private attachment</button>}
  {r.status==='approved'&&<div className="my-4 rounded-xl bg-emerald-50 p-4 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200"><strong>{approvedLabels[r.kind]}</strong><p>Original schedule preserved. Payroll and leave treatment remain for HR review.</p><p>{r.reviewed_at&&manila(r.reviewed_at)} · Approval reference {r.id}</p>{r.kind==='punch'&&<PunchEvidence id={r.id}/>}</div>}
  {r.canReview&&<ManagerDecision request={r} onChanged={()=>{attendanceChanged();void data.load();}}/>}

@@ -1,3 +1,4 @@
+import ApprovalWidget from './ApprovalWidget';
 // Phase 2 Migration: All data now fetched from Supabase — mockDataCompat import removed
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
@@ -1556,6 +1557,7 @@ const ManagerDashboard: React.FC = () => {
     return (
         <div className="space-y-6">
             <QuickLinks />
+            <ApprovalWidget />
             <MyRequestsWidget />
             <UpcomingEventsWidget />
 
