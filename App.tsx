@@ -83,6 +83,7 @@ const AttendanceExceptions = React.lazy(() => import('./pages/payroll/Attendance
 const AttendanceDevices = React.lazy(() => import('./pages/payroll/AttendanceDevices'));
 const AttendanceKiosk = React.lazy(() => import('./pages/payroll/AttendanceKiosk'));
 const MissedPunches = React.lazy(() => import('./pages/payroll/MissedPunches'));
+const AttendancePulsePage = React.lazy(() => import('./pages/payroll/AttendancePulse'));
 const AttendanceRequests = React.lazy(() => import('./pages/payroll/AttendanceRequests'));
 const AttendanceReview = React.lazy(() => import('./pages/payroll/AttendanceReview'));
 const ClockingExceptions = React.lazy(() => import('./pages/payroll/ClockingExceptions'));
@@ -172,6 +173,7 @@ const routePermissions: Array<[string, Resource, Permission]> = [
   ...flattenRoutePermissions(NAV_LINKS),
   ['/approvals', 'Dashboard', Permission.View] as [string, Resource, Permission],
   ['/my-requests', 'Dashboard', Permission.View] as [string, Resource, Permission],
+  ['/payroll/attendance-pulse', 'Dashboard', Permission.View] as [string, Resource, Permission],
   ['/payroll/attendance-requests', 'Dashboard', Permission.View] as [string, Resource, Permission],
 ].sort(([leftPath], [rightPath]) => rightPath.length - leftPath.length);
 
@@ -410,6 +412,7 @@ const AppRoutes: React.FC = () => {
             <Route path="exceptions" element={<ProtectedRoute><AttendanceExceptions /></ProtectedRoute>} />
             <Route path="attendance-devices" element={<ProtectedRoute><AttendanceDevices /></ProtectedRoute>} />
             <Route path="missed-punches" element={<ProtectedRoute><MissedPunches /></ProtectedRoute>} />
+            <Route path="attendance-pulse" element={<ProtectedRoute><AttendancePulsePage /></ProtectedRoute>} />
             <Route path="attendance-requests" element={<ProtectedRoute><AttendanceRequests /></ProtectedRoute>} />
             <Route path="attendance-review" element={<ProtectedRoute><AttendanceReview /></ProtectedRoute>} />
             <Route path="clocking-exceptions" element={<ProtectedRoute><ClockingExceptions /></ProtectedRoute>} />

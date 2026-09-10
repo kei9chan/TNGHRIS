@@ -1,3 +1,4 @@
+import ApprovalWidget from './ApprovalWidget';
 
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
@@ -1785,6 +1786,7 @@ const EmployeeDashboard: React.FC = () => {
                 icon={toastInfo.icon}
             />
             <QuickLinks />
+            <ApprovalWidget />
             <AnniversaryBanner />
 
 
