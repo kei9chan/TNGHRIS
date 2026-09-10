@@ -27,7 +27,7 @@ const HRReviewQueue: React.FC = () => {
     const [pendingUsers, setPendingUsers] = useState<User[]>([]);
     const [pendingDocuments, setPendingDocuments] = useState<UserDocument[]>([]);
     const [employeeLookup, setEmployeeLookup] = useState<Map<string, string>>(new Map());
-    const [activeUsers, setActiveUsers] = useState<Array<{ id: string; name: string; role: Role }>>([]);
+    const [activeUsers, setActiveUsers] = useState<Array<{ id: string; name: string; role: Role; businessUnitId?: string }>>([]);
     const [reportingToMap, setReportingToMap] = useState<Record<string, string>>({});
     const [employeeIdMap, setEmployeeIdMap] = useState<Record<string, string>>({});
 
@@ -115,7 +115,7 @@ const HRReviewQueue: React.FC = () => {
             try {
                 const { data, error } = await supabase
                     .rpc('get_accessible_hris_users')
-                    .select('id, full_name, email, role, status, position, department, business_unit, birth_date')
+                    .select('id, full_name, email, role, status, position, department, business_unit, business_unit_id, birth_date')
                     .eq('status', 'Inactive');
                 if (error) throw error;
                 if (data) {
@@ -130,6 +130,7 @@ const HRReviewQueue: React.FC = () => {
                             position: u.position || '',
                             department: u.department || '',
                             businessUnit: u.business_unit || '',
+                            businessUnitId: u.business_unit_id || undefined,
                             birthDate: u.birth_date || '',
                         })) as User[]
                     );
@@ -143,11 +144,9 @@ const HRReviewQueue: React.FC = () => {
     }, []);
 
     // Role-based hierarchy for "Reports To" selection
-    const getReportsToOptions = (pendingRole: Role) => {
-        const seniorRoles: Role[] = [Role.HRManager, Role.Admin, Role.OperationsDirector, Role.GeneralManager, Role.BOD];
-        const managerAndAbove: Role[] = [Role.Manager, Role.BusinessUnitManager, ...seniorRoles];
-        const isManagerLevel = pendingRole === Role.Manager || pendingRole === Role.BusinessUnitManager;
-        return activeUsers.filter(u => (isManagerLevel ? seniorRoles : managerAndAbove).includes(u.role));
+    const getReportsToOptions = (pendingRole: Role, pendingBusinessUnitId?: string) => {
+        const allowed: Role[] = [Role.Manager, Role.BusinessUnitManager, Role.Auditor, Role.HRManager, Role.OperationsDirector, Role.GeneralManager, Role.BOD, Role.Admin];
+        return activeUsers.filter(u => allowed.includes(u.role) && (u.role !== Role.BusinessUnitManager || !pendingBusinessUnitId || u.businessUnitId === pendingBusinessUnitId));
     };
 
     useEffect(() => {
@@ -155,7 +154,7 @@ const HRReviewQueue: React.FC = () => {
             try {
                 const { data, error } = await supabase
                     .from('hris_users')
-                    .select('id, full_name, role')
+                    .select('id, full_name, role, business_unit_id')
                     .eq('status', 'Active')
                     .order('full_name');
                 if (error || !data) return;
@@ -164,6 +163,7 @@ const HRReviewQueue: React.FC = () => {
                         id: row.id,
                         name: formatEmployeeName(row.full_name || 'Unknown'),
                         role: row.role as Role,
+                        businessUnitId: row.business_unit_id || undefined,
                     }))
                 );
             } catch (e) {
@@ -432,12 +432,9 @@ const HRReviewQueue: React.FC = () => {
                 <Card title="New User Registrations">
                     <div className="space-y-4">
                         {filteredPendingUsers.map(pendingUser => {
-                            const reportsToOptions = getReportsToOptions(pendingUser.role);
+                            const reportsToOptions = getReportsToOptions(pendingUser.role, pendingUser.businessUnitId);
                             const selectedReportsTo = reportingToMap[pendingUser.id] || '';
-                            const isManagerLevel = pendingUser.role === Role.Manager || pendingUser.role === Role.BusinessUnitManager;
-                            const hintText = isManagerLevel
-                                ? 'Managers must report to: HR Manager, Admin, Operations Director, General Manager, or Board of Director.'
-                                : 'Employees must report to: Manager, Business Unit Manager, HR Manager, Admin, Operations Director, General Manager, or Board of Director.';
+                            const hintText = 'Select the employee’s Business Unit Manager, Manager, Auditor, or HR Manager. The Business Unit Manager is limited to the employee’s assigned business unit.';
                             return (
                                 <div key={pendingUser.id} className="p-4 border dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800/50">
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
