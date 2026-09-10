@@ -159,7 +159,8 @@ export const createLeaveRequest = async (request: Partial<LeaveRequest>, user: U
     department_id: user.departmentId || null,
   };
 
-  const { data, error } = await supabase.from('leave_requests').insert(payload).select().single();
+  const { data: result, error } = await supabase.rpc('submit_leave_request',{p_key:crypto.randomUUID(),p_data:{...payload,status:LeaveRequestStatus.Pending},p_id:null});
+  const data=result?.request;
   if (error) throw new Error(error.message || 'Failed to create leave request');
   return mapLeaveRequest(data as LeaveRequestRow);
 };
