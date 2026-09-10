@@ -30,7 +30,7 @@ begin
  if not (public.get_attendance_issues(r)->'rows'->0->>'canReview')::boolean then raise exception 'Direct manager cannot review';end if;
  perform public.review_attendance_issue(r,'details','Please confirm details',1);
  perform set_config('request.jwt.claims',claims,true);
- perform public.submit_attendance_issue(payload||'{"explanation":"Updated rollback test"}',gen_random_uuid(),r,2);
+ perform public.submit_attendance_issue(payload||'{"explanation":"Updated rollback test","changesConfirmed":true}',gen_random_uuid(),r,2);
  perform public.review_attendance_issue(r,'withdraw','Withdrawal test',3);
  begin update attendance_issues.audit set action='tampered' where request_id=r;raise exception 'Audit mutation succeeded';exception when others then if sqlerrm='Audit mutation succeeded' then raise;end if;end;
  -- Create a transaction-only publication on a day with no attendance session.
