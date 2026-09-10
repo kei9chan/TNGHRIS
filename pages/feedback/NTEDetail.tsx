@@ -1,3 +1,4 @@
+import {CaseQuestions} from '../../modules/caseQuestions';
 import { decisionSaved } from '../../services/approvalNavigation';
 import NTEWorkflowPanel from '../../modules/nte/NTEWorkflowPanel';
 import { DisciplineEntry } from '../../types';
@@ -409,6 +410,7 @@ const NTEDetail: React.FC = () => {
                     </div>
                 </dl>
             </div>
+            {user?.id !== nte.employeeId && <CaseQuestions caseId={incidentReport.id} />}
             <NTEWorkflowPanel key={nte.id} nte={nte} onChanged={()=>setReload(x=>x+1)}/>
             {canScheduleHearing&&<Button variant="secondary" onClick={()=>setIsHearingModalOpen(true)}>Schedule administrative hearing</Button>}
             {currentUserStep && (

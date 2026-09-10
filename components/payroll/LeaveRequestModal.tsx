@@ -1,5 +1,6 @@
+import { supabase } from '../../services/supabaseClient';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { LeaveRequest, LeaveRequestStatus } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import Modal from '../ui/Modal';
@@ -22,12 +23,30 @@ interface LeaveRequestModalProps {
   request: LeaveRequest | null;
   leaveTypes: { id: string; name: string }[];
   onSave: (request: Partial<LeaveRequest>, status: LeaveRequestStatus) => void;
-  onApprove: (request: LeaveRequest, approved: boolean, notes: string) => void;
+  onApprove: (request: LeaveRequest, approved: boolean, notes: string) => void | Promise<void>;
 }
 
 const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({ isOpen, onClose, request, leaveTypes, onSave, onApprove }) => {
     const { user } = useAuth();
     const [current, setCurrent] = useState<Partial<LeaveRequest>>(request || {});
+    const [decisionError,setDecisionError] = useState('');
+    const [busy,setBusy] = useState(false);
+    const [progress,setProgress] = useState<any>(null);
+    const decisionLock = useRef(false);
+    useEffect(() => {
+      let active=true; setDecisionError('');setProgress(null);
+      if (isOpen && request?.status === LeaveRequestStatus.PendingBOD) {
+        supabase.rpc('get_time_approval_progress',{p_request_type:'leave',p_request_id:request.id}).then(({data,error})=>{if(active){if(error)setDecisionError(error.message);else setProgress(data);}});
+      }
+      return ()=>{active=false;};
+    }, [isOpen,request?.id,request?.status]);
+    const decide = async (approved:boolean) => {
+      if (!request || decisionLock.current) return;
+      decisionLock.current=true;setBusy(true);setDecisionError('');
+      try { await onApprove(request,approved,managerNotes); }
+      catch(error:any){setDecisionError(error.message || 'Decision was not saved. Please retry.');}
+      finally{decisionLock.current=false;setBusy(false);}
+    };
     const [managerNotes, setManagerNotes] = useState('');
 
     const isNewRequest = !request;
@@ -97,11 +116,11 @@ const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({ isOpen, onClose, 
     const footer = () => {
         if (isManagerView) {
             return (
-                <div className="flex w-full justify-between items-center">
+                <div className="flex w-full flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
                     <Textarea label="Manager Notes (Required for Rejection)" value={managerNotes} onChange={e => setManagerNotes(e.target.value)} rows={1} />
                     <div className="flex space-x-2 ml-4">
-                        <Button variant="danger" onClick={() => onApprove(request!, false, managerNotes)} disabled={!managerNotes}>Reject</Button>
-                        <Button onClick={() => onApprove(request!, true, managerNotes)}>Approve</Button>
+                        <Button variant="danger" onClick={() => void decide(false)} disabled={busy || !managerNotes.trim() || progress?.alreadyApproved}>Reject</Button>
+                        <Button onClick={() => void decide(true)} disabled={busy || progress?.alreadyApproved} isLoading={busy}>{progress?.alreadyApproved ? 'Already approved by you' : 'Approve'}</Button>
                     </div>
                 </div>
             );
@@ -126,12 +145,14 @@ const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({ isOpen, onClose, 
     return (
         <Modal acknowledgmentRequestType={canEdit ? "Leave" : undefined} acknowledgmentDraft={!isNewRequest}
             isOpen={isOpen}
-            onClose={onClose}
+            onClose={busy ? () => {} : onClose}
             title={isNewRequest ? 'Request Leave' : 'Leave Request Details'}
             size="3xl"
             footer={footer()}
         >
             <div className="space-y-4">
+                {decisionError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-red-800 dark:bg-red-950 dark:text-red-200">{decisionError}</p>}
+                {progress?.required > 0 && <p role="status">{progress.completed} of {progress.required} BOD approvals completed{progress.alreadyApproved ? ' · Already approved by you' : ''}</p>}
                 {request && (
                     <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-600 dark:bg-slate-800">
                         <p><span className="font-semibold">Employee:</span> {request.employeeName}</p>

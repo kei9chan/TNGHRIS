@@ -1,7 +1,7 @@
 import { GateMessage, useAcknowledgmentGate } from '../../modules/acknowledgments/Gate';
 import { ApprovalDialogNavigation } from '../approvals/ApprovalNavigation';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useId } from 'react';
 import { createPortal } from 'react-dom';
 
 interface ModalProps {
@@ -14,13 +14,26 @@ interface ModalProps {
   footer?: React.ReactNode;
   size?: 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | 'full';
   centered?: boolean;
+  viewportFit?: boolean;
 }
+
+let scrollLocks = 0;
+let previousOverflow = '';
 
 const CloseIcon = () => (
     <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
 )
 
-const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer, size = '2xl', centered = true, acknowledgmentRequestType, acknowledgmentDraft = false }) => {
+const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer, size = '2xl', centered = true, viewportFit = false, acknowledgmentRequestType, acknowledgmentDraft = false }) => {
+  const titleId = useId();
+  const [viewport, setViewport] = useState<{height:number;top:number}>();
+  useEffect(() => {
+    if (!isOpen || !viewportFit || !window.visualViewport) return;
+    const vv = window.visualViewport;
+    const update = () => setViewport({height:vv.height,top:vv.offsetTop});
+    update(); vv.addEventListener('resize',update); vv.addEventListener('scroll',update);
+    return () => { vv.removeEventListener('resize',update); vv.removeEventListener('scroll',update); };
+  }, [isOpen,viewportFit]);
   const gate = useAcknowledgmentGate(acknowledgmentRequestType, isOpen);
   const gateHidesForm = !!acknowledgmentRequestType && !acknowledgmentDraft && (gate.blocked || gate.loading || !!gate.error);
   useEffect(() => {
@@ -30,11 +43,11 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer,
       }
     };
     if (isOpen) {
-      document.body.style.overflow = 'hidden';
+      if (scrollLocks++ === 0) { previousOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden'; }
       window.addEventListener('keydown', handleEsc);
     }
     return () => {
-      document.body.style.overflow = 'unset';
+      if (isOpen && --scrollLocks === 0) document.body.style.overflow = previousOverflow;
       window.removeEventListener('keydown', handleEsc);
     };
   }, [isOpen, onClose]);
@@ -56,21 +69,23 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer,
 
   const modalContent = (
     <div 
-        className={`fixed inset-0 z-[9999] flex justify-center bg-black/60 backdrop-blur-sm p-3 sm:p-6 overflow-hidden ${centered ? 'items-center' : 'items-start pt-6 sm:pt-12'}`}
+        className={`fixed inset-0 z-[9999] flex justify-center bg-black/60 backdrop-blur-sm ${viewportFit ? 'p-0 sm:p-4' : 'p-3 sm:p-6'} overflow-hidden ${centered || viewportFit ? 'items-center' : 'items-start pt-6 sm:pt-12'}`}
+        style={viewportFit ? {height:viewport?.height || '100dvh',top:viewport?.top || 0,bottom:'auto'} : undefined}
         onClick={onClose}
     >
       <div 
         className={`
             bg-white dark:bg-slate-800 rounded-xl shadow-2xl 
-            w-full flex flex-col ${centered ? '' : 'mt-4'}
+            w-full min-h-0 flex flex-col ${viewportFit ? 'h-full sm:h-auto max-sm:rounded-none' : ''} ${centered || viewportFit ? '' : 'mt-4'}
             ${sizeClasses[size]}
         `}
         onClick={(e) => e.stopPropagation()}
-        style={{ maxHeight: 'calc(100dvh - 1.5rem)' }}
+        role="dialog" aria-modal="true" aria-labelledby={titleId}
+        style={{ maxHeight: viewportFit ? '100%' : centered ? 'calc(100dvh - 3rem)' : 'calc(100dvh - 6rem)' }}
       >
         {/* Header - Fixed */}
         <div className="flex-shrink-0 flex justify-between items-center p-4 sm:p-5 border-b border-gray-200 dark:border-slate-700">
-          <h3 id="modal-title" className="min-w-0 text-lg font-bold text-gray-900 dark:text-white leading-6 break-words pr-4">
+          <h3 id={titleId} className="min-w-0 text-lg font-bold text-gray-900 dark:text-white leading-6 break-words pr-4">
             {title}
           </h3>
           <button
@@ -95,7 +110,7 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer,
 
         {/* Footer - Fixed */}
         {footer && !gateHidesForm && (
-            <div className="max-h-[42dvh] flex-shrink-0 overflow-y-auto rounded-b-xl border-t border-gray-200 bg-gray-50 p-3 dark:border-slate-700 dark:bg-slate-800/50 sm:p-5">
+            <div className={`${viewportFit ? '' : 'max-h-[42dvh] overflow-y-auto'} flex-shrink-0 rounded-b-xl border-t border-gray-200 bg-gray-50 p-3 dark:border-slate-700 dark:bg-slate-800/50 sm:p-5 pb-[max(0.75rem,env(safe-area-inset-bottom))]`}>
                 {footer}
             </div>
         )}
