@@ -52,7 +52,6 @@ import UpcomingEventsWidget from './UpcomingEventsWidget';
 import MemoViewModal from '../feedback/MemoViewModal';
 import Confetti from '../ui/Confetti';
 import Toast from '../ui/Toast';
-import QuickLinks from './QuickLinks';
 import RequestCOEModal from '../employees/RequestCOEModal';
 import { logActivity } from '../../services/auditService';
 import { createCoeRequest, fetchCoeRequestById, fetchCoeRequests } from '../../services/coeService';
@@ -1785,7 +1784,6 @@ const EmployeeDashboard: React.FC = () => {
                 message={toastInfo.message}
                 icon={toastInfo.icon}
             />
-            <QuickLinks />
             <ApprovalWidget />
             <AnniversaryBanner />
 

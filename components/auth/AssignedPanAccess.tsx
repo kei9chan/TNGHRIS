@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '../../services/supabaseClient';
+import { supabase, retryTransientSupabaseRead } from '../../services/supabaseClient';
 
 /** Record-level fallback only; never grants PAN creation or directory access. */
 export default function AssignedPanAccess({ userId, requestId, children }: {
@@ -16,9 +16,9 @@ export default function AssignedPanAccess({ userId, requestId, children }: {
       try {
         // RLS also checks the authenticated account. URL IDs are never authority.
         let query = supabase.from('pans').select('id')
-          .contains('routing_steps', [{ userId }]).limit(1);
+          .contains('routing_steps', JSON.stringify([{ userId }])).limit(1);
         if (requestId) query = query.eq('id', requestId);
-        const { data, error } = await query;
+        const { data, error } = await retryTransientSupabaseRead(async () => await query);
         if (!cancelled) setState(error ? 'error' : data?.length ? 'allowed' : 'denied');
       } catch {
         if (!cancelled) setState('error');
