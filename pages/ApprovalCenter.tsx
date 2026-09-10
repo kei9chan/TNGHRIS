@@ -1,6 +1,7 @@
 import { approvalViewKey, readApprovalView } from '../services/approvalNavigation';
 import { ApprovalOutcome } from '../components/approvals/ApprovalNavigation';
 import RecentDecisions from '../components/approvals/RecentDecisions';
+import {useAttendanceIssues,issueLabels,shiftText} from '../services/attendanceIssues';
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../services/supabaseClient';
@@ -44,6 +45,7 @@ type ApprovalItem = {
 const DEFAULT_FILTERS = { search: '', businessUnit: '', department: '', kind: '', status: '', age: '', dateFrom: '', dateTo: '', quick: 'all', sort: 'newest' };
 
 const KIND_META: Record<Kind, { title: string; badge: string; rule: string }> = {
+  attendance: {title:'Attendance',badge:'bg-violet-100 text-violet-800',rule:'Attendance reports awaiting direct-manager or authorized HR action.'},
   nte: { title: 'NTE Approval', badge: 'bg-red-100 text-red-800', rule: 'Notices to Explain awaiting your assigned approval step.' },
   pan: { title: 'PAN', badge: 'bg-purple-100 text-purple-800', rule: 'Personnel Action Notices awaiting your assigned routing step.' },
   wfh: { title: 'WFH', badge: 'bg-blue-100 text-blue-800', rule: 'Work-from-home requests awaiting action in your assigned approval step.' },
@@ -57,7 +59,7 @@ const KIND_META: Record<Kind, { title: string; badge: string; rule: string }> = 
   benefit: { title: 'Benefit Requests', badge: 'bg-emerald-100 text-emerald-800', rule: 'Benefit requests awaiting HR Manager or final BOD / General Manager approval.' },
 };
 
-const GROUP_ORDER: Kind[] = ['nte', 'pan', 'benefit', 'award', 'offer', 'asset', 'wfh', 'leave', 'overtime', 'requisition', 'manpower'];
+const GROUP_ORDER: Kind[] = ['attendance','nte', 'pan', 'benefit', 'award', 'offer', 'asset', 'wfh', 'leave', 'overtime', 'requisition', 'manpower'];
 const BULK_KINDS = new Set<Kind>(['leave', 'wfh', 'overtime']);
 const TIME_KINDS = new Set<Kind>(['leave', 'wfh', 'overtime']);
 const TIME_DESKTOP_HEADINGS = ['Select', 'Request / Employee', 'Business unit / Department', 'Request details', 'Submitted / Pending', 'Approval step', 'Eligibility', 'Action'];
@@ -165,6 +167,7 @@ export default function ApprovalCenter() {
   }, []);
   const approvals = useApprovals({ user, isHR: roles.has(Role.HRStaff), reporteeIds });
   const additional = useAdditionalApprovals(user);
+  const attendance = useAttendanceIssues();
   const requestedItem = getApprovalRequestId(searchParams);
   const requestedType = searchParams.get('type');
   const requestedLeave = requestedType === 'leave' ? approvals.pendingLeaveApprovals.find(request => request.id === requestedItem) || null : null;
@@ -344,9 +347,10 @@ export default function ApprovalCenter() {
       };
     });
     const canonical = new Map<string, ApprovalItem>();
+    attendance.pending.forEach(r=>canonical.set('attendance:'+r.id,{id:r.id,canonicalKey:'attendance:'+r.id,kind:'attendance',reference:'ATT-'+r.id.slice(0,8).toUpperCase(),employeeId:r.employee_id,employee:r.employeeName,employeeCode:r.employeeCode,businessUnit:r.businessUnit||'Not assigned',department:r.department||'Not assigned',start:new Date(r.submitted_at),end:new Date(r.due_at),duration:r.work_date,status:'Pending approval',currentStep:'Direct manager / HR review',details:issueLabels[r.kind]+' · '+shiftText(r.schedule),reason:r.category,exception:new Date(r.due_at).getTime()<Date.now()?'Overdue attendance response':undefined,bulkSelectable:false,reviewUrl:getApprovalReviewUrl('attendance',r.id)}));
     [...ntes, ...pans, ...benefitItems, ...awardItems, ...offerItems, ...assetItems, ...wfh, ...leave, ...overtime, ...requisitions, ...manpower].forEach(item => { if (!canonical.has(item.canonicalKey)) canonical.set(item.canonicalKey, item); });
     return Array.from(canonical.values());
-  }, [approvals, additional, employeeMeta, businessUnitLabels, departmentLabels]);
+  }, [approvals, additional, attendance.rows, employeeMeta, businessUnitLabels, departmentLabels]);
 
   const filtered = useMemo(() => items.filter(item => {
     const query = filters.search.trim().toLowerCase(), age = dayAge(item.start);
@@ -396,7 +400,7 @@ export default function ApprovalCenter() {
   };
 
   if (!user) return null;
-  const error = approvals.approvalError || additional.additionalApprovalError || loadError;
+  const error = approvals.approvalError || additional.additionalApprovalError || attendance.error || loadError;
   const controlClasses = 'rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:border-slate-500 dark:bg-slate-700 dark:text-white dark:placeholder:text-slate-300 dark:focus:border-indigo-400 dark:focus:ring-indigo-900';
   return <div className="space-y-5 pb-12 text-slate-900 dark:text-slate-100">
     {decisionMessage && <ApprovalOutcome message={decisionMessage} onReturn={() => { setDecisionMessage(''); closeRequestedReview(); }} />}

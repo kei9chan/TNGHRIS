@@ -7,8 +7,11 @@ import Input from '../../components/ui/Input';
 import ExceptionsTable from '../../components/payroll/ExceptionsTable';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
+import {Link} from 'react-router-dom';
+import {useAttendanceIssues} from '../../services/attendanceIssues';
 
 const AttendanceExceptions: React.FC = () => {
+    const attendance=useAttendanceIssues();
     const { user } = useAuth();
     const { getVisibleEmployeeIds, can } = usePermissions();
     const canView = can('Exceptions', Permission.View);
@@ -120,6 +123,10 @@ const AttendanceExceptions: React.FC = () => {
 
     const filteredExceptions = useMemo(() => {
         return exceptions.filter(ex => {
+            const day=new Date(ex.date).toLocaleDateString('en-CA');
+            const approved=attendance.rows.filter(r=>r.employee_id===ex.employeeId&&r.work_date===day&&r.status==='approved');
+            if(approved.some(r=>r.kind==='absence')&&[ExceptionType.MissingIn,ExceptionType.MissingOut].includes(ex.type))return false;
+            if(approved.some(r=>r.kind==='punch'&&((r.punch_type==='CLOCK_IN'&&ex.type===ExceptionType.MissingIn)||(r.punch_type==='CLOCK_OUT'&&ex.type===ExceptionType.MissingOut))))return false;
             const exDate = new Date(ex.date);
             if (filters.startDate && exDate < new Date(filters.startDate)) return false;
             if (filters.endDate) {
@@ -132,7 +139,7 @@ const AttendanceExceptions: React.FC = () => {
             if (filters.status && ex.status !== filters.status) return false;
             return true;
         }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [filters, exceptions]);
+    }, [filters, exceptions,attendance.rows]);
 
     if (!canView) {
         return (
@@ -148,6 +155,7 @@ const AttendanceExceptions: React.FC = () => {
 
     return (
         <div className="space-y-6">
+            <Link className="inline-flex min-h-12 items-center rounded-xl border border-violet-500 px-4 font-semibold text-violet-700 dark:text-violet-300" to="/payroll/attendance-requests">Attendance requests, approved exceptions & HR review →</Link>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Attendance Exceptions</h1>
             <p className="text-gray-600 dark:text-gray-400">Review and resolve flagged attendance records to ensure payroll accuracy.</p>
 

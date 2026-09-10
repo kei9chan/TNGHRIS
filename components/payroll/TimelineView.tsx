@@ -1,6 +1,8 @@
 import {DayStatus,DayTag,dateKey,statusPresets,leaveForDay,leaveLabel} from '../../services/scheduleStatuses';
 import {scheduleLabel} from '../../services/schedulePolicy';
 import React from 'react';
+import {useAttendanceIssues} from '../../services/attendanceIssues';
+import AttendanceIssueBadges from '../attendance/AttendanceIssueBadges';
 import { ShiftTemplate, ShiftAssignment, User, OperatingHours, LeaveRequest } from '../../types';
 
 interface TimelineViewProps {
@@ -20,6 +22,7 @@ const timeToPercent = (time: string): number => {
 };
 
 const TimelineView: React.FC<TimelineViewProps> = ({ dayStatuses,leaves,onStatus,weekDates, employees, assignments, templates, operatingHours, onOpenDrawer, isEditable }) => {
+    const attendance=useAttendanceIssues();
 
     const hours = Array.from({ length: 24 }, (_, i) => i); // 0 to 23
 
@@ -94,6 +97,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({ dayStatuses,leaves,onStatus
                                     onClick={isEditable ? () => onOpenDrawer(employee, date) : undefined}
                                 >
                                     {(leave||ds?.tag)&&<div className="absolute inset-2 z-10 rounded bg-violet-100 p-2 text-xs text-violet-900"><b>{leave?leaveLabel(leave):statusPresets.find(p=>p.tag===ds?.tag)?.label}</b>{template&&<p>{scheduleLabel(template)}</p>}{!leave&&isEditable&&<button className="ml-2 underline" onClick={e=>{e.stopPropagation();onStatus(employee,date,null);}}>Restore shift</button>}</div>}
+                                    <div className="absolute right-1 top-0 z-20 max-w-56" onClick={e=>e.stopPropagation()}><AttendanceIssueBadges rows={attendance.rows} employee={employee.id} date={dateKey(date)}/></div>
                                     {/* Hour grid lines */}
                                     {hours.slice(1).map(hour => (
                                         <div key={hour} className="absolute h-full border-l border-dashed border-gray-200 dark:border-gray-700" style={{ left: `${(hour / 24) * 100}%` }}></div>

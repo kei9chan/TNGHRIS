@@ -2,6 +2,8 @@ import {DayStatus,DayTag,dateKey,statusPresets,leaveForDay,leaveLabel} from '../
 import {scheduleLabel} from '../../services/schedulePolicy';
 
 import React from 'react';
+import {useAttendanceIssues} from '../../services/attendanceIssues';
+import AttendanceIssueBadges from '../attendance/AttendanceIssueBadges';
 import { ShiftTemplate, ShiftAssignment, User, LeaveRequest, LeaveRequestStatus, OperatingHours } from '../../types';
 
 interface RoleViewTableProps {
@@ -38,6 +40,7 @@ const RoleViewTable: React.FC<RoleViewTableProps> = ({
     view, employeesByRole, employeesByArea, employees, weekDates, operatingHours, validationStatus, assignments,
     suggestedAssignments, leaves, selectedStatus,dayStatuses,onStatus,templates, shiftColorClasses, onOpenDetailModal, onOpenDrawer, isEditable
 }) => {
+    const attendance=useAttendanceIssues();
     const renderEmployeeRow = (employee: User) => (
         <tr key={employee.id}>
             <td className="sticky left-0 bg-white dark:bg-slate-800 px-3 py-2 text-sm font-medium text-gray-900 dark:text-white z-10 w-48">
@@ -52,12 +55,13 @@ const RoleViewTable: React.FC<RoleViewTableProps> = ({
                 const leave=leaveForDay(leaves,employee.id,date);
                 const ds=dayStatuses.find(s=>s.employee_id===employee.id&&s.work_date===dateKey(date));
                 const drop={onDragOver:(e:React.DragEvent)=>{if(isEditable)e.preventDefault();},onDrop:(e:React.DragEvent)=>{e.preventDefault();const tag=e.dataTransfer.getData('application/x-tng-status') as DayTag;if(isEditable&&statusPresets.some(s=>s.tag===tag))onStatus(employee,date,tag);}};
-                if(leave||ds?.tag){const preset=statusPresets.find(s=>s.tag===ds?.tag);const template=assignment?templates.find(t=>t.id===assignment.shiftTemplateId):null;return <td {...drop} key={date.toISOString()} className="px-2 py-2 align-top"><div className={`rounded-lg border p-2 text-xs ${leave?( (leave as any).paid?'bg-green-100 text-green-900':'bg-amber-100 text-amber-900'):preset?.color}`}><p className="font-bold">{leave?leaveLabel(leave):preset?.label}</p>{!leave&&isEditable&&<button className="min-h-11 underline" onClick={()=>onOpenDrawer(employee,date)}>Change status</button>}{leave&&<p>{(leave as any).leaveTypeName} · approved{leave.startTime?` · ${leave.startTime}–${leave.endTime}`:''}</p>}{template&&((leave&&(leave.startTime||leave.endTime))||!leave&&['skeletal','absence'].includes(ds?.tag??''))&&<p>{scheduleLabel(template)}</p>}{!leave&&isEditable&&<button className="min-h-11 underline" onClick={()=>onStatus(employee,date,null)}>Restore shift</button>}{leave&&assignment&&<button className="min-h-11 underline" onClick={()=>onOpenDetailModal(assignment)}>Original shift</button>}</div></td>;}
+                if(leave||ds?.tag){const preset=statusPresets.find(s=>s.tag===ds?.tag);const template=assignment?templates.find(t=>t.id===assignment.shiftTemplateId):null;return <td {...drop} key={date.toISOString()} className="px-2 py-2 align-top"><AttendanceIssueBadges rows={attendance.rows} employee={employee.id} date={dateKey(date)}/><div className={`rounded-lg border p-2 text-xs ${leave?( (leave as any).paid?'bg-green-100 text-green-900':'bg-amber-100 text-amber-900'):preset?.color}`}><p className="font-bold">{leave?leaveLabel(leave):preset?.label}</p>{!leave&&isEditable&&<button className="min-h-11 underline" onClick={()=>onOpenDrawer(employee,date)}>Change status</button>}{leave&&<p>{(leave as any).leaveTypeName} · approved{leave.startTime?` · ${leave.startTime}–${leave.endTime}`:''}</p>}{template&&((leave&&(leave.startTime||leave.endTime))||!leave&&['skeletal','absence'].includes(ds?.tag??''))&&<p>{scheduleLabel(template)}</p>}{!leave&&isEditable&&<button className="min-h-11 underline" onClick={()=>onStatus(employee,date,null)}>Restore shift</button>}{leave&&assignment&&<button className="min-h-11 underline" onClick={()=>onOpenDetailModal(assignment)}>Original shift</button>}</div></td>;}
 
                 if (assignment) {
                     const template = templates.find(t => t.id === assignment.shiftTemplateId);
                     return (
                         <td {...drop} key={date.toISOString()} className="px-2 py-2 align-top">
+                            <AttendanceIssueBadges rows={attendance.rows} employee={employee.id} date={dateKey(date)}/>
                             <button onClick={() => selectedStatus?onOpenDrawer(employee,date):onOpenDetailModal(assignment)} className={`w-full h-full p-2 rounded-md border text-left text-xs ${shiftColorClasses[template?.color || 'gray']}`}>
                                 <p className="font-bold">{template?.name}</p>{template&&<p>{scheduleLabel(template)}</p>}
                             </button>
@@ -86,6 +90,7 @@ const RoleViewTable: React.FC<RoleViewTableProps> = ({
                 }
                 return (
                     <td {...drop} key={date.toISOString()} className="px-2 py-2 align-top text-center">
+                        <AttendanceIssueBadges rows={attendance.rows} employee={employee.id} date={dateKey(date)}/>
                         <button onClick={isEditable ? () => onOpenDrawer(employee, date) : undefined} disabled={!isEditable} className="w-full h-12 text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-md flex items-center justify-center text-2xl disabled:cursor-not-allowed disabled:hover:bg-transparent dark:disabled:hover:bg-transparent" aria-label={`Missing Schedule for ${employee.name}`}>+</button><span className="text-xs text-amber-700">Missing Schedule</span>
                     </td>
                 );

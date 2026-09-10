@@ -45,6 +45,7 @@ const QuickLinkCard: React.FC<QuickLinkCardProps> = ({ name, path, state, icon }
 
 
 type QuickLinkId =
+  | 'attendance-issue'
   | 'family-visits'
   | 'acknowledgments'
   | 'approvals'
@@ -74,6 +75,7 @@ const QuickLinks: React.FC<QuickLinksProps> = ({ hideCOE = false }) => {
 
     const visibleLinks = useMemo(() => {
         const allQuickLinks: (QuickLinkCardProps & { id: QuickLinkId; allowed: boolean })[] = [
+            { id: 'attendance-issue', name: 'Report attendance issue', path: '/payroll/attendance-requests?new=1', icon: <CalendarDaysIcon />, allowed: Boolean(user) },
             { id: 'family-visits', name: 'My Benefits', path: '/employees/benefits?tab=my_benefits', icon: <TicketIcon />, allowed: Boolean(user) },
             // Keep access available even after the last assigned request is processed.
             // The center itself only loads the signed-in user's authorized queues.

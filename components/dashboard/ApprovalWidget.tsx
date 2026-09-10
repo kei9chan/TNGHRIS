@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import {useAttendanceIssues,issueLabels,shiftText} from '../../services/attendanceIssues';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useApprovals } from '../../hooks/useApprovals';
@@ -6,7 +7,7 @@ import { useAdditionalApprovals } from '../../hooks/useAdditionalApprovals';
 import { ApprovalRequestKind, getApprovalReviewUrl } from '../../services/approvalDeepLinks';
 
 type Item = { id: string; kind: ApprovalRequestKind; employee: string; details: string; submitted?: Date | string; relevantDate?: Date | string };
-const labels: Record<ApprovalRequestKind,string> = {leave:'Leave',wfh:'WFH',overtime:'Overtime',manpower:'On-call',nte:'NTE',pan:'PAN',requisition:'Job Requisition',award:'Award',offer:'Offer',asset:'Asset',benefit:'Benefit'};
+const labels: Record<ApprovalRequestKind,string> = {attendance:'Attendance',leave:'Leave',wfh:'WFH',overtime:'Overtime',manpower:'On-call',nte:'NTE',pan:'PAN',requisition:'Job Requisition',award:'Award',offer:'Offer',asset:'Asset',benefit:'Benefit'};
 const dateText = (v?: Date | string) => v && Number.isFinite(new Date(v).getTime()) ? new Date(v).toLocaleDateString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric'}) : '';
 const dayKey = (v: Date | string) => new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(v));
 function urgency(item: Item) {
@@ -21,8 +22,10 @@ export default function ApprovalWidget() {
   const {user}=useAuth();
   const a=useApprovals({user});
   const b=useAdditionalApprovals(user);
+  const attendance=useAttendanceIssues();
   const [filter,setFilter]=useState('all');
   const items: Item[] = [
+    ...attendance.pending.map(r=>({id:r.id,kind:'attendance' as const,employee:r.employeeName,details:issueLabels[r.kind]+' · '+r.work_date+' · '+shiftText(r.schedule),submitted:r.submitted_at,relevantDate:r.due_at})),
     ...a.pendingLeaveApprovals.map(r=>({id:r.id,kind:'leave' as const,employee:r.employeeName,details:'Leave · '+dateText(r.startDate)+'–'+dateText(r.endDate)+' · '+r.durationDays+' days',submitted:r.createdAt,relevantDate:r.startDate})),
     ...a.pendingWfhApprovals.map(r=>({id:r.id,kind:'wfh' as const,employee:r.employeeName,details:'Work from home · '+dateText(r.date)+(r.endDate?'–'+dateText(r.endDate):''),submitted:r.createdAt,relevantDate:r.date})),
     ...a.pendingOtApprovals.map(r=>({id:r.id,kind:'overtime' as const,employee:r.employeeName,details:dateText(r.date)+' · '+r.startTime+'–'+r.endTime,submitted:r.submittedAt,relevantDate:r.date})),
@@ -37,7 +40,7 @@ export default function ApprovalWidget() {
   ];
   const unique=[...new Map(items.map(r=>[r.kind+':'+r.id,r])).values()].sort((a,b)=>urgency(a).priority-urgency(b).priority||(new Date(a.submitted||0).getTime()-new Date(b.submitted||0).getTime()));
   const visible=unique.filter(r=>filter==='all'||urgency(r).group===filter);
-  const error=a.approvalError||b.additionalApprovalError;
+  const error=a.approvalError||b.additionalApprovalError||attendance.error;
   if(!user||(!items.length&&!error))return null;
   return <section aria-labelledby="approval-inbox-title" className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800 sm:p-6">
     <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 id="approval-inbox-title" className="text-2xl font-bold text-slate-900 dark:text-white">Needs your approval <span className="ml-2 inline-flex rounded-full bg-violet-600 px-3 py-1 text-base text-white">{unique.length}</span></h2><p className="mt-2 text-slate-500 dark:text-slate-300">Requests waiting for your decision</p></div><Link to="/approvals" className="hidden min-h-11 items-center rounded-lg border border-violet-500 px-4 font-semibold text-violet-700 dark:text-violet-300 sm:inline-flex">Open Approval Center →</Link></div>
