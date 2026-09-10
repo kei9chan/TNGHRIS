@@ -98,17 +98,19 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
             return;
           }
 
-          // Apply the same hierarchy rules used in HR Review Queue
-          const isManagerLevel = user.role === 'Manager' || user.role === 'Business Unit Manager';
-          const allowedRoles = isManagerLevel
-            ? ['Operations Director', 'GeneralManager', 'Board of Director', 'Admin']
-            : ['Manager', 'Business Unit Manager', 'Operations Director', 'GeneralManager', 'Board of Director', 'Admin'];
-
+          // Reporting lines can be assigned to the employee's BU Manager, a Manager,
+          // Auditor, or HR Manager. Keep the existing senior roles available for
+          // executives and preserve the BU Manager's same-BU scope.
+          const allowedRoles = ['Manager', 'Business Unit Manager', 'Auditor', 'HR Manager', 'Operations Director', 'GeneralManager', 'Board of Director', 'Admin'];
           const options = data
-            .filter((row: any) => row.id !== user.id && allowedRoles.includes(row.role))
+            .filter((row: any) => {
+              if (row.id === user.id || !allowedRoles.includes(row.role)) return false;
+              if (row.role === 'Business Unit Manager') return !user.businessUnitId || row.business_unit_id === user.businessUnitId;
+              return true;
+            })
             .map((row: any) => ({
               id: row.id,
-              label: `${formatEmployeeName(row.full_name || 'Unknown')} (${row.role || 'Employee'})`,
+              label: `${formatEmployeeName(row.full_name || 'Unknown')} (${row.role || 'Employee'})${row.role === 'Business Unit Manager' ? ' · Same business unit' : ''}`,
             }));
           setReportsToOptions(options);
         } catch {
@@ -496,7 +498,7 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
                 <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
                   {(user.role === 'Manager' || user.role === 'Business Unit Manager')
                     ? 'Managers may report to: Operations Director, General Manager, Board of Director, or Admin.'
-                    : 'Employees may report to: Manager, Business Unit Manager, Operations Director, General Manager, Board of Director, or Admin.'}
+                    : 'Employees may report to: their Business Unit Manager, Manager, Auditor, or HR Manager.'}
                 </p>
               </div>
             )}
