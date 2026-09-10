@@ -1,3 +1,4 @@
+import {CaseQuestions} from '../../modules/caseQuestions';
 import { fetchBusinessUnits } from '../../services/userService';
 import { fetchCodeOfDiscipline } from '../../services/disciplineService';
 
@@ -783,6 +784,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
       footer={renderFooter()}
     >
       {renderModalContent()}
+      {report && /^[0-9a-f-]{36}$/i.test(report.id) && <CaseQuestions caseId={report.id} />}
       {report && assignmentMessage && (
         <p
           role={assignmentState === 'error' ? 'alert' : 'status'}

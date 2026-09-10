@@ -584,7 +584,7 @@ const PersonnelActionNotice: React.FC = () => {
         />
       )}
 
-      {isModalOpen && (
+      {(
         createPortal(
           <PANModal
             isOpen={isModalOpen}

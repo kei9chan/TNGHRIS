@@ -286,9 +286,9 @@ export function useApprovals({ user }: UseApprovalsOptions) {
         if (!user || !request.id) throw new Error('Approval is unavailable. Refresh the queue.');
         const result: any = await processTimeRequestApproval('leave', request.id, approved ? 'approve' : 'reject', notes);
         if (result?.notifyEscalation) sendConditionalApprovalEmails('leave', request.id).catch(error => console.error('Approval email failed', error));
-        if (request.employeeId) createNotification({
+        if (request.employeeId && !result?.alreadyDecided) createNotification({
             userId: request.employeeId,
-            title: approved ? (result?.route === 'BOD_REQUIRED' ? '🔄 Leave Request Forwarded for Final Approval' : '✅ Leave Request Approved') : '❌ Leave Request Rejected',
+            title: approved ? (result?.status === 'PendingBOD' ? '🔄 Leave Request Forwarded for Final Approval' : '✅ Leave Request Approved') : '❌ Leave Request Rejected',
             message: getTimeApprovalReason('leave', result?.context, result?.context?.reason, result?.route === 'BOD_REQUIRED') || `Your leave request was ${approved ? 'approved' : 'rejected'}.`,
             type: approved ? NotificationType.LEAVE_APPROVED : NotificationType.LEAVE_DECISION,
             link: `/approvals?type=leave&item=${request.id}`,
@@ -306,7 +306,7 @@ export function useApprovals({ user }: UseApprovalsOptions) {
             if (result?.notifyEscalation) sendConditionalApprovalEmails('wfh', requestId).catch(error => console.error('Approval email failed', error));
             if (request.employeeId) createNotification({
                 userId: request.employeeId,
-                title: result?.route === 'BOD_REQUIRED' ? '🔄 WFH Request Forwarded for Final Approval' : '✅ WFH Request Approved',
+                title: result?.status === 'WFH_PENDING_BOD_APPROVAL' ? '🔄 WFH Request Forwarded for Final Approval' : '✅ WFH Request Approved',
                 message: getTimeApprovalReason('wfh', result?.context, result?.context?.reason, result?.route === 'BOD_REQUIRED') || 'Your WFH request was approved.',
                 type: NotificationType.WFH_APPROVED,
                 link: `/approvals?type=wfh&item=${requestId}`,

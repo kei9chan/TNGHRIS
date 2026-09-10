@@ -1,3 +1,4 @@
+const CaseQuestionsPage = React.lazy(() => import('./modules/caseQuestions'));
 import { GateRejectionNotice } from './modules/acknowledgments/Gate';
 const EmployeeAcknowledgments = React.lazy(() => import('./modules/acknowledgments/EmployeePage'));
 const AcknowledgmentAdmin = React.lazy(() => import('./modules/acknowledgments/AdminPage'));
@@ -254,6 +255,8 @@ const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }
     );
   }
 
+  if (location.pathname === '/case-questions') return children; // RPCs enforce participant and reviewer scope.
+
   if (location.pathname === '/employee-snapshot') return isBod(user) ? children : <p role="alert">Access denied. Employee Snapshot requires the BOD role.</p>;
 
   // This module has independent database permissions. Legacy money prototypes
@@ -326,6 +329,7 @@ const AppRoutes: React.FC = () => {
       >
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
+        <Route path="case-questions" element={<ProtectedRoute><CaseQuestionsPage /></ProtectedRoute>} />
         <Route path="payments" element={<ProtectedRoute><PayrollPaymentsPage /></ProtectedRoute>} />
             <Route path="acknowledgments" element={<ProtectedRoute><EmployeeAcknowledgments /></ProtectedRoute>} />
             <Route path="acknowledgments/manage" element={<ProtectedRoute><AcknowledgmentAdmin /></ProtectedRoute>} />
