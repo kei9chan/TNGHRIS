@@ -807,8 +807,15 @@ const Timekeeping: React.FC = () => {
     };
     
     const handleCopyWeek = async (assignmentToCopy: ShiftAssignment) => {
+        if (savingShift.current || !isScheduleEditable) return;
         const { employeeId, shiftTemplateId, date } = assignmentToCopy;
         if (!hasScopedPreset(employeeId, shiftTemplateId)) { rejectLegacyCopy(); return; }
+        savingShift.current = true;
+        scheduleMutation.current++;
+        try {
+        const freshStatuses = await getDayStatuses([employeeId], toDateOnly(weekStart), toDateOnly(addDays(weekStart,6)));
+        const {data: savedShifts,error: readError} = await supabase.from('shift_assignments').select('date').eq('employee_id',employeeId).gte('date',toDateOnly(weekStart)).lte('date',toDateOnly(addDays(weekStart,6)));
+        if(readError) throw readError;
         const startDate = new Date(date);
         const dayOfWeek = startDate.getDay();
         const weekDayIndex = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
@@ -819,20 +826,24 @@ const Timekeeping: React.FC = () => {
             const targetDate = weekDates[i];
             
             const existingAssignmentIndex = assignments.findIndex(a => a.employeeId === employeeId && new Date(a.date).toDateString() === targetDate.toDateString());
-            const existingLeave = leaves.find(l => l.employeeId === employeeId && l.status === LeaveRequestStatus.Approved && targetDate >= new Date(l.startDate) && targetDate <= new Date(l.endDate));
+            const existingLeave = leaveForDay(leaves, employeeId, targetDate);
             
-            if (existingAssignmentIndex === -1 && !existingLeave) {
+            if (existingAssignmentIndex === -1 && !existingLeave
+                && !savedShifts?.some(a=>a.date===toDateOnly(targetDate))
+                && !freshStatuses.some(d=>d.work_date===toDateOnly(targetDate)&&d.tag)) {
                 newAssignments.push({
                     id: `SA-COPY-${Date.now()}-${i}`,
                     employeeId,
                     date: targetDate,
                     shiftTemplateId,
                     locationId: assignmentToCopy.locationId,
+                    assignedAreaId: assignmentToCopy.assignedAreaId,
                 });
             }
         }
         
         if (newAssignments.length > 0) {
+            if(!window.confirm(`Copy this schedule to ${newAssignments.length} remaining unscheduled day(s): ${newAssignments.map(a=>toDateOnly(new Date(a.date))).join(', ')}? Existing shifts, leave, and day statuses will be kept. Review and publish afterward.`)) return;
             const payloads = newAssignments.map(a => {
                 const emp = employees.find(e => e.id === a.employeeId);
                 const resolvedBuId = resolveAssignmentBuId(a.employeeId);
@@ -852,6 +863,7 @@ const Timekeeping: React.FC = () => {
                 .insert(payloads)
                 .select('id, employee_id, shift_template_id, date, assigned_area_id');
 
+            if(error || !data || data.length !== payloads.length) throw new Error(error?.message || 'Could not verify all copied shifts. Refresh before retrying.');
             if (!error && data) {
                 const inserted = data.map((row: any) => ({
                     id: row.id,
@@ -866,7 +878,17 @@ const Timekeeping: React.FC = () => {
             setScheduleStatus('dirty');
             logActivity(user, 'CREATE', 'ShiftAssignment', 'batch', `Copied shift to rest of week for employee ${employeeId}`);
         }
+        setPublicationRefresh(v=>v+1);
+        setStatusRefresh(v=>v+1);
+        setToastInfo({show:true,message:newAssignments.length ? `${newAssignments.length} shifts saved as drafts. Review and publish the week.` : 'No remaining empty dates. Existing shifts, leave, and day statuses were preserved.'});
         handleCloseDetailModal();
+        handleCloseDrawer();
+        } catch(error) {
+            setToastInfo({show:true,message:(error as Error).message || 'Could not copy the schedule.'});
+        } finally {
+            savingShift.current = false;
+            scheduleMutation.current++;
+        }
     };
 
     const copyWeek=async(ids:string[])=>{try{const {error}=await supabase.rpc('copy_schedule_week_with_statuses',{p_employees:ids,p_week:toDateOnly(weekStart)});if(error)throw error;
@@ -1050,6 +1072,7 @@ const Timekeeping: React.FC = () => {
                 .insert(payloads)
                 .select('id, employee_id, shift_template_id, date, assigned_area_id');
 
+            if(error || !data || data.length !== payloads.length) throw new Error(error?.message || 'Could not verify all copied shifts. Refresh before retrying.');
             if (!error && data) {
                 const inserted = data.map((row: any) => ({
                     id: row.id,
@@ -1098,6 +1121,7 @@ const Timekeeping: React.FC = () => {
                 .insert(payloads)
                 .select('id, employee_id, shift_template_id, date, assigned_area_id');
 
+            if(error || !data || data.length !== payloads.length) throw new Error(error?.message || 'Could not verify all copied shifts. Refresh before retrying.');
             if (!error && data) {
                 const inserted = data.map((row: any) => ({
                     id: row.id,
@@ -1401,6 +1425,11 @@ const Timekeeping: React.FC = () => {
                 templates={templatesForDrawer}
                 onSave={handleSaveShift}
                 onCopyLastWeekSchedule={handleCopyLastWeekSchedule}
+                onCopyRestOfWeek={() => {
+                    const source = assignments.find(a=>a.employeeId===drawerState.employee?.id&&drawerState.date&&toDateOnly(new Date(a.date))===toDateOnly(drawerState.date));
+                    if(source) void handleCopyWeek(source);
+                }}
+                canCopyRestOfWeek={Boolean(drawerState.date&&drawerState.date.getDay()!==0&&assignments.some(a=>a.employeeId===drawerState.employee?.id&&toDateOnly(new Date(a.date))===toDateOnly(drawerState.date!)))}
                 gaps={gaps}
             />
             

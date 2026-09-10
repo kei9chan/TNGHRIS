@@ -26,8 +26,8 @@ export function ScheduleTask({week,manager,refresh=0,details=false}:{week?:strin
   <p className="mt-4 text-xl font-semibold">{task.completed} of {task.required} completed · {task.remaining} remaining</p>
   <progress className="mt-3 h-3 w-full accent-violet-600" max={100} value={task.percentage} aria-label="Saved schedule completion"/>
   <p className="mt-2">{task.percentage}% complete · {task.exempt} exempt employees excluded</p><p className={urgent?"mt-2 text-red-800 dark:text-red-200":"mt-2"}>Deadline: <strong>{deadline(task.deadline)} Philippine time</strong></p>
-  <div className="mt-4 flex flex-wrap items-center gap-4"><Link className={button} to={scheduleLink(task)}>Set Schedules</Link>{task.hr&&<Link className="underline" to="/payroll/schedule-compliance">Schedule Compliance</Link>}<button className="underline" onClick={()=>setRetry(v=>v+1)}>Refresh progress</button></div>
-  {details&&<ul className="mt-4 divide-y divide-slate-200 dark:divide-slate-700">{task.employees.map(e=><li key={e.id} className="py-3"><strong>{e.name}</strong> · {e.businessUnit} · {e.exempt?'Exempt':e.complete?'Completed':`${e.missingDates.length} missing dates`} · {e.publication}<p className="text-sm">{e.days.map(d=>`${d.date.slice(5)}: ${d.status}`).join(' · ')}</p></li>)}</ul>}
+  <div className="mt-4 flex flex-wrap items-center gap-4"><Link className={button} to={scheduleLink(task)}>Set Schedules</Link>{task.hr&&<Link className="underline" to="/payroll/schedule-compliance">Schedule Compliance</Link>}<button className="underline" onClick={()=>setRetry(v=>v+1)}>Refresh progress</button>{details&&task.hr&&<Link className="underline" to="/payroll/clocking-exceptions">Clock-in exemptions</Link>}</div>
+  {details&&task.hr&&<p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Clock-in exemptions control punch requirements. Weekly scheduling exemptions are managed separately in Schedule Compliance.</p>}
  </section>;
 }
 

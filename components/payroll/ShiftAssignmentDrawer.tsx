@@ -25,6 +25,8 @@ interface ShiftAssignmentDrawerProps {
     templates: ShiftTemplate[];
     onSave: (employeeId: string, date: Date, templateId: string) => void;
     onCopyLastWeekSchedule: (employeeId: string) => void;
+    onCopyRestOfWeek: () => void;
+    canCopyRestOfWeek: boolean;
     gaps?: Gap[];
 }
 
@@ -42,7 +44,7 @@ const ClipboardCopyIcon = () => (
 
 const SparklesIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z" /></svg>;
 
-const ShiftAssignmentDrawer: React.FC<ShiftAssignmentDrawerProps> = ({ onStatus,isOpen, onClose, employee, date, templates, onSave, onCopyLastWeekSchedule, gaps }) => {
+const ShiftAssignmentDrawer: React.FC<ShiftAssignmentDrawerProps> = ({ onStatus,isOpen, onClose, employee, date, templates, onSave, onCopyLastWeekSchedule, onCopyRestOfWeek, canCopyRestOfWeek, gaps }) => {
     
     // Local state to override template selection when a gap recommendation is clicked
     const [highlightedTemplateId, setHighlightedTemplateId] = useState<string | null>(null);
@@ -132,6 +134,8 @@ const ShiftAssignmentDrawer: React.FC<ShiftAssignmentDrawerProps> = ({ onStatus,
                                 <ClipboardCopyIcon />
                                 Copy Last Week's Schedule
                             </button>
+                            <button onClick={onCopyRestOfWeek} disabled={!canCopyRestOfWeek} className="mt-2 min-h-11 w-full rounded-md border border-violet-400 px-3 py-2 text-sm font-semibold text-violet-700 dark:text-violet-200 disabled:opacity-50">Copy this schedule to the rest of the week</button>
+                            <p className="mt-2 px-2 text-xs text-slate-600 dark:text-slate-300">Save a shift first, then reopen its day to copy it through Sunday. Existing shifts, leave and rest days are kept.</p>
                         </div>
                         <div className="my-2 border-t border-gray-200 dark:border-gray-600"></div>
                         <div className="mb-3 space-y-2"><h4 className="font-semibold">Status Presets</h4>{statusPresets.map(p=><button key={p.tag} className={`min-h-11 w-full rounded p-2 text-left ${p.color}`} onClick={()=>onStatus(p.tag)}>{p.label}</button>)}</div><ul className="space-y-1 pb-4">
