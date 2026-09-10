@@ -1,4 +1,5 @@
 export type ApprovalRequestKind =
+  | 'attendance'
   | 'leave'
   | 'wfh'
   | 'overtime'
@@ -12,6 +13,7 @@ export type ApprovalRequestKind =
   | 'benefit';
 
 const approvalPaths: Record<ApprovalRequestKind, string> = {
+  attendance: '/payroll/attendance-requests',
   leave: '/payroll/leave',
   wfh: '/payroll/wfh-requests',
   overtime: '/payroll/overtime-requests',

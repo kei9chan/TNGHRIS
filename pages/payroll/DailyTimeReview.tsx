@@ -9,8 +9,11 @@ import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
+import {useAttendanceIssues} from '../../services/attendanceIssues';
+import AttendanceIssueBadges from '../../components/attendance/AttendanceIssueBadges';
 
 const DailyTimeReview: React.FC = () => {
+    const attendance=useAttendanceIssues();
     const { user } = useAuth();
     const { getAccessibleBusinessUnits, getVisibleEmployeeIds, can } = usePermissions();
     const canView = can('DailyTimeReview', Permission.View);
@@ -224,7 +227,7 @@ const DailyTimeReview: React.FC = () => {
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <div className="flex flex-wrap gap-1">
-                                            {record.exceptions.map(ex => (
+                                            {record.exceptions.filter(ex=>!attendance.rows.some(r=>r.employee_id===record.employeeId&&r.work_date===filterDate&&r.status==='approved'&&(r.kind==='absence'||r.kind==='punch')&&/missing|absen/i.test(ex))).map(ex => (
                                                 <span key={ex} className="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200">
                                                     {ex.replace(/([A-Z])/g, ' $1').trim()}
                                                 </span>
@@ -233,7 +236,7 @@ const DailyTimeReview: React.FC = () => {
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
-                                        {getStatusBadge(record.status)}
+                                        {attendance.rows.some(r=>r.employee_id===record.employeeId&&r.work_date===filterDate&&r.status==='approved')?<AttendanceIssueBadges rows={attendance.rows} employee={record.employeeId} date={filterDate}/>:getStatusBadge(record.status)}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                         <Button size="sm" variant="secondary" onClick={() => handleFix(record)}>Fix Record</Button>

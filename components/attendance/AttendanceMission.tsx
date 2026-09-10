@@ -1,4 +1,5 @@
 import React from 'react';
+import {approvedLabels,issueStatuses,manila} from '../../services/attendanceIssues';
 import {uniqueShifts} from '../../services/attendanceExperience';
 import {Link} from 'react-router-dom';
 import {useAttendanceClock} from '../../hooks/useAttendanceClock';
@@ -28,6 +29,9 @@ export function AttendanceMissionView({day,elapsed,busy,error,onAction,onRefresh
     {working&&<button disabled={busy} onClick={()=>onAction('START_BREAK')} className="mt-3 min-h-14 w-full rounded-xl border border-violet-400 px-4 font-semibold text-violet-700 dark:text-violet-100 hover:bg-white/5 disabled:opacity-50">TAKE A BREAK</button>}
     {day&&!working&&!onBreak&&!canStart&&<p className="mt-4 text-sm text-violet-700 dark:text-violet-200">Your published working shift will appear here when it’s ready.</p>}
    </>}
+   <Link to="/payroll/attendance-requests?new=1" className="mt-4 flex min-h-14 items-center justify-center rounded-xl border border-violet-500 px-4 py-3 font-semibold text-violet-700 dark:text-violet-200">Report attendance issue</Link>
+   <Link to="/payroll/attendance-requests" className="mt-2 flex min-h-11 items-center justify-center text-sm underline">View my attendance requests</Link>
+   {(day?.attendanceIssues||[]).map(r=><Link key={r.id} to={'/payroll/attendance-requests?review='+r.id} className="mt-3 block rounded-xl bg-violet-100 p-3 text-sm text-violet-900 dark:bg-violet-950 dark:text-violet-100">{r.status==='approved'?approvedLabels[r.kind]:issueStatuses[r.status]}{r.time&&' · '+manila(r.time)}{r.approvedAt&&r.status==='approved'&&<span className="mt-1 block">{r.approvedBy} · {manila(r.approvedAt)}</span>}</Link>)}
    <Link to="/payroll/timekeeping" className="mt-3 flex min-h-11 items-center justify-center text-sm font-semibold text-violet-700 dark:text-violet-200 underline">View schedule</Link>
    {error&&<div role="alert" className="mt-3 rounded-xl bg-amber-100 p-3 text-sm text-amber-950">{error}<button onClick={onRefresh} className="ml-2 min-h-11 font-semibold underline">Refresh my day</button></div>}
   </div>
