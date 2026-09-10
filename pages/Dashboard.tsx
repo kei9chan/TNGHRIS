@@ -37,12 +37,12 @@ const Dashboard: React.FC = () => {
   return (
     <div>
         <h1 className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-white mb-3">Welcome back{greetingName ? `, ${greetingName}` : ''}!</h1>
+        <AttendanceMission />
         <QuickLinks />
-        <ScheduleTask />
         <AttendancePulse />
+        <ScheduleTask />
         <CaseFollowups />
         <AttendanceFollowups />
-        <AttendanceMission />
         <AlertBanner />
         <PayrollApprovalNotice />
         <ApprovalFollowupCard />
