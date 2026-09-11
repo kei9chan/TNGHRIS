@@ -46,6 +46,9 @@ const RoleViewTable: React.FC<RoleViewTableProps> = ({
             <td className="sticky left-0 bg-white dark:bg-slate-800 px-3 py-2 text-sm font-medium text-gray-900 dark:text-white z-10 w-48">
                 <div>
                     <p>{employee.name}</p>
+                    {employee.position?.trim() && (
+                        <p className="text-xs font-medium text-gray-600 dark:text-gray-300">{employee.position}</p>
+                    )}
                     <p className="text-xs text-gray-400">{employee.role}</p>
                 </div>
             </td>
