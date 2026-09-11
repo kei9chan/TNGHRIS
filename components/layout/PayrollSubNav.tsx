@@ -44,6 +44,7 @@ const iconMap: { [key: string]: React.FC<{className?: string}> } = {
     'Clock Log': DocumentMagnifyingGlassIcon,
     'Daily Time Review': ClipboardDocumentCheckIcon,
     'Manpower Planning': UserGroupIcon,
+    'On-Call & Manpower Cost': ChartBarIcon,
     'Workforce Planning': ChartPieIcon,
 };
 
@@ -70,7 +71,7 @@ const PayrollSubNav: React.FC = () => {
             },
             {
                 name: 'Payroll',
-                links: subLinks.filter(link => ['Payroll Access', 'Payroll Approvals', 'Payments & Reports', 'Compare & Pilot', 'Pay Packages', 'Gross Pay Review', 'Take-home Pay Review', 'Payroll Prep', 'Payroll Staging', 'Payslips', 'Loan Application System', 'Special Pay & Corrections'].includes(link.name))
+                links: subLinks.filter(link => ['Payroll Access', 'Payroll Approvals', 'Payments & Reports', 'Compare & Pilot', 'Pay Packages', 'Gross Pay Review', 'Take-home Pay Review', 'Payroll Prep', 'Payroll Staging', 'Payslips', 'Loan Application System', 'Special Pay & Corrections', 'On-Call & Manpower Cost'].includes(link.name))
             },
             {
                 name: 'Compliance & Reports',
