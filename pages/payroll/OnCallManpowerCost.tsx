@@ -101,6 +101,9 @@ const OnCallManpowerCost: React.FC = () => {
   const [employmentType, setEmploymentType] = useState('');
   const [shift, setShift] = useState('');
   const [eventFilter, setEventFilter] = useState('');
+  const [locationFilter, setLocationFilter] = useState('');
+  const [costStatus, setCostStatus] = useState('');
+  const [coverageStatus, setCoverageStatus] = useState('');
   const [dashboard, setDashboard] = useState<Dashboard>({ kpis: emptyKpis, daily: [], employees: [], events: [], replacements: [] });
   const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -115,10 +118,10 @@ const OnCallManpowerCost: React.FC = () => {
   const loadDashboard = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    const { data, error: queryError } = await supabase.rpc('get_on_call_manpower_dashboard', {
+    const { data, error: queryError } = await supabase.rpc('get_on_call_manpower_dashboard_v2', {
       p_from: from, p_to: to, p_business_unit_id: businessUnitId || null, p_department_id: departmentId || null,
       p_employment_type: employmentType || null, p_shift: shift || null, p_event: eventFilter || null,
-      p_cost_status: null, p_coverage_status: null,
+      p_location: locationFilter || null, p_cost_status: costStatus || null, p_coverage_status: coverageStatus || null,
     });
     if (queryError) {
       setError(queryError.message || 'The manpower dashboard could not be loaded.');
@@ -127,7 +130,7 @@ const OnCallManpowerCost: React.FC = () => {
       setError('');
     }
     setLoading(false);
-  }, [businessUnitId, departmentId, employmentType, eventFilter, from, shift, to, user]);
+  }, [businessUnitId, coverageStatus, costStatus, departmentId, employmentType, eventFilter, from, locationFilter, shift, to, user]);
 
   useEffect(() => { void loadDashboard(); }, [loadDashboard]);
   useEffect(() => {
@@ -187,7 +190,10 @@ const OnCallManpowerCost: React.FC = () => {
       <label className="text-sm">Employment<select value={employmentType} onChange={e => setEmploymentType(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent p-2 dark:border-slate-600"><option value="">All</option><option>Regular</option><option>Probationary</option><option>Part-time</option><option>Consultant</option></select></label>
       <label className="text-sm">Shift<input value={shift} onChange={e => setShift(e.target.value)} placeholder="e.g. Opening" className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent p-2 dark:border-slate-600" /></label>
       <label className="text-sm md:col-span-2">Event<input value={eventFilter} onChange={e => setEventFilter(e.target.value)} placeholder="Search event notes" className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent p-2 dark:border-slate-600" /></label>
-      <div className="flex items-end md:col-span-2"><Button variant="secondary" onClick={() => { const bounds = monthBounds(); setFrom(bounds.from); setTo(bounds.to); setBusinessUnitId(''); setDepartmentId(''); setEmploymentType(''); setShift(''); setEventFilter(''); }}>This month</Button></div>
+      <label className="text-sm md:col-span-2">Location<input value={locationFilter} onChange={e => setLocationFilter(e.target.value)} placeholder="Search location" className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent p-2 dark:border-slate-600" /></label>
+      <label className="text-sm">Cost status<select value={costStatus} onChange={e => setCostStatus(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent p-2 dark:border-slate-600"><option value="">All</option><option value="Actual">Actual</option><option value="Provisional">Provisional</option><option value="Committed">Committed</option><option value="Projected">Projected</option><option value="Over Budget">Over Budget</option></select></label>
+      <label className="text-sm">Coverage status<select value={coverageStatus} onChange={e => setCoverageStatus(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent p-2 dark:border-slate-600"><option value="">All</option><option value="Fully covered">Fully covered</option><option value="Covered with on-call">Covered with on-call</option><option value="Unfilled">Unfilled</option></select></label>
+      <div className="flex items-end md:col-span-2"><Button variant="secondary" onClick={() => { const bounds = monthBounds(); setFrom(bounds.from); setTo(bounds.to); setBusinessUnitId(''); setDepartmentId(''); setEmploymentType(''); setShift(''); setEventFilter(''); setLocationFilter(''); setCostStatus(''); setCoverageStatus(''); }}>This month</Button></div>
     </div></Card>
     {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">{error}</div>}
     <div className="flex gap-2 overflow-x-auto border-b border-gray-200 dark:border-slate-700">{[['overview','Overview'],['daily','Daily View'],['employees','Employee Cost'],['reports','Reports']].map(([key,label]) => <button key={key} type="button" onClick={() => setTab(key as typeof tab)} className={`min-h-11 whitespace-nowrap border-b-2 px-4 text-sm font-semibold ${tab === key ? 'border-indigo-600 text-indigo-600 dark:text-indigo-300' : 'border-transparent text-gray-500'}`}>{label}</button>)}</div>

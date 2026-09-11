@@ -11,6 +11,8 @@ const deepLinks = read('services/approvalDeepLinks.ts');
 const migration = read('supabase/migrations/20260829100000_on_call_manpower_form_and_approval_workflow.sql');
 const grantMigration = read('supabase/migrations/20260829101000_grant_manpower_rls_helper_execution.sql');
 const calendarDate = read('utils/calendarDate.ts');
+const dashboard = read('pages/payroll/OnCallManpowerCost.tsx');
+const dashboardMigration = read('supabase/migrations/20260912133000_on_call_manpower_dashboard_filters_and_costs.sql');
 
 const reasons = [
   'Sick call / absence',
@@ -53,6 +55,11 @@ const checks = [
   [planning.includes('fetchMyPendingManpowerApprovalIds') && planning.includes('This on-call request is no longer assigned to you'), 'planning deep-link authorization'],
   [managerDashboard.includes('fetchMyPendingManpowerApprovalIds') && managerDashboard.includes('assignment-based'), 'manager dashboard follows active assignment'],
   [review.includes('Approval trail') && review.includes('Pending BOD / GM Approval') && review.includes('Required FTE'), 'review modal shows stage and request detail'],
+  [dashboard.includes("get_on_call_manpower_dashboard_v2") && dashboard.includes('On-Call &amp; Manpower Cost'), 'cost dashboard route and live RPC'],
+  [dashboard.includes('Location') && dashboard.includes('Cost status') && dashboard.includes('Coverage status'), 'dashboard scope filters'],
+  [dashboard.includes('Overview') && dashboard.includes('Daily View') && dashboard.includes('Employee Cost') && dashboard.includes('Reports'), 'dashboard tabs'],
+  [dashboardMigration.includes('get_on_call_manpower_dashboard_v2') && dashboardMigration.includes("'actualCost'") && dashboardMigration.includes('replacementActualCost'), 'actual cost reconciliation wrapper'],
+  [dashboardMigration.includes('p_location text') && dashboardMigration.includes('p_coverage_status text'), 'server-side location and coverage filters'],
 ];
 
 const failed = checks.filter(([ok]) => !ok);
