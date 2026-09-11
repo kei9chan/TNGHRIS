@@ -20,7 +20,7 @@ const NewEvaluation: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { can } = usePermissions();
-  const canManage = can('Evaluation', Permission.Manage);
+  const canAssign = can('Evaluation', Permission.Assign);
   const [evaluationName, setEvaluationName] = useState('');
   const [dueDate, setDueDate] = useState(new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
   const [selectedBuIds, setSelectedBuIds] = useState<string[]>([]);
@@ -320,14 +320,14 @@ const NewEvaluation: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {!canManage && (
+      {!canAssign && (
         <Card>
           <div className="p-6 text-center text-gray-600 dark:text-gray-300">
-            You do not have permission to create or view evaluations.
+            You do not have permission to create or assign evaluations.
           </div>
         </Card>
       )}
-      {canManage && (
+      {canAssign && (
         <>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Create New Evaluation</h1>
 

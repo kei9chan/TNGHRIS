@@ -131,7 +131,7 @@ export const NAV_LINKS: NavLink[] = [
         children: [
             { name: 'Evaluations', path: '/evaluation/reviews', requiredPermission: { resource: 'Evaluation', permission: Permission.View } },
             { name: 'Pulse Surveys', path: '/evaluation/pulse', requiredPermission: { resource: 'PulseSurvey', permission: Permission.View } },
-            { name: 'New Evaluation', path: '/evaluation/new', requiredPermission: { resource: 'Evaluation', permission: Permission.Manage } },
+            { name: 'New Evaluation', path: '/evaluation/new', requiredPermission: { resource: 'Evaluation', permission: Permission.Assign } },
             { name: 'Question Bank', path: '/evaluation/question-bank', requiredPermission: { resource: 'Evaluation', permission: Permission.Manage } },
             { name: 'Timelines', path: '/evaluation/timelines', requiredPermission: { resource: 'Evaluation', permission: Permission.Manage } },
             { name: 'Awards', path: '/evaluation/awards', requiredPermission: { resource: 'Evaluation', permission: Permission.Manage } },
