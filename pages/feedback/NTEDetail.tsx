@@ -410,7 +410,7 @@ const NTEDetail: React.FC = () => {
                     </div>
                 </dl>
             </div>
-            {user?.id !== nte.employeeId && <CaseQuestions caseId={incidentReport.id} />}
+            <CaseQuestions key={nte.id} caseId={incidentReport.id} nteId={nte.id} />
             <NTEWorkflowPanel key={nte.id} nte={nte} onChanged={()=>setReload(x=>x+1)}/>
             {canScheduleHearing&&<Button variant="secondary" onClick={()=>setIsHearingModalOpen(true)}>Schedule administrative hearing</Button>}
             {currentUserStep && (

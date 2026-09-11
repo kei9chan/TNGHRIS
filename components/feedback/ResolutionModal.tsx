@@ -1,4 +1,5 @@
 import { useUsers } from '../../hooks/useHRData';
+import { CaseQuestions } from '../../modules/caseQuestions';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { IncidentReport, Resolution, ResolutionType, Permission, Role, User, ResolutionStatus, ApproverStatus } from '../../types';
@@ -302,6 +303,7 @@ const ResolutionModal: React.FC<ResolutionModalProps> = ({ isOpen, onClose, inci
         footer={renderFooter()}
         size="2xl"
       >
+        {!isEmployeeAcknowledgeView && <CaseQuestions caseId={incidentReport.id} />}
         {rejectionReasons.length > 0 && (
             <Card title="Rejection Notes" className="mb-4 bg-red-50 dark:bg-red-900/40 border-red-400">
                 <ul className="space-y-2">
