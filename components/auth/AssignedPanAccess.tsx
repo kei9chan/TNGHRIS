@@ -16,7 +16,7 @@ export default function AssignedPanAccess({ userId, requestId, children }: {
       try {
         // RLS also checks the authenticated account. URL IDs are never authority.
         let query = supabase.from('pans').select('id')
-          .contains('routing_steps', JSON.stringify([{ userId }])).limit(1);
+          .or(`employee_id.eq.${userId},routing_steps.cs.${JSON.stringify([{ userId }])}`).limit(1);
         if (requestId) query = query.eq('id', requestId);
         const { data, error } = await retryTransientSupabaseRead(async () => await query);
         if (!cancelled) setState(error ? 'error' : data?.length ? 'allowed' : 'denied');

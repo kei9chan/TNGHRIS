@@ -1,7 +1,7 @@
 import { panPayload, panSaveError } from '../../services/panPersistence';
 import { decisionSaved } from '../../services/approvalNavigation';
 // Phase E: mockDataCompat removed from PersonnelActionNotice
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { getApprovalRequestId } from '../../services/approvalDeepLinks';
 import { useSearchParams } from 'react-router-dom';
 import { createPortal } from 'react-dom';
@@ -293,7 +293,11 @@ const PersonnelActionNotice: React.FC = () => {
     }
   };
 
+  const acknowledgmentInFlight = useRef(false);
   const handleAcknowledge = async (panId: string, signatureDataUrl: string, signatureName: string) => {
+    if (acknowledgmentInFlight.current) return;
+    acknowledgmentInFlight.current = true;
+    try {
     const { data, error } = await supabase.rpc('accept_pan', {
       p_pan_id: panId,
       p_signature_data_url: signatureDataUrl,
@@ -306,6 +310,10 @@ const PersonnelActionNotice: React.FC = () => {
     setRecords(prev => prev.map(r => (r.id === panId ? mapPanRow(data) : r)));
     setIsModalOpen(false);
     setSelectedRecord(null);
+    alert('PAN acknowledged successfully.');
+    } catch (error) {
+      alert((error as Error)?.message || 'Unable to acknowledge PAN. Please retry.');
+    } finally { acknowledgmentInFlight.current = false; }
   };
 
   const handleApprovePANRequest = (pan: PAN) => {

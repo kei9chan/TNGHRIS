@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 const t = { slots: [], cursor: 0, effects: [], pending: [], filters: [] };
 globalThis.__panAccessTest = t;
 const react = `const t=globalThis.__panAccessTest;export const useState=v=>{const i=t.cursor++;if(!(i in t.slots))t.slots[i]=v;return [t.slots[i],v=>t.slots[i]=typeof v==='function'?v(t.slots[i]):v];};export const useEffect=f=>t.effects.push(f);export default {createElement:(type,props,...children)=>({type,props,children})};`;
-const client = `const t=globalThis.__panAccessTest;export const supabase={from:table=>{t.filters.push(['table',table]);const q={select:v=>(t.filters.push(['select',v]),q),contains:(k,v)=>(t.filters.push([k,v]),q),limit:v=>q,eq:(k,v)=>(t.filters.push([k,v]),q),then:(resolve,reject)=>new Promise(r=>t.pending.push(r)).then(resolve,reject)};return q;}};`;
+const client = `const t=globalThis.__panAccessTest;export const retryTransientSupabaseRead=f=>f();export const supabase={from:table=>{t.filters.push(['table',table]);const q={select:v=>(t.filters.push(['select',v]),q),or:v=>(t.filters.push(['or',v]),q),limit:v=>q,eq:(k,v)=>(t.filters.push([k,v]),q),then:(resolve,reject)=>new Promise(r=>t.pending.push(r)).then(resolve,reject)};return q;}};`;
 const {outputFiles}=await build({entryPoints:['components/auth/AssignedPanAccess.tsx'],bundle:true,write:false,platform:'node',format:'esm',tsconfigRaw:{compilerOptions:{jsx:'react'}},plugins:[{name:'mocks',setup(b){b.onResolve({filter:/^react$|services\/supabaseClient$/},a=>({path:a.path,namespace:'mock'}));b.onLoad({filter:/.*/,namespace:'mock'},a=>({contents:a.path==='react'?react:client}));}}]});
 const {default:Guard}=await import('data:text/javascript;base64,'+Buffer.from(outputFiles[0].text).toString('base64'));
 const child={page:'PAN'};
@@ -12,7 +12,7 @@ const render=(userId='manager',requestId='assigned')=>{t.cursor=0;t.effects=[];r
 const flush=()=>new Promise(r=>setImmediate(r));
 async function check(result,expected) {
  t.slots=[];t.filters=[];render();const cleanup=t.effects[0]();await flush();t.pending.shift()(result);await flush();assert.equal(render()===child,expected);cleanup();
- assert.deepEqual(t.filters,[['table','pans'],['select','id'],['routing_steps',[{userId:'manager'}]],['id','assigned']]);
+ assert.deepEqual(t.filters,[['table','pans'],['select','id'],['or','employee_id.eq.manager,routing_steps.cs.[{"userId":"manager"}]'],['id','assigned']]);
 }
 await check({data:[{id:'assigned'}],error:null},true);
 await check({data:[],error:null},false);

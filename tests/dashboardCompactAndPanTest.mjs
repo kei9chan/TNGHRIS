@@ -35,6 +35,6 @@ tree=render(ScheduleTask,{});assert.match(tree.props.className,/border-2 border-
 h.state[0].status='Completed';h.state[0].remaining=0;const completedTree=render(ScheduleTask,{});assert.ok(!nodes(completedTree).some(n=>n.props?.id==='schedule-task'),'Completed schedule tasks are hidden from the dashboard');
 reset();h.state[0]={required:3,remaining:0,completed:3,percentage:100,exempt:0,week:'2026-09-14',deadline:'2026-09-12T15:59:00Z',status:'Completed',hr:false,employees:[]};assert.equal(render(ScheduleTask,{}),null,'Completed employee-manager tasks render nothing');
 reset();render(Access,{userId:'manager-id',requestId:null,children:{type:'authorized'}});effects();await new Promise(r=>setImmediate(r));
-assert.equal(new URL(requestUrl).searchParams.get('routing_steps'),'cs.[{"userId":"manager-id"}]','JSONB filter must not serialize as PostgreSQL object array');
+assert.equal(new URL(requestUrl).searchParams.get('or'),'(employee_id.eq.manager-id,routing_steps.cs.[{"userId":"manager-id"}])','JSONB filter must not serialize as PostgreSQL object array');
 assert.equal(render(Access,{userId:'manager-id',requestId:null,children:{type:'authorized'}}).type,'authorized');
 console.log('PASS: normal/pending accordion defaults, manual toggles, refresh defaults, urgent schedule styling, purple action, real Supabase JSONB request serialization');
