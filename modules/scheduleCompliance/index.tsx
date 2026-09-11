@@ -17,7 +17,11 @@ export function ScheduleTask({week,manager,refresh=0,details=false}:{week?:strin
  useEffect(()=>{let active=true;const load=()=>{void call('get_schedule_compliance',{p_week:week||null,p_manager:manager||null}).then(x=>{if(active){setTask(x);setError('');}}).catch(e=>{if(active)setError(e.message);});};load();window.addEventListener('focus',load);return()=>{active=false;window.removeEventListener('focus',load);};},[week,manager,refresh,retry]);
  if(error)return <div className={box} role="alert">Schedule task could not be checked: {error} <button className="underline" onClick={()=>setRetry(v=>v+1)}>Retry</button></div>;
  if(!task)return null;
- if(!task.required&&!details&&!task.overdueTasks?.some(t=>t.remaining>0))return task.hr?<div className="mb-4"><Link className="font-semibold text-violet-600 dark:text-violet-300" to="/payroll/schedule-compliance">Schedule Compliance →</Link></div>:null;
+ const hasOverdueAction=Boolean(task.overdueTasks?.some(t=>t.remaining>0));
+ const hasCurrentAction=task.required>0&&task.remaining>0;
+ // Completed schedule tasks should leave the dashboard. Keep the card only when
+ // this week's work is still outstanding or an older overdue week needs action.
+ if(!details&&!hasCurrentAction&&!hasOverdueAction)return task.hr?<div className="mb-4"><Link className="font-semibold text-violet-600 dark:text-violet-300" to="/payroll/schedule-compliance">Schedule Compliance →</Link></div>:null;
  const urgent=['Overdue','Due Today','Due Tomorrow'].includes(task.status)||Boolean(task.overdueTasks?.some(t=>t.remaining>0));
  const overdue=task.status==='Overdue'||Boolean(task.overdueTasks?.some(t=>t.remaining>0));
  return <section id="schedule-task" className={urgent?'mb-5 rounded-2xl border-2 border-red-500 bg-red-50 p-5 text-slate-900 dark:border-red-400 dark:bg-red-950/30 dark:text-white':box}>

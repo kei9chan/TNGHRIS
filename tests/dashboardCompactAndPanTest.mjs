@@ -32,7 +32,8 @@ render(PulseAccordion,{data});effects();assert.equal(nodes(render(PulseAccordion
 reset();assert.equal(nodes(render(PulseAccordion,{data:issue})).find(n=>n.type==='button').props['aria-expanded'],true,'Refresh with pending reports opens details');
 reset();h.state[0]={required:9,remaining:9,completed:0,percentage:0,exempt:0,week:'2026-09-14',deadline:'2026-09-12T15:59:00Z',status:'Due Tomorrow',hr:true,employees:[]};
 tree=render(ScheduleTask,{});assert.match(tree.props.className,/border-2 border-red-500/);assert.ok(nodes(tree).some(n=>n.props?.children?.includes('URGENT')));assert.ok(nodes(tree).some(n=>n.props?.children?.includes('Set Schedules')&&n.props.className.includes('bg-violet-600')));
-h.state[0].status='Completed';h.state[0].remaining=0;assert.ok(!render(ScheduleTask,{}).props.className.includes('border-red-500'));
+h.state[0].status='Completed';h.state[0].remaining=0;const completedTree=render(ScheduleTask,{});assert.ok(!nodes(completedTree).some(n=>n.props?.id==='schedule-task'),'Completed schedule tasks are hidden from the dashboard');
+reset();h.state[0]={required:3,remaining:0,completed:3,percentage:100,exempt:0,week:'2026-09-14',deadline:'2026-09-12T15:59:00Z',status:'Completed',hr:false,employees:[]};assert.equal(render(ScheduleTask,{}),null,'Completed employee-manager tasks render nothing');
 reset();render(Access,{userId:'manager-id',requestId:null,children:{type:'authorized'}});effects();await new Promise(r=>setImmediate(r));
 assert.equal(new URL(requestUrl).searchParams.get('routing_steps'),'cs.[{"userId":"manager-id"}]','JSONB filter must not serialize as PostgreSQL object array');
 assert.equal(render(Access,{userId:'manager-id',requestId:null,children:{type:'authorized'}}).type,'authorized');
