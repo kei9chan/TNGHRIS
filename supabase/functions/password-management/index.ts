@@ -1,188 +1,137 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { decryptRefreshToken, hasExactGmailSendScope, refreshAccessToken, sendGmailMessage } from '../_shared/gmail.ts';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
-const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
-  status,
-  headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
-});
+const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' };
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+const failureMessage = 'We could not send the password-reset email. Please contact HRIS support.';
+const normalize = (value: unknown) => String(value || '').trim().toLowerCase();
 const validEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-const cleanHeader = (value: string) => value.replace(/[\r\n]+/g, ' ').trim();
-const escapeHtml = (value: string) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const strongPassword = (value: string) => value.length >= 12
-  && /[a-z]/.test(value) && /[A-Z]/.test(value) && /\d/.test(value) && /[^A-Za-z0-9]/.test(value);
+const digest = async (value: string) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))), b => b.toString(16).padStart(2, '0')).join('');
 
-const digest = async (value: string) => {
-  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('');
-};
-const encodeBase64 = (value: string) => {
-  const bytes = new TextEncoder().encode(value);
-  let binary = '';
-  for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
-  return btoa(binary);
-};
-const encodeBase64Url = (value: string) => encodeBase64(value).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-const encodeHeader = (value: string) => `=?UTF-8?B?${encodeBase64(value)}?=`;
-
-const googleError = async (response: Response) => {
-  const payload = await response.json().catch(() => ({}));
-  const reason = payload?.error?.errors?.[0]?.reason;
-  const message = payload?.error?.message || payload?.error_description || `Google Gmail returned HTTP ${response.status}.`;
-  if (response.status === 403 && ['insufficientPermissions', 'forbidden'].includes(reason)) {
-    return 'Google is connected, but the saved authorization does not include Gmail send permission. Reconnect Google with the Gmail send scope.';
-  }
-  if (reason === 'accessNotConfigured') return 'Gmail API is not enabled for the connected Google Cloud project.';
-  return reason && !message.includes(reason) ? `${message} (${reason})` : message;
-};
-
-const allowedRedirect = (raw: unknown) => {
-  try {
-    const url = new URL(String(raw || 'https://hris.thenextperience.com/reset-password'));
-    const productionHosts = new Set(['hris.thenextperience.com', 'tnghris-omega.vercel.app']);
-    const local = ['localhost', '127.0.0.1'].includes(url.hostname) && url.protocol === 'http:';
-    if ((!productionHosts.has(url.hostname) || url.protocol !== 'https:') && !local) throw new Error('Invalid redirect origin.');
-    url.pathname = '/reset-password';
-    url.search = '';
-    url.hash = '';
-    return url.toString();
-  } catch {
-    return 'https://hris.thenextperience.com/reset-password';
-  }
-};
-
-const sendRecoveryEmail = async (to: string, actionLink: string) => {
-  const clientId = Deno.env.get('GOOGLE_CLIENT_ID')?.trim();
-  const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET')?.trim();
-  const refreshToken = Deno.env.get('GOOGLE_REFRESH_TOKEN')?.trim();
-  if (!clientId || !clientSecret || !refreshToken) throw new Error('Password email delivery is not configured.');
-  const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token' }),
+// Refresh the connected HR/Admin sender before looking up the recipient. Global
+// configuration failures therefore have the same public result for all emails.
+async function recoverySender(admin: any) {
+  const roles = await admin.from('user_roles').select('user_id,role_id').eq('is_active', true).in('role_id', ['HR Manager', 'Admin']);
+  if (roles.error) throw new Error('sender_role_lookup_failed');
+  const ids = [...new Set((roles.data || []).map((r: any) => r.user_id))];
+  if (!ids.length) throw new Error('sender_not_configured');
+  const profiles = await admin.from('hris_users').select('id,auth_user_id,status').in('id', ids).eq('status', 'Active');
+  if (profiles.error) throw new Error('sender_profile_lookup_failed');
+  const authIds = (profiles.data || []).map((p: any) => p.auth_user_id).filter(Boolean);
+  if (!authIds.length) throw new Error('sender_not_configured');
+  const connections = await admin.from('gmail_connections').select('user_id,google_email,refresh_token_ciphertext,refresh_token_iv,granted_scopes').in('user_id', authIds).eq('connection_status', 'connected').order('connected_at');
+  if (connections.error) throw new Error('sender_connection_lookup_failed');
+  // Prefer HR Manager, then Admin; never use an Employee sender.
+  const candidates = (connections.data || []).sort((a: any, b: any) => {
+    const hr = (c: any) => roles.data.some((r: any) => r.role_id === 'HR Manager' && profiles.data.some((p: any) => p.id === r.user_id && p.auth_user_id === c.user_id));
+    return Number(hr(b)) - Number(hr(a));
   });
-  if (!tokenResponse.ok) throw new Error(await googleError(tokenResponse));
-  const tokenPayload = await tokenResponse.json();
-  if (!tokenPayload?.access_token) throw new Error('Google did not return an access token for password email delivery.');
-
-  const safeLink = escapeHtml(actionLink);
-  const plainText = `Reset your TNG HRIS password\n\nOpen this secure link to choose a new password:\n${actionLink}\n\nThis link expires and can be used only for password recovery. If you did not request this, you can ignore this email.`;
-  const html = `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#111827"><h1 style="font-size:24px">Reset your TNG HRIS password</h1><p>Use the button below to choose a new password.</p><p style="margin:28px 0"><a href="${safeLink}" style="display:inline-block;background:#6d28d9;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:700">Reset password</a></p><p style="font-size:13px;color:#4b5563">If the button does not work, copy and paste this URL into your browser:</p><p style="font-size:12px;word-break:break-all"><a href="${safeLink}">${safeLink}</a></p><p style="font-size:13px;color:#4b5563">This link expires. If you did not request it, you can ignore this email.</p></div>`;
-  const boundary = `tng-password-${crypto.randomUUID()}`;
-  const sender = cleanHeader(Deno.env.get('GOOGLE_GMAIL_FROM_EMAIL')?.trim() || '');
-  const mime = [
-    sender ? `From: TNG HRIS <${sender}>` : '', `To: ${cleanHeader(to)}`, `Subject: ${encodeHeader('Reset your TNG HRIS password')}`,
-    'MIME-Version: 1.0', `Content-Type: multipart/alternative; boundary="${boundary}"`, '',
-    `--${boundary}`, 'Content-Type: text/plain; charset="UTF-8"', 'Content-Transfer-Encoding: 8bit', '', plainText,
-    `--${boundary}`, 'Content-Type: text/html; charset="UTF-8"', 'Content-Transfer-Encoding: 8bit', '', html,
-    `--${boundary}--`, '',
-  ].filter((value, index) => value !== '' || index > 4).join('\r\n');
-  const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-    method: 'POST', headers: { Authorization: `Bearer ${tokenPayload.access_token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ raw: encodeBase64Url(mime) }),
-  });
-  if (!response.ok) throw new Error(await googleError(response));
-};
+  let senderFailure = 'gmail_sender_unavailable_reconnect_required';
+  for (const connection of candidates) {
+    if (!hasExactGmailSendScope(connection.granted_scopes) || !validEmail(normalize(connection.google_email))) continue;
+    try {
+      const refresh = await decryptRefreshToken(connection.refresh_token_ciphertext, connection.refresh_token_iv);
+      const token = await refreshAccessToken(refresh);
+      return { accessToken: token.accessToken, senderEmail: connection.google_email };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      senderFailure = /decrypt/i.test(message) ? 'gmail_credential_decryption_failed'
+        : /not configured|must decode|valid base64/i.test(message) ? 'gmail_configuration_missing'
+        : /revoked|expired/i.test(message) ? 'gmail_authorization_expired'
+        : /permission|scope/i.test(message) ? 'gmail_send_scope_missing'
+        : 'gmail_provider_unavailable';
+    }
+  }
+  throw new Error(senderFailure);
+}
 
 Deno.serve(async (request: Request) => {
-  if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  if (request.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
   let body: any;
   try { body = await request.json(); } catch { return json({ error: 'Invalid request body.' }, 400); }
-
-  const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
+  const url = Deno.env.get('SUPABASE_URL');
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  if (!supabaseUrl || !anonKey || !serviceKey) return json({ error: 'Password service is not configured.' }, 500);
-  const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
-  const action = String(body?.action || '');
-  const redirectTo = allowedRedirect(body?.redirectTo);
-
-  if (action === 'request_reset') {
-    const email = String(body?.email || '').trim().toLowerCase();
-    const generic = { ok: true, message: 'If an active account matches that email, a reset link has been sent.' };
-    if (!validEmail(email)) return json(generic);
-    const emailHash = await digest(email);
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
+  if (!url || !serviceKey || !anonKey) return json({ error: failureMessage }, 503);
+  const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
+  const isPublic = body.action === 'request_reset';
+  let actor: any = null;
+  let target: any = null;
+  let email = normalize(body.email);
+  let recordId: string | null = null;
+  const generic = { ok: true, message: 'Request received. If an eligible account exists for this email, reset instructions will be emailed. If they do not arrive, please contact HRIS support.' };
+  const outcome = async (state: string, code: string | null = null, messageId: string | null = null) => {
+    if (!recordId) return;
+    const result = await admin.from('password_reset_rate_limits').update({ outcome: state, failure_code: code, hris_user_id: target?.id || null, delivered: state === 'provider_accepted', provider_message_id: messageId }).eq('id', recordId);
+    if (result.error) throw new Error('audit_write_failed');
+  };
+  try {
+    if (!isPublic) {
+      const authorization = request.headers.get('Authorization');
+      if (!authorization) return json({ error: 'Authentication is required.' }, 401);
+      const scoped = createClient(url, anonKey, { global: { headers: { Authorization: authorization } }, auth: { persistSession: false, autoRefreshToken: false } });
+      const { data, error } = await scoped.auth.getUser();
+      if (error || !data.user) return json({ error: 'Your session is no longer valid.' }, 401);
+      const role = await scoped.rpc('has_active_role', { p_role: 'Admin' });
+      if (role.error || !role.data) return json({ error: 'Only an active Admin can manage account access.' }, 403);
+      const profile = await admin.from('hris_users').select('id,email,status').eq('auth_user_id', data.user.id).single();
+      if (profile.error || profile.data?.status !== 'Active') return json({ error: 'Active Admin access is required.' }, 403);
+      actor = profile.data;
+      if (body.action !== 'send_reset_link') return json({ error: 'Use an emailed recovery link. Passwords and recovery tokens are never available to administrators.' }, 400);
+      const selected = await admin.from('hris_users').select('id,email,auth_user_id,status').eq('id', String(body.targetUserId || '')).single();
+      if (selected.error || !selected.data) return json({ error: 'The employee account could not be loaded.' }, 404);
+      target = selected.data;
+      if (target.status !== 'Active') return json({ error: 'Password actions are unavailable for inactive accounts.' }, 409);
+      email = normalize(target.email);
+    }
+    if (!validEmail(email)) return json({ error: 'Enter a valid email address.' }, 400);
     const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || request.headers.get('cf-connecting-ip') || 'unknown';
-    const ipHash = await digest(forwarded);
-    const since = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-    const [{ count: emailCount }, { count: ipCount }] = await Promise.all([
-      admin.from('password_reset_rate_limits').select('*', { count: 'exact', head: true }).eq('email_hash', emailHash).gte('requested_at', since),
-      admin.from('password_reset_rate_limits').select('*', { count: 'exact', head: true }).eq('ip_hash', ipHash).gte('requested_at', since),
-    ]);
-    if ((emailCount || 0) >= 3 || (ipCount || 0) >= 10) return json(generic);
-    const record = await admin.from('password_reset_rate_limits').insert({ email_hash: emailHash, ip_hash: ipHash }).select('id').single();
-    const generated = await admin.auth.admin.generateLink({ type: 'recovery', email, options: { redirectTo } });
-    if (!generated.error && generated.data?.properties?.action_link) {
-      try {
-        await sendRecoveryEmail(email, generated.data.properties.action_link);
-        if (record.data?.id) await admin.from('password_reset_rate_limits').update({ delivered: true }).eq('id', record.data.id);
-      } catch (error) {
-        console.error('Password recovery delivery failed', error);
+    const reservation = await admin.rpc('reserve_password_recovery', { p_email_hash: await digest(email), p_ip_hash: await digest(actor ? `admin:${actor.id}` : forwarded) });
+    if (reservation.error) return json({ error: failureMessage }, 503);
+    recordId = reservation.data;
+    if (!recordId) return json({ error: 'Too many reset requests. Please wait 15 minutes before trying again.' }, 429);
+    const sender = await recoverySender(admin);
+    if (isPublic) {
+      // Literal equality prevents wildcard matching against account addresses.
+      const found = await admin.from('hris_users').select('id,email,auth_user_id,status').eq('email', email).limit(2);
+      if (found.error) throw new Error('profile_lookup_failed');
+      if (found.data?.length !== 1 || found.data[0].status !== 'Active') {
+        await outcome('not_eligible'); return json(generic);
       }
+      target = found.data[0];
     }
-    return json(generic);
-  }
-
-  const authorization = request.headers.get('Authorization');
-  if (!authorization) return json({ error: 'Authentication is required.' }, 401);
-  const scoped = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: authorization } }, auth: { persistSession: false, autoRefreshToken: false } });
-  const [{ data: authData, error: authError }, { data: isAdmin, error: roleError }] = await Promise.all([
-    scoped.auth.getUser(), scoped.rpc('has_active_role', { p_role: 'Admin' }),
-  ]);
-  if (authError || !authData.user) return json({ error: 'Your session is no longer valid.' }, 401);
-  if (roleError || !isAdmin) return json({ error: 'Only an active Admin can manage user passwords.' }, 403);
-  const targetUserId = String(body?.targetUserId || '');
-  const { data: target, error: targetError } = await admin.from('hris_users').select('id,auth_user_id,email,full_name,status').eq('id', targetUserId).single();
-  if (targetError || !target?.auth_user_id) return json({ error: 'The selected HRIS user has no linked login account.' }, 404);
-  if (target.status !== 'Active') return json({ error: 'Password actions are unavailable for inactive accounts.' }, 409);
-  const { data: actor } = await admin.from('hris_users').select('id,email').eq('auth_user_id', authData.user.id).single();
-  let result: Record<string, unknown> = { ok: true };
-
-  if (action === 'send_reset_link') {
-    const generated = await admin.auth.admin.generateLink({ type: 'recovery', email: target.email, options: { redirectTo } });
-    if (generated.error || !generated.data?.properties?.action_link) {
-      console.error('Admin recovery-link generation failed', generated.error?.message || 'No action link returned.');
-      return json({ error: generated.error?.message || 'A reset link could not be generated for this account.' }, 502);
+    const existing = target.auth_user_id ? await admin.auth.admin.getUserById(target.auth_user_id) : null;
+    const authUser = existing?.data?.user;
+    if (!authUser || existing?.error || normalize(authUser.email) !== email || ((authUser as { banned_until?: string }).banned_until && new Date((authUser as { banned_until: string }).banned_until).getTime() > Date.now())) {
+      await outcome('failed', 'identity_or_status_mismatch');
+      return isPublic ? json(generic) : json({ error: 'The account identity requires review in Account diagnostics.' }, 409);
     }
+    // Recovery never provisions an account and does not change profile IDs/roles.
+    const generated = await admin.auth.admin.generateLink({ type: 'recovery', email: authUser.email!, options: { redirectTo: 'https://hris.thenextperience.com/reset-password' } });
+    if (generated.error || !generated.data?.properties?.action_link || generated.data.user?.id !== authUser.id) {
+      await outcome('failed', 'recovery_generation_failed');
+      return isPublic ? json(generic) : json({ error: failureMessage }, 502);
+    }
+    const actionLink = generated.data.properties.action_link;
     try {
-      await sendRecoveryEmail(target.email, generated.data.properties.action_link);
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : 'Password reset email could not be delivered.';
-      console.error('Admin password recovery delivery failed:', reason);
-      result = {
-        ok: true,
-        delivered: false,
-        warning: `${reason} The secure reset link was generated and can be copied below.`,
-        manualResetLink: generated.data.properties.action_link,
-      };
+      const sent = await sendGmailMessage(sender.accessToken, { senderEmail: sender.senderEmail, senderName: 'TNG HRIS', to: authUser.email!, subject: 'Reset your TNG HRIS password', message: `Use this secure link to choose a new password:\n\n${actionLink}\n\nThis link expires and can be used once. If you did not request a reset, ignore this email.` });
+      await outcome('provider_accepted', null, sent.messageId);
+      if (actor) {
+        const audit = await admin.from('audit_logs').insert({ user_id: actor.id, user_email: actor.email, action: 'PASSWORD_RESET_SENT', entity: 'hris_user', entity_id: target.id, details: JSON.stringify({ requestId: recordId, deliveryStatus: 'provider_accepted' }) });
+        if (audit.error) throw new Error('audit_write_failed');
+      }
+      return isPublic ? json(generic) : json({ ok: true, delivered: true });
+    } catch {
+      await outcome('failed', 'gmail_send_failed');
+      return isPublic ? json(generic) : json({ error: failureMessage }, 502);
     }
-    if (!('delivered' in result)) result.delivered = true;
-  } else if (action === 'set_temporary_password') {
-    const temporaryPassword = String(body?.temporaryPassword || '');
-    if (!strongPassword(temporaryPassword)) return json({ error: 'Temporary password must be at least 12 characters and include uppercase, lowercase, number, and symbol.' }, 400);
-    const existing = await admin.auth.admin.getUserById(target.auth_user_id);
-    if (existing.error) return json({ error: 'The linked login account could not be loaded.' }, 502);
-    const updated = await admin.auth.admin.updateUserById(target.auth_user_id, {
-      password: temporaryPassword,
-      email_confirm: true,
-      user_metadata: { ...(existing.data.user.user_metadata || {}), must_change_password: true },
-    });
-    if (updated.error) return json({ error: 'The temporary password could not be saved.' }, 502);
-  } else {
-    return json({ error: 'Unsupported password action.' }, 400);
+  } catch (error) {
+    const allowedCodes = ['gmail_credential_decryption_failed','gmail_configuration_missing','gmail_authorization_expired','gmail_send_scope_missing','gmail_provider_unavailable','sender_role_lookup_failed','sender_profile_lookup_failed','sender_connection_lookup_failed','sender_not_configured','gmail_sender_unavailable_reconnect_required','profile_lookup_failed','audit_write_failed'];
+    const code = error instanceof Error && allowedCodes.includes(error.message) ? error.message : 'recovery_service_failed';
+    try { await outcome('failed', code); } catch { /* Fail closed without exposing data. */ }
+    console.error('Password recovery failed', { requestId: recordId, code });
+    return json({ error: failureMessage }, 503);
   }
-
-  if (actor?.id) await admin.from('audit_logs').insert({
-    user_id: actor.id, user_email: actor.email,
-    action: action === 'send_reset_link'
-      ? (result.delivered ? 'PASSWORD_RESET_SENT' : 'PASSWORD_RESET_LINK_GENERATED')
-      : 'TEMPORARY_PASSWORD_SET',
-    entity: 'hris_user', entity_id: target.id,
-    details: JSON.stringify({ targetEmail: target.email, sourceModule: 'Admin/UserManagement' }),
-  });
-  return json(result);
 });
