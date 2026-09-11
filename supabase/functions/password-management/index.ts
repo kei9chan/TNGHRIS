@@ -9,8 +9,50 @@ const normalize = (value: unknown) => String(value || '').trim().toLowerCase();
 const validEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 const digest = async (value: string) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))), b => b.toString(16).padStart(2, '0')).join('');
 
-// Refresh the connected HR/Admin sender before looking up the recipient. Global
-// configuration failures therefore have the same public result for all emails.
+
+class RecoveryDeliveryError extends Error {
+  code: string;
+  constructor(code: string) { super(code); this.name = 'RecoveryDeliveryError'; this.code = code; }
+}
+const escapeHtml = (value: string) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');
+const resendFrom = () => Deno.env.get('RESEND_FROM_EMAIL')?.trim() || Deno.env.get('APPROVAL_EMAIL_FROM')?.trim() || '';
+const senderAddress = (value: string) => value.match(/<([^<>]+)>/)?.[1]?.trim() || value.trim();
+const resendConfigured = () => Boolean(Deno.env.get('RESEND_API_KEY')?.trim() && validEmail(normalize(senderAddress(resendFrom()))));
+const sendResendRecovery = async (to: string, actionLink: string) => {
+  const apiKey = Deno.env.get('RESEND_API_KEY')?.trim();
+  const from = resendFrom();
+  if (!apiKey || !validEmail(normalize(senderAddress(from)))) throw new RecoveryDeliveryError('resend_configuration_missing');
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'Idempotency-Key': `password-recovery/${await digest(to + actionLink)}` },
+    body: JSON.stringify({
+      from,
+      to: [to],
+      subject: 'Reset your TNG HRIS password',
+      text: `Use this secure link to choose a new password:\n\n${actionLink}\n\nThis link expires and can be used once. If you did not request a reset, ignore this email.`,
+      html: `<p>Use this secure link to choose a new password.</p><p><a href="${escapeHtml(actionLink)}">Reset password</a></p><p>This link expires and can be used once. If you did not request a reset, ignore this email.</p>`,
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload?.id) throw new RecoveryDeliveryError('resend_send_failed');
+  return { provider: 'resend', messageId: String(payload.id) };
+};
+const sendGmailRecovery = async (admin: any, to: string, actionLink: string) => {
+  try {
+    const sender = await recoverySender(admin);
+    const sent = await sendGmailMessage(sender.accessToken, { senderEmail: sender.senderEmail, senderName: 'TNG HRIS', to, subject: 'Reset your TNG HRIS password', message: `Use this secure link to choose a new password:\n\n${actionLink}\n\nThis link expires and can be used once. If you did not request a reset, ignore this email.` });
+    return { provider: 'gmail', messageId: sent.messageId };
+  } catch (error) {
+    if (error instanceof RecoveryDeliveryError) throw error;
+    throw new RecoveryDeliveryError(error instanceof Error && error.message.startsWith('gmail_') ? error.message : 'gmail_send_failed');
+  }
+};
+const sendRecovery = async (admin: any, to: string, actionLink: string) => {
+  if (resendConfigured()) return sendResendRecovery(to, actionLink);
+  return sendGmailRecovery(admin, to, actionLink);
+};
+
+// Gmail is retained as a fallback for existing HR/Admin integrations. Resend is preferred when configured.
 async function recoverySender(admin: any) {
   const roles = await admin.from('user_roles').select('user_id,role_id').eq('is_active', true).in('role_id', ['HR Manager', 'Admin']);
   if (roles.error) throw new Error('sender_role_lookup_failed');
@@ -92,7 +134,6 @@ Deno.serve(async (request: Request) => {
     if (reservation.error) return json({ error: failureMessage }, 503);
     recordId = reservation.data;
     if (!recordId) return json({ error: 'Too many reset requests. Please wait 15 minutes before trying again.' }, 429);
-    const sender = await recoverySender(admin);
     if (isPublic) {
       // Literal equality prevents wildcard matching against account addresses.
       const found = await admin.from('hris_users').select('id,email,auth_user_id,status').eq('email', email).limit(2);
@@ -116,19 +157,19 @@ Deno.serve(async (request: Request) => {
     }
     const actionLink = generated.data.properties.action_link;
     try {
-      const sent = await sendGmailMessage(sender.accessToken, { senderEmail: sender.senderEmail, senderName: 'TNG HRIS', to: authUser.email!, subject: 'Reset your TNG HRIS password', message: `Use this secure link to choose a new password:\n\n${actionLink}\n\nThis link expires and can be used once. If you did not request a reset, ignore this email.` });
+      const sent = await sendRecovery(admin, authUser.email!, actionLink);
       await outcome('provider_accepted', null, sent.messageId);
       if (actor) {
         const audit = await admin.from('audit_logs').insert({ user_id: actor.id, user_email: actor.email, action: 'PASSWORD_RESET_SENT', entity: 'hris_user', entity_id: target.id, details: JSON.stringify({ requestId: recordId, deliveryStatus: 'provider_accepted' }) });
         if (audit.error) throw new Error('audit_write_failed');
       }
       return isPublic ? json(generic) : json({ ok: true, delivered: true });
-    } catch {
-      await outcome('failed', 'gmail_send_failed');
+    } catch (error) {
+      await outcome('failed', error instanceof RecoveryDeliveryError ? error.code : 'recovery_delivery_failed');
       return isPublic ? json(generic) : json({ error: failureMessage }, 502);
     }
   } catch (error) {
-    const allowedCodes = ['gmail_credential_decryption_failed','gmail_configuration_missing','gmail_authorization_expired','gmail_send_scope_missing','gmail_provider_unavailable','sender_role_lookup_failed','sender_profile_lookup_failed','sender_connection_lookup_failed','sender_not_configured','gmail_sender_unavailable_reconnect_required','profile_lookup_failed','audit_write_failed'];
+    const allowedCodes = ['resend_configuration_missing','resend_send_failed','gmail_send_failed','recovery_delivery_failed','gmail_credential_decryption_failed','gmail_configuration_missing','gmail_authorization_expired','gmail_send_scope_missing','gmail_provider_unavailable','sender_role_lookup_failed','sender_profile_lookup_failed','sender_connection_lookup_failed','sender_not_configured','gmail_sender_unavailable_reconnect_required','profile_lookup_failed','audit_write_failed'];
     const code = error instanceof Error && allowedCodes.includes(error.message) ? error.message : 'recovery_service_failed';
     try { await outcome('failed', code); } catch { /* Fail closed without exposing data. */ }
     console.error('Password recovery failed', { requestId: recordId, code });
