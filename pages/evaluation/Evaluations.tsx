@@ -18,6 +18,7 @@ const Evaluations: React.FC = () => {
     const navigate = useNavigate();
     const { getAccessibleBusinessUnits, isUserEligibleEvaluator, can } = usePermissions();
     const canView = can('Evaluation', Permission.View);
+    const canAssign = can('Evaluation', Permission.Assign);
     const canManage = can('Evaluation', Permission.Manage);
     const isEvaluationOversight = hasEvaluationOversightAccess(user);
     const { hasAssignment, loading: assignmentAccessLoading } = useEvaluationAssignmentAccess(!canView && !isEvaluationOversight);
@@ -417,7 +418,7 @@ const Evaluations: React.FC = () => {
                     <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Evaluations</h1>
                     <p className="text-gray-600 dark:text-gray-400 mt-1">View ongoing and completed performance reviews across all business units — track progress and access results in real time.</p>
                 </div>
-                {canManage && (
+                {canAssign && (
                     <Link to="/evaluation/new">
                         <Button>Create New Evaluation</Button>
                     </Link>
