@@ -124,6 +124,7 @@ const DailyTimeReview = React.lazy(() => import('./pages/payroll/DailyTimeReview
 const Holidays = React.lazy(() => import('./pages/admin/Holidays'));
 const WorkforcePlanning = React.lazy(() => import('./pages/admin/WorkforcePlanning'));
 const ManpowerPlanning = React.lazy(() => import('./pages/payroll/ManpowerPlanning'));
+const OnCallManpowerCost = React.lazy(() => import('./pages/payroll/OnCallManpowerCost'));
 import COETemplates from './pages/admin/COETemplates'; // NEW
 import COERequests from './pages/admin/COERequests'; // NEW
 
@@ -401,6 +402,7 @@ const AppRoutes: React.FC = () => {
             <Route path="timekeeping" element={<ProtectedRoute><Timekeeping /></ProtectedRoute>} />
             <Route path="schedule-compliance" element={<ProtectedRoute><ScheduleCompliance /></ProtectedRoute>} />
             <Route path="manpower-planning" element={<ProtectedRoute><ManpowerPlanning /></ProtectedRoute>} />
+            <Route path="on-call-manpower-cost" element={<ProtectedRoute><OnCallManpowerCost /></ProtectedRoute>} />
             <Route path="workforce-planning" element={<ProtectedRoute><WorkforcePlanning /></ProtectedRoute>} />
              <Route path="daily-review" element={<ProtectedRoute><DailyTimeReview /></ProtectedRoute>} />
             <Route path="clock-in-out" element={<ProtectedRoute><ClockInOut /></ProtectedRoute>} />

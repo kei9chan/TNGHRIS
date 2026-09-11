@@ -104,6 +104,7 @@ export const NAV_LINKS: NavLink[] = [
             { name: 'Attendance Readiness', path: '/payroll/attendance-readiness', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
             { name: 'Timekeeping', path: '/payroll/timekeeping', requiredPermission: { resource: 'Timekeeping', permission: Permission.View } },
             { name: 'Manpower Planning', path: '/payroll/manpower-planning', requiredPermission: { resource: 'Manpower', permission: Permission.View } },
+            { name: 'On-Call & Manpower Cost', path: '/payroll/on-call-manpower-cost', requiredPermission: { resource: 'Manpower', permission: Permission.View } },
             { name: 'Workforce Planning', path: '/payroll/workforce-planning', requiredPermission: { resource: 'WorkforcePlanning', permission: Permission.View } },
             { name: 'Daily Time Review', path: '/payroll/daily-review', requiredPermission: { resource: 'Timekeeping', permission: Permission.View } },
             { name: 'Clock-in/Out', path: '/payroll/clock-in-out', requiredPermission: { resource: 'Clock', permission: Permission.View } },
