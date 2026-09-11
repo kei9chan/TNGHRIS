@@ -1,3 +1,4 @@
+import {textNoticeHtml} from '../server/noticeEmail.js';
 import nodemailer from 'nodemailer';
 
 const getEnv = (key: string) => {
@@ -64,7 +65,7 @@ const sendEmail = async ({
     to,
     subject,
     text: message,
-    html,
+    html: html || textNoticeHtml(subject, message, getEnv('APP_BASE_URL') || 'https://hris.thenextperience.com'),
     attachments: resolvedAttachments,
   });
 };

@@ -1,3 +1,4 @@
+import { noticeHtml, textNoticeHtml } from './noticeEmail.js';
 import { createClient } from '@supabase/supabase-js';
 import { timingSafeEqual } from 'node:crypto';
 
@@ -55,11 +56,11 @@ export function emailPayload(recipient: { email: string; name?: string; groups: 
   const lines = recipient.groups.map(g => `${g.count} ${g.label}`);
   return { from: env('APPROVAL_EMAIL_FROM'), to: [recipient.email], subject,
     text: `Good morning, ${firstName}!\n\n${intro}\n\n${lines.join('\n')}\n\nReview Pending Approvals: ${url}\n\nSign in to review the current approval queue.`,
-    html: `<html><body style="margin:0;background:#f4f3fa;font-family:Arial,sans-serif;color:#20203b"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td style="padding:24px 12px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;margin:auto;background:white;border-radius:16px"><tr><td style="padding:24px;background:#11172d;color:white;font-size:22px;font-weight:bold">TNG HRIS${test ? ' · TEST' : ''}</td></tr><tr><td style="padding:24px"><h1 style="font-size:22px">Good morning, ${escapeHtml(firstName)}!</h1><p style="line-height:1.6">${intro}</p>${lines.length ? `<ul style="padding-left:20px;line-height:1.9">${lines.map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ul>` : ''}<p style="margin:28px 0"><a href="${escapeHtml(url)}" style="display:inline-block;padding:16px 20px;border-radius:10px;background:#7040ed;color:white;text-decoration:none;font-weight:bold">Review Pending Approvals</a></p><p style="font-size:13px;color:#65617b">Sign in to review the current approval queue.</p></td></tr></table></td></tr></table></body></html>` };
+    html: noticeHtml({title: test ? 'Approval reminder preview' : `${count} approvals need your review`, intro: `Good morning, ${firstName}! ${intro}`, badge: test ? 'Test notification' : 'Action required', facts: recipient.groups.map(g => [g.label, String(g.count)]), actions: [{label:'Review pending approvals',url}]}) };
 }
 export async function sendResend(payload: any, key: string, fetcher = fetch) {
   try {
-    const result = await fetcher('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${env('RESEND_API_KEY')}`, 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(payload), signal: AbortSignal.timeout(15000) });
+    const result = await fetcher('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${env('RESEND_API_KEY')}`, 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify({...payload, html: payload.html || (payload.text ? textNoticeHtml(payload.subject, payload.text, env('APP_BASE_URL')) : undefined)}), signal: AbortSignal.timeout(15000) });
     const data = await result.json().catch(() => ({})) as any;
     if (!result.ok || !data.id) throw new Error(`Resend did not accept the email (HTTP ${result.status})`);
     return String(data.id);
