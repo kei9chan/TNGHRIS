@@ -4,8 +4,9 @@ import {useSearchParams} from 'react-router-dom';
 import {DayStatus,DayTag,dateKey,getDayStatuses,setDayStatus,statusPresets,leaveForDay} from '../../services/scheduleStatuses';
 import {mapShiftTemplate} from '../../services/shiftService';
 import {scheduleLabel} from '../../services/schedulePolicy';
-import {getScheduleWeek,publishScheduleWeek,reviewScheduleOverride} from '../../services/schedulePublicationService';
+import {getScheduleWeek,reviewScheduleOverride} from '../../services/schedulePublicationService';
 import type {SchedulePublication} from '../../services/schedulePublicationService';
+import SchedulePublishReview from '../../components/payroll/SchedulePublishReview';
 import SchedulePublicationStatus from '../../components/payroll/SchedulePublicationStatus';
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
@@ -138,6 +139,8 @@ const Timekeeping: React.FC = () => {
     const [view, setView] = useState<'grid' | 'role' | 'area' | 'timeline'>('grid');
     const [scheduleStatus, setScheduleStatus] = useState<'published' | 'dirty'>('dirty');
     const [publicationRows,setPublicationRows]=useState<SchedulePublication[]>([]);
+    const [reviewIds,setReviewIds]=useState<string[]|null>(null);
+    const [publicationLoading,setPublicationLoading]=useState(false);
     const [publicationReason,setPublicationReason]=useState('');
     const [publicationBusy,setPublicationBusy]=useState(false);
     const [publicationRefresh,setPublicationRefresh]=useState(0);
@@ -608,12 +611,13 @@ const Timekeeping: React.FC = () => {
     }, [scopedEmployees, clockingExemptEmployeeIds]);
 
     const publicationEmployeeKey=employeesInBU.map(e=>e.id).sort().join(',');
-    useEffect(()=>{let active=true;setScheduleStatus('dirty');setPublicationRows([]);setPublicationBusy(true);
+    useEffect(()=>{let active=true;setScheduleStatus('dirty');setPublicationRows([]);setPublicationLoading(true);
       const ids=publicationEmployeeKey?publicationEmployeeKey.split(','):[];
-      getScheduleWeek(ids,toDateOnly(weekStart)).then(rows=>{if(active){setPublicationRows(rows);setScheduleStatus(rows.length===ids.length&&rows.length>0&&rows.every(r=>r.published)?'published':'dirty');}}).catch(e=>{if(active)setToastInfo({show:true,message:e.message});}).finally(()=>{if(active)setPublicationBusy(false);});return()=>{active=false;};
+      getScheduleWeek(ids,toDateOnly(weekStart)).then(rows=>{if(active){setPublicationRows(rows);setScheduleStatus(rows.length===ids.length&&rows.length>0&&rows.every(r=>r.published)?'published':'dirty');}}).catch(e=>{if(active)setToastInfo({show:true,message:e.message});}).finally(()=>{if(active)setPublicationLoading(false);});return()=>{active=false;};
     },[publicationEmployeeKey,weekStart,assignments,templates,publicationRefresh,user?.id]);
+    useEffect(()=>{setReviewIds(null);},[publicationEmployeeKey,weekStart]);
     const handleReviewSchedule=async(id:string,approve:boolean)=>{
-      if(publicationReason.trim().length<3){setToastInfo({show:true,message:'Enter the override review reference above Publish Week.'});return;}
+      if(publicationReason.trim().length<3){setToastInfo({show:true,message:'Enter an override review note in Advanced schedule versions.'});return;}
       setPublicationBusy(true);try{await reviewScheduleOverride(id,approve,publicationReason);setPublicationRefresh(v=>v+1);setToastInfo({show:true,message:approve?'Override approved. HR must submit the linked timekeeping version.':'Override rejected; the effective version is retained.'});}catch(e){setToastInfo({show:true,message:(e as Error).message});}finally{setPublicationBusy(false);}
     };
 
@@ -1125,64 +1129,6 @@ const Timekeeping: React.FC = () => {
         }
     };
 
-    const handlePublishSchedule = async () => {
-        if(publicationReason.trim().length<3){setToastInfo({show:true,message:'Enter a publication reason below the week controls, then click Publish Week.'});return;}
-        const currentWeekKey = weekStart.toISOString().split('T')[0];
-        const suggestionsToConfirm = suggestedAssignments.filter(sa => 
-            getStartOfWeek(new Date(sa.date)).toISOString().split('T')[0] === currentWeekKey
-        );
-        
-        if (suggestionsToConfirm.length > 0) {
-            const payloads = suggestionsToConfirm.map(suggestion => {
-                const emp = employees.find(e => e.id === suggestion.employeeId);
-                const resolvedBuId = resolveAssignmentBuId(suggestion.employeeId);
-                return {
-                    employee_id: suggestion.employeeId,
-                    shift_template_id: suggestion.shiftTemplateId,
-                    date: toDateOnly(new Date(suggestion.date)),
-                    business_unit_id: resolvedBuId,
-                    department_id: emp?.departmentId || null,
-                    assigned_area_id: suggestion.assignedAreaId || null,
-                    created_by: user?.id || null,
-                };
-            });
-
-            const { data, error } = await supabase
-                .from('shift_assignments')
-                .insert(payloads)
-                .select('id, employee_id, shift_template_id, date, assigned_area_id');
-
-            if(error || !data || data.length !== payloads.length) throw new Error(error?.message || 'Could not verify all copied shifts. Refresh before retrying.');
-            if (!error && data) {
-                const inserted = data.map((row: any) => ({
-                    id: row.id,
-                    employeeId: row.employee_id,
-                    shiftTemplateId: row.shift_template_id,
-                    date: row.date ? new Date(row.date) : new Date(),
-                    locationId: 'OFFICE-MAIN',
-                    assignedAreaId: row.assigned_area_id || undefined,
-                }));
-                setAssignments(prev => [...prev, ...inserted]);
-                setSuggestedAssignments(prev => prev.filter(sa => 
-                    getStartOfWeek(new Date(sa.date)).toISOString().split('T')[0] !== currentWeekKey
-                ));
-            } else {
-                setToastInfo({ show: true, message: 'Failed to publish suggested shifts.' });
-                return;
-            }
-        }
-
-        setPublicationBusy(true);
-        try{
-          const ids=employeesInBU.map(e=>e.id);
-          const reviewed=suggestionsToConfirm.length?await getScheduleWeek(ids,toDateOnly(weekStart)):publicationRows;
-          const result=await publishScheduleWeek(ids,toDateOnly(weekStart),publicationReason,reviewed);
-          setPublicationRefresh(v=>v+1);
-          setToastInfo({show:true,message:result.some((r:any)=>r.approval_required)?'Version recorded. Finalized schedules require independent HR Manager override approval.':'Week published with dated schedule versions. Missing days still block payroll.'});
-        }catch(e){setToastInfo({show:true,message:(e as Error).message});return;}finally{setPublicationBusy(false);}
-        logActivity(user!, 'UPDATE', 'Schedule', currentWeekKey, `Published schedule for week of ${weekStart.toLocaleDateString()}`);
-    };
-
     const handlePrevWeek = () => { setViewDate(prev => addDays(prev, -7)); setScheduleStatus('dirty'); };
     const handleNextWeek = () => { setViewDate(prev => addDays(prev, 7)); setScheduleStatus('dirty'); };
     const handleToday = () => { setViewDate(new Date()); setScheduleStatus('dirty'); };
@@ -1367,7 +1313,8 @@ const Timekeeping: React.FC = () => {
 
             <Card>
                 <div className="p-4 space-y-4">
-                    {/* --- First Row: Date --- */}
+                    <h2 className="text-3xl font-bold">Schedule Builder</h2>
+                    <p className="text-sm font-semibold">{publicationLoading?'Checking publication status…':scheduleStatus==='published'?'PUBLISHED — Employees can now see their schedules':publicationRows.some(r=>r.activeVersion)?'DRAFT CHANGES — Employees still see their last published schedules':'DRAFT — Employees cannot see this yet'}</p>
                      <div className="grid grid-cols-1 items-center gap-4">
                         <span className="font-semibold text-2xl text-gray-800 dark:text-gray-200">
                             {formatDateRange(weekStart, addDays(weekStart, 6))}
@@ -1397,13 +1344,7 @@ const Timekeeping: React.FC = () => {
                                         Copy Last Week's Schedule
                                     </Button>
 
-                                    {scheduleStatus === 'dirty' ? (
-                                        <Button disabled={publicationBusy} onClick={handlePublishSchedule}>
-                                            Publish Week
-                                        </Button>
-                                    ) : (
-                                        <span className="text-green-600 dark:text-green-400 font-semibold text-sm">✓ Published</span>
-                                    )}
+                                    <Button disabled={publicationBusy||publicationLoading||!employeesInBU.length} onClick={()=>setReviewIds(employeesInBU.map(e=>e.id))}>Review &amp; publish</Button>
                                     {selectedBuId !== 'all' && (
                                         <Button variant="secondary" onClick={() => setIsHoursModalOpen(true)}>Edit Business Hours</Button>
                                     )}
@@ -1412,9 +1353,9 @@ const Timekeeping: React.FC = () => {
                         </div>
                     </div>
                 </div>
-                <div className="px-3">{isScheduleEditable&&<label className="mb-3 block text-sm">Publication reason / override review reference<input className="mt-1 block w-full rounded border p-2 dark:bg-slate-800" value={publicationReason} maxLength={1000} onChange={e=>setPublicationReason(e.target.value)} placeholder="Why this week is being published or changed"/></label>}
-                <p className="mb-3 text-sm">Saved shifts appear on the employee dashboard after publication. Enter a reason, then Publish Week. To publish one employee without publishing everyone else, open Schedule versions below.</p>
-                <SchedulePublicationStatus onPublish={isScheduleEditable?async(employeeId:string)=>{if(publicationReason.trim().length<3){setToastInfo({show:true,message:'Enter a publication reason first.'});return;}setPublicationBusy(true);try{await publishScheduleWeek([employeeId],toDateOnly(weekStart),publicationReason,publicationRows);setPublicationRefresh(v=>v+1);setToastInfo({show:true,message:'Employee week published or submitted for the required override review.'});}catch(e){setToastInfo({show:true,message:(e as Error).message});}finally{setPublicationBusy(false);}}:undefined} rows={publicationRows} names={Object.fromEntries(employeesInBU.map(e=>[e.id,e.name]))} onReview={handleReviewSchedule} busy={publicationBusy}/></div>
+                <ol className="mx-4 mb-4 grid gap-3 rounded-lg border border-slate-500/30 p-4 sm:grid-cols-3"><li className="font-bold text-violet-400">1 · Prepare schedules</li><li>2 · Review for issues</li><li>3 · Publish to employees</li></ol>
+                {!isScheduleEditable&&<p className="p-4" role="alert">You do not have permission to publish schedules for this scope.</p>}
+                <p className="px-4 pb-4 text-sm">Save your changes, then review the week before publishing. Suggested shifts must be assigned before they can be published.</p>
                 {view === 'timeline' ? (
                     <TimelineView 
                         weekDates={weekDates}
@@ -1446,6 +1387,9 @@ const Timekeeping: React.FC = () => {
                     />
                 )}
             </Card>
+
+            <SchedulePublicationStatus week={toDateOnly(weekStart)} onPublish={isScheduleEditable?(id)=>setReviewIds([id]):undefined} rows={publicationRows} names={Object.fromEntries(employeesInBU.map(e=>[e.id,e.name]))} onReview={handleReviewSchedule} busy={publicationBusy||publicationLoading} reviewNote={publicationReason} onReviewNote={setPublicationReason}/>
+            {reviewIds&&<SchedulePublishReview coverageWarnings={Object.entries(validationStatus).filter(([,value])=>value.tooltip).map(([day,value])=>`${day}: ${value.tooltip}`)} ids={reviewIds} week={toDateOnly(weekStart)} label={formatDateRange(weekStart,addDays(weekStart,6))} excluded={Math.max(0,scopedEmployees.length-employeesInBU.length)} onClose={()=>setReviewIds(null)} onPublished={()=>setPublicationRefresh(v=>v+1)} onFix={(id,date)=>{setReviewIds(null);const employee=employeesInBU.find(e=>e.id===id);if(employee)handleOpenDrawer(employee,date?new Date(date+'T12:00:00'):weekStart);}}/>}
 
             <ShiftAssignmentDrawer onStatus={(tag)=>{if(drawerState.employee&&drawerState.date)void applyDayStatus(drawerState.employee,drawerState.date,tag);handleCloseDrawer();}}
 
