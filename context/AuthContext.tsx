@@ -373,11 +373,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     email: string,
     pass: string
   ): Promise<User | null> => {
-    console.log('[Auth] login called with', email);
+
     setLoading(true);
 
     try {
-      const normalizedEmail = email.trim();
+      const normalizedEmail = email.trim().toLowerCase();
 
       // -- 1) Try Supabase first ----------------------------------------------
       let data: Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>['data'] = {
@@ -398,7 +398,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         error = err;
       }
 
-      console.log('[Auth] AFTER signInWithPassword', { data, error });
+
 
       let supabaseErrorCode =
         (error as any)?.code || (error instanceof SupabaseAuthError ? error.code : undefined);
@@ -412,7 +412,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         supabaseErrorMsg = 'Your HRIS account is inactive. Contact HR or an administrator if access should be restored.';
       }
 
-      if (!error && data?.user) {
+      if (error && isTransientNetworkError(error)) {
+        supabaseErrorCode = 'network_unavailable';
+      }
+      if (!error && data?.user && data?.session) {
         console.log('[Auth] Supabase signInWithPassword succeeded');
         const sbUser = data.user as SupabaseUser;
         const profile = await buildAppUserFromSupabase(sbUser);
@@ -444,7 +447,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       throw new SupabaseAuthError(supabaseErrorMsg, supabaseErrorCode);
     } finally {
       setLoading(false);
-      console.log('[Auth] login finally, user =', user);
+
     }
   };
 

@@ -29,19 +29,13 @@ const Login: React.FC = () => {
   const location = useLocation();
   const [successMessage, setSuccessMessage] = useState(location.state?.message || '');
   const formatSupabaseError = (err: SupabaseAuthError) => {
-    if (err.code === 'email_not_confirmed') {
-      return 'Please verify your email before signing in. Check your inbox for the confirmation link.';
-    }
-    if (err.code === 'hr_pending') {
-      return 'Your account is pending HR approval. Please wait for activation.';
-    }
-    if (err.code === 'account_inactive') {
-      return 'Your HRIS account is inactive. Contact HR or an administrator if access should be restored.';
-    }
-    if (err.code === 'network_unavailable') {
-      return 'The connection was interrupted. Please try signing in again.';
-    }
-    return err.message || 'Invalid email or password. New accounts require HR approval.';
+    if (err.code === 'invalid_credentials') return 'Invalid email or password.';
+    if (err.code === 'email_not_confirmed') return 'Please verify your email. Use Forgot password to request a new email, or contact HRIS support.';
+    if (err.code === 'hr_pending') return 'Your account is not fully set up. Please contact HRIS support.';
+    if (err.code === 'account_inactive' || err.code === 'user_banned') return 'Your account is temporarily unavailable. Please contact HRIS support.';
+    if (['invalid_role', 'inactive_role', 'rbac_profile_error', 'rbac_resolver_error'].includes(err.code || '')) return 'Your account access could not be loaded. Please contact HRIS support.';
+    if (err.code === 'over_request_rate_limit') return 'Too many attempts. Please wait before trying again.';
+    return 'The login service is unavailable. Please try again shortly.';
   };
 
   // if there is already a logged-in user (Supabase session), go straight to dashboard
@@ -84,7 +78,7 @@ const Login: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('[Login] handleSubmit fired with', email);
+
 
     setError('');
     setDeviceConflict(false);
@@ -93,7 +87,7 @@ const Login: React.FC = () => {
     try {
       // 🔑 THIS is the important part – actually call login(...)
       const loggedInUser = await login(email, password);
-      console.log('[Login] login() returned:', loggedInUser);
+
 
       if (loggedInUser) {
         const { data } = await supabase.auth.getSession();
@@ -101,7 +95,7 @@ const Login: React.FC = () => {
       } else {
         // covers: wrong password, Supabase user not found,
         // or status not Active (if you add that gate in AuthContext)
-        setError('Invalid email or password. New accounts require HR approval.');
+        setError('Your account access could not be loaded. Please contact HRIS support.');
       }
     } catch (err) {
       if (err instanceof DeviceConflictError) {
@@ -131,7 +125,7 @@ const Login: React.FC = () => {
         const { data } = await supabase.auth.getSession();
         navigate(data.session?.user.user_metadata?.must_change_password ? '/reset-password' : '/dashboard');
       } else {
-        setError('Invalid email or password.');
+        setError('Your account access could not be loaded. Please contact HRIS support.');
       }
     } catch (err) {
       if (err instanceof SupabaseAuthError) {

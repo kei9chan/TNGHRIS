@@ -15,14 +15,14 @@ const ForgotPassword: React.FC = () => {
     setIsLoading(true);
 
     try {
-      await requestPasswordReset(email);
+      const result = await requestPasswordReset(email);
       setSuccessMessage(
-        'If an active account matches that email, a working reset link has been sent. Check your inbox and spam folder.'
+        result.message || 'Request received. Check your inbox and spam folder for reset instructions.'
       );
       setEmail('');
     } catch (err) {
       console.error('[ForgotPassword] unexpected error', err);
-      setError('An unexpected error occurred. Please try again.');
+      setError(err instanceof Error ? err.message : 'We could not send the password-reset email. Please contact HRIS support.');
     } finally {
       setIsLoading(false);
     }
