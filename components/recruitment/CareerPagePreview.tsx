@@ -43,6 +43,8 @@ const CareerPagePreview: React.FC<CareerPagePreviewProps> = ({ theme: propTheme,
     const [jobs, setJobs] = useState<JobPost[]>([]);
     const [buName, setBuName] = useState<string>('');
     const [loading, setLoading] = useState<boolean>(!propTheme);
+    const [loadError,setLoadError]=useState('');
+    const [retry,setRetry]=useState(0);
     const [isGalleryOpen, setIsGalleryOpen] = useState(false);
     const [galleryIndex, setGalleryIndex] = useState(0);
 
@@ -73,6 +75,7 @@ const CareerPagePreview: React.FC<CareerPagePreviewProps> = ({ theme: propTheme,
     useEffect(() => {
         const fetchThemeAndJobs = async (incomingTheme?: ApplicantPageTheme | null) => {
             setLoading(true);
+            setLoadError('');
             try {
                 let resolvedTheme = incomingTheme || null;
                 if (!resolvedTheme) {
@@ -113,6 +116,7 @@ const CareerPagePreview: React.FC<CareerPagePreviewProps> = ({ theme: propTheme,
                 }
             } catch (err) {
                 console.error('Failed to load public career page', err);
+                setLoadError('We could not load this career page. Please try again.');
             } finally {
                 setLoading(false);
             }
@@ -126,7 +130,7 @@ const CareerPagePreview: React.FC<CareerPagePreviewProps> = ({ theme: propTheme,
             setTheme(propTheme);
             fetchThemeAndJobs(propTheme);
         }
-    }, [propTheme, slug, mapTheme, isPublic]);
+    }, [propTheme, slug, mapTheme, isPublic, retry]);
 
     const openJobs = useMemo(
         () => jobs.filter(j => isJobCurrentlyOpen(j)),
@@ -143,6 +147,8 @@ const CareerPagePreview: React.FC<CareerPagePreviewProps> = ({ theme: propTheme,
     if (loading) {
         return <div className="p-10 text-center">Loading...</div>;
     }
+
+    if(loadError) return <div className="p-10 text-center" role="alert"><p>{loadError}</p><button className="mt-4 underline" onClick={()=>setRetry(v=>v+1)}>Try again</button></div>;
 
     if (!theme) {
         return <div className="p-10 text-center">Page not found.</div>;
