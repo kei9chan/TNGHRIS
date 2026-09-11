@@ -208,6 +208,7 @@ const CareerApplicationPage: React.FC = () => {
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [submission, setSubmission] = useState<SubmissionResult | null>(null);
   const submitLock = useRef(false);
+  const submissionToken = useRef(newId());
 
   useEffect(() => {
     let cancelled = false;
@@ -393,51 +394,24 @@ const CareerApplicationPage: React.FC = () => {
       const lastName = nameParts.slice(1).join(' ') || 'Applicant';
       const resumeLinkValue = allowResumeLink && isValidUrl(form.resumeLink.trim()) ? form.resumeLink.trim() : null;
       const resumeValue = form.resumeFileUrl || resumeLinkValue || null;
-      const applicationReference = createApplicationReference();
-      const submissionToken = newId();
-      const sourceApplicationPage = window.location.pathname;
 
-      const { data: candidate, error: candidateError } = await supabase.from('job_candidates').insert({
-        first_name: firstName,
-        last_name: lastName,
-        email: form.email.trim(),
-        phone: form.mobile.trim(),
-        source: CandidateSource.CareerSite,
-        portfolio_url: (collectLinkedIn ? form.linkedinUrl.trim() : '') || resumeLinkValue || resumeValue,
-        tags: [],
-        consent_at: new Date().toISOString(),
-        current_city: collectCurrentCity ? form.currentCity.trim() : null,
-        linkedin_url: collectLinkedIn ? (form.linkedinUrl.trim() || null) : null,
-        current_employer: collectCurrentEmployer ? (form.currentEmployer.trim() || null) : null,
-        earliest_start_date: collectEarliestStartDate ? (form.earliestStartDate || null) : null,
-      }).select().single();
-      if (candidateError) throw candidateError;
 
-      const { error: applicationError } = await supabase.from('job_applications').insert({
-        candidate_id: candidate.id,
-        job_post_id: liveJob?.id || null,
-        requisition_id: liveJob?.requisitionId || null,
-        role_id: liveJob?.id || null,
-        role_slug: liveJob?.slug || roleSlug || null,
-        role_title_snapshot: liveJob?.title || 'General Application',
-        department_snapshot: liveJob?.departmentLabel || null,
-        location_snapshot: liveJob?.locationLabel || null,
-        employment_type_snapshot: liveJob?.employmentType || null,
-        work_arrangement_snapshot: liveJob?.roleDetails?.workArrangement || null,
-        stage: ApplicationStage.New,
-        cover_letter: null,
-        resume_url: resumeValue,
-        resume_link: resumeLinkValue,
-        resume_file_url: form.resumeFileUrl || null,
-        resume_file_path: form.resumeFilePath || null,
-        role_answers: form.roleAnswers,
-        source_application_page: sourceApplicationPage,
-        application_reference: applicationReference,
-        submission_token: submissionToken,
+      const { data, error } = await supabase.rpc('submit_public_career_application', {
+        p_slug: theme!.slug, p_job: liveJob?.id || null, p_token: submissionToken.current,
+        p_candidate: {
+          first_name: firstName, last_name: lastName, email: form.email.trim(), phone: form.mobile.trim(),
+          portfolio_url: (collectLinkedIn ? form.linkedinUrl.trim() : '') || resumeLinkValue || resumeValue,
+          current_city: collectCurrentCity ? form.currentCity.trim() : null,
+          linkedin_url: collectLinkedIn ? (form.linkedinUrl.trim() || null) : null,
+          current_employer: collectCurrentEmployer ? (form.currentEmployer.trim() || null) : null,
+          earliest_start_date: collectEarliestStartDate ? (form.earliestStartDate || null) : null,
+        },
+        p_application: {consent: form.consent, resume_url: resumeValue, resume_link: resumeLinkValue,
+          resume_file_url: form.resumeFileUrl || null, resume_file_path: form.resumeFilePath || null,
+          role_answers: form.roleAnswers},
       });
-      if (applicationError) throw applicationError;
-
-      setSubmission({ reference: applicationReference, roleTitle: liveJob?.title || 'General Application' });
+      if (error) throw error;
+      setSubmission({ reference: data.reference, roleTitle: liveJob?.title || 'General Application' });
       setHasSubmitted(true);
     } catch (error: any) {
       console.error('Application submission failed', error);
