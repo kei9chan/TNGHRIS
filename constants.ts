@@ -38,6 +38,7 @@ export const CURRENCIES = [
 
 // Navigation Links
 export const NAV_LINKS: NavLink[] = [
+    { name: 'Punch Station', path: '/punch-station/', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
     {
         name: 'Dashboard',
         path: '/dashboard',
