@@ -2,7 +2,7 @@ import {DayTag,statusPresets} from '../../services/scheduleStatuses';
 import {scheduleLabel} from '../../services/schedulePolicy';
 
 import React, { useMemo, useState } from 'react';
-import { ShiftTemplate, User, DayTypeTier } from '../../types';
+import { ShiftTemplate, User, DayTypeTier, Role } from '../../types';
 
 interface Gap {
     date: Date;
@@ -45,6 +45,8 @@ const ClipboardCopyIcon = () => (
 const SparklesIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z" /></svg>;
 
 const ShiftAssignmentDrawer: React.FC<ShiftAssignmentDrawerProps> = ({ onStatus,isOpen, onClose, employee, date, templates, onSave, onCopyLastWeekSchedule, onCopyRestOfWeek, canCopyRestOfWeek, gaps }) => {
+    const {user}=useAuth();
+    const canSuspend=!!user&&[user.role,...(user.roles||[])].some(r=>[Role.Admin,Role.HRManager,Role.HRStaff].includes(r));
     
     // Local state to override template selection when a gap recommendation is clicked
     const [highlightedTemplateId, setHighlightedTemplateId] = useState<string | null>(null);
@@ -138,7 +140,7 @@ const ShiftAssignmentDrawer: React.FC<ShiftAssignmentDrawerProps> = ({ onStatus,
                             <p className="mt-2 px-2 text-xs text-slate-600 dark:text-slate-300">Save a shift first, then reopen its day to copy it through Sunday. Existing shifts, leave and rest days are kept.</p>
                         </div>
                         <div className="my-2 border-t border-gray-200 dark:border-gray-600"></div>
-                        <div className="mb-3 space-y-2"><h4 className="font-semibold">Status Presets</h4>{statusPresets.map(p=><button key={p.tag} className={`min-h-11 w-full rounded p-2 text-left ${p.color}`} onClick={()=>onStatus(p.tag)}>{p.label}</button>)}</div><ul className="space-y-1 pb-4">
+                        <div className="mb-3 space-y-2"><h4 className="font-semibold">Status Presets</h4>{statusPresets.filter(p=>p.tag!=='suspended'||canSuspend).map(p=><button key={p.tag} className={`min-h-11 w-full rounded p-2 text-left ${p.color}`} onClick={()=>onStatus(p.tag)}>{p.label}</button>)}</div><ul className="space-y-1 pb-4">
                             {templates.length === 0 && <p className="p-4 text-sm text-slate-500">No presets for this employee’s business unit yet. Close this panel, select their BU, then add its presets before assigning shifts.</p>}
                             {templates.map(template => {
                                 const isHighlighted = highlightedTemplateId === template.id;
@@ -170,3 +172,4 @@ const ShiftAssignmentDrawer: React.FC<ShiftAssignmentDrawerProps> = ({ onStatus,
 };
 
 export default ShiftAssignmentDrawer;
+import {useAuth} from '../../hooks/useAuth';

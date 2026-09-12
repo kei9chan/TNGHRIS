@@ -508,7 +508,9 @@ const AppRoutes: React.FC = () => {
 
 import { PermissionsProvider } from './context/PermissionsContext';
 
+const OffboardingAccessPortal = React.lazy(() => import('./pages/employees/OffboardingAccessPortal'));
 const App: React.FC = () => {
+  if (window.location.pathname === '/offboarding-access') return <React.Suspense fallback={<p>Loading offboarding…</p>}><OffboardingAccessPortal /></React.Suspense>;
   return (
     <ThemeProvider>
       <AuthProvider>

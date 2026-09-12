@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 20934)
+Total output lines: 1444
+
 import {CompensableWorkPanel} from '../../modules/payroll/ConfirmedPolicyPanels';
 import {ScheduleTask} from '../../modules/scheduleCompliance';
 import {useSearchParams} from 'react-router-dom';
@@ -696,87 +699,12 @@ const Timekeeping: React.FC = () => {
 
 
     useEffect(()=>{let active=true;getDayStatuses(employeesInBU.map(e=>e.id),toDateOnly(addDays(weekStart,-7)),toDateOnly(addDays(weekStart,6))).then(rows=>{if(active)setDayStatuses(rows);}).catch(e=>{if(active)setToastInfo({show:true,message:e.message});});return()=>{active=false;};},[employeesInBU,weekStart,statusRefresh]);
-    const applyDayStatus=async(employee:User,date:Date,tag:DayTag|null)=>{if(!isScheduleEditable)return;try{await setDayStatus(employee.id,toDateOnly(date),tag);setStatusRefresh(v=>v+1);setPublicationRefresh(v=>v+1);setToastInfo({show:true,message:'Day status saved. Publish the reviewed week to make it effective.'});}catch(e){setToastInfo({show:true,message:(e as Error).message});}};
+    const applyDayStatus=async(employee:User,date:Date,tag:DayTag|null)=>{if(!isScheduleEditable)return;try{const suspension=tag==='suspended'||dayStatuses.some(s=>s.employee_id===employee.id&&s.work_date===toDateOnly(date)&&s.tag==='suspended');const reason=suspension?window.prompt('Reason for this suspension status change (at least 3 characters):'):undefined;if(suspension&&(!reason||reason.trim().length<3))return;await setDayStatus(employee.id,toDateOnly(date),tag,reason||undefined);setStatusRefresh(v=>v+1);setPublicationRefresh(v=>v+1);setToastInfo({show:true,message:'Day status saved. Publish the reviewed week to make it effective.'});}catch(e){setToastInfo({show:true,message:(e as Error).message});}};
     useEffect(()=>{let active=true;const load=async()=>{const {data}=await supabase.rpc('get_attendance_review');if(active&&data)setFlaggedEmployees([...new Set<string>((data.flags??[]).filter((f:any)=>f.status==='review').map((f:any)=>f.employee_id))]);};void load();const t=setInterval(()=>{if(document.visibilityState==='visible')void load();},60000);return()=>{active=false;clearInterval(t);};},[user?.id]);
     const handleOpenDrawer = (employee: User, date: Date) => {
         if (!isScheduleEditable) return;
         if(selectedStatus){void applyDayStatus(employee,date,selectedStatus);return;}
-        // Special Check: If user is a manager (and lacks global edit rights), they can only edit their own team
-        if (isTeamManager && !can('Timekeeping', Permission.Edit) && user && employee.department !== user.department && employee.reportsTo !== user.id) {
-            setToastInfo({ show: true, message: `You can only manage schedules for your direct team or department.` });
-            return;
-        }
-
-        setDrawerState({
-            open: true,
-            employee,
-            date,
-        });
-    };
-    
-    const handleCloseDrawer = () => setDrawerState({ open: false, employee: null, date: null });
-
-    const resolveAssignmentBuId = (employeeId: string) => {
-        const employee = employees.find(e => e.id === employeeId);
-        return employee?.businessUnitId || null;
-    };
-
-    const hasScopedPreset = (employeeId: string, templateId: string) => {
-        const buId = employees.find(e => e.id === employeeId)?.businessUnitId;
-        return !!buId && templates.some(t => t.id === templateId && t.businessUnitId === buId);
-    };
-    const rejectLegacyCopy = () => setToastInfo({show:true,message:'This schedule uses a retired shared preset. Create the BU presets and assign the week before copying it.'});
-
-    const handleSaveShift = async (employeeId: string, date: Date, templateId: string) => {
-        if (savingShift.current) return;
-        savingShift.current = true;
-        scheduleMutation.current++;
-        setShiftSaveError('');
-        setRetryShift({employeeId,date,templateId});
-        try {
-        const leave=leaveForDay(leaves,employeeId,date);if(leave&&!leave.startTime&&!leave.endTime)throw new Error('Approved leave covers this day. Use the existing leave workflow to change it.');
-        if (!hasScopedPreset(employeeId, templateId)) throw new Error('Select an active shift preset for this employee’s business unit.');
-        const existing = assignments.find(
-            a => a.employeeId === employeeId && new Date(a.date).toDateString() === date.toDateString()
-        );
-        const employee = employees.find(e => e.id === employeeId);
-        const resolvedBuId = resolveAssignmentBuId(employeeId);
-
-        if (existing) {
-            const { data, error } = await supabase
-                .from('shift_assignments')
-                .update({ shift_template_id: templateId, business_unit_id: resolvedBuId })
-                .eq('id', existing.id).select('id').single();
-
-            if (error || !data) throw new Error(error?.message || 'Shift was not saved.');
-            if (!error) {
-                setAssignments(prev => prev.map(a => a.id === existing.id ? { ...a, shiftTemplateId: templateId } : a));
-                logActivity(user, 'UPDATE', 'ShiftAssignment', existing.id, `Updated shift assignment for employee ${employeeId} on ${date.toDateString()}`);
-            }
-        } else {
-            const payload = {
-                employee_id: employeeId,
-                shift_template_id: templateId,
-                date: toDateOnly(date),
-                business_unit_id: resolvedBuId,
-                department_id: employee?.departmentId || null,
-                assigned_area_id: null,
-                created_by: user?.id || null,
-            };
-            const { data, error } = await supabase
-                .from('shift_assignments')
-                .insert(payload)
-                .select('id')
-                .single();
-
-            if (error || !data) throw new Error(error?.message || 'Shift was not saved.');
-            if (!error && data) {
-                const newAssignment: ShiftAssignment = {
-                    id: data.id,
-                    employeeId,
-                    date,
-                    shiftTemplateId: templateId,
-                    locationId: 'OFFICE-MAIN'
+        // Special C…934 tokens truncated…                  locationId: 'OFFICE-MAIN'
                 };
                 setAssignments(prev => [...prev, newAssignment]);
                 logActivity(user, 'CREATE', 'ShiftAssignment', newAssignment.id, `Assigned shift to employee ${employeeId} on ${date.toDateString()}`);
@@ -1254,6 +1182,7 @@ const Timekeeping: React.FC = () => {
                 message={toastInfo.message}
             />
 
+            <SuspensionStatusReport />
             {isScheduleEditable && (
                 <LiveShiftStatusDashboard flaggedEmployees={flaggedEmployees}
                     selectedBuId={selectedBuId}
@@ -1273,7 +1202,7 @@ const Timekeeping: React.FC = () => {
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">WeeklyShiftRoster</h1>
             
             {isScheduleEditable && (
-                <Card title="Status Presets" className="mb-4"><div className="flex flex-wrap gap-3">{statusPresets.map(p=><button key={p.tag} draggable={isScheduleEditable} disabled={!isScheduleEditable} onDragStart={e=>e.dataTransfer.setData('application/x-tng-status',p.tag)} onClick={()=>setSelectedStatus(selectedStatus===p.tag?null:p.tag)} aria-pressed={selectedStatus===p.tag} className={`min-h-12 rounded-lg border px-4 font-semibold ${p.color} ${selectedStatus===p.tag?'ring-2 ring-violet-600':''}`}>{p.label}</button>)}</div><p className="mt-3 text-sm">{selectedStatus?'Select an employee day to apply this status, or click the selected status to cancel.':'Drag a status onto a day, or select it and tap the day. Skeletal and Absence keep the expected working hours. Approved paid/unpaid leave appears automatically.'}</p><a className="mt-3 inline-block min-h-11 underline" href="/payroll/attendance-review">Attendance flags & review settings</a></Card>
+                <Card title="Status Presets" className="mb-4"><div className="flex flex-wrap gap-3">{statusPresets.filter(p=>p.tag!=='suspended'||isHrPresetEditor||isSuperAdmin).map(p=><button key={p.tag} draggable={isScheduleEditable} disabled={!isScheduleEditable} onDragStart={e=>e.dataTransfer.setData('application/x-tng-status',p.tag)} onClick={()=>setSelectedStatus(selectedStatus===p.tag?null:p.tag)} aria-pressed={selectedStatus===p.tag} className={`min-h-12 rounded-lg border px-4 font-semibold ${p.color} ${selectedStatus===p.tag?'ring-2 ring-violet-600':''}`}>{p.label}</button>)}</div><p className="mt-3 text-sm">{selectedStatus?'Select an employee day to apply this status, or click the selected status to cancel.':'Drag a status onto a day, or select it and tap the day. Skeletal and Absence keep the expected working hours. Approved paid/unpaid leave appears automatically.'}</p><a className="mt-3 inline-block min-h-11 underline" href="/payroll/attendance-review">Attendance flags & review settings</a></Card>
             )}
             {isPresetEditable && (<Card title="Shift Presets">
                     <p className="text-sm text-slate-600 dark:text-slate-300">{selectedBuId === 'all' ? 'Choose a business unit to create or view its presets.' : presetTemplates.length === 0 ? 'No presets for this business unit yet. HR Staff, HR Managers or its BU manager can create presets here.' : 'Presets for this business unit only.'}</p>
@@ -1440,3 +1369,4 @@ const Timekeeping: React.FC = () => {
 };
 
 export default Timekeeping;
+import SuspensionStatusReport from '../../components/payroll/SuspensionStatusReport';

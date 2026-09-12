@@ -18,6 +18,7 @@ const AttendanceExceptions: React.FC = () => {
     const canManage = can('Exceptions', Permission.Manage);
     
     const [exceptions, setExceptions] = useState<AttendanceExceptionRecord[]>([]);
+    const [loadError,setLoadError]=useState('');
     const [employees, setEmployees] = useState<{ id: string; name: string; role: Role }[]>([]);
 
     // Dynamic generation of exceptions based on current logs and schedule
@@ -98,9 +99,14 @@ const AttendanceExceptions: React.FC = () => {
                 // Missing break/extended break detection skipped for now without break events
             });
 
-            setExceptions(derived);
+            const days=[...eventsByDay.keys()].map(key=>{const [employee,date]=key.split('|');return {employee,date};});
+            const {data:suspended,error:statusError}=await supabase.rpc('get_attendance_suspension_dates',{p_days:days});
+            if(statusError)throw new Error('Could not verify suspension statuses. Please refresh before reviewing attendance exceptions.');
+            const excluded=new Set((suspended||[]).map((r:any)=>`${r.employee}|${r.date}`));
+            setExceptions(derived.filter(ex=>!excluded.has(`${ex.employeeId}|${new Date(ex.date).toLocaleDateString('en-CA')}`)));
+            setLoadError('');
         };
-        load();
+        void load().catch(e=>{setExceptions([]);setLoadError(e.message);});
     }, [canView, canManage, getVisibleEmployeeIds]);
 
     const [filters, setFilters] = useState({
@@ -157,6 +163,7 @@ const AttendanceExceptions: React.FC = () => {
         <div className="space-y-6">
             <Link className="inline-flex min-h-12 items-center rounded-xl border border-violet-500 px-4 font-semibold text-violet-700 dark:text-violet-300" to="/payroll/attendance-requests">Attendance requests, approved exceptions & HR review →</Link>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Attendance Exceptions</h1>
+            {loadError&&<p role="alert" className="text-red-600">{loadError}</p>}
             <p className="text-gray-600 dark:text-gray-400">Review and resolve flagged attendance records to ensure payroll accuracy.</p>
 
             <Card>
