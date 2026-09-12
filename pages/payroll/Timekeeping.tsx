@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 20934)
-Total output lines: 1444
-
 import {CompensableWorkPanel} from '../../modules/payroll/ConfirmedPolicyPanels';
 import {ScheduleTask} from '../../modules/scheduleCompliance';
 import {useSearchParams} from 'react-router-dom';
@@ -704,7 +701,82 @@ const Timekeeping: React.FC = () => {
     const handleOpenDrawer = (employee: User, date: Date) => {
         if (!isScheduleEditable) return;
         if(selectedStatus){void applyDayStatus(employee,date,selectedStatus);return;}
-        // Special C…934 tokens truncated…                  locationId: 'OFFICE-MAIN'
+        // Special Check: If user is a manager (and lacks global edit rights), they can only edit their own team
+        if (isTeamManager && !can('Timekeeping', Permission.Edit) && user && employee.department !== user.department && employee.reportsTo !== user.id) {
+            setToastInfo({ show: true, message: `You can only manage schedules for your direct team or department.` });
+            return;
+        }
+
+        setDrawerState({
+            open: true,
+            employee,
+            date,
+        });
+    };
+    
+    const handleCloseDrawer = () => setDrawerState({ open: false, employee: null, date: null });
+
+    const resolveAssignmentBuId = (employeeId: string) => {
+        const employee = employees.find(e => e.id === employeeId);
+        return employee?.businessUnitId || null;
+    };
+
+    const hasScopedPreset = (employeeId: string, templateId: string) => {
+        const buId = employees.find(e => e.id === employeeId)?.businessUnitId;
+        return !!buId && templates.some(t => t.id === templateId && t.businessUnitId === buId);
+    };
+    const rejectLegacyCopy = () => setToastInfo({show:true,message:'This schedule uses a retired shared preset. Create the BU presets and assign the week before copying it.'});
+
+    const handleSaveShift = async (employeeId: string, date: Date, templateId: string) => {
+        if (savingShift.current) return;
+        savingShift.current = true;
+        scheduleMutation.current++;
+        setShiftSaveError('');
+        setRetryShift({employeeId,date,templateId});
+        try {
+        const leave=leaveForDay(leaves,employeeId,date);if(leave&&!leave.startTime&&!leave.endTime)throw new Error('Approved leave covers this day. Use the existing leave workflow to change it.');
+        if (!hasScopedPreset(employeeId, templateId)) throw new Error('Select an active shift preset for this employee’s business unit.');
+        const existing = assignments.find(
+            a => a.employeeId === employeeId && new Date(a.date).toDateString() === date.toDateString()
+        );
+        const employee = employees.find(e => e.id === employeeId);
+        const resolvedBuId = resolveAssignmentBuId(employeeId);
+
+        if (existing) {
+            const { data, error } = await supabase
+                .from('shift_assignments')
+                .update({ shift_template_id: templateId, business_unit_id: resolvedBuId })
+                .eq('id', existing.id).select('id').single();
+
+            if (error || !data) throw new Error(error?.message || 'Shift was not saved.');
+            if (!error) {
+                setAssignments(prev => prev.map(a => a.id === existing.id ? { ...a, shiftTemplateId: templateId } : a));
+                logActivity(user, 'UPDATE', 'ShiftAssignment', existing.id, `Updated shift assignment for employee ${employeeId} on ${date.toDateString()}`);
+            }
+        } else {
+            const payload = {
+                employee_id: employeeId,
+                shift_template_id: templateId,
+                date: toDateOnly(date),
+                business_unit_id: resolvedBuId,
+                department_id: employee?.departmentId || null,
+                assigned_area_id: null,
+                created_by: user?.id || null,
+            };
+            const { data, error } = await supabase
+                .from('shift_assignments')
+                .insert(payload)
+                .select('id')
+                .single();
+
+            if (error || !data) throw new Error(error?.message || 'Shift was not saved.');
+            if (!error && data) {
+                const newAssignment: ShiftAssignment = {
+                    id: data.id,
+                    employeeId,
+                    date,
+                    shiftTemplateId: templateId,
+                    locationId: 'OFFICE-MAIN'
                 };
                 setAssignments(prev => [...prev, newAssignment]);
                 logActivity(user, 'CREATE', 'ShiftAssignment', newAssignment.id, `Assigned shift to employee ${employeeId} on ${date.toDateString()}`);
