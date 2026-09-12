@@ -48,7 +48,7 @@ export default function CompliancePage(){
  const units=[...new Set(rows.flatMap(r=>r.employees.map(e=>e.businessUnit)).filter(Boolean))].sort();
  const people=[...new Map(rows.flatMap(r=>r.employees).map(e=>[e.id,e])).values()];
  const filtered=rows.filter(r=>(!manager||r.managerId===manager)&&(!bu||r.employees.some(e=>e.businessUnit===bu))&&(!status||(status==='Exempt'?r.exempt>0:r.status===status)));
- return <main><h1 className="mb-4 text-2xl font-bold">Schedule Compliance</h1>{error&&<p className={`${box} text-red-700 dark:text-red-300`} role="alert">{error}</p>}
+ return <main><h1 className="mb-4 text-2xl font-bold">Schedule Compliance</h1><SuspensionStatusReport />{error&&<p className={`${box} text-red-700 dark:text-red-300`} role="alert">{error}</p>}
  {notice&&<p role="status" className={box}>{notice}</p>}
  {!data?<p>{error?'Access could not be loaded.':'Loading authorized schedule compliance…'}</p>:<>
  <details className={box}><summary>Email delivery history</summary><p className="my-2 text-sm">Daily at 8 AM Philippine time. Sent means accepted by the email provider. Up to five retries use the same delivery key.</p>{deliveries.map((d,i)=><p className="py-2" key={i}>{d.recipient} · {d.week} · {d.event} · {d.status} · {d.attempts} attempts {d.error&&`· ${d.error}`}</p>)}</details>
@@ -61,3 +61,4 @@ export default function CompliancePage(){
  <details className="mt-4"><summary>Exemption audit history</summary>{data.exemptions.map((e:any)=><p className="mt-2" key={e.id}>{people.find(p=>p.id===e.employee_id)?.name||e.employee_id} · {e.exempt?'Granted':'Removed'} · {e.effective_from} to {e.effective_to||'No expiry'} · {e.reason} · {date(e.approved_at)}</p>)}</details></section>
  </> }</main>;
 }
+import SuspensionStatusReport from '../../components/payroll/SuspensionStatusReport';

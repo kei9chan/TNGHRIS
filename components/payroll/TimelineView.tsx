@@ -96,7 +96,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({ dayStatuses,leaves,onStatus
                                     className={`h-16 relative border-b border-r dark:border-gray-700 bg-gray-50 dark:bg-slate-800/50 ${isEditable ? 'cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700/50' : ''}`}
                                     onClick={isEditable ? () => onOpenDrawer(employee, date) : undefined}
                                 >
-                                    {(leave||ds?.tag)&&<div className="absolute inset-2 z-10 rounded bg-violet-100 p-2 text-xs text-violet-900"><b>{leave?leaveLabel(leave):statusPresets.find(p=>p.tag===ds?.tag)?.label}</b>{template&&<p>{scheduleLabel(template)}</p>}{!leave&&isEditable&&<button className="ml-2 underline" onClick={e=>{e.stopPropagation();onStatus(employee,date,null);}}>Restore shift</button>}</div>}
+                                    {(leave||ds?.tag)&&<div className={`absolute inset-2 z-10 rounded p-2 text-xs ${leave?'bg-green-100 text-green-900':statusPresets.find(p=>p.tag===ds?.tag)?.color}`}><b>{leave?leaveLabel(leave):statusPresets.find(p=>p.tag===ds?.tag)?.label}</b>{template&&<p>{scheduleLabel(template)}</p>}{!leave&&isEditable&&<button className="ml-2 underline" onClick={e=>{e.stopPropagation();onStatus(employee,date,null);}}>Restore shift</button>}</div>}
                                     <div className="absolute right-1 top-0 z-20 max-w-56" onClick={e=>e.stopPropagation()}><AttendanceIssueBadges rows={attendance.rows} employee={employee.id} date={dateKey(date)}/></div>
                                     {/* Hour grid lines */}
                                     {hours.slice(1).map(hour => (

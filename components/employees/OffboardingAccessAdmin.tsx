@@ -1,0 +1,22 @@
+import React,{useEffect,useState} from 'react';
+import {supabase} from '../../services/supabaseClient';
+
+export default function OffboardingAccessAdmin(){
+ const [rows,setRows]=useState<any[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false),[link,setLink]=useState('');
+ const [expiry,setExpiry]=useState(''),[reason,setReason]=useState(''),[documents,setDocuments]=useState<any[]>([]),[documentChecklist,setDocumentChecklist]=useState('');
+ async function files(checklist:string,id?:string){setError('');try{const {data,error}=await supabase.rpc('get_offboarding_documents',{p_checklist:checklist,p_document:id||null});if(error)throw new Error(error.message);if(!id){setDocuments(data||[]);setDocumentChecklist(checklist);return;}if(!data)throw new Error('Document unavailable');const bytes=Uint8Array.from(atob(data.content.replace(/\s/g,'')),c=>c.charCodeAt(0));const url=URL.createObjectURL(new Blob([bytes],{type:'application/octet-stream'}));const a=document.createElement('a');a.href=url;a.download=data.filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){setError((e as Error).message);}}
+ async function load(){const {data,error}=await supabase.rpc('get_offboarding_access_admin');if(error)throw new Error(error.message);setRows(data||[]);}
+ useEffect(()=>{void load().catch(e=>setError(e.message));},[]);
+ async function change(id:string,revoke:boolean){setBusy(true);setError('');setLink('');try{
+ if(!revoke&&!expiry)throw new Error('Choose the access expiration date and time.');
+ const {data,error}=await supabase.rpc('manage_offboarding_access',{p_checklist:id,p_expiry:revoke?null:new Date(expiry).toISOString(),p_reason:reason});if(error)throw new Error(error.message);
+ if(data.token)setLink(`${window.location.origin}/offboarding-access#${data.token}`);await load();
+ }catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+ return <section className="mb-6 space-y-3 rounded-xl border p-4"><h3 className="text-lg font-semibold">Inactive employee offboarding access</h3><p className="text-sm">Normal HRIS login stays blocked. Grant a private link to an existing offboarding checklist for up to 30 days. Reissuing a link invalidates the previous link. Share it only with the intended employee.</p>
+ {error&&<p role="alert" className="text-red-600">{error}</p>}
+ <div className="flex flex-wrap gap-3"><label>Expires at (your local time)<input type="datetime-local" value={expiry} onChange={e=>setExpiry(e.target.value)} className="block rounded border bg-transparent p-2"/></label><label>Grant / revoke reason<input value={reason} minLength={5} onChange={e=>setReason(e.target.value)} className="block rounded border bg-transparent p-2"/></label></div>
+ {link&&<div role="status" className="rounded border p-3"><p>Access granted. Copy this private link now; it is not stored in readable form.</p><input aria-label="Private offboarding link" readOnly value={link} className="w-full rounded border bg-transparent p-2"/><button className="min-h-11 underline" onClick={()=>setLink('')}>Hide link</button></div>}
+ <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr>{['Employee','Account','Checklist','Access','Expiration','Actions'].map(h=><th className="p-2" key={h}>{h}</th>)}</tr></thead><tbody>{rows.map(r=><tr key={r.id} className="border-t"><td className="p-2">{r.employee}</td><td>{r.accountStatus}</td><td>{r.checklistStatus}</td><td>{r.accessStatus}</td><td>{r.expiresAt?new Date(r.expiresAt).toLocaleString():'—'}</td><td><button className="min-h-11 px-2 underline" onClick={()=>void files(r.id)}>Documents</button><button disabled={busy||reason.trim().length<5||r.accessStatus==='Completed'} className="min-h-11 px-2 underline disabled:opacity-50" onClick={()=>void change(r.id,false)}>Grant / reissue</button><button disabled={busy||reason.trim().length<5||r.accessStatus!=='Offboarding access active'} className="min-h-11 px-2 underline disabled:opacity-50" onClick={()=>void change(r.id,true)}>Revoke</button></td></tr>)}</tbody></table></div>
+ {documentChecklist&&<div><h4 className="font-semibold">Submitted offboarding documents</h4>{documents.length?documents.map(d=><button key={d.id} className="block min-h-11 underline" onClick={()=>void files(documentChecklist,d.id)}>{d.filename}</button>):<p>No documents submitted.</p>}</div>}{!rows.length&&!error&&<p>No inactive employees with offboarding checklists in your scope. Assign a checklist through the existing resignation workflow first.</p>}
+ </section>;
+}

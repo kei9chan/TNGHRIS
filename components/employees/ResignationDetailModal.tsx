@@ -181,25 +181,8 @@ const ResignationDetailModal: React.FC<ResignationDetailModalProps> = ({ isOpen,
         if (!user) return;
 
         try {
-            const { error: updateResError } = await supabase
-                .from('resignations')
-                .update({ status: ResignationStatus.Completed })
-                .eq('id', resignation.id);
-            
-            if (updateResError) throw updateResError;
-
-            const { error } = await supabase
-                .from('hris_users')
-                .update({ 
-                    status: 'Inactive', 
-                    end_date: resignation.lastWorkingDay 
-                })
-                .eq('id', resignation.employeeId);
-                
-            if (error) {
-                console.error("Error updating user status in DB:", error);
-                alert("Failed to update user status in the database.");
-            }
+            const {error}=await supabase.rpc('complete_offboarding_clearance',{p_resignation:resignation.id});
+            if(error)throw new Error(error.message);
 
             logActivity(user, 'UPDATE', 'Resignation', resignation.id, `Completed offboarding clearance for ${resignation.employeeName}.`);
             alert('Offboarding complete. Employee has been marked as inactive.');
@@ -207,7 +190,7 @@ const ResignationDetailModal: React.FC<ResignationDetailModalProps> = ({ isOpen,
             onClose();
         } catch (err) {
             console.error("Failed to execute DB update:", err);
-            alert("Failed to complete offboarding.");
+            alert((err as Error).message || 'Failed to complete offboarding. No changes were saved.');
         }
     };
 
@@ -352,4 +335,4 @@ const ResignationDetailModal: React.FC<ResignationDetailModalProps> = ({ isOpen,
     );
 };
 
-export default ResignationDetailModal;
+export default ResignationDetailModal;

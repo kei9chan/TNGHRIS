@@ -33,7 +33,7 @@ export function AttendanceMissionView({day,elapsed,busy,error,onAction,onRefresh
  return <section aria-label="Time and Attendance" className="mb-4 min-w-0 text-slate-900 dark:text-white">
  <div className="grid min-w-0 grid-cols-1 items-start gap-4 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
   <div data-attendance-action className="min-w-0 rounded-3xl border border-violet-500 bg-gradient-to-br from-violet-50 to-white p-4 shadow-lg dark:from-indigo-950 dark:to-slate-900 sm:p-7">
-   <span role="status" className="inline-flex rounded-xl bg-emerald-300/10 px-3 py-2 text-xs font-bold tracking-wide text-emerald-700 dark:text-emerald-300">{!day?'LOADING':day.requiresClock?(onBreak?'ON BREAK':working?'ON THE CLOCK':'OFF THE CLOCK'):'CLOCKING EXEMPT'}</span>
+   <span role="status" className="inline-flex rounded-xl bg-emerald-300/10 px-3 py-2 text-xs font-bold tracking-wide text-emerald-700 dark:text-emerald-300">{!day?'LOADING':day.requiresClock?(onBreak?'ON BREAK':working?'ON THE CLOCK':'OFF THE CLOCK'):(day.schedule.entries.some(s=>s.statusTag==='suspended')?'SUSPENDED':'CLOCKING EXEMPT')}</span>
    <p aria-label="Current company time" className="mt-3 text-5xl font-bold tracking-tight tabular-nums sm:text-6xl">{day?time(day.serverTime,day.timezone):'—'}</p>
    <p className="mt-1 text-sm text-violet-700 dark:text-violet-200">{day?new Intl.DateTimeFormat('en-PH',{timeZone:day.timezone,month:'short',day:'numeric',weekday:'short'}).format(new Date(day.serverTime)):''}</p>
    <p className={'mt-4 '+heading}>YOUR SHIFT</p><p className="mt-1 text-lg font-semibold sm:text-2xl">{day?shiftLabel(day):'Loading shift…'}</p>

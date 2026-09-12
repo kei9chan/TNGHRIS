@@ -756,6 +756,7 @@ const OnboardingChecklistPage: React.FC = () => {
                     <div className="text-sm text-gray-500 dark:text-gray-400 mb-4">
                         <EditableDescription descriptionKey="onboardingOffboardingDesc" />
                     </div>
+                    <OffboardingAccessAdmin />
                     <ResignationListTable resignations={resignations} onUpdate={forceResignationUpdate} />
                 </Card>
             ) : (
@@ -824,3 +825,4 @@ const OnboardingChecklistPage: React.FC = () => {
 };
 
 export default OnboardingChecklistPage;
+import OffboardingAccessAdmin from '../../components/employees/OffboardingAccessAdmin';
