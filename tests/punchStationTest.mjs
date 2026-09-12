@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+import {readFile} from 'node:fs/promises';
+const {outputFiles}=await build({entryPoints:['services/punchStation.ts'],bundle:true,platform:'node',format:'esm',write:false,define:{'import.meta.env.VITE_SUPABASE_URL':'"https://test.invalid"','import.meta.env.VITE_SUPABASE_ANON_KEY':'"test"'}});
+const m=await import('data:text/javascript;base64,'+Buffer.from(outputFiles[0].text).toString('base64'));
+assert.deepEqual(m.actions('not_started'),['CLOCK_IN']);assert.deepEqual(m.actions('working'),['START_BREAK','CLOCK_OUT']);assert.deepEqual(m.actions('on_break'),['END_BREAK']);assert.deepEqual(m.actions('completed'),[]);
+await assert.rejects(()=>m.capture({readyState:0}),/Camera access/);
+global.fetch=async()=>new Response(JSON.stringify({error:'Invalid PIN'}),{status:200});await assert.rejects(()=>m.stationRpc('test',{}),m.StationRejection);
+global.fetch=async()=>new Response('',{status:503});await assert.rejects(()=>m.stationRpc('test',{}),/temporarily unavailable/);
+global.fetch=async()=>new Response(JSON.stringify({status:'Accepted'}),{status:200});assert.equal((await m.stationRpc('test',{})).status,'Accepted');
+const sql=await readFile('supabase/migrations/20260912221101_punch_station.sql','utf8');assert.match(sql,/p_supervisor_pin!~'\^\[0-9\]\{8,12\}\$'/);assert.match(sql,/Pending HR verification/);assert.match(sql,/enable row level security/);
+const client=await readFile('services/punchStation.ts','utf8');assert.match(client,/AES-GCM/);assert.match(client,/false,\['encrypt','decrypt'\]/);assert.doesNotMatch(client,/services\/supabaseClient/);
+console.log('PASS: attendance action choices, camera gate, confirmed rejection vs unknown outcome, backend-confirmed results, separate supervisor PIN, offline staging and local encryption guards.');

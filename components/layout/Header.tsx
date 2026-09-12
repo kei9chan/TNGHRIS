@@ -66,6 +66,7 @@ const MobileNavTree: React.FC<{ links: NavLink[]; depth?: number; onNavigate: ()
             <RouterNavLink
                 key={`${depth}-${link.name}`}
                 to={link.path}
+                reloadDocument={link.path === '/punch-station/'}
                 onClick={onNavigate}
                 className={({ isActive }) => `mb-1 flex min-h-11 items-center rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors ${isActive ? 'bg-indigo-600 text-white' : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800'}`}
             >
@@ -99,6 +100,7 @@ const NavItem: React.FC<{ link: NavLink; hasEvaluationAccess: boolean }> = ({ li
     return (
          <RouterNavLink
             to={hasVisibleChildren ? filteredChildren[0].path : link.path}
+            reloadDocument={link.path === '/punch-station/'}
             className={({ isActive }) => `${navLinkClasses} ${(isActive && !isParentActive) || isParentActive ? activeNavLinkClasses : ''}`}
         >
             {link.name}
