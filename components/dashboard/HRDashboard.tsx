@@ -1492,24 +1492,6 @@ const HRDashboard: React.FC = () => {
     return (
         <div className="space-y-6">
             <ApprovalWidget />
-            <MyRequestsWidget />
-
-            <UpcomingEventsWidget />
-
-            {isHR && (
-                <Card title="Pending COE Requests">
-                    <COEQueue 
-                        requests={pendingCOE}
-                        onApprove={handleApproveCOE}
-                        onReject={handleRejectCOE}
-                        onReturn={handleReturnCOE}
-                        canAct={coeAccess.canApprove}
-                        canActOn={coeAccess.canActOn}
-                        canReturn={coeAccess.canReturn}
-                        canReturnOn={coeAccess.canReturnOn}
-                    />
-                </Card>
-            )}
 
             {actionItems.length > 0 ? (
                 <Card title="Action Items">
@@ -1531,6 +1513,24 @@ const HRDashboard: React.FC = () => {
                     </div>
                 </Card>
             )}
+
+            {isHR && (
+                <Card title="Pending COE Requests">
+                    <COEQueue
+                        requests={pendingCOE}
+                        onApprove={handleApproveCOE}
+                        onReject={handleRejectCOE}
+                        onReturn={handleReturnCOE}
+                        canAct={coeAccess.canApprove}
+                        canActOn={coeAccess.canActOn}
+                        canReturn={coeAccess.canReturn}
+                        canReturnOn={coeAccess.canReturnOn}
+                    />
+                </Card>
+            )}
+
+            <MyRequestsWidget />
+            <UpcomingEventsWidget />
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {isHR && <UnassignedTicketsWidget />}
