@@ -1219,10 +1219,7 @@ const BODDashboard: React.FC = () => {
 
     return (
         <div className="space-y-6">
-            <QuickLinks hideCOE />
             <ApprovalWidget />
-            <MyRequestsWidget />
-            <UpcomingEventsWidget />
 
             {actionItems.length > 0 ? (
                  <Card title="Action Items">
@@ -1270,6 +1267,10 @@ const BODDashboard: React.FC = () => {
                     </div>
                 </Card>
             )}
+
+            <QuickLinks hideCOE />
+            <MyRequestsWidget />
+            <UpcomingEventsWidget />
             
             <QuickAnalyticsPreview />
 

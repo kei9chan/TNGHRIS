@@ -1556,21 +1556,6 @@ const ManagerDashboard: React.FC = () => {
     return (
         <div className="space-y-6">
             <ApprovalWidget />
-            <MyRequestsWidget />
-            <UpcomingEventsWidget />
-
-            {!isBodDashboard && <Card title="COE Requests">
-                <COEQueue
-                    requests={pendingCOE}
-                    onApprove={handleApproveCOE}
-                    onReject={handleRejectCOE}
-                    onReturn={handleReturnCOE}
-                    canAct={coeAccess.canApprove}
-                    canActOn={coeAccess.canActOn}
-                    canReturn={coeAccess.canReturn}
-                    canReturnOn={coeAccess.canReturnOn}
-                />
-            </Card>}
 
             {actionItems.length > 0 ? (
                 <Card title="Action Items">
@@ -1618,6 +1603,22 @@ const ManagerDashboard: React.FC = () => {
                     </div>
                 </Card>
             )}
+
+            {!isBodDashboard && <Card title="COE Requests">
+                <COEQueue
+                    requests={pendingCOE}
+                    onApprove={handleApproveCOE}
+                    onReject={handleRejectCOE}
+                    onReturn={handleReturnCOE}
+                    canAct={coeAccess.canApprove}
+                    canActOn={coeAccess.canActOn}
+                    canReturn={coeAccess.canReturn}
+                    canReturnOn={coeAccess.canReturnOn}
+                />
+            </Card>}
+
+            <MyRequestsWidget />
+            <UpcomingEventsWidget />
 
             <QuickAnalyticsPreview />
 
