@@ -293,7 +293,10 @@ export function useAdditionalApprovals(user: User | null) {
       }];
     }));
 
-    setPendingAssetApprovals(assetQueue.map(row => ({
+    // The detail queue also includes read-only requests. Pending inboxes must
+    // contain only the current viewer's actionable stage, including when a BOD
+    // is themselves the assigned direct manager.
+    setPendingAssetApprovals(assetQueue.filter(row => row.isActionable && actionable('asset', row.requestId)).map(row => ({
       id: row.requestId,
       employeeId: row.employeeId,
       employeeName: row.employeeName,
