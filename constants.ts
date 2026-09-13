@@ -1,5 +1,5 @@
 
-import { NavLink, Permission, Resource } from './types';
+import { NavLink, Permission, Resource, Role } from './types';
 
 // Feature Flags
 export const F_CLOCK_ADMIN_AUDIT_UI = true; // Set to false by default in production
@@ -103,6 +103,7 @@ export const NAV_LINKS: NavLink[] = [
             { name: 'Payroll Approvals', path: '/payroll/approvals', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
             { name: 'Take-home Pay Review', path: '/payroll/net-pay', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
             { name: 'Attendance Readiness', path: '/payroll/attendance-readiness', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
+            { name: 'Attendance Devices & Punch Station', path: '/payroll/attendance-devices', requiredPermission: { resource: 'Settings', permission: Permission.Manage }, visibilityRoles: [Role.Admin, Role.HRManager, Role.HRStaff] },
             { name: 'Timekeeping', path: '/payroll/timekeeping', requiredPermission: { resource: 'Timekeeping', permission: Permission.View } },
             { name: 'Manpower Planning', path: '/payroll/manpower-planning', requiredPermission: { resource: 'Manpower', permission: Permission.View } },
             { name: 'On-Call & Manpower Cost', path: '/payroll/on-call-manpower-cost', requiredPermission: { resource: 'Manpower', permission: Permission.View } },
