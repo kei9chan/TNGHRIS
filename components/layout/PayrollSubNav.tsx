@@ -45,12 +45,14 @@ const iconMap: { [key: string]: React.FC<{className?: string}> } = {
     'Daily Time Review': ClipboardDocumentCheckIcon,
     'Manpower Planning': UserGroupIcon,
     'On-Call & Manpower Cost': ChartBarIcon,
+    'Attendance Devices & Punch Station': FingerPrintIcon,
     'Workforce Planning': ChartPieIcon,
 };
 
 
 const PayrollSubNav: React.FC = () => {
     const { can } = usePermissions();
+    const { user } = useAuth();
     const location = useLocation();
     const navigate = useNavigate();
     const payrollLink = NAV_LINKS.find(link => link.name === 'Payroll');
@@ -61,13 +63,13 @@ const PayrollSubNav: React.FC = () => {
         if (!payrollLink?.children) return [];
 
         const subLinks = payrollLink.children.filter(
-            child => child.requiredPermission && can(child.requiredPermission.resource, child.requiredPermission.permission)
+            child => (!child.visibilityRoles?.length || child.visibilityRoles.some(role => user?.role === role || user?.roles?.includes(role))) && child.requiredPermission && can(child.requiredPermission.resource, child.requiredPermission.permission)
         ) || [];
 
         return [
             {
                 name: 'Timekeeping & Attendance',
-                links: subLinks.filter(link => ['Timekeeping', 'Attendance Readiness', 'Manpower Planning', 'Workforce Planning', 'Daily Time Review', 'Clock-in/Out', 'Overtime Requests', 'WFH Requests', 'Leave', 'Leave Credits', 'Exceptions', 'Clock Log'].includes(link.name))
+                links: subLinks.filter(link => ['Timekeeping', 'Attendance Readiness', 'Attendance Devices & Punch Station', 'Manpower Planning', 'Workforce Planning', 'Daily Time Review', 'Clock-in/Out', 'Overtime Requests', 'WFH Requests', 'Leave', 'Leave Credits', 'Exceptions', 'Clock Log'].includes(link.name))
             },
             {
                 name: 'Payroll',
@@ -79,7 +81,7 @@ const PayrollSubNav: React.FC = () => {
             }
         ].filter(group => group.links.length > 0);
 
-    }, [can, payrollLink]);
+    }, [can, payrollLink, user]);
 
     useEffect(() => {
         const currentGroup = navGroups.find(group => 

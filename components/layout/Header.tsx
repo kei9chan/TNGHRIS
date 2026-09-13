@@ -4,7 +4,7 @@ import { NavLink as RouterNavLink, useNavigate, useLocation, Link } from 'react-
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { NAV_LINKS } from '../../constants';
-import { Permission, type NavLink } from '../../types';
+import { Permission, Role, type NavLink } from '../../types';
 import { useSettings } from '../../context/SettingsContext';
 import NotificationBell from './NotificationBell';
 import { useEvaluationAssignmentAccess } from '../../hooks/useEvaluationAssignmentAccess';
@@ -80,14 +80,15 @@ const NavItem: React.FC<{ link: NavLink; hasEvaluationAccess: boolean }> = ({ li
     const { user } = useAuth();
     const { can } = usePermissions();
     const location = useLocation();
+    const roleVisible = (item: NavLink) => !item.visibilityRoles?.length || item.visibilityRoles.some(role => user?.role === role || user?.roles?.includes(role));
 
     const filteredChildren = link.children?.filter(
-        child => child.requiredPermission && can(child.requiredPermission.resource, child.requiredPermission.permission)
+        child => roleVisible(child) && child.requiredPermission && can(child.requiredPermission.resource, child.requiredPermission.permission)
     ) || [];
 
     const assignmentOnlyEvaluation = link.name === 'Evaluation' && hasEvaluationAccess && filteredChildren.length === 0;
     const hasVisibleChildren = filteredChildren.length > 0;
-    const isVisible = assignmentOnlyEvaluation || hasVisibleChildren || (link.requiredPermission && can(link.requiredPermission.resource, link.requiredPermission.permission));
+    const isVisible = roleVisible(link) && (assignmentOnlyEvaluation || hasVisibleChildren || (link.requiredPermission && can(link.requiredPermission.resource, link.requiredPermission.permission)));
 
     if (!user || !isVisible) {
         return null;
@@ -126,6 +127,7 @@ const Header: React.FC = () => {
 
     const visibleMobileLinks = React.useMemo(() => {
         const filterLinks = (links: NavLink[]): NavLink[] => links.flatMap(link => {
+            if (link.visibilityRoles?.length && !link.visibilityRoles.some(role => user?.role === role || user?.roles?.includes(role))) return [];
             const children = link.children ? filterLinks(link.children) : [];
             const hasDirectPermission = Boolean(link.requiredPermission && can(link.requiredPermission.resource, link.requiredPermission.permission));
             const hasAssignmentOnlyAccess = link.name === 'Evaluation' && hasEvaluationAccess;

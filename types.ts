@@ -57,6 +57,8 @@ export interface NavLink {
   name: string;
   path: string;
   requiredPermission: { resource: Resource; permission: Permission };
+  /** Optional role gate for sensitive navigation entries. Backend authorization remains authoritative. */
+  visibilityRoles?: Role[];
   children?: NavLink[];
 }
 
