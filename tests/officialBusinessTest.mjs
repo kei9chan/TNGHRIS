@@ -46,6 +46,8 @@ insert into public.user_roles values('${id(3)}','HR Staff',true,'HOME_ONLY','{}'
 await db.exec(fs.readFileSync(new URL('./fixtures/obExistingFunctions.sql',import.meta.url),'utf8'));
 const migration=fs.readdirSync('supabase/migrations').find(x=>x.endsWith('_official_business_requests.sql'));
 await db.exec(fs.readFileSync('supabase/migrations/'+migration,'utf8'));
+await db.exec(fs.readFileSync('supabase/migrations/'+fs.readdirSync('supabase/migrations').find(x=>x.endsWith('_ob_preserve_changed_punch_review.sql')),'utf8'));
+await db.exec(fs.readFileSync('supabase/migrations/'+fs.readdirSync('supabase/migrations').find(x=>x.endsWith('_ob_payroll_review_alias.sql')),'utf8'));
 const actor=async(n,role='Employee')=>{await db.exec('reset role');await db.query("select set_config('test.actor',$1,false),set_config('test.role',$2,false)",[id(n),role]);await db.exec('set role authenticated');};
 const admin=async(sql,args=[])=>{await db.exec('reset role');return db.query(sql,args);};
 const revision=async()=>scalar('select revision v from public.official_business_requests where id=$1',[id(100)]);
@@ -109,6 +111,7 @@ await db.query("update official_business_requests set status='Approved',approved
 const assembled=await scalar('select private.payroll_time_sources($1,$2,$2) v',[id(11),ph]);assert.equal(assembled.officialBusiness.length,1);assert.equal(assembled.shifts[0].name,'Official Business');assert.deepEqual(assembled.originalShiftsBeforeOb,source.shifts);assert.equal(assembled.officialBusiness[0].originalScheduledMinutes,480);
 assert.equal(await scalar('select count(*)::int v from payroll_time_compensation_reviews'),0);
 await db.query("update official_business_requests set status='Cancelled' where id=$1",[id(100)]);
+const cancelledSources=await scalar('select private.payroll_time_sources($1,$2,$2) v',[id(11),ph]);assert.equal(cancelledSources.officialBusiness[0].status,'For Review');assert.equal(cancelledSources.officialBusiness[0].changedAfterPunch,true);
 await actor(4);const regular=await scalar('select public.get_my_attendance() v');assert.equal(regular.officialBusiness,undefined);
 assert.equal((await scalar('select public.record_my_attendance($1,$2,$3,$4) v',['CLOCK_IN',id(250),0,ph])).state,'working');
 console.log('OB integration checks passed: ordered approvals, scoped reads/storage, no direct writes or legacy bypass, GPS/selfie evidence, rejected attempt audit, idempotency, amendments/cancellation, schedule isolation, payroll guard, regular clock.');
