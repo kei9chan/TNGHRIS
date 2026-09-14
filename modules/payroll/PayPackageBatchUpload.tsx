@@ -2,28 +2,20 @@ import React,{useEffect,useRef,useState} from 'react';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import {fetchPayPackages,savePayPackage} from './payPackages';
-import {componentHeaders,packageHeaders,simpleHeaders,simpleImportRows,assertArrangementLive,arrangements,NET_ARRANGEMENTS_LIVE,prepareImport,ImportRow} from './payPackageImport';
+import {componentHeaders,packageHeaders,simpleHeaders,simpleImportRows,assertArrangementLive,arrangements,NET_ARRANGEMENTS_LIVE,prepareImport,ImportRow,readImportSheet,importKey,verifySavedImport} from './payPackageImport';
 
 type Preview={source:ImportRow;employeeId:string;name:string;error:string;status:string};
 const PayPackageBatchUpload:React.FC<{directory:{id:string;name:string;employeeCode:string}[];onSaved:()=>void}>=({directory,onSaved})=>{
  const saving=useRef(false);const active=useRef(true);useEffect(()=>{active.current=true;return()=>{active.current=false;};},[]);
  const [rows,setRows]=useState<Preview[]>([]);const [busy,setBusy]=useState(false);const [error,setError]=useState('');
  async function upload(file:File){
-  setBusy(true);setRows([]);setError('');
+  setBusy(true);setError('');
   try{
    if(!file.name.toLowerCase().endsWith('.xlsx')||file.size>5*1024*1024)throw new Error('Choose an .xlsx file under 5 MB.');
    const ExcelJS=await import('exceljs');const workbook=new ExcelJS.Workbook();await workbook.xlsx.load(await file.arrayBuffer());
-   function read(name:string,headers:string[]){
-    const sheet=workbook.getWorksheet(name);if(!sheet)throw new Error(`Missing ${name} sheet.`);
-    if(sheet.rowCount>1001)throw new Error(`${name}: maximum 1,000 rows.`);
-    const cell=(r:number,c:number)=>{const v=sheet!.getCell(r,c).value;if(v==null)return '';if(v instanceof Date)return v.toISOString().slice(0,10);if(typeof v==='object')throw new Error(`${name} row ${r}: use plain values, not formulas or links.`);return String(v).trim();};
-    headers.forEach((h,i)=>{if(cell(1,i+1)!==h)throw new Error(`${name}: keep the template column headers unchanged.`);});
-    const result:{row:number;values:Record<string,string>}[]=[];
-    for(let r=2;r<=sheet.rowCount;r++){const values=Object.fromEntries(headers.map((h,i)=>[h,cell(r,i+1)]));if(Object.values(values).some(Boolean))result.push({row:r,values});}
-    return result;
-   }
+   const read=(name:string,headers:string[])=>readImportSheet(workbook,name,headers);
    let imports:ImportRow[];
-   if(workbook.getWorksheet('Pay Input')){
+   if(workbook.worksheets.some(s=>importKey(s.name)==='pay input')){
     imports=simpleImportRows(read('Pay Input',simpleHeaders));
    }else{
    const exampleKey=(key:string)=>key.trim().toUpperCase().startsWith('EXAMPLE-');
@@ -44,8 +36,8 @@ const PayPackageBatchUpload:React.FC<{directory:{id:string;name:string;employeeC
    const preview:Preview[]=[];
    for(const p of packages){
     const source=p;
-    const matches=directory.filter(e=>e.employeeCode&&e.employeeCode===p.values['Employee code']);const employee=matches.length===1?matches[0]:null;
-    let issue='';try{if(!employee)throw new Error('Employee code: no unique accessible HRIS record matches this code. Copy the code from Employee codes you can access below; register missing employees in HRIS first.');assertArrangementLive((arrangements as Record<string,string>)[source.values['Salary arrangement']||'Gross salary']);prepareImport(source,await fetchPayPackages(employee.id));}catch(e){issue=e instanceof Error?e.message:'Validation failed.';}
+    const matches=directory.filter(e=>e.employeeCode&&importKey(e.employeeCode)===importKey(p.values['Employee code']));const employee=matches.length===1?matches[0]:null;
+    let issue='';try{if(!employee)throw new Error('Employee code: no unique accessible HRIS record matches this code. Copy the code from Employee codes you can access below; register missing employees in HRIS first.');assertArrangementLive((arrangements as Record<string,string>)[source.values['Salary arrangement']||'Gross salary']);const context=await fetchPayPackages(employee.id);if(context.employeeId!==employee.id)throw new Error('Conflicting salary source — employee identity differs from the requested employee code.');prepareImport(source,context);}catch(e){issue=e instanceof Error?e.message:'Validation failed.';}
     preview.push({source,employeeId:employee?.id||'',name:employee?.name||p.values['Employee code'],error:issue,status:'Ready'});
    }
    setRows(preview);
@@ -56,8 +48,8 @@ const PayPackageBatchUpload:React.FC<{directory:{id:string;name:string;employeeC
   setBusy(true);setError('');const next=[...rows];
   try{for(let i=0;i<next.length;i++){
    if(!active.current)break;
-   if(next[i].status==='Saved')continue;
-   try{assertArrangementLive((arrangements as Record<string,string>)[next[i].source.values['Salary arrangement']||'Gross salary']);const p=prepareImport(next[i].source,await fetchPayPackages(next[i].employeeId));if(!active.current)break;await savePayPackage(p.employeeId,p.scopeId,p.payload,p.hash);next[i]={...next[i],status:'Saved'};setRows([...next]);}
+   if(next[i].status==='Saved'||next[i].error)continue;
+   try{assertArrangementLive((arrangements as Record<string,string>)[next[i].source.values['Salary arrangement']||'Gross salary']);const context=await fetchPayPackages(next[i].employeeId);if(context.employeeId!==next[i].employeeId)throw new Error('Conflicting salary source — employee identity differs from the requested employee code.');const p=prepareImport(next[i].source,context);if(!active.current)break;const id=await savePayPackage(p.employeeId,p.scopeId,p.payload,p.hash);verifySavedImport(p,await fetchPayPackages(p.employeeId),id,next[i].source);next[i]={...next[i],status:'Saved',error:''};setRows([...next]);}
    catch(e){next[i]={...next[i],status:'Check before retry',error:e instanceof Error?e.message:'Save failed.'};setRows([...next]);setError('Stopped at the first failed row. Earlier saved drafts remain saved. Refresh and check the employee’s packages before uploading remaining rows.');break;}
   }}finally{saving.current=false;if(active.current){setBusy(false);onSaved();}}
  }
@@ -66,7 +58,7 @@ const PayPackageBatchUpload:React.FC<{directory:{id:string;name:string;employeeC
   <details className="mt-3 text-sm"><summary>Employee codes you can access</summary><div className="max-h-48 overflow-auto">{directory.map(e=><p key={e.id}>{e.employeeCode||'No employee code — update HRIS first'} · {e.name}</p>)}</div></details>
   <p className="mt-3 text-sm">Amounts must match the selected HRIS or approved PAN source. Existing packages on the same date must be reviewed individually. Treatments remain unreviewed; uploading does not approve packages or release payments.</p>
   {busy&&<p role="status" className="mt-3">Processing…</p>}{error&&<p role="alert" className="mt-3 text-red-700 dark:text-red-300">{error}</p>}
-  {rows.length>0&&<><div className="overflow-auto mt-4"><table className="w-full text-sm text-left"><thead><tr>{['Row','Employee','Scope','Stream','Effective','Amount','Result'].map(h=><th className="p-2" key={h}>{h}</th>)}</tr></thead><tbody>{rows.map(r=><tr className="border-t" key={r.source.row}><td className="p-2">{r.source.row}</td><td className="p-2">{r.name}</td><td className="p-2">{r.source.values[packageHeaders[2]]}</td><td className="p-2">{r.source.values['Pay stream']==='employee_payroll'?'Employee salary':'Consultant fee'}</td><td className="p-2">{r.source.values['Effective from']}</td><td className="p-2">{r.source.values['Basic pay / fee amount']} / {r.source.values['Amount unit']}</td><td className="p-2">{r.error||r.status}</td></tr>)}</tbody></table></div><Button className="mt-3" disabled={busy||rows.some(r=>!!r.error)||rows.every(r=>r.status==='Saved')} onClick={()=>void save()}>Save {rows.filter(r=>r.status!=='Saved').length} drafts</Button></>}
+  {rows.length>0&&<><div className="overflow-auto mt-4"><table className="w-full text-sm text-left"><thead><tr>{['Row','Employee','Scope','Stream','Effective','Amount','Salary source','PAN reference','Result'].map(h=><th className="p-2" key={h}>{h}</th>)}</tr></thead><tbody>{rows.map(r=><tr className="border-t" key={r.source.row}><td className="p-2">{r.source.row}</td><td className="p-2">{r.name}</td><td className="p-2">{r.source.values[packageHeaders[2]]}</td><td className="p-2">{r.source.values['Pay stream']==='employee_payroll'?'Employee salary':'Consultant fee'}</td><td className="p-2">{r.source.values['Effective from']}</td><td className="p-2">{r.source.values['Basic pay / fee amount']} / {r.source.values['Amount unit']}</td><td className="p-2">{r.source.values['Salary source']||'Legacy source reference'}</td><td className="p-2">{r.source.values['PAN ID (optional)']||'—'}</td><td className="p-2">{r.error||r.status}</td></tr>)}</tbody></table></div><Button className="mt-3" disabled={busy||!rows.some(r=>!r.error&&r.status!=='Saved')} onClick={()=>void save()}>Save {rows.filter(r=>!r.error&&r.status!=='Saved').length} drafts</Button></>}
  </Card>;
 }
 

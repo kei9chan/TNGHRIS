@@ -44,5 +44,5 @@ assert(workbook.getWorksheet('Field Guide'));
 assert.throws(()=>prepareImport(normalize({...net,'Tax treatment':'Exemption requested - evidence required'}),context),/legal basis/);
 assert.equal(prepareImport(normalize({...net,'Tax treatment':'Exemption requested - evidence required','Exemption / tax basis':'Actual legal evidence'}),context).payload.treatment.tax,'unreviewed');
 assert.throws(()=>prepareImport(normalize({...flat,'Extra 1 frequency':'One time'}),context),/payable date/);
-assert.throws(()=>normalize({...flat,'Salary source':'Approved PAN'}),/PAN ID/);
+assert.throws(()=>prepareImport(normalize({...flat,'Salary source':'Approved PAN'}),context),/PAN ID/);
 console.log('Passed: legacy compatibility, single-row fields, custom allowance, dropdowns, freeze panes, separate examples, net metadata, exemption guards, source/date/scope/duplicate validation.');
