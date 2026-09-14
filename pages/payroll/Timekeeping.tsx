@@ -163,11 +163,10 @@ const Timekeeping: React.FC = () => {
 
     useEffect(() => {
         const loadReferenceData = async () => {
-            const [buRes, deptRes, usersRes, templateRes, teamRes] = await Promise.all([
+            const [buRes, deptRes, usersRes, teamRes] = await Promise.all([
                 supabase.from('business_units').select('id, name, code, color'),
                 supabase.from('departments').select('id, name, business_unit_id'),
                 supabase.from('hris_users').select('id, full_name, email, role, status, business_unit, business_unit_id, department, department_id, position, date_hired, reports_to'),
-                supabase.from('shift_templates').select('*'),
                 supabase.rpc('get_schedule_roster_people'),
             ]);
 
@@ -208,9 +207,6 @@ const Timekeeping: React.FC = () => {
                 } as User)));
             }
 
-            if (!templateRes.error && templateRes.data) {
-                setTemplates(templateRes.data.map(mapShiftTemplate));
-            }
 
         };
 
@@ -218,7 +214,7 @@ const Timekeeping: React.FC = () => {
     }, [user?.id, user?.role]);
 
     // --- Permission Logic ---
-    const isHrPresetEditor = !!user && [user.role, ...(user.roles ?? [])].some(role => role === Role.HRStaff || role === Role.HRManager);
+    const isHrPresetEditor = !!user && [user.role, ...(user.roles ?? [])].some(role => role === Role.Admin || role === Role.HRStaff || role === Role.HRManager);
     const accessibleBus = useMemo(() => {
         if (isHrPresetEditor) return businessUnits;
         const existing = getAccessibleBusinessUnits(businessUnits as any);
@@ -450,6 +446,7 @@ const Timekeeping: React.FC = () => {
                 setBuilderPeople(snapshot.people.map((row:any)=>({id:row.id,name:formatEmployeeName(row.full_name||'Employee'),role:row.role,status:'Active',businessUnitId:row.business_unit_id,businessUnit:row.business_unit,departmentId:row.department_id,department:row.department,position:row.position,reportsTo:row.reports_to,canEdit:row.can_edit===true} as User & {canEdit:boolean})));
                 setAssignments(snapshot.assignments.map(mapBuilderAssignment));
                 setDayStatuses(snapshot.statuses);
+                if (Array.isArray(snapshot.templates)) setTemplates(snapshot.templates.map(mapShiftTemplate));
             }
 
             if (!leaveRes.error && leaveRes.data) {
@@ -752,7 +749,7 @@ const Timekeeping: React.FC = () => {
 
     const hasScopedPreset = (employeeId: string, templateId: string) => {
         const buId = builderPeople.find(e => e.id === employeeId)?.businessUnitId;
-        return !!buId && templates.some(t => t.id === templateId && t.businessUnitId === buId);
+        return !!buId && templates.some(t => t.id === templateId && t.canUse !== false && t.businessUnitId === buId);
     };
 
     const handleSaveShift = async (employeeId: string, date: Date, templateId: string) => {
@@ -1019,7 +1016,7 @@ const Timekeeping: React.FC = () => {
 
              if (availableEmployee && gap.shiftTime) {
                  // Find or create a matching template
-                 let template = templates.filter(t=>t.businessUnitId===availableEmployee.businessUnitId && (t.scheduleKind??'work')==='work').find(t => t.startTime === gap.shiftTime?.start && t.endTime === gap.shiftTime?.end);
+                 let template = templates.filter(t=>t.canUse!==false && t.businessUnitId===availableEmployee.businessUnitId && (t.scheduleKind??'work')==='work').find(t => t.startTime === gap.shiftTime?.start && t.endTime === gap.shiftTime?.end);
                  
                  // Leave unconfigured shifts for the manager to prepare explicitly.
 
@@ -1089,10 +1086,10 @@ const Timekeeping: React.FC = () => {
 
     const templatesForDrawer = useMemo(() => {
         const buId = drawerState.employee?.businessUnitId;
-        return buId ? templates.filter(t => t.businessUnitId === buId) : [];
+        return buId ? templates.filter(t => t.canUse !== false && t.businessUnitId === buId) : [];
     }, [templates, drawerState.employee]);
 
-    const presetTemplates = useMemo(() => selectedBuId === 'all' ? [] : templates.filter(t => t.businessUnitId === selectedBuId), [templates, selectedBuId]);
+    const presetTemplates = useMemo(() => selectedBuId === 'all' ? [] : templates.filter(t => t.canUse !== false && t.businessUnitId === selectedBuId), [templates, selectedBuId]);
 
     const buNameForModal = businessUnits.find(b => b.id === selectedBuId)?.name;
     
@@ -1214,7 +1211,7 @@ const Timekeeping: React.FC = () => {
                 <Card title="Status Presets" className="mb-4"><div className="flex flex-wrap gap-3">{statusPresets.filter(p=>p.tag!=='suspended'||isHrPresetEditor||isSuperAdmin).map(p=><button key={p.tag} draggable={isScheduleEditable} disabled={!isScheduleEditable} onDragStart={e=>e.dataTransfer.setData('application/x-tng-status',p.tag)} onClick={()=>setSelectedStatus(selectedStatus===p.tag?null:p.tag)} aria-pressed={selectedStatus===p.tag} className={`min-h-12 rounded-lg border px-4 font-semibold ${p.color} ${selectedStatus===p.tag?'ring-2 ring-violet-600':''}`}>{p.label}</button>)}</div><p className="mt-3 text-sm">{selectedStatus?'Select an employee day to apply this status, or click the selected status to cancel.':'Drag a status onto a day, or select it and tap the day. Skeletal and Absence keep the expected working hours. Approved paid/unpaid leave appears automatically.'}</p><a className="mt-3 inline-block min-h-11 underline" href="/payroll/attendance-review">Attendance flags & review settings</a></Card>
             )}
             {isPresetEditable && (<Card title="Shift Presets">
-                    <p className="text-sm text-slate-600 dark:text-slate-300">{selectedBuId === 'all' ? 'Choose a business unit to create or view its presets.' : presetTemplates.length === 0 ? 'No presets for this business unit yet. HR Staff, HR Managers or its BU manager can create presets here.' : 'Presets for this business unit only.'}</p>
+                    <p className="text-sm text-slate-600 dark:text-slate-300">{selectedBuId === 'all' ? 'Choose a business unit to create or view its presets.' : presetTemplates.length === 0 ? 'No accessible presets for this business unit yet.' : 'Your presets and those shared by your direct manager. Admin and HR can manage presets for support.'}</p>
                     <div className="flex flex-wrap gap-x-2 gap-y-4 pt-8">
                         {presetTemplates.map(template => {
                             const tooltip = template.isFlexible
@@ -1228,7 +1225,7 @@ const Timekeeping: React.FC = () => {
                                     title={tooltip}
                                 >
                                     <span>{template.name}<small className="block font-normal">{scheduleLabel(template)}</small></span>
-                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-1 bg-white dark:bg-slate-900 p-1 rounded-md shadow-lg z-10 border border-gray-200 dark:border-gray-700">
+                                    {(template.canManage ?? (isHrPresetEditor || template.createdBy === user?.id)) && <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-1 bg-white dark:bg-slate-900 p-1 rounded-md shadow-lg z-10 border border-gray-200 dark:border-gray-700">
                                         <button onClick={() => setTemplateModalState({ open: true, template })} className="p-1.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-md" title="Edit Preset">
                                             <PencilIcon />
                                         </button>
@@ -1236,7 +1233,7 @@ const Timekeeping: React.FC = () => {
                                         <button onClick={() => handleDeleteTemplate(template.id)} className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/50 rounded-md" title="Delete Preset">
                                             <TrashIcon />
                                         </button>
-                                    </div>
+                                    </div>}
                                 </div>
                             );
                         })}

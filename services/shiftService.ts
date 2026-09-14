@@ -6,6 +6,9 @@ import { ShiftTemplate, ShiftAssignment, Site } from '../types';
 // Row Types
 // ---------------------------------------------------------------------------
 type ShiftTemplateRow = {
+  created_by?: string | null;
+  can_use?: boolean;
+  can_manage?: boolean;
   end_day_offset?: 0 | 1 | null;
   paid_minutes?: number | null;
   schedule_kind?: 'work' | 'rest' | 'no_schedule';
@@ -47,6 +50,9 @@ type SiteRow = {
 // ---------------------------------------------------------------------------
 export const mapShiftTemplate = (row: ShiftTemplateRow): ShiftTemplate => ({
   id: row.id,
+  createdBy: row.created_by ?? undefined,
+  canUse: row.can_use ?? true,
+  canManage: row.can_manage,
   name: row.name,
   startTime: row.start_time,
   endTime: row.end_time,
