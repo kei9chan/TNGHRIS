@@ -57,7 +57,8 @@
     "test:gmail-sending": "node tests/gmailSendingConnectionSmokeTest.mjs",
     "test:asset-approvals": "node tests/assetRequestApprovalWorkflowSmokeTest.mjs",
     "test:benefit-approvals": "node tests/benefitApprovalWorkflowSmokeTest.mjs",
-    "test:case-register": "node tests/caseRegisterDatabaseTest.mjs && node tests/caseRegisterExportTest.mjs"
+    "test:case-register": "node tests/caseRegisterDatabaseTest.mjs && node tests/caseRegisterExportTest.mjs",
+    "test:official-business": "node tests/officialBusinessTest.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.84.0",

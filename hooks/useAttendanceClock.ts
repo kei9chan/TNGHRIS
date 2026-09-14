@@ -52,6 +52,7 @@ export function useAttendanceClock(){
     else throw first;
    }
    if(!current())return false;
+   if(value.recorded===false)throw new Error(value.error||'OB punch held for HR review.');
    accept(value);window.dispatchEvent(new Event('attendance-updated'));return value;
   }catch(e){
    if(!current())return false;
