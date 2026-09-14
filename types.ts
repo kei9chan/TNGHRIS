@@ -1251,6 +1251,9 @@ export interface Site {
 }
 
 export interface ShiftTemplate {
+  createdBy?: string;
+  canUse?: boolean;
+  canManage?: boolean;
   scheduleKind?: 'work' | 'rest' | 'no_schedule';
   endDayOffset?: 0 | 1;
   paidMinutes?: number;
