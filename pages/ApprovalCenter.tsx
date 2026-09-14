@@ -1,3 +1,4 @@
+import OBApprovalQueue from '../modules/official-business/OBApprovalQueue';
 import { ApprovalOutcome } from '../components/approvals/ApprovalNavigation';
 import RecentDecisions from '../components/approvals/RecentDecisions';
 import {useAttendanceIssues,issueLabels,shiftText} from '../services/attendanceIssues';
@@ -388,6 +389,7 @@ export default function ApprovalCenter() {
     {decisionMessage && <ApprovalOutcome message={decisionMessage} onReturn={() => { setDecisionMessage(''); closeRequestedReview(); }} />}
     <div className="flex flex-wrap items-end justify-between gap-3"><div><h1 className="text-3xl font-bold text-slate-900 dark:text-white">Approval Center</h1><p className="mt-1 text-slate-500 dark:text-slate-300">The single queue for every approval requiring your action.</p></div><Link to="/dashboard" className="font-semibold text-indigo-600 dark:text-indigo-300">← Dashboard</Link></div>
     {loading && <p role="status" className="text-sm text-slate-500 dark:text-slate-300">Updating approval queues…</p>}
+    <OBApprovalQueue key={user.id} />
     {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-800"><b>Some approval data could not be loaded.</b> {error} <button onClick={() => Promise.all([approvals.refreshApprovals(), additional.refreshAdditionalApprovals(), attendance.load()])} className="min-h-11 font-semibold underline">Retry loading approvals</button></div>}
     {requestedItem && !['offer', 'asset'].includes(requestedType || '') && !loading && !items.some(item => item.id === requestedItem) && !error && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"><b>This request is no longer awaiting your action.</b> It may already be processed, reassigned, or outside your authorized scope.</div>}
     {!approverConfigs.conditionalTimeApprovals.valid && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900"><b>Conditional approval routing needs an Admin.</b> {approverConfigs.conditionalTimeApprovals.invalid_reason || 'At least one active BOD approver must be selected.'}</div>}

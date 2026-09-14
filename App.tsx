@@ -46,6 +46,7 @@ const RegistrationSuccess = React.lazy(() => import('./pages/RegistrationSuccess
 const ForgotPassword = React.lazy(() => import('./pages/ForgotPassword'));
 const ResetPassword = React.lazy(() => import('./pages/ResetPassword'));
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
+const OfficialBusinessPage = React.lazy(() => import('./modules/official-business/OfficialBusinessPage'));
 const ApprovalCenter = React.lazy(() => import('./pages/ApprovalCenter'));
 const MyRequests = React.lazy(() => import('./pages/MyRequests'));
 const NotFound = React.lazy(() => import('./pages/NotFound'));
@@ -173,6 +174,7 @@ const flattenRoutePermissions = (links: NavLink[]): Array<[string, Resource, Per
 // broader parent route.
 const routePermissions: Array<[string, Resource, Permission]> = [
   ...flattenRoutePermissions(NAV_LINKS),
+  ['/official-business', 'Dashboard', Permission.View] as [string, Resource, Permission],
   ['/approvals', 'Dashboard', Permission.View] as [string, Resource, Permission],
   ['/my-requests', 'Dashboard', Permission.View] as [string, Resource, Permission],
   ['/payroll/attendance-pulse', 'Dashboard', Permission.View] as [string, Resource, Permission],
@@ -342,6 +344,7 @@ const AppRoutes: React.FC = () => {
         <Route path="payments" element={<ProtectedRoute><PayrollPaymentsPage /></ProtectedRoute>} />
             <Route path="acknowledgments" element={<ProtectedRoute><EmployeeAcknowledgments /></ProtectedRoute>} />
             <Route path="acknowledgments/manage" element={<ProtectedRoute><AcknowledgmentAdmin /></ProtectedRoute>} />
+            <Route path="official-business" element={<ProtectedRoute><OfficialBusinessPage /></ProtectedRoute>} />
             <Route path="approvals" element={<ProtectedRoute><ApprovalCenter /></ProtectedRoute>} />
             <Route path="employee-snapshot" element={<ProtectedRoute><EmployeeSnapshotPage /></ProtectedRoute>} />
         <Route path="my-requests" element={<ProtectedRoute><MyRequests /></ProtectedRoute>} />
