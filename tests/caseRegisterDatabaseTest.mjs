@@ -33,6 +33,8 @@ const migration=fs.readdirSync('supabase/migrations').find(x=>x.endsWith('_case_
 await db.exec(fs.readFileSync(`supabase/migrations/${migration}`,'utf8'));
 const boundary=fs.readdirSync('supabase/migrations').find(x=>x.endsWith('_case_register_invoker_boundaries.sql'));
 await db.exec(fs.readFileSync(`supabase/migrations/${boundary}`,'utf8'));
+const stages=fs.readdirSync('supabase/migrations').find(x=>x.endsWith('_case_register_workflow_stage_fallback.sql'));
+await db.exec(fs.readFileSync(`supabase/migrations/${stages}`,'utf8'));
 await db.exec('set role authenticated');
 const query=async(f={},e=null,page=0,size=50)=>(await db.query('select public.get_case_register($1::jsonb,$2,$3,$4::jsonb) result',[JSON.stringify(f),page,size,e===null?null:JSON.stringify(e)])).rows[0].result;
 let r=await query();assert.equal(r.total,2);assert.equal(r.summary.open,1);assert.equal(r.summary.closed,1);assert.equal(r.summary.overdue,1);assert.equal(r.summary.averageResolution,15);assert.equal(r.rows[0].action,null);assert.ok(r.rows[0].servedDate);assert.notEqual(r.rows[0].servedDate,r.rows[0].reportedDate);
@@ -50,6 +52,9 @@ await db.query('select public.set_case_register_archive($1,false)',[id(202)]);as
 await assert.rejects(db.query('select public.set_case_register_archive($1,true)',[id(201)]),/closed case/);
 await assert.rejects(db.query('insert into public.case_register_archives(row_key,incident_report_id,employee_id) values($1,$2,$3)',[id(201),id(101),id(2)]),/closed case/);
 await db.exec('reset role');const audits=(await db.query("select details::jsonb details from public.audit_logs where action='EXPORT'")).rows;assert.equal(audits.length,1);assert.equal(audits[0].details.recordCount,1);
+await db.exec(`insert into public.incident_reports(id,case_number,business_unit_id,status,pipeline_stage,created_at,sla_deadline) values('${id(104)}',4,'${id(11)}','Submitted','nte-for-approval',now(),now()-interval '1 day');set role authenticated;`);
+let legacy=await query({keyword:'TNGIR-00004'});assert.equal(legacy.rows[0].stage,'For approval');assert.equal(legacy.rows[0].overdue,false);
+await db.exec('reset role');
 await db.exec('drop policy fixture_audit on public.audit_logs;set role authenticated');await assert.rejects(query({},opts),/row-level security/);
 console.log('PASS: register mapping, RLS exclusion, global/BU/self scope, filters, pagination, selected export, mandatory audit, archive integrity.');
 await db.close();

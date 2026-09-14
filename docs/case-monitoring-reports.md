@@ -25,3 +25,9 @@ XLSX uses native numeric cells and hyperlinks; CSV escapes formula-like text and
 `npm run test:case-register` runs isolated Postgres/WASM fixtures and file-generation checks. It covers caller RLS exclusion, GLOBAL/HOME_ONLY/SPECIFIC/SELF scopes, filters, pagination, selected export intersection, missing dates/actions, mandatory audit failure, archive guard, editable XLSX values, hyperlinks, CSV formula safety and PDF generation. Fixtures contain no real employee case data. This is not a production load test or a complete reproduction of every existing RLS policy.
 
 `npm run build` validates the production bundle. Excel/PDF code and the register are loaded on demand. Existing repository-wide TypeScript errors remain outside this change.
+
+## Live verification, 14 September 2026
+
+The signed-in production account loaded 30 accessible employee-case rows. The HR-review summary narrowed the table to exactly three HR-review rows; a column toggle added Department to the table. Kanban, Reports & Analytics, and the empty Archived Cases view rendered successfully. A deliberately empty XLSX export completed and audit `32d92021-03ee-492a-905e-a7f2b2ea0b82` was verified with actor, timestamp, format, zero count, and the exact filters. No employee case details were downloaded for this check and no real case was archived.
+
+The live check found and resolved a private-schema namespace error. Authenticated users still have no private-schema USAGE or private-table SELECT. SQL-standard invoker wrappers resolve only the explicitly granted, checked helpers. Fixtures now reproduce this restriction. Pre-NTE cases retain their saved workflow stages; IR-SLA overdue counts are limited to IR review. Live cross-role login sessions and real case archival were not exercised; their scope/integrity checks ran in isolated fixtures.
