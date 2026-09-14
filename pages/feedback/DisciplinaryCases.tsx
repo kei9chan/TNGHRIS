@@ -8,6 +8,7 @@ import { useNavigate, useLocation, Link, useSearchParams } from 'react-router-do
 import { IncidentReport, ChatMessage, NTE, Resolution, IRStatus, Permission, NTEStatus, PipelineStage, Role, BusinessUnit, ResolutionType, ResolutionStatus, ApproverStep, ApproverStatus, Notification, NotificationType, CoachingSession, CoachingStatus, CoachingTrigger } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
+import { usePermissionsContext } from '../../context/PermissionsContext';
 import KanbanBoard from '../../components/feedback/KanbanBoard';
 import Button from '../../components/ui/Button';
 import IncidentReportModal from '../../components/feedback/IncidentReportModal';
@@ -1110,11 +1111,13 @@ const CaseRegister = lazy(() => import('../../modules/case-register/CaseRegister
 const DisciplinaryCases: React.FC = () => {
   const [params, setParams] = useSearchParams();
   const { getIrAccess } = usePermissions();
+  const { loadingPermissions } = usePermissionsContext();
   const { user } = useAuth();
   const access = getIrAccess();
   const reporting = access.canView && !['self', 'none'].includes(access.scope);
   const requested = params.get('view');
   const view = reporting && ['register', 'reports', 'archived'].includes(requested || '') ? requested : 'kanban';
+  if (loadingPermissions && requested) return <p role="status">Verifying case reporting access…</p>;
   return <div className="space-y-5">
     {reporting && <nav aria-label="Administrative case views" className="flex flex-wrap gap-2 border-b border-gray-200 dark:border-gray-700 pb-3">
       {[['kanban', 'Kanban View'], ['register', 'Case Register'], ['reports', 'Reports & Analytics'], ['archived', 'Archived Cases']].map(([key, label]) =>
