@@ -56,7 +56,8 @@
     "test:nte-mobile-review": "node tests/nteMobileReviewSmokeTest.mjs",
     "test:gmail-sending": "node tests/gmailSendingConnectionSmokeTest.mjs",
     "test:asset-approvals": "node tests/assetRequestApprovalWorkflowSmokeTest.mjs",
-    "test:benefit-approvals": "node tests/benefitApprovalWorkflowSmokeTest.mjs"
+    "test:benefit-approvals": "node tests/benefitApprovalWorkflowSmokeTest.mjs",
+    "test:case-register": "node tests/caseRegisterDatabaseTest.mjs && node tests/caseRegisterExportTest.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.84.0",
@@ -70,6 +71,7 @@
     "react-router-dom": "^7.9.5"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "typescript": "~5.8.2",
