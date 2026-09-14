@@ -1,7 +1,8 @@
 // src/context/AuthContext.tsx
-import React, { createContext, useCallback, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useCallback, useEffect, useRef, useState, ReactNode } from 'react';
 import { User, Role } from '../types';
 import { isTransientNetworkError, retryTransientSupabaseRead, supabase } from '../services/supabaseClient';
+import { withAuthDeadline } from '../services/authDeadline';
 import { fetchEffectiveRbacSnapshot } from '../services/rbacService';
 
 // Keep this so existing imports don't break.
@@ -24,6 +25,8 @@ export class SupabaseAuthError extends Error {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  authError: string | null;
+  retryAuth: () => void;
   login: (email: string, pass: string) => Promise<User | null>;
   forceLogin: (email: string, pass: string) => Promise<User | null>;
   loginWithGoogle: () => Promise<User | null>;
@@ -188,7 +191,7 @@ const buildAppUserFromSupabase = (
   const existing = profileHydrationInFlight.get(sbUser.id);
   if (existing) return existing;
 
-  const hydration = loadAppUserFromSupabase(sbUser);
+  const hydration = withAuthDeadline(loadAppUserFromSupabase(sbUser));
   profileHydrationInFlight.set(sbUser.id, hydration);
   const clearHydration = () => {
     if (profileHydrationInFlight.get(sbUser.id) === hydration) {
@@ -206,15 +209,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
 }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [retryVersion, setRetryVersion] = useState(0);
+  const authGeneration = useRef(0);
+  const explicitLogin = useRef(false);
+  const currentUser = useRef(user);
+  currentUser.current = user;
+  const retryAuth = () => setRetryVersion(v => v + 1);
 
   const refreshUser = useCallback(async (): Promise<User | null> => {
-    const { data, error } = await retryTransientSupabaseRead(() => supabase.auth.getUser());
+    const generation = authGeneration.current;
+    const { data, error } = await withAuthDeadline(retryTransientSupabaseRead(() => supabase.auth.getUser()));
+    if (generation !== authGeneration.current) return null;
     if (error || !data.user) {
       if (!error) setUser(null);
       return null;
     }
 
     const refreshed = await buildAppUserFromSupabase(data.user as SupabaseUser);
+    if (generation !== authGeneration.current) return null;
     if (refreshed) setUser(refreshed);
     return refreshed;
   }, []);
@@ -223,44 +236,55 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
   useEffect(() => {
     let mounted = true;
 
+    const generation = ++authGeneration.current;
     const init = async () => {
       setLoading(true);
-      console.log('[Auth] init: calling supabase.auth.getUser()');
-      const { data, error } = await retryTransientSupabaseRead(() => supabase.auth.getUser());
-
-      if (error || !data.user) {
-        console.log('[Auth] init: no Supabase user, user=null');
-        if (error && isTransientNetworkError(error)) setAuthorizationUnavailableNotice();
-        if (mounted) {
+      setAuthError(null);
+      try {
+        // Session storage supplies only an identity hint. Both server RPCs must
+        // verify the current account and permissions before it is exposed.
+        const { data, error } = await withAuthDeadline(supabase.auth.getSession());
+        if (!mounted || generation !== authGeneration.current) return;
+        if (error) throw error;
+        if (!data.session?.user) { setUser(null); return; }
+        await hydrateSupabaseUser(data.session.user as SupabaseUser, false, generation);
+      } catch (error) {
+        if (mounted && generation === authGeneration.current) {
+          console.error('[Auth] startup verification failed', error);
           setUser(null);
-          setLoading(false);
+          setAuthError('HRIS could not verify your access in time. Retry the connection.');
         }
-        return;
-      }
-
-      console.log('[Auth] init: Supabase user found, hydrating app user');
-      await hydrateSupabaseUser(data.user as SupabaseUser);
-      if (mounted) {
-        setLoading(false);
+      } finally {
+        if (mounted && generation === authGeneration.current) setLoading(false);
       }
     };
 
-    init();
+    void init();
 
     // Keep auth state in sync if Supabase session changes
     const pendingAuthTimers = new Set<number>();
     const { data: sub } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        console.log('[Auth] onAuthStateChange event:', event);
+        if (!mounted || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED' || explicitLogin.current) return;
         if (!session?.user) {
+          ++authGeneration.current;
           setUser(null);
+          setLoading(false);
           return;
         }
+        if (event === 'SIGNED_IN' && currentUser.current?.authUserId === session.user.id) return;
+        const eventGeneration = ++authGeneration.current;
+        const sameAccount = currentUser.current?.authUserId === session.user.id;
+        if (!sameAccount) setUser(null);
+        setLoading(true);
         // Supabase warns against starting client API calls inside this callback.
         // Defer profile hydration until the auth event's internal lock is released.
         const timerId = window.setTimeout(() => {
           pendingAuthTimers.delete(timerId);
-          void hydrateSupabaseUser(session.user as SupabaseUser, true);
+          if (!mounted || eventGeneration !== authGeneration.current) return;
+          setLoading(true);
+          void hydrateSupabaseUser(session.user as SupabaseUser, sameAccount, eventGeneration)
+            .finally(() => { if (mounted && eventGeneration === authGeneration.current) setLoading(false); });
         }, 0);
         pendingAuthTimers.add(timerId);
       }
@@ -268,27 +292,30 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
 
     return () => {
       mounted = false;
+      ++authGeneration.current;
       pendingAuthTimers.forEach(timerId => window.clearTimeout(timerId));
       pendingAuthTimers.clear();
       sub.subscription.unsubscribe();
     };
-  }, []);
+  }, [retryVersion]);
 
   /**
    * Resolve the server-side RBAC profile before exposing a signed-in user to
    * the application. Unknown or broken assignments never become Employee.
    */
-  const hydrateSupabaseUser = async (sbUser: SupabaseUser, preserveExisting = false) => {
+  const hydrateSupabaseUser = async (sbUser: SupabaseUser, preserveExisting = false, generation = authGeneration.current) => {
     if (!preserveExisting) {
       setUser(null);
     }
 
     try {
       const hydrated = await buildAppUserFromSupabase(sbUser);
+      if (generation !== authGeneration.current) return;
+      setAuthError(null);
       if (hydrated) {
         if (!isActiveStatus(hydrated.status)) {
           setAccountInactiveNotice();
-          await supabase.auth.signOut().catch(() => { });
+          await withAuthDeadline(supabase.auth.signOut(), 4_000).catch(() => { });
           setUser(null);
           return;
         }
@@ -297,10 +324,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       }
       // No HRIS profile yet -> treat as pending HR approval
       setHrPendingNotice();
-      await supabase.auth.signOut().catch(() => { });
+      await withAuthDeadline(supabase.auth.signOut(), 4_000).catch(() => { });
       setUser(null);
     } catch (err) {
+      if (generation !== authGeneration.current) return;
       console.error('[Auth] hydrateSupabaseUser failed to load HRIS profile', err);
+      if (isTransientNetworkError(err)) {
+        if (!preserveExisting || !currentUser.current) {
+          setUser(null);
+          setAuthError('HRIS could not verify your access in time. Retry the connection.');
+        }
+        return;
+      }
       if (err instanceof SupabaseAuthError && err.code === 'network_unavailable') {
         if (!preserveExisting) {
           setAuthorizationUnavailableNotice();
@@ -317,7 +352,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       } else {
         setAuthorizationUnavailableNotice();
       }
-      await supabase.auth.signOut().catch(() => { });
+      await withAuthDeadline(supabase.auth.signOut(), 4_000).catch(() => { });
       setUser(null);
     }
   };
@@ -345,7 +380,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         const profile = data as any;
         if (!profile || !isActiveStatus(profile.status)) {
           setAccountInactiveNotice();
-          await supabase.auth.signOut().catch(() => { });
+          await withAuthDeadline(supabase.auth.signOut(), 4_000).catch(() => { });
           if (!disposed) setUser(null);
         }
       } finally {
@@ -374,7 +409,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     pass: string
   ): Promise<User | null> => {
 
+    if (explicitLogin.current) throw new SupabaseAuthError('Sign-in is already in progress.');
+    explicitLogin.current = true;
+    const generation = ++authGeneration.current;
     setLoading(true);
+    setAuthError(null);
 
     try {
       const normalizedEmail = email.trim().toLowerCase();
@@ -387,10 +426,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       let error: any = null;
 
       try {
-        const result = await supabase.auth.signInWithPassword({
+        const result = await withAuthDeadline(supabase.auth.signInWithPassword({
           email: normalizedEmail,
           password: pass,
-        });
+        }));
         data = result.data;
         error = result.error;
       } catch (err) {
@@ -421,7 +460,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         const profile = await buildAppUserFromSupabase(sbUser);
         if (!profile) {
           setHrPendingNotice();
-          await supabase.auth.signOut().catch(() => { });
+          await withAuthDeadline(supabase.auth.signOut(), 4_000).catch(() => { });
           throw new SupabaseAuthError(
             'Your account is pending HR approval.',
             'hr_pending'
@@ -432,13 +471,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         const isActive = statusLower === 'active';
         if (!isActive) {
           setAccountInactiveNotice();
-          await supabase.auth.signOut().catch(() => { });
+          await withAuthDeadline(supabase.auth.signOut(), 4_000).catch(() => { });
           throw new SupabaseAuthError(
             'Your HRIS account is inactive. Contact HR or an administrator if access should be restored.',
             'account_inactive'
           );
         }
 
+        if (generation !== authGeneration.current) return null;
         setUser(userCandidate);
         return userCandidate;
       }
@@ -446,8 +486,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       console.warn('[Auth] signInWithPassword failed', error);
       throw new SupabaseAuthError(supabaseErrorMsg, supabaseErrorCode);
     } finally {
-      setLoading(false);
-
+      explicitLogin.current = false;
+      if (generation === authGeneration.current) setLoading(false);
     }
   };
 
@@ -460,6 +500,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
   };
 
   const logout = () => {
+    ++authGeneration.current;
+    setUser(null);
+    setLoading(false);
+    setAuthError(null);
     supabase.auth
       .signOut()
       .catch((err) => console.error('AuthProvider.logout error', err))
@@ -475,6 +519,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       value={{
         user,
         loading,
+        authError,
+        retryAuth,
         login,
         forceLogin,
         loginWithGoogle,
