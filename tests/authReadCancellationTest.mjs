@@ -13,7 +13,7 @@ const compile=path=>ts.transpileModule(readFileSync(path,'utf8').replaceAll('imp
 const deadline={exports:{}};
 vm.runInNewContext(compile('services/authDeadline.ts'),{...common,exports:deadline.exports});
 const client={exports:{}};
-vm.runInNewContext(compile('services/supabaseClient.ts'),{...common,exports:client.exports,require:name=>name==='./authDeadline'?deadline.exports:{createClient:()=>({})}});
+vm.runInNewContext(compile('services/supabaseClient.ts'),{...common,exports:client.exports,require:name=>name==='./authDeadline'?deadline.exports:name==='./performanceTelemetry'?{recordRequestTiming(){}}:{createClient:()=>({})}});
 let signal,calls=0;
 const hung=client.exports.boundedAuthRead(s=>{signal=s;calls++;return new Promise(()=>{});});
 const rejected=assert.rejects(hung,e=>e.code==='authorization_timeout');

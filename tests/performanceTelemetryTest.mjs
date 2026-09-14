@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+const code=path=>ts.transpileModule(readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+const api={exports:{}};let logs=0;
+vm.runInNewContext(code('api/performance.ts'),{exports:api.exports,console:{info(){logs++;}}});
+const sample={operation:'attendance_save',durationMs:110,status:200,sampleRate:.1};
+assert.ok(api.exports.validSamples({samples:[sample]}));
+for(const bad of [{samples:[{...sample,email:'private'}]},{samples:[{...sample,operation:'private-email'}]},{samples:[{...sample,durationMs:Infinity}]},{samples:[sample],token:'secret'},{samples:Array(21).fill(sample)}])assert.equal(api.exports.validSamples(bad),null);
+function call(origin,body,method='POST'){let status;const res={setHeader(){},status(v){status=v;return this;},end(){}};api.exports.default({method,headers:{origin,'content-type':'application/json'},body},res);return status;}
+assert.equal(call('https://other.invalid',{samples:[sample]}),403);assert.equal(logs,0);
+assert.equal(call('https://hris.thenextperience.com',{samples:[sample]}),204);assert.equal(logs,1);
+const client={exports:{}};let callback,sends=0,payload;
+vm.runInNewContext(code('services/performanceTelemetry.ts'),{exports:client.exports,URL,window:{location:{hostname:'hris.thenextperience.com'}},performance:{now:()=>100},Math:{random:()=>0,round:Math.round,min:Math.min,max:Math.max},setTimeout:fn=>{callback=fn;return 1;},fetch:async(url,opts)=>{sends++;payload=JSON.parse(opts.body);}});
+client.exports.recordRequestTiming('https://kpogfmwsxwikfilxhcqh.supabase.co/rest/v1/rpc/get_my_attendance?employee=private',0,200);
+client.exports.recordRequestTiming('https://other.invalid/auth/v1/token',0,200);
+callback();assert.equal(sends,1);assert.equal(payload.samples.length,1);assert.equal(JSON.stringify(payload).includes('private'),false);
+for(let i=0;i<100;i++)client.exports.recordRequestTiming('https://kpogfmwsxwikfilxhcqh.supabase.co/auth/v1/token',0,0);
+callback();assert.equal(payload.samples.length,20);
+console.log('PASS: strict schema, origin check, no identifiers/URLs, bounded client batch, no database work.');
