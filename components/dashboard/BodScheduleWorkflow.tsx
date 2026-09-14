@@ -47,7 +47,7 @@ export default function BodScheduleWorkflow() {
   {error&&<div className={box} role="alert">{error} <button className="underline" onClick={()=>setRevision(v=>v+1)}>Retry</button></div>}
   {notice&&<p className={box} role="status">{notice}</p>}
   {data&&!data.isBod&&<ScheduleTask />}
-  {data?.eligible&&<section id="my-schedule-submission" className={box}>
+  {data?.eligible&&!data.isBod&&<section id="my-schedule-submission" className={box}>
    <h2 className="text-xl font-bold">{data.submission?.status==='Pending'?'Your schedule is awaiting BOD approval':data.submission?.status==='Approved'?'Your schedule was approved':'Submit your schedule for BOD approval'}</h2>
    <p className="mt-2">You report directly to {data.managerName}. Prepare your own schedule; your BOD will approve or reject it.</p>
    <div className="my-3 flex flex-wrap items-center gap-3"><label>Week starting Monday <input aria-label="Schedule week starting Monday" className={input} type="date" value={week||data.week} onChange={e=>{setWeek(e.target.value);setOpen(false);}}/></label><p>Deadline: {new Date(data.deadline).toLocaleString('en-PH',{timeZone:'Asia/Manila'})} Philippine time</p></div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { User, EmployeeDraft, SalaryBreakdown, RateType, TaxStatus, EmploymentStatus } from '../../types';
+import { User, EmployeeDraft, SalaryBreakdown, RateType, TaxStatus, EmploymentStatus, Role } from '../../types';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
@@ -22,6 +22,7 @@ interface ProfileEditModalProps {
 type Tab = 'personal' | 'gov' | 'emergency' | 'banking' | 'compensation' | 'leave';
 
 const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, user, onSave, onSaveDraft, draft, isAdminEdit = false, canManageEndDate = false, canEditEmployeeId = false, employmentFieldsOnly = false }) => {
+  const isBodProfile = user.role === Role.BOD || user.roles?.includes(Role.BOD);
   const [activeTab, setActiveTab] = useState<Tab>('personal');
   const [formData, setFormData] = useState<Partial<User>>({});
   const [validationError, setValidationError] = useState('');
@@ -486,17 +487,18 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ isOpen, onClose, us
                 <label className="block text-sm font-medium">Reports To</label>
                 <select
                   name="reportsTo"
-                  value={formData.reportsTo || ''}
+                  value={isBodProfile ? '' : formData.reportsTo || ''}
+                  disabled={isBodProfile}
                   onChange={handleChange}
                   className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                 >
-                  <option value="">Select manager</option>
+                  <option value="">{isBodProfile ? 'No reporting manager — Board of Director' : 'Select manager'}</option>
                   {reportsToOptions.map(option => (
                     <option key={option.id} value={option.id}>{option.label}</option>
                   ))}
                 </select>
                 <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                  {(user.role === 'Manager' || user.role === 'Business Unit Manager')
+                  {isBodProfile ? 'Board of Directors do not report to a manager.' : (user.role === 'Manager' || user.role === 'Business Unit Manager')
                     ? 'Managers may report to: Operations Director, General Manager, Board of Director, or Admin.'
                     : 'Employees may report to: their Business Unit Manager, Manager, Auditor, or HR Manager.'}
                 </p>
