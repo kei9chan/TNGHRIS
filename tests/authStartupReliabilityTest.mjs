@@ -18,7 +18,7 @@ function fixture() {
   let bootstrapCalls=0, rbacCalls=0, getUserCalls=0;
   const f={session:{user:{id:'auth-a',email:'a@example.invalid'}},profile:{id:'employee-a',full_name:'Employee A',role:'Employee',status:'Active'},rbac:{authorized:true,roles:['Employee'],primaryRole:'Employee'},bootstrap:null};
   const supabase={auth:{getSession:async()=>f.sessionRead?await f.sessionRead.promise:({data:{session:f.session},error:null}),getUser:async()=>{getUserCalls++;throw Error('Startup should verify through server RPCs');},onAuthStateChange:cb=>{listener=cb;return {data:{subscription:{unsubscribe(){}}}};},signOut:async()=>({error:null}),signInWithPassword:async()=>{listener('SIGNED_IN',f.session);return {data:{user:f.session.user,session:f.session},error:null};}},
-    rpc:async()=>{bootstrapCalls++;return f.bootstrap?await f.bootstrap.promise:{data:f.profile,error:null};}};
+    rpc:()=>({abortSignal:()=>{bootstrapCalls++;return f.bootstrap?f.bootstrap.promise:Promise.resolve({data:f.profile,error:null});}})};
   const common={...clock,console:{log(){},warn(){},error(){}},URL,Request,AbortController,localStorage:{setItem(){}},window:{...clock,setInterval:()=>0,clearInterval(){},addEventListener(){},removeEventListener(){}},document:{addEventListener(){},removeEventListener(){}}};
   const deadline={exports:{}};vm.runInNewContext(transpile('services/authDeadline.ts'),{...common,exports:deadline.exports});
   const module={exports:{}};
@@ -27,7 +27,7 @@ function fixture() {
     if(name.endsWith('/types'))return {Role:{Employee:'Employee',Admin:'Admin'}};
     if(name.endsWith('/authDeadline'))return deadline.exports;
     if(name.endsWith('/rbacService'))return {fetchEffectiveRbacSnapshot:async()=>{rbacCalls++;return {data:f.rbac,error:null};}};
-    if(name.endsWith('/supabaseClient'))return {supabase,retryTransientSupabaseRead:fn=>fn(),isTransientNetworkError:e=>e?.code==='authorization_timeout'};
+    if(name.endsWith('/supabaseClient'))return {supabase,boundedAuthRead:fn=>deadline.exports.withAuthDeadline(fn(new AbortController().signal)),retryTransientSupabaseRead:fn=>fn(),isTransientNetworkError:e=>e?.code==='authorization_timeout'};
     throw Error(name);
   }});
   f.render=()=>{hook=0;const value=module.exports.AuthProvider({children:null});const pending=effects;effects=[];pending.forEach(fn=>fn());return value;};
@@ -92,3 +92,10 @@ assert.equal(calls,1);pending.resolve('verified');assert.equal(await a,'verified
 await cache.exports.dedupeRead('user-a',async()=>{calls++;return 'fresh';},10000,true);assert.equal(calls,2);
 await cache.exports.dedupeRead('user-b',async()=>{calls++;return 'other';},10000);assert.equal(calls,3);
 console.log('PASS: verified startup, session deduplication, deadline, retry, stale response/logout, inactive/unauthorized denial, signed-out startup, per-user refresh deduplication.');
+
+// A slow older authorization response must not overwrite a forced fresh snapshot.
+const old=deferred();
+const oldRead=cache.exports.dedupeRead('race',()=>old.promise,10000);
+await cache.exports.dedupeRead('race',async()=>'revoked',10000,true);
+old.resolve('old-access');await oldRead;
+assert.equal(await cache.exports.dedupeRead('race',async()=>'unexpected',10000),'revoked');

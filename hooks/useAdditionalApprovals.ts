@@ -123,6 +123,7 @@ const actionLabel = (action: Record<string, unknown> | null | undefined) => {
 
 export function useAdditionalApprovals(user: User | null) {
   const refreshSequence = useRef(0);
+  const pendingRefreshes = useRef(new Map<string | undefined, number>());
   const lastViewer = useRef(user?.id);
   const [pendingNTEApprovals, setPendingNTEApprovals] = useState<PendingNTEApproval[]>([]);
   const [pendingPANApprovals, setPendingPANApprovals] = useState<PendingPANApproval[]>([]);
@@ -135,6 +136,8 @@ export function useAdditionalApprovals(user: User | null) {
   const [additionalApprovalsLoading, setAdditionalApprovalsLoading] = useState(true);
 
   const refreshAdditionalApprovals = useCallback(async () => {
+    const viewer = user?.id;
+    pendingRefreshes.current.set(viewer, (pendingRefreshes.current.get(viewer) || 0) + 1);
     const sequence = ++refreshSequence.current;
     setAdditionalApprovalsLoading(true);
     try {
@@ -337,6 +340,9 @@ export function useAdditionalApprovals(user: User | null) {
     } catch (error: any) {
       if (sequence === refreshSequence.current) setAdditionalApprovalError(error?.message || 'Approval requests could not be loaded. Please retry.');
     } finally {
+      const remaining = (pendingRefreshes.current.get(viewer) || 1) - 1;
+      if (remaining) pendingRefreshes.current.set(viewer, remaining);
+      else pendingRefreshes.current.delete(viewer);
       if (sequence === refreshSequence.current) setAdditionalApprovalsLoading(false);
     }
   }, [user?.id]);
@@ -344,10 +350,10 @@ export function useAdditionalApprovals(user: User | null) {
   useEffect(() => {
     refreshAdditionalApprovals();
     const interval = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void refreshAdditionalApprovals();
+      if (document.visibilityState === 'visible' && !pendingRefreshes.current.get(user?.id)) void refreshAdditionalApprovals();
     }, 30000);
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible') void refreshAdditionalApprovals();
+      if (document.visibilityState === 'visible' && !pendingRefreshes.current.get(user?.id)) void refreshAdditionalApprovals();
     };
     document.addEventListener('visibilitychange', handleVisibility);
     return () => {

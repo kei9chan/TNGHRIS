@@ -21,7 +21,9 @@ export const dedupeRead = async <T>(
 
   const promise = loader().then(
     value => {
-      readCache.set(key, { value, expiresAt: Date.now() + ttlMs });
+      if ((readCache.get(key) as ReadCacheEntry<T> | undefined)?.promise === promise) {
+        readCache.set(key, { value, expiresAt: Date.now() + ttlMs });
+      }
       return value;
     },
     error => {
