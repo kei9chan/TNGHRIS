@@ -1,5 +1,5 @@
 import { fetchActionableApprovalTasks } from '../services/actionableApprovalService';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { User } from '../types';
 import { fetchOfferApprovalPackage, fetchPendingOfferApprovalIds } from '../services/offerApprovalService';
@@ -122,6 +122,8 @@ const actionLabel = (action: Record<string, unknown> | null | undefined) => {
 };
 
 export function useAdditionalApprovals(user: User | null) {
+  const refreshSequence = useRef(0);
+  const lastViewer = useRef(user?.id);
   const [pendingNTEApprovals, setPendingNTEApprovals] = useState<PendingNTEApproval[]>([]);
   const [pendingPANApprovals, setPendingPANApprovals] = useState<PendingPANApproval[]>([]);
   const [pendingRequisitionApprovals, setPendingRequisitionApprovals] = useState<PendingRequisitionApproval[]>([]);
@@ -132,6 +134,17 @@ export function useAdditionalApprovals(user: User | null) {
   const [additionalApprovalError, setAdditionalApprovalError] = useState<string | null>(null);
 
   const refreshAdditionalApprovals = useCallback(async () => {
+    const sequence = ++refreshSequence.current;
+    if (lastViewer.current !== user?.id) {
+      lastViewer.current = user?.id;
+      setPendingNTEApprovals([]);
+      setPendingPANApprovals([]);
+      setPendingRequisitionApprovals([]);
+      setPendingAwardApprovals([]);
+      setPendingOfferApprovals([]);
+      setPendingAssetApprovals([]);
+      setPendingBenefitApprovals([]);
+    }
     if (!user?.id) {
       setPendingNTEApprovals([]);
       setPendingPANApprovals([]);
@@ -189,10 +202,14 @@ export function useAdditionalApprovals(user: User | null) {
       }
     }));
 
+    if (sequence !== refreshSequence.current) return;
     const actionable = (type: string, id: string) => taskResult.data.some(t => t.request_type === type && t.request_id === id);
     const nteRows = (nteResult.data || []).filter((r: any) => actionable('nte', r.id));
     const errors = [taskResult.error, nteResult.error, panResult.error, requisitionResult.error, awardResult.error, offerLoadError, assetLoadError, benefitLoadError, ...offerPackageErrors].filter(Boolean);
     setAdditionalApprovalError(errors.length ? errors.map(error => error!.message).join(' · ') : null);
+    // A failed refresh is not an empty queue. Keep the last successful result
+    // with a visible error; decisions still require backend authorization.
+    if (taskResult.error) return;
 
     setPendingNTEApprovals(nteRows.map((row: any) => {
       const reference = row.nte_code || (row.nte_number ? `NTE-${row.nte_number}` : `NTE-${String(row.id).slice(0, 8)}`);
@@ -216,7 +233,7 @@ export function useAdditionalApprovals(user: User | null) {
       };
     }));
 
-    setPendingPANApprovals((panResult.data || []).flatMap((row: any) => {
+    if (!panResult.error) setPendingPANApprovals((panResult.data || []).flatMap((row: any) => {
       if (!actionable('pan', row.id)) return [];
       const steps: PendingStep[] = Array.isArray(row.routing_steps) ? row.routing_steps : [];
       const stepIndex = steps.findIndex(step => step.userId === user.id && isPending(step.status));
@@ -335,6 +352,9 @@ export function useAdditionalApprovals(user: User | null) {
     if (!user?.id) return;
     const channel = supabase
       .channel(`asset-approval-queue-${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pans' }, () => {
+        void refreshAdditionalApprovals();
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'asset_requests' }, () => {
         void refreshAdditionalApprovals();
       })
