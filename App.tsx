@@ -76,7 +76,7 @@ const Timekeeping = React.lazy(() => import('./pages/payroll/Timekeeping'));
 const ClockInOut = React.lazy(() => import('./pages/payroll/ClockInOut'));
 const ClockLog = React.lazy(() => import('./pages/payroll/ClockLog'));
 const OvertimeRequests = React.lazy(() => import('./pages/payroll/OvertimeRequests'));
-import WFHRequests from './pages/payroll/WFHRequests'; // NEW
+const WFHRequests = React.lazy(() => import('./pages/payroll/WFHRequests'));
 const Leave = React.lazy(() => import('./pages/payroll/Leave'));
 const LeaveCredits = React.lazy(() => import('./pages/payroll/LeaveCredits'));
 const Loans = React.lazy(() => import('./pages/payroll/Loans'));
@@ -180,7 +180,7 @@ const routePermissions: Array<[string, Resource, Permission]> = [
 ].sort(([leftPath], [rightPath]) => rightPath.length - leftPath.length);
 
 const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }) => {
-  const { user, loading } = useAuth();
+  const { user, loading, authError, retryAuth } = useAuth();
   const { can } = usePermissions();
   const { effectiveRbac, loadingPermissions, authorizationError, authorizationTransient, refreshPermissions } = usePermissionsContext();
   const location = useLocation();
@@ -203,6 +203,14 @@ const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }
   }
 
   if (!user) {
+    if (authError) return <div className="flex min-h-screen items-center justify-center p-6">
+      <div role="alert" className="w-full max-w-lg rounded-xl border bg-white p-6 dark:bg-slate-900 dark:text-white">
+        <h1 className="text-xl font-bold">Connection interrupted</h1>
+        <p className="mt-3">{authError}</p>
+        <button className="mt-5 rounded bg-indigo-600 px-5 py-3 font-semibold text-white" onClick={retryAuth}>Retry connection</button>
+        <a className="ml-4 underline" href="/login">Back to sign in</a>
+      </div>
+    </div>;
     return <Navigate to="/login" replace />;
   }
 

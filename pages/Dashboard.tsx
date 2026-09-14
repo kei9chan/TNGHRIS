@@ -5,10 +5,10 @@ import BodScheduleWorkflow from '../components/dashboard/BodScheduleWorkflow';
 import React from 'react';
 import AttendanceMission from '../components/attendance/AttendanceClock';
 import { useAuth } from '../hooks/useAuth';
-import HRDashboard from '../components/dashboard/HRDashboard';
-import ManagerDashboard from '../components/dashboard/ManagerDashboard';
+const HRDashboard = React.lazy(() => import('../components/dashboard/HRDashboard'));
+const ManagerDashboard = React.lazy(() => import('../components/dashboard/ManagerDashboard'));
 // FIX: Changed to a named import as the default export was not being resolved correctly, likely due to syntax errors in the imported file.
-import EmployeeDashboard from '../components/dashboard/EmployeeDashboard';
+const EmployeeDashboard = React.lazy(() => import('../components/dashboard/EmployeeDashboard'));
 import PayrollApprovalNotice from '../modules/payroll/PayrollApprovalNotice';
 import { Link } from 'react-router-dom';
 import AlertBanner from '../components/dashboard/AlertBanner';
@@ -46,7 +46,9 @@ const Dashboard: React.FC = () => {
         <AlertBanner />
         <PayrollApprovalNotice />
         <ApprovalFollowupCard />
-        {renderDashboard()}
+        <React.Suspense fallback={<p role="status" className="p-4">Loading your dashboard…</p>}>
+          {renderDashboard()}
+        </React.Suspense>
     </div>
   );
 };

@@ -146,7 +146,9 @@ const SessionPermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
                 if (includeProfile) {
                     await Promise.all([refreshPermissions(), refreshUser()]);
                 } else {
-                    await refreshPermissions();
+                    // Focus/visibility are read checks. Reuse the short verified
+                    // cache; permission-change events above still force a read.
+                    await loadPermissions(false);
                 }
             } catch (error) {
                 console.warn('Unable to refresh effective access.', error);
@@ -184,7 +186,7 @@ const SessionPermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
             document.removeEventListener('visibilitychange', handleVisibility);
             void supabase.removeChannel(channel);
         };
-    }, [user?.id, refreshPermissions, refreshUser]);
+    }, [user?.id, refreshPermissions, refreshUser, loadPermissions]);
 
     const permissionsMatrix = effectiveRbac?.authorized
         ? { effective: effectiveRbac.features }

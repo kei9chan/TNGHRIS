@@ -1,11 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
+import { fetchWithAuthTimeout } from './authDeadline';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL!;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY!;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   global: { fetch: async (input, init) => {
-    const response = await fetch(input, init);
+    const response = await fetchWithAuthTimeout(input, init);
     if (!response.ok && typeof window !== 'undefined') {
       const body = await response.clone().json().catch(() => null);
       if (body?.message === 'ACKNOWLEDGMENT_REQUIRED') window.dispatchEvent(new Event('acknowledgment-required'));
@@ -21,6 +22,7 @@ const TRANSIENT_DELAYS_MS = [250, 800] as const;
 export const isTransientNetworkError = (error: unknown): boolean => {
   if (!error) return false;
   const candidate = error as any;
+  if (candidate?.code === 'authorization_timeout') return true;
   const status = Number(candidate?.status || candidate?.statusCode || 0);
   if ([408, 502, 503, 504, 520].includes(status)) return true;
 
