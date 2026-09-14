@@ -1,0 +1,19 @@
+// Isolated component fixtures: no authentication, network requests or production mutations.
+export const date = new Date('2026-09-14T00:00:00Z');
+const row = {id:'test-1',employeeId:'employee-1',employeeName:'Test Employee',canonicalKey:'test',createdAt:date,submittedAt:date,status:'Pending',reference:'TEST-1',currentStep:'BOD approval',approvalRoute:'BOD_REQUIRED',date,startDate:date,endDate:date,effectiveDate:date,reason:'Test request',durationDays:1,startTime:'18:00',endTime:'20:00'};
+export const fixture = Object.fromEntries(['Leave','Wfh','Ot','Manpower','NTE','PAN','Benefit','Requisition','Award','Offer','Asset'].map((kind,i)=>['pending'+kind+'Approvals',[{...row,id:'test-'+kind,canonicalKey:kind+':1',title:'Test role',action:'Promotion',awardTitle:'Service',candidateName:'Test Candidate',jobTitle:'Test role',businessUnit:'Test BU',benefitTypeName:'Test benefit',submissionDate:date,dateNeeded:date,requesterName:'Test Employee',assetDescription:'Test asset',approvalStage:'BOD_GM'}]]));
+fixture.pendingPANApprovals.push({...fixture.pendingPANApprovals[0],id:'test-PAN-2',canonicalKey:'PAN:2'});
+export const attendanceFixture = {id:'test-attendance',employee_id:'employee-1',employeeName:'Test Employee',kind:'absence',work_date:'2026-09-14',submitted_at:date.toISOString(),due_at:'2026-09-15',schedule:{},canReview:true};
+export const panFixture = {id:'pan-preview',employeeId:'employee-1',employeeName:'Test Employee',createdByUserId:'hr',status:'Pending Approval',effectiveDate:date,actionTaken:{promotion:true,salaryIncrease:true},particulars:{from:{businessUnit:'Test BU',department:'Operations',position:'Staff',salary:{basic:18000,deminimis:0,reimbursable:0,payBasis:'gross'}},to:{businessUnit:'Test BU',department:'Operations',position:'Supervisor',salary:{basic:21000,deminimis:1000,reimbursable:0,payBasis:'gross'}}},routingSteps:[{id:'step1',order:0,userId:'hr',name:'HR reviewer',role:'Approver',status:'Approved',notes:'Reviewed'},{id:'step2',order:1,userId:'test',name:'Test Director',role:'Board of Director',status:'Pending'},{id:'step3',order:2,userId:'director2',name:'Second Director',role:'Board of Director',status:'Pending'}]};
+export function fixturePlugin(){return {name:'approval-ui-fixtures',setup(b){
+ b.onResolve({filter:/hooks\/use(Auth|Approvals|AdditionalApprovals)$|services\/(attendanceIssues|supabaseClient)$|context\/SettingsContext$|approvals\/RecentDecisions$|\/(LeaveRequestModal|OTRequestModal|WFHReviewModal|ManpowerReviewModal|OfferApprovalReviewModal|AssetRequestApprovalModal)$/},args=>({path:args.path,namespace:'fixture'}));
+ b.onLoad({filter:/.*/,namespace:'fixture'},args=>{
+ let contents='export default () => null;';
+ if(args.path.endsWith('useAuth'))contents="export const useAuth=()=>({user:{id:'test',role:'Board of Director'}});";
+ else if(/use(Additional)?Approvals$/.test(args.path)) contents='export const '+(args.path.endsWith('useAdditionalApprovals')?'useAdditionalApprovals':'useApprovals')+'=()=>({...globalThis.inboxFixture,refreshApprovals:async()=>{},refreshAdditionalApprovals:async()=>{}});';
+ else if(args.path.endsWith('attendanceIssues'))contents='export const useAttendanceIssues=()=>({rows:globalThis.attendanceFixture,pending:globalThis.attendanceFixture,load:async()=>{}}); export const issueLabels={absence:"Absence"}; export const shiftText=()=>"Test shift";';
+ else if(args.path.endsWith('supabaseClient'))contents='const response=()=>Promise.resolve({data:[],error:null}); const query={select:()=>query,in:()=>query,eq:()=>query,then:(a,b)=>response().then(a,b)}; export const supabase={rpc:response,from:()=>query};';
+ else if(args.path.endsWith('SettingsContext'))contents='export const useSettings=()=>({approverConfigs:{conditionalTimeApprovals:{valid:true}}});';
+ return {contents,loader:'js'};
+ });
+}};}

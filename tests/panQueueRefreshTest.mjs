@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 const source=readFileSync(new URL('../hooks/useAdditionalApprovals.ts',import.meta.url),'utf8');
 const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;
-const states=[];let id='first',taskError=false,panError=false,delay;
+const states=[];let id='first',taskError=false,panError=false,nteError=false,unexpected=false,delay;
 const empty={data:[],error:null};
 const deps={
  react:{useRef:v=>({current:v}),useState:v=>{const i=states.length;states.push(v);return [v,x=>{states[i]=x;}];},useCallback:f=>f,useEffect(){}},
@@ -14,9 +14,9 @@ const deps={
  '../services/actionableApprovalService':{fetchActionableApprovalTasks:async()=>{
   const value=id;if(taskError)throw new Error('Task refresh failed');
   if(delay){const promise=delay;delay=null;await promise;}
-  return [{request_type:'pan',request_id:value}];
+  return [{request_type:'pan',request_id:value},{request_type:'nte',request_id:'nte-test'}];
  }},
- '../services/supabaseClient':{supabase:{rpc:async()=>empty,from:table=>({
+ '../services/supabaseClient':{supabase:{rpc:async()=>{if(unexpected)throw new Error('Network interrupted');return {data:[{id:'nte-test',recipient_name:'Test',created_at:'2026-09-14'}],error:nteError?{message:'NTE refresh failed'}:null};},from:table=>({
   select(){return this;},eq(){return this;},in(){return this;},order:async()=>table==='pans'?{data:[{id,employee_name:'Test',routing_steps:[{userId:'viewer',status:'Pending'}]}],error:panError?{message:'PAN refresh failed'}:null}:empty,
  })}},
 };
@@ -28,5 +28,9 @@ taskError=false;panError=true;await hook.refreshAdditionalApprovals();assert.equ
 panError=false;let release;delay=new Promise(resolve=>{release=resolve;});id='slow-old';
 const old=hook.refreshAdditionalApprovals();id='newest';await hook.refreshAdditionalApprovals();release();await old;
 assert.equal(states[1][0].id,'newest','Older response must not overwrite newer PAN queue');
-assert.equal(states[7],null);
-console.log('PASS: last successful PAN queue retained on task/PAN errors; out-of-order refresh ignored.');
+assert.equal(states[7],null);assert.equal(states[8],false);
+assert.equal(states[0][0].id,'nte-test');
+nteError=true;await hook.refreshAdditionalApprovals();assert.equal(states[0][0].id,'nte-test');assert.match(states[7],/NTE refresh failed/);
+nteError=false;unexpected=true;await hook.refreshAdditionalApprovals();assert.equal(states[1][0].id,'newest');assert.match(states[7],/Network interrupted/);assert.equal(states[8],false);
+unexpected=false;await hook.refreshAdditionalApprovals();assert.equal(states[7],null);
+console.log('PASS: PAN/NTE queues retained on errors; thrown network failure handled; loading completes; out-of-order refresh ignored.');
