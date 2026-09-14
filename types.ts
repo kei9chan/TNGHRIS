@@ -647,6 +647,7 @@ export interface User {
   id: string;
   employeeId?: string;
   authUserId?: string;
+  mustChangePassword?: boolean; // Navigation hint from the authenticated session; never grants access.
   name: string;
   email: string;
   role: Role;

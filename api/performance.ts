@@ -1,5 +1,5 @@
 // This endpoint accepts no identity or free-text fields and never accesses the DB.
-const operations=new Set(['auth_token','access_profile','access_permissions','attendance_read','attendance_history','attendance_save','employee_directory','approval_tasks']);
+const operations=new Set(['access_profile_complete','access_permissions_complete','auth_token','access_profile','access_permissions','attendance_read','attendance_history','attendance_save','employee_directory','approval_tasks']);
 export function validSamples(body:unknown){
  if(!body||typeof body!=='object'||Array.isArray(body))return null;
  if(Object.keys(body).length!==1||!('samples' in body))return null;

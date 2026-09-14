@@ -13,8 +13,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     catch (error) { recordRequestTiming(input, started, 0); throw error; }
     recordRequestTiming(input, started, response.status);
     if (!response.ok && typeof window !== 'undefined') {
-      const body = await response.clone().json().catch(() => null);
-      if (body?.message === 'ACKNOWLEDGMENT_REQUIRED') window.dispatchEvent(new Event('acknowledgment-required'));
+      void response.clone().json().then(body => {
+        if (body?.message === 'ACKNOWLEDGMENT_REQUIRED') window.dispatchEvent(new Event('acknowledgment-required'));
+      }).catch(() => {});
     }
     return response;
   } },
@@ -27,7 +28,7 @@ const TRANSIENT_DELAYS_MS = [250, 800] as const;
 export const isTransientNetworkError = (error: unknown): boolean => {
   if (!error) return false;
   const candidate = error as any;
-  if (candidate?.code === 'authorization_timeout') return true;
+  if (['authorization_timeout', 'network_unavailable'].includes(candidate?.code) || candidate?.isAcquireTimeout === true) return true;
   const status = Number(candidate?.status || candidate?.statusCode || 0);
   if ([408, 502, 503, 504, 520].includes(status)) return true;
 

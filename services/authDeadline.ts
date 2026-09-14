@@ -29,7 +29,13 @@ export async function fetchWithAuthTimeout(input: RequestInfo | URL, init?: Requ
   else source?.addEventListener('abort', abort, { once: true });
   const timer = setTimeout(() => controller.abort(new AuthTimeoutError()), 10_000);
   try {
-    return await fetch(input, { ...init, signal: controller.signal });
+    const response = await fetch(input, { ...init, signal: controller.signal });
+    // Auth's SDK reads JSON after fetch returns. Keep the deadline active until
+    // the body is received so a stalled body cannot hold its session lock open.
+    const body = await response.arrayBuffer();
+    return new Response(body.byteLength ? body : null, {
+      status: response.status, statusText: response.statusText, headers: response.headers,
+    });
   } finally {
     clearTimeout(timer);
     source?.removeEventListener('abort', abort);

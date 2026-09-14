@@ -3,7 +3,6 @@ import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { DeviceConflictError, SupabaseAuthError } from '../context/AuthContext';
 import GoogleIcon from '../components/icons/GoogleIcon';
-import { supabase } from '../services/supabaseClient';
 
 const FloatingIcon: React.FC<{ children: React.ReactNode; delay?: string; className?: string }> = ({ children, delay = '0s', className = '' }) => (
   <div 
@@ -24,11 +23,12 @@ const Login: React.FC = () => {
   const [isDeviceConflict, setDeviceConflict] = useState(false);
 
   // we still read user, but only to auto-redirect if already logged in
-  const { user, login, forceLogin, loginWithGoogle } = useAuth();
+  const { user, loading: authLoading, authError, retryAuth, login, forceLogin, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [successMessage, setSuccessMessage] = useState(location.state?.message || '');
   const formatSupabaseError = (err: SupabaseAuthError) => {
+    if (err.code === 'authorization_timeout') return err.message;
     if (err.code === 'invalid_credentials') return 'Invalid email or password.';
     if (err.code === 'email_not_confirmed') return 'Please verify your email. Use Forgot password to request a new email, or contact HRIS support.';
     if (err.code === 'hr_pending') return 'Your account is not fully set up. Please contact HRIS support.';
@@ -42,11 +42,7 @@ const Login: React.FC = () => {
   useEffect(() => {
     const isActive = (user?.status || '').toString().toLowerCase() === 'active';
     if (user && isActive) {
-      let mounted = true;
-      void supabase.auth.getSession().then(({ data }) => {
-        if (mounted) navigate(data.session?.user.user_metadata?.must_change_password ? '/reset-password' : '/dashboard');
-      });
-      return () => { mounted = false; };
+      navigate(user.mustChangePassword ? '/reset-password' : '/dashboard', { replace: true });
     }
   }, [user, navigate]);
 
@@ -89,10 +85,8 @@ const Login: React.FC = () => {
       const loggedInUser = await login(email, password);
 
 
-      if (loggedInUser) {
-        const { data } = await supabase.auth.getSession();
-        navigate(data.session?.user.user_metadata?.must_change_password ? '/reset-password' : '/dashboard');
-      } else {
+      // The verified user effect redirects without another session read.
+      if (!loggedInUser) {
         // covers: wrong password, Supabase user not found,
         // or status not Active (if you add that gate in AuthContext)
         setError('Your account access could not be loaded. Please contact HRIS support.');
@@ -121,10 +115,8 @@ const Login: React.FC = () => {
 
     try {
       const loggedInUser = await forceLogin(email, password);
-      if (loggedInUser) {
-        const { data } = await supabase.auth.getSession();
-        navigate(data.session?.user.user_metadata?.must_change_password ? '/reset-password' : '/dashboard');
-      } else {
+      // The verified user effect redirects without another session read.
+      if (!loggedInUser) {
         setError('Your account access could not be loaded. Please contact HRIS support.');
       }
     } catch (err) {
@@ -315,7 +307,17 @@ const Login: React.FC = () => {
             </div>
           )}
 
-          {error && (
+          {authError && (
+            <div role="alert" className="px-4 py-3 rounded-xl mb-6 bg-amber-50 text-amber-900 border border-amber-300">
+              <p>{authError}</p>
+              <button type="button" disabled={authLoading} onClick={() => { setError(''); retryAuth(); }}
+                className="mt-3 font-semibold underline disabled:opacity-50">
+                {authLoading ? 'Verifying access…' : 'Retry access check'}
+              </button>
+            </div>
+          )}
+
+          {error && !authError && (
             <div
               className={`px-4 py-3 rounded-xl relative mb-6 flex items-center ${
                 isDeviceConflict
@@ -399,7 +401,7 @@ const Login: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleForceSubmit}
-                  disabled={isLoading}
+                  disabled={isLoading || authLoading}
                   className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-amber-200 transform transition hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isLoading ? 'Processing...' : 'Force Sign In'}
@@ -407,10 +409,10 @@ const Login: React.FC = () => {
               ) : (
                 <button
                   type="submit"
-                  disabled={isLoading}
+                  disabled={isLoading || authLoading}
                   className="w-full bg-gradient-to-r from-violet-600 to-pink-500 hover:from-violet-500 hover:to-pink-400 text-white font-bold py-3.5 rounded-xl shadow-xl shadow-violet-200 transform transition hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isLoading ? (
+                  {isLoading || authLoading ? (
                     <span className="flex items-center justify-center">
                       <svg
                         className="animate-spin -ml-1 mr-3 h-5 w-5 text-white"

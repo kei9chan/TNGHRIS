@@ -15,25 +15,27 @@ function fixture() {
     useRef:initial=>{const i=hook++;return slots[i]??(slots[i]={current:initial});},useCallback:fn=>fn,
     useEffect:(fn,deps)=>{const i=hook++,prev=slots[i];if(!prev||deps.some((v,n)=>v!==prev.deps[n])){effects.push(()=>{prev?.cleanup?.();slots[i]={deps,cleanup:fn()};});}}
   };
-  let bootstrapCalls=0, rbacCalls=0, getUserCalls=0;
+  let bootstrapCalls=0, rbacCalls=0, getUserCalls=0, passwordCalls=0;
   const f={session:{user:{id:'auth-a',email:'a@example.invalid'}},profile:{id:'employee-a',full_name:'Employee A',role:'Employee',status:'Active'},rbac:{authorized:true,roles:['Employee'],primaryRole:'Employee'},bootstrap:null};
-  const supabase={auth:{getSession:async()=>f.sessionRead?await f.sessionRead.promise:({data:{session:f.session},error:null}),getUser:async()=>{getUserCalls++;throw Error('Startup should verify through server RPCs');},onAuthStateChange:cb=>{listener=cb;return {data:{subscription:{unsubscribe(){}}}};},signOut:async()=>({error:null}),signInWithPassword:async()=>{listener('SIGNED_IN',f.session);return {data:{user:f.session.user,session:f.session},error:null};}},
+  const supabase={auth:{getSession:async()=>f.sessionRead?await f.sessionRead.promise:({data:{session:f.session},error:null}),getUser:async()=>{getUserCalls++;throw Error('Startup should verify through server RPCs');},onAuthStateChange:cb=>{listener=cb;return {data:{subscription:{unsubscribe(){}}}};},signOut:async()=>({error:null}),signInWithPassword:async()=>{passwordCalls++;listener('SIGNED_IN',f.session);return {data:{user:f.session.user,session:f.session},error:null};}},
     rpc:()=>({abortSignal:()=>{bootstrapCalls++;return f.bootstrap?f.bootstrap.promise:Promise.resolve({data:f.profile,error:null});}})};
-  const common={...clock,console:{log(){},warn(){},error(){}},URL,Request,AbortController,localStorage:{setItem(){}},window:{...clock,setInterval:()=>0,clearInterval(){},addEventListener(){},removeEventListener(){}},document:{addEventListener(){},removeEventListener(){}}};
+  const common={...clock,performance:{now:()=>now},console:{log(){},warn(){},error(){}},URL,Request,AbortController,localStorage:{setItem(){}},window:{...clock,setInterval:()=>0,clearInterval(){},addEventListener(){},removeEventListener(){}},document:{addEventListener(){},removeEventListener(){}}};
   const deadline={exports:{}};vm.runInNewContext(transpile('services/authDeadline.ts'),{...common,exports:deadline.exports});
   const module={exports:{}};
-  vm.runInNewContext(transpile('context/AuthContext.tsx'),{...common,exports:module.exports,require:name=>{
+  vm.runInNewContext(transpile(process.env.AUTH_CONTEXT_SOURCE || 'context/AuthContext.tsx'),{...common,exports:module.exports,require:name=>{
     if(name==='react')return {...react,default:react};
     if(name.endsWith('/types'))return {Role:{Employee:'Employee',Admin:'Admin'}};
+    if(name.endsWith('/performanceTelemetry'))return {recordAuthStageTiming(){}};
     if(name.endsWith('/authDeadline'))return deadline.exports;
-    if(name.endsWith('/rbacService'))return {fetchEffectiveRbacSnapshot:async()=>{rbacCalls++;return {data:f.rbac,error:null};}};
-    if(name.endsWith('/supabaseClient'))return {supabase,boundedAuthRead:fn=>deadline.exports.withAuthDeadline(fn(new AbortController().signal)),retryTransientSupabaseRead:fn=>fn(),isTransientNetworkError:e=>e?.code==='authorization_timeout'};
+    if(name.endsWith('/rbacService'))return {fetchEffectiveRbacSnapshot:async()=>{rbacCalls++;return f.rbacRead ? await deadline.exports.withAuthDeadline(f.rbacRead.promise) : {data:f.rbac,error:null};}};
+    if(name.endsWith('/supabaseClient'))return {supabase,boundedAuthRead:fn=>deadline.exports.withAuthDeadline(fn(new AbortController().signal)),retryTransientSupabaseRead:fn=>fn(),isTransientNetworkError:e=>['authorization_timeout','network_unavailable'].includes(e?.code)};
     throw Error(name);
   }});
   f.render=()=>{hook=0;const value=module.exports.AuthProvider({children:null});const pending=effects;effects=[];pending.forEach(fn=>fn());return value;};
   f.advance=async ms=>{now+=ms;for(const [id,t] of [...timers])if(t.at<=now){timers.delete(id);t.fn();}await flush();};
   f.event=(event,session=f.session)=>listener(event,session);
   f.counts=()=>({bootstrapCalls,rbacCalls,getUserCalls});
+  f.passwordCalls=()=>passwordCalls;
   f.deadline=deadline.exports;
   return f;
 }
@@ -99,3 +101,26 @@ const oldRead=cache.exports.dedupeRead('race',()=>old.promise,10000);
 await cache.exports.dedupeRead('race',async()=>'revoked',10000,true);
 old.resolve('old-access');await oldRead;
 assert.equal(await cache.exports.dedupeRead('race',async()=>'unexpected',10000),'revoked');
+
+// Reproduce the screenshot: password accepted, then a profile timeout. Recovery
+// must verify fresh profile AND permissions and must not exchange the password again.
+for (const stage of ['profile', 'permissions']) for (const denied of [false, true]) {
+  f=fixture();f.session=null;f.render();await flush();
+  f.session={user:{id:'auth-a',user_metadata:{must_change_password:true}}};
+  f.bootstrap=deferred();
+  if(stage==='permissions'){f.bootstrap=null;f.rbacRead=deferred();}
+  const attempt=f.render().login('test@example.invalid','test-only-password');
+  const failure=assert.rejects(attempt,e=>e.code==='authorization_timeout' && e.message.includes(`ACCESS_${stage.toUpperCase()}_TIMEOUT`));
+  await flush();await f.advance(12000);await failure;
+  assert.equal(f.render().user,null);assert.equal(f.render().loading,false);
+  assert.match(f.render().authError,/Retry the access check/);
+  assert.equal(f.passwordCalls(),1);
+  f.bootstrap=null;f.rbacRead=null;f.rbac.authorized=!denied;
+  f.render().retryAuth();f.render();await flush();
+  assert.equal(f.passwordCalls(),1,'Recovery must not repeat authentication');
+  assert.equal(f.counts().bootstrapCalls,2);assert.equal(f.counts().rbacCalls,2);
+  assert.equal(f.render().loading,false);
+  if (denied) assert.equal(f.render().user,null,'Revoked permissions must block recovery');
+  else { assert.equal(f.render().user.id,'employee-a');assert.equal(f.render().user.mustChangePassword,true); }
+}
+console.log('PASS: password accepted → typed profile timeout → access-only retry, fresh RBAC denial, and password reset routing metadata.');
