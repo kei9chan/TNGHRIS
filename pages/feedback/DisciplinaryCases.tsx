@@ -2,7 +2,7 @@ import { useUsers, useBusinessUnits } from '../../hooks/useHRData';
 import { createNotification } from '../../services/notificationService';
 import { createCoachingSession } from '../../services/coachingService';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation, Link, useSearchParams } from 'react-router-dom';
 import { IncidentReport, ChatMessage, NTE, Resolution, IRStatus, Permission, NTEStatus, PipelineStage, Role, BusinessUnit, ResolutionType, ResolutionStatus, ApproverStep, ApproverStatus, Notification, NotificationType, CoachingSession, CoachingStatus, CoachingTrigger } from '../../types';
@@ -89,7 +89,7 @@ const getDerivedPipelineStage = (nte: NTE, allResolutions: Resolution[], report:
 };
 
 
-const DisciplinaryCases: React.FC = () => {
+const CaseWorkflow: React.FC = () => {
   const { user } = useAuth();
   const { can, getIrAccess, getAccessibleBusinessUnits } = usePermissions();
   const navigate = useNavigate();
@@ -1106,4 +1106,22 @@ const DisciplinaryCases: React.FC = () => {
   );
 };
 
+const CaseRegister = lazy(() => import('../../modules/case-register/CaseRegister'));
+const DisciplinaryCases: React.FC = () => {
+  const [params, setParams] = useSearchParams();
+  const { getIrAccess } = usePermissions();
+  const { user } = useAuth();
+  const access = getIrAccess();
+  const reporting = access.canView && !['self', 'none'].includes(access.scope);
+  const requested = params.get('view');
+  const view = reporting && ['register', 'reports', 'archived'].includes(requested || '') ? requested : 'kanban';
+  return <div className="space-y-5">
+    {reporting && <nav aria-label="Administrative case views" className="flex flex-wrap gap-2 border-b border-gray-200 dark:border-gray-700 pb-3">
+      {[['kanban', 'Kanban View'], ['register', 'Case Register'], ['reports', 'Reports & Analytics'], ['archived', 'Archived Cases']].map(([key, label]) =>
+        <button key={key} aria-current={view === key ? 'page' : undefined} onClick={() => setParams(key === 'kanban' ? {} : {view: key})}
+          className={`rounded-lg px-4 py-2 text-sm font-medium ${view === key ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200'}`}>{label}</button>)}
+    </nav>}
+    {view === 'kanban' ? <CaseWorkflow /> : <Suspense fallback={<p role="status">Loading case reporting…</p>}><CaseRegister key={`${user?.id}:${view}`} mode={view as 'register' | 'reports' | 'archived'} /></Suspense>}
+  </div>;
+};
 export default DisciplinaryCases;
