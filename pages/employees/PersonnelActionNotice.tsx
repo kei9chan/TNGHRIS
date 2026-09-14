@@ -1,9 +1,10 @@
+import { fetchActionableApprovalTasks } from '../../services/actionableApprovalService';
 import { panPayload, panSaveError } from '../../services/panPersistence';
 import { decisionSaved } from '../../services/approvalNavigation';
 // Phase E: mockDataCompat removed from PersonnelActionNotice
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { getApprovalRequestId } from '../../services/approvalDeepLinks';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -45,6 +46,8 @@ const emptyActions: PANActionTaken = {
 const PersonnelActionNotice: React.FC = () => {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const approvalInFlight = useRef(false);
   const { getPanAccess } = usePermissions();
 
   const [records, setRecords] = useState<PAN[]>([]);
@@ -316,23 +319,42 @@ const PersonnelActionNotice: React.FC = () => {
     } finally { acknowledgmentInFlight.current = false; }
   };
 
+  const approveAndContinue = async (pan: PAN, comment: string | null) => {
+    if (!user?.id || approvalInFlight.current) return;
+    approvalInFlight.current = true;
+    try {
+      const { data, error } = await supabase.rpc('approve_pan', { p_pan_id: pan.id, p_comment: comment });
+      if (error || !data) throw new Error(error?.message || 'Failed to approve this PAN.');
+      setRecords(prev => prev.map(r => r.id === pan.id ? mapPanRow(data) : r));
+      setIsApproveModalOpen(false);
+      setPanForApproval(null);
+      setIsModalOpen(false);
+      setSelectedRecord(null);
+      decisionSaved('Your PAN approval was recorded.');
+      // Re-read backend eligibility: never advance using stale local routing steps.
+      try {
+        const tasks = await fetchActionableApprovalTasks(user.id);
+        const next = tasks.find(task => task.request_type === 'pan' && task.request_id !== pan.id);
+        navigate(next ? `/employees/pan?review=${encodeURIComponent(next.request_id)}` : '/approvals', { replace: true });
+      } catch {
+        setReviewLoadError('Your approval was saved, but the next PAN could not be loaded. Open Approval Center to continue.');
+      }
+    } catch (error) {
+      setReviewLoadError((error as Error).message || 'PAN approval failed. Please retry.');
+      setSelectedRecord(pan);
+      setIsModalOpen(true);
+    } finally { approvalInFlight.current = false; }
+  };
+
   const handleApprovePANRequest = (pan: PAN) => {
+    const isBod = user?.role === Role.BOD || user?.roles?.includes(Role.BOD);
+    if (isBod) { void approveAndContinue(pan, null); return; }
     setPanForApproval(pan);
     setIsApproveModalOpen(true);
   };
 
   const handleConfirmApprovePAN = async (comment: string) => {
-    if (!panForApproval) return;
-    const { data, error } = await supabase.rpc('approve_pan', { p_pan_id: panForApproval.id, p_comment: comment });
-    if (error || !data) {
-      alert(error?.message || 'Failed to approve this PAN.');
-      return;
-    }
-    decisionSaved('Your PAN approval was recorded. Any other required decisions remain pending.');
-    setRecords(prev => prev.map(r => (r.id === panForApproval.id ? mapPanRow(data) : r)));
-    setIsApproveModalOpen(false);
-    setPanForApproval(null);
-    setSelectedRecord(null);
+    if (panForApproval) await approveAndContinue(panForApproval, comment);
   };
 
   const handleRejectPANRequest = (pan: PAN) => {

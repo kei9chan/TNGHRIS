@@ -14,6 +14,8 @@ interface TimelineViewProps {
     operatingHours: OperatingHours | null;
     onOpenDrawer: (employee: User, date: Date) => void;
     isEditable: boolean;
+    canEditEmployee?:(id:string)=>boolean;
+    employeeStates?:Record<string,string>;
 }
 
 const timeToPercent = (time: string): number => {
@@ -21,7 +23,7 @@ const timeToPercent = (time: string): number => {
     return ((hours * 60 + minutes) / (24 * 60)) * 100;
 };
 
-const TimelineView: React.FC<TimelineViewProps> = ({ dayStatuses,leaves,onStatus,weekDates, employees, assignments, templates, operatingHours, onOpenDrawer, isEditable }) => {
+const TimelineView: React.FC<TimelineViewProps> = ({ dayStatuses,leaves,onStatus,weekDates, employees, assignments, templates, operatingHours, onOpenDrawer, isEditable: globalEditable,canEditEmployee,employeeStates }) => {
     const attendance=useAttendanceIssues();
 
     const hours = Array.from({ length: 24 }, (_, i) => i); // 0 to 23
@@ -59,7 +61,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({ dayStatuses,leaves,onStatus
                         <div key={employee.id} className="h-16 flex items-center px-3 border-b border-r dark:border-gray-700">
                             <div>
                                 <p className="font-medium text-sm text-gray-900 dark:text-white">{employee.name}</p>
-                                <p className="text-xs text-gray-500">{employee.position}</p>
+                                <p className="text-xs text-gray-500">{employeeStates?.[employee.id]}{canEditEmployee&&!canEditEmployee(employee.id)?" · View only":""}</p>
                             </div>
                         </div>
                     ))}
@@ -84,6 +86,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({ dayStatuses,leaves,onStatus
 
                         {/* Shift Rows */}
                         {employees.map(employee => {
+                            const isEditable=globalEditable&&(canEditEmployee?.(employee.id)??true);
                             const assignment = assignments.find(a => a.employeeId === employee.id && new Date(a.date).toDateString() === date.toDateString());
                             const leave=leaveForDay(leaves,employee.id,date);
                             const ds=dayStatuses.find(s=>s.employee_id===employee.id&&s.work_date===dateKey(date));
