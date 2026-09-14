@@ -1,3 +1,4 @@
+import { recordRequestTiming } from './performanceTelemetry';
 import { createClient } from '@supabase/supabase-js';
 import { fetchWithAuthTimeout, withAuthDeadline } from './authDeadline';
 
@@ -6,7 +7,11 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY!;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   global: { fetch: async (input, init) => {
-    const response = await fetchWithAuthTimeout(input, init);
+    const started = performance.now();
+    let response: Response;
+    try { response = await fetchWithAuthTimeout(input, init); }
+    catch (error) { recordRequestTiming(input, started, 0); throw error; }
+    recordRequestTiming(input, started, response.status);
     if (!response.ok && typeof window !== 'undefined') {
       const body = await response.clone().json().catch(() => null);
       if (body?.message === 'ACKNOWLEDGMENT_REQUIRED') window.dispatchEvent(new Event('acknowledgment-required'));
