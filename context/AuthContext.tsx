@@ -1,7 +1,7 @@
 // src/context/AuthContext.tsx
 import React, { createContext, useCallback, useEffect, useRef, useState, ReactNode } from 'react';
 import { User, Role } from '../types';
-import { isTransientNetworkError, retryTransientSupabaseRead, supabase } from '../services/supabaseClient';
+import { boundedAuthRead, isTransientNetworkError, retryTransientSupabaseRead, supabase } from '../services/supabaseClient';
 import { withAuthDeadline } from '../services/authDeadline';
 import { fetchEffectiveRbacSnapshot } from '../services/rbacService';
 
@@ -107,7 +107,7 @@ const loadAppUserFromSupabase = async (
   if (!sbUser) return null;
 
   const [{ data: bootstrapData, error }, { data: rbacData, error: rbacError }] = await Promise.all([
-    retryTransientSupabaseRead(() => supabase.rpc('get_my_hris_bootstrap')),
+    boundedAuthRead(signal => supabase.rpc('get_my_hris_bootstrap').abortSignal(signal)),
     fetchEffectiveRbacSnapshot(sbUser.id),
   ]);
   const data = bootstrapData as any;
@@ -370,8 +370,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       if (checking || disposed) return;
       checking = true;
       try {
-        const { data, error } = await retryTransientSupabaseRead(
-          () => supabase.rpc('get_my_hris_bootstrap')
+        const { data, error } = await boundedAuthRead(
+          signal => supabase.rpc('get_my_hris_bootstrap').abortSignal(signal)
         );
         if (error) {
           console.warn('[Auth] active-session recheck failed', error);

@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { fetchWithAuthTimeout } from './authDeadline';
+import { fetchWithAuthTimeout, withAuthDeadline } from './authDeadline';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL!;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY!;
@@ -40,19 +40,38 @@ export const isTransientNetworkError = (error: unknown): boolean => {
 
 /** Retry only read-only Supabase calls that failed before a response arrived. */
 export const retryTransientSupabaseRead = async <T extends SupabaseReadResult>(
-  operation: () => Promise<T>
+  operation: () => PromiseLike<T>,
+  signal?: AbortSignal,
 ): Promise<T> => {
   for (let attempt = 0; ; attempt += 1) {
+    signal?.throwIfAborted();
     try {
       const result = await operation();
       if (!result.error || !isTransientNetworkError(result.error) || attempt >= TRANSIENT_DELAYS_MS.length) {
         return result;
       }
     } catch (error) {
+      signal?.throwIfAborted();
       if (!isTransientNetworkError(error)) throw error;
       if (attempt >= TRANSIENT_DELAYS_MS.length) return { error } as T;
     }
 
     await new Promise(resolve => window.setTimeout(resolve, TRANSIENT_DELAYS_MS[attempt]));
+  }
+};
+
+/** One deadline across all attempts; abort the underlying read when it expires.
+ * Only use for reads: a cancelled write can still have committed on the server.
+ */
+export const boundedAuthRead = async <T extends SupabaseReadResult>(
+  operation: (signal: AbortSignal) => PromiseLike<T>,
+): Promise<T> => {
+  const controller = new AbortController();
+  try {
+    return await withAuthDeadline(
+      retryTransientSupabaseRead(() => operation(controller.signal), controller.signal),
+    );
+  } finally {
+    controller.abort();
   }
 };
