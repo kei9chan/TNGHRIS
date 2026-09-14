@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+import {createRequire} from 'node:module';
+import {fixturePlugin,panFixture} from './approvalUiFixtures.mjs';
+const require=createRequire(import.meta.url),Module=require('node:module');
+globalThis.panFixture=panFixture;
+const result=await build({stdin:{contents:`import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import PAN from './components/employees/PANModal';export const render=()=>renderToStaticMarkup(<PAN isOpen pan={globalThis.panFixture} templates={[]} employees={[]} approvers={[]} businessUnits={[]} onClose={()=>{}} onApprove={()=>{}} onReject={()=>{}}/>);`,loader:'tsx',resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'cjs',packages:'external',plugins:[{name:'modal-shell',setup(b){b.onResolve({filter:/ui\/Modal$/},args=>({path:args.path,namespace:'modal'}));b.onLoad({filter:/.*/,namespace:'modal'},()=>({contents:`import React from 'react';export default ({children,footer,size,viewportFit})=><div data-size={size} data-fit={viewportFit}>{children}{footer}</div>;`,loader:'tsx',resolveDir:process.cwd()}));}},fixturePlugin()]});
+const mod=new Module(process.cwd()+'/pan-layout-test.cjs');mod.paths=Module._nodeModulePaths(process.cwd());mod._compile(result.outputFiles[0].text,'pan-layout-test.cjs');const html=mod.exports.render();
+assert.match(html,/data-size="5xl"/);assert.match(html,/data-fit="true"/);
+assert.match(html,/Test Director/);assert.match(html,/Second Director/);assert.match(html,/>Approve</);assert.match(html,/>Reject</);
+assert.doesNotMatch(html,/Add at least one Board of Director approver|Search for employees/);
+assert.match(html,/18000/);assert.match(html,/21000/);assert.match(html,/Approval history/);
+console.log('PASS: constrained PAN review width, saved BOD routing with empty editor directory, complete salary/history and review actions.');

@@ -1,4 +1,3 @@
-import { approvalViewKey, readApprovalView } from '../services/approvalNavigation';
 import { ApprovalOutcome } from '../components/approvals/ApprovalNavigation';
 import RecentDecisions from '../components/approvals/RecentDecisions';
 import {useAttendanceIssues,issueLabels,shiftText} from '../services/attendanceIssues';
@@ -136,36 +135,18 @@ export default function ApprovalCenter() {
   const [businessUnitLabels, setBusinessUnitLabels] = useState<Record<string, string>>({});
   const [departmentLabels, setDepartmentLabels] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const restored = useRef(readApprovalView(user?.id || ''));
-  const [expanded, setExpanded] = useState<Kind | null>(() => GROUP_ORDER.includes(restored.current?.expanded) ? restored.current.expanded : null);
-  const expansionInitialized = useRef(Boolean(restored.current));
+  const [expanded, setExpanded] = useState<Kind | null>(null);
+  const expansionInitialized = useRef(false);
   const [decisionMessage, setDecisionMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState<{ kind: Kind; ids: string[] } | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [filters, setFilters] = useState(() => Object.fromEntries(Object.entries(DEFAULT_FILTERS).map(([key, value]) => [key, typeof restored.current?.filters?.[key] === 'string' ? restored.current.filters[key].slice(0, 500) : value])) as typeof DEFAULT_FILTERS);
+  // Every fresh visit starts with the complete authorized queue. URL category links
+  // are explicit; stale session filters and scroll positions must not hide requests.
+  const [filters, setFilters] = useState(() => ({ ...DEFAULT_FILTERS }));
   const [filtersOpen, setFiltersOpen] = useState(false);
-
-  useEffect(() => {
-    if (!user?.id) return;
-    const save = () => { try { sessionStorage.setItem(approvalViewKey(user.id), JSON.stringify({ filters, expanded, scroll: window.scrollY, savedAt: Date.now() })); } catch {} };
-    window.addEventListener('pagehide', save);
-    window.addEventListener('scroll', save, { passive: true });
-    save();
-    return () => { save(); window.removeEventListener('pagehide', save); window.removeEventListener('scroll', save); };
-  }, [user?.id, filters, expanded]);
-  useEffect(() => {
-    const y = Math.max(0, Math.min(Number(restored.current?.scroll) || 0, 100000));
-    if (!y) return;
-    const restore = () => window.scrollTo(0, y);
-    const observer = new ResizeObserver(restore);
-    observer.observe(document.body);
-    restore();
-    const timer = window.setTimeout(() => observer.disconnect(), 1500);
-    return () => { observer.disconnect(); window.clearTimeout(timer); };
-  }, []);
   const approvals = useApprovals({ user, isHR: roles.has(Role.HRStaff), reporteeIds });
   const additional = useAdditionalApprovals(user);
   const attendance = useAttendanceIssues();
@@ -190,8 +171,9 @@ export default function ApprovalCenter() {
     const quick = requestedReview === 'exceptions' ? 'exceptions' : undefined;
     if (kind || quick) {
       if (kind) setExpanded(kind);
-      setFilters(current => ({ ...current, ...(kind ? { kind } : {}), ...(quick ? { quick } : {}) }));
     }
+    setFilters({ ...DEFAULT_FILTERS, kind, quick: quick || 'all' });
+    setSelected(new Set());
   }, [searchParams]);
 
   useEffect(() => {
@@ -381,11 +363,11 @@ export default function ApprovalCenter() {
       setExpanded(current => current && !activeGroupKinds.includes(current) ? null : current);
     }
   }, [activeGroupKinds, filters.kind]);
-  const exceptionCount = filtered.filter(needsIndividualReview).length;
-  const dueTodayCount = filtered.filter(item => dayAge(item.start) === 0).length;
-  const overdueCount = filtered.filter(item => dayAge(item.start) >= 3).length;
-  const managerOnlyCount = filtered.filter(item => item.route === 'MANAGER_ONLY').length;
-  const bodRequiredCount = filtered.filter(item => item.route === 'BOD_REQUIRED').length;
+  const exceptionCount = items.filter(needsIndividualReview).length;
+  const dueTodayCount = items.filter(item => dayAge(item.start) === 0).length;
+  const overdueCount = items.filter(item => dayAge(item.start) >= 3).length;
+  const managerOnlyCount = items.filter(item => item.route === 'MANAGER_ONLY').length;
+  const bodRequiredCount = items.filter(item => item.route === 'BOD_REQUIRED').length;
   const businessUnits = Array.from(new Map(items.filter(item => item.businessUnitId).map(item => [item.businessUnitId!, item.businessUnit])).entries());
   const departments = Array.from(new Map(items.filter(item => item.departmentId).map(item => [item.departmentId!, item.department])).entries());
   const statuses: string[] = Array.from(new Set<string>(items.map(item => item.status))).sort();
@@ -394,6 +376,12 @@ export default function ApprovalCenter() {
     if (key === 'quick') return value !== 'all';
     return Boolean(value);
   }).length;
+
+  const showAllPending = () => {
+    setFilters({ ...DEFAULT_FILTERS });
+    setSelected(new Set());
+    navigate('/approvals', { replace: true });
+  };
 
   const openConfirm = (kind: Kind, ids: string[]) => { setConfirmed(false); setResult(null); setConfirming({ kind, ids }); };
   const runBulk = async () => {
@@ -407,25 +395,32 @@ export default function ApprovalCenter() {
   };
 
   if (!user) return null;
+  const loading = approvals.approvalsLoading || additional.additionalApprovalsLoading || attendance.loading;
   const error = approvals.approvalError || additional.additionalApprovalError || attendance.error || loadError;
   const controlClasses = 'rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:border-slate-500 dark:bg-slate-700 dark:text-white dark:placeholder:text-slate-300 dark:focus:border-indigo-400 dark:focus:ring-indigo-900';
   return <div className="space-y-5 pb-12 text-slate-900 dark:text-slate-100">
     {decisionMessage && <ApprovalOutcome message={decisionMessage} onReturn={() => { setDecisionMessage(''); closeRequestedReview(); }} />}
     <div className="flex flex-wrap items-end justify-between gap-3"><div><h1 className="text-3xl font-bold text-slate-900 dark:text-white">Approval Center</h1><p className="mt-1 text-slate-500 dark:text-slate-300">The single queue for every approval requiring your action.</p></div><Link to="/dashboard" className="font-semibold text-indigo-600 dark:text-indigo-300">← Dashboard</Link></div>
-    {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-800"><b>Some approval data could not be loaded.</b> {error}</div>}
-    {requestedItem && !['offer', 'asset'].includes(requestedType || '') && !approvals.approvalsLoading && !items.some(item => item.id === requestedItem) && !error && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"><b>This request is no longer awaiting your action.</b> It may already be processed, reassigned, or outside your authorized scope.</div>}
+    {loading && <p role="status" className="text-sm text-slate-500 dark:text-slate-300">Updating approval queues…</p>}
+    {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-800"><b>Some approval data could not be loaded.</b> {error} <button onClick={() => Promise.all([approvals.refreshApprovals(), additional.refreshAdditionalApprovals(), attendance.load()])} className="min-h-11 font-semibold underline">Retry loading approvals</button></div>}
+    {requestedItem && !['offer', 'asset'].includes(requestedType || '') && !loading && !items.some(item => item.id === requestedItem) && !error && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"><b>This request is no longer awaiting your action.</b> It may already be processed, reassigned, or outside your authorized scope.</div>}
     {!approverConfigs.conditionalTimeApprovals.valid && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900"><b>Conditional approval routing needs an Admin.</b> {approverConfigs.conditionalTimeApprovals.invalid_reason || 'At least one active BOD approver must be selected.'}</div>}
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">{[['Pending approvals', filtered.length, 'bg-blue-50 text-blue-700'], ['Manager only', managerOnlyCount, 'bg-emerald-50 text-emerald-700'], ['BOD required', bodRequiredCount, 'bg-violet-50 text-violet-700'], ['Due today', dueTodayCount, 'bg-orange-50 text-orange-700'], ['Overdue', overdueCount, 'bg-red-50 text-red-700'], ['High risk / exceptions', exceptionCount, 'bg-amber-50 text-amber-700']].map(([label, value, color]) => <div key={String(label)} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-600 dark:bg-slate-800 sm:p-5"><div className={`inline-flex rounded-lg px-3 py-1 text-2xl font-bold ${color}`}>{value}</div><p className="mt-2 text-sm text-slate-600 dark:text-slate-200">{label}</p></div>)}</div>
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">{[['Pending approvals', items.length, 'bg-blue-50 text-blue-700'], ['Manager only', managerOnlyCount, 'bg-emerald-50 text-emerald-700'], ['BOD required', bodRequiredCount, 'bg-violet-50 text-violet-700'], ['Due today', dueTodayCount, 'bg-orange-50 text-orange-700'], ['Overdue', overdueCount, 'bg-red-50 text-red-700'], ['High risk / exceptions', exceptionCount, 'bg-amber-50 text-amber-700']].map(([label, value, color]) => <div key={String(label)} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-600 dark:bg-slate-800 sm:p-5"><div className={`inline-flex rounded-lg px-3 py-1 text-2xl font-bold ${color}`}>{value}</div><p className="mt-2 text-sm text-slate-600 dark:text-slate-200">{label}</p></div>)}</div>
     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-600 dark:bg-slate-800">
       <div className="flex items-center justify-between gap-3 lg:hidden"><div><h2 className="font-bold">Filter requests</h2><p className="text-sm text-slate-500 dark:text-slate-300">{appliedFilterCount ? `${appliedFilterCount} filter${appliedFilterCount === 1 ? '' : 's'} applied` : 'Showing all pending requests'}</p></div><button type="button" onClick={() => setFiltersOpen(open => !open)} aria-expanded={filtersOpen} aria-controls="approval-filters" className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 dark:border-slate-500 dark:text-white">{filtersOpen ? 'Hide filters' : 'Open filters'}</button></div>
       <div id="approval-filters" className={`${filtersOpen ? 'mt-4 block' : 'hidden'} lg:block`}>
         <div className="mb-3 grid gap-3 sm:grid-cols-3"><label className="text-sm font-semibold text-slate-700 dark:text-slate-100">Date from<input type="date" aria-label="Date from" value={filters.dateFrom} onChange={event => setFilters({ ...filters, dateFrom: event.target.value })} className={`mt-1 block w-full font-normal ${controlClasses}`} /></label><label className="text-sm font-semibold text-slate-700 dark:text-slate-100">Date to<input type="date" aria-label="Date to" value={filters.dateTo} onChange={event => setFilters({ ...filters, dateTo: event.target.value })} className={`mt-1 block w-full font-normal ${controlClasses}`} /></label><label className="text-sm font-semibold text-slate-700 dark:text-slate-100">Approver scope<select aria-label="Approver scope" disabled className={`mt-1 block w-full font-normal disabled:cursor-not-allowed disabled:opacity-100 dark:disabled:bg-slate-600 dark:disabled:text-slate-100 ${controlClasses}`}><option>My authorized scope</option></select></label></div>
         <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-8"><input aria-label="Approval search" value={filters.search} onChange={event => setFilters({ ...filters, search: event.target.value })} placeholder="Employee, NTE, PAN, case or request ID" className={`md:col-span-2 ${controlClasses}`} /><select aria-label="Business unit" value={filters.businessUnit} onChange={event => setFilters({ ...filters, businessUnit: event.target.value })} className={controlClasses}><option value="">All business units</option>{businessUnits.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select><select aria-label="Department" value={filters.department} onChange={event => setFilters({ ...filters, department: event.target.value })} className={controlClasses}><option value="">All departments</option>{departments.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select><select aria-label="Request type" value={filters.kind} onChange={event => setFilters({ ...filters, kind: event.target.value })} className={controlClasses}><option value="">All request types</option>{GROUP_ORDER.map(id => <option key={id} value={id}>{KIND_META[id].title}</option>)}</select><select aria-label="Approval status" value={filters.status} onChange={event => setFilters({ ...filters, status: event.target.value })} className={controlClasses}><option value="">All statuses</option>{statuses.map(status => <option key={status} value={status}>{getApprovalStatusLabel(status)}</option>)}</select><select aria-label="Age of request" value={filters.age} onChange={event => setFilters({ ...filters, age: event.target.value })} className={controlClasses}><option value="">Any age</option><option value="today">Due today</option><option value="overdue">Overdue (3+ days)</option></select><select aria-label="Sort approvals" value={filters.sort} onChange={event => setFilters({ ...filters, sort: event.target.value })} className={controlClasses}><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="age">Days pending</option></select></div>
-        <div className="mt-3 flex flex-wrap gap-2">{[['all', 'All pending'], ['exceptions', 'Exceptions'], ['today', 'Due today'], ['overdue', 'Overdue']].map(([id, label]) => <button key={id} onClick={() => setFilters({ ...filters, quick: id })} className={`min-h-10 rounded-full px-3 py-1.5 text-sm font-semibold ${filters.quick === id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 dark:bg-slate-600 dark:text-white'}`}>{label}</button>)}</div>
-        <div className="mt-4 flex flex-wrap justify-end gap-2 lg:hidden"><button type="button" onClick={() => setFilters({ ...DEFAULT_FILTERS })} className="min-h-11 rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold dark:border-slate-500">Clear filters</button><button type="button" onClick={() => setFiltersOpen(false)} className="min-h-11 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white">Apply filters</button></div>
+        <div className="mt-3 flex flex-wrap gap-2">{[['all', 'All pending'], ['exceptions', 'Exceptions'], ['today', 'Due today'], ['overdue', 'Overdue']].map(([id, label]) => <button key={id} onClick={() => id === 'all' ? showAllPending() : setFilters({ ...filters, quick: id })} className={`min-h-10 rounded-full px-3 py-1.5 text-sm font-semibold ${filters.quick === id && (id !== 'all' || !appliedFilterCount) ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 dark:bg-slate-600 dark:text-white'}`}>{label}</button>)}</div>
+        <div className="mt-4 flex flex-wrap justify-end gap-2 lg:hidden"><button type="button" onClick={showAllPending} className="min-h-11 rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold dark:border-slate-500">Clear filters</button><button type="button" onClick={() => setFiltersOpen(false)} className="min-h-11 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white">Apply filters</button></div>
       </div>
     </div>
     <div>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3" role="status">
+        <p className="text-sm text-slate-600 dark:text-slate-300">Showing {filtered.length} of {items.length} pending approvals{filters.kind ? ` · ${KIND_META[filters.kind as Kind]?.title || filters.kind}` : ' · All request types'}</p>
+        {appliedFilterCount > 0 && <button onClick={showAllPending} className="min-h-11 rounded-lg border border-indigo-400 px-4 text-sm font-semibold text-indigo-700 dark:text-indigo-300">Show all pending / Clear filters</button>}
+      </div>
+      <nav aria-label="Pending approval categories" className="mb-4 flex flex-wrap gap-2">{GROUP_ORDER.filter(kind => items.some(item => item.kind === kind)).map(kind => <button key={kind} aria-pressed={filters.kind === kind} onClick={() => navigate(`/approvals?type=${kind}`)} className={`min-h-10 rounded-full border px-3 text-sm font-semibold ${filters.kind === kind ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-800'}`}>{KIND_META[kind].title} ({items.filter(item => item.kind === kind).length})</button>)}</nav>
       <div className="space-y-3">{groups.map(group => {
         const selectableRequests = group.items.filter(item => item.bulkSelectable);
         const exceptions = group.items.filter(needsIndividualReview);
@@ -476,7 +471,7 @@ export default function ApprovalCenter() {
             </table></div>
           </div>}
         </section>;
-      })}{!groups.length && !error && <div className="rounded-xl border border-slate-200 bg-white p-10 text-center dark:border-slate-600 dark:bg-slate-800"><p className="text-lg font-bold text-slate-900 dark:text-white">{items.length ? 'No pending approvals match your filters.' : 'No pending approvals'}</p><p className="mt-1 text-sm text-slate-500 dark:text-slate-300">{items.length ? 'Try clearing a filter to see the active queues.' : 'You are all caught up.'}</p></div>}</div>
+      })}{!groups.length && !error && !loading && <div className="rounded-xl border border-slate-200 bg-white p-10 text-center dark:border-slate-600 dark:bg-slate-800"><p className="text-lg font-bold text-slate-900 dark:text-white">{items.length ? 'No pending approvals match your filters.' : 'No pending approvals'}</p><p className="mt-1 text-sm text-slate-500 dark:text-slate-300">{items.length ? 'Try clearing a filter to see the active queues.' : 'You are all caught up.'}</p></div>}</div>
     </div>
     {confirming && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"><div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-600 dark:bg-slate-800 dark:text-white"><h2 className="text-xl font-bold">Approve {confirming.ids.length} {KIND_META[confirming.kind].title} request{confirming.ids.length === 1 ? '' : 's'}?</h2><ul className="mt-4 list-disc space-y-2 pl-5 text-sm text-slate-600 dark:text-slate-200"><li>{confirming.ids.length} requests currently shown in your assigned scope will be processed.</li><li>Requests that changed, are no longer assigned to you, or require another approver are safely skipped.</li><li>Each request keeps its own history and audit record.</li>{confirming.kind==='leave'&&<li>Insufficient-credit requests at the BOD stage are approved as BOD exceptions. No additional earned credits will be granted. Approval notes are optional.</li>}<li>Employees are notified using existing settings.</li></ul><label className="mt-5 flex gap-3 rounded-lg bg-slate-50 p-4 font-semibold dark:bg-slate-700 dark:text-white"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} /> I confirm these requests meet policy.</label>{result?.error && <p role="alert" className="mt-4 text-red-700 dark:text-red-300">{result.error}</p>}{result && !result.error && <div className={`mt-4 rounded-lg p-4 text-sm ${result.failed ? 'bg-red-50 text-red-800' : result.skipped ? 'bg-amber-50 text-amber-900' : 'bg-emerald-50 text-emerald-800'}`}><div><b>{result.succeeded} approved</b> · {result.skipped} skipped · {result.failed} failed</div>{result.skippedItems?.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5">{Array.from(new Set(result.skippedItems.map((item: any) => item.reason))).map((reason: any) => <li key={String(reason)}>{String(reason)}</li>)}</ul>}{result.failures?.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5">{Array.from(new Set(result.failures.map((item: any) => item.error))).map((failure: any) => <li key={String(failure)}>{String(failure)}</li>)}</ul>}</div>}<div className="mt-6 flex justify-end gap-3"><Button variant="secondary" onClick={() => { setConfirming(null); setResult(null); }}>{result && !result.error ? 'Close' : 'Cancel'}</Button><Button disabled={!confirmed || busy || !!(result && !result.error)} isLoading={busy} onClick={runBulk}>Approve {confirming.ids.length} requests</Button></div></div></div>}
     <LeaveRequestModal

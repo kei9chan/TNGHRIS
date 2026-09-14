@@ -132,9 +132,12 @@ export function useAdditionalApprovals(user: User | null) {
   const [pendingAssetApprovals, setPendingAssetApprovals] = useState<PendingAssetApproval[]>([]);
   const [pendingBenefitApprovals, setPendingBenefitApprovals] = useState<PendingBenefitApproval[]>([]);
   const [additionalApprovalError, setAdditionalApprovalError] = useState<string | null>(null);
+  const [additionalApprovalsLoading, setAdditionalApprovalsLoading] = useState(true);
 
   const refreshAdditionalApprovals = useCallback(async () => {
     const sequence = ++refreshSequence.current;
+    setAdditionalApprovalsLoading(true);
+    try {
     if (lastViewer.current !== user?.id) {
       lastViewer.current = user?.id;
       setPendingNTEApprovals([]);
@@ -211,7 +214,7 @@ export function useAdditionalApprovals(user: User | null) {
     // with a visible error; decisions still require backend authorization.
     if (taskResult.error) return;
 
-    setPendingNTEApprovals(nteRows.map((row: any) => {
+    if (!nteResult.error) setPendingNTEApprovals(nteRows.map((row: any) => {
       const reference = row.nte_code || (row.nte_number ? `NTE-${row.nte_number}` : `NTE-${String(row.id).slice(0, 8)}`);
       const caseReference = row.case_number ? `TNGIR-${String(row.case_number).padStart(5, '0')}` : row.incident_report_id;
       return {
@@ -253,7 +256,7 @@ export function useAdditionalApprovals(user: User | null) {
       }];
     }));
 
-    setPendingRequisitionApprovals((requisitionResult.data || []).flatMap((row: any) => {
+    if (!requisitionResult.error) setPendingRequisitionApprovals((requisitionResult.data || []).flatMap((row: any) => {
       if (!actionable('requisition', row.id)) return [];
       return [{
         id: row.id,
@@ -268,7 +271,7 @@ export function useAdditionalApprovals(user: User | null) {
       }];
     }));
 
-    setPendingAwardApprovals((awardResult.data || []).flatMap((row: any) => {
+    if (!awardResult.error) setPendingAwardApprovals((awardResult.data || []).flatMap((row: any) => {
       if (!actionable('award', row.id)) return [];
       const steps: PendingStep[] = Array.isArray(row.approver_steps) ? row.approver_steps : [];
       const stepIndex = steps.findIndex(step => step.userId === user.id && isPending(step.status));
@@ -290,7 +293,7 @@ export function useAdditionalApprovals(user: User | null) {
       }];
     }));
 
-    setPendingOfferApprovals(offerPackages.flatMap((pkg, index) => {
+    if (!offerLoadError && !offerPackageErrors.length) setPendingOfferApprovals(offerPackages.flatMap((pkg, index) => {
       if (!pkg || !actionable('offer', pkg.request.id)) return [];
       const queue = offerIds[index];
       const candidateName = `${pkg.candidate.firstName} ${pkg.candidate.lastName}`.trim() || 'Candidate';
@@ -313,7 +316,7 @@ export function useAdditionalApprovals(user: User | null) {
     // The detail queue also includes read-only requests. Pending inboxes must
     // contain only the current viewer's actionable stage, including when a BOD
     // is themselves the assigned direct manager.
-    setPendingAssetApprovals(assetQueue.filter(row => row.isActionable && actionable('asset', row.requestId)).map(row => ({
+    if (!assetLoadError) setPendingAssetApprovals(assetQueue.filter(row => row.isActionable && actionable('asset', row.requestId)).map(row => ({
       id: row.requestId,
       employeeId: row.employeeId,
       employeeName: row.employeeName,
@@ -330,7 +333,12 @@ export function useAdditionalApprovals(user: User | null) {
       approvalIssue: row.approvalIssue,
       canonicalKey: `asset:${row.requestId}:${row.approvalStage}:${row.viewerActionStatus || 'READ_ONLY'}`,
     })));
-    setPendingBenefitApprovals(benefitQueue);
+    if (!benefitLoadError) setPendingBenefitApprovals(benefitQueue);
+    } catch (error: any) {
+      if (sequence === refreshSequence.current) setAdditionalApprovalError(error?.message || 'Approval requests could not be loaded. Please retry.');
+    } finally {
+      if (sequence === refreshSequence.current) setAdditionalApprovalsLoading(false);
+    }
   }, [user?.id]);
 
   useEffect(() => {
@@ -374,6 +382,7 @@ export function useAdditionalApprovals(user: User | null) {
     pendingAssetApprovals,
     pendingBenefitApprovals,
     additionalApprovalError,
+    additionalApprovalsLoading,
     refreshAdditionalApprovals,
   };
 }
