@@ -18,6 +18,7 @@ function render(data){
  return renderToStaticMarkup(React.createElement(exports.default));
 }
 assert.equal(render(base),'','BOD with no pending submissions sees no plotting reminder');
+assert.equal(render({...base,eligible:true}),'','Stale eligibility must never show BOD self-submission');
 assert.match(render({...base,isBod:false}),/Complete employee schedules/,'Normal manager workflow stays present');
 const own={...base,isBod:false,eligible:true,managerName:'Assigned BOD'};
 assert.match(render(own),/Submit your schedule for BOD approval/);
