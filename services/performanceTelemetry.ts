@@ -20,6 +20,18 @@ export function recordRequestTiming(input:RequestInfo|URL,started:number,status:
   const url=new URL(raw);
   if(url.hostname!=='kpogfmwsxwikfilxhcqh.supabase.co')return;
   const operation=paths[url.pathname];if(!operation)return;
+  enqueue(operation,started,status);
+ }catch{/* Monitoring cannot break application requests. */}
+}
+
+// These timings include SDK session waits and response parsing, not just fetch.
+export function recordAuthStageTiming(stage: 'profile' | 'permissions', started: number, status: number) {
+ try {
+  if(typeof window==='undefined'||window.location.hostname!=='hris.thenextperience.com')return;
+  enqueue(stage === 'profile' ? 'access_profile_complete' : 'access_permissions_complete', started, status);
+ } catch { /* Monitoring cannot affect authentication. */ }
+}
+function enqueue(operation: string, started: number, status: number) {
   const sampleRate=status>=200&&status<400?0.1:1;
   if(Math.random()>=sampleRate)return;
   if(Date.now()-windowStart>=3600000){windowStart=Date.now();sent=0;}
@@ -31,5 +43,4 @@ export function recordRequestTiming(input:RequestInfo|URL,started:number,status:
    // Best effort: never retry monitoring and never delay the employee's request.
    void fetch('/api/performance',{method:'POST',credentials:'omit',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({samples})}).catch(()=>{});
   },10000);
- }catch{/* Monitoring cannot break application requests. */}
 }

@@ -4,6 +4,7 @@ import { User, Role } from '../types';
 import { boundedAuthRead, isTransientNetworkError, retryTransientSupabaseRead, supabase } from '../services/supabaseClient';
 import { withAuthDeadline } from '../services/authDeadline';
 import { fetchEffectiveRbacSnapshot } from '../services/rbacService';
+import { recordAuthStageTiming } from '../services/performanceTelemetry';
 
 // Keep this so existing imports don't break.
 export class DeviceConflictError extends Error {
@@ -44,6 +45,7 @@ export const AuthContext = createContext<AuthContextType | undefined>(
 type SupabaseUser = {
   id: string;
   email?: string | null;
+  user_metadata?: { must_change_password?: boolean };
 };
 
 /**
@@ -92,7 +94,28 @@ const applyAuthUserId = (
   sbUser: SupabaseUser,
   base: User
 ): User => {
-  return { ...base, authUserId: sbUser.id };
+  return { ...base, authUserId: sbUser.id, mustChangePassword: sbUser.user_metadata?.must_change_password === true };
+};
+
+// Measure the whole verification step, including time waiting for the SDK session
+// lock. Transport-only timing cannot see a request that never reaches fetch.
+const verifyAccessRead = async <T extends { error?: unknown }>(stage: 'profile' | 'permissions', operation: Promise<T>): Promise<T> => {
+  const started = performance.now();
+  try {
+    const result = await operation;
+    if (result.error && isTransientNetworkError(result.error)) throw result.error;
+    recordAuthStageTiming(stage, started, result.error ? 0 : 200);
+    return result;
+  } catch (error) {
+    recordAuthStageTiming(stage, started, 0);
+    if (isTransientNetworkError(error)) {
+      throw new SupabaseAuthError(
+        `HRIS could not verify your ${stage} in time. Retry the access check. If it fails again, contact HRIS support with code ACCESS_${stage.toUpperCase()}_TIMEOUT.`,
+        'authorization_timeout',
+      );
+    }
+    throw error;
+  }
 };
 
 /**
@@ -106,10 +129,16 @@ const loadAppUserFromSupabase = async (
 ): Promise<User | null> => {
   if (!sbUser) return null;
 
-  const [{ data: bootstrapData, error }, { data: rbacData, error: rbacError }] = await Promise.all([
-    boundedAuthRead(signal => supabase.rpc('get_my_hris_bootstrap').abortSignal(signal)),
-    fetchEffectiveRbacSnapshot(sbUser.id),
+  // Settle both bounded reads before exposing retry, so a failed sibling cannot
+  // leave an old request running beside the next verification attempt.
+  const [bootstrapResult, rbacResult] = await Promise.allSettled([
+    verifyAccessRead('profile', boundedAuthRead(signal => supabase.rpc('get_my_hris_bootstrap').abortSignal(signal))),
+    verifyAccessRead('permissions', fetchEffectiveRbacSnapshot(sbUser.id, true)),
   ]);
+  if (bootstrapResult.status === 'rejected') throw bootstrapResult.reason;
+  if (rbacResult.status === 'rejected') throw rbacResult.reason;
+  const { data: bootstrapData, error } = bootstrapResult.value;
+  const { data: rbacData, error: rbacError } = rbacResult.value;
   const data = bootstrapData as any;
 
   if (error) {
@@ -191,7 +220,9 @@ const buildAppUserFromSupabase = (
   const existing = profileHydrationInFlight.get(sbUser.id);
   if (existing) return existing;
 
-  const hydration = withAuthDeadline(loadAppUserFromSupabase(sbUser));
+  // Each underlying read has a deadline and aborts on expiry. Do not race a
+  // second identical deadline against it: retries must wait for that cleanup.
+  const hydration = loadAppUserFromSupabase(sbUser);
   profileHydrationInFlight.set(sbUser.id, hydration);
   const clearHydration = () => {
     if (profileHydrationInFlight.get(sbUser.id) === hydration) {
@@ -215,7 +246,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
   const explicitLogin = useRef(false);
   const currentUser = useRef(user);
   currentUser.current = user;
-  const retryAuth = () => setRetryVersion(v => v + 1);
+  const retryAuth = () => {
+    if (loading || explicitLogin.current) return;
+    setUser(null);
+    setLoading(true);
+    setRetryVersion(v => v + 1);
+  };
 
   const refreshUser = useCallback(async (): Promise<User | null> => {
     const generation = authGeneration.current;
@@ -252,7 +288,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         if (mounted && generation === authGeneration.current) {
           console.error('[Auth] startup verification failed', error);
           setUser(null);
-          setAuthError('HRIS could not verify your access in time. Retry the connection.');
+          setAuthError('HRIS could not restore your session in time. Retry the access check. If it fails again, contact HRIS support with code SESSION_TIMEOUT.');
         }
       } finally {
         if (mounted && generation === authGeneration.current) setLoading(false);
@@ -332,13 +368,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       if (isTransientNetworkError(err)) {
         if (!preserveExisting || !currentUser.current) {
           setUser(null);
-          setAuthError('HRIS could not verify your access in time. Retry the connection.');
+          setAuthError(err instanceof SupabaseAuthError ? err.message : 'HRIS could not verify your access in time. Retry the access check.');
         }
         return;
       }
       if (err instanceof SupabaseAuthError && err.code === 'network_unavailable') {
         if (!preserveExisting) {
-          setAuthorizationUnavailableNotice();
+          setAuthError(err.message);
           setUser(null);
         }
         return;
@@ -383,6 +419,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
           await withAuthDeadline(supabase.auth.signOut(), 4_000).catch(() => { });
           if (!disposed) setUser(null);
         }
+      } catch (error) {
+        console.warn('[Auth] active-session recheck could not complete', error);
       } finally {
         checking = false;
       }
@@ -414,6 +452,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     const generation = ++authGeneration.current;
     setLoading(true);
     setAuthError(null);
+    setUser(null);
+    let credentialsAccepted = false;
 
     try {
       const normalizedEmail = email.trim().toLowerCase();
@@ -455,7 +495,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         supabaseErrorCode = 'network_unavailable';
       }
       if (!error && data?.user && data?.session) {
-        console.log('[Auth] Supabase signInWithPassword succeeded');
+        credentialsAccepted = true;
         const sbUser = data.user as SupabaseUser;
         const profile = await buildAppUserFromSupabase(sbUser);
         if (!profile) {
@@ -485,6 +525,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
 
       console.warn('[Auth] signInWithPassword failed', error);
       throw new SupabaseAuthError(supabaseErrorMsg, supabaseErrorCode);
+    } catch (error) {
+      if (generation === authGeneration.current && credentialsAccepted && isTransientNetworkError(error)) {
+        const recovery = error instanceof SupabaseAuthError ? error : new SupabaseAuthError(
+          'HRIS could not verify your access in time. Retry the access check.', 'authorization_timeout');
+        // Retain the authenticated session, but expose no application user.
+        // Recovery reruns both server checks without another password exchange.
+        setUser(null);
+        setAuthError(recovery.message);
+        throw recovery;
+      }
+      throw error;
     } finally {
       explicitLogin.current = false;
       if (generation === authGeneration.current) setLoading(false);
