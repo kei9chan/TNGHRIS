@@ -11,6 +11,8 @@ export default async function handler(req:any,res:any){
   await rpc(db,'queue_schedule_compliance_reminders');
   while(Date.now()<end){
    const c=await rpc(db,'claim_schedule_compliance_email');if(!c)break;if(c.skipped)continue;
+   // Recheck immediately before sending; BODs receive no employee-schedule mail.
+   if(!await rpc(db,'schedule_email_recipient_allowed',{p_id:c.id}))continue;
    let provider:string|null=null,error:string|null=null;
    try{
     const p=c.payload;if(!validEmail(p.email))throw new Error('No valid recipient email');

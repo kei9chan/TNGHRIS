@@ -1,7 +1,7 @@
 import {CaseFollowups} from '../modules/caseQuestions';
 import ApprovalFollowupCard from '../components/dashboard/ApprovalFollowupCard';
 import AttendanceFollowups from '../components/dashboard/AttendanceFollowups';
-import {ScheduleTask} from '../modules/scheduleCompliance';
+import BodScheduleWorkflow from '../components/dashboard/BodScheduleWorkflow';
 import React from 'react';
 import AttendanceMission from '../components/attendance/AttendanceClock';
 import { useAuth } from '../hooks/useAuth';
@@ -40,7 +40,7 @@ const Dashboard: React.FC = () => {
         <AttendanceMission />
         <QuickLinks />
         <AttendancePulse />
-        <ScheduleTask />
+        <BodScheduleWorkflow />
         <CaseFollowups />
         <AttendanceFollowups />
         <AlertBanner />
