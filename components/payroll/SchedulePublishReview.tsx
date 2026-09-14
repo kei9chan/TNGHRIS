@@ -1,9 +1,10 @@
+import {publishBuilderWeek,EmployeeScope} from '../../services/scheduleBuilderService';
 import React, {useEffect, useRef, useState} from 'react';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
-import {reviewScheduleWeek, publishScheduleWeek, ScheduleReview} from '../../services/schedulePublicationService';
+import {reviewScheduleWeek, ScheduleReview} from '../../services/schedulePublicationService';
 
-export default function SchedulePublishReview({ids,week,label,excluded,coverageWarnings=[],onClose,onPublished,onFix}:{ids:string[];week:string;label:string;excluded:number;coverageWarnings?:string[];onClose:()=>void;onPublished:()=>void;onFix:(id:string,date?:string)=>void}) {
+export default function SchedulePublishReview({scope,ids,week,label,excluded,coverageWarnings=[],onClose,onPublished,onFix}:{scope:EmployeeScope;ids:string[];week:string;label:string;excluded:number;coverageWarnings?:string[];onClose:()=>void;onPublished:()=>void;onFix:(id:string,date?:string)=>void}) {
  const [rows,setRows]=useState<ScheduleReview[]>([]),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[note,setNote]=useState(''),[noteError,setNoteError]=useState(''),[checked,setChecked]=useState(false),[success,setSuccess]=useState('');
  const lock=useRef(false), generation=useRef(0);
  const refresh=async()=>{const n=++generation.current;setLoading(true);setError('');setChecked(false);try{const data=await reviewScheduleWeek(ids,week);if(n===generation.current)setRows(data);}catch(e){if(n===generation.current)setError((e as Error).message);}finally{if(n===generation.current)setLoading(false);}};
@@ -14,9 +15,13 @@ export default function SchedulePublishReview({ids,week,label,excluded,coverageW
   if(note.trim().length<3){setNoteError('Please add a publication note before publishing.');return;}
   if(!checked||!ready.length||loading)return;
   lock.current=true;setBusy(true);setError('');
-  try{const result=await publishScheduleWeek(ready.map(r=>r.employeeId),week,note,ready);
+  try{const result=await publishBuilderWeek(scope,ready.map(r=>r.employeeId),week,note,ready);
+   if(!Array.isArray(result)||result.length!==ready.length||ready.some(r=>!result.some((p:any)=>p.employee_id===r.employeeId)))throw new Error('The server did not confirm every selected employee.');
+   const confirmed=await reviewScheduleWeek(ready.map(r=>r.employeeId),week);
+   if(ready.some(r=>!confirmed.some(c=>c.employeeId===r.employeeId&&c.draftHash===r.draftHash&&(c.published||c.pending))))throw new Error('The saved publication could not be read back. Retry the review to check its current state.');
+   setRows(confirmed);
    const pending=result.filter((r:any)=>r.approval_required).length;
-   setSuccess(pending?`${result.length-pending} schedules published. ${pending} finalized employee schedules were submitted for the required HR override review; their previous schedules remain visible.`:'Schedules published successfully.');onPublished();
+   setSuccess(pending?`${result.length-pending} schedules published. Schedule submitted successfully for ${pending} employees requiring HR override review; their previous schedules remain visible.`:'Schedules published successfully.');onPublished();
   }catch(e){console.error('Schedule publication failed',{week,error:e});setError(`The schedules could not be confirmed as published. ${(e as Error).message} Refresh this review before retrying.`);setChecked(false);}
   finally{lock.current=false;setBusy(false);}
  };
@@ -24,7 +29,7 @@ export default function SchedulePublishReview({ids,week,label,excluded,coverageW
  <ol className="flex flex-wrap gap-4 text-sm"><li>✓ Prepare schedules</li><li className="font-bold text-violet-400">2 · Review for issues</li><li>3 · Publish to employees</li></ol>
  <h4 className="text-xl font-bold">{label} · Monday–Sunday</h4>
  {loading&&<p role="status">Checking saved schedules and publishing permissions…</p>}
- {error&&<div role="alert" className="rounded border border-red-400 p-3"><p>{error}</p><button className="mt-2 underline" onClick={refresh} disabled={busy}>Refresh review</button></div>}
+ {error&&<div role="alert" className="rounded border border-red-400 p-3"><p>{error}</p><button className="mt-2 underline" onClick={refresh} disabled={busy}>Retry / reload saved review</button></div>}
  {success?<p role="status" className="rounded bg-green-900/30 p-4 text-green-500">{success}</p>:!loading&&rows.length>0&&<>
  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{[[rows.length,'employees included'],[ready.length,'ready to publish'],[blocked.length,'need attention'],[rows.filter(r=>r.published).length,'already published']].map(([n,t])=><div className="rounded bg-slate-500/10 p-3" key={t}><strong className="block text-2xl">{n}</strong>{t}</div>)}</div>
  <p className="text-sm">{rows.reduce((n,r)=>n+r.saved,0)} saved schedule records · {rows.reduce((n,r)=>n+r.restDays,0)} rest days · {rows.reduce((n,r)=>n+r.absences,0)} approved absence days</p>

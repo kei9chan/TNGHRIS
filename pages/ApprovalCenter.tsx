@@ -136,7 +136,6 @@ export default function ApprovalCenter() {
   const [departmentLabels, setDepartmentLabels] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Kind | null>(null);
-  const expansionInitialized = useRef(false);
   const [decisionMessage, setDecisionMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState<{ kind: Kind; ids: string[] } | null>(null);
@@ -169,10 +168,9 @@ export default function ApprovalCenter() {
     const kind = GROUP_ORDER.includes(requestedType as Kind) ? requestedType as Kind : '';
     const requestedReview = searchParams.get('review');
     const quick = requestedReview === 'exceptions' ? 'exceptions' : undefined;
-    if (kind || quick) {
-      if (kind) setExpanded(kind);
-    }
-    setFilters({ ...DEFAULT_FILTERS, kind, quick: quick || 'all' });
+    // A category link opens its row without hiding the other pending categories.
+    setExpanded(kind || null);
+    setFilters({ ...DEFAULT_FILTERS, quick: quick || 'all' });
     setSelected(new Set());
   }, [searchParams]);
 
@@ -340,7 +338,6 @@ export default function ApprovalCenter() {
     if (query && !`${item.employee} ${item.employeeCode || ''} ${item.reference} ${item.details || ''} ${item.reason || ''}`.toLowerCase().includes(query)) return false;
     if (filters.businessUnit && item.businessUnitId !== filters.businessUnit) return false;
     if (filters.department && item.departmentId !== filters.department) return false;
-    if (filters.kind && item.kind !== filters.kind) return false;
     if (filters.status && item.status !== filters.status) return false;
     if (filters.dateFrom && item.start < new Date(`${filters.dateFrom}T00:00:00`)) return false;
     if (filters.dateTo && item.start > new Date(`${filters.dateTo}T23:59:59`)) return false;
@@ -352,17 +349,6 @@ export default function ApprovalCenter() {
 
   const activeGroupKinds = useMemo(() => GROUP_ORDER.filter(kind => filtered.some(item => item.kind === kind)), [filtered]);
   const groups = useMemo(() => activeGroupKinds.map(kind => ({ kind, items: filtered.filter(item => item.kind === kind) })), [activeGroupKinds, filtered]);
-  useEffect(() => {
-    const requestedKind = filters.kind as Kind;
-    const preferred = requestedKind && activeGroupKinds.includes(requestedKind) ? requestedKind : activeGroupKinds[0] || null;
-    if (!expansionInitialized.current && activeGroupKinds.length) {
-      expansionInitialized.current = true;
-      setExpanded(preferred);
-    } else {
-      // A user's collapsed state must survive polling and filter recalculation.
-      setExpanded(current => current && !activeGroupKinds.includes(current) ? null : current);
-    }
-  }, [activeGroupKinds, filters.kind]);
   const exceptionCount = items.filter(needsIndividualReview).length;
   const dueTodayCount = items.filter(item => dayAge(item.start) === 0).length;
   const overdueCount = items.filter(item => dayAge(item.start) >= 3).length;
@@ -410,7 +396,7 @@ export default function ApprovalCenter() {
       <div className="flex items-center justify-between gap-3 lg:hidden"><div><h2 className="font-bold">Filter requests</h2><p className="text-sm text-slate-500 dark:text-slate-300">{appliedFilterCount ? `${appliedFilterCount} filter${appliedFilterCount === 1 ? '' : 's'} applied` : 'Showing all pending requests'}</p></div><button type="button" onClick={() => setFiltersOpen(open => !open)} aria-expanded={filtersOpen} aria-controls="approval-filters" className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 dark:border-slate-500 dark:text-white">{filtersOpen ? 'Hide filters' : 'Open filters'}</button></div>
       <div id="approval-filters" className={`${filtersOpen ? 'mt-4 block' : 'hidden'} lg:block`}>
         <div className="mb-3 grid gap-3 sm:grid-cols-3"><label className="text-sm font-semibold text-slate-700 dark:text-slate-100">Date from<input type="date" aria-label="Date from" value={filters.dateFrom} onChange={event => setFilters({ ...filters, dateFrom: event.target.value })} className={`mt-1 block w-full font-normal ${controlClasses}`} /></label><label className="text-sm font-semibold text-slate-700 dark:text-slate-100">Date to<input type="date" aria-label="Date to" value={filters.dateTo} onChange={event => setFilters({ ...filters, dateTo: event.target.value })} className={`mt-1 block w-full font-normal ${controlClasses}`} /></label><label className="text-sm font-semibold text-slate-700 dark:text-slate-100">Approver scope<select aria-label="Approver scope" disabled className={`mt-1 block w-full font-normal disabled:cursor-not-allowed disabled:opacity-100 dark:disabled:bg-slate-600 dark:disabled:text-slate-100 ${controlClasses}`}><option>My authorized scope</option></select></label></div>
-        <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-8"><input aria-label="Approval search" value={filters.search} onChange={event => setFilters({ ...filters, search: event.target.value })} placeholder="Employee, NTE, PAN, case or request ID" className={`md:col-span-2 ${controlClasses}`} /><select aria-label="Business unit" value={filters.businessUnit} onChange={event => setFilters({ ...filters, businessUnit: event.target.value })} className={controlClasses}><option value="">All business units</option>{businessUnits.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select><select aria-label="Department" value={filters.department} onChange={event => setFilters({ ...filters, department: event.target.value })} className={controlClasses}><option value="">All departments</option>{departments.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select><select aria-label="Request type" value={filters.kind} onChange={event => setFilters({ ...filters, kind: event.target.value })} className={controlClasses}><option value="">All request types</option>{GROUP_ORDER.map(id => <option key={id} value={id}>{KIND_META[id].title}</option>)}</select><select aria-label="Approval status" value={filters.status} onChange={event => setFilters({ ...filters, status: event.target.value })} className={controlClasses}><option value="">All statuses</option>{statuses.map(status => <option key={status} value={status}>{getApprovalStatusLabel(status)}</option>)}</select><select aria-label="Age of request" value={filters.age} onChange={event => setFilters({ ...filters, age: event.target.value })} className={controlClasses}><option value="">Any age</option><option value="today">Due today</option><option value="overdue">Overdue (3+ days)</option></select><select aria-label="Sort approvals" value={filters.sort} onChange={event => setFilters({ ...filters, sort: event.target.value })} className={controlClasses}><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="age">Days pending</option></select></div>
+        <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-8"><input aria-label="Approval search" value={filters.search} onChange={event => setFilters({ ...filters, search: event.target.value })} placeholder="Employee, NTE, PAN, case or request ID" className={`md:col-span-2 ${controlClasses}`} /><select aria-label="Business unit" value={filters.businessUnit} onChange={event => setFilters({ ...filters, businessUnit: event.target.value })} className={controlClasses}><option value="">All business units</option>{businessUnits.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select><select aria-label="Department" value={filters.department} onChange={event => setFilters({ ...filters, department: event.target.value })} className={controlClasses}><option value="">All departments</option>{departments.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select><select aria-label="Approval status" value={filters.status} onChange={event => setFilters({ ...filters, status: event.target.value })} className={controlClasses}><option value="">All statuses</option>{statuses.map(status => <option key={status} value={status}>{getApprovalStatusLabel(status)}</option>)}</select><select aria-label="Age of request" value={filters.age} onChange={event => setFilters({ ...filters, age: event.target.value })} className={controlClasses}><option value="">Any age</option><option value="today">Due today</option><option value="overdue">Overdue (3+ days)</option></select><select aria-label="Sort approvals" value={filters.sort} onChange={event => setFilters({ ...filters, sort: event.target.value })} className={controlClasses}><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="age">Days pending</option></select></div>
         <div className="mt-3 flex flex-wrap gap-2">{[['all', 'All pending'], ['exceptions', 'Exceptions'], ['today', 'Due today'], ['overdue', 'Overdue']].map(([id, label]) => <button key={id} onClick={() => id === 'all' ? showAllPending() : setFilters({ ...filters, quick: id })} className={`min-h-10 rounded-full px-3 py-1.5 text-sm font-semibold ${filters.quick === id && (id !== 'all' || !appliedFilterCount) ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 dark:bg-slate-600 dark:text-white'}`}>{label}</button>)}</div>
         <div className="mt-4 flex flex-wrap justify-end gap-2 lg:hidden"><button type="button" onClick={showAllPending} className="min-h-11 rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold dark:border-slate-500">Clear filters</button><button type="button" onClick={() => setFiltersOpen(false)} className="min-h-11 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white">Apply filters</button></div>
       </div>
@@ -420,7 +406,7 @@ export default function ApprovalCenter() {
         <p className="text-sm text-slate-600 dark:text-slate-300">Showing {filtered.length} of {items.length} pending approvals{filters.kind ? ` · ${KIND_META[filters.kind as Kind]?.title || filters.kind}` : ' · All request types'}</p>
         {appliedFilterCount > 0 && <button onClick={showAllPending} className="min-h-11 rounded-lg border border-indigo-400 px-4 text-sm font-semibold text-indigo-700 dark:text-indigo-300">Show all pending / Clear filters</button>}
       </div>
-      <nav aria-label="Pending approval categories" className="mb-4 flex flex-wrap gap-2">{GROUP_ORDER.filter(kind => items.some(item => item.kind === kind)).map(kind => <button key={kind} aria-pressed={filters.kind === kind} onClick={() => navigate(`/approvals?type=${kind}`)} className={`min-h-10 rounded-full border px-3 text-sm font-semibold ${filters.kind === kind ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-800'}`}>{KIND_META[kind].title} ({items.filter(item => item.kind === kind).length})</button>)}</nav>
+
       <div className="space-y-3">{groups.map(group => {
         const selectableRequests = group.items.filter(item => item.bulkSelectable);
         const exceptions = group.items.filter(needsIndividualReview);
@@ -432,9 +418,11 @@ export default function ApprovalCenter() {
         const desktopHeadings = group.kind === 'overtime' ? OVERTIME_DESKTOP_HEADINGS : isTimeGroup ? TIME_DESKTOP_HEADINGS : GENERIC_DESKTOP_HEADINGS;
         return <section key={group.kind} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-600 dark:bg-slate-800">
           <div className="flex flex-wrap items-center gap-3 p-4">
-            <button aria-label={`Toggle ${displayTitle}`} aria-expanded={expanded === group.kind} onClick={() => { expansionInitialized.current = true; setExpanded(current => current === group.kind ? null : group.kind); }} className="inline-flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg text-xl text-slate-700 hover:bg-slate-100 dark:text-white dark:hover:bg-slate-700">{expanded === group.kind ? '⌄' : '›'}</button>
-            <span className={`rounded-full px-3 py-1 text-sm font-bold ${KIND_META[group.kind].badge}`}>{KIND_META[group.kind].title}</span>
-            <div className="min-w-0 flex-[1_1_15rem]"><h2 className="font-bold text-slate-900 dark:text-white">{displayTitle} — {group.items.length} pending</h2><p className="text-sm text-slate-500 dark:text-slate-300">{KIND_META[group.kind].rule}</p><p className="mt-1 text-xs text-slate-500 dark:text-slate-300">Oldest {dayAge(oldest.start)} days · {new Set(group.items.map(item => item.employeeId).filter(Boolean)).size} employees</p></div>
+            <button aria-label={`Toggle ${displayTitle}`} aria-expanded={expanded === group.kind} onClick={() => setExpanded(current => current === group.kind ? null : group.kind)} className="flex min-h-14 min-w-0 flex-[1_1_20rem] items-center gap-4 rounded-lg text-left hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500 dark:hover:bg-slate-700">
+              <span aria-hidden="true" className="w-6 flex-shrink-0 text-center text-xl">{expanded === group.kind ? '⌄' : '›'}</span>
+              <span className={`rounded-full px-3 py-1 text-sm font-bold ${KIND_META[group.kind].badge}`}>{displayTitle}</span>
+              <span className="min-w-0"><span className="block font-bold">{group.items.length} pending</span><span className="block text-xs text-slate-500 dark:text-slate-300">Oldest {dayAge(oldest.start)} days · Click to {expanded === group.kind ? 'collapse' : 'expand'}</span></span>
+            </button>
             {!!exceptions.length && <button onClick={() => navigate(exceptions[0].reviewUrl)} className="min-h-11 font-semibold text-indigo-600 dark:text-indigo-300">Review exceptions ({exceptions.length})</button>}
             {individualOnly ? <button onClick={() => navigate(group.items[0].reviewUrl)} className="min-h-11 rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white">Review queue</button> : <Button variant="success" disabled={!selectableRequests.length} onClick={() => openConfirm(group.kind, selectableRequests.map(item => item.id))}>Approve all pending — {selectableRequests.length}</Button>}
           </div>

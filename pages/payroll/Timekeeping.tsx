@@ -1,10 +1,11 @@
+import {loadBuilder,saveBuilderShift,mapBuilderAssignment,EmployeeScope} from '../../services/scheduleBuilderService';
 import {CompensableWorkPanel} from '../../modules/payroll/ConfirmedPolicyPanels';
 import {ScheduleTask} from '../../modules/scheduleCompliance';
 import {useSearchParams} from 'react-router-dom';
 import {DayStatus,DayTag,dateKey,getDayStatuses,setDayStatus,statusPresets,leaveForDay} from '../../services/scheduleStatuses';
 import {mapShiftTemplate} from '../../services/shiftService';
 import {scheduleLabel} from '../../services/schedulePolicy';
-import {getScheduleWeek,reviewScheduleOverride} from '../../services/schedulePublicationService';
+import {reviewScheduleWeek,reviewScheduleOverride} from '../../services/schedulePublicationService';
 import type {SchedulePublication} from '../../services/schedulePublicationService';
 import SchedulePublishReview from '../../components/payroll/SchedulePublishReview';
 import SchedulePublicationStatus from '../../components/payroll/SchedulePublicationStatus';
@@ -39,6 +40,8 @@ interface Gap {
     dayType: DayTypeTier;
     shiftTime?: { start: string; end: string };
 }
+
+const manilaToday=()=>new Date(new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())+'T00:00:00');
 
 const getStartOfWeek = (date: Date): Date => {
   const d = new Date(date);
@@ -113,7 +116,19 @@ const Timekeeping: React.FC = () => {
     };
     const savingShift = useRef(false);
     const [shiftSaveError, setShiftSaveError] = useState('');
-    const [retryShift, setRetryShift] = useState<{employeeId:string;date:Date;templateId:string}|null>(null);
+    const [shiftBusy,setShiftBusy]=useState(false);
+    const [builderLoading,setBuilderLoading]=useState(true);
+    const [builderError,setBuilderError]=useState('');
+    const operationRetry=useRef<null|(()=>Promise<void>)>(null);
+    const [failedEmployees,setFailedEmployees]=useState<string[]>([]);
+    const [builderRefresh,setBuilderRefresh]=useState(0);
+    const [builderPeople,setBuilderPeople]=useState<(User & {canEdit:boolean})[]>([]);
+    const [builderContext,setBuilderContext]=useState('');
+    const [employeeScope,setEmployeeScope]=useState<EmployeeScope>(()=>{
+        try{return sessionStorage.getItem(`schedule-scope:${user?.id}`)==='business_unit'?'business_unit':'direct';}catch{return 'direct';}
+    });
+    useEffect(()=>{try{sessionStorage.setItem(`schedule-scope:${user?.id}`,employeeScope);}catch{}},[employeeScope,user?.id]);
+    const [retryShift, setRetryShift] = useState<{employeeId:string;date:Date;templateId:string;scope?:EmployeeScope;week?:string}|null>(null);
     useEffect(()=>{
         if(!retryShift)return;
         const warn=(event:BeforeUnloadEvent)=>{event.preventDefault();event.returnValue='';};
@@ -134,7 +149,7 @@ const Timekeeping: React.FC = () => {
     const [serviceAreas, setServiceAreas] = useState<ServiceArea[]>([]);
     const [staffingRequirements, setStaffingRequirements] = useState<StaffingRequirement[]>([]);
     
-    const [viewDate, setViewDate] = useState(() => requestedWeek && /^\d{4}-\d{2}-\d{2}$/.test(requestedWeek) && !Number.isNaN(Date.parse(requestedWeek)) ? new Date(requestedWeek+'T00:00:00') : new Date());
+    const [viewDate, setViewDate] = useState(() => requestedWeek && /^\d{4}-\d{2}-\d{2}$/.test(requestedWeek) && !Number.isNaN(Date.parse(requestedWeek)) ? new Date(requestedWeek+'T00:00:00') : manilaToday());
     useEffect(()=>{if(requestedWeek&&/^\d{4}-\d{2}-\d{2}$/.test(requestedWeek)&&!Number.isNaN(Date.parse(requestedWeek)))setViewDate(new Date(requestedWeek+'T00:00:00'));},[requestedWeek]);
     const [view, setView] = useState<'grid' | 'role' | 'area' | 'timeline'>('grid');
     const [scheduleStatus, setScheduleStatus] = useState<'published' | 'dirty'>('dirty');
@@ -406,12 +421,6 @@ const Timekeeping: React.FC = () => {
             const rangeEnd = addDays(weekStart, 13);
             const accessibleBuIds = accessibleBus.map(bu => bu.id);
 
-            const makeAssignmentQuery = () => supabase
-                .from('shift_assignments')
-                .select('id, employee_id, shift_template_id, date, business_unit_id, department_id, assigned_area_id, notes')
-                .gte('date', toDateOnly(rangeStart))
-                .lte('date', toDateOnly(rangeEnd)).order('id');
-
             const leaveQuery = supabase
                 .from('leave_requests')
                 .select('id, employee_id, start_date, end_date, start_time, end_time, status, leave_type_id, leave_types(name,paid), approver_configuration_required')
@@ -429,32 +438,18 @@ const Timekeeping: React.FC = () => {
                 leaveQuery.eq('business_unit_id', selectedBuId);
             }
 
-            const loadAssignments = async () => {
-                const rows:any[]=[];
-                for(let offset=0;;offset+=500){
-                    let query=makeAssignmentQuery().range(offset,offset+499);
-                    if(complianceManager)query=query.in('employee_id',employees.filter(e=>e.reportsTo===complianceManager).map(e=>e.id));
-                    else if(selectedBuId!=='all')query=query.eq('business_unit_id',selectedBuId);
-                    else if(accessibleBuIds.length)query=query.in('business_unit_id',accessibleBuIds);
-                    const {data,error}=await query;
-                    if(error)return {data:null,error};
-                    rows.push(...(data||[]));
-                    if((data?.length||0)<500)return {data:rows,error:null};
-                }
-            };
-            const [assignmentRes, leaveRes] = await Promise.all([loadAssignments(), leaveQuery]);
-
+            const [assignmentRes, leaveRes] = await Promise.all([
+                loadBuilder(employeeScope,toDateOnly(weekStart)).then(data=>({data,error:null})).catch(error=>({data:null,error})), leaveQuery]);
             if (!active || request !== sequence || mutation !== scheduleMutation.current || savingShift.current) return;
-
-            if (!assignmentRes.error && assignmentRes.data) {
-                setAssignments(assignmentRes.data.map((row: any) => ({
-                    id: row.id,
-                    employeeId: row.employee_id,
-                    shiftTemplateId: row.shift_template_id,
-                    date: row.date ? new Date(row.date + 'T00:00:00') : new Date(),
-                    locationId: 'OFFICE-MAIN',
-                    assignedAreaId: row.assigned_area_id || undefined,
-                })));
+            setBuilderLoading(false);
+            if(assignmentRes.error){setBuilderError(assignmentRes.error.message);}
+            else if(assignmentRes.data){
+                const snapshot=assignmentRes.data;
+                if(!operationRetry.current)setBuilderError('');
+                setBuilderContext(`${user?.id}:${employeeScope}:${toDateOnly(weekStart)}`);
+                setBuilderPeople(snapshot.people.map((row:any)=>({id:row.id,name:formatEmployeeName(row.full_name||'Employee'),role:row.role,status:'Active',businessUnitId:row.business_unit_id,businessUnit:row.business_unit,departmentId:row.department_id,department:row.department,position:row.position,reportsTo:row.reports_to,canEdit:row.can_edit===true} as User & {canEdit:boolean})));
+                setAssignments(snapshot.assignments.map(mapBuilderAssignment));
+                setDayStatuses(snapshot.statuses);
             }
 
             if (!leaveRes.error && leaveRes.data) {
@@ -472,10 +467,10 @@ const Timekeeping: React.FC = () => {
             }
         };
 
-        void loadScheduleData();
+        if(!savingShift.current){setBuilderLoading(true);void loadScheduleData();}
         const timer=setInterval(()=>{if(document.visibilityState==='visible')void loadScheduleData();},30000);
         return()=>{active=false;clearInterval(timer);};
-    }, [selectedBuId, weekStart, accessibleBus, complianceManager, employees]);
+    }, [selectedBuId, weekStart, accessibleBus, complianceManager, employees,employeeScope,builderRefresh,statusRefresh,user?.id]);
 
     // --- GAP ANALYSIS ENGINE (New in Phase 3) ---
     const gaps = useMemo<Gap[]>(() => {
@@ -605,16 +600,27 @@ const Timekeeping: React.FC = () => {
         return filtered.sort((a,b) => a.name.localeCompare(b.name));
     }, [selectedBuId, departmentFilter, employees, user, complianceManager]);
 
-    const employeesInBU = useMemo(() => {
-        const exemptIds = new Set(clockingExemptEmployeeIds);
-        return scopedEmployees.filter(employee => !exemptIds.has(employee.id));
-    }, [scopedEmployees, clockingExemptEmployeeIds]);
+    const builderIsCurrent=builderContext===`${user?.id}:${employeeScope}:${toDateOnly(weekStart)}`;
+    const employeesInBU=useMemo(()=>!builderIsCurrent?[]:builderPeople.filter(e=>
+      (employeeScope==='business_unit'||selectedBuId==='all'||e.businessUnitId===selectedBuId)&&
+      (departmentFilter==='all'||e.departmentId===departmentFilter)&&
+      !clockingExemptEmployeeIds.includes(e.id)),[builderIsCurrent,builderPeople,employeeScope,selectedBuId,departmentFilter,clockingExemptEmployeeIds]);
+    const canEditEmployee=(id:string)=>builderIsCurrent&&!builderLoading&&!shiftBusy&&builderPeople.some(e=>e.id===id&&e.canEdit&&(employeeScope==='business_unit'||e.reportsTo===user?.id));
+    const editableEmployees=employeesInBU.filter(e=>canEditEmployee(e.id));
+    const displayAssignments=retryShift&&shiftSaveError?[...assignments.filter(a=>!(a.employeeId===retryShift.employeeId&&toDateOnly(new Date(a.date))===toDateOnly(retryShift.date))),{id:'unsaved-selection',employeeId:retryShift.employeeId,date:retryShift.date,shiftTemplateId:retryShift.templateId,locationId:'OFFICE-MAIN'}]:assignments;
+    const employeeStates=Object.fromEntries(employeesInBU.map(e=>{
+      const row=publicationRows.find(r=>r.employeeId===e.id);
+      const saved=assignments.some(a=>a.employeeId===e.id&&toDateOnly(new Date(a.date))>=toDateOnly(weekStart)&&toDateOnly(new Date(a.date))<=toDateOnly(addDays(weekStart,6)))||dayStatuses.some(d=>d.employee_id===e.id&&d.work_date>=toDateOnly(weekStart)&&d.work_date<=toDateOnly(addDays(weekStart,6)));
+      const failed=shiftSaveError&&retryShift?.employeeId===e.id&&toDateOnly(retryShift.date)>=toDateOnly(weekStart)&&toDateOnly(retryShift.date)<=toDateOnly(addDays(weekStart,6));
+      return [e.id,failed||failedEmployees.includes(e.id)?'Save failed — Retry':!builderIsCurrent||builderLoading||publicationLoading?'Checking saved schedule…':row?.pending?'Submitted':row?.published?'Published':(row as any)?.ready?'Ready for review':saved?'Draft saved':'Missing schedule'];
+    }));
 
+    const publicationDataKey=JSON.stringify([assignments.map(a=>[a.id,a.shiftTemplateId]),dayStatuses.map(d=>[d.id,d.revision])]);
     const publicationEmployeeKey=employeesInBU.map(e=>e.id).sort().join(',');
     useEffect(()=>{let active=true;setScheduleStatus('dirty');setPublicationRows([]);setPublicationLoading(true);
       const ids=publicationEmployeeKey?publicationEmployeeKey.split(','):[];
-      getScheduleWeek(ids,toDateOnly(weekStart)).then(rows=>{if(active){setPublicationRows(rows);setScheduleStatus(rows.length===ids.length&&rows.length>0&&rows.every(r=>r.published)?'published':'dirty');}}).catch(e=>{if(active)setToastInfo({show:true,message:e.message});}).finally(()=>{if(active)setPublicationLoading(false);});return()=>{active=false;};
-    },[publicationEmployeeKey,weekStart,assignments,templates,publicationRefresh,user?.id]);
+      reviewScheduleWeek(ids,toDateOnly(weekStart)).then(rows=>{if(active){setPublicationRows(rows);setScheduleStatus(rows.length===ids.length&&rows.length>0&&rows.every(r=>r.published)?'published':'dirty');}}).catch(e=>{if(active)setToastInfo({show:true,message:e.message});}).finally(()=>{if(active)setPublicationLoading(false);});return()=>{active=false;};
+    },[publicationEmployeeKey,publicationDataKey,weekStart,templates,publicationRefresh,builderRefresh,user?.id]);
     useEffect(()=>{setReviewIds(null);},[publicationEmployeeKey,weekStart]);
     const handleReviewSchedule=async(id:string,approve:boolean)=>{
       if(publicationReason.trim().length<3){setToastInfo({show:true,message:'Enter an override review note in Advanced schedule versions.'});return;}
@@ -695,11 +701,34 @@ const Timekeeping: React.FC = () => {
     }, [operatingHours, weekDates, assignments, templates]);
 
 
-    useEffect(()=>{let active=true;getDayStatuses(employeesInBU.map(e=>e.id),toDateOnly(addDays(weekStart,-7)),toDateOnly(addDays(weekStart,6))).then(rows=>{if(active)setDayStatuses(rows);}).catch(e=>{if(active)setToastInfo({show:true,message:e.message});});return()=>{active=false;};},[employeesInBU,weekStart,statusRefresh]);
-    const applyDayStatus=async(employee:User,date:Date,tag:DayTag|null)=>{if(!isScheduleEditable)return;try{const suspension=tag==='suspended'||dayStatuses.some(s=>s.employee_id===employee.id&&s.work_date===toDateOnly(date)&&s.tag==='suspended');const reason=suspension?window.prompt('Reason for this suspension status change (at least 3 characters):'):undefined;if(suspension&&(!reason||reason.trim().length<3))return;await setDayStatus(employee.id,toDateOnly(date),tag,reason||undefined);setStatusRefresh(v=>v+1);setPublicationRefresh(v=>v+1);setToastInfo({show:true,message:'Day status saved. Publish the reviewed week to make it effective.'});}catch(e){setToastInfo({show:true,message:(e as Error).message});}};
+    const runScheduleOperation=async(label:string,ids:string[],operation:()=>Promise<void|false>)=>{
+        if(savingShift.current||retryShift)return;
+        if(ids.some(id=>!canEditEmployee(id))){setBuilderError('You cannot edit these employees in the selected scope.');return;}
+        const retry=()=>runScheduleOperation(label,ids,operation);
+        operationRetry.current=retry;savingShift.current=true;setShiftBusy(true);scheduleMutation.current++;
+        setBuilderError('');setFailedEmployees([]);
+        try{
+            if(await operation()===false){operationRetry.current=null;return;}
+            const snapshot=await loadBuilder(employeeScope,toDateOnly(weekStart));
+            setAssignments(snapshot.assignments.map(mapBuilderAssignment));setDayStatuses(snapshot.statuses);
+            setPublicationRefresh(v=>v+1);setScheduleStatus('dirty');operationRetry.current=null;
+            setToastInfo({show:true,message:label});handleCloseDrawer();handleCloseDetailModal();
+        }catch(e){setBuilderError((e as Error).message||'Schedule was not saved. Please retry.');setFailedEmployees(ids);}
+        finally{savingShift.current=false;setShiftBusy(false);scheduleMutation.current++;}
+    };
+    const applyDayStatus=async(employee:User,date:Date,tag:DayTag|null)=>{
+      if(!canEditEmployee(employee.id)||savingShift.current)return;
+      const suspension=tag==='suspended'||dayStatuses.some(s=>s.employee_id===employee.id&&s.work_date===toDateOnly(date)&&s.tag==='suspended');
+      const reason=suspension?window.prompt('Reason for this suspension status change (at least 3 characters):'):undefined;
+      if(suspension&&(!reason||reason.trim().length<3))return;
+      await runScheduleOperation('Schedule saved',[employee.id],async()=>{
+        const saved=await getDayStatuses([employee.id],toDateOnly(date),toDateOnly(date));
+        if((saved.find(s=>s.work_date===toDateOnly(date))?.tag??null)!==tag)await setDayStatus(employee.id,toDateOnly(date),tag,reason||undefined);
+      });
+    };
     useEffect(()=>{let active=true;const load=async()=>{const {data}=await supabase.rpc('get_attendance_review');if(active&&data)setFlaggedEmployees([...new Set<string>((data.flags??[]).filter((f:any)=>f.status==='review').map((f:any)=>f.employee_id))]);};void load();const t=setInterval(()=>{if(document.visibilityState==='visible')void load();},60000);return()=>{active=false;clearInterval(t);};},[user?.id]);
     const handleOpenDrawer = (employee: User, date: Date) => {
-        if (!isScheduleEditable) return;
+        if (!canEditEmployee(employee.id)||retryShift) return;
         if(selectedStatus){void applyDayStatus(employee,date,selectedStatus);return;}
         // Special Check: If user is a manager (and lacks global edit rights), they can only edit their own team
         if (isTeamManager && !can('Timekeeping', Permission.Edit) && user && employee.department !== user.department && employee.reportsTo !== user.id) {
@@ -717,82 +746,33 @@ const Timekeeping: React.FC = () => {
     const handleCloseDrawer = () => setDrawerState({ open: false, employee: null, date: null });
 
     const resolveAssignmentBuId = (employeeId: string) => {
-        const employee = employees.find(e => e.id === employeeId);
+        const employee = builderPeople.find(e => e.id === employeeId);
         return employee?.businessUnitId || null;
     };
 
     const hasScopedPreset = (employeeId: string, templateId: string) => {
-        const buId = employees.find(e => e.id === employeeId)?.businessUnitId;
+        const buId = builderPeople.find(e => e.id === employeeId)?.businessUnitId;
         return !!buId && templates.some(t => t.id === templateId && t.businessUnitId === buId);
     };
-    const rejectLegacyCopy = () => setToastInfo({show:true,message:'This schedule uses a retired shared preset. Create the BU presets and assign the week before copying it.'});
 
     const handleSaveShift = async (employeeId: string, date: Date, templateId: string) => {
-        if (savingShift.current) return;
-        savingShift.current = true;
-        scheduleMutation.current++;
-        setShiftSaveError('');
-        setRetryShift({employeeId,date,templateId});
-        try {
-        const leave=leaveForDay(leaves,employeeId,date);if(leave&&!leave.startTime&&!leave.endTime)throw new Error('Approved leave covers this day. Use the existing leave workflow to change it.');
-        if (!hasScopedPreset(employeeId, templateId)) throw new Error('Select an active shift preset for this employee’s business unit.');
-        const existing = assignments.find(
-            a => a.employeeId === employeeId && new Date(a.date).toDateString() === date.toDateString()
-        );
-        const employee = employees.find(e => e.id === employeeId);
-        const resolvedBuId = resolveAssignmentBuId(employeeId);
-
-        if (existing) {
-            const { data, error } = await supabase
-                .from('shift_assignments')
-                .update({ shift_template_id: templateId, business_unit_id: resolvedBuId })
-                .eq('id', existing.id).select('id').single();
-
-            if (error || !data) throw new Error(error?.message || 'Shift was not saved.');
-            if (!error) {
-                setAssignments(prev => prev.map(a => a.id === existing.id ? { ...a, shiftTemplateId: templateId } : a));
-                logActivity(user, 'UPDATE', 'ShiftAssignment', existing.id, `Updated shift assignment for employee ${employeeId} on ${date.toDateString()}`);
-            }
-        } else {
-            const payload = {
-                employee_id: employeeId,
-                shift_template_id: templateId,
-                date: toDateOnly(date),
-                business_unit_id: resolvedBuId,
-                department_id: employee?.departmentId || null,
-                assigned_area_id: null,
-                created_by: user?.id || null,
-            };
-            const { data, error } = await supabase
-                .from('shift_assignments')
-                .insert(payload)
-                .select('id')
-                .single();
-
-            if (error || !data) throw new Error(error?.message || 'Shift was not saved.');
-            if (!error && data) {
-                const newAssignment: ShiftAssignment = {
-                    id: data.id,
-                    employeeId,
-                    date,
-                    shiftTemplateId: templateId,
-                    locationId: 'OFFICE-MAIN'
-                };
-                setAssignments(prev => [...prev, newAssignment]);
-                logActivity(user, 'CREATE', 'ShiftAssignment', newAssignment.id, `Assigned shift to employee ${employeeId} on ${date.toDateString()}`);
-            }
-        }
-
-        setScheduleStatus('dirty');
-        setPublicationRefresh(v=>v+1);
-        setRetryShift(null);
-        handleCloseDrawer();
-        } catch (error) {
-            setShiftSaveError((error as Error).message || 'Shift was not saved. Please retry.');
-        } finally {
-            savingShift.current = false;
-            scheduleMutation.current++;
-        }
+        if(savingShift.current)return;
+        if(!canEditEmployee(employeeId)){setShiftSaveError('You cannot edit this employee in the current scope.');return;}
+        const scope=retryShift?.scope??employeeScope;
+        const week=retryShift?.week??toDateOnly(weekStart);
+        savingShift.current=true;setShiftBusy(true);scheduleMutation.current++;
+        setShiftSaveError('');setRetryShift({employeeId,date,templateId,scope,week});
+        try{
+            const leave=leaveForDay(leaves,employeeId,date);
+            if(leave&&!leave.startTime&&!leave.endTime)throw new Error('Approved leave covers this day. Use the existing leave workflow to change it.');
+            const existing=assignments.find(a=>a.employeeId===employeeId&&toDateOnly(new Date(a.date))===toDateOnly(date));
+            const snapshot=await saveBuilderShift(scope,week,employeeId,toDateOnly(date),templateId,existing);
+            setAssignments(snapshot.assignments.map(mapBuilderAssignment));setDayStatuses(snapshot.statuses);
+            setScheduleStatus('dirty');setPublicationRefresh(v=>v+1);setRetryShift(null);
+            handleCloseDrawer();setToastInfo({show:true,message:'Schedule saved'});
+            void logActivity(user,'UPDATE','ShiftAssignment',employeeId,`Schedule saved for ${toDateOnly(date)}`);
+        }catch(error){setShiftSaveError((error as Error).message||'Schedule was not saved. Please retry.');}
+        finally{savingShift.current=false;setShiftBusy(false);scheduleMutation.current++;}
     };
 
     const handleOpenDetailModal = (assignment: ShiftAssignment) => {
@@ -815,22 +795,18 @@ const Timekeeping: React.FC = () => {
         setDetailModalState({ open: false, assignment: null });
     };
 
-    const handleDeleteShift = async (assignmentId: string) => {
-        if (window.confirm('This will delete the single shift for this day. Do you want to proceed?')) {
-            const { error } = await supabase
-                .from('shift_assignments')
-                .delete()
-                .eq('id', assignmentId);
-
-            if (!error) {
-                setAssignments(prev => prev.filter(a => a.id !== assignmentId));
-                logActivity(user, 'DELETE', 'ShiftAssignment', assignmentId, 'Deleted shift assignment');
-                setScheduleStatus('dirty');
-                handleCloseDetailModal();
-            }
-        }
+    const handleDeleteShift=async(assignmentId:string)=>{
+      const target=assignments.find(a=>a.id===assignmentId);
+      if(!target||!canEditEmployee(target.employeeId)||savingShift.current)return;
+      if(!window.confirm('Delete the shift for this day?'))return;
+      await runScheduleOperation('Schedule saved',[target.employeeId],async()=>{
+        const {error}=await supabase.from('shift_assignments').delete().eq('id',assignmentId);
+        if(error)throw error;
+        const {data,error:readError}=await supabase.from('shift_assignments').select('id').eq('id',assignmentId);
+        if(readError)throw readError;if(data?.length)throw new Error('Permission denied: the shift could not be deleted.');
+      });
     };
-    
+
     const handleChangeShift = (assignment: ShiftAssignment) => {
         const employee = employees.find(u => u.id === assignment.employeeId);
         if (employee) {
@@ -841,13 +817,9 @@ const Timekeeping: React.FC = () => {
         }
     };
     
-    const handleCopyWeek = async (assignmentToCopy: ShiftAssignment) => {
-        if (savingShift.current || !isScheduleEditable) return;
+    const copyRemaining = async (assignmentToCopy: ShiftAssignment) => {
         const { employeeId, shiftTemplateId, date } = assignmentToCopy;
-        if (!hasScopedPreset(employeeId, shiftTemplateId)) { rejectLegacyCopy(); return; }
-        savingShift.current = true;
-        scheduleMutation.current++;
-        try {
+        if (!hasScopedPreset(employeeId, shiftTemplateId)) throw new Error('Select a current business-unit preset before copying.');
         const freshStatuses = await getDayStatuses([employeeId], toDateOnly(weekStart), toDateOnly(addDays(weekStart,6)));
         const {data: savedShifts,error: readError} = await supabase.from('shift_assignments').select('date').eq('employee_id',employeeId).gte('date',toDateOnly(weekStart)).lte('date',toDateOnly(addDays(weekStart,6)));
         if(readError) throw readError;
@@ -878,7 +850,7 @@ const Timekeeping: React.FC = () => {
         }
         
         if (newAssignments.length > 0) {
-            if(!window.confirm(`Copy this schedule to ${newAssignments.length} remaining unscheduled day(s): ${newAssignments.map(a=>toDateOnly(new Date(a.date))).join(', ')}? Existing shifts, leave, and day statuses will be kept. Review and publish afterward.`)) return;
+            if(!window.confirm(`Copy this schedule to ${newAssignments.length} remaining unscheduled day(s): ${newAssignments.map(a=>toDateOnly(new Date(a.date))).join(', ')}? Existing shifts, leave, and day statuses will be kept. Review and publish afterward.`)) return false;
             const payloads = newAssignments.map(a => {
                 const emp = employees.find(e => e.id === a.employeeId);
                 const resolvedBuId = resolveAssignmentBuId(a.employeeId);
@@ -899,39 +871,19 @@ const Timekeeping: React.FC = () => {
                 .select('id, employee_id, shift_template_id, date, assigned_area_id');
 
             if(error || !data || data.length !== payloads.length) throw new Error(error?.message || 'Could not verify all copied shifts. Refresh before retrying.');
-            if (!error && data) {
-                const inserted = data.map((row: any) => ({
-                    id: row.id,
-                    employeeId: row.employee_id,
-                    shiftTemplateId: row.shift_template_id,
-                    date: row.date ? new Date(row.date) : new Date(),
-                    locationId: 'OFFICE-MAIN',
-                    assignedAreaId: row.assigned_area_id || undefined,
-                }));
-                setAssignments(prev => [...prev, ...inserted]);
-            }
+
             setScheduleStatus('dirty');
             logActivity(user, 'CREATE', 'ShiftAssignment', 'batch', `Copied shift to rest of week for employee ${employeeId}`);
         }
-        setPublicationRefresh(v=>v+1);
-        setStatusRefresh(v=>v+1);
-        setToastInfo({show:true,message:newAssignments.length ? `${newAssignments.length} shifts saved as drafts. Review and publish the week.` : 'No remaining empty dates. Existing shifts, leave, and day statuses were preserved.'});
-        handleCloseDetailModal();
-        handleCloseDrawer();
-        } catch(error) {
-            setToastInfo({show:true,message:(error as Error).message || 'Could not copy the schedule.'});
-        } finally {
-            savingShift.current = false;
-            scheduleMutation.current++;
-        }
     };
+    const handleCopyWeek=(assignment:ShiftAssignment)=>runScheduleOperation('Schedule saved',[assignment.employeeId],()=>copyRemaining(assignment));
 
-    const copyWeek=async(ids:string[])=>{try{const {error}=await supabase.rpc('copy_schedule_week_with_statuses',{p_employees:ids,p_week:toDateOnly(weekStart)});if(error)throw error;
-      const {data,error:readError}=await supabase.from('shift_assignments').select('id,employee_id,shift_template_id,date,assigned_area_id').in('employee_id',ids).gte('date',toDateOnly(weekStart)).lte('date',toDateOnly(addDays(weekStart,6)));if(readError)throw readError;
-      setAssignments(prev=>[...prev.filter(a=>!ids.includes(a.employeeId)||toDateOnly(new Date(a.date))<toDateOnly(weekStart)||toDateOnly(new Date(a.date))>toDateOnly(addDays(weekStart,6))),...(data??[]).map(r=>({id:r.id,employeeId:r.employee_id,shiftTemplateId:r.shift_template_id,date:new Date(r.date+'T00:00:00'),assignedAreaId:r.assigned_area_id||undefined,locationId:'OFFICE-MAIN'}))]);setStatusRefresh(v=>v+1);setPublicationRefresh(v=>v+1);setScheduleStatus('dirty');handleCloseDrawer();setToastInfo({show:true,message:'Week copied with Rest Day and Skeletal tags. Approved leave stays on its approved dates. Publish after review.'});
-    }catch(e){setToastInfo({show:true,message:(e as Error).message});}};
+    const copyWeek=(ids:string[])=>runScheduleOperation('Schedule saved',ids,async()=>{
+      const {error}=await supabase.rpc('copy_schedule_week_with_statuses',{p_employees:ids,p_week:toDateOnly(weekStart)});
+      if(error)throw error;
+    });
     const handleCopyLastWeekSchedule=async(employeeId:string)=>{if(isScheduleEditable&&window.confirm('Copy last week’s shifts and recurring status tags over this employee’s current draft week?'))await copyWeek([employeeId]);};
-    const handleCopyPreviousWeekAll=async()=>{if(isScheduleEditable&&window.confirm('Copy last week’s shifts and recurring status tags over the displayed employees’ current draft week?'))await copyWeek(employeesInBU.map(e=>e.id));};
+    const handleCopyPreviousWeekAll=async()=>{if(isScheduleEditable&&window.confirm('Copy last week’s shifts and recurring status tags over the displayed employees’ current draft week?'))await copyWeek(editableEmployees.map(e=>e.id));};
 
     const handleSaveTemplate = async (templateData: ShiftTemplate) => {
         if (!isPresetEditable) return;
@@ -1025,10 +977,10 @@ const Timekeeping: React.FC = () => {
     };
     
     // --- Auto Fill Logic ---
-    const handleAutoFill = async () => {
+    const autoFill = async () => {
         if (selectedBuId === 'all') {
             setToastInfo({ show: true, message: 'Select a specific business unit to auto-assign shifts.' });
-            return;
+            return false;
         }
 
         const hasRequirementsForBu = staffingRequirements.some(req => {
@@ -1038,21 +990,19 @@ const Timekeeping: React.FC = () => {
 
         if (!hasRequirementsForBu) {
             setToastInfo({ show: true, message: 'No staffing requirements configured for this business unit.' });
-            return;
+            return false;
         }
 
         if (gaps.length === 0) {
             setToastInfo({ show: true, message: 'No gaps to fill!' });
-            return;
+            return false;
         }
 
         let filledCount = 0;
         const newAssignments: ShiftAssignment[] = [];
 
         // Restrict autofill candidates for specific managers
-        const candidates = isTeamManager && !can('Timekeeping', Permission.Edit) && user 
-            ? employeesInBU.filter(e => e.department === user.department || e.reportsTo === user.id)
-            : employeesInBU;
+        const candidates = editableEmployees;
 
         gaps.forEach(gap => {
              // Find an employee with the right role who is NOT working on this day
@@ -1108,30 +1058,17 @@ const Timekeeping: React.FC = () => {
                 .select('id, employee_id, shift_template_id, date, assigned_area_id');
 
             if(error || !data || data.length !== payloads.length) throw new Error(error?.message || 'Could not verify all copied shifts. Refresh before retrying.');
-            if (!error && data) {
-                const inserted = data.map((row: any) => ({
-                    id: row.id,
-                    employeeId: row.employee_id,
-                    shiftTemplateId: row.shift_template_id,
-                    date: row.date ? new Date(row.date) : new Date(),
-                    locationId: 'OFFICE-MAIN',
-                    assignedAreaId: row.assigned_area_id || undefined,
-                }));
-                setAssignments(prev => [...prev, ...inserted]);
-                setScheduleStatus('dirty');
-                setToastInfo({ show: true, message: `Auto-assigned ${inserted.length} shifts based on gaps.` });
-                logActivity(user!, 'CREATE', 'ShiftAssignment', 'batch', `Auto-filled ${inserted.length} shifts based on gaps.`);
-            } else {
-                setToastInfo({ show: true, message: 'Failed to auto-assign shifts.' });
-            }
+
         } else {
-             setToastInfo({ show: true, message: 'Could not find available employees to fill gaps.' });
+             setToastInfo({ show: true, message: 'Could not find available employees to fill gaps.' });return false;
         }
     };
 
-    const handlePrevWeek = () => { setViewDate(prev => addDays(prev, -7)); setScheduleStatus('dirty'); };
-    const handleNextWeek = () => { setViewDate(prev => addDays(prev, 7)); setScheduleStatus('dirty'); };
-    const handleToday = () => { setViewDate(new Date()); setScheduleStatus('dirty'); };
+    const handleAutoFill=()=>runScheduleOperation('Schedule saved',editableEmployees.map(e=>e.id),autoFill);
+
+    const handlePrevWeek = () => { if(shiftBusy||retryShift||operationRetry.current)return; setViewDate(prev => addDays(prev, -7)); setScheduleStatus('dirty'); };
+    const handleNextWeek = () => { if(shiftBusy||retryShift||operationRetry.current)return; setViewDate(prev => addDays(prev, 7)); setScheduleStatus('dirty'); };
+    const handleToday = () => { if(shiftBusy||retryShift||operationRetry.current)return; setViewDate(manilaToday()); setScheduleStatus('dirty'); };
 
     const shiftColorClasses: Record<string, string> = {
         blue: 'bg-blue-100 border-blue-400 text-blue-800 dark:bg-blue-900/50 dark:border-blue-700 dark:text-blue-200',
@@ -1144,11 +1081,11 @@ const Timekeeping: React.FC = () => {
     
     const enrichedAssignmentDetail: EnrichedAssignmentDetail | null = useMemo(() => {
         if (!detailModalState.assignment) return null;
-        const employee = employees.find(u => u.id === detailModalState.assignment!.employeeId);
+        const employee = builderPeople.find(u => u.id === detailModalState.assignment!.employeeId);
         const shift = templates.find(t => t.id === detailModalState.assignment!.shiftTemplateId);
         if (!employee || !shift) return null;
         return { assignment: detailModalState.assignment, employee, shift };
-    }, [detailModalState.assignment, templates]);
+    }, [detailModalState.assignment, templates,builderPeople]);
 
     const templatesForDrawer = useMemo(() => {
         const buId = drawerState.employee?.businessUnitId;
@@ -1183,7 +1120,7 @@ const Timekeeping: React.FC = () => {
                 <select
                     id="bu-filter"
                     value={selectedBuId}
-                    onChange={e => setSelectedBuId(e.target.value)}
+                    disabled={shiftBusy||!!retryShift||!!operationRetry.current} onChange={e => setSelectedBuId(e.target.value)}
                     className={`block w-full pl-4 pr-10 py-2 text-xl appearance-none focus:outline-none rounded-md ${buColorStyle.bg} ${buColorStyle.text}`}
                 >
                     {accessibleBus.length > 0 && <option value="all">All BUs</option>}
@@ -1195,7 +1132,7 @@ const Timekeeping: React.FC = () => {
             </div>
             <div className="relative">
                 <label htmlFor="dept-filter" className="sr-only">Department</label>
-                <select id="dept-filter" value={departmentFilter} onChange={e => setDepartmentFilter(e.target.value)} className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white">
+                <select id="dept-filter" value={departmentFilter} disabled={shiftBusy||!!retryShift||!!operationRetry.current} onChange={e => setDepartmentFilter(e.target.value)} className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white">
                     <option value="all">All Departments</option>
                     {departmentsInSelectedBu.map(dept => <option key={dept.id} value={dept.id}>{dept.name}</option>)}
                 </select>
@@ -1246,7 +1183,7 @@ const Timekeeping: React.FC = () => {
     return (
         <div className="space-y-6">
             <ScheduleTask week={toDateOnly(weekStart)} manager={complianceManager} refresh={statusRefresh+publicationRefresh+scheduleMutation.current} details />
-            {shiftSaveError && retryShift && <div role="alert" className="rounded border border-red-300 bg-red-50 p-4 text-red-900"><p>Shift not saved: {shiftSaveError}</p><button className="mt-2 underline" onClick={()=>void handleSaveShift(retryShift.employeeId,retryShift.date,retryShift.templateId)}>Retry save</button></div>}
+            {shiftSaveError && retryShift && <div role="alert" className="rounded border border-red-300 bg-red-50 p-4 text-red-900"><p>Shift not saved: {shiftSaveError}</p><button className="mt-2 underline" disabled={shiftBusy} onClick={()=>void handleSaveShift(retryShift.employeeId,retryShift.date,retryShift.templateId)}>Retry save</button> <button disabled={shiftBusy} className="ml-3 underline" onClick={()=>{const employee=builderPeople.find(e=>e.id===retryShift.employeeId);if(employee)setDrawerState({open:true,employee,date:retryShift.date});}}>Edit selection</button></div>}
             <Toast
                 show={toastInfo.show}
                 onClose={() => setToastInfo({ show: false, message: '' })}
@@ -1260,7 +1197,7 @@ const Timekeeping: React.FC = () => {
                     selectedBuId={selectedBuId}
                     actions={dropdowns}
                     employees={scopedEmployees}
-                    assignments={assignments}
+                    assignments={displayAssignments}
                     templates={templates}
                 />
             )}
@@ -1315,6 +1252,10 @@ const Timekeeping: React.FC = () => {
             <Card>
                 <div className="p-4 space-y-4">
                     <h2 className="text-3xl font-bold">Schedule Builder</h2>
+                    {builderLoading&&<p role="status">Loading saved schedules…</p>}
+                    {shiftBusy&&<p role="status">Saving schedule…</p>}
+                    {builderError&&<p role="alert" className="text-red-500">{builderError} <button className="underline" disabled={shiftBusy} onClick={()=>{if(operationRetry.current)void operationRetry.current();else setBuilderRefresh(v=>v+1);}}>Retry</button></p>}
+                    <p>Showing {builderIsCurrent?employeesInBU.length:0} {employeeScope==='direct'?'direct reports':'employees in your business unit'}{departmentFilter!=='all'?' (department filter applied)':''}. Employees marked view-only cannot be edited.</p>
                     <p className="text-sm font-semibold">{publicationLoading?'Checking publication status…':scheduleStatus==='published'?'PUBLISHED — Employees can now see their schedules':publicationRows.some(r=>r.activeVersion)?'DRAFT CHANGES — Employees still see their last published schedules':'DRAFT — Employees cannot see this yet'}</p>
                      <div className="grid grid-cols-1 items-center gap-4">
                         <span className="font-semibold text-2xl text-gray-800 dark:text-gray-200">
@@ -1326,10 +1267,11 @@ const Timekeeping: React.FC = () => {
                     <div className="flex flex-col md:flex-row justify-between items-center gap-4">
                         <div className="flex flex-wrap items-center gap-4">
                             <div className="flex items-center space-x-2">
-                                <Button variant="secondary" onClick={handlePrevWeek}>&larr; Prev</Button>
-                                <Button variant="secondary" onClick={handleToday}>Today</Button>
-                                <Button variant="secondary" onClick={handleNextWeek}>Next &rarr;</Button>
+                                <Button variant="secondary" disabled={shiftBusy||!!retryShift||!!operationRetry.current} onClick={handlePrevWeek}>&larr; Prev</Button>
+                                <Button variant="secondary" disabled={shiftBusy||!!retryShift||!!operationRetry.current} onClick={handleToday}>Today</Button>
+                                <Button variant="secondary" disabled={shiftBusy||!!retryShift||!!operationRetry.current} onClick={handleNextWeek}>Next &rarr;</Button>
                             </div>
+                            <label className="text-sm font-semibold">Employee scope<select aria-label="Employee scope" value={employeeScope} disabled={shiftBusy||!!retryShift||!!operationRetry.current} onChange={e=>setEmployeeScope(e.target.value as EmployeeScope)} className="ml-2 rounded border p-2 dark:bg-slate-800"><option value="direct">My direct reports</option><option value="business_unit">Entire business unit</option></select></label>
                             <div className="inline-flex space-x-1 p-1 bg-gray-200 dark:bg-slate-800 rounded-lg">
                                 <button className={viewButtonClass('grid')} onClick={() => setView('grid')}><ViewGridIcon/> Grid</button>
                                 <button className={viewButtonClass('role')} onClick={() => setView('role')}><ViewListIcon/> Role</button>
@@ -1345,7 +1287,7 @@ const Timekeeping: React.FC = () => {
                                         Copy Last Week's Schedule
                                     </Button>
 
-                                    <Button disabled={publicationBusy||publicationLoading||!employeesInBU.length} onClick={()=>setReviewIds(employeesInBU.map(e=>e.id))}>Review &amp; publish</Button>
+                                    <Button disabled={shiftBusy||!!retryShift||!!operationRetry.current||publicationBusy||publicationLoading||!editableEmployees.length} onClick={()=>setReviewIds(editableEmployees.map(e=>e.id))}>Review &amp; publish</Button>
                                     {selectedBuId !== 'all' && (
                                         <Button variant="secondary" onClick={() => setIsHoursModalOpen(true)}>Edit Business Hours</Button>
                                     )}
@@ -1361,12 +1303,12 @@ const Timekeeping: React.FC = () => {
                     <TimelineView 
                         weekDates={weekDates}
                         employees={employeesInBU}
-                        assignments={assignments}
+                        assignments={displayAssignments}
                         templates={templates}
                         operatingHours={operatingHours}
                         leaves={leaves} dayStatuses={dayStatuses} onStatus={applyDayStatus}
                         onOpenDrawer={handleOpenDrawer}
-                        isEditable={isScheduleEditable}
+                        isEditable={isScheduleEditable} canEditEmployee={canEditEmployee} employeeStates={employeeStates}
                     />
                 ) : (
                     <RoleViewTable selectedStatus={selectedStatus}
@@ -1377,25 +1319,25 @@ const Timekeeping: React.FC = () => {
                         weekDates={weekDates}
                         operatingHours={operatingHours}
                         validationStatus={validationStatus}
-                        assignments={assignments}
+                        assignments={displayAssignments}
                         suggestedAssignments={suggestedAssignments}
                         leaves={leaves} dayStatuses={dayStatuses} onStatus={applyDayStatus}
                         templates={templates}
                         shiftColorClasses={shiftColorClasses}
                         onOpenDetailModal={handleOpenDetailModal}
                         onOpenDrawer={handleOpenDrawer}
-                        isEditable={isScheduleEditable}
+                        isEditable={isScheduleEditable} canEditEmployee={canEditEmployee} employeeStates={employeeStates}
                     />
                 )}
             </Card>
 
-            <SchedulePublicationStatus week={toDateOnly(weekStart)} onPublish={isScheduleEditable?(id)=>setReviewIds([id]):undefined} rows={publicationRows} names={Object.fromEntries(employeesInBU.map(e=>[e.id,e.name]))} onReview={handleReviewSchedule} busy={publicationBusy||publicationLoading} reviewNote={publicationReason} onReviewNote={setPublicationReason}/>
-            {reviewIds&&<SchedulePublishReview coverageWarnings={Object.entries(validationStatus).filter(([,value])=>value.tooltip).map(([day,value])=>`${day}: ${value.tooltip}`)} ids={reviewIds} week={toDateOnly(weekStart)} label={formatDateRange(weekStart,addDays(weekStart,6))} excluded={Math.max(0,scopedEmployees.length-employeesInBU.length)} onClose={()=>setReviewIds(null)} onPublished={()=>setPublicationRefresh(v=>v+1)} onFix={(id,date)=>{setReviewIds(null);const employee=employeesInBU.find(e=>e.id===id);if(employee)handleOpenDrawer(employee,date?new Date(date+'T12:00:00'):weekStart);}}/>}
+            <SchedulePublicationStatus week={toDateOnly(weekStart)} onPublish={isScheduleEditable?(id)=>{if(canEditEmployee(id))setReviewIds([id]);}:undefined} rows={publicationRows.filter(r=>builderPeople.some(e=>e.id===r.employeeId&&e.canEdit))} names={Object.fromEntries(employeesInBU.map(e=>[e.id,e.name]))} onReview={handleReviewSchedule} busy={publicationBusy||publicationLoading} reviewNote={publicationReason} onReviewNote={setPublicationReason}/>
+            {reviewIds&&<SchedulePublishReview scope={employeeScope} coverageWarnings={Object.entries(validationStatus).filter(([,value])=>value.tooltip).map(([day,value])=>`${day}: ${value.tooltip}`)} ids={reviewIds} week={toDateOnly(weekStart)} label={formatDateRange(weekStart,addDays(weekStart,6))} excluded={Math.max(0,scopedEmployees.length-employeesInBU.length)} onClose={()=>setReviewIds(null)} onPublished={()=>{setPublicationRefresh(v=>v+1);setBuilderRefresh(v=>v+1);}} onFix={(id,date)=>{setReviewIds(null);const employee=employeesInBU.find(e=>e.id===id);if(employee)handleOpenDrawer(employee,date?new Date(date+'T12:00:00'):weekStart);}}/>}
 
-            <ShiftAssignmentDrawer onStatus={(tag)=>{if(drawerState.employee&&drawerState.date)void applyDayStatus(drawerState.employee,drawerState.date,tag);handleCloseDrawer();}}
+            <ShiftAssignmentDrawer busy={shiftBusy} error={shiftSaveError||builderError} onRetry={()=>{if(operationRetry.current)void operationRetry.current();else if(retryShift)void handleSaveShift(retryShift.employeeId,retryShift.date,retryShift.templateId);}} onStatus={(tag)=>{if(drawerState.employee&&drawerState.date)void applyDayStatus(drawerState.employee,drawerState.date,tag);}}
 
                 isOpen={drawerState.open}
-                onClose={handleCloseDrawer}
+                onClose={()=>{if(!shiftBusy)handleCloseDrawer();}}
                 employee={drawerState.employee}
                 date={drawerState.date}
                 templates={templatesForDrawer}
@@ -1416,7 +1358,7 @@ const Timekeeping: React.FC = () => {
                 onCopyWeek={handleCopyWeek}
                 onChangeShift={() => handleChangeShift(detailModalState.assignment!)}
                 assignmentDetail={enrichedAssignmentDetail}
-                isEditable={isScheduleEditable && (can('Timekeeping', Permission.Edit) || !isTeamManager || enrichedAssignmentDetail?.employee?.department === user?.department || enrichedAssignmentDetail?.employee?.reportsTo === user?.id)}
+                isEditable={!!enrichedAssignmentDetail?.employee&&canEditEmployee(enrichedAssignmentDetail.employee.id)}
             />
             
             <ShiftTemplateModal

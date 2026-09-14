@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+const file=ts.createSourceFile('PAN.tsx',readFileSync('pages/employees/PersonnelActionNotice.tsx','utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+let fn;function visit(n){if(ts.isVariableDeclaration(n)&&n.name.getText(file)==='approveAndContinue')fn=n.initializer.getText(file);ts.forEachChild(n,visit);}visit(file);
+let rpcError=false,queueError=false,next=true,url,error,saved=0,calls=0,payload;
+const scope={user:{id:'bod'},approvalInFlight:{current:false},supabase:{rpc:async(_,args)=>{calls++;payload=args;return {data:rpcError?null:{id:'current'},error:rpcError?{message:'Not authorized'}:null}}},mapPanRow:x=>x,setRecords:()=>{},setIsApproveModalOpen:()=>{},setPanForApproval:()=>{},setIsModalOpen:()=>{},setSelectedRecord:()=>{},decisionSaved:()=>saved++,setReviewLoadError:v=>error=v,fetchActionableApprovalTasks:async()=>{if(queueError)throw Error('Unavailable');return next?[{request_type:'pan',request_id:'current'},{request_type:'pan',request_id:'next'}]:[];},navigate:v=>url=v};
+const run=vm.runInNewContext(ts.transpileModule('('+fn+')',{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,scope);
+await run({id:'current'},null);assert.equal(payload.p_comment,null);assert.equal(url,'/employees/pan?review=next');assert.equal(saved,1);
+next=false;await run({id:'current'},null);assert.equal(url,'/approvals');
+url=null;rpcError=true;await run({id:'current'},null);assert.equal(url,null);assert.equal(saved,2);assert.equal(error,'Not authorized');
+rpcError=false;queueError=true;await run({id:'current'},null);assert.match(error,/approval was saved/);assert.equal(url,null);
+scope.approvalInFlight.current=true;const before=calls;await run({id:'current'},null);assert.equal(calls,before);
+console.log('PASS: null comment, next actionable PAN, empty queue return, failed save stays, post-save queue failure, duplicate-click lock.');
