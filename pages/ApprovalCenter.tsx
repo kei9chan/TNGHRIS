@@ -138,6 +138,7 @@ export default function ApprovalCenter() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const restored = useRef(readApprovalView(user?.id || ''));
   const [expanded, setExpanded] = useState<Kind | null>(() => GROUP_ORDER.includes(restored.current?.expanded) ? restored.current.expanded : null);
+  const expansionInitialized = useRef(Boolean(restored.current));
   const [decisionMessage, setDecisionMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState<{ kind: Kind; ids: string[] } | null>(null);
@@ -372,7 +373,13 @@ export default function ApprovalCenter() {
   useEffect(() => {
     const requestedKind = filters.kind as Kind;
     const preferred = requestedKind && activeGroupKinds.includes(requestedKind) ? requestedKind : activeGroupKinds[0] || null;
-    setExpanded(current => current && activeGroupKinds.includes(current) ? current : preferred);
+    if (!expansionInitialized.current && activeGroupKinds.length) {
+      expansionInitialized.current = true;
+      setExpanded(preferred);
+    } else {
+      // A user's collapsed state must survive polling and filter recalculation.
+      setExpanded(current => current && !activeGroupKinds.includes(current) ? null : current);
+    }
   }, [activeGroupKinds, filters.kind]);
   const exceptionCount = filtered.filter(needsIndividualReview).length;
   const dueTodayCount = filtered.filter(item => dayAge(item.start) === 0).length;
@@ -430,7 +437,7 @@ export default function ApprovalCenter() {
         const desktopHeadings = group.kind === 'overtime' ? OVERTIME_DESKTOP_HEADINGS : isTimeGroup ? TIME_DESKTOP_HEADINGS : GENERIC_DESKTOP_HEADINGS;
         return <section key={group.kind} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-600 dark:bg-slate-800">
           <div className="flex flex-wrap items-center gap-3 p-4">
-            <button aria-label={`Toggle ${displayTitle}`} onClick={() => setExpanded(expanded === group.kind ? null : group.kind)} className="inline-flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg text-xl text-slate-700 hover:bg-slate-100 dark:text-white dark:hover:bg-slate-700">{expanded === group.kind ? '⌄' : '›'}</button>
+            <button aria-label={`Toggle ${displayTitle}`} aria-expanded={expanded === group.kind} onClick={() => { expansionInitialized.current = true; setExpanded(current => current === group.kind ? null : group.kind); }} className="inline-flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg text-xl text-slate-700 hover:bg-slate-100 dark:text-white dark:hover:bg-slate-700">{expanded === group.kind ? '⌄' : '›'}</button>
             <span className={`rounded-full px-3 py-1 text-sm font-bold ${KIND_META[group.kind].badge}`}>{KIND_META[group.kind].title}</span>
             <div className="min-w-0 flex-[1_1_15rem]"><h2 className="font-bold text-slate-900 dark:text-white">{displayTitle} — {group.items.length} pending</h2><p className="text-sm text-slate-500 dark:text-slate-300">{KIND_META[group.kind].rule}</p><p className="mt-1 text-xs text-slate-500 dark:text-slate-300">Oldest {dayAge(oldest.start)} days · {new Set(group.items.map(item => item.employeeId).filter(Boolean)).size} employees</p></div>
             {!!exceptions.length && <button onClick={() => navigate(exceptions[0].reviewUrl)} className="min-h-11 font-semibold text-indigo-600 dark:text-indigo-300">Review exceptions ({exceptions.length})</button>}

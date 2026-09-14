@@ -14,6 +14,7 @@ async function inbox({ role = 'BOD', stage = 'DIRECT_MANAGER', canAct = false, t
     react: {
       useState(value) { const index = states.length; states.push(value); return [value, next => { states[index] = next; }]; },
       useCallback: fn => fn,
+      useRef: value => ({current: value}),
       useEffect() {},
     },
     '../services/supabaseClient': { supabase: { rpc: async () => empty, from: () => query } },
