@@ -1,3 +1,4 @@
+import { hrReviewCount } from '../../services/hrReviewCount';
 // Migration complete: mockDataCompat removed from EmployeeList
 
 import React, { useState, useMemo, useEffect } from 'react';
@@ -49,8 +50,7 @@ const EmployeeList: React.FC = () => {
   }, [location.search]);
   
   // State for pending review counts
-  const [pendingChangeCount, setPendingChangeCount] = useState(0);
-  const [pendingDocCount, setPendingDocCount] = useState(0);
+  const [pendingReviewCount, setPendingReviewCount] = useState<number | null>(null);
   const { users, loading: usersLoading, refetchUsers } = useUsers();
 
   const departments = useMemo(() => [...new Set(users.map(u => u.department))].sort(), [users]);
@@ -95,33 +95,26 @@ const EmployeeList: React.FC = () => {
   useEffect(() => {
     if (currentUser?.role !== Role.Admin && currentUser?.role !== Role.HRManager && currentUser?.role !== Role.HRStaff) return;
 
+    if (activeTab === 'review') return; // The open queue supplies its exact loaded count.
+    let active = true;
+    setPendingReviewCount(null);
     const fetchCounts = async () => {
       try {
-        // Fetch pending documents
-        const { count: docCount } = await supabase
-          .from('user_documents')
-          .select('id', { count: 'exact', head: true })
-          .eq('status', UserDocumentStatus.Pending);
-        
-        setPendingDocCount(docCount || 0);
-
-        // Fetch pending changes (distinct submissions)
-        const { data: changes } = await supabase
-          .from('profile_change_requests')
-          .select('submission_id')
-          .eq('status', ChangeHistoryStatus.Pending);
-        
-        if (changes) {
-          const distinctSubmissions = new Set(changes.map(c => c.submission_id)).size;
-          setPendingChangeCount(distinctSubmissions);
-        }
+        const [registrations, documents, changes] = await Promise.all([
+          supabase.rpc('get_pending_registrations').select('id'),
+          supabase.from('user_documents').select('id').eq('status', UserDocumentStatus.Pending),
+          supabase.from('profile_change_requests').select('submission_id').eq('status', ChangeHistoryStatus.Pending),
+        ]);
+        for (const result of [registrations, documents, changes]) if (result.error) throw result.error;
+        if (active) setPendingReviewCount(hrReviewCount(registrations.data || [], documents.data || [], (changes.data || []).map(c => c.submission_id)));
       } catch (err) {
         console.error('Failed to fetch pending counts', err);
+        if (active) setPendingReviewCount(null);
       }
     };
-
     fetchCounts();
-  }, [currentUser]);
+    return () => { active = false; };
+  }, [currentUser, activeTab]);
 
   // Filter users based on RBAC scope + UI filters
   const filteredUsers = useMemo(() => {
@@ -166,14 +159,6 @@ const EmployeeList: React.FC = () => {
       })
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [searchTerm, buFilter, departmentFilter, statusFilter, employmentStatusFilter, accessibleBus, users, accessControl, currentUser]);
-
-  const pendingReviewCount = useMemo(() => {
-    const pendingUserRegistrations = users.filter(
-        u => u.status === 'Inactive' && u.role === Role.Employee
-    ).length;
-    
-    return pendingChangeCount + pendingUserRegistrations + pendingDocCount;
-  }, [pendingChangeCount, users, pendingDocCount]);
 
   const handleView = (userId: string) => {
     const targetPath = `/users/${userId}`;
@@ -356,7 +341,7 @@ const EmployeeList: React.FC = () => {
                 {(currentUser?.role === Role.Admin || currentUser?.role === Role.HRManager || currentUser?.role === Role.HRStaff) && (
                   <button onClick={() => handleTabChange('review')} className={tabClass('review')}>
                       HR Review Queue
-                      {pendingReviewCount > 0 && (
+                      {pendingReviewCount !== null && pendingReviewCount > 0 && (
                           <span className="ml-2 inline-flex items-center justify-center h-6 w-6 rounded-full bg-red-500 text-xs font-bold text-white">
                               {pendingReviewCount}
                           </span>
@@ -410,7 +395,7 @@ const EmployeeList: React.FC = () => {
         )}
 
         {activeTab === 'review' && (
-            <HRReviewQueue />
+            <HRReviewQueue key={currentUser?.id} onCountChange={setPendingReviewCount} />
         )}
         
         {isEditModalOpen && userToEdit && (
