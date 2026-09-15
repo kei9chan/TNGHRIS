@@ -1,6 +1,7 @@
 import OBApprovalQueue from '../modules/official-business/OBApprovalQueue';
 import { ApprovalOutcome } from '../components/approvals/ApprovalNavigation';
 import RecentDecisions from '../components/approvals/RecentDecisions';
+import BulkDisapprovalDialog from '../components/approvals/BulkDisapprovalDialog';
 import {useAttendanceIssues,issueLabels,shiftText} from '../services/attendanceIssues';
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -141,6 +142,7 @@ export default function ApprovalCenter() {
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState<{ kind: Kind; ids: string[] } | null>(null);
   const [confirmed, setConfirmed] = useState(false);
+  const [disapproving,setDisapproving]=useState<{kind:'leave'|'wfh'|'overtime';items:ApprovalItem[]}|null>(null);
   const [result, setResult] = useState<any>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   // Every fresh visit starts with the complete authorized queue. URL category links
@@ -386,6 +388,7 @@ export default function ApprovalCenter() {
   const error = approvals.approvalError || additional.additionalApprovalError || attendance.error || loadError;
   const controlClasses = 'rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:border-slate-500 dark:bg-slate-700 dark:text-white dark:placeholder:text-slate-300 dark:focus:border-indigo-400 dark:focus:ring-indigo-900';
   return <div className="space-y-5 pb-12 text-slate-900 dark:text-slate-100">
+    {disapproving&&<BulkDisapprovalDialog kind={disapproving.kind} items={disapproving.items} onClose={()=>setDisapproving(null)} onDone={async()=>{setSelected(new Set());await approvals.refreshApprovals();}} />}
     {decisionMessage && <ApprovalOutcome message={decisionMessage} onReturn={() => { setDecisionMessage(''); closeRequestedReview(); }} />}
     <div className="flex flex-wrap items-end justify-between gap-3"><div><h1 className="text-3xl font-bold text-slate-900 dark:text-white">Approval Center</h1><p className="mt-1 text-slate-500 dark:text-slate-300">The single queue for every approval requiring your action.</p></div><Link to="/dashboard" className="font-semibold text-indigo-600 dark:text-indigo-300">← Dashboard</Link></div>
     {loading && <p role="status" className="text-sm text-slate-500 dark:text-slate-300">Updating approval queues…</p>}
@@ -429,7 +432,7 @@ export default function ApprovalCenter() {
             {individualOnly ? <button onClick={() => navigate(group.items[0].reviewUrl)} className="min-h-11 rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white">Review queue</button> : <Button variant="success" disabled={!selectableRequests.length} onClick={() => openConfirm(group.kind, selectableRequests.map(item => item.id))}>Approve all pending — {selectableRequests.length}</Button>}
           </div>
           {expanded === group.kind && <div className="border-t border-slate-200 dark:border-slate-600">
-            {!individualOnly && <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 px-4 py-3 text-sm dark:bg-slate-700 dark:text-slate-100"><label className="flex min-h-11 items-center gap-2"><input type="checkbox" checked={selectableRequests.length > 0 && checked.length === selectableRequests.length} onChange={event => { const next = new Set(selected); selectableRequests.forEach(item => event.target.checked ? next.add(item.canonicalKey) : next.delete(item.canonicalKey)); setSelected(next); }} /> Select all pending requests ({selectableRequests.length})</label><Button size="sm" disabled={!checked.length} onClick={() => openConfirm(group.kind, checked.map(item => item.id))}>Approve selected — {checked.length}</Button></div>}
+            {!individualOnly && <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 px-4 py-3 text-sm dark:bg-slate-700 dark:text-slate-100"><label className="flex min-h-11 items-center gap-2"><input type="checkbox" checked={selectableRequests.length > 0 && checked.length === selectableRequests.length} onChange={event => { const next = new Set(selected); selectableRequests.forEach(item => event.target.checked ? next.add(item.canonicalKey) : next.delete(item.canonicalKey)); setSelected(next); }} /> Select all pending requests ({selectableRequests.length})</label><div className="flex flex-wrap gap-2"><Button size="sm" disabled={!checked.length} onClick={() => openConfirm(group.kind, checked.map(item => item.id))}>Approve selected — {checked.length}</Button>{(group.kind==='leave'||group.kind==='wfh'||group.kind==='overtime')&&<Button variant="danger" size="sm" disabled={!checked.length||checked.length>100} onClick={()=>setDisapproving({kind:group.kind as 'leave'|'wfh'|'overtime',items:[...checked]})}>Disapprove selected — {checked.length}</Button>}</div></div>}
             <div className="space-y-3 bg-slate-50 p-3 dark:bg-slate-900/40 lg:hidden">{group.items.map(item => <ApprovalMobileCard key={item.canonicalKey} item={item} requested={requestedItem === item.id} selected={selected.has(item.canonicalKey)} onSelect={checkedItem => { const next = new Set(selected); checkedItem ? next.add(item.canonicalKey) : next.delete(item.canonicalKey); setSelected(next); }} />)}</div>
             <div className="hidden overflow-x-auto lg:block"><table className={`${group.kind === 'overtime' ? 'min-w-[1320px]' : isTimeGroup ? 'min-w-[1120px]' : 'min-w-full'} text-sm`}>
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-700 dark:text-slate-200"><tr>{desktopHeadings.map((heading, index) => <th key={heading} className={`${index === 0 ? 'w-16' : ''} ${heading === 'Action' ? 'sticky right-0 z-20 bg-slate-50 shadow-[-10px_0_12px_-12px_rgba(15,23,42,0.45)] dark:bg-slate-700' : ''} px-4 py-3`}>{heading}</th>)}</tr></thead>
