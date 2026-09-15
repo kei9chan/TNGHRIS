@@ -194,8 +194,7 @@ const Awards: React.FC = () => {
       departmentId: string,
       approvers: User[]
   ) => {
-    if (!user) return;
-    try {
+    if (!user) throw new Error('Sign in before submitting award nominations.');
       const created = await createEmployeeAward({
         employeeId,
         awardTemplateId: awardId,
@@ -213,8 +212,8 @@ const Awards: React.FC = () => {
         dateAwarded: created.dateAwarded || new Date(),
         createdByUserId: user.id,
         level: created.level || BadgeLevel.Bronze,
-        businessUnitId,
-        departmentId: departmentId || undefined,
+        businessUnitId: created.businessUnitId,
+        departmentId: created.departmentId,
         status: created.status,
         approverSteps: created.approverSteps as ApproverStep[],
         rejectionReason: created.rejectionReason,
@@ -224,16 +223,6 @@ const Awards: React.FC = () => {
         submittedAt: created.submittedAt,
       };
       setEmployeeAwards(prev => [mapped, ...prev]);
-      setIsAssignModalOpen(false);
-      setToastInfo({
-        show: true,
-        title: 'Award Submitted',
-        message: 'Award nomination submitted.',
-      });
-
-    } catch (err: any) {
-      alert(err?.message || 'Failed to submit award.');
-    }
   };
 
   const handleSaveAwardTemplate = async (award: Award) => {

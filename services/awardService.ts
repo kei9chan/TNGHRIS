@@ -189,13 +189,18 @@ export const createEmployeeAward = async (payload: {
   });
   if (error || !rpcData) throw new Error(error?.message || 'Failed to save award');
   const createdRow = Array.isArray(rpcData) ? rpcData[0] : rpcData;
-  const { data, error: readError } = await supabase
-    .from('employee_awards')
-    .select('*, award_templates(title, badge_icon_url), hris_users:employee_id(full_name), approver:approver_id(full_name), business_units(name)')
-    .eq('id', createdRow.id)
-    .single();
-  if (readError || !data) throw new Error(readError?.message || 'Award was submitted but could not be reloaded');
-  return mapEmployeeAward(data);
+  // The RPC has committed. A failed enrichment read must not turn a saved
+  // nomination into a retryable failure and create a duplicate nomination.
+  try {
+    const { data, error: readError } = await supabase
+      .from('employee_awards')
+      .select('*, award_templates(title, badge_icon_url), hris_users:employee_id(full_name), approver:approver_id(full_name), business_units(name)')
+      .eq('id', createdRow.id)
+      .single();
+    return mapEmployeeAward(!readError && data ? data : createdRow);
+  } catch {
+    return mapEmployeeAward(createdRow);
+  }
 };
 
 export const uploadTemplateAsset = async (file: File, userId?: string): Promise<{ path: string; signedUrl: string }> => {
