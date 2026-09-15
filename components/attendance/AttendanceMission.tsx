@@ -61,6 +61,6 @@ export function AttendanceMissionView({day,elapsed,busy,error,onAction,onRefresh
    </div>
   </div>
  </div>
- <Link to="/payroll/timekeeping" className="mt-2 flex min-h-11 items-center justify-end text-sm underline underline-offset-4">View schedule</Link>
+ <Link to="/payroll/my-schedule" className="mt-2 flex min-h-11 items-center justify-end text-sm underline underline-offset-4">View schedule</Link>
  </section>;
 }

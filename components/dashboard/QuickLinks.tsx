@@ -88,7 +88,7 @@ const QuickLinks: React.FC<QuickLinksProps> = ({ hideCOE = false }) => {
             { id: 'oncall', name: 'Request On-Call', path: '/dashboard', state: { openManpowerModal: true }, icon: <UserGroupIcon />, allowed: can('Manpower', Permission.Create) && workflowCan('Manpower', Permission.Submit) },
             { id: 'wfh', name: 'Request WFH', path: '/payroll/wfh-requests', state: { openNewModal: true }, icon: <HomeIcon />, allowed: workflowCan('WFH', Permission.Submit) },
             { id: 'coe', name: 'Request COE', path: '/dashboard', state: { openRequestCOE: true }, icon: <DocumentDuplicateIcon />, allowed: !hideCOE && workflowCan('COE', Permission.Submit) },
-            { id: 'schedule', name: 'View Schedule', path: '/payroll/timekeeping', icon: <CalendarDaysIcon />, allowed: can('Timekeeping', Permission.View) },
+            { id: 'schedule', name: 'View Schedule', path: '/payroll/my-schedule', icon: <CalendarDaysIcon />, allowed: can('Timekeeping', Permission.View) },
             { id: 'leave', name: 'Request Leave', path: '/payroll/leave', icon: <CalendarIcon />, allowed: workflowCan('Leave', Permission.Submit) },
             { id: 'overtime', name: 'Request Overtime', path: '/payroll/overtime-requests', state: { openNewOTModal: true }, icon: <ClockIcon />, allowed: workflowCan('Overtime', Permission.Submit) },
             { id: 'ticket', name: 'Submit a Ticket', path: '/helpdesk/tickets', state: { openNewTicketModal: true }, icon: <TicketIcon />, allowed: can('Helpdesk', Permission.Create) || can('Helpdesk', Permission.Submit) },
