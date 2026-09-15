@@ -1,5 +1,5 @@
 // Migration complete: mockDataCompat removed from HRReviewQueue
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { ChangeHistory, ChangeHistoryStatus, EmployeeDraftStatus, User, Role, Permission, UserDocument, UserDocumentStatus, NotificationType } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import Card from '../../components/ui/Card';
@@ -24,6 +24,8 @@ const HRReviewQueue: React.FC = () => {
     const { user } = useAuth();
     const { can } = usePermissions();
     const [pendingChanges, setPendingChanges] = useState<ChangeHistory[]>([]);
+    const registrationBusy = useRef(new Set<string>());
+    const [registrationError, setRegistrationError] = useState('');
     const [pendingUsers, setPendingUsers] = useState<User[]>([]);
     const [pendingDocuments, setPendingDocuments] = useState<UserDocument[]>([]);
     const [employeeLookup, setEmployeeLookup] = useState<Map<string, string>>(new Map());
@@ -114,9 +116,8 @@ const HRReviewQueue: React.FC = () => {
         const loadPendingUsers = async () => {
             try {
                 const { data, error } = await supabase
-                    .rpc('get_accessible_hris_users')
-                    .select('id, full_name, email, role, status, position, department, business_unit, business_unit_id, birth_date')
-                    .eq('status', 'Inactive');
+                    .rpc('get_pending_registrations')
+                    .select('id, full_name, email, role, status, position, department, business_unit, business_unit_id, birth_date');
                 if (error) throw error;
                 if (data) {
                     const rows = Array.isArray(data) ? data : [data];
@@ -137,6 +138,7 @@ const HRReviewQueue: React.FC = () => {
                 }
             } catch (e) {
                 console.error('Failed to load pending users', e);
+                setRegistrationError('Unable to load registrations. Please refresh to retry.');
                 setPendingUsers([]);
             }
         };
@@ -354,45 +356,35 @@ const HRReviewQueue: React.FC = () => {
         }
     };
 
-    const handleUserApproval = async (userId: string, reportsToId: string, employeeId: string) => {
-        if (!user) return;
+    const decideRegistration = async (userId: string, decision: 'Approved' | 'Rejected', reason?: string, reportsToId?: string, employeeId?: string) => {
+        if (!user || registrationBusy.current.has(userId)) return;
+        registrationBusy.current.add(userId);
+        setRegistrationError('');
         try {
-            const { error } = await supabase
-                .from('hris_users')
-                .update({ status: 'Active', reports_to: reportsToId, employee_id: employeeId })
-                .eq('id', userId);
+            const { data, error } = await supabase.rpc('review_registration', {
+                p_id: userId, p_decision: decision, p_reason: reason || null,
+                p_reports_to: reportsToId || null, p_employee_id: employeeId || null,
+            });
             if (error) throw error;
-            logActivity(user, 'APPROVE', 'UserRegistration', userId, `Approved new user registration.`);
-            setPendingUsers(prev =>
-                prev.map(u => (u.id === userId ? { ...u, status: 'Active' } : u))
-            );
-            // Notify the newly-activated user that their account is ready
-            createNotification({
-                userId,
-                type: NotificationType.GENERAL,
-                title: 'Account Activated',
-                message: 'Your registration has been approved. Welcome to the system!',
-                link: '/dashboard',
-            }).catch(e => console.warn('Failed to send account activation notification', e));
-        } catch (e) {
-            console.error('Failed to approve user', e);
-            alert('Failed to approve user.');
+            if (data !== decision) throw new Error('Decision was not confirmed. Refresh the queue before retrying.');
+            setPendingUsers(prev => prev.filter(u => u.id !== userId));
+            if (decision === 'Approved') createNotification({
+                userId, type: NotificationType.GENERAL, title: 'Account Activated',
+                message: 'Your registration has been approved. Welcome to the system!', link: '/dashboard',
+            }).catch(e => console.warn('Failed to send activation notification', e));
+        } catch (e: any) {
+            setRegistrationError(e?.message || 'Unable to save the registration decision. Please retry.');
+        } finally {
+            registrationBusy.current.delete(userId);
         }
     };
-
-    const handleUserRejection = async (userId: string) => {
-        if (!user) return;
-        if (window.confirm('Are you sure you want to reject and delete this user registration? This cannot be undone.')) {
-            try {
-                const { error } = await supabase.from('hris_users').delete().eq('id', userId);
-                if (error) throw error;
-                logActivity(user, 'DELETE', 'UserRegistration', userId, `Rejected and deleted new user registration.`);
-                setPendingUsers(prev => prev.filter(u => u.id !== userId));
-            } catch (e) {
-                console.error('Failed to reject user', e);
-                alert('Failed to reject user.');
-            }
-        }
+    const handleUserApproval = (userId: string, reportsToId: string, employeeId: string) =>
+        decideRegistration(userId, 'Approved', undefined, reportsToId, employeeId);
+    const handleUserRejection = (userId: string) => {
+        const reason = window.prompt('Reason for rejecting this registration (required). The account and audit history will be retained.');
+        if (reason === null) return;
+        if (!reason.trim()) { setRegistrationError('A rejection reason is required.'); return; }
+        return decideRegistration(userId, 'Rejected', reason.trim());
     };
 
     const handleOpenRejectModal = (type: 'profile' | 'document', id: string) => {
@@ -428,6 +420,7 @@ const HRReviewQueue: React.FC = () => {
                 </div>
             </Card>
 
+            {registrationError && <div role="alert" className="p-4 text-red-700 bg-red-50 rounded-lg">{registrationError}</div>}
             {filteredPendingUsers.length > 0 && (
                 <Card title="New User Registrations">
                     <div className="space-y-4">
