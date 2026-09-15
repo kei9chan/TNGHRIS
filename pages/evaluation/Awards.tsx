@@ -4,7 +4,7 @@ import React from 'react';
 import { getApprovalRequestId } from '../../services/approvalDeepLinks';
 import { useSearchParams } from 'react-router-dom';
 import Button from '../../components/ui/Button';
-import { Award, EmployeeAward, User, Permission, BadgeLevel, BusinessUnit, Role, ResolutionStatus, ApproverStep } from '../../types';
+import { Award, EmployeeAward as BaseEmployeeAward, User, Permission, BadgeLevel, BusinessUnit, Role, ResolutionStatus, ApproverStep } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import AssignAwardModal from '../../components/evaluation/AssignAwardModal';
@@ -17,14 +17,16 @@ import RejectReasonModal from '../../components/feedback/RejectReasonModal';
 import { fetchAwardTemplates, fetchEmployeeAwardById, fetchEmployeeAwards, createEmployeeAward, processEmployeeAwardApproval, markEmployeeAwardIssued, saveAwardTemplate } from '../../services/awardService';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
-import CertificateRenderer from '../../components/evaluation/CertificateRenderer';
 import { createModernAwardDesign } from '../../components/evaluation/AwardVisualSystem';
-import { captureCertificatePng, downloadCertificatePdf, printCertificateImage } from '../../services/awardCertificateExport';
-import GmailSenderField from '../../components/integrations/GmailSenderField';
-import { useGmailConnection } from '../../hooks/useGmailConnection';
-import { sendHrisEmail } from '../../services/gmailConnectionService';
+import { downloadCertificatePdf } from '../../services/awardCertificateExport';
+import {issueCommendation,fetchLetterTemplates,selectLetterTemplate,LetterTemplate} from '../../services/commendationService';
+import AwardLetterDialog from '../../components/evaluation/AwardLetterDialog';
+import CommendationTemplates from '../../components/evaluation/CommendationTemplates';
+import CommendationLetter from '../../components/evaluation/CommendationLetter';
+import CommendationRecords from '../../components/evaluation/CommendationRecords';
 
 const FALLBACK_DESIGN = createModernAwardDesign('TNG HRIS', 'Certificate of Recognition');
+type EmployeeAward = BaseEmployeeAward & {awardDate?:string};
 
 type EnrichedEmployeeAward = EmployeeAward & { 
     employeeName: string, 
@@ -53,6 +55,7 @@ const toEmployeeAward = (award: Awaited<ReturnType<typeof fetchEmployeeAwards>>[
   submittedAt: award.submittedAt,
   decidedAt: award.decidedAt,
   issuedAt: award.issuedAt,
+  awardDate:award.awardDate,
 });
 
 
@@ -81,12 +84,17 @@ const Awards: React.FC = () => {
   const [toastInfo, setToastInfo] = React.useState<{ show: boolean, title: string, message: string, icon?: React.ReactNode }>({ show: false, title: '', message: '' });
 
   const [reviewAward, setReviewAward] = React.useState<EnrichedEmployeeAward | null>(null);
+  const [letterId,setLetterId]=React.useState<string|null>(searchParams.get('letter'));
+  const [letterTemplates,setLetterTemplates]=React.useState<LetterTemplate[]>([]);
+  const [issuing,setIssuing]=React.useState(false);
+  const issuanceLock=React.useRef(false);
+  const canManageLetters=!!user&&[Role.Admin,Role.HRManager,Role.HRStaff].some(role=>user.role===role||user.roles?.includes(role));
+  React.useEffect(()=>{fetchLetterTemplates().then(setLetterTemplates).catch(()=>{});},[]);
   const [isRejectModalOpen, setIsRejectModalOpen] = React.useState(false);
   const [awardToReject, setAwardToReject] = React.useState<EnrichedEmployeeAward | null>(null);
   const [openedReviewId, setOpenedReviewId] = React.useState<string | null>(null);
   const [reviewLoadError, setReviewLoadError] = React.useState('');
   const reviewCertificateRef = React.useRef<HTMLDivElement>(null);
-  const { connection: gmailConnection, loading: gmailLoading } = useGmailConnection(Boolean(reviewAward));
 
   React.useEffect(() => {
     const load = async () => {
@@ -192,7 +200,8 @@ const Awards: React.FC = () => {
       notes: string, 
       businessUnitId: string, 
       departmentId: string,
-      approvers: User[]
+      approvers: User[],
+      awardDate?:string
   ) => {
     if (!user) throw new Error('Sign in before submitting award nominations.');
       const created = await createEmployeeAward({
@@ -203,6 +212,7 @@ const Awards: React.FC = () => {
         departmentId: departmentId || undefined,
         createdByUserId: user.id,
         approverIds: approvers.map(approver => approver.id),
+        awardDate,
       });
       const mapped: EmployeeAward = {
         id: created.id,
@@ -261,6 +271,7 @@ const Awards: React.FC = () => {
   };
 
   const downloadIssuedCertificate = (award: EnrichedEmployeeAward) => {
+    if(award.certificateSnapshotUrl?.startsWith('private:')){setLetterId(award.id);return;}
     if (award.status !== ResolutionStatus.Issued || !award.certificateSnapshotUrl) {
       alert('The final certificate is available only after approval and issuance.');
       return;
@@ -320,45 +331,22 @@ const Awards: React.FC = () => {
     }
   }, [searchParams, enrichedEmployeeAwards, user, canManage, openedReviewId]);
 
-    const captureFinalCertificate = async () => {
-        const source = reviewCertificateRef.current;
-        if (!source) throw new Error('Certificate preview is not ready. Please reopen the award and try again.');
-        return captureCertificatePng(source);
-    };
-
     const issueApprovedAward = async (award: EnrichedEmployeeAward) => {
-        const employee = users.find(candidate => candidate.id === award.employeeId);
-        if (!employee?.email) throw new Error('The employee has no email address. Add one before issuing the award.');
-        const certificateUrl = await captureFinalCertificate();
-        const certificateBase64 = certificateUrl.split(',')[1] || '';
-        const firstName = employee.name.includes(',')
-          ? employee.name.split(',')[1]?.trim().split(' ')[0]
-          : employee.name.split(' ')[0];
-        const senderName = user?.name || 'HR Team';
-        await sendHrisEmail({
-          to: employee.email,
-          subject: `Award Certificate - ${award.awardTitle}`,
-          message: `Dear ${firstName},\n\nCongratulations on receiving the ${award.awardTitle} award. Your approved certificate is attached.\n\nBest regards,\n${senderName}`,
-          html: `<p>Dear ${firstName},</p><p>Congratulations on receiving the <strong>${award.awardTitle}</strong> award. Your approved certificate is attached.</p>${award.notes ? `<p><strong>Citation:</strong> ${award.notes}</p>` : ''}<p>Best regards,<br />${senderName}</p>`,
-          attachments: [{
-            filename: `Award_Certificate_${employee.name.replace(/\s+/g, '_')}.png`,
-            contentBase64: certificateBase64,
-            contentType: 'image/png',
-          }],
-          documentType: 'award',
-          documentId: award.id,
-        });
-        const issued = await markEmployeeAwardIssued(award.id, certificateUrl);
+        if(issuanceLock.current)return;
+        issuanceLock.current=true;setIssuing(true);
+        try {
+        const issued = await issueCommendation(award.id);
         setEmployeeAwards(previous => previous.map(item => item.id === award.id ? {
           ...item,
           status: ResolutionStatus.Issued,
-          certificateSnapshotUrl: issued.certificateUrl,
-          issuedAt: issued.issuedAt,
-          dateAwarded: issued.issuedAt || issued.decidedAt || new Date(),
+          certificateSnapshotUrl: 'private:award-commendations/'+issued.file_path,
+          issuedAt: new Date(issued.issued_at!),
+          dateAwarded: new Date(issued.snapshot.awardDate+'T12:00:00'),
         } : item));
         setShowConfetti(true);
         setTimeout(() => setShowConfetti(false), 4000);
-        setToastInfo({ show: true, title: 'Award issued', message: `${award.employeeName} was emailed the approved certificate.` });
+        setToastInfo({ show: true, title: 'Award issued', message: `${award.employeeName} received a private Letter of Commendation and dashboard notification.` });
+        } finally {issuanceLock.current=false;setIssuing(false);}
     };
 
     const handleApproveAward = async (award: EnrichedEmployeeAward) => {
@@ -443,26 +431,14 @@ const Awards: React.FC = () => {
         return (
             <Modal
                 isOpen={!!reviewAward}
-                onClose={() => setReviewAward(null)}
+                onClose={() => {if(!issuanceLock.current)setReviewAward(null);}}
                 title={`Review Award for ${reviewAward.employeeName}`}
                 footer={
                     <div className="flex flex-wrap justify-end w-full gap-2">
-                        <Button variant="secondary" onClick={async () => {
-                          try {
-                            const image = await captureFinalCertificate();
-                            downloadCertificatePdf(image, `Certificate_${reviewAward.employeeName}`, (previewDesign.orientation || 'portrait') as 'portrait' | 'landscape');
-                          } catch (error: any) { alert(error?.message || 'Could not download the certificate.'); }
-                        }}>Download PDF</Button>
-                        <Button variant="secondary" onClick={async () => {
-                          try {
-                            const image = await captureFinalCertificate();
-                            printCertificateImage(image, (previewDesign.orientation || 'portrait') as 'portrait' | 'landscape');
-                          } catch (error: any) { alert(error?.message || 'Could not print the certificate.'); }
-                        }}>Print</Button>
                         {reviewAward.status === ResolutionStatus.PendingApproval ? (
                           <>
-                            <Button variant="danger" onClick={() => handleRejectAward(reviewAward)}>Reject</Button>
-                            <Button onClick={() => handleApproveAward(reviewAward)}>Approve</Button>
+                            <Button disabled={issuing} variant="danger" onClick={() => handleRejectAward(reviewAward)}>Reject</Button>
+                            <Button disabled={issuing} onClick={() => handleApproveAward(reviewAward)}>Approve</Button>
                           </>
                         ) : (
                           <Button onClick={async () => {
@@ -472,37 +448,13 @@ const Awards: React.FC = () => {
                             } catch (error: any) {
                               alert(error?.message || 'Failed to issue certificate.');
                             }
-                          }} disabled={gmailLoading || !gmailConnection.connected}>Issue Certificate & Email</Button>
+                          }} disabled={issuing}>Issue / Retry Commendation Letter</Button>
                         )}
                     </div>
                 }
             >
                 <div className="space-y-4">
-                    <GmailSenderField enabled={Boolean(reviewAward)} />
-                    <div>
-                        <p className="font-bold mb-2">Certificate Preview</p>
-                        <div className="border p-2 bg-gray-100 rounded flex justify-center min-h-[320px] overflow-auto">
-                            <div className="flex justify-center w-full">
-                                <div ref={reviewCertificateRef} className="origin-top scale-[.5] sm:scale-[.6]">
-                                    <CertificateRenderer
-                                      design={previewDesign as any}
-                                      data={{
-                                        employeeName: reviewAward.employeeName,
-                                        date: reviewAward.dateAwarded || new Date(),
-                                        awardTitle: previewTitle,
-                                        citation: reviewAward.notes || '',
-                                        position: users.find(candidate => candidate.id === reviewAward.employeeId)?.position,
-                                        department: users.find(candidate => candidate.id === reviewAward.employeeId)?.department,
-                                        businessUnit: reviewAward.businessUnitName,
-                                        issuerName: user?.name,
-                                        issuerTitle: user?.role,
-                                        awardValue: reviewTemplate?.awardValueLabel,
-                                      }}
-                                    />
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                    {(() => {const t=selectLetterTemplate(letterTemplates,reviewAward.businessUnitId||'',reviewAward.awardId);const issuer=users.find(u=>u.id===reviewAward.createdByUserId);return t?<><p className="text-sm">Preview only. The final letter is stored after all approvals. {t.business_unit_id?'':'Admin/HR: using the corporate fallback template.'}</p><CommendationLetter data={{employeeId:reviewAward.employeeId,employeeName:reviewAward.employeeName,awardTitle:reviewAward.awardTitle,awardDate:reviewAward.awardDate||new Date(reviewAward.submittedAt||reviewAward.dateAwarded).toLocaleDateString('en-CA'),citation:reviewAward.notes,businessUnit:reviewAward.businessUnitName,issuer:{id:issuer?.id||'',name:issuer?.name||reviewAward.createdByName,position:issuer?.position||issuer?.role||''},approvers:reviewAward.approverSteps.map(s=>({id:s.userId,name:s.userName,position:users.find(u=>u.id===s.userId)?.position||''})),brand:{...t.config,signatures:[]},templateVersion:t.version}}/></>:<p className="text-amber-700">Letter template preview unavailable. Issuance requires an approved active template.</p>})()}
                     <p><strong>Award:</strong> {reviewAward.awardTitle}</p>
                     <p><strong>Business Unit:</strong> {reviewAward.businessUnitName}</p>
                     <p><strong>Reason:</strong> {reviewAward.notes}</p>
@@ -533,6 +485,9 @@ const Awards: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {letterId&&<AwardLetterDialog id={letterId} onClose={()=>setLetterId(null)}/>}
+      <CommendationRecords canManage={canManageLetters} onView={setLetterId} onRefresh={()=>{fetchEmployeeAwards().then(data=>setEmployeeAwards(data.map(toEmployeeAward))).catch(e=>setLoadError(e.message));}}/>
+      {canManageLetters&&<CommendationTemplates units={businessUnits} awards={awards} users={users}/>}
       {showConfetti && <Confetti />}
       <Toast show={toastInfo.show} onClose={() => setToastInfo(previous => ({ ...previous, show: false }))} title={toastInfo.title} message={toastInfo.message} icon={toastInfo.icon} />
       {reviewLoadError && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800" role="alert"><strong>Unable to open award review.</strong> {reviewLoadError}</div>}

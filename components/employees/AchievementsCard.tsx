@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Card from '../ui/Card';
 import { BadgeLevel, ResolutionStatus } from '../../types';
 import { fetchEmployeeAwards } from '../../services/awardService';
+import AwardLetterDialog from '../evaluation/AwardLetterDialog';
 
 interface AchievementsCardProps {
     employeeId: string;
@@ -27,6 +28,7 @@ const levelStyles = {
 
 const AchievementsCard: React.FC<AchievementsCardProps> = ({ employeeId }) => {
     const [achievements, setAchievements] = useState<any[]>([]);
+    const [letterId,setLetterId]=useState<string|null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     
@@ -40,13 +42,14 @@ const AchievementsCard: React.FC<AchievementsCardProps> = ({ employeeId }) => {
             try {
                 const data = await fetchEmployeeAwards();
                 const approved = data
-                    .filter(a => a.employeeId === employeeId && a.status === ResolutionStatus.Approved)
+                    .filter(a => a.employeeId === employeeId && a.status === ResolutionStatus.Issued)
                     .map(a => ({
                         id: a.id,
                         title: a.awardTitle,
                         badgeIconUrl: a.badgeIconUrl,
                         dateAwarded: a.dateAwarded || new Date(),
                         notes: a.notes || '',
+                        hasLetter:a.certificateUrl?.startsWith('private:'),
                         level: a.level || BadgeLevel.Bronze,
                     }))
                     .sort((a, b) => new Date(b.dateAwarded).getTime() - new Date(a.dateAwarded).getTime());
@@ -80,6 +83,7 @@ const AchievementsCard: React.FC<AchievementsCardProps> = ({ employeeId }) => {
 
     return (
         <Card title="My Achievements" className="!p-0">
+            {letterId&&<AwardLetterDialog id={letterId} onClose={()=>setLetterId(null)}/>}
             <div id="achievements" className="p-6">
                 {loading && <p className="text-sm text-gray-500">Loading awards…</p>}
                 {!loading && achievements.length > 0 ? (
@@ -105,6 +109,7 @@ const AchievementsCard: React.FC<AchievementsCardProps> = ({ employeeId }) => {
                                       )}
                                   </div>
                                   <p className="font-semibold text-sm text-gray-900 dark:text-white leading-tight line-clamp-2">{ach.title}</p>
+                                  {ach.hasLetter&&<button className="mt-2 text-xs text-indigo-600 underline" onClick={()=>setLetterId(ach.id)}>View Commendation Letter</button>}
                                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{new Date(ach.dateAwarded).toLocaleDateString()}</p>
                               </div>
                           );
