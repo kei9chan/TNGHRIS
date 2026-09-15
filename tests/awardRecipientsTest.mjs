@@ -49,11 +49,12 @@ console.log('PASS: active-only BU/department scope; 50 default recipients; 48 af
 const service = await readFile(new URL('../services/awardService.ts', import.meta.url), 'utf8');
 const mapper = service.slice(service.indexOf('const mapEmployeeAward'), service.indexOf('const TEMPLATE_BUCKET'));
 const create = service.slice(service.indexOf('export const createEmployeeAward'), service.indexOf('export const uploadTemplateAsset')).replace('export const', 'const');
-const row={id:'saved',employee_id:'employee',award_template_id:'award',status:'PendingApproval',business_unit_id:'bu',department_id:'sales',approver_steps:[{userId:'bod',status:'Pending'}]};
+const row={id:'saved',employee_id:'employee',award_template_id:'award',status:'PendingApproval',business_unit_id:'bu',department_id:'sales',award_date:'2026-08-15',issued_at:'2026-09-15T08:00:00Z',approver_steps:[{userId:'bod',status:'Pending'}]};
 for (const throws of [false,true]) {
   const context={BadgeLevel:{Bronze:'Bronze'},ResolutionStatus:{PendingApproval:'PendingApproval',Draft:'Draft'},supabase:{rpc:async()=>({data:row,error:null}),from:()=>({select:()=>({eq:()=>({single:async()=>{if(throws)throw Error('Connection interrupted');return {data:null,error:{message:'Read failed'}};}})})})}};
   vm.runInNewContext(compile(mapper+create+';this.create=createEmployeeAward;'),context);
   const saved=await context.create({employeeId:'employee',awardTemplateId:'award',approverIds:['bod']});
   assert.equal(saved.id,'saved');assert.equal(saved.departmentId,'sales');assert.equal(saved.status,'PendingApproval');
+  assert.equal(saved.dateAwarded.getMonth(),7);assert.equal(saved.dateAwarded.getDate(),15);
 }
 console.log('PASS: committed nominations retain their server ID, scope and pending status when the enrichment read fails; no duplicate-producing failure.');
