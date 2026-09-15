@@ -1,3 +1,4 @@
+import { hrReviewCount } from '../../services/hrReviewCount';
 // Migration complete: mockDataCompat removed from HRReviewQueue
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { ChangeHistory, ChangeHistoryStatus, EmployeeDraftStatus, User, Role, Permission, UserDocument, UserDocumentStatus, NotificationType } from '../../types';
@@ -20,9 +21,13 @@ interface SubmissionGroup {
     changes: ChangeHistory[];
 }
 
-const HRReviewQueue: React.FC = () => {
+const HRReviewQueue: React.FC<{ onCountChange?: (count: number | null) => void }> = ({ onCountChange }) => {
     const { user } = useAuth();
     const { can } = usePermissions();
+    const [queueLoaded, setQueueLoaded] = useState({ changes: false, registrations: false, documents: false });
+    const [queueErrors, setQueueErrors] = useState({ changes: false, registrations: false, documents: false });
+    const queueLoading = !Object.values(queueLoaded).every(Boolean);
+    const queueFailed = Object.values(queueErrors).some(Boolean);
     const [pendingChanges, setPendingChanges] = useState<ChangeHistory[]>([]);
     const registrationBusy = useRef(new Set<string>());
     const [registrationError, setRegistrationError] = useState('');
@@ -64,7 +69,11 @@ const HRReviewQueue: React.FC = () => {
         return pendingDocuments.filter(doc => (doc as any).employeeName?.toLowerCase().includes(filterName.toLowerCase()));
     }, [pendingDocuments, filterName]);
 
-    // Load new user registrations (email confirmed + inactive)
+    useEffect(() => {
+        onCountChange?.(hrReviewCount(pendingUsers, pendingDocuments, pendingChanges.map(change => change.submissionId), queueLoading, queueFailed));
+    }, [onCountChange, queueLoading, queueFailed, pendingUsers, pendingDocuments, pendingChanges]);
+
+    // Load review records under the caller's existing backend permissions.
     useEffect(() => {
         let active = true;
         const loadPendingChanges = async () => {
@@ -103,7 +112,9 @@ const HRReviewQueue: React.FC = () => {
                 if (active) setPendingChanges(mapped);
             } catch (e) {
                 console.error('Failed to load profile change requests', e);
-                if (active) setPendingChanges([]);
+                if (active) { setPendingChanges([]); setQueueErrors(prev => ({ ...prev, changes: true })); }
+            } finally {
+                if (active) setQueueLoaded(prev => ({ ...prev, changes: true }));
             }
         };
         loadPendingChanges();
@@ -140,6 +151,9 @@ const HRReviewQueue: React.FC = () => {
                 console.error('Failed to load pending users', e);
                 setRegistrationError('Unable to load registrations. Please refresh to retry.');
                 setPendingUsers([]);
+                setQueueErrors(prev => ({ ...prev, registrations: true }));
+            } finally {
+                setQueueLoaded(prev => ({ ...prev, registrations: true }));
             }
         };
         loadPendingUsers();
@@ -201,6 +215,9 @@ const HRReviewQueue: React.FC = () => {
             } catch (e) {
                 console.error('Failed to load pending documents', e);
                 setPendingDocuments([]);
+                setQueueErrors(prev => ({ ...prev, documents: true }));
+            } finally {
+                setQueueLoaded(prev => ({ ...prev, documents: true }));
             }
         };
         loadPendingDocuments();
@@ -420,6 +437,8 @@ const HRReviewQueue: React.FC = () => {
                 </div>
             </Card>
 
+            {queueLoading && <div role="status">Loading review queue…</div>}
+            {queueFailed && <div role="alert">Some review items could not be loaded. Refresh the page to retry.</div>}
             {registrationError && <div role="alert" className="p-4 text-red-700 bg-red-50 rounded-lg">{registrationError}</div>}
             {filteredPendingUsers.length > 0 && (
                 <Card title="New User Registrations">
@@ -558,11 +577,11 @@ const HRReviewQueue: React.FC = () => {
                 </div>
             )}
             
-            {submissions.length === 0 && filteredPendingUsers.length === 0 && filteredPendingDocuments.length === 0 && (
+            {!queueLoading && !queueFailed && submissions.length === 0 && filteredPendingUsers.length === 0 && filteredPendingDocuments.length === 0 && (
                 <Card>
                     <div className="text-center py-10">
-                        <h3 className="text-lg font-medium text-gray-900 dark:text-white">All Clear!</h3>
-                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">There are no pending items in the review queue.</p>
+                        <h3 className="text-lg font-medium text-gray-900 dark:text-white">{filterName.trim() ? 'No matching reviews' : 'All Clear!'}</h3>
+                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{filterName.trim() ? 'Try another name or clear the filter to see all pending reviews.' : 'There are no pending items in the review queue.'}</p>
                     </div>
                 </Card>
             )}
