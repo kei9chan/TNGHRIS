@@ -18,7 +18,7 @@ const modal = await readFile(new URL('../components/evaluation/AssignAwardModal.
 // Execute the modal's actual selection expressions; search must not alter recipients.
 const selection = modal.slice(modal.indexOf('    const filteredEmployees ='), modal.indexOf('\n    useEffect(() => {', modal.indexOf('    const filteredEmployees =')));
 const selected = search => vm.runInNewContext(compile(selection + '; ({selectedEmployees, visibleEmployees, employeeId});'), {
-  useMemo: f=>f(), awardRecipients, people: all, businessUnitId:'bu', departmentId:'', excludedIds:new Set(['0','1']), employeeSearch:search
+  useMemo: f=>f(), awardRecipients, people: all, businessUnitId:'bu', departmentId:'', excludedIds:new Set(['0','1']), employeeSearch:search,previewEmployeeId:'',letterTemplates:[],awardId:'award',selectLetterTemplate:()=>({})
 });
 assert.equal(selected('').selectedEmployees.length, 48);
 assert.equal(selected('Sales').selectedEmployees.length, 48);
@@ -29,7 +29,7 @@ const handlers = modal.slice(modal.indexOf('    const handleNext ='), modal.inde
 function harness({recipients=people.slice(0,3), bod=true, stale=false, fail=false}={}) {
   const calls=[], alerts=[], outcomes=[];
   let preview=false;
-  const context={console:{error(){}}, selectedEmployees:recipients, selectedEmployee:recipients[0], employeeId:recipients[0]?.id || '', selectedAward:{id:'award'}, awardId:'award', notes:'Thank you', businessUnitId:'bu', departmentId:'', selectedApprovers:[{id:'bod'}], hasBodApprover:bod, hasAvailableBod:true, loadingPeople:false, peopleError:'', templateError:'', submissionStarted:{current:false}, inFlight:{current:false}, isActiveAwardRecipient,
+  const context={console:{error(){}}, selectedEmployees:recipients, selectedEmployee:recipients[0], employeeId:recipients[0]?.id || '', selectedAward:{id:'award'}, awardId:'award', notes:'Thank you', businessUnitId:'bu', departmentId:'', selectedApprovers:[{id:'bod'}], hasBodApprover:bod, hasAvailableBod:true, loadingPeople:false, peopleError:'', templateError:'', submissionStarted:{current:false}, inFlight:{current:false}, isActiveAwardRecipient,letterTemplate:{},letterError:'',awardDate:'2026-09-15',
     alert:m=>alerts.push(m), setStep:()=>{preview=true}, setIsGenerating(){}, setResults:r=>outcomes.push([...r]),
     supabase:{from:()=>({select:()=>({in:async()=>({data:recipients.map(e=>({id:e.id,status:stale?'Inactive':'Active',employment_status:'Regular',business_unit_id:'bu',department_id:e.departmentId})),error:null})})})},
     onAssign:async(id,...args)=>{calls.push([id,...args]);if(fail&&id==='1')throw Error('Permission denied');}

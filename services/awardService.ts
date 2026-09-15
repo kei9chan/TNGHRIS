@@ -24,6 +24,7 @@ export type EmployeeAwardRecord = {
   approverName?: string;
   approverSteps: Array<{ userId: string; userName: string; status: ApproverStatus; order?: number; timestamp?: Date; rejectionReason?: string }>;
   issuedAt?: Date;
+  awardDate?: string;
 };
 
 const mapAward = (row: any): Award => ({
@@ -75,6 +76,7 @@ const mapEmployeeAward = (row: any): EmployeeAwardRecord => ({
     timestamp: step.timestamp ? new Date(step.timestamp) : undefined,
   })),
   issuedAt: row.issued_at ? new Date(row.issued_at) : undefined,
+  awardDate:row.award_date||undefined,
 });
 
 const TEMPLATE_BUCKET = 'create_award_template_attachments';
@@ -178,14 +180,16 @@ export const createEmployeeAward = async (payload: {
   departmentId?: string;
   createdByUserId?: string;
   approverIds: string[];
+  awardDate?:string;
 }): Promise<EmployeeAwardRecord> => {
-  const { data: rpcData, error } = await supabase.rpc('submit_employee_award', {
+  const { data: rpcData, error } = await supabase.rpc('submit_formal_award', {
     p_employee_id: payload.employeeId,
     p_award_template_id: payload.awardTemplateId,
     p_notes: payload.notes || '',
     p_business_unit_id: payload.businessUnitId || null,
     p_department_id: payload.departmentId || null,
     p_approver_ids: payload.approverIds,
+    p_award_date:payload.awardDate||new Date().toLocaleDateString('en-CA'),
   });
   if (error || !rpcData) throw new Error(error?.message || 'Failed to save award');
   const createdRow = Array.isArray(rpcData) ? rpcData[0] : rpcData;

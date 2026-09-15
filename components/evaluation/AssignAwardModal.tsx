@@ -5,16 +5,18 @@ import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Textarea from '../ui/Textarea';
 import EmployeeMultiSelect from '../feedback/EmployeeMultiSelect';
-import CertificateRenderer from './CertificateRenderer';
 import { fetchAwardTemplates } from '../../services/awardService';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { awardRecipients, awardConfirmation, isActiveAwardRecipient } from '../../services/awardRecipients';
+import CommendationLetter from './CommendationLetter';
+import {fetchLetterTemplates,LetterTemplate,selectLetterTemplate} from '../../services/commendationService';
+import {useAuth} from '../../hooks/useAuth';
 
 interface AssignAwardModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onAssign: (employeeId: string, awardId: string, notes: string, businessUnitId: string, departmentId: string, approvers: User[]) => Promise<void> | void;
+    onAssign: (employeeId: string, awardId: string, notes: string, businessUnitId: string, departmentId: string, approvers: User[], awardDate?:string) => Promise<void> | void;
     employees: User[];
     businessUnits: BusinessUnit[];
     awardTemplates: Award[];
@@ -23,6 +25,12 @@ interface AssignAwardModalProps {
 
 const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, onAssign, employees, businessUnits, awardTemplates, initialAwardId }) => {
     const [step, setStep] = useState<'details' | 'preview'>('details');
+    const {user}=useAuth();
+    const [awardDate,setAwardDate]=useState(new Date().toLocaleDateString('en-CA'));
+    const [letterTemplates,setLetterTemplates]=useState<LetterTemplate[]>([]);
+    const [letterError,setLetterError]=useState('');
+    const [previewEmployeeId,setPreviewEmployeeId]=useState('');
+    useEffect(()=>{if(!isOpen)return;let active=true;setLetterTemplates([]);setLetterError('');setAwardDate(new Date().toLocaleDateString('en-CA'));fetchLetterTemplates().then(data=>{if(active)setLetterTemplates(data)}).catch(e=>{if(active)setLetterError(e.message)});return()=>{active=false}},[isOpen]);
     const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set());
     const [employeeSearch, setEmployeeSearch] = useState('');
     const [loadingPeople, setLoadingPeople] = useState(true);
@@ -169,6 +177,8 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
     const filteredEmployees = useMemo(() => awardRecipients(people, businessUnitId, departmentId), [people, businessUnitId, departmentId]);
     const selectedEmployees = filteredEmployees.filter(employee => !excludedIds.has(employee.id));
     const employeeId = selectedEmployees[0]?.id || '';
+    const previewEmployee=selectedEmployees.find(e=>e.id===previewEmployeeId)||selectedEmployees[0];
+    const letterTemplate=selectLetterTemplate(letterTemplates,businessUnitId,awardId);
     const visibleEmployees = filteredEmployees.filter(employee =>
         `${employee.name} ${employee.department}`.toLowerCase().includes(employeeSearch.trim().toLowerCase()));
 
@@ -216,6 +226,7 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
 
     const handleNext = () => {
         if (loadingPeople || peopleError) return;
+        if(!letterTemplate||!notes.trim()||!awardDate){alert(letterError||'Enter a commendation and award date, and wait for an approved letter template.');return;}
         if (!employeeId) {
             alert('Please select an employee.');
             return;
@@ -264,7 +275,7 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
             }
             for (const employee of selectedEmployees) {
                 try {
-                    await onAssign(employee.id, awardId, notes, businessUnitId, departmentId, selectedApprovers);
+                    await onAssign(employee.id, awardId, notes, businessUnitId, departmentId, selectedApprovers,awardDate);
                     messages.push(`${employee.name}: submitted for approval.`);
                 } catch (error) {
                     messages.push(`${employee.name}: submission not confirmed — ${(error as Error).message || 'Request failed'}. Check the Awards list before submitting again.`);
@@ -365,12 +376,15 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
                 {templateError && <p className="mt-1 text-sm text-red-600">Award templates failed to load: {templateError}</p>}
             </div>
             <Textarea
-                label="Notes / Reason for Award"
+                label="Personalized commendation (required)"
                 value={notes}
                 onChange={e => setNotes(e.target.value)}
                 rows={3}
                 placeholder="e.g., For demonstrating exceptional leadership during the project..."
             />
+            <label className="block text-sm">Award date<input type="date" required value={awardDate} onChange={e=>setAwardDate(e.target.value)} className="mt-1 block rounded border p-2 dark:bg-gray-700"/></label>
+            {letterError&&<p role="alert" className="text-red-600">{letterError}</p>}
+            {letterTemplate&&!letterTemplate.business_unit_id&&<p role="status" className="text-amber-700">Corporate fallback will be used. Admin/HR: configure an active letter template for this business unit.</p>}
             <EmployeeMultiSelect
                 label="Request Approval From (at least one BOD required)"
                 allUsers={eligibleApprovers}
@@ -394,46 +408,11 @@ const AssignAwardModal: React.FC<AssignAwardModalProps> = ({ isOpen, onClose, on
                 {results.map((result, index) => <p key={index} className="mb-2">{result}</p>)}
             </div>}
             <p className="text-sm text-gray-600 dark:text-gray-300 text-center">
-                Sample certificate for {selectedEmployee?.name}. Each selected employee will receive their own certificate upon approval.
+                Each selected employee receives a separate letter after final approval. Signatures appear only for the actual issuer and approving signatories.
             </p>
+            <label className="w-full text-sm">Preview recipient<select value={previewEmployee?.id||''} onChange={e=>setPreviewEmployeeId(e.target.value)} className="ml-2 rounded border p-2 dark:bg-gray-700">{selectedEmployees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select></label>
+            {letterTemplate&&previewEmployee&&<CommendationLetter data={{employeeId:previewEmployee.id,employeeName:previewEmployee.name,awardTitle:selectedAward?.title||'',awardDate,citation:notes,businessUnit:bus.find(b=>b.id===businessUnitId)?.name||'',issuer:{id:user?.id||'',name:user?.name||'',position:user?.position||user?.role||''},approvers:selectedApprovers.map(p=>({id:p.id,name:p.name,position:p.position||p.role})),brand:{...letterTemplate.config,signatures:[]},templateVersion:letterTemplate.version,fallback:!letterTemplate.business_unit_id}}/>}
 
-            {/* Certificate Preview Container */}
-            <div
-                className="border shadow-lg bg-gray-100 dark:bg-gray-900 p-2 w-full overflow-auto"
-                style={{ maxWidth: '100%' }}
-            >
-                <div
-                    className="w-full flex justify-center"
-                    style={{ minHeight: '760px' }}
-                >
-                    <div
-                        className="inline-block"
-                        style={{
-                            transform: 'scale(0.6)',
-                            transformOrigin: 'top center',
-                            margin: '0 auto',
-                        }}
-                    >
-                        {selectedAward?.design && selectedEmployee && (
-                            <div id="certificate-preview">
-                                <CertificateRenderer
-                                    design={selectedAward.design}
-                                    data={{
-                                        employeeName: selectedEmployee.name,
-                                        date: new Date(),
-                                        awardTitle: selectedAward.title,
-                                        citation: notes,
-                                        position: selectedEmployee.position,
-                                        department: selectedEmployee.department,
-                                        businessUnit: bus.find(unit => unit.id === businessUnitId)?.name || selectedEmployee.businessUnit,
-                                        awardValue: selectedAward.awardValueLabel,
-                                    }}
-                                />
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </div>
         </div>
     );
 
