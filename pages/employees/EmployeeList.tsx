@@ -106,7 +106,7 @@ const EmployeeList: React.FC = () => {
           supabase.from('profile_change_requests').select('submission_id').eq('status', ChangeHistoryStatus.Pending),
         ]);
         for (const result of [registrations, documents, changes]) if (result.error) throw result.error;
-        if (active) setPendingReviewCount(hrReviewCount(registrations.data || [], documents.data || [], (changes.data || []).map(c => c.submission_id)));
+        if (active) setPendingReviewCount(hrReviewCount(Array.isArray(registrations.data) ? registrations.data : registrations.data ? [registrations.data] : [], documents.data || [], (changes.data || []).map(c => c.submission_id)));
       } catch (err) {
         console.error('Failed to fetch pending counts', err);
         if (active) setPendingReviewCount(null);
