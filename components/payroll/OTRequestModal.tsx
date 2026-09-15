@@ -23,7 +23,7 @@ interface OTRequestModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSave: (request: Partial<OTRequest>, status: OTStatus) => void;
-    onApproveOrReject: (request: Partial<OTRequest>, newStatus: OTStatus.Approved | OTStatus.Rejected, details: { approvedHours?: number, managerNote?: string }) => void;
+    onApproveOrReject: (request: Partial<OTRequest>, newStatus: OTStatus.Approved | OTStatus.Rejected, details: { approvedHours?: number, managerNote?: string }) => void | Promise<void>;
     requestToEdit: OTRequest | null;
     attendanceRecords: AttendanceRecord[];
     shiftAssignments?: ShiftAssignment[];
@@ -33,8 +33,9 @@ interface OTRequestModalProps {
 
 const calculatePlannedHours = (start: string, end: string): number => {
     if (!start || !end) return 0;
-    const startTime = new Date(`1970-01-01T${start}:00`);
-    const endTime = new Date(`1970-01-01T${end}:00`);
+    const startTime = new Date(`1970-01-01T${start.length === 5 ? start + ':00' : start}`);
+    const endTime = new Date(`1970-01-01T${end.length === 5 ? end + ':00' : end}`);
+    if (!Number.isFinite(startTime.getTime()) || !Number.isFinite(endTime.getTime())) return 0;
     
     // Handle overnight shifts where end time is smaller than start time
     if (endTime < startTime) {
@@ -73,6 +74,9 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
     const [approvedHours, setApprovedHours] = useState('');
     const [managerNote, setManagerNote] = useState('');
     const [error, setError] = useState('');
+    const [rejecting, setRejecting] = useState(false);
+    const [deciding, setDeciding] = useState(false);
+    const decisionInFlight = useRef(false);
     const [warnings, setWarnings] = useState<string[]>([]);
     const [shiftInfo, setShiftInfo] = useState<string>('');
     const [attachmentPreviewUrl, setAttachmentPreviewUrl] = useState<string | null>(null);
@@ -84,7 +88,7 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
     };
 
     useEffect(() => {
-        if (!isOpen) return;
+        if (!isOpen) { initializedRef.current = null; return; }
 
         const currentKey = requestToEdit?.id || 'new';
         if (initializedRef.current === currentKey) {
@@ -109,6 +113,7 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
         setApprovedHours(requestToEdit?.approvedHours?.toString() || '');
         setManagerNote(requestToEdit?.managerNote || '');
         setError('');
+        setRejecting(false);
         setWarnings([]);
         setShiftInfo('');
         setAttachmentPreviewUrl(null);
@@ -273,6 +278,13 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
         onSave(request, status);
     };
 
+    const recordDecision = async (status: OTStatus.Approved | OTStatus.Rejected, hours: number) => {
+        if (decisionInFlight.current) return;
+        decisionInFlight.current = true; setDeciding(true); setError('');
+        try { await onApproveOrReject(request, status, { approvedHours: hours, managerNote: managerNote.trim() }); }
+        catch (e) { setError(e instanceof Error ? e.message : 'The decision could not be saved. Your note is retained; please retry.'); }
+        finally { decisionInFlight.current = false; setDeciding(false); }
+    };
     const handleApprove = () => {
         const hours = parseFloat(approvedHours);
         if (isNaN(hours) || hours <= 0) {
@@ -280,16 +292,17 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
             return;
         }
         setError('');
-        onApproveOrReject(request, OTStatus.Approved, { approvedHours: hours, managerNote });
+        void recordDecision(OTStatus.Approved, hours);
     };
 
     const handleReject = () => {
+        if (!rejecting) { setRejecting(true); setError(''); return; }
         if (!managerNote.trim()) {
             setError('A note is required when rejecting a request.');
             return;
         }
         setError('');
-        onApproveOrReject(request, OTStatus.Rejected, { managerNote, approvedHours: 0 });
+        void recordDecision(OTStatus.Rejected, 0);
     };
 
     const plannedHours = useMemo(() => calculatePlannedHours(request.startTime || '', request.endTime || ''), [request.startTime, request.endTime]);
@@ -317,14 +330,18 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
     const renderFooter = () => {
         if (isManagerReviewing) {
             return (
-                <div className="flex flex-col gap-3 w-full sm:flex-row sm:items-center sm:justify-between">
+                <div className="w-full space-y-3">
+                    {rejecting && <Textarea label="Reason for disapproval (required)" id="ot-rejection-reason" name="rejectionReason" autoFocus value={managerNote} onChange={e => setManagerNote(e.target.value)} disabled={deciding} />}
+                    {error && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{error}</p>}
+                    <div className="flex flex-col gap-3 w-full sm:flex-row sm:items-center sm:justify-between">
                     <span className="text-sm text-gray-600 dark:text-gray-400 text-center sm:text-left">
                         Planned: {formatApprovalNumber(plannedHours)}h
                     </span>
                     <div className="flex flex-col gap-2 w-full sm:w-auto sm:flex-row sm:gap-2">
-                        <Button variant="secondary" onClick={onClose} className="w-full sm:w-auto">Cancel</Button>
-                        <Button variant="danger" onClick={handleReject} disabled={!canApprove} className="w-full sm:w-auto">Reject</Button>
-                        <Button variant="primary" onClick={handleApprove} disabled={!canApprove} className="w-full sm:w-auto">Approve</Button>
+                        <Button variant="secondary" disabled={deciding} onClick={() => rejecting ? setRejecting(false) : onClose()} className="w-full sm:w-auto">Cancel</Button>
+                        <Button variant="danger" onClick={handleReject} disabled={!canApprove || deciding} isLoading={deciding && rejecting} className="w-full sm:w-auto">{rejecting ? 'Confirm disapproval' : 'Reject'}</Button>
+                        {!rejecting && <Button variant="primary" onClick={handleApprove} disabled={!canApprove || deciding} isLoading={deciding} className="w-full sm:w-auto">Approve</Button>}
+                    </div>
                     </div>
                 </div>
             )
@@ -351,7 +368,7 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
     return (
         <Modal acknowledgmentRequestType={!requestToEdit || requestToEdit.status === OTStatus.Draft ? "Overtime" : undefined} acknowledgmentDraft={!!requestToEdit}
             isOpen={isOpen}
-            onClose={onClose}
+            onClose={() => { if (!decisionInFlight.current) onClose(); }}
             title={requestToEdit ? `Overtime Request: ${requestToEdit.id}` : 'New Overtime Request'}
             footer={renderFooter()}
         >
