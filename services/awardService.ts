@@ -64,7 +64,7 @@ const mapEmployeeAward = (row: any): EmployeeAwardRecord => ({
   departmentId: row.department_id || undefined,
   certificateUrl: row.certificate_snapshot_url || undefined,
   createdByUserId: row.created_by_user_id || undefined,
-  dateAwarded: row.issued_at ? new Date(row.issued_at) : row.decided_at ? new Date(row.decided_at) : row.submitted_at ? new Date(row.submitted_at) : undefined,
+  dateAwarded: row.award_date ? new Date(row.award_date + 'T12:00:00') : row.issued_at ? new Date(row.issued_at) : row.decided_at ? new Date(row.decided_at) : row.submitted_at ? new Date(row.submitted_at) : undefined,
   submittedAt: row.submitted_at ? new Date(row.submitted_at) : undefined,
   decidedAt: row.decided_at ? new Date(row.decided_at) : undefined,
   rejectionReason: row.rejection_reason || undefined,
