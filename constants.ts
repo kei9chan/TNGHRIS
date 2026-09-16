@@ -105,7 +105,7 @@ export const NAV_LINKS: NavLink[] = [
             { name: 'Import Historical Attendance', path: '/payroll/historical-attendance', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
             { name: 'Attendance Readiness', path: '/payroll/attendance-readiness', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
             { name: 'Attendance Devices & Punch Station', path: '/payroll/attendance-devices', requiredPermission: { resource: 'Timekeeping', permission: Permission.View }, visibilityRoles: [Role.Admin, Role.HRManager, Role.HRStaff] },
-            { name: 'Timekeeping', path: '/payroll/timekeeping', requiredPermission: { resource: 'Timekeeping', permission: Permission.View } },
+            { name: 'Schedule Builder', path: '/payroll/timekeeping', requiredPermission: { resource: 'Timekeeping', permission: Permission.View } },
             { name: 'Manpower Planning', path: '/payroll/manpower-planning', requiredPermission: { resource: 'Manpower', permission: Permission.View } },
             { name: 'On-Call & Manpower Cost', path: '/payroll/on-call-manpower-cost', requiredPermission: { resource: 'Manpower', permission: Permission.View } },
             { name: 'Workforce Planning', path: '/payroll/workforce-planning', requiredPermission: { resource: 'WorkforcePlanning', permission: Permission.View } },
