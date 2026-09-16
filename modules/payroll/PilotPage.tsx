@@ -1,3 +1,4 @@
+import {usePayrollField} from './usePayrollSelection';
 import React,{useEffect,useState} from 'react';
 import {Link} from 'react-router-dom';
 import Card from '../../components/ui/Card';
@@ -11,7 +12,7 @@ import {pilotWorkspace,comparisonTemplate,saveComparison,acceptComparison,propos
 import type {PilotWorkspace,CompareTemplate,CompareInput} from './pilot';
 const input='mt-1 block w-full rounded border border-gray-300 p-2 dark:bg-slate-800 dark:border-slate-600';
 export default function PilotPage(){
- const {user}=useAuth();const [scopeId,setScopeId]=useState('');const [w,setW]=useState<PilotWorkspace|null>(null);const [runs,setRuns]=useState<ApprovalSummary[]>([]);
+ const {user}=useAuth();const [scopeId,setScopeId]=usePayrollField('scope');const [w,setW]=useState<PilotWorkspace|null>(null);const [runs,setRuns]=useState<ApprovalSummary[]>([]);
  const [runId,setRunId]=useState('');const [template,setTemplate]=useState<CompareTemplate|null>(null);const [upload,setUpload]=useState<CompareInput|null>(null);
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');const [reference,setReference]=useState(''),[confirmBU,setConfirmBU]=useState('');
  const [first,setFirst]=useState(''),[second,setSecond]=useState(''),[from,setFrom]=useState(''),[to,setTo]=useState(''),[evidence,setEvidence]=useState<Record<string,string>>({});const [liveRun,setLiveRun]=useState('');
