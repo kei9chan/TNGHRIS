@@ -33,3 +33,16 @@ assert.match(render({...own,submission:s}),/Your schedule is awaiting BOD approv
 assert.match(render({...own,submission:{...s,status:'Rejected',review_reason:'Change Monday'}}),/Please revise and resubmit/);
 assert.match(render({...own,submission:{...s,status:'Approved'}}),/Your schedule was approved/);
 console.log('PASS: BOD reminder suppression, normal manager reminder, self-submission, approval/rejection and status rendering.');
+
+const gmReport={...own,managerRole:'GM',managerName:'Assigned GM'};
+assert.match(render(gmReport),/Submit your schedule for GM approval/);
+assert.match(render(gmReport),/your GM will approve or reject/);
+assert.doesNotMatch(render(gmReport),/BOD approval/);
+assert.match(render({...gmReport,submission:s}),/awaiting GM approval/);
+assert.match(render({...gmReport,submission:s,needsResubmission:true}),/reporting line changed/);
+const gm=render({...base,isBod:false,isGm:true,pending:[s]});
+assert.match(gm,/Review your direct reports/);
+assert.match(gm,/Approve schedule/);
+assert.doesNotMatch(gm,/Complete employee schedules/);
+assert.match(render({...base,isBod:false,isGm:true,eligible:true,managerRole:'BOD',managerName:'BOD'}),/Submit your schedule for BOD approval/);
+console.log('PASS: GM direct-report prompt, GM approval queue, no GM plotting reminder, reassignment prompt and GM own BOD submission.');
