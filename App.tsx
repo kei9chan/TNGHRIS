@@ -73,6 +73,7 @@ const CodeOfDiscipline = React.lazy(() => import('./pages/feedback/CodeOfDiscipl
 const Pipeline = React.lazy(() => import('./pages/feedback/Pipeline'));
 const MyIncidentReports = React.lazy(() => import('./pages/feedback/MyIncidentReports'));
 const MyNTEs = React.lazy(() => import('./pages/feedback/MyNTEs'));
+const PayrollHome = React.lazy(() => import('./modules/payroll/PayrollHome'));
 const MySchedule = React.lazy(() => import('./pages/payroll/MySchedule'));
 const Timekeeping = React.lazy(() => import('./pages/payroll/ScheduleEntry'));
 const ClockInOut = React.lazy(() => import('./pages/payroll/ClockInOut'));
@@ -410,7 +411,8 @@ const AppRoutes: React.FC = () => {
             <Route path="gross-pay" element={<ProtectedRoute><GrossPayPage /></ProtectedRoute>} />
             <Route path="net-pay" element={<ProtectedRoute><NetPayPage /></ProtectedRoute>} />
             <Route path="attendance-readiness" element={<ProtectedRoute><AttendanceReadinessPage /></ProtectedRoute>} />
-            <Route index element={<Navigate to="timekeeping" replace />} />
+            <Route index element={<Navigate to="home" replace />} />
+            <Route path="home" element={<ProtectedRoute><PayrollHome /></ProtectedRoute>} />
             <Route path="my-schedule" element={<ProtectedRoute><MySchedule /></ProtectedRoute>} />
             <Route path="timekeeping" element={<ProtectedRoute><Timekeeping /></ProtectedRoute>} />
             <Route path="schedule-compliance" element={<ProtectedRoute><ScheduleCompliance /></ProtectedRoute>} />

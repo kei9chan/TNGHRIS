@@ -1,3 +1,4 @@
+import ProcessingModeBadge from './ProcessingModeBadge';
 import {arrangements,assertArrangementLive,NET_ARRANGEMENTS_LIVE} from './payPackageImport';
 import PayPackageBatchUpload from './PayPackageBatchUpload';
 import {EmployeePolicyPanel} from './ConfirmedPolicyPanels';
@@ -25,7 +26,7 @@ const PayPackagesPage:React.FC=()=>{
  useEffect(()=>{void refresh();const onFocus=()=>void refresh();window.addEventListener('focus',onFocus);return()=>{++sequence.current;window.removeEventListener('focus',onFocus);};},[refresh]);
  const run=async(fn:()=>Promise<unknown>,message:string)=>{setBusy(true);setError('');setNotice('');try{await fn();setNotice(message);await refresh();}catch(e){setError(e instanceof Error?e.message:'The change could not be saved.');}finally{setBusy(false);}};
  return <div className="space-y-6 text-gray-800 dark:text-slate-200">
-  <div className="flex flex-wrap justify-between gap-3"><div><h1 className="text-2xl font-bold">Pay Packages & Salary History</h1><p className="mt-1 text-sm text-gray-500 dark:text-slate-400">Review dated pay, keep prior versions and record the supporting approval.</p></div><span className="self-start rounded-full bg-amber-100 px-3 py-1 text-sm font-medium text-amber-900">Payroll processing off</span></div>
+  <div className="flex flex-wrap justify-between gap-3"><div><h1 className="text-2xl font-bold">Pay Packages & Salary History</h1><p className="mt-1 text-sm text-gray-500 dark:text-slate-400">Review dated pay, keep prior versions and record the supporting approval.</p></div><ProcessingModeBadge scopeId={data?.scopeId}/></div>
   <Card><Field label="Employee" value={employeeId} onChange={id=>{setEmployeeId(id);setParams({employee:id});setNotice('');}}><option value="">Select an employee</option>{directory.map(u=><option value={u.id} key={u.id}>{u.name} · {u.employeeCode}</option>)}</Field><p className="mt-3 text-sm">Salary work requires a scoped payroll duty and existing HRIS compensation permission. <Link className="text-indigo-600 dark:text-indigo-300" to="/payroll/access">Manage Payroll Access</Link></p></Card>
   <PayPackageBatchUpload key={user?.id} directory={directory} onSaved={()=>void refresh()}/>
   {error&&<Card><p role="alert" className="text-red-700 dark:text-red-300">{error}</p><Button className="mt-3" onClick={()=>void refresh()}>Refresh</Button></Card>}{notice&&<p role="status" className="text-green-700 dark:text-green-300">{notice}</p>}
