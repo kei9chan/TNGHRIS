@@ -16,8 +16,9 @@ export function nextPayrollStep(r:Readiness|null){
  return {label:'Continue payroll calculation and review',owner:'Finance preparer',path:'/payroll/gross-pay'};
 }
 export const payrollGroups=[
+ {name:'Schedule Builder',path:'/payroll/timekeeping',names:['Schedule Builder','Timekeeping']},
  {name:'Payroll Home',path:'/payroll/home',names:[] as string[]},
- {name:'Run Payroll',path:'/payroll/attendance-readiness',names:['Attendance Readiness','Import Historical Attendance','Schedule Builder','Timekeeping','Gross Pay Review','Take-home Pay Review','Compare & Pilot','Payroll Approvals','Payments & Reports','Payslips']},
+ {name:'Run Payroll',path:'/payroll/attendance-readiness',names:['Attendance Readiness','Import Historical Attendance','Gross Pay Review','Take-home Pay Review','Compare & Pilot','Payroll Approvals','Payments & Reports','Payslips']},
  {name:'Employee Pay Setup',path:'/payroll/pay-packages',names:['Pay Packages','Loan Application System','Leave Credits']},
  {name:'Reports & Settings',path:'/payroll/access',names:[] as string[]},
 ];
