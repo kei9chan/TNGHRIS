@@ -1,11 +1,19 @@
 import {supabase} from '../../services/supabaseClient';
 export type TimeScope={id:string;name:string;canView:boolean;canFinalize:boolean;canConfigure:boolean;canManage:boolean};
 export type TimeRow={officialBusiness?:{id:string;reference:string;status:string};requiresClock?:boolean;attendanceBasis?:string;employeeId:string;employeeName:string;date:string;restDay:boolean;holiday:boolean;approvedFullLeave:boolean;scheduledMinutes:number;actualMinutes:number;regularMinutes:number;breakMinutes:number;lateMinutes:number;undertimeMinutes:number;approvedOtMinutes:number;actualOtMinutes:number;workedLunch:boolean;issues:string[];ready:boolean;shiftIds:string[];eventIds:string[];leaveIds:string[];ot:{id:string;type:string;status:string}[];segments:{date:string;start:string;end:string}[]};
-export type TimeResult={engineVersion:string;rows:TimeRow[];blockedDays:number;totalDays:number};
+export type TimeEvidence={scheduleStatus:string;shifts:{id:string;name?:string;start?:string;end?:string;kind?:string;publicationId?:string;publicationVersion?:number;endDayOffset?:number}[];punches:{id:string;type:string;timestamp:string;source?:string;sessionId?:string;revision?:number}[];leave:{id:string;type:string;status:string;startDate:string;endDate:string;days:number;configurationRequired:boolean}[];ot:{id:string;type:string;status:string;approvedHours:number|null;start:string;end:string;reviewRef?:string;configurationRequired:boolean}[]};
+export type ReviewTimeRow=TimeRow&{evidence?:TimeEvidence};
+export type TestTimeEvidence={id:string;batchId:string;employeeId:string;employeeName:string;workDate:string;kind:'punches'|'dtr';sourceRow:number;filename:string;reference:string;payload:{timestamp?:string;action?:string;sourceReference?:string;reviewReference?:string;minutes?:Record<string,number>}};
+export type TimeResult={engineVersion:string;rows:ReviewTimeRow[];blockedDays:number;totalDays:number};
 export type TimeRuleConfig={restTemplates:string[];meals:Record<string,string>;holidayCoverageConfirmed:boolean;splitShiftConfirmed:boolean;leavePolicyRef:string;offsetPolicyRef:string};
 export type TimePreview={sourceHash:string;result:TimeResult;holidays:{id:string;name:string;date:string;kind:string;source:string}[];templates:{id:string;name:string;start:string;end:string}[];rules:{id:string;effective_from:string;effective_to:string;source_ref:string;config:TimeRuleConfig}[];packages:{id:string;version:number;status:string;current:boolean;blockedDays:number;reason:string;previousId:string|null}[]};
-export type OffsetReview={id:string;employeeName:string;date:string;minutes:number;complete:boolean;current:boolean;isSelf:boolean;actions:{stage:string;decision:string;createdAt:string}[]};
-async function rpc<T>(name:string,args?:Record<string,unknown>):Promise<T>{const {data,error}=await supabase.rpc(name,args);if(error)throw new Error(error.message);return data as T;}
+export type OffsetReview={id:string;scopeId:string;employeeId:string;requestId:string;employeeName:string;date:string;minutes:number;complete:boolean;current:boolean;isSelf:boolean;actions:{stage:string;decision:string;createdAt:string}[]};
+async function rpc<T>(name:string,args?:Record<string,unknown>):Promise<T>{
+ const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),25000);
+ try{const {data,error}=await supabase.rpc(name,args).abortSignal(controller.signal);if(error)throw new Error(error.message);return data as T;}
+ catch(e){if(controller.signal.aborted)throw new Error('Timekeeping request timed out. Refresh saved versions before retrying a save or submission.');throw e;}finally{clearTimeout(timer);}
+}
+export const fetchTimeTestEvidence=(scope:string,from:string,to:string)=>rpc<TestTimeEvidence[]>('get_payroll_time_test_evidence',{p_scope_id:scope,p_date_from:from,p_date_to:to});
 export const fetchTimeContext=()=>rpc<{scopes:TimeScope[]}>('get_payroll_time_context');
 export const previewTime=(scope:string,from:string,to:string)=>rpc<TimePreview>('preview_payroll_time',{p_scope_id:scope,p_date_from:from,p_date_to:to});
 export const saveTime=(scope:string,from:string,to:string,hash:string,reason:string)=>rpc<string>('save_payroll_time_package',{p_scope_id:scope,p_date_from:from,p_date_to:to,p_source_hash:hash,p_reason:reason});
