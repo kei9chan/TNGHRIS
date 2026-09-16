@@ -49,7 +49,7 @@ export default function PayrollHome(){
  {mode==='off'&&<li>Processing is off. Setup and review remain available; the payroll access manager controls test-processing activation.</li>}
  </ul>}<p className="mt-4 text-sm text-slate-500">Checked {new Date(data.checkedAt).toLocaleString()}. Refresh after changes. Submitted means a saved version still matches its source records.</p></section>
  </>}
- <section className="rounded-xl border p-5 dark:border-slate-700"><h2 className="font-semibold">Historical attendance for the pilot</h2><p className="mt-2">This phase does not add a test importer. The existing device importer writes real attendance records. Historical test uploads will be added in Phase 2.</p></section>
+ <section className="rounded-xl border p-5 dark:border-slate-700"><h2 className="font-semibold">Historical attendance for the pilot</h2><p className="mt-2">Import actual punch logs or reviewed DTR summaries into a separate test dataset for this cutoff. Test imports do not change the live readiness counts above, attendance, leave or payments.</p>{scope?.canView&&validCutoff(from,to)&&<Link className="mt-4 inline-flex min-h-11 items-center rounded-lg bg-violet-600 px-4 font-semibold text-white" to="/payroll/historical-attendance">Import Historical Attendance →</Link>}</section>
  <div className="flex flex-wrap gap-5 text-sm underline">{can('Timekeeping',Permission.View)&&<Link to="/payroll/timekeeping">Schedule Builder</Link>}<Link to="/payroll/pilot">Compare & Pilot</Link><Link to="/payroll/access">Payroll access & duties</Link></div>
  </main>;
 }
