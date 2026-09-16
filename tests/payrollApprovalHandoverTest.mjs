@@ -1,0 +1,87 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {PGlite} from '@electric-sql/pglite';
+process.on('uncaughtException',e=>{console.error(e.message,e.code,e.where);process.exit(1);});
+const db=new PGlite(),id=n=>`00000000-0000-0000-0000-${String(n).padStart(12,'0')}`;
+const scope=id(10),other=id(11),run=id(20),proposal=id(30),manager=id(1);
+function definition(file,name){const sql=fs.readFileSync(file,'utf8'),start=sql.indexOf(`create function ${name}(`);assert.ok(start>=0,name);const tail=sql.slice(start),d=tail.match(/\bas\s+(\$[a-z_0-9]*\$)/i),end=tail.indexOf(d[1],d.index+d[0].length)+d[1].length;return tail.slice(0,end)+';';}
+const phase7='supabase/migrations/20260906062342_payroll_approval_phase7.sql',phase9='supabase/migrations/20260906074753_payroll_comparison_pilot_phase9.sql';
+// All data and auth substitutes below are local fixtures. Production is never impersonated.
+await db.exec(`create schema private;create schema auth;create role authenticated;create role anon;grant usage on schema private to authenticated;
+create function auth.uid() returns uuid language sql as $$select nullif(current_setting('test.actor',true),'')::uuid$$;
+create function current_hris_user_id() returns uuid language sql as $$select auth.uid()$$;
+create function private.payroll_actor_id() returns uuid language sql as $$select auth.uid()$$;
+create table hris_users(id uuid primary key,full_name text);
+create table payroll_access_scopes(id uuid primary key,name text,processing_mode text,kind text);
+insert into payroll_access_scopes values('${scope}','Synthetic Bakebe','off','business_unit'),('${other}','Other BU','off','business_unit');
+create table payroll_approval_runs(id uuid primary key,scope_id uuid,submitted_at timestamptz default now(),source_snapshot jsonb,source_hash text,net_run_id uuid,special_run_id uuid,mode text,submission_ref text,correction_contact text);
+create table payroll_approval_actions(run_id uuid,step int,action text,actor_id uuid,occurred_at timestamptz default now(),reason text);
+create table payroll_disbursements(run_id uuid);
+create table payroll_pilot_proposals(id uuid primary key,scope_id uuid,date_from date,date_to date);
+create table payroll_pilot_activations(id uuid primary key default gen_random_uuid(),proposal_id uuid,scope_id uuid,actor_id uuid,reference text);
+create table payroll_pilot_decisions(proposal_id uuid,actor_id uuid);
+create table payroll_pilot_promotions(activation_id uuid);
+create table payroll_gross_audit(scope_id uuid,actor_id uuid,action text,record_id uuid,reason text);
+create function private.payroll_gross_permission(uuid,text) returns boolean language sql as $$select $1='${scope}'::uuid and auth.uid() is not null and auth.uid()<>'${id(99)}'::uuid$$;
+create function private.payroll_package_permission(uuid,uuid,text) returns boolean language sql as $$select current_setting('test.employee_access',true) is distinct from 'denied'$$;
+create function private.payroll_has_access(text,uuid) returns boolean language sql as $$select auth.uid()='${manager}'::uuid and $2='${scope}'::uuid$$;
+create function private.workflow_user_has_role(uuid,text) returns boolean language sql as $$select $1 in('${id(5)}'::uuid,'${id(6)}'::uuid)$$;
+create function private.payroll_scope_covers(uuid,uuid) returns boolean language sql as $$select $1=$2 or $1='${id(12)}'::uuid$$;
+create function private.payroll_approval_source(uuid,uuid) returns jsonb language sql as $$select jsonb_build_object('hash',case when current_setting('test.stale',true)='yes' then 'changed' else 'hash' end)$$;
+create function private.payroll_approval_mode(uuid) returns text language sql as $$select 'shadow'::text$$;
+create function private.payroll_approval_role(integer,uuid) returns boolean language sql as $$select $1=coalesce(nullif(current_setting('test.step',true),''),'0')::int$$;
+create function check_payroll_operation(text,uuid,text) returns boolean language sql as $$select false$$;
+create function private.payroll_check_proposal(uuid) returns payroll_pilot_proposals language plpgsql as $$declare p public.payroll_pilot_proposals;begin if current_setting('test.evidence',true)='stale' then raise exception 'Comparison or evidence is stale';end if;select * into p from public.payroll_pilot_proposals where id=$1;return p;end$$;
+insert into payroll_pilot_proposals values('${proposal}','${scope}',current_date,current_date+10);
+`);
+for(let n=1;n<=6;n++)await db.query('insert into hris_users values($1,$2)',[id(n),'Synthetic reviewer '+n]);
+for(const name of ['private.payroll_approval_stage','private.payroll_approval_state','private.payroll_validate_approval_action','public.act_on_payroll_approval'])await db.exec(definition(phase7,name));
+await db.exec(definition(phase9,'public.activate_payroll_pilot'));
+await db.exec(fs.readFileSync('supabase/migrations/20260916042721_payroll_approval_handover_workspace.sql','utf8'));
+const call=async(name,args)=>(await db.query(`select ${name}(${args.map((_,i)=>'$'+(i+1)).join(',')}) value`,args)).rows[0].value;
+const cfg=async(k,v)=>db.query('select set_config($1,$2,false)',['test.'+k,v]);
+const source={from:'2026-06-01',to:'2026-06-15',version:1,kind:'regular',editors:[id(8)],employees:[{employeeId:id(40)}]};
+await db.query('insert into payroll_approval_runs(id,scope_id,source_snapshot,source_hash,mode) values($1,$2,$3,\'hash\',\'shadow\')',[run,scope,source]);
+await cfg('actor',manager);await db.exec('set role authenticated');
+const page=(offset=0)=>call('public.get_payroll_workspace_approvals',[scope,source.from,source.to,offset]);
+let first=await page();assert.equal(first.items.length,1);assert.equal(first.items[0].step,0);assert.equal(first.items[0].source,undefined);
+for(let step=0;step<6;step++){
+ await cfg('step',String(step));await cfg('actor',id(step+1));
+ if(step===5){await cfg('actor',id(5));await assert.rejects(()=>call('public.act_on_payroll_approval',[run,step,'approve','duplicate BOD']),/different authorized reviewer/);await cfg('actor',id(6));}
+ await call('public.act_on_payroll_approval',[run,step,'approve','Synthetic decision '+step]);
+ const refreshed=await page();assert.equal(refreshed.items[0].step,step+1);assert.equal(refreshed.items[0].actions.length,step+1);
+}
+assert.equal((await page()).items[0].canDisburse,false,'Fully approved test run cannot release payment');
+await cfg('stale','yes');assert.equal((await page()).items[0].current,false);await cfg('stale','no');
+await assert.rejects(()=>call('public.get_payroll_workspace_approvals',[other,source.from,source.to,0]),/Scoped/);
+assert.equal((await call('public.get_payroll_workspace_approvals',[scope,'2026-06-16','2026-06-30',0])).items.length,0);
+await cfg('employee_access','denied');assert.equal((await page()).items.length,0);await cfg('employee_access','allowed');
+await cfg('actor',id(99));await assert.rejects(page,/Scoped/);await cfg('actor',manager);
+// Pagination filters the BU/cutoff BEFORE limiting, unlike the former global last-100 list.
+await db.exec('reset role');for(let n=100;n<152;n++)await db.query('insert into payroll_approval_runs(id,scope_id,source_snapshot,source_hash,mode) values($1,$2,$3,\'hash\',\'shadow\')',[id(n),scope,source]);
+await db.exec('set role authenticated');first=await page();assert.equal(first.items.length,50);assert.equal(first.hasMore,true);assert.equal((await page(50)).items.length,3);
+// New explicit confirmation delegates to the unchanged activation implementation.
+await db.exec('reset role');
+const dates=(await db.query('select date_from::text f,date_to::text t from payroll_pilot_proposals')).rows[0];
+await db.exec('set role authenticated');
+const args=[proposal,scope,dates.f,dates.t,'Synthetic Bakebe','Synthetic explicit authorization',true];
+await assert.rejects(()=>call('public.activate_payroll_pilot',[proposal,'legacy call']),/Explicit live authorization/);
+await assert.rejects(()=>call('private.payroll_activate_certified_pilot',[proposal,'bypass']),/permission denied/);
+await assert.rejects(()=>call('public.authorize_payroll_pilot_activation',[...args.slice(0,-1),false]),/Explicit live authorization/);
+await assert.rejects(()=>call('public.authorize_payroll_pilot_activation',[proposal,scope,'2020-01-01',dates.t,...args.slice(4)]),/window changed/);
+await assert.rejects(()=>call('public.authorize_payroll_pilot_activation',[proposal,scope,dates.f,dates.t,'Other BU',...args.slice(5)]),/window changed/);
+await cfg('actor',id(2));await assert.rejects(()=>call('public.authorize_payroll_pilot_activation',args),/Access manager/);await cfg('actor',manager);
+await cfg('evidence','stale');await assert.rejects(()=>call('public.authorize_payroll_pilot_activation',args),/evidence is stale/);await cfg('evidence','current');
+await assert.rejects(()=>call('public.authorize_payroll_pilot_activation',args),/Two distinct BOD/);
+await db.exec('reset role');await db.query('insert into payroll_pilot_decisions values($1,$2),($1,$3)',[proposal,id(5),id(6)]);
+await db.exec(`insert into payroll_access_scopes values('${id(12)}','Organization','off','organization');set role authenticated;`);
+await assert.rejects(()=>call('public.authorize_payroll_pilot_activation',args),/parent shadow gate/);
+await db.exec('reset role');assert.equal((await db.query('select count(*)::int n from payroll_pilot_activations')).rows[0].n,0,'Gate failure rolls back certificate');
+await db.exec(`update payroll_access_scopes set processing_mode='shadow' where id='${id(12)}';set role authenticated;`);
+const activated=await call('public.authorize_payroll_pilot_activation',args);assert.ok(activated);
+await db.exec('reset role');assert.equal((await db.query('select processing_mode from payroll_access_scopes where id=$1',[scope])).rows[0].processing_mode,'live');
+assert.equal((await db.query('select processing_mode from payroll_access_scopes where id=$1',[other])).rows[0].processing_mode,'off');
+assert.equal((await db.query("select count(*)::int n from payroll_gross_audit where action='pilot_explicit_live_authorization'")).rows[0].n,1);
+assert.equal((await db.query('select count(*)::int n from payroll_disbursements')).rows[0].n,0);
+const acl=(await db.query("select has_function_privilege('anon','public.authorize_payroll_pilot_activation(uuid,uuid,date,date,text,text,boolean)','execute') anon,has_function_privilege('authenticated','private.payroll_activate_certified_pilot(uuid,text)','execute') bypass")).rows[0];assert.equal(acl.anon,false);assert.equal(acl.bypass,false);
+await db.close();console.log('PASS: actual six-stage engine and distinct BODs; completed decisions survive refresh; stale/source/BU/employee access; scoped pagination; test release blocked; explicit live authorization; original evidence/BOD/parent gates and transactional rollback; scoped activation and audit; legacy/bypass/anonymous calls denied. Local fixtures only.');
