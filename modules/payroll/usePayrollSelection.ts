@@ -1,12 +1,12 @@
-import {useState,useCallback} from 'react';
+import {useCallback,useSyncExternalStore} from 'react';
 import {useAuth} from '../../hooks/useAuth';
 import {Selection,readSelection,workspaceKey} from './workspace';
-function read(id:string,field:keyof Selection){try{return readSelection(localStorage,id)[field];}catch{return '';}}
+const event='payroll-workspace-selection';
+const subscribe=(callback:()=>void)=>{window.addEventListener(event,callback);window.addEventListener('storage',callback);return()=>{window.removeEventListener(event,callback);window.removeEventListener('storage',callback);};};
 export function usePayrollField(field:keyof Selection){
  const {user}=useAuth();const id=user?.id||'';
- const [state,setState]=useState(()=>({id,field,value:read(id,field)}));
- const value=state.id===id&&state.field===field?state.value:read(id,field);
- if(state.id!==id||state.field!==field)setState({id,field,value});
- const update=useCallback((next:string)=>{setState({id,field,value:next});try{localStorage.setItem(workspaceKey(id),JSON.stringify({...readSelection(localStorage,id),[field]:next}));}catch{}},[field,id]);
+ const read=useCallback(()=>{try{return readSelection(localStorage,id)[field];}catch{return '';}},[id,field]);
+ const value=useSyncExternalStore(subscribe,read,()=> '');
+ const update=useCallback((next:string)=>{try{localStorage.setItem(workspaceKey(id),JSON.stringify({...readSelection(localStorage,id),[field]:next}));window.dispatchEvent(new Event(event));}catch{}},[field,id]);
  return [value,update] as const;
 }
