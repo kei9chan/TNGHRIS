@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import ts from 'typescript';
+import React from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+import ExcelJS from 'exceljs';
+import {previewDifferences,employeeDifferences} from '../modules/payroll/calculationModel.ts';
+function compile(path,dependencies={},globals={}){const output=ts.transpileModule(fs.readFileSync(path,'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;const exports={};new Function('exports','require',...Object.keys(globals),output)(exports,name=>{if(!(name in dependencies))throw new Error(`Unexpected dependency ${name}`);return dependencies[name];},...Object.values(globals));return exports;}
+const types=compile('types.ts'),constants=compile('constants.ts',{'./types':types}),workspace=compile('modules/payroll/workspace.ts');
+const Link=({to,children,...props})=>React.createElement('a',{href:to,...props},children);
+const router={Link,useLocation:()=>({pathname:'/payroll/pilot'}),useNavigate:()=>()=>{}};
+const Navigation=compile('components/layout/PayrollSubNav.tsx',{react:React,'react-router-dom':router,'../../hooks/useAuth':{useAuth:()=>({user:{role:'Admin',roles:['Admin']}})},'../../hooks/usePermissions':{usePermissions:()=>({can:()=>true})},'../../constants':constants,'../../modules/payroll/workspace':workspace}).default;
+const nav=renderToStaticMarkup(React.createElement(Navigation));assert.match(nav,/aria-current="page">Run Payroll/);assert.ok(nav.indexOf('Gross Pay Review')<nav.indexOf('Take-home Pay Review'));assert.ok(nav.indexOf('Take-home Pay Review')<nav.indexOf('Compare &amp; Pilot'));assert.match(nav,/value="\/payroll\/pilot" selected/);
+const HiddenNavigation=compile('components/layout/PayrollSubNav.tsx',{react:React,'react-router-dom':router,'../../hooks/useAuth':{useAuth:()=>({user:{role:'Employee'}})},'../../hooks/usePermissions':{usePermissions:()=>({can:()=>false})},'../../constants':constants,'../../modules/payroll/workspace':workspace}).default;assert.equal(renderToStaticMarkup(React.createElement(HiddenNavigation)),'');
+const workbook=compile('modules/payroll/comparisonWorkbook.ts',{exceljs:ExcelJS},{Blob,URL,Uint8Array});
+const template={runId:'saved-net-v1',sourceHash:'immutable-source',from:'2026-06-01',to:'2026-06-15',rows:[{employeeId:'a',employeeName:'Synthetic A',key:'gross',label:'Gross',amount:'15000.00'},{employeeId:'a',employeeName:'Synthetic A',key:'otherDeductions:1',label:'Reviewed deduction',amount:'100.00'},{employeeId:'b',employeeName:'Synthetic B',key:'gross',label:'Gross',amount:'8000.00'}]};
+const book=workbook.buildComparisonWorkbook(template);book.getWorksheet('Read first').getCell('B5').value='Synthetic historical payroll';book.getWorksheet('Read first').getCell('B6').value='Checked complete source roster';const sheet=book.getWorksheet('Comparison');sheet.getCell('F2').value='15000';sheet.getCell('F3').value='90';sheet.getCell('G3').value='Existing payroll omitted PHP 10';sheet.getCell('H3').value='Reviewed deduction source';sheet.getCell('F4').value='8000';book.getWorksheet('Legacy roster').addRow(['a']);book.getWorksheet('Legacy roster').addRow(['b']);
+const parsed=await workbook.parseComparisonWorkbook(await book.xlsx.writeBuffer(),template);const rows=previewDifferences(template,parsed);assert.equal(rows[1].difference,'10.00');assert.equal(rows[1].resolved,true);
+const Table=compile('modules/payroll/ComparisonEmployeeTable.tsx',{react:React,'./calculationModel':{employeeDifferences}}).default;
+const html=renderToStaticMarkup(React.createElement(Table,{rows}));for(const text of ['Synthetic A','Synthetic B','Matches existing payroll','Existing payroll omitted PHP 10','Reviewed deduction source','System minus existing payroll','15000.00','90','10.00'])assert.ok(html.includes(text),text);
+sheet.getCell('F3').value='';
+await assert.rejects(async()=>workbook.parseComparisonWorkbook(await book.xlsx.writeBuffer(),template),/including zero/);
+// Exercise the real storage hooks: user/cutoff isolation and cross-component notification.
+const memory=new Map(),events=new Map();const storage={getItem:k=>memory.get(k)||null,setItem:(k,v)=>memory.set(k,v)};const win={addEventListener:(e,f)=>{if(!events.has(e))events.set(e,new Set());events.get(e).add(f);},removeEventListener:(e,f)=>events.get(e)?.delete(f),dispatchEvent:e=>events.get(e.type)?.forEach(f=>f())};let user='u1',notifications=0;const hookReact={useCallback:f=>f,useSyncExternalStore:(subscribe,get)=>{subscribe(()=>notifications++);return get();}};const auth={useAuth:()=>({user:{id:user}})};
+const selectionHooks=compile('modules/payroll/usePayrollSelection.ts',{react:hookReact,'../../hooks/useAuth':auth,'./workspace':workspace},{window:win,localStorage:storage,Event});
+selectionHooks.usePayrollField('scope')[1]('bu-a');selectionHooks.usePayrollField('from')[1]('2026-06-01');selectionHooks.usePayrollField('to')[1]('2026-06-15');assert.equal(selectionHooks.usePayrollField('scope')[0],'bu-a');assert.ok(notifications>0);user='u2';assert.equal(selectionHooks.usePayrollField('scope')[0],'');user='u1';assert.equal(selectionHooks.usePayrollField('from')[0],'2026-06-01');
+console.log('PASS: consecutive navigation order and permission filtering; actual XLSX round-trip, precise differences and missing-value rejection; per-employee comparison rendering including equal components; persistent user-isolated workspace selection and synchronized updates.');
