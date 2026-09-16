@@ -1,4 +1,6 @@
-import React,{useEffect,useState} from 'react';
+import ApprovalHandover from './ApprovalHandover';
+import type {NextApproval} from './approvalWorkspace';
+import React,{useCallback,useEffect,useState} from 'react';
 import {Link} from 'react-router-dom';
 import {useAuth} from '../../hooks/useAuth';
 import {usePermissions} from '../../hooks/usePermissions';
@@ -26,7 +28,10 @@ export default function PayrollHome(){
  setLoading(true);const controller=new AbortController();const timer=setTimeout(()=>{if(active){active=false;controller.abort();setLoading(false);setError('Readiness took too long. Click Refresh readiness to retry.');}},20000);
  Promise.resolve(supabase.rpc('get_payroll_home_readiness',{p_scope:scopeId,p_from:from,p_to:to}).abortSignal(controller.signal)).then(({data,error})=>{if(!active)return;if(error)throw error;if(!data||typeof data.employees!=='number')throw new Error('Incomplete readiness response. Please refresh.');setResult({key,value:data as Readiness});}).catch(e=>{if(active)setError(e.message||'Readiness could not be loaded.');}).finally(()=>{clearTimeout(timer);if(active)setLoading(false);});return()=>{active=false;controller.abort();clearTimeout(timer);};
  },[key,scope?.canView,contextLoading,refresh]);
- const next=nextPayrollStep(data);
+ const [approvalNext,setApprovalNext]=useState<{key:string;next:NextApproval|null}|null>(null);
+ const onApprovalNext=useCallback((next:NextApproval|null)=>setApprovalNext({key,next}),[key]);
+ const initialNext=nextPayrollStep(data);
+ const next=initialNext.path==='/payroll/gross-pay'&&modeLabel(data?.mode)!=='PROCESSING OFF'&&approvalNext?.key===key&&approvalNext.next?approvalNext.next:initialNext;
  const nextPath=next.path==='/payroll/timekeeping'&&validCutoff(from,to)?`${next.path}?week=${(()=>{const d=new Date(from+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-((d.getUTCDay()+6)%7));return d.toISOString().slice(0,10);})()}`:next.path;const mode=data?.mode||scope?.mode;
  const cards=data?[
  {title:'Published schedules',value:`${data.publishedDays} / ${data.totalDays}`,detail:'Employee-days with a published entry',owner:'BU manager / HR'},
@@ -49,6 +54,7 @@ export default function PayrollHome(){
  {mode==='off'&&<li>Processing is off. Setup and review remain available; the payroll access manager controls test-processing activation.</li>}
  </ul>}<p className="mt-4 text-sm text-slate-500">Checked {new Date(data.checkedAt).toLocaleString()}. Refresh after changes. Submitted means a saved version still matches its source records.</p></section>
  </>}
+ {scope?.gross?.canView&&<ApprovalHandover scope={scopeId} from={from} to={to} revision={refresh} onNext={onApprovalNext}/>}
  <section className="rounded-xl border p-5 dark:border-slate-700"><h2 className="font-semibold">Historical attendance for the pilot</h2><p className="mt-2">Import actual punch logs or reviewed DTR summaries into a separate test dataset for this cutoff. Test imports do not change the live readiness counts above, attendance, leave or payments.</p>{scope?.canView&&validCutoff(from,to)&&<Link className="mt-4 inline-flex min-h-11 items-center rounded-lg bg-violet-600 px-4 font-semibold text-white" to="/payroll/historical-attendance">Import Historical Attendance →</Link>}</section>
  <div className="flex flex-wrap gap-5 text-sm underline">{can('Timekeeping',Permission.View)&&<Link to="/payroll/timekeeping">Schedule Builder</Link>}<Link to="/payroll/pilot">Compare & Pilot</Link><Link to="/payroll/access">Payroll access & duties</Link></div>
  </main>;
