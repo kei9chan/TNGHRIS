@@ -21,25 +21,29 @@ function compile(path, dependencies = {}) {
 }
 const types = compile('types.ts');
 const constants = compile('constants.ts', { './types': types });
+const workspace = compile('modules/payroll/workspace.ts');
 let cases = 0;
 for (const role of Object.values(types.Role)) {
   for (const group of ['Payroll', 'Timekeeping & Attendance', 'Compliance & Reports']) {
     const { default: Navigation } = compile('components/layout/PayrollSubNav.tsx', {
       react: { ...React, useState: () => [group, () => {}] },
       'react-router-dom': {
-        useLocation: () => ({ pathname: '/payroll/access' }),
+        useLocation: () => ({ pathname: group === 'Payroll' ? '/payroll/timekeeping' : '/payroll/access' }),
         useNavigate: () => () => {},
+        Link: ({ to, children, ...props }) => React.createElement('a', { ...props, href: to }, children),
         NavLink: ({ to, children }) => React.createElement('a', { href: to }, children),
       },
       '../../hooks/useAuth': { useAuth: () => ({ user: { role, roles: [role] } }) },
       '../../hooks/usePermissions': { usePermissions: () => ({ can: () => true }) },
       '../../constants': constants,
+      '../../modules/payroll/workspace': workspace,
     });
     const html = renderToStaticMarkup(React.createElement(Navigation));
     assert.match(html, /Payroll/);
-    if (group === 'Payroll') assert.match(html, /Payroll Access/);
+    if (group === 'Payroll') assert.match(html, /Schedule Builder/);
+    else assert.match(html, /Payroll Access/);
     if (group === 'Timekeeping & Attendance') {
-      assert.equal(html.includes('href="/payroll/attendance-devices"'),
+      assert.equal(html.includes('value="/payroll/attendance-devices"'),
         [types.Role.Admin, types.Role.HRManager, types.Role.HRStaff].includes(role));
     }
     cases++;
