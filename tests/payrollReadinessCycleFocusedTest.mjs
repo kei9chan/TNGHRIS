@@ -32,6 +32,13 @@ const migration = await fs.readFile(
   ),
   "utf8",
 );
+const employeeResolutionMigration = await fs.readFile(
+  new URL(
+    "../supabase/migrations/20260920134301_fix_test_payroll_employee_resolution.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const selectorSource = await fs.readFile(
   new URL("../modules/payroll/PayrollCycleSelector.tsx", import.meta.url),
   "utf8",
@@ -233,9 +240,18 @@ assert.match(payrollHomeScenarioSource, /setActiveIssue\(item\)/);
 assert.match(payrollHomeScenarioSource, /issueActionForLabel\(item\.label\)/);
 assert.match(
   payrollHomeScenarioSource,
-  /Apply standard schedule to all missing dates/,
+  /Fix all attendance issues \(\$\{selectedIssues\.length\}\)/,
 );
-assert.match(payrollHomeScenarioSource, /Original punches retained/);
+assert.match(payrollHomeScenarioSource, /resolve_test_payroll_employee_issues/);
+assert.match(payrollHomeScenarioSource, /<span>Category<\/span>/);
+assert.match(payrollHomeScenarioSource, /<span>Issue<\/span>/);
+assert.match(payrollHomeScenarioSource, /<span>Affected dates<\/span>/);
+assert.match(
+  employeeResolutionMigration,
+  /src:=jsonb_set\(src,'\{scheduleDays\}',arr\)/,
+);
+assert.match(employeeResolutionMigration, /'RESOLVE_ALL_EMPLOYEE_ISSUES'/);
+assert.match(employeeResolutionMigration, /'remaining',remaining/);
 
 // 15. Original punches remain in the immutable correction/audit evidence.
 assert.match(migration, /original_snapshot/);
