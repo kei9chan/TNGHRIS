@@ -14,6 +14,7 @@ const migration=await fs.readFile(new URL('../supabase/migrations/20260920121322
 const selectorSource=await fs.readFile(new URL('../modules/payroll/PayrollCycleSelector.tsx',import.meta.url),'utf8');
 const correctionSource=await fs.readFile(new URL('../modules/payroll/PresetAttendanceCorrection.tsx',import.meta.url),'utf8');
 const payrollHomeScenarioSource=await fs.readFile(new URL('../modules/payroll/ScenarioRun.tsx',import.meta.url),'utf8');
+const scheduleBuilderSource=await fs.readFile(new URL('../pages/payroll/Timekeeping.tsx',import.meta.url),'utf8');
 
 const baseRow={employeeId:'employee-1',employeeName:'Leonard Reyes',date:'2026-08-20',restDay:false,holiday:false,approvedFullLeave:false,scheduledMinutes:480,actualMinutes:479,regularMinutes:479,breakMinutes:60,lateMinutes:1,undertimeMinutes:0,approvedOtMinutes:0,actualOtMinutes:0,workedLunch:false,issues:['1-minute late'],ready:false,shiftIds:['shift-1'],eventIds:['punch-1'],leaveIds:[],ot:[],segments:[],evidence:{scheduleStatus:'published',shifts:[{id:'shift-1',start:'09:00',end:'18:00',kind:'work'}],punches:[{id:'punch-1',type:'CLOCK_IN',timestamp:'2026-08-20T09:01:00+08:00'}],leave:[],ot:[]}};
 
@@ -72,6 +73,11 @@ assert.match(payrollHomeScenarioSource,/Use scheduled break/);assert.match(payro
 // 14. Saving can recalculate and open the next issue.
 assert.match(correctionSource,/Save & recalculate/);assert.match(correctionSource,/Open next issue after saving/);assert.match(correctionSource,/onSaved\(continueToNext\)/);
 assert.match(payrollHomeScenarioSource,/Open next issue after saving/);assert.match(payrollHomeScenarioSource,/Save & recalculate/);
+assert.match(payrollHomeScenarioSource,/Finish \{selected\.name\} before moving on/);
+assert.match(payrollHomeScenarioSource,/const employeeIssues = issues\.filter/);
+assert.doesNotMatch(payrollHomeScenarioSource,/issues\.find\(\(_, index\) => index !== current\)/);
+assert.match(payrollHomeScenarioSource,/employee=\$\{selected\.id\}&week=\$\{currentDay\.date\}/s);
+assert.match(scheduleBuilderSource,/!requestedEmployee\|\|e\.id===requestedEmployee/);
 
 // 15. Original punches remain in the immutable correction/audit evidence.
 assert.match(migration,/original_snapshot/);assert.match(migration,/Original punch retained/);
