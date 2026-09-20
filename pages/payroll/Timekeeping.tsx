@@ -105,6 +105,9 @@ const Timekeeping: React.FC = () => {
     const [scheduleParams] = useSearchParams();
     const complianceManager = scheduleParams.get('manager') || undefined;
     const requestedWeek = scheduleParams.get('week');
+    const requestedEmployee = scheduleParams.get('employee') || undefined;
+    const fromReadiness = scheduleParams.get('source') === 'readiness';
+    const requestedEmployeeOpened = useRef(false);
     const { user } = useAuth();
     const { can, isSuperAdmin, getAccessibleBusinessUnits } = usePermissions();
     
@@ -125,6 +128,7 @@ const Timekeeping: React.FC = () => {
     const [builderPeople,setBuilderPeople]=useState<(User & {canEdit:boolean})[]>([]);
     const [builderContext,setBuilderContext]=useState('');
     const [employeeScope,setEmployeeScope]=useState<EmployeeScope>(()=>{
+        if(requestedEmployee)return 'business_unit';
         try{return sessionStorage.getItem(`schedule-scope:${user?.id}`)==='business_unit'?'business_unit':'direct';}catch{return 'direct';}
     });
     useEffect(()=>{try{sessionStorage.setItem(`schedule-scope:${user?.id}`,employeeScope);}catch{}},[employeeScope,user?.id]);
@@ -224,6 +228,15 @@ const Timekeeping: React.FC = () => {
     }, [user, isHrPresetEditor, getAccessibleBusinessUnits, businessUnits, employees]);
     const [selectedBuId, setSelectedBuId] = useState<string>('all');
     const [departmentFilter, setDepartmentFilter] = useState<string>('all');
+
+    useEffect(()=>{
+        if(!requestedEmployee)return;
+        const target=employees.find(employee=>employee.id===requestedEmployee);
+        if(!target)return;
+        setEmployeeScope('business_unit');
+        setDepartmentFilter('all');
+        if(target.businessUnitId)setSelectedBuId(target.businessUnitId);
+    },[requestedEmployee,employees]);
 
     const canView = useMemo(() => can('Timekeeping', Permission.View), [can]);
 
@@ -601,7 +614,8 @@ const Timekeeping: React.FC = () => {
     const employeesInBU=useMemo(()=>!builderIsCurrent?[]:builderPeople.filter(e=>
       (employeeScope==='business_unit'||selectedBuId==='all'||e.businessUnitId===selectedBuId)&&
       (departmentFilter==='all'||e.departmentId===departmentFilter)&&
-      !clockingExemptEmployeeIds.includes(e.id)),[builderIsCurrent,builderPeople,employeeScope,selectedBuId,departmentFilter,clockingExemptEmployeeIds]);
+      (!requestedEmployee||e.id===requestedEmployee)&&
+      !clockingExemptEmployeeIds.includes(e.id)),[builderIsCurrent,builderPeople,employeeScope,selectedBuId,departmentFilter,requestedEmployee,clockingExemptEmployeeIds]);
     const canEditEmployee=(id:string)=>builderIsCurrent&&!builderLoading&&!shiftBusy&&builderPeople.some(e=>e.id===id&&e.canEdit&&(employeeScope==='business_unit'||e.reportsTo===user?.id));
     const editableEmployees=employeesInBU.filter(e=>canEditEmployee(e.id));
     const displayAssignments=retryShift&&shiftSaveError?[...assignments.filter(a=>!(a.employeeId===retryShift.employeeId&&toDateOnly(new Date(a.date))===toDateOnly(retryShift.date))),{id:'unsaved-selection',employeeId:retryShift.employeeId,date:retryShift.date,shiftTemplateId:retryShift.templateId,locationId:'OFFICE-MAIN'}]:assignments;
@@ -739,6 +753,14 @@ const Timekeeping: React.FC = () => {
             date,
         });
     };
+
+    useEffect(()=>{
+        if(requestedEmployeeOpened.current||!requestedEmployee||!requestedWeek||builderLoading||!builderIsCurrent)return;
+        const employee=employeesInBU.find(item=>item.id===requestedEmployee);
+        if(!employee||!canEditEmployee(employee.id))return;
+        requestedEmployeeOpened.current=true;
+        handleOpenDrawer(employee,new Date(`${requestedWeek}T12:00:00`));
+    },[requestedEmployee,requestedWeek,builderLoading,builderIsCurrent,employeesInBU]);
     
     const handleCloseDrawer = () => setDrawerState({ open: false, employee: null, date: null });
 
@@ -1180,6 +1202,7 @@ const Timekeeping: React.FC = () => {
     return (
         <div className="space-y-6">
             <ScheduleTask week={toDateOnly(weekStart)} manager={complianceManager} refresh={statusRefresh+publicationRefresh+scheduleMutation.current} details />
+            {fromReadiness&&requestedEmployee&&<div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-violet-200 bg-violet-50 p-4 text-violet-950"><div><b className="block">Schedule correction for {employees.find(employee=>employee.id===requestedEmployee)?.name||'selected employee'}</b><span className="text-sm">Only this employee is shown. Save their schedule before returning to payroll readiness.</span></div><a href="/payroll/home" className="min-h-11 rounded-lg border border-violet-300 bg-white px-4 py-3 text-sm font-bold text-violet-700">Back to payroll readiness</a></div>}
             {shiftSaveError && retryShift && <div role="alert" className="rounded border border-red-300 bg-red-50 p-4 text-red-900"><p>Shift not saved: {shiftSaveError}</p><button className="mt-2 underline" disabled={shiftBusy} onClick={()=>void handleSaveShift(retryShift.employeeId,retryShift.date,retryShift.templateId)}>Retry save</button> <button disabled={shiftBusy} className="ml-3 underline" onClick={()=>{const employee=builderPeople.find(e=>e.id===retryShift.employeeId);if(employee)setDrawerState({open:true,employee,date:retryShift.date});}}>Edit selection</button></div>}
             <Toast
                 show={toastInfo.show}
