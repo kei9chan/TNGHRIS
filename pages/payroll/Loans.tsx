@@ -1,19 +1,72 @@
-import React from 'react';
+import React,{useEffect,useMemo,useState} from 'react';
+import Button from '../../components/ui/Button';
 import Card from '../../components/ui/Card';
+import {usePayrollField} from '../../modules/payroll/usePayrollSelection';
+import {actDebt,createDebt,getDebtContext,openDebtDocument,peso,uploadDebtDocument,type DebtContext,type PayrollDebt} from '../../modules/payroll/debts';
 
-const Loans: React.FC = () => {
-  return (
-    <div className="space-y-6">
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Loan Application System</h1>
-      <Card>
-        <div className="text-center py-24 text-gray-500 dark:text-gray-400">
-          <p className="text-2xl font-semibold">Coming Soon!</p>
-          <p className="mt-2 text-lg">This feature is currently under development.</p>
-          <p className="mt-1">The Loan Application System will be available here in a future update.</p>
-        </div>
-      </Card>
-    </div>
-  );
-};
+const control='mt-1 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 dark:border-slate-600 dark:bg-slate-900';
+const colors:Record<string,string>={Active:'bg-emerald-100 text-emerald-800',Completed:'bg-emerald-100 text-emerald-800','Pending Approval':'bg-amber-100 text-amber-900',Draft:'bg-slate-100 text-slate-700',Paused:'bg-amber-100 text-amber-900',Cancelled:'bg-slate-100 text-slate-600'};
+const manilaToday=()=>new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Manila'});
+function nextPayDate(){const d=new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Manila'}));if(d.getDate()<=5)return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-20`;const month=(d.getMonth()+1)%12;return `${month===0?d.getFullYear()+1:d.getFullYear()}-${String(month+1).padStart(2,'0')}-05`;}
+export function schedulePreview(opening:string,method:'months'|'cutoffs',term:number){const count=method==='months'?term*2:term;const initial=Math.max(0,Number(opening)||0);const regular=count?Math.round(initial/count*100)/100:0;let remaining=initial;const amounts=Array.from({length:count},(_,index)=>{const amount=index===count-1?remaining:Math.min(regular,remaining);remaining=Math.max(0,Math.round((remaining-amount)*100)/100);return amount;});return {count,regular,final:amounts.at(-1)||0,remaining};}
 
-export default Loans;
+function AddDrawer({context,onClose,onSaved}:{context:DebtContext;onClose:()=>void;onSaved:()=>void}){
+ const [form,setForm]=useState({employeeId:'',source:'',original:'',opening:'',issued:manilaToday(),method:'cutoffs' as 'months'|'cutoffs',term:6,firstDate:nextPayDate(),authority:''});
+ const [file,setFile]=useState<File|null>(null);const [busy,setBusy]=useState(false);const [error,setError]=useState('');const preview=schedulePreview(form.opening,form.method,form.term);
+ async function save(submit:boolean){setBusy(true);setError('');const id=crypto.randomUUID();try{if(!form.employeeId||!form.source.trim())throw new Error('Select an employee and enter the debt source.');await createDebt({id,...form,submit:false});if(file)await uploadDebtDocument(id,file);if(submit)await actDebt(id,'submit','Submitted with payroll deduction authority');onSaved();onClose();}catch(reason){setError((reason as Error).message);}finally{setBusy(false);}}
+ return <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40" role="dialog" aria-modal="true" aria-labelledby="add-debt-title">
+  <div className="h-full w-full max-w-xl overflow-y-auto bg-white p-6 shadow-2xl dark:bg-slate-900">
+   <header className="flex items-start justify-between gap-3"><div><h2 id="add-debt-title" className="text-2xl font-bold">Add loan or debt</h2><p className="text-sm text-slate-500">The deduction stays out of payroll until approval.</p></div><button className="min-h-11 px-3 text-2xl" onClick={onClose} aria-label="Close">×</button></header>
+   {error&&<p role="alert" className="mt-4 rounded-xl border border-red-300 bg-red-50 p-3 text-red-800">{error}</p>}
+   <div className="mt-5 grid gap-4 sm:grid-cols-2">
+    <label className="sm:col-span-2">Employee<select className={control} value={form.employeeId} onChange={e=>setForm({...form,employeeId:e.target.value})}><option value="">Select employee</option>{context.employees.map(e=><option key={e.id} value={e.id}>{e.name} · {e.code}</option>)}</select></label>
+    <label className="sm:col-span-2">Debt source<input className={control} value={form.source} onChange={e=>setForm({...form,source:e.target.value})} placeholder="Existing employee loan"/></label>
+    <label>Original amount<input className={control} inputMode="decimal" value={form.original} onChange={e=>setForm({...form,original:e.target.value})}/></label>
+    <label>Opening balance<input className={control} inputMode="decimal" value={form.opening} onChange={e=>setForm({...form,opening:e.target.value})}/></label>
+    <label>Issue date<input className={control} type="date" value={form.issued} onChange={e=>setForm({...form,issued:e.target.value})}/></label>
+    <label>First deduction date<input className={control} type="date" value={form.firstDate} onChange={e=>setForm({...form,firstDate:e.target.value})}/></label>
+    <label>Repay over<select className={control} value={form.method} onChange={e=>setForm({...form,method:e.target.value as 'months'|'cutoffs'})}><option value="months">Number of months</option><option value="cutoffs">Number of payroll cutoffs</option></select></label>
+    <label>{form.method==='months'?'Number of months':'Number of cutoffs'}<input className={control} type="number" min="1" max="120" value={form.term} onChange={e=>setForm({...form,term:Number(e.target.value)})}/></label>
+    <label className="sm:col-span-2">Payroll deduction authority<input className={control} value={form.authority} onChange={e=>setForm({...form,authority:e.target.value})} placeholder="Signed authority reference"/></label>
+    <label className="sm:col-span-2">Supporting document<input className={control} type="file" accept="application/pdf,image/png,image/jpeg" onChange={e=>setFile(e.target.files?.[0]||null)}/><span className="text-xs text-slate-500">Private PDF, PNG, or JPEG; maximum 10 MB.</span></label>
+   </div>
+   <div className="mt-5 rounded-2xl bg-violet-50 p-4 text-violet-950 dark:bg-violet-950/40 dark:text-violet-100"><p className="text-sm font-semibold">Live repayment preview</p><p className="mt-1 text-lg font-bold">{peso(form.opening)} balance · {preview.count} payroll cutoffs · {peso(preview.regular)} per cutoff · final balance {peso(preview.remaining)}</p><p className="text-sm">Final installment automatically adjusts to {peso(preview.final)}.</p></div>
+   <footer className="mt-6 flex flex-wrap justify-end gap-3"><Button variant="secondary" disabled={busy} onClick={onClose}>Cancel</Button><Button variant="secondary" disabled={busy} onClick={()=>void save(false)}>Save as draft</Button><Button disabled={busy||!form.authority.trim()} onClick={()=>void save(true)}>Submit for approval</Button></footer>
+  </div>
+ </div>;
+}
+
+function DetailDrawer({debt,canApprove,onClose,onChanged}:{debt:PayrollDebt;canApprove:boolean;onClose:()=>void;onChanged:()=>void}){
+ const [reason,setReason]=useState('');const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [method,setMethod]=useState<'months'|'cutoffs'>(debt.repayment_method);const [term,setTerm]=useState(debt.term_count);const [firstDate,setFirstDate]=useState(debt.first_deduction_date);const [excludeDate,setExcludeDate]=useState('');
+ async function run(action:string,payload:Record<string,unknown>={}){setBusy(true);setError('');try{await actDebt(debt.id,action,reason,payload);onChanged();onClose();}catch(cause){setError((cause as Error).message);}finally{setBusy(false);}}
+ const actionable=['Draft','Pending Approval','Active','Paused'].includes(debt.status);
+ return <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40" role="dialog" aria-modal="true">
+  <div className="h-full w-full max-w-2xl overflow-y-auto bg-white p-6 shadow-2xl dark:bg-slate-900">
+   <header className="flex justify-between gap-3"><div><h2 className="text-2xl font-bold">Review employee deductions</h2><p>{debt.employeeName} · {debt.employeeCode}</p></div><button className="min-h-11 px-3 text-2xl" onClick={onClose} aria-label="Close">×</button></header>
+   {error&&<p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-red-800">{error}</p>}
+   <div className="mt-5 grid gap-3 sm:grid-cols-3">{[['Current balance',peso(debt.current_balance)],['Deduction per cutoff',peso(debt.installment)],['Remaining cutoffs',String(debt.remainingCutoffs)]].map(([label,value])=><div className="rounded-2xl bg-violet-50 p-4 dark:bg-violet-950/30" key={label}><p className="text-sm text-slate-600 dark:text-slate-300">{label}</p><strong className="text-2xl">{value}</strong></div>)}</div>
+   <section className="mt-5 rounded-2xl border p-4"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-lg font-bold">{debt.debt_source}</h3><span className={`rounded-full px-3 py-1 text-sm font-semibold ${colors[debt.status]}`}>{debt.status}</span></div><dl className="mt-4 grid gap-3 sm:grid-cols-2"><div><dt>Original amount</dt><dd className="font-bold">{peso(debt.original_amount)}</dd></div><div><dt>Opening balance</dt><dd className="font-bold">{peso(debt.opening_balance)}</dd></div><div><dt>Total paid</dt><dd className="font-bold">{peso(debt.totalPaid)}</dd></div><div><dt>Remaining after next payroll</dt><dd className="font-bold">{peso(Math.max(0,Number(debt.current_balance)-Number(debt.installment)))}</dd></div><div><dt>Repayment term</dt><dd className="font-bold">{debt.term_count} {debt.repayment_method}</dd></div><div><dt>Expected final deduction</dt><dd className="font-bold">{debt.expected_final_date}</dd></div></dl>{debt.document_path&&<button className="mt-4 text-violet-700 underline" onClick={()=>void openDebtDocument(debt.document_path!)}>Open secured supporting document</button>}</section>
+   <section className="mt-5"><h3 className="text-lg font-bold">Repayment timeline</h3><div className="mt-2 max-h-64 overflow-auto rounded-xl border"><table className="w-full text-left text-sm"><thead><tr><th className="p-2">Payroll date</th><th className="p-2">Scheduled</th><th className="p-2">Actual</th><th className="p-2">Balance</th><th className="p-2">Status</th></tr></thead><tbody>{debt.schedule.map(row=><tr className="border-t" key={row.id}><td className="p-2">{row.payroll_date}</td><td className="p-2">{peso(row.scheduled_amount)}</td><td className="p-2">{row.actual_amount?peso(row.actual_amount):'—'}</td><td className="p-2">{peso(row.balance_after)}</td><td className="p-2">{row.status}</td></tr>)}</tbody></table></div></section>
+   {['Active','Paused'].includes(debt.status)&&<section className="mt-5 rounded-2xl border p-4"><h3 className="font-bold">Change future repayment schedule</h3><p className="text-sm text-slate-500">Before-and-after values are audited. The replacement schedule returns to Pending Approval.</p><div className="mt-3 grid gap-3 sm:grid-cols-3"><select className={control} value={method} onChange={e=>setMethod(e.target.value as 'months'|'cutoffs')}><option value="months">Months</option><option value="cutoffs">Payroll cutoffs</option></select><input aria-label="Replacement term" className={control} type="number" min="1" max="120" value={term} onChange={e=>setTerm(Number(e.target.value))}/><input aria-label="Replacement first date" className={control} type="date" value={firstDate} onChange={e=>setFirstDate(e.target.value)}/></div><Button className="mt-3" variant="secondary" disabled={busy||reason.trim().length<3} onClick={()=>void run('change_schedule',{method,term,firstDate})}>Change schedule & request reapproval</Button><div className="mt-4 flex gap-2"><select aria-label="Exclude payroll cutoff" className={control} value={excludeDate} onChange={e=>setExcludeDate(e.target.value)}><option value="">Choose future cutoff</option>{debt.schedule.filter(row=>row.status==='Scheduled').map(row=><option key={row.id} value={row.payroll_date}>{row.payroll_date}</option>)}</select><Button variant="secondary" disabled={busy||!excludeDate||reason.trim().length<3} onClick={()=>void run('exclude',{payrollDate:excludeDate})}>Exclude once</Button></div></section>}
+   <section className="mt-5"><h3 className="text-lg font-bold">Audit history</h3>{debt.audit.length?<div className="mt-2 space-y-2">{debt.audit.map((entry,index)=><div className="rounded-xl bg-slate-50 p-3 text-sm dark:bg-slate-800" key={`${entry.at}-${index}`}><strong>{entry.action}</strong> · {entry.actor}<p>{entry.reason}</p><time>{new Date(entry.at).toLocaleString('en-PH')}</time></div>)}</div>:<p>No actions recorded.</p>}</section>
+   {actionable&&<><label className="mt-5 block">Required reason<textarea className={control} minLength={3} value={reason} onChange={e=>setReason(e.target.value)} placeholder="Explain this action for the immutable audit trail"/></label><div className="mt-4 flex flex-wrap gap-2">{debt.status==='Draft'&&<Button disabled={busy||reason.trim().length<3} onClick={()=>void run('submit')}>Submit for approval</Button>}{debt.status==='Pending Approval'&&canApprove&&<Button disabled={busy||reason.trim().length<3} onClick={()=>void run('approve')}>Approve schedule</Button>}{debt.status==='Active'&&<Button variant="secondary" disabled={busy||reason.trim().length<3} onClick={()=>void run('pause')}>Pause deductions</Button>}{debt.status==='Paused'&&<Button disabled={busy||reason.trim().length<3} onClick={()=>void run('resume')}>Resume deductions</Button>}{['Active','Paused'].includes(debt.status)&&<Button variant="secondary" disabled={busy||reason.trim().length<3} onClick={()=>void run('mark_paid')}>Mark fully paid</Button>}</div></>}
+   <p className="mt-4 text-sm text-slate-500">Locked payroll history cannot be silently changed. Corrections apply to a future cutoff and remain auditable.</p>
+  </div>
+ </div>;
+}
+
+export default function Loans(){
+ const [scope]=usePayrollField('scope');const [data,setData]=useState<DebtContext|null>(null);const [error,setError]=useState('');const [busy,setBusy]=useState(false);const [add,setAdd]=useState(false);const [selected,setSelected]=useState<PayrollDebt|null>(null);const [refresh,setRefresh]=useState(0);
+ useEffect(()=>{let active=true;setBusy(true);setError('');void getDebtContext(scope||null).then(result=>{if(active)setData(result);}).catch(reason=>{if(active)setError((reason as Error).message);}).finally(()=>{if(active)setBusy(false);});return()=>{active=false;};},[scope,refresh]);
+ const active=useMemo(()=>data?.debts.filter(d=>d.status==='Active')||[],[data]);const pending=useMemo(()=>data?.debts.filter(d=>['Draft','Pending Approval'].includes(d.status))||[],[data]);const scheduled=active.reduce((sum,d)=>sum+Math.min(Number(d.current_balance),Number(d.installment)),0);
+ return <div className="space-y-6">
+  <header className="flex flex-wrap items-end justify-between gap-4"><div><h1 className="text-3xl font-bold">Loans & Deductions</h1><p className="mt-1 text-slate-600 dark:text-slate-300">Existing approved employee loans and debt only. NTE and service-charge deductions are not included in Phase 1.</p></div>{data?.canManage&&<Button onClick={()=>setAdd(true)}>Add loan or debt</Button>}</header>
+  {error&&<p role="alert" className="rounded-xl border border-red-300 bg-red-50 p-3 text-red-800">{error}</p>}
+  {busy&&!data?<p role="status">Loading secured loan records…</p>:data&&<>
+   <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[['Total active loans',active.length],['Total deductions next payroll',peso(scheduled)],['Employees with debt',new Set(data.debts.filter(d=>!['Cancelled','Completed'].includes(d.status)).map(d=>d.employee_id)).size],['Loans needing review',pending.length]].map(([label,value])=><Card key={String(label)}><p className="text-sm text-slate-500">{label}</p><strong className="mt-2 block text-3xl">{value}</strong></Card>)}</div>
+   <Card title={data.canManage?'Employee loans and debt':'My approved loans'}>{data.debts.length===0?<p>No loan or debt records are available for this scope.</p>:<div className="overflow-x-auto"><table className="w-full min-w-[850px] text-left text-sm"><thead><tr>{['Employee','Original balance','Remaining balance','Next deduction','Repayment term','Status','Review'].map(heading=><th className="p-3" key={heading}>{heading}</th>)}</tr></thead><tbody>{data.debts.map(debt=><tr className="border-t" key={debt.id}><td className="p-3 font-semibold">{debt.employeeName}<span className="block text-xs font-normal text-slate-500">{debt.employeeCode}</span></td><td className="p-3">{peso(debt.original_amount)}</td><td className="p-3 text-lg font-bold">{peso(debt.current_balance)}</td><td className="p-3">{debt.status==='Active'?peso(Math.min(Number(debt.current_balance),Number(debt.installment))):'—'}</td><td className="p-3">{debt.term_count} {debt.repayment_method}<span className="block text-xs">{debt.remainingCutoffs} cutoffs left</span></td><td className="p-3"><span className={`rounded-full px-3 py-1 font-semibold ${colors[debt.status]}`}>{debt.status}</span></td><td className="p-3"><Button variant="secondary" size="sm" onClick={()=>setSelected(debt)}>Review</Button></td></tr>)}</tbody></table></div>}</Card>
+  </>}
+  {add&&data&&<AddDrawer context={data} onClose={()=>setAdd(false)} onSaved={()=>setRefresh(value=>value+1)}/>}
+  {selected&&data&&<DetailDrawer debt={selected} canApprove={data.canApprove} onClose={()=>setSelected(null)} onChanged={()=>setRefresh(value=>value+1)}/>}
+ </div>;
+}
