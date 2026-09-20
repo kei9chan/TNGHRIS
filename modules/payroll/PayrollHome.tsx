@@ -1,3 +1,4 @@
+import ScenarioRun from './ScenarioRun';
 import ApprovalHandover from './ApprovalHandover';
 import type {NextApproval} from './approvalWorkspace';
 import React,{useCallback,useEffect,useState} from 'react';
@@ -56,6 +57,7 @@ export default function PayrollHome(){
  </>}
  {scope?.gross?.canView&&<ApprovalHandover scope={scopeId} from={from} to={to} revision={refresh} onNext={onApprovalNext}/>}
  <section className="rounded-xl border p-5 dark:border-slate-700"><h2 className="font-semibold">Historical attendance for the pilot</h2><p className="mt-2">Import actual punch logs or reviewed DTR summaries into a separate test dataset for this cutoff. Test imports do not change the live readiness counts above, attendance, leave or payments.</p>{scope?.canView&&validCutoff(from,to)&&<Link className="mt-4 inline-flex min-h-11 items-center rounded-lg bg-violet-600 px-4 font-semibold text-white" to="/payroll/historical-attendance">Import Historical Attendance →</Link>}</section>
+ {scope?.gross?.canView&&<><button className="rounded-lg border px-4 py-3" onClick={()=>{setFrom('2026-08-11');setTo('2026-08-25');}}>Open August 11–25 test cutoff</button><ScenarioRun key={`${user?.id}:${scopeId}:${from}:${to}`} scope={scopeId} from={from} to={to}/></>}
  <div className="flex flex-wrap gap-5 text-sm underline"><Link to="/payroll/pilot">Compare & Pilot</Link><Link to="/payroll/access">Payroll access & duties</Link></div>
  </main>;
 }
