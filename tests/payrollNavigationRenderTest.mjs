@@ -40,7 +40,7 @@ for (const role of Object.values(types.Role)) {
     });
     const html = renderToStaticMarkup(React.createElement(Navigation));
     assert.match(html, /Payroll/);
-    if (group === 'Payroll') { assert.match(html, /Schedule Builder/); assert.match(html, /Payroll Home/); assert.match(html, /Run Payroll/); }
+    if (group === 'Payroll') { assert.match(html, /Schedule Builder/); assert.match(html, /Payroll Home/); assert.match(html, /Run Payroll/); assert.match(html, /Loans &amp; Debt/); }
     else assert.match(html, /Payroll Access/);
     if (group === 'Timekeeping & Attendance') {
       assert.equal(html.includes('value="/payroll/attendance-devices"'),
