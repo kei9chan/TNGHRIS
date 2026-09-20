@@ -58,13 +58,15 @@
     "test:asset-approvals": "node tests/assetRequestApprovalWorkflowSmokeTest.mjs",
     "test:benefit-approvals": "node tests/benefitApprovalWorkflowSmokeTest.mjs",
     "test:case-register": "node tests/caseRegisterDatabaseTest.mjs && node tests/caseRegisterExportTest.mjs",
-    "test:official-business": "node tests/officialBusinessTest.mjs"
+    "test:official-business": "node tests/officialBusinessTest.mjs",
+    "test:payroll-completion": "node tests/payrollCompletionUiTest.mjs && node tests/payrollScenarioAccessTest.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.84.0",
     "exceljs": "4.4.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^2.5.1",
+    "jszip": "3.10.1",
     "nodemailer": "^6.9.14",
     "qrcode": "1.5.4",
     "react": "^19.2.0",

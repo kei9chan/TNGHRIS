@@ -8,8 +8,10 @@ create function auth.uid() returns uuid language sql as $$select null::uuid$$;
 create table public.payroll_access_scopes(id uuid primary key);
 create function private.payroll_gross_permission(s uuid,a text) returns boolean language sql as $$select s::text=current_setting('test.scope',true) and (a='view' or current_setting('test.duty',true)='prepare')$$;
 create function private.payroll_has_access(a text,s uuid) returns boolean language sql as $$select false$$;
-create function private.payroll_package_permission(e uuid,s uuid,a text) returns boolean language sql as $$select s::text=current_setting('test.scope',true) and current_setting('test.employee_denied',true)<>'yes'$$;`);
-for(const file of ['20260920013529_isolated_payroll_scenario_run.sql','20260920020734_authorized_test_payroll_calculation.sql','20260920021029_test_payroll_calculation_hash_fix.sql','20260920021116_test_payroll_decimal_inputs.sql','20260920021239_test_payroll_view_capabilities.sql','20260920033000_test_payroll_attendance_corrections.sql','20260920034500_test_payroll_correction_status_accuracy.sql'])await db.exec(fs.readFileSync('supabase/migrations/'+file,'utf8'));
+create function private.payroll_package_permission(e uuid,s uuid,a text) returns boolean language sql as $$select s::text=current_setting('test.scope',true) and current_setting('test.employee_denied',true)<>'yes'$$;
+create function public.current_hris_user_id() returns uuid language sql as $$select null::uuid$$;
+create function private.workflow_user_has_role(u uuid,r text) returns boolean language sql as $$select false$$;`);
+for(const file of ['20260920013529_isolated_payroll_scenario_run.sql','20260920020734_authorized_test_payroll_calculation.sql','20260920021029_test_payroll_calculation_hash_fix.sql','20260920021116_test_payroll_decimal_inputs.sql','20260920021239_test_payroll_view_capabilities.sql','20260920033000_test_payroll_attendance_corrections.sql','20260920034500_test_payroll_correction_status_accuracy.sql','20260920040000_test_payroll_completion_flow.sql'])await db.exec(fs.readFileSync('supabase/migrations/'+file,'utf8'));
 await db.query('insert into public.payroll_access_scopes values($1),($2)',[scope,other]);
 await db.query("insert into payroll_scenario_private.runs(seed_run_id,scope_id,label,date_from,date_to,pay_date,snapshot) values('fixture',$1,'TEST','2026-08-11','2026-08-25','2026-09-05',$2)",[scope,JSON.stringify({employees:[{id:employee}],initialSnapshot:{privateHistory:true},beforeMockSnapshot:{privateHistory:true}})]);
 // Pure calculation arithmetic is checked against the existing engines separately.
@@ -28,5 +30,9 @@ await assert.rejects(()=>db.exec('select * from payroll_scenario_private.runs'),
 await assert.rejects(()=>db.exec('delete from payroll_scenario_private.calculations'),/permission denied/);
 await assert.rejects(()=>db.exec('select * from payroll_scenario_private.corrections'),/permission denied/);
 await assert.rejects(()=>db.exec('select * from payroll_scenario_private.correction_audit'),/permission denied/);
-await db.exec('reset role;set role anon');await assert.rejects(()=>calc(),/permission denied/);
+await assert.rejects(()=>db.exec('select * from payroll_scenario_private.output_batches'),/permission denied/);
+await assert.rejects(()=>db.exec('select * from payroll_scenario_private.outputs'),/permission denied/);
+await assert.rejects(()=>db.exec('select * from payroll_scenario_private.completion_approvals'),/permission denied/);
+await assert.rejects(()=>db.exec('select * from payroll_scenario_private.completion_audit'),/permission denied/);
+await db.exec('reset role;set role anon');await assert.rejects(()=>calc(),/permission denied/);await assert.rejects(()=>db.query('select public.get_test_payroll_completion($1,$2,$3)',[scope,'2026-08-11','2026-08-25']),/permission denied/);
 await db.close();console.log('PASS: authorized read/calculate; view-only denied; wrong BU denied; restricted employee denied; private tables inaccessible; anonymous denied; historic snapshots omitted.');
