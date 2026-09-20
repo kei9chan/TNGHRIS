@@ -23,6 +23,7 @@ grant execute on function public.get_bod_schedule_workflow(date),public.submit_m
 `);
 await db.exec('drop function schedule_compliance.bod_manager(uuid)');
 await db.exec(fs.readFileSync('supabase/migrations/20260916050014_gm_direct_report_schedule_submission.sql','utf8'));
+await db.exec(fs.readFileSync('supabase/migrations/20260920090000_schedule_submission_notes_optional.sql','utf8'));
 const people=[[1,'GM','GeneralManager',null],[2,'Employee','Employee',1],[3,'Other GM','GeneralManager',null],[4,'Other employee','Employee',3],[5,'BOD','Board of Director',null],[6,'BOD report','Employee',5],[7,'Ordinary manager','Manager',null],[8,'Ordinary report','Employee',7]];
 for(const [n,name,role,m] of people)await db.query('insert into public.hris_users(id,auth_user_id,full_name,role,reports_to,business_unit_id) values($1,$2,$3,$4,$5,$6)',[id(n),id(1000+n),name,role,m?id(m):null,id(20)]);
 await db.query("insert into shift_templates(id,name,business_unit_id,created_by,start_time,end_time) values($1,'GM preset',$3,$2,'09:00','18:00'),($4,'Other preset',$3,$5,'09:00','18:00')",[id(30),id(1),id(20),id(31),id(3)]);
@@ -33,6 +34,10 @@ const week=(await admin("select date_trunc('week',now() at time zone 'Asia/Manil
 const entries=Array.from({length:7},(_,n)=>({date:new Date(Date.parse(week+'T00:00:00Z')+86400000*n).toISOString().slice(0,10),templateId:id(30)}));
 await actor(2);let workflow=await call('get_bod_schedule_workflow',[week]);assert.equal(workflow.eligible,true);assert.equal(workflow.managerRole,'GM');assert.equal(workflow.templates.length,1);
 const submit=()=>call('submit_my_bod_schedule',[week,entries,'Synthetic employee proposal']);const request=await submit();assert.equal(await submit(),request,'Retry returns the same proposal');
+const weekWithoutNotes=new Date(Date.parse(week+'T00:00:00Z')+86400000*14).toISOString().slice(0,10);
+const entriesWithoutNotes=entries.map((e,n)=>({...e,date:new Date(Date.parse(weekWithoutNotes+'T00:00:00Z')+86400000*n).toISOString().slice(0,10)}));
+const noNotesRequest=await call('submit_my_bod_schedule',[weekWithoutNotes,entriesWithoutNotes,'']);
+assert.ok(noNotesRequest,'A schedule may be submitted without notes');
 assert.equal((await admin('select count(*)::int n from shift_assignments')).rows[0].n,0,'Pending proposal never changes attendance schedules');
 await actor(2);await assert.rejects(()=>call('review_bod_schedule_submission',[request,1,true,'Self approval']),/assigned BOD or GM/);
 await actor(3);assert.equal((await call('get_bod_schedule_workflow',[week])).pending.length,0);await assert.rejects(()=>call('review_bod_schedule_submission',[request,1,true,'Wrong GM']),/assigned BOD or GM/);
