@@ -123,6 +123,7 @@ export const NAV_LINKS: NavLink[] = [
             { name: 'Government Reports', path: '/payroll/government-reports', requiredPermission: { resource: 'GovernmentReports', permission: Permission.View } },
             { name: 'Report Templates', path: '/payroll/report-templates', requiredPermission: { resource: 'ReportTemplates', permission: Permission.View } },
             { name: 'Loans & Deductions', path: '/payroll/loans', requiredPermission: { resource: 'Loans', permission: Permission.View } },
+            { name: 'Service Charge Setup', path: '/payroll/service-charge', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
             { name: 'Special Pay & Corrections', path: '/payroll/special-pay', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
             { name: 'Reports', path: '/payroll/reports', requiredPermission: { resource: 'Reports', permission: Permission.View } },
             { name: 'Configuration', path: '/payroll/configuration', requiredPermission: { resource: 'Settings', permission: Permission.Manage } },

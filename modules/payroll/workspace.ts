@@ -19,7 +19,7 @@ export const payrollGroups=[
  {name:'Schedule Builder',path:'/payroll/timekeeping',names:['Schedule Builder','Timekeeping']},
  {name:'Payroll Home',path:'/payroll/home',names:[] as string[]},
  {name:'Run Payroll',path:'/payroll/attendance-readiness',names:['Attendance Readiness','Import Historical Attendance','Gross Pay Review','Take-home Pay Review','Compare & Pilot','Payroll Approvals','Payments & Reports','Payslips']},
- {name:'Employee Pay Setup',path:'/payroll/pay-packages',names:['Pay Packages','Loans & Deductions','Leave Credits']},
+ {name:'Employee Pay Setup',path:'/payroll/pay-packages',names:['Pay Packages','Loans & Deductions','Service Charge Setup','Leave Credits']},
  {name:'Reports & Settings',path:'/payroll/access',names:[] as string[]},
 ];
 export function payrollGroupFor(name:string){return payrollGroups.find(g=>g.names.includes(name))?.name||'Reports & Settings';}
