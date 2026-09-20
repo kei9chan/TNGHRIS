@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const ui=fs.readFileSync('modules/payroll/ScenarioRun.tsx','utf8');
+const ui=fs.readFileSync('modules/payroll/ScenarioRun.tsx','utf8').replace(/\s+/g,' ');
 const sql=fs.readFileSync('supabase/migrations/20260920040000_test_payroll_completion_flow.sql','utf8');
 
 for(const label of ['Review attendance','Finalize payroll','Generate outputs','Approve & release'])assert.ok(ui.includes(label),`missing workflow step: ${label}`);

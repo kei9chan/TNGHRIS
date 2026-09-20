@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+import React from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+import {createRequire} from 'node:module';
+const require=createRequire(import.meta.url);
+const slip={employeeName:'Test Person',employeeCode:'TEST-1',businessUnit:'Test BU',from:'2026-08-11',to:'2026-08-25',payDate:'2026-09-05',gross:'9521.25',deductions:'812.50',net:'8708.75',tax:'0.00',employer:'1302.50',employerTotalCost:'10823.75',contributions:[{label:'sssEE',amount:'475.00'},{label:'sssER',amount:'950.00'}],lines:[{label:'Corrected earnings',amount:'9521.25'}],assumptions:['MOCK test inputs'],calculationVersion:'test',snapshotHash:'test'};
+let states=[];
+const module={exports:{}};
+vm.runInNewContext(ts.transpileModule(fs.readFileSync('modules/payroll/EmployeeTestOutputs.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText,{module,exports:module.exports,Blob,URL,setTimeout,require(name){if(name==='react')return {...React,useEffect:()=>{},useState:()=>[states.shift(),()=>{}]};if(name.includes('supabaseClient'))return {supabase:{}};return require(name);}});
+states=[{payload:slip,snapshotId:'snapshot',generatedAt:'2026-09-20',canGenerate:true},'',false,false,true];
+const html=renderToStaticMarkup(React.createElement(module.exports.default,{scope:'scope',employeeId:'employee',from:slip.from,to:slip.to}));
+for(const label of ['Download payslip PDF','Hide payslip','Government worksheets','Download SSS worksheet','Draft payslip preview','₱8,708.75'])assert.ok(html.includes(label),label);
+const pdf=await module.exports.payslipPdf(slip,'snapshot');const text=await pdf.text();assert.ok(text.startsWith('%PDF-'));assert.ok(text.includes('TEST / DRAFT PAYSLIP'));assert.ok(text.includes('8708.75'));assert.equal(module.exports.csvCell('=SUM(A1)'), '"\'=SUM(A1)"');
+console.log('PASS: actual component renders payslip/contributions/download controls; real PDF bytes contain draft label and correct net; worksheet CSV escapes formulas.');
