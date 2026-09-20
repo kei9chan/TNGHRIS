@@ -36,6 +36,7 @@ const NetPayPage = React.lazy(() => import('./modules/payroll/NetPayPage'));
 const PayrollPilotPage = React.lazy(() => import('./modules/payroll/PilotPage'));
 const PayrollPaymentsPage = React.lazy(() => import('./modules/payroll/PaymentsPage'));
 const PayrollApprovalsPage = React.lazy(() => import('./modules/payroll/ApprovalsPage'));
+const ServiceChargeSetupPage = React.lazy(() => import('./modules/payroll/ServiceChargeSetupPage'));
 const MyPayrollIssuesPage = React.lazy(() => import('./modules/payroll/MyPayrollIssuesPage'));
 const MyPayrollPayslipsPage = React.lazy(() => import('./modules/payroll/MyPayslipsPage'));
 const SpecialPayPage = React.lazy(() => import('./modules/payroll/SpecialPayPage'));
@@ -433,6 +434,7 @@ const AppRoutes: React.FC = () => {
             <Route path="leave" element={<ProtectedRoute><Leave /></ProtectedRoute>} />
             <Route path="leave-credits" element={<ProtectedRoute><LeaveCredits /></ProtectedRoute>} />
             <Route path="loans" element={<ProtectedRoute><Loans /></ProtectedRoute>} />
+            <Route path="service-charge" element={<ProtectedRoute><ServiceChargeSetupPage /></ProtectedRoute>} />
             <Route path="payroll-prep" element={<ProtectedRoute><PayrollAccessPage staffOnly /></ProtectedRoute>} />
             <Route path="exceptions" element={<ProtectedRoute><AttendanceExceptions /></ProtectedRoute>} />
             <Route path="attendance-devices" element={<ProtectedRoute><AttendanceDevices /></ProtectedRoute>} />

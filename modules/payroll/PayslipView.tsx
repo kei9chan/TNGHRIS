@@ -3,9 +3,10 @@ import {EmployeePayslip,PayLine,money} from './selfService';
 export function payslipGroups(s:EmployeePayslip):{title:string;lines:PayLine[]}[]{
  const earnings=(s.lines||[]).filter(l=>!l.kind||l.kind==='earning');
  const matches=(l:PayLine,re:RegExp)=>re.test(l.label||'');
- const ot=/overtime|\bot\b/i,allow=/allowance/i,adjust=/leave|absence|attendance|late|undertime|adjust/i;
+ const ot=/overtime|\bot\b/i,allow=/allowance/i,service=/^service charge$/i,adjust=/leave|absence|attendance|late|undertime|adjust/i;
  return [
- {title:'Regular pay & other earnings',lines:earnings.filter(l=>!matches(l,ot)&&!matches(l,allow)&&!matches(l,adjust))},
+ {title:'Regular pay & other earnings',lines:earnings.filter(l=>!matches(l,ot)&&!matches(l,allow)&&!matches(l,service)&&!matches(l,adjust))},
+ {title:'Service Charge',lines:earnings.filter(l=>matches(l,service))},
  {title:'Approved overtime',lines:earnings.filter(l=>matches(l,ot))},
  {title:'Allowances',lines:earnings.filter(l=>!matches(l,ot)&&matches(l,allow))},
  {title:'Leave, attendance & other approved adjustments',lines:earnings.filter(l=>!matches(l,ot)&&!matches(l,allow)&&matches(l,adjust))},
