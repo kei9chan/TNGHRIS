@@ -1,11 +1,21 @@
-import React,{useEffect,useState} from 'react';
+import React,{useEffect,useMemo,useState} from 'react';
+import {Link} from 'react-router-dom';
 import Button from '../../components/ui/Button';
-import {workflowRpc} from './workflow';
 import type {NetInputs} from '../payroll/netPay';
+import {getNteDeductionQueue,ntePeso,type NTEDeduction} from '../payroll/nteDeductions';
+
 export default function PayrollATDQueue({grossId,inputs,onChange}:{grossId:string;inputs:NetInputs;onChange:(p:NetInputs)=>void}){
- const[rows,setRows]=useState<any[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false),[version,setVersion]=useState(0);
- useEffect(()=>{let live=true;workflowRpc('get_payroll_atd_queue',{p_gross_id:grossId}).then(v=>{if(live)setRows(v);}).catch(e=>{if(live)setError(e.message);});return()=>{live=false;};},[grossId,version]);
- async function approve(id:string){setBusy(true);setError('');try{await workflowRpc('approve_payroll_atd',{p_gross_id:grossId,p_resolution_id:id});setVersion(x=>x+1);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
- function include(row:any){setError('');if(!inputs.payDate||inputs.payDate<row.firstDate||inputs.payDate>row.finalDate){setError('Set a reviewed payday within the authorized deduction dates first.');return;}onChange({...inputs,employees:inputs.employees.map(e=>e.employeeId===row.employeeId?{...e,deductions:[...e.deductions.filter(x=>x.sourceRef!==row.reference),{label:'Authorized salary deduction',sourceRef:row.reference,amount:String(Math.min(Number(row.remaining),Number(row.perCutoff))),kind:'voluntary',carryForward:false}]}:e)});}
- return <details className="my-4 rounded-lg border p-3"><summary className="cursor-pointer font-semibold">Signed Authorities to Deduct — HR verified</summary>{error&&<p role="alert" className="text-red-600">{error}</p>}{!rows.length&&!error&&<p className="mt-2">No signed, HR-verified ATDs for this payroll roster.</p>}{rows.map(r=><div key={r.id} className="mt-3 space-y-2 border-t pt-3"><p className="font-semibold">{r.employeeName}</p><p>{r.basis}</p><p>PHP {r.perCutoff} per cutoff · PHP {r.remaining} remaining · {r.firstDate} to {r.finalDate}</p>{!r.financeApprovedAt?<Button disabled={busy} onClick={()=>approve(r.id)}>Finance: approve signed ATD</Button>:Number(r.remaining)>0?<Button disabled={busy} onClick={()=>include(r)}>Include authorized installment in this review</Button>:<p>Fully posted</p>}</div>)}</details>;
+ const [rows,setRows]=useState<NTEDeduction[]>([]);const [error,setError]=useState('');
+ useEffect(()=>{let active=true;setError('');if(!inputs.payDate){setRows([]);return()=>{active=false;};}void getNteDeductionQueue(grossId,inputs.payDate).then(value=>{if(active)setRows(value);}).catch(cause=>{if(active)setError((cause as Error).message);});return()=>{active=false;};},[grossId,inputs.payDate]);
+ const blocked=useMemo(()=>rows.filter(row=>row.workflowStatus!=='Approved for Payroll'||row.scheduleStatus!=='Scheduled'),[rows]);
+ function include(row:NTEDeduction){
+  setError('');const amount=Math.min(Number(row.scheduledThisPayroll),Number(row.currentBalance));
+  if(row.workflowStatus!=='Approved for Payroll'||row.scheduleStatus!=='Scheduled'||amount<=0){setError('Resolve the blocked ATD requirement or exclude it with a reason before payroll.');return;}
+  onChange({...inputs,employees:inputs.employees.map(employee=>employee.employeeId===row.employeeId?{...employee,deductions:[...employee.deductions.filter(item=>item.sourceRef!==`ATD:${row.resolutionId}`),{label:`NTE deduction · ${row.nteNumber}`,sourceRef:`ATD:${row.resolutionId}`,amount:String(amount),kind:'voluntary',carryForward:false}]}:employee)});
+ }
+ if(rows.length===0&&!error)return null;
+ return <section className="my-4 rounded-2xl border border-violet-200 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-bold">NTE deductions</h3><p className="text-sm text-slate-500">Only employee-signed, HR-verified, Finance-approved ATDs can enter this payroll.</p></div>{blocked.length>0&&<span className="rounded-full bg-red-100 px-3 py-1 text-sm font-semibold text-red-800">{blocked.length} needs attention</span>}</div>
+  {error&&<p role="alert" className="mt-3 rounded-xl bg-red-50 p-3 text-red-800">{error}</p>}
+  <div className="mt-3 space-y-3">{rows.map(row=>{const ready=row.workflowStatus==='Approved for Payroll'&&row.scheduleStatus==='Scheduled'&&Number(row.scheduledThisPayroll)>0;return <div key={row.id} className={`rounded-xl border p-3 ${ready?'border-emerald-300 bg-emerald-50':'border-amber-300 bg-amber-50'}`}><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold">{row.employeeName} · {row.nteNumber}</p><p className="text-sm">{ready?`${ntePeso(row.scheduledThisPayroll)} this payroll · ${ntePeso(row.currentBalance)} current balance`:row.workflowStatus}</p></div><div className="flex flex-wrap gap-2">{ready&&<Button size="sm" onClick={()=>include(row)}>Include approved deduction</Button>}<Link className="inline-flex min-h-10 items-center rounded-lg border border-violet-500 px-3 text-sm font-semibold text-violet-700" to={`/feedback/nte/${row.nteId}`}>Review NTE deduction</Link></div></div>{!ready&&<p className="mt-2 text-sm font-medium text-amber-900">Blocked deductions do not reduce net pay.</p>}</div>;})}</div>
+ </section>;
 }

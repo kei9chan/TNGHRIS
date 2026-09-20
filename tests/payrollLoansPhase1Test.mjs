@@ -20,5 +20,5 @@ assert.match(migration,/payroll_debt_audit/);assert.match(migration,/p_action='p
 assert.match(migration,/private\.payroll_debt_locked/);assert.match(migration,/Locked payroll cannot be silently changed/,'7. locked payroll mutations are blocked');
 assert.match(migration,/enable row level security/g);assert.match(migration,/revoke all on public\.%I from public,anon,authenticated/);assert.match(migration,/d\.employee_id=public\.current_hris_user_id\(\) and d\.status in\('Active','Paused','Completed'\)/,'8. employee self-read is limited to own approved debt');
 assert.match(page,/Add loan or debt/);assert.match(page,/Change schedule & request reapproval/);assert.match(approval,/This payroll deduction/);
-assert.doesNotMatch(page,/NTE deduction|service-charge functionality/,'Phase 1 does not expose future deduction workflows');
+assert.doesNotMatch(page,/Add service charge|Configure service charge|Distribute service charge/,'Service-charge functionality remains out of scope');
 console.log('8 focused employee-loan/debt checks passed.');

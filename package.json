@@ -60,7 +60,8 @@
     "test:case-register": "node tests/caseRegisterDatabaseTest.mjs && node tests/caseRegisterExportTest.mjs",
     "test:official-business": "node tests/officialBusinessTest.mjs",
     "test:payroll-completion": "node tests/payrollCompletionUiTest.mjs && node tests/payrollScenarioAccessTest.mjs",
-    "test:payroll-loans": "node tests/payrollLoansPhase1Test.mjs"
+    "test:payroll-loans": "node tests/payrollLoansPhase1Test.mjs",
+    "test:payroll-nte-deductions": "node tests/payrollNteDeductionsPhase2Test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.84.0",
