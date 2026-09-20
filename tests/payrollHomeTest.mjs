@@ -7,7 +7,7 @@ storage.set(workspaceKey('a'),JSON.stringify({scope:'aura',from:'2026-08-26',to:
 assert.equal(readSelection(storage,'a').scope,'aura');assert.equal(readSelection(storage,'b').scope,'');
 assert(validCutoff('2026-08-26','2026-09-10'));assert(!validCutoff('2026-09-10','2026-08-26'));assert(!validCutoff('2026-08-01','2026-09-10'));
 assert.equal(modeLabel('shadow'),'TEST — NO PAYMENT');assert.equal(modeLabel(),'MODE UNAVAILABLE');
-assert.equal(payrollGroupFor('Pay Packages'),'Employee Pay Setup');assert.equal(payrollGroupFor('Gross Pay Review'),'Run Payroll');assert.equal(payrollGroupFor('Schedule Builder'),'Schedule Builder');assert.equal(payrollGroupFor('Timekeeping'),'Schedule Builder');
+assert.equal(payrollGroupFor('Pay Packages'),'Pay Package Builder');assert.equal(payrollGroupFor('Gross Pay Review'),'Run Payroll');assert.equal(payrollGroupFor('Schedule Builder'),'Schedule Builder');assert.equal(payrollGroupFor('Timekeeping'),'Schedule Builder');
 const r={employees:2,totalDays:4,publishedDays:3,payVisible:true,reviewedPayEmployees:1,blockedDays:1,submittedVersions:0,mode:'off',canFinalize:true};
 assert.equal(nextPayrollStep(r).path,'/payroll/timekeeping');r.publishedDays=4;assert.equal(nextPayrollStep(r).path,'/payroll/pay-packages');r.reviewedPayEmployees=2;assert.equal(nextPayrollStep(r).path,'/payroll/attendance-readiness');r.blockedDays=0;assert.match(nextPayrollStep(r).label,/submit/);r.submittedVersions=1;assert.match(nextPayrollStep(r).label,/test-processing/);r.mode='shadow';assert.match(nextPayrollStep(r).label,/calculation/);
 const db=new PGlite();const id=n=>`00000000-0000-0000-0000-${String(n).padStart(12,'0')}`;
