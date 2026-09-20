@@ -443,7 +443,7 @@ function CorrectionDrawer({
     setReason(choice.reason);
   };
   const selectedPreset = presets.find((choice) => choice.id === preset);
-  const save = async (mode: "save" | "recalculate") => {
+  const save = async (_mode: "save" | "recalculate") => {
     setError("");
     if (!preset && reason.trim().length < 3) {
       setError(
@@ -465,7 +465,7 @@ function CorrectionDrawer({
         p_submit_for_approval: !!selectedPreset?.approval,
       });
       if (error) throw error;
-      if (mode === "recalculate") await onRecalculate();
+      await onRecalculate();
       onClose();
       onSaved(openNext);
     } catch (e) {
@@ -1347,6 +1347,7 @@ export default function ScenarioRun({
     [revision, setRevision] = useState(0),
     [busy, setBusy] = useState(false),
     [actionError, setActionError] = useState(""),
+    [actionNotice, setActionNotice] = useState(""),
     [employeeId, setEmployeeId] = useState<string | null>(null),
     [focusDate, setFocusDate] = useState<string | null>(null),
     [activeIssue, setActiveIssue] = useState<Issue | null>(null),
@@ -1386,6 +1387,7 @@ export default function ScenarioRun({
     if (!run) return;
     setBusy(true);
     setActionError("");
+    setActionNotice("");
     try {
       const { error } = await supabase.rpc("calculate_payroll_scenario_demo", {
         p_scope: scope,
@@ -1619,66 +1621,43 @@ export default function ScenarioRun({
           ? "Needs attention"
           : "Ready after correction"
       : "";
-  const selectedMissingScheduleDays = Array.from(
-    new Map(
-      selectedRows
-        .filter((row) =>
-          row.issues.some((issue) => issue.toLowerCase().includes("schedule")),
-        )
-        .filter(
-          (row) =>
-            !run.corrections?.some(
-              (correction) =>
-                correction.employee_id === employeeId &&
-                correction.work_date === row.date &&
-                correction.status === "Ready after correction",
-            ),
-        )
-        .map((row) => [row.date, row]),
-    ).values(),
-  );
-  const applyStandardSchedule = async () => {
-    if (!selected || !selectedMissingScheduleDays.length) return;
+  const resolveAllEmployeeIssues = async () => {
+    if (!selected || !selectedIssues.length) return;
     setBusy(true);
     setActionError("");
+    setActionNotice("");
     try {
-      for (const day of selectedMissingScheduleDays) {
-        const events = source.events.filter(
-            (event) =>
-              event.employeeId === selected.id &&
-              event.timestamp.slice(0, 10) === day.date,
-          ),
-          valueFor = (type: string) =>
-            events
-              .find((event) => event.type === type)
-              ?.timestamp.slice(11, 16) || "";
-        const { error } = await supabase.rpc("save_test_payroll_correction", {
+      const { data, error } = await supabase.rpc(
+        "resolve_test_payroll_employee_issues",
+        {
           p_scope: scope,
           p_from: run.date_from,
           p_to: run.date_to,
           p_employee: selected.id,
-          p_date: day.date,
-          p_issue: "Published schedule missing",
-          p_values: {
-            scheduleKind: "work",
-            scheduleStart: "09:00",
-            scheduleEnd: "18:00",
-            clockIn: valueFor("CLOCK_IN"),
-            breakStart: valueFor("START_BREAK"),
-            breakEnd: valueFor("END_BREAK"),
-            clockOut: valueFor("CLOCK_OUT"),
-          } satisfies FormValues,
-          p_reason:
-            "Applied the standard 9:00 AM–6:00 PM schedule for this isolated test payroll. Original punches retained.",
-          p_submit_for_approval: false,
-        });
-        if (error) throw error;
+        },
+      );
+      if (error) throw error;
+      const result = data as {
+        corrected?: number;
+        remaining?: number;
+        ready?: boolean;
+      } | null;
+      if (result?.remaining) {
+        throw new Error(
+          `${selected.name} still has ${result.remaining} unresolved issue${result.remaining === 1 ? "" : "s"} after recalculation.`,
+        );
       }
-      await calculate();
+      setActionNotice(
+        `${selected.name}'s ${result?.corrected || selectedIssues.length} attendance issue${(result?.corrected || selectedIssues.length) === 1 ? " was" : "s were"} corrected and recalculated. Review pay is now available.`,
+      );
+      setFocusDate(null);
+      setActiveIssue(null);
+      setDrawer(false);
+      setRevision((value) => value + 1);
     } catch (e) {
       setActionError(
         (e as { message?: string }).message ||
-          `The missing schedules for ${selected.name} could not be saved.`,
+          `The attendance issues for ${selected.name} could not be resolved.`,
       );
     } finally {
       setBusy(false);
@@ -1927,6 +1906,14 @@ export default function ScenarioRun({
             </button>
           </div>
         )}
+        {actionNotice && (
+          <div
+            role="status"
+            className="mx-4 mb-4 rounded-lg bg-emerald-50 p-3 font-semibold text-emerald-800"
+          >
+            {actionNotice}
+          </div>
+        )}
       </header>
       <div className="grid gap-4 sm:grid-cols-3">
         {[
@@ -1971,10 +1958,9 @@ export default function ScenarioRun({
               issueGroups.map((group) => {
                 const uniqueItems = group.items.filter(
                   (item, index, list) =>
-                    issueCategory(item) !== "Payroll setup" ||
                     list.findIndex(
                       (other) =>
-                        issueCategory(other) === "Payroll setup" &&
+                        issueCategory(other) === issueCategory(item) &&
                         other.label === item.label,
                     ) === index,
                 );
@@ -2031,7 +2017,14 @@ export default function ScenarioRun({
                         </div>
                       ))}
                     </div>
-                    <div className="grid gap-4 p-5 lg:grid-cols-2">
+                    <div className="overflow-x-auto">
+                      <div className="grid min-w-[760px] grid-cols-[130px_1fr_1.2fr_110px_190px] gap-3 border-b bg-slate-50 px-5 py-3 text-xs font-black uppercase tracking-wide text-slate-500">
+                        <span>Category</span>
+                        <span>Issue</span>
+                        <span>Affected dates</span>
+                        <span>Status</span>
+                        <span className="text-right">Action</span>
+                      </div>
                       {uniqueItems.map((item, index) => {
                         const category = issueCategory(item),
                           dates = group.items
@@ -2049,32 +2042,30 @@ export default function ScenarioRun({
                         return (
                           <div
                             key={`${item.label}:${index}`}
-                            className={`rounded-xl border p-4 ${item.severity === "blocked" ? "border-rose-200 bg-rose-50" : "border-slate-200"}`}
+                            className={`grid min-w-[760px] grid-cols-[130px_1fr_1.2fr_110px_190px] items-center gap-3 border-b px-5 py-4 last:border-b-0 ${item.severity === "blocked" ? "bg-rose-50/70" : "bg-white"}`}
                           >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="text-xs font-black uppercase tracking-wide text-slate-500">
-                                  {category}
+                            <span className="text-xs font-black uppercase tracking-wide text-slate-500">
+                              {category}
+                            </span>
+                            <div>
+                              <b className="block">{item.label}</b>
+                              {category === "Payroll setup" && (
+                                <p className="mt-1 text-xs text-rose-700">
+                                  This is one setup dependency affecting
+                                  multiple dates. Fix it once and affected
+                                  payroll dates refresh automatically.
                                 </p>
-                                <b className="mt-1 block">{item.label}</b>
-                                <p className="mt-1 text-sm text-slate-500">
-                                  Affected: {dates.join(", ")}
-                                </p>
-                              </div>
-                              <span className="rounded-full bg-white px-2 py-1 text-xs font-bold">
-                                {item.severity === "blocked"
-                                  ? "Blocking"
-                                  : "Review"}
-                              </span>
+                              )}
                             </div>
-                            {category === "Payroll setup" && (
-                              <p className="mt-3 text-xs text-rose-700">
-                                This is one setup dependency affecting multiple
-                                dates. Fix it once and affected payroll dates
-                                refresh automatically.
-                              </p>
-                            )}
-                            <div className="mt-3 flex justify-end">
+                            <span className="text-sm text-slate-500">
+                              {dates.join(", ")}
+                            </span>
+                            <span className="w-fit rounded-full bg-white px-2 py-1 text-xs font-bold">
+                              {item.severity === "blocked"
+                                ? "Blocking"
+                                : "Review"}
+                            </span>
+                            <div className="flex justify-end">
                               {correction?.status === "Pending approval" &&
                               run.canApproveTestCorrections ? (
                                 <button
@@ -2298,14 +2289,15 @@ export default function ScenarioRun({
               </span>
             </div>
             <div className="flex flex-wrap gap-2">
-              {selectedMissingScheduleDays.length > 0 && (
+              {selectedIssues.length > 0 && (
                 <button
                   disabled={busy}
                   className="min-h-11 rounded-xl border border-violet-300 bg-white px-5 font-bold text-violet-700 disabled:opacity-50"
-                  onClick={() => void applyStandardSchedule()}
+                  onClick={() => void resolveAllEmployeeIssues()}
                 >
-                  Apply standard schedule to all missing dates (
-                  {selectedMissingScheduleDays.length})
+                  {busy
+                    ? `Fixing ${selected.name.split(" ")[0]}…`
+                    : `Fix all attendance issues (${selectedIssues.length})`}
                 </button>
               )}
               {selectedIssues.length > 0 && (
