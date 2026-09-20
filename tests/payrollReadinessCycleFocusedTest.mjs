@@ -243,6 +243,12 @@ assert.match(
   /Fix all attendance issues \(\$\{selectedIssues\.length\}\)/,
 );
 assert.match(payrollHomeScenarioSource, /resolve_test_payroll_employee_issues/);
+assert.match(
+  payrollHomeScenarioSource,
+  /const readyEmployees = s\.employees\.filter/,
+);
+assert.match(payrollHomeScenarioSource, /Ready employees/);
+assert.match(payrollHomeScenarioSource, /Review pay &amp; benefits/);
 assert.match(payrollHomeScenarioSource, /<span>Category<\/span>/);
 assert.match(payrollHomeScenarioSource, /<span>Issue<\/span>/);
 assert.match(payrollHomeScenarioSource, /<span>Affected dates<\/span>/);
