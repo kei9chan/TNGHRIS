@@ -1621,6 +1621,11 @@ export default function ScenarioRun({
           ? "Needs attention"
           : "Ready after correction"
       : "";
+  const readyEmployees = s.employees.filter(
+    (employee) =>
+      !blockedEmployees.has(employee.id) &&
+      !attentionEmployees.has(employee.id),
+  );
   const resolveAllEmployeeIssues = async () => {
     if (!selected || !selectedIssues.length) return;
     setBusy(true);
@@ -1954,6 +1959,60 @@ export default function ScenarioRun({
                 status={issues.length ? "Needs attention" : "Ready"}
               />
             </div>
+            {readyEmployees.length > 0 && (
+              <div className="overflow-hidden rounded-2xl border border-emerald-200 bg-white shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-emerald-100 bg-emerald-50 px-5 py-4">
+                  <div>
+                    <h4 className="font-black text-emerald-950">
+                      Ready employees
+                    </h4>
+                    <p className="text-sm text-emerald-800">
+                      These employees have no unresolved attendance or payroll
+                      blockers and can move to pay, benefits, and payslip
+                      review.
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-emerald-100 px-3 py-1 text-sm font-black text-emerald-800">
+                    {readyEmployees.length} ready
+                  </span>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {readyEmployees.map((employee) => (
+                    <div
+                      key={employee.id}
+                      className="flex flex-wrap items-center justify-between gap-4 px-5 py-4"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-100 font-black text-emerald-800">
+                          {employee.name
+                            .split(" ")
+                            .filter(Boolean)
+                            .map((part) => part[0])
+                            .slice(0, 2)
+                            .join("")}
+                        </span>
+                        <div>
+                          <b className="block">{employee.name}</b>
+                          <span className="text-sm text-slate-500">
+                            {employee.code || "Employee ID unavailable"} ·
+                            Bakebe · SM Aura
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <StatusPill status="Ready" />
+                        <button
+                          className="min-h-10 rounded-lg bg-violet-600 px-4 text-sm font-bold text-white"
+                          onClick={() => reviewEmployee(employee.id)}
+                        >
+                          Review pay &amp; benefits →
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {issueGroups.length ? (
               issueGroups.map((group) => {
                 const uniqueItems = group.items.filter(
