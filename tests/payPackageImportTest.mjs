@@ -13,9 +13,9 @@ assert.throws(()=>prepareImport({...row,values:{...values,'Basic pay / fee amoun
 assert.throws(()=>prepareImport({...row,values:{...values,'Effective from':'2026-02-30'}},context),/real/);
 assert.throws(()=>prepareImport(row,{...context,scopes:[]}),/Business unit/);
 assert.throws(()=>prepareImport(row,{...context,scopes:[{...context.scopes[0],canEdit:false}]}),/editing is not allowed/);
-assert.throws(()=>prepareImport(row,{...context,packages:[{engagement_key:'employee',effective_from:'2026-09-01',status:'draft'}]}),/already exists/);
+assert.throws(()=>prepareImport(row,{...context,packages:[{scope_id:'scope',stream:'employee_payroll',engagement_key:'employee',effective_from:'2026-09-01',status:'draft'}]}),/Duplicate active package/);
 assert.throws(()=>prepareImport(row,{...context,sources:[{...context.sources[0],deminimis:1000}]}),/deminimis/);
-assert.throws(()=>prepareImport({...row,values:{...values,'Pay stream':'professional_fee'}},context),/distinct engagement/);
+assert.throws(()=>prepareImport({...row,values:{...values,'Pay stream':'professional_fee'}},context),/Consultant invoice or supporting document/);
 assert.equal(prepareImport({...row,values:{...values,'Pay stream':'professional_fee','Engagement reference':'Consulting agreement','Tax profile reference':'Reviewed profile'}},context).payload.stream,'professional_fee');
 const workbook=new ExcelJS.Workbook();await workbook.xlsx.readFile(new URL('../public/templates/Pay-Packages-Batch-Template.xlsx',import.meta.url).pathname);
 assert.deepEqual(workbook.getWorksheet('Pay Input').getRow(1).values.slice(1),simpleHeaders);

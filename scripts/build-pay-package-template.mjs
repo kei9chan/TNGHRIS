@@ -1,7 +1,8 @@
 import fs from 'node:fs/promises';
 import {Workbook,SpreadsheetFile} from '@oai/artifact-tool';
+import JSZip from 'jszip';
 const out=process.argv[2];if(!out)throw new Error('Pass the output directory. Run with CODEX_PRIMARY_RUNTIME_NODE from an artifact-tool-enabled temporary directory.');
-const headers=['Employee code','Business unit','Pay type','Effective date','Amount unit','Approved basic pay / fee','Existing de minimis','Existing reimbursable','Salary arrangement','Agreed net amount','Arrangement document','Tax treatment','Exemption / tax basis',...[1,2,3].flatMap(i=>[`Extra ${i} name`,`Extra ${i} amount`,`Extra ${i} frequency`,`Extra ${i} payable date`]),'Salary source','PAN ID (if applicable)','Source document / note','Reason for this record','Consultant agreement','Consultant tax document'];
+const headers=['Employee code','Business unit','Pay type','Effective date','Amount unit','Approved basic pay / fee','Existing de minimis','Existing reimbursable','Salary arrangement','Agreed net amount','Arrangement document','Tax treatment','Exemption / tax basis',...[1,2,3].flatMap(i=>[`Extra ${i} name`,`Extra ${i} amount`,`Extra ${i} frequency`,`Extra ${i} payable date`]),'Salary source','PAN ID (if applicable)','Source document / note','Reason for this record','Consultant agreement','Consultant tax document','Employee name','Engagement type','Pay frequency','Gross/net arrangement','Tax responsibility','Tax coverage scope','Benefit responsibility','Component type','Component name','Amount','Frequency','Tax treatment detail','Receipt required','Receipt or document reference','Policy reference','Notes'];
 const wb=Workbook.create();const input=wb.worksheets.add('Pay Input'),examples=wb.worksheets.add('Examples'),guide=wb.worksheets.add('Guide');
 const mode=['Gross salary','Company pays income tax','Company pays income tax and employee contributions','Custom - needs review'];
 const tax=['Normal tax calculation','Exemption requested - evidence required','Custom - needs review'];
@@ -9,7 +10,7 @@ const bus=['The Fun Roof','The Dessert Museum','Gootopia SM North Edsa','Bakebe 
 const fields=wb.worksheets.add('Field Guide');
 const extra=['Meal allowance','Transportation allowance','Communication allowance','Project completion fee'];
 const date=new Date('2026-09-01T00:00:00Z');
-function sample(code,type,base,arrangement,target,extraName='',extraAmount=null){return [code,'The Fun Roof',type,date,'Monthly',base,0,0,arrangement,target,arrangement===mode[0]?'':'Approved agreement / sample only',tax[0],'',extraName,extraAmount,extraName?'Recurring':'','',...Array(8).fill(''),type==='Consultant fee'?'Approved consultant agreement':'Current HRIS record','','Replace with actual document','Example only - replace with approved facts',type==='Consultant fee'?'CONSULTING-SAMPLE-003':'',type==='Consultant fee'?'REVIEWED-TAX-SAMPLE-003':''];}
+function sample(code,type,base,arrangement,target,extraName='',extraAmount=null){return [code,'The Fun Roof',type,date,'Monthly',base,0,0,arrangement,target,arrangement===mode[0]?'':'Approved agreement / sample only',tax[0],'',extraName,extraAmount,extraName?'Recurring':'','',...Array(8).fill(''),type==='Consultant fee'?'Approved consultant agreement':'Current HRIS record','','Replace with actual document','Example only - replace with approved facts',type==='Consultant fee'?'CONSULTING-SAMPLE-003':'',type==='Consultant fee'?'REVIEWED-TAX-SAMPLE-003':'','Example employee',type==='Consultant fee'?'Consultant':'Employee','Monthly',arrangement,arrangement===mode[0]?'Employee':'Employer','Entire package',arrangement===mode[2]?'Employer':'Employee','','','', '', '', '',type==='Consultant fee'?'CONSULTING-SAMPLE-003':'','','Sample only'];}
 const rows=[sample('TNG-EXAMPLE-001','Employee salary',25000,mode[0],null,'Meal allowance',1000),sample('TNG-EXAMPLE-002','Employee salary',30000,mode[1],30000),sample('TNG-EXAMPLE-003','Employee salary',30000,mode[2],30000),sample('TNG-EXAMPLE-004','Employee salary',30000,mode[0],null),sample('TNG-EXAMPLE-004','Consultant fee',15000,mode[0],null,'Project completion fee',5000)];
 rows[4][15]='One time';rows[4][16]=new Date('2026-12-15T00:00:00Z');
 for(const s of [input,examples]){
@@ -17,13 +18,13 @@ for(const s of [input,examples]){
  s.getRangeByIndexes(0,0,1,headers.length).values=[headers];
  s.getRangeByIndexes(0,0,count,headers.length).format={columnWidth:24,rowHeight:32,font:{name:'Calibri',size:11}};
  s.getRangeByIndexes(0,0,1,headers.length).format={rowHeight:58,wrapText:true,fill:'#3730A3',font:{bold:true,color:'#FFFFFF'}};
- for(const [start,len,color] of [[6,2,'#0F766E'],[8,5,'#4338CA'],[13,12,'#0F766E'],[25,6,'#475569']])s.getRangeByIndexes(0,start,1,len).format.fill=color;
+ for(const [start,len,color] of [[6,2,'#0F766E'],[8,5,'#4338CA'],[13,12,'#0F766E'],[25,6,'#475569'],[31,16,'#6D28D9']])s.getRangeByIndexes(0,start,1,len).format.fill=color;
  s.getRangeByIndexes(1,0,count-1,headers.length).format.font.color='#2563EB';
  s.freezePanes.freezeRows(1);s.freezePanes.freezeColumns(1);s.showGridLines=true;
  for(const name of ['Business unit','Salary arrangement','Arrangement document','Tax treatment','Exemption / tax basis','Source document / note','Reason for this record','Consultant agreement','Consultant tax document'])s.getRangeByIndexes(0,headers.indexOf(name),count,1).format.columnWidth=name==='Salary arrangement'?49:34;
  for(const name of ['Approved basic pay / fee','Existing de minimis','Existing reimbursable','Agreed net amount',...([1,2,3].map(i=>`Extra ${i} amount`))])s.getRangeByIndexes(1,headers.indexOf(name),count-1,1).setNumberFormat('#,##0.00');
  for(const name of ['Effective date',...([1,2,3].map(i=>`Extra ${i} payable date`))])s.getRangeByIndexes(1,headers.indexOf(name),count-1,1).setNumberFormat('yyyy-mm-dd');
- const lists={'Business unit':bus,'Pay type':['Employee salary','Consultant fee'],'Amount unit':['Monthly','Daily','Hourly'],'Salary arrangement':mode,'Tax treatment':tax,'Salary source':['Current HRIS record','Approved PAN','Approved consultant agreement'],'Reason for this record':['Initial setup','Approved salary change','New consulting engagement','Correction - review individually']};
+ const lists={'Business unit':bus,'Pay type':['Employee salary','Consultant fee'],'Amount unit':['Monthly','Daily','Hourly','Per invoice','Other approved frequency'],'Salary arrangement':mode,'Tax treatment':tax,'Salary source':['Current HRIS record','Approved PAN','Approved consultant agreement'],'Reason for this record':['Initial setup','Approved salary change','New consulting engagement','Correction - review individually'],'Engagement type':['Employee','Consultant'],'Pay frequency':['Monthly','Daily','Hourly','Per invoice','Other approved frequency'],'Gross/net arrangement':['Gross pay','Net of tax','Gross with selected components covered','Net of tax and benefits'],'Tax responsibility':['Employee','Employer','Split'],'Tax coverage scope':['Basic pay only','Selected components','Entire package'],'Benefit responsibility':['Employee','Employer','Split'],'Component type':['De minimis benefits','Fixed allowance','Reimbursable allowance','Service charge or variable pay','Employee deduction','Employee-paid benefit','Employer-paid benefit','Employer contribution','Other approved component'],'Frequency':['Monthly','Per cutoff','Daily','Hourly','One time','Per invoice'],'Tax treatment detail':['Taxable','Non-taxable','Reimbursable','Needs review'],'Receipt required':['Yes','No']};
  for(const i of [1,2,3]){lists[`Extra ${i} name`]=extra;lists[`Extra ${i} frequency`]=['Recurring','One time'];}
  for(const [name,values] of Object.entries(lists))s.getRangeByIndexes(1,headers.indexOf(name),count-1,1).dataValidation={rule:{type:'list',values}};
 }
@@ -50,6 +51,24 @@ const fieldHelp={
 'Consultant agreement':['Consultant row only','Actual distinct consulting engagement reference, not employee salary agreement.','Signed consulting agreement [reference/date]'],
 'Consultant tax document':['Consultant row only','Actual reviewed consultant withholding/tax-profile reference.','Finance-reviewed tax profile [reference]']
 };
+Object.assign(fieldHelp,{
+'Employee name':['Optional check','Employee display name for human review; Employee code remains the system key.','Example employee'],
+'Engagement type':['Optional dropdown','Employee or Consultant. Pay type remains the authoritative stream.','Employee'],
+'Pay frequency':['Optional dropdown','Monthly, Daily, Hourly, Per invoice, or another approved frequency.','Monthly'],
+'Gross/net arrangement':['Optional structured choice','Use the four approved package-basis choices; do not describe gross/net terms only in Notes.','Gross pay'],
+'Tax responsibility':['Optional structured choice','Who funds income tax: Employee, Employer, or Split.','Employee'],
+'Tax coverage scope':['Optional structured choice','Basic pay only, Selected components, or Entire package.','Entire package'],
+'Benefit responsibility':['Optional structured choice','Who funds employee benefit shares: Employee, Employer, or Split.','Employee'],
+'Component type':['Optional component detail','Classify the component so payroll can apply the correct evidence and cost rules.','Fixed allowance'],
+'Component name':['When a component is supplied','Approved component name.','Meal allowance'],
+'Amount':['When a component is supplied','Approved amount or maximum amount.','1000'],
+'Frequency':['When a component is supplied','Approved component frequency.','Monthly'],
+'Tax treatment detail':['When a component is supplied','Taxable, Non-taxable, Reimbursable, or Needs review.','Taxable'],
+'Receipt required':['Reimbursements','Yes prevents inclusion in payable amounts until evidence is approved.','Yes'],
+'Receipt or document reference':['When evidence exists','Receipt, invoice, or supporting-document reference.','Receipt 2026-001'],
+'Policy reference':['Optional component detail','Policy, limit, or approval source.','Benefits policy 2026'],
+'Notes':['Optional','Short clarification that does not replace structured pay, tax, or benefit choices.','Approved by Finance on 2026-09-01']
+});
 for(const i of [1,2,3]){fieldHelp[`Extra ${i} name`]=['Optional dropdown or custom','Name an additional approved component. Do not repeat existing allowances.','Meal allowance'];fieldHelp[`Extra ${i} amount`]=['When Extra name is filled','Approved component amount.','1000 (example only)'];fieldHelp[`Extra ${i} frequency`]=['Dropdown','Recurring uses the package amount unit. One time requires a payable date.','Recurring'];fieldHelp[`Extra ${i} payable date`]=['One time only','Approved payment date. Leave blank for recurring.','2026-12-15'];}
 const fieldRows=[['Field name','When to fill','What to enter','Example / choice'],...headers.map(h=>[h,...fieldHelp[h]])];
 fields.getRange(`A1:D${fieldRows.length}`).values=fieldRows;
@@ -81,7 +100,16 @@ const info=[
  ['PhilHealth employer procedure','https://www.philhealth.gov.ph/partners/employers/pay_procedures.php']];
 guide.getRange(`A1:B${info.length}`).values=info;guide.getRange(`A1:B${info.length}`).format={rowHeight:56,wrapText:true,font:{name:'Calibri',size:11}};guide.getRange(`A1:A${info.length}`).format.columnWidth=32;guide.getRange(`B1:B${info.length}`).format.columnWidth=110;guide.getRange('A1:B1').format={fill:'#3730A3',font:{bold:true,color:'#FFFFFF'}};
 await fs.mkdir(out,{recursive:true});
-for(const [s,ranges] of [[input,['A1:H5','I1:M5','N1:Q5','Z1:AE5']],[examples,['A1:H6','I1:M6','N1:Q6','Z1:AE6']],[guide,[`A1:B${info.length}`]],[fields,['A1:D12','A13:D24','A25:D32']]])for(const [n,range] of ranges.entries()){const blob=await wb.render({sheetName:s.name,range,scale:1});await fs.writeFile(`${out}/easy-${s.name.replaceAll(' ','-')}-${n}.png`,new Uint8Array(await blob.arrayBuffer()));}
+for(const [s,ranges] of [[input,['A1:H5','I1:M5','N1:Q5','Z1:AE5','AF1:AU5']],[examples,['A1:H6','I1:M6','N1:Q6','Z1:AE6','AF1:AU6']],[guide,[`A1:B${info.length}`]],[fields,['A1:D16','A17:D32','A33:D48']]])for(const [n,range] of ranges.entries()){const blob=await wb.render({sheetName:s.name,range,scale:1});await fs.writeFile(`${out}/easy-${s.name.replaceAll(' ','-')}-${n}.png`,new Uint8Array(await blob.arrayBuffer()));}
 console.log((await wb.inspect({kind:'table',range:'Examples!A1:M6',tableMaxRows:6,tableMaxCols:13,maxChars:2400})).ndjson);
 console.log((await wb.inspect({kind:'match',searchTerm:'#REF!|#DIV/0!|#VALUE!|#NAME\\?|#N/A',options:{useRegex:true,maxResults:20},summary:'Error scan'})).ndjson);
-const xlsx=await SpreadsheetFile.exportXlsx(wb);await xlsx.save(`${out}/Pay-Packages-Batch-Template.xlsx`);
+const outputPath=`${out}/Pay-Packages-Batch-Template.xlsx`;
+const xlsx=await SpreadsheetFile.exportXlsx(wb);await xlsx.save(outputPath);
+// Artifact Tool 2.8 may serialize the main OOXML namespace with an `x:` prefix.
+// Normalize only that prefix so ExcelJS, used by the HRIS importer, reads the template too.
+const archive=await JSZip.loadAsync(await fs.readFile(outputPath));
+for(const [name,file] of Object.entries(archive.files))if(!file.dir&&name.endsWith('.xml')){
+ const xml=await file.async('string');
+ if(xml.includes('xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'))archive.file(name,xml.replaceAll('<x:','<').replaceAll('</x:','</').replace('xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"','xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'));
+}
+await fs.writeFile(outputPath,await archive.generateAsync({type:'nodebuffer'}));
