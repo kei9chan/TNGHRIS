@@ -234,10 +234,10 @@ const emptyForm: FormValues = {
   breakEnd: "",
   clockOut: "",
 };
-const issueAction = (issues: string[]): Issue["action"] => {
-  const text = issues.join(" ").toLowerCase();
+const issueActionForLabel = (label: string): Issue["action"] => {
+  const text = label.toLowerCase();
   if (text.includes("schedule")) return "Review schedule";
-  if (text.includes("ot ") || text.includes("overtime"))
+  if (text.includes("overtime") || text.includes("ot approval"))
     return "Review overtime";
   return "Fix attendance";
 };
@@ -258,16 +258,15 @@ const issueLabel = (issues: string[]) => {
     "Timekeeping setup needed",
   );
 };
-const issueCategory = (item: Issue): IssueCategory =>
-  item.action === "Review overtime"
-    ? "Overtime"
-    : item.action === "Review schedule" ||
-        item.label.toLowerCase().includes("schedule")
-      ? "Schedule"
-      : item.action === "Review pay package" ||
-          /setup|salary source|employment start/i.test(item.label)
-        ? "Payroll setup"
-        : "Attendance";
+const issueCategory = (item: Issue): IssueCategory => {
+  const label = item.label.toLowerCase();
+  if (label.includes("schedule")) return "Schedule";
+  if (/setup|salary source|employment start/.test(label))
+    return "Payroll setup";
+  if (label.includes("overtime") || label.includes("ot approval"))
+    return "Overtime";
+  return "Attendance";
+};
 
 function StatusPill({ status }: { status: string }) {
   const color =
@@ -1350,6 +1349,7 @@ export default function ScenarioRun({
     [actionError, setActionError] = useState(""),
     [employeeId, setEmployeeId] = useState<string | null>(null),
     [focusDate, setFocusDate] = useState<string | null>(null),
+    [activeIssue, setActiveIssue] = useState<Issue | null>(null),
     [drawer, setDrawer] = useState(false),
     [drawerTitle, setDrawerTitle] = useState("Fix attendance"),
     [queueView, setQueueView] = useState<"employees" | "quick">("employees"),
@@ -1468,19 +1468,20 @@ export default function ScenarioRun({
         (c) => c.employee_id === day.employeeId && c.work_date === day.date,
       );
       if (correction?.status === "Ready after correction") continue;
+      const label =
+        correction?.status === "Pending approval"
+          ? "Attendance correction awaiting approval"
+          : correction?.status === "Recalculation failed"
+            ? "Recalculation failed"
+            : issueLabel(day.issues);
       found.push({
         employee,
         day,
-        label:
-          correction?.status === "Pending approval"
-            ? "Attendance correction awaiting approval"
-            : correction?.status === "Recalculation failed"
-              ? "Recalculation failed"
-              : issueLabel(day.issues),
+        label,
         action:
           correction?.status === "Pending approval"
             ? "Send for approval"
-            : issueAction(day.issues),
+            : issueActionForLabel(label),
         severity:
           correction?.status === "Pending approval"
             ? "pending"
@@ -1618,17 +1619,84 @@ export default function ScenarioRun({
           ? "Needs attention"
           : "Ready after correction"
       : "";
+  const selectedMissingScheduleDays = Array.from(
+    new Map(
+      selectedRows
+        .filter((row) =>
+          row.issues.some((issue) => issue.toLowerCase().includes("schedule")),
+        )
+        .filter(
+          (row) =>
+            !run.corrections?.some(
+              (correction) =>
+                correction.employee_id === employeeId &&
+                correction.work_date === row.date &&
+                correction.status === "Ready after correction",
+            ),
+        )
+        .map((row) => [row.date, row]),
+    ).values(),
+  );
+  const applyStandardSchedule = async () => {
+    if (!selected || !selectedMissingScheduleDays.length) return;
+    setBusy(true);
+    setActionError("");
+    try {
+      for (const day of selectedMissingScheduleDays) {
+        const events = source.events.filter(
+            (event) =>
+              event.employeeId === selected.id &&
+              event.timestamp.slice(0, 10) === day.date,
+          ),
+          valueFor = (type: string) =>
+            events
+              .find((event) => event.type === type)
+              ?.timestamp.slice(11, 16) || "";
+        const { error } = await supabase.rpc("save_test_payroll_correction", {
+          p_scope: scope,
+          p_from: run.date_from,
+          p_to: run.date_to,
+          p_employee: selected.id,
+          p_date: day.date,
+          p_issue: "Published schedule missing",
+          p_values: {
+            scheduleKind: "work",
+            scheduleStart: "09:00",
+            scheduleEnd: "18:00",
+            clockIn: valueFor("CLOCK_IN"),
+            breakStart: valueFor("START_BREAK"),
+            breakEnd: valueFor("END_BREAK"),
+            clockOut: valueFor("CLOCK_OUT"),
+          } satisfies FormValues,
+          p_reason:
+            "Applied the standard 9:00 AM–6:00 PM schedule for this isolated test payroll. Original punches retained.",
+          p_submit_for_approval: false,
+        });
+        if (error) throw error;
+      }
+      await calculate();
+    } catch (e) {
+      setActionError(
+        (e as { message?: string }).message ||
+          `The missing schedules for ${selected.name} could not be saved.`,
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
   const open = (item: Issue) => {
     setEmployeeId(item.employee.id);
     setFocusDate(item.day.date);
+    setActiveIssue(item);
     if (item.action === "Review pay package") {
       navigate(`/payroll/pay-packages?employee=${item.employee.id}`);
       return;
     }
+    const action = issueActionForLabel(item.label);
     setDrawerTitle(
-      item.action === "Review schedule"
+      action === "Review schedule"
         ? "Review schedule"
-        : item.action === "Review overtime"
+        : action === "Review overtime"
           ? "Review overtime"
           : "Fix attendance",
     );
@@ -1726,15 +1794,19 @@ export default function ScenarioRun({
     }
   };
   const currentDay = selectedRows.find((r) => r.date === focusDate) || null,
+    drawerEmployee = activeIssue?.employee || selected,
+    drawerDay = activeIssue?.day || currentDay,
     existingCorrection = run.corrections?.find(
-      (c) => c.employee_id === employeeId && c.work_date === focusDate,
+      (c) =>
+        c.employee_id === drawerEmployee?.id && c.work_date === drawerDay?.date,
     ),
     dayEvents = source.events.filter(
       (e) =>
-        e.employeeId === employeeId && e.timestamp.slice(0, 10) === focusDate,
+        e.employeeId === drawerEmployee?.id &&
+        e.timestamp.slice(0, 10) === drawerDay?.date,
     ),
     dayShift = source.shifts.find(
-      (x) => x.employeeId === employeeId && x.date === focusDate,
+      (x) => x.employeeId === drawerEmployee?.id && x.date === drawerDay?.date,
     ),
     drawerValues: FormValues = existingCorrection?.corrected_value || {
       ...emptyForm,
@@ -1880,310 +1952,320 @@ export default function ScenarioRun({
           </div>
         ))}
       </div>
-      {!selected && (queueView === "employees" ? (
-        <section className="space-y-4" aria-label="Employee readiness queue">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h3 className="text-xl font-black">Resolve by employee</h3>
-              <p className="text-sm text-slate-500">
-                One card per employee and business unit. Setup dependencies
-                appear once, even when they affect multiple dates.
-              </p>
-            </div>
-            <StatusPill status={issues.length ? "Needs attention" : "Ready"} />
-          </div>
-          {issueGroups.length ? (
-            issueGroups.map((group) => {
-              const uniqueItems = group.items.filter(
-                (item, index, list) =>
-                  issueCategory(item) !== "Payroll setup" ||
-                  list.findIndex(
-                    (other) =>
-                      issueCategory(other) === "Payroll setup" &&
-                      other.label === item.label,
-                  ) === index,
-              );
-              return (
-                <article
-                  key={group.employee.id}
-                  className={`overflow-hidden rounded-2xl border bg-white shadow-sm ${group.status === "Blocking payroll" ? "border-rose-200" : "border-amber-200"}`}
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-4 p-5">
-                    <div className="flex items-center gap-4">
-                      <span className="grid h-12 w-12 place-items-center rounded-2xl bg-violet-100 text-lg font-black text-violet-700">
-                        {group.employee.name
-                          .split(" ")
-                          .map((part) => part[0])
-                          .slice(0, 2)
-                          .join("")}
-                      </span>
-                      <div>
-                        <h4 className="text-xl font-black">
-                          {group.employee.name}
-                        </h4>
-                        <p className="text-sm text-slate-500">
-                          {group.employee.code || "Employee ID unavailable"} ·
-                          Bakebe · SM Aura
-                        </p>
-                        <p className="mt-1 text-xs text-slate-400">
-                          {displayDate(run.pay_date, true)} payroll ·{" "}
-                          {group.items.length} issue
-                          {group.items.length === 1 ? "" : "s"}
-                        </p>
-                      </div>
-                    </div>
-                    <StatusPill status={group.status} />
-                  </div>
-                  <div className="grid gap-2 border-y bg-slate-50 p-4 sm:grid-cols-4">
-                    {(
-                      [
-                        "Attendance",
-                        "Schedule",
-                        "Payroll setup",
-                        "Overtime",
-                      ] as IssueCategory[]
-                    ).map((category) => (
-                      <div
-                        key={category}
-                        className="rounded-xl bg-white px-3 py-2"
-                      >
-                        <span className="text-xs text-slate-500">
-                          {category}
-                        </span>
-                        <b className="float-right">{group.counts[category]}</b>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="grid gap-4 p-5 lg:grid-cols-2">
-                    {uniqueItems.map((item, index) => {
-                      const category = issueCategory(item),
-                        dates = group.items
-                          .filter(
-                            (other) =>
-                              issueCategory(other) === category &&
-                              other.label === item.label,
-                          )
-                          .map((other) => displayDate(other.day.date));
-                      const correction = run.corrections?.find(
-                        (c) =>
-                          c.employee_id === item.employee.id &&
-                          c.work_date === item.day.date,
-                      );
-                      return (
-                        <div
-                          key={`${item.label}:${index}`}
-                          className={`rounded-xl border p-4 ${item.severity === "blocked" ? "border-rose-200 bg-rose-50" : "border-slate-200"}`}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-xs font-black uppercase tracking-wide text-slate-500">
-                                {category}
-                              </p>
-                              <b className="mt-1 block">{item.label}</b>
-                              <p className="mt-1 text-sm text-slate-500">
-                                Affected: {dates.join(", ")}
-                              </p>
-                            </div>
-                            <span className="rounded-full bg-white px-2 py-1 text-xs font-bold">
-                              {item.severity === "blocked"
-                                ? "Blocking"
-                                : "Review"}
-                            </span>
-                          </div>
-                          {category === "Payroll setup" && (
-                            <p className="mt-3 text-xs text-rose-700">
-                              This is one setup dependency affecting multiple
-                              dates. Fix it once and affected payroll dates
-                              refresh automatically.
-                            </p>
-                          )}
-                          <div className="mt-3 flex justify-end">
-                            {correction?.status === "Pending approval" &&
-                            run.canApproveTestCorrections ? (
-                              <button
-                                disabled={busy}
-                                className="min-h-10 rounded-lg bg-violet-600 px-4 text-sm font-bold text-white"
-                                onClick={() => void approve(correction)}
-                              >
-                                Approve correction
-                              </button>
-                            ) : (
-                              <button
-                                className="min-h-10 rounded-lg font-bold text-violet-700"
-                                onClick={() => open(item)}
-                              >
-                                {item.action === "Review pay package"
-                                  ? "Open employee setup"
-                                  : item.action === "Review schedule"
-                                    ? "Open correction options"
-                                    : "Fix next"}{" "}
-                                →
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="flex flex-wrap gap-2 border-t p-4">
-                    <button
-                      className="min-h-10 rounded-lg bg-violet-600 px-4 text-sm font-bold text-white"
-                      onClick={() => open(group.items[0])}
-                    >
-                      Fix next
-                    </button>
-                    <button
-                      className="min-h-10 rounded-lg border px-4 text-sm font-bold"
-                      onClick={() =>
-                        reviewEmployee(
-                          group.employee.id,
-                          group.items[0]?.day.date,
-                        )
-                      }
-                    >
-                      Review all issues
-                    </button>
-                    <button
-                      className="min-h-10 rounded-lg border px-4 text-sm font-bold"
-                      onClick={() => setQueueView("quick")}
-                    >
-                      Quick attendance fixes
-                    </button>
-                    <button
-                      className="min-h-10 rounded-lg border px-4 text-sm font-bold"
-                      onClick={() =>
-                        navigate(
-                          `/payroll/pay-packages?employee=${group.employee.id}`,
-                        )
-                      }
-                    >
-                      Open employee setup
-                    </button>
-                  </div>
-                </article>
-              );
-            })
-          ) : (
-            <div className="rounded-2xl bg-white p-8 text-center text-emerald-700 shadow-sm">
-              <b>All employees are ready for this payroll cycle.</b>
-            </div>
-          )}
-        </section>
-      ) : (
-        <section className="space-y-4" aria-label="Quick attendance fixes">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h3 className="text-xl font-black">Quick attendance fixes</h3>
-              <p className="text-sm text-slate-500">
-                Minor late arrivals within the approved 5-minute grace period.
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                disabled={busy || !selectedGrace.size}
-                className="min-h-11 rounded-xl border border-violet-300 px-4 font-bold text-violet-700 disabled:opacity-50"
-                onClick={() => void applyGrace([...selectedGrace])}
-              >
-                Apply grace to selected
-              </button>
-              <button
-                disabled={busy || !quickCandidates.length}
-                className="min-h-11 rounded-xl bg-violet-600 px-4 font-bold text-white disabled:opacity-50"
-                onClick={() =>
-                  void applyGrace(quickCandidates.map((item) => item.key))
-                }
-              >
-                Apply grace to all eligible
-              </button>
-            </div>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-4">
-            {[
-              ["Minor late arrivals", quickCandidates.length],
-              ["Eligible for grace", quickCandidates.length],
-              ["Pay impact", "Recalculate"],
-              [
-                "Needs detailed review",
-                issues.filter((item) => issueCategory(item) === "Attendance")
-                  .length,
-              ],
-            ].map(([label, value]) => (
-              <div
-                key={label as string}
-                className="rounded-xl bg-white p-4 shadow-sm"
-              >
-                <p className="text-xs font-semibold text-slate-500">{label}</p>
-                <b className="mt-1 block text-xl">{value}</b>
+      {!selected &&
+        (queueView === "employees" ? (
+          <section className="space-y-4" aria-label="Employee readiness queue">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h3 className="text-xl font-black">Resolve by employee</h3>
+                <p className="text-sm text-slate-500">
+                  One card per employee and business unit. Setup dependencies
+                  appear once, even when they affect multiple dates.
+                </p>
               </div>
-            ))}
-          </div>
-          <div className="space-y-3">
-            {quickCandidates.map((candidate) => (
-              <article
-                key={candidate.key}
-                className="grid gap-4 rounded-2xl bg-white p-5 shadow-sm md:grid-cols-[auto_1.2fr_repeat(3,1fr)_auto] md:items-center"
-              >
-                <input
-                  aria-label={`Select ${candidate.employee.name} on ${candidate.day.date}`}
-                  type="checkbox"
-                  checked={selectedGrace.has(candidate.key)}
-                  onChange={(e) =>
-                    setSelectedGrace((current) => {
-                      const next = new Set(current);
-                      e.target.checked
-                        ? next.add(candidate.key)
-                        : next.delete(candidate.key);
-                      return next;
-                    })
-                  }
-                />
-                <div>
-                  <b>{candidate.employee.name}</b>
-                  <p className="text-sm text-slate-500">
-                    Bakebe · SM Aura · {displayDate(candidate.day.date)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500">Scheduled</p>
-                  <b>{candidate.shift.start}</b>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500">Clock-in</p>
-                  <b>{time(candidate.clockIn.timestamp)}</b>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500">Difference</p>
-                  <b>
-                    {candidate.minutes} minute
-                    {candidate.minutes === 1 ? "" : "s"}
-                  </b>
-                  <p className="text-xs text-emerald-700">Within grace</p>
-                </div>
-                <button
-                  disabled={busy}
-                  className="min-h-11 rounded-xl bg-violet-600 px-4 font-bold text-white"
-                  onClick={() => void applyGrace([candidate.key])}
-                >
-                  Apply grace
-                </button>
-              </article>
-            ))}
-            {!quickCandidates.length && (
-              <div className="rounded-2xl bg-white p-8 text-center text-slate-500">
-                No eligible minor lateness records remain for this payroll
-                cycle.
+              <StatusPill
+                status={issues.length ? "Needs attention" : "Ready"}
+              />
+            </div>
+            {issueGroups.length ? (
+              issueGroups.map((group) => {
+                const uniqueItems = group.items.filter(
+                  (item, index, list) =>
+                    issueCategory(item) !== "Payroll setup" ||
+                    list.findIndex(
+                      (other) =>
+                        issueCategory(other) === "Payroll setup" &&
+                        other.label === item.label,
+                    ) === index,
+                );
+                return (
+                  <article
+                    key={group.employee.id}
+                    className={`overflow-hidden rounded-2xl border bg-white shadow-sm ${group.status === "Blocking payroll" ? "border-rose-200" : "border-amber-200"}`}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-4 p-5">
+                      <div className="flex items-center gap-4">
+                        <span className="grid h-12 w-12 place-items-center rounded-2xl bg-violet-100 text-lg font-black text-violet-700">
+                          {group.employee.name
+                            .split(" ")
+                            .map((part) => part[0])
+                            .slice(0, 2)
+                            .join("")}
+                        </span>
+                        <div>
+                          <h4 className="text-xl font-black">
+                            {group.employee.name}
+                          </h4>
+                          <p className="text-sm text-slate-500">
+                            {group.employee.code || "Employee ID unavailable"} ·
+                            Bakebe · SM Aura
+                          </p>
+                          <p className="mt-1 text-xs text-slate-400">
+                            {displayDate(run.pay_date, true)} payroll ·{" "}
+                            {group.items.length} issue
+                            {group.items.length === 1 ? "" : "s"}
+                          </p>
+                        </div>
+                      </div>
+                      <StatusPill status={group.status} />
+                    </div>
+                    <div className="grid gap-2 border-y bg-slate-50 p-4 sm:grid-cols-4">
+                      {(
+                        [
+                          "Attendance",
+                          "Schedule",
+                          "Payroll setup",
+                          "Overtime",
+                        ] as IssueCategory[]
+                      ).map((category) => (
+                        <div
+                          key={category}
+                          className="rounded-xl bg-white px-3 py-2"
+                        >
+                          <span className="text-xs text-slate-500">
+                            {category}
+                          </span>
+                          <b className="float-right">
+                            {group.counts[category]}
+                          </b>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="grid gap-4 p-5 lg:grid-cols-2">
+                      {uniqueItems.map((item, index) => {
+                        const category = issueCategory(item),
+                          dates = group.items
+                            .filter(
+                              (other) =>
+                                issueCategory(other) === category &&
+                                other.label === item.label,
+                            )
+                            .map((other) => displayDate(other.day.date));
+                        const correction = run.corrections?.find(
+                          (c) =>
+                            c.employee_id === item.employee.id &&
+                            c.work_date === item.day.date,
+                        );
+                        return (
+                          <div
+                            key={`${item.label}:${index}`}
+                            className={`rounded-xl border p-4 ${item.severity === "blocked" ? "border-rose-200 bg-rose-50" : "border-slate-200"}`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+                                  {category}
+                                </p>
+                                <b className="mt-1 block">{item.label}</b>
+                                <p className="mt-1 text-sm text-slate-500">
+                                  Affected: {dates.join(", ")}
+                                </p>
+                              </div>
+                              <span className="rounded-full bg-white px-2 py-1 text-xs font-bold">
+                                {item.severity === "blocked"
+                                  ? "Blocking"
+                                  : "Review"}
+                              </span>
+                            </div>
+                            {category === "Payroll setup" && (
+                              <p className="mt-3 text-xs text-rose-700">
+                                This is one setup dependency affecting multiple
+                                dates. Fix it once and affected payroll dates
+                                refresh automatically.
+                              </p>
+                            )}
+                            <div className="mt-3 flex justify-end">
+                              {correction?.status === "Pending approval" &&
+                              run.canApproveTestCorrections ? (
+                                <button
+                                  disabled={busy}
+                                  className="min-h-10 rounded-lg bg-violet-600 px-4 text-sm font-bold text-white"
+                                  onClick={() => void approve(correction)}
+                                >
+                                  Approve correction
+                                </button>
+                              ) : (
+                                <button
+                                  className="min-h-10 rounded-lg font-bold text-violet-700"
+                                  onClick={() => open(item)}
+                                >
+                                  {item.action === "Review pay package"
+                                    ? "Open employee setup"
+                                    : item.action === "Review schedule"
+                                      ? "Open correction options"
+                                      : "Fix next"}{" "}
+                                  →
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="flex flex-wrap gap-2 border-t p-4">
+                      <button
+                        className="min-h-10 rounded-lg bg-violet-600 px-4 text-sm font-bold text-white"
+                        onClick={() => open(group.items[0])}
+                      >
+                        Fix next
+                      </button>
+                      <button
+                        className="min-h-10 rounded-lg border px-4 text-sm font-bold"
+                        onClick={() =>
+                          reviewEmployee(
+                            group.employee.id,
+                            group.items[0]?.day.date,
+                          )
+                        }
+                      >
+                        Review all issues
+                      </button>
+                      <button
+                        className="min-h-10 rounded-lg border px-4 text-sm font-bold"
+                        onClick={() => setQueueView("quick")}
+                      >
+                        Quick attendance fixes
+                      </button>
+                      <button
+                        className="min-h-10 rounded-lg border px-4 text-sm font-bold"
+                        onClick={() =>
+                          navigate(
+                            `/payroll/pay-packages?employee=${group.employee.id}`,
+                          )
+                        }
+                      >
+                        Open employee setup
+                      </button>
+                    </div>
+                  </article>
+                );
+              })
+            ) : (
+              <div className="rounded-2xl bg-white p-8 text-center text-emerald-700 shadow-sm">
+                <b>All employees are ready for this payroll cycle.</b>
               </div>
             )}
-          </div>
-          <div className="rounded-xl bg-violet-50 p-4 text-sm text-violet-900">
-            Applying grace removes the late flag and records an automatic audit
-            note: <b>Within approved grace period.</b> Original punch data
-            remains unchanged.
-          </div>
-        </section>
-      ))}
+          </section>
+        ) : (
+          <section className="space-y-4" aria-label="Quick attendance fixes">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h3 className="text-xl font-black">Quick attendance fixes</h3>
+                <p className="text-sm text-slate-500">
+                  Minor late arrivals within the approved 5-minute grace period.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  disabled={busy || !selectedGrace.size}
+                  className="min-h-11 rounded-xl border border-violet-300 px-4 font-bold text-violet-700 disabled:opacity-50"
+                  onClick={() => void applyGrace([...selectedGrace])}
+                >
+                  Apply grace to selected
+                </button>
+                <button
+                  disabled={busy || !quickCandidates.length}
+                  className="min-h-11 rounded-xl bg-violet-600 px-4 font-bold text-white disabled:opacity-50"
+                  onClick={() =>
+                    void applyGrace(quickCandidates.map((item) => item.key))
+                  }
+                >
+                  Apply grace to all eligible
+                </button>
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-4">
+              {[
+                ["Minor late arrivals", quickCandidates.length],
+                ["Eligible for grace", quickCandidates.length],
+                ["Pay impact", "Recalculate"],
+                [
+                  "Needs detailed review",
+                  issues.filter((item) => issueCategory(item) === "Attendance")
+                    .length,
+                ],
+              ].map(([label, value]) => (
+                <div
+                  key={label as string}
+                  className="rounded-xl bg-white p-4 shadow-sm"
+                >
+                  <p className="text-xs font-semibold text-slate-500">
+                    {label}
+                  </p>
+                  <b className="mt-1 block text-xl">{value}</b>
+                </div>
+              ))}
+            </div>
+            <div className="space-y-3">
+              {quickCandidates.map((candidate) => (
+                <article
+                  key={candidate.key}
+                  className="grid gap-4 rounded-2xl bg-white p-5 shadow-sm md:grid-cols-[auto_1.2fr_repeat(3,1fr)_auto] md:items-center"
+                >
+                  <input
+                    aria-label={`Select ${candidate.employee.name} on ${candidate.day.date}`}
+                    type="checkbox"
+                    checked={selectedGrace.has(candidate.key)}
+                    onChange={(e) =>
+                      setSelectedGrace((current) => {
+                        const next = new Set(current);
+                        e.target.checked
+                          ? next.add(candidate.key)
+                          : next.delete(candidate.key);
+                        return next;
+                      })
+                    }
+                  />
+                  <div>
+                    <b>{candidate.employee.name}</b>
+                    <p className="text-sm text-slate-500">
+                      Bakebe · SM Aura · {displayDate(candidate.day.date)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500">Scheduled</p>
+                    <b>{candidate.shift.start}</b>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500">Clock-in</p>
+                    <b>{time(candidate.clockIn.timestamp)}</b>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500">Difference</p>
+                    <b>
+                      {candidate.minutes} minute
+                      {candidate.minutes === 1 ? "" : "s"}
+                    </b>
+                    <p className="text-xs text-emerald-700">Within grace</p>
+                  </div>
+                  <button
+                    disabled={busy}
+                    className="min-h-11 rounded-xl bg-violet-600 px-4 font-bold text-white"
+                    onClick={() => void applyGrace([candidate.key])}
+                  >
+                    Apply grace
+                  </button>
+                </article>
+              ))}
+              {!quickCandidates.length && (
+                <div className="rounded-2xl bg-white p-8 text-center text-slate-500">
+                  No eligible minor lateness records remain for this payroll
+                  cycle.
+                </div>
+              )}
+            </div>
+            <div className="rounded-xl bg-violet-50 p-4 text-sm text-violet-900">
+              Applying grace removes the late flag and records an automatic
+              audit note: <b>Within approved grace period.</b> Original punch
+              data remains unchanged.
+            </div>
+          </section>
+        ))}
       {selected && (
-        <section ref={employeeReviewRef} className="scroll-mt-6 rounded-2xl bg-white p-5 shadow-sm dark:bg-slate-900">
+        <section
+          ref={employeeReviewRef}
+          className="scroll-mt-6 rounded-2xl bg-white p-5 shadow-sm dark:bg-slate-900"
+        >
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <button
@@ -2197,7 +2279,8 @@ export default function ScenarioRun({
               </button>
               <h3 className="text-2xl font-black">{selected.name}</h3>
               <p className="text-slate-500">
-                {selected.code || "Employee code unavailable"} · Bakebe · SM Aura ·{" "}
+                {selected.code || "Employee code unavailable"} · Bakebe · SM
+                Aura ·{" "}
                 {selectedPackage
                   ? `${money(selectedPackage.base_amount)} / ${selectedPackage.rate_type}`
                   : "No pay package"}
@@ -2214,14 +2297,27 @@ export default function ScenarioRun({
                   : "All issues for this employee are cleared. You can return to the employee list."}
               </span>
             </div>
-            {selectedIssues.length > 0 && (
-              <button
-                className="min-h-11 rounded-xl bg-violet-600 px-5 font-bold text-white"
-                onClick={() => open(selectedIssues[0])}
-              >
-                Fix next for {selected.name.split(" ")[0]}
-              </button>
-            )}
+            <div className="flex flex-wrap gap-2">
+              {selectedMissingScheduleDays.length > 0 && (
+                <button
+                  disabled={busy}
+                  className="min-h-11 rounded-xl border border-violet-300 bg-white px-5 font-bold text-violet-700 disabled:opacity-50"
+                  onClick={() => void applyStandardSchedule()}
+                >
+                  Apply standard schedule to all missing dates (
+                  {selectedMissingScheduleDays.length})
+                </button>
+              )}
+              {selectedIssues.length > 0 && (
+                <button
+                  disabled={busy}
+                  className="min-h-11 rounded-xl bg-violet-600 px-5 font-bold text-white disabled:opacity-50"
+                  onClick={() => open(selectedIssues[0])}
+                >
+                  Fix next for {selected.name.split(" ")[0]}
+                </button>
+              )}
+            </div>
           </div>
           <ol className="my-6 grid gap-2 rounded-xl bg-slate-100 p-2 text-center text-sm font-bold sm:grid-cols-3 dark:bg-slate-800">
             <li className="rounded-lg bg-violet-600 p-3 text-white">
@@ -2298,7 +2394,8 @@ export default function ScenarioRun({
                         : row.lateMinutes
                           ? `${time(ev.find((x) => x.type === "CLOCK_IN")?.timestamp)} · ${row.lateMinutes} minute${row.lateMinutes === 1 ? "" : "s"} late`
                           : issueLabel(row.issues)),
-                    action = issueAction(row.issues);
+                    label = issueLabel(row.issues),
+                    action = issueActionForLabel(label);
                   return (
                     <tr
                       key={row.date}
@@ -2341,7 +2438,7 @@ export default function ScenarioRun({
                               open({
                                 employee: selected,
                                 day: row,
-                                label: issueLabel(row.issues),
+                                label,
                                 action,
                                 severity: "attention",
                               })
@@ -2422,22 +2519,25 @@ export default function ScenarioRun({
         open={drawer}
         scope={scope}
         run={run}
-        employee={selected}
-        day={currentDay}
+        employee={drawerEmployee}
+        day={drawerDay}
         values={drawerValues}
-        issue={currentDay ? issueLabel(currentDay.issues) : "Attendance issue"}
+        issue={
+          activeIssue?.label ||
+          (drawerDay ? issueLabel(drawerDay.issues) : "Attendance issue")
+        }
         title={drawerTitle}
         onClose={() => setDrawer(false)}
         onSaved={(openNext) => {
           setRevision((v) => v + 1);
-          if (openNext && selected && currentDay)
-            openNextIssue(selected.id, currentDay.date);
+          if (openNext && drawerEmployee && drawerDay)
+            openNextIssue(drawerEmployee.id, drawerDay.date);
         }}
         onRecalculate={calculate}
         onOpenSchedule={() =>
-          selected && currentDay
+          drawerEmployee && drawerDay
             ? navigate(
-                `/payroll/timekeeping?employee=${selected.id}&week=${currentDay.date}&source=readiness`,
+                `/payroll/timekeeping?employee=${drawerEmployee.id}&week=${drawerDay.date}&source=readiness`,
               )
             : navigate("/payroll/timekeeping")
         }
