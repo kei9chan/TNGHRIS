@@ -8,6 +8,10 @@ export type TimeResult={engineVersion:string;rows:ReviewTimeRow[];blockedDays:nu
 export type TimeRuleConfig={restTemplates:string[];meals:Record<string,string>;holidayCoverageConfirmed:boolean;splitShiftConfirmed:boolean;leavePolicyRef:string;offsetPolicyRef:string};
 export type TimePreview={sourceHash:string;result:TimeResult;holidays:{id:string;name:string;date:string;kind:string;source:string}[];templates:{id:string;name:string;start:string;end:string}[];rules:{id:string;effective_from:string;effective_to:string;source_ref:string;config:TimeRuleConfig}[];packages:{id:string;version:number;status:string;current:boolean;blockedDays:number;reason:string;previousId:string|null}[]};
 export type OffsetReview={id:string;scopeId:string;employeeId:string;requestId:string;employeeName:string;date:string;minutes:number;complete:boolean;current:boolean;isSelf:boolean;actions:{stage:string;decision:string;createdAt:string}[]};
+export type PayrollCalendarRule={id:string;scopeId:string|null;scopeName:string|null;effectiveFrom:string;releaseDays:number[];cutoffRules:{releaseDay:number;startDay:number;endDay:number;startMonthOffset:number;endMonthOffset:number}[];status:'Global default'|'Business-unit override';policyRef:string;createdAt:string};
+export type PayrollCalendarSettings={canConfigure:boolean;global:PayrollCalendarRule;overrides:PayrollCalendarRule[]};
+export type GraceApplyResult={applied:{employeeId:string;date:string;status:string;auditNote:string}[];skipped:{employeeId:string;date:string;reason:string}[]};
+export type PayrollAttendanceAction={id:string;employeeId:string;date:string;action:string;status:string;actorName:string;createdAt:string;originalPunch:string|null;auditNote:string};
 async function rpc<T>(name:string,args?:Record<string,unknown>):Promise<T>{
  const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),25000);
  try{const {data,error}=await supabase.rpc(name,args).abortSignal(controller.signal);if(error)throw new Error(error.message);return data as T;}
@@ -24,3 +28,8 @@ export const recordTimeHoliday=(scope:string,date:string,name:string,kind:string
 export const openOffsetReview=(id:string,reason:string)=>rpc<string>('open_payroll_offset_case',{p_ot_request_id:id,p_reason:reason});
 export const reviewOffset=(id:string,approve:boolean,reason:string)=>rpc<void>('review_payroll_offset_case',{p_case_id:id,p_approve:approve,p_reason:reason});
 export const fetchOffsetReviews=()=>rpc<OffsetReview[]>('get_my_payroll_offset_reviews');
+export const fetchPayrollCalendarSettings=()=>rpc<PayrollCalendarSettings>('get_payroll_calendar_settings');
+export const savePayrollCalendarOverride=(scopeId:string,effectiveFrom:string,calendar:PayrollCalendarRule['cutoffRules'],policyRef:string)=>rpc<string>('save_payroll_calendar_override',{p_scope_id:scopeId,p_effective_from:effectiveFrom,p_calendar:calendar,p_policy_ref:policyRef});
+export const applyPayrollGraceBulk=(scopeId:string,from:string,to:string,records:{employeeId:string;date:string}[])=>rpc<GraceApplyResult>('apply_payroll_attendance_grace_bulk',{p_scope_id:scopeId,p_from:from,p_to:to,p_records:records});
+export const applyPayrollAttendancePreset=(scopeId:string,employeeId:string,date:string,preset:string,note:string)=>rpc<unknown>('apply_payroll_attendance_preset',{p_scope_id:scopeId,p_employee_id:employeeId,p_date:date,p_preset:preset,p_note:note});
+export const fetchPayrollAttendanceActions=(scopeId:string,from:string,to:string)=>rpc<PayrollAttendanceAction[]>('get_payroll_attendance_actions',{p_scope_id:scopeId,p_from:from,p_to:to});
