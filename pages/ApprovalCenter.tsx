@@ -145,6 +145,7 @@ export default function ApprovalCenter() {
   const [disapproving,setDisapproving]=useState<{kind:'leave'|'wfh'|'overtime';items:ApprovalItem[]}|null>(null);
   const [result, setResult] = useState<any>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [schedulePending, setSchedulePending] = useState<any[]>([]);
   // Every fresh visit starts with the complete authorized queue. URL category links
   // are explicit; stale session filters and scroll positions must not hide requests.
   const [filters, setFilters] = useState(() => ({ ...DEFAULT_FILTERS }));
@@ -184,6 +185,24 @@ export default function ApprovalCenter() {
       else setReporteeIds((data || []).map((row: any) => row.id));
     });
   }, [user]);
+
+  // Schedule proposals use their existing, separately scoped workflow. Surface
+  // the same pending records in the central queue so a GM/BOD does not have to
+  // discover them only from the dashboard card.
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    const load = async () => {
+      const { data, error } = await supabase.rpc('get_bod_schedule_workflow', { p_week: null });
+      if (!active) return;
+      if (error) { setSchedulePending([]); return; }
+      setSchedulePending(Array.isArray(data?.pending) ? data.pending : []);
+    };
+    void load();
+    const onFocus = () => { void load(); };
+    window.addEventListener('focus', onFocus);
+    return () => { active = false; window.removeEventListener('focus', onFocus); };
+  }, [user?.id]);
 
   useEffect(() => {
     Promise.all([supabase.from('business_units').select('id,name'), supabase.from('departments').select('id,name')]).then(([businessUnits, departments]) => {
@@ -393,10 +412,17 @@ export default function ApprovalCenter() {
     <div className="flex flex-wrap items-end justify-between gap-3"><div><h1 className="text-3xl font-bold text-slate-900 dark:text-white">Approval Center</h1><p className="mt-1 text-slate-500 dark:text-slate-300">The single queue for every approval requiring your action.</p></div><Link to="/dashboard" className="font-semibold text-indigo-600 dark:text-indigo-300">← Dashboard</Link></div>
     {loading && <p role="status" className="text-sm text-slate-500 dark:text-slate-300">Updating approval queues…</p>}
     <OBApprovalQueue key={user.id} />
+    {schedulePending.length > 0 && <section className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-indigo-950 shadow-sm dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-100">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><h2 className="text-lg font-bold">Employee schedules · {schedulePending.length} pending</h2><p className="mt-1 text-sm">Direct reports submitted schedules for your approval. Open the dashboard to approve or request revisions; publication happens only after approval.</p></div>
+        <Link className="inline-flex min-h-11 items-center rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white" to="/dashboard#schedule-approvals">Review schedules</Link>
+      </div>
+      <ul className="mt-3 space-y-1 text-sm">{schedulePending.map(row => <li key={row.id}>{row.employeeName} · week of {row.week} · {row.reason || 'No note provided'}</li>)}</ul>
+    </section>}
     {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-800"><b>Some approval data could not be loaded.</b> {error} <button onClick={() => Promise.all([approvals.refreshApprovals(), additional.refreshAdditionalApprovals(), attendance.load()])} className="min-h-11 font-semibold underline">Retry loading approvals</button></div>}
     {requestedItem && !['offer', 'asset'].includes(requestedType || '') && !loading && !items.some(item => item.id === requestedItem) && !error && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"><b>This request is no longer awaiting your action.</b> It may already be processed, reassigned, or outside your authorized scope.</div>}
     {!approverConfigs.conditionalTimeApprovals.valid && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900"><b>Conditional approval routing needs an Admin.</b> {approverConfigs.conditionalTimeApprovals.invalid_reason || 'At least one active BOD approver must be selected.'}</div>}
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">{[['Pending approvals', items.length, 'bg-blue-50 text-blue-700'], ['Manager only', managerOnlyCount, 'bg-emerald-50 text-emerald-700'], ['BOD required', bodRequiredCount, 'bg-violet-50 text-violet-700'], ['Due today', dueTodayCount, 'bg-orange-50 text-orange-700'], ['Overdue', overdueCount, 'bg-red-50 text-red-700'], ['High risk / exceptions', exceptionCount, 'bg-amber-50 text-amber-700']].map(([label, value, color]) => <div key={String(label)} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-600 dark:bg-slate-800 sm:p-5"><div className={`inline-flex rounded-lg px-3 py-1 text-2xl font-bold ${color}`}>{value}</div><p className="mt-2 text-sm text-slate-600 dark:text-slate-200">{label}</p></div>)}</div>
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">{[['Pending approvals', items.length + schedulePending.length, 'bg-blue-50 text-blue-700'], ['Manager only', managerOnlyCount, 'bg-emerald-50 text-emerald-700'], ['BOD required', bodRequiredCount, 'bg-violet-50 text-violet-700'], ['Due today', dueTodayCount, 'bg-orange-50 text-orange-700'], ['Overdue', overdueCount, 'bg-red-50 text-red-700'], ['High risk / exceptions', exceptionCount, 'bg-amber-50 text-amber-700']].map(([label, value, color]) => <div key={String(label)} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-600 dark:bg-slate-800 sm:p-5"><div className={`inline-flex rounded-lg px-3 py-1 text-2xl font-bold ${color}`}>{value}</div><p className="mt-2 text-sm text-slate-600 dark:text-slate-200">{label}</p></div>)}</div>
     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-600 dark:bg-slate-800">
       <div className="flex items-center justify-between gap-3 lg:hidden"><div><h2 className="font-bold">Filter requests</h2><p className="text-sm text-slate-500 dark:text-slate-300">{appliedFilterCount ? `${appliedFilterCount} filter${appliedFilterCount === 1 ? '' : 's'} applied` : 'Showing all pending requests'}</p></div><button type="button" onClick={() => setFiltersOpen(open => !open)} aria-expanded={filtersOpen} aria-controls="approval-filters" className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 dark:border-slate-500 dark:text-white">{filtersOpen ? 'Hide filters' : 'Open filters'}</button></div>
       <div id="approval-filters" className={`${filtersOpen ? 'mt-4 block' : 'hidden'} lg:block`}>

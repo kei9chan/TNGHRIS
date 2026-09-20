@@ -63,12 +63,12 @@ export default function BodScheduleWorkflow() {
     </select></label>)}
     <p className="text-sm">Choose a shift or rest-day preset for every unscheduled date. Existing HR statuses must be kept. Changes take effect only after approval.</p>
     {!data.templates.length&&<p role="alert">No business-unit presets are available. Ask HR to configure them before submitting.</p>}
-    <label className="block">Schedule notes<textarea className={input} maxLength={1000} value={reason} onChange={e=>setReason(e.target.value)}/></label>
-    <div className="flex gap-3"><button disabled={busy||reason.trim().length<3} className={button} onClick={()=>action('submit_my_bod_schedule',{p_week:data.week,p_entries:entries.map(({date,templateId,restDay})=>({date,templateId,restDay:!!restDay})),p_reason:reason},`Schedule submitted to your ${approver} for approval.`)}>{busy?'Submitting…':`Submit for ${approver} approval`}</button><button disabled={busy} className="underline" onClick={()=>setOpen(false)}>Close</button></div>
+    <label className="block">Schedule notes <span className="font-normal text-slate-500 dark:text-slate-300">(optional)</span><textarea className={input} maxLength={1000} value={reason} onChange={e=>setReason(e.target.value)}/></label>
+    <div className="flex gap-3"><button disabled={busy} className={button} onClick={()=>action('submit_my_bod_schedule',{p_week:data.week,p_entries:entries.map(({date,templateId,restDay})=>({date,templateId,restDay:!!restDay})),p_reason:reason},`Schedule submitted to your ${approver} for approval.`)}>{busy?'Submitting…':`Submit for ${approver} approval`}</button><button disabled={busy} className="underline" onClick={()=>setOpen(false)}>Close</button></div>
    </div>}
   </section>}
   {data?.isGm&&!data.isBod&&<section className={box}><h2 className="text-xl font-bold">Review your direct reports’ schedules</h2><p className="mt-2">Employees who report directly to you prepare and submit their own schedules. Approve or return their submissions here; schedules take effect only after approval.</p>{!data.pending.length&&<p className="mt-2">No schedules are awaiting your approval.</p>}</section>}
-  {!!data?.pending.length&&<section className={box}>
+  {!!data?.pending.length&&<section id="schedule-approvals" className={box}>
    <h2 className="text-xl font-bold">Employee schedules awaiting your approval · {data.pending.length}</h2>
    <p className="my-2">Your direct reports prepared these schedules. Review their submissions below.</p>
    {data.pending.map(s=><details className="border-t border-slate-400 py-3" key={s.id}>
