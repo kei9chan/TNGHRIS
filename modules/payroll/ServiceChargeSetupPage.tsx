@@ -5,6 +5,7 @@ import Button from '../../components/ui/Button';
 import {usePayrollField} from './usePayrollSelection';
 import {validCutoff} from './workspace';
 import {getServiceCharge,includeServiceCharge,initializeServiceCharge,peso,previewServiceCharge,reviseServiceCharge,saveServiceCharge,type ServiceChargeAllocation,type ServiceChargeContext,type ServiceChargeSetup} from './serviceCharge';
+import PayrollCycleSelector from './PayrollCycleSelector';
 
 const input='mt-1 block min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 dark:border-slate-600 dark:bg-slate-900';
 const statusTone=(status:string)=>status==='Eligible'||status.includes('Included')||status==='Released'?'bg-emerald-100 text-emerald-800':status==='Not configured'||status==='Needs review'?'bg-red-100 text-red-800':'bg-amber-100 text-amber-900';
@@ -29,7 +30,7 @@ export default function ServiceChargeSetupPage(){
  const act=async(fn:()=>Promise<unknown>)=>{setBusy(true);setError('');try{await fn();setSearchKey(v=>v+1);}catch(e){setError((e as Error).message);}finally{setBusy(false);}};
  if(!scope||!validCutoff(from,to))return <Card title="Service Charge Setup"><p>Select a business unit and payroll cutoff in <Link className="text-violet-700 underline" to="/payroll/home">Payroll Home</Link>.</p></Card>;
  const frozen=!!draft&&!['Draft','Needs review'].includes(draft.status);const allocated=Number(draft?.allocatedAmount||0),pool=Number(draft?.pool_amount||0),difference=pool-allocated;
- return <div className="space-y-6"><header><div className="flex flex-wrap items-center gap-3"><h1 className="text-3xl font-bold">Service charge setup</h1>{draft&&<span className={`rounded-full px-3 py-1 text-sm font-semibold ${statusTone(draft.status)}`}>{draft.status}</span>}</div><p className="mt-1 text-slate-600">Configure eligibility before finalizing payroll · {from}–{to}</p></header>
+ return <div className="space-y-6"><header><div className="flex flex-wrap items-center gap-3"><h1 className="text-3xl font-bold">Service charge setup</h1>{draft&&<span className={`rounded-full px-3 py-1 text-sm font-semibold ${statusTone(draft.status)}`}>{draft.status}</span>}</div><p className="mt-1 text-slate-600">Configure eligibility before finalizing payroll · {from}–{to}</p></header><PayrollCycleSelector compact/>
   <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sky-900">Service charge is variable pay. Only configured business units and the confirmed employee selection are included.</div>
   {error&&<div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-4 text-red-800"><strong>Action blocked</strong><p>{error}</p></div>}
   {!data?<p role="status">Loading service-charge setup…</p>:!data.configured?<Card title="Start this payroll selection"><p className="mb-4">Rank-and-file employees will appear selected by default, but nothing enters payroll until you review every employee, allocate the approved pool, preview it, and freeze the snapshot.</p><label className="block max-w-xs">Pay date<input className={input} type="date" min={to} value={payDate} onChange={e=>setPayDate(e.target.value)}/></label><Button className="mt-4" size="lg" disabled={busy||!data.canManage||!payDate} onClick={()=>act(()=>initializeServiceCharge(scope,from,to,payDate))}>Start service-charge setup</Button></Card>:draft&&<>

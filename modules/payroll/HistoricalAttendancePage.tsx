@@ -5,6 +5,7 @@ import {usePayrollField} from './usePayrollSelection';
 import {validCutoff} from './workspace';
 import {historyContext,historyDetail,stageHistory,historyRpc,downloadHistoricalSource,saveDownload,HistoryBatch,HistoryContext,HistoryKind,HistoryPreview} from './historicalAttendance';
 import {historicalTemplate} from './historicalTemplates';
+import PayrollCycleSelector from './PayrollCycleSelector';
 const input='mt-2 block min-h-11 w-full rounded-lg border border-slate-300 bg-white p-3 dark:border-slate-600 dark:bg-slate-800';
 const button='min-h-11 rounded-lg border px-4 py-2 font-semibold disabled:opacity-50';
 export default function HistoricalAttendancePage(){
@@ -23,7 +24,7 @@ const HistoricalWorkspace:React.FC<{scope:string;from:string;to:string}>=({scope
  if(result.error){setBatch({...batch,preview:result.preview||batch.preview});setError(result.error);setConfirmed(false);return;}setBatch(await historyDetail(batch.id));setContext(await historyContext(scope,from,to));setConfirmed(false);setNotice(result.alreadyImported?'This test batch was already imported.':`${result.imported||0} test records imported. Live attendance and payroll are unchanged.`);}
  const rows=(batch?.preview.rows||[]).filter(r=>!errorsOnly||r.errors.length);const visible=rows.slice(page*50,page*50+50);
  return <main className="space-y-6 p-4 text-slate-900 dark:text-slate-100 sm:p-6">
- <header><div className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-3xl font-bold">Import Historical Attendance</h1><span className="rounded-full bg-violet-100 px-4 py-2 font-bold text-violet-900">TEST DATA ONLY</span></div><p className="mt-3">{context?.scopeName||'Selected payroll workspace'} · {from||'Choose start'} to {to||'Choose end'}</p><Link className="mt-2 inline-block underline" to="/payroll/home">Change Business Unit / cutoff</Link></header>
+ <header><div className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-3xl font-bold">Import Historical Attendance</h1><span className="rounded-full bg-violet-100 px-4 py-2 font-bold text-violet-900">TEST DATA ONLY</span></div><p className="mt-3">{context?.scopeName||'Selected payroll workspace'} · {from||'Choose start'} to {to||'Choose end'}</p><Link className="mt-2 inline-block underline" to="/payroll/home">Change Business Unit / cutoff</Link></header><PayrollCycleSelector compact/>
  <section className="rounded-xl border border-violet-300 bg-violet-50 p-5 text-violet-950"><h2 className="font-bold">Safe historical testing</h2><p className="mt-2">Imports are stored separately from live attendance. They do not create attendance penalties, change leave balances, submit timekeeping, or authorize payment. These test records do not make Payroll Home’s live readiness counts change.</p><p className="mt-2">This phase validates and preserves test attendance. It does not calculate payroll from the imported dataset.</p></section>
  {error&&<p role="alert" className="rounded-lg bg-red-50 p-4 text-red-800">{error}</p>}{notice&&<p role="status" className="rounded-lg bg-emerald-50 p-4 text-emerald-900">{notice}</p>}
  {loading?<p role="status">Loading the cutoff and import history…</p>:!scope||!validCutoff(from,to)?<p>Select a BU and valid cutoff in Payroll Home first.</p>:!context?<button className={button} onClick={()=>setRefresh(n=>n+1)}>Retry loading</button>:<>

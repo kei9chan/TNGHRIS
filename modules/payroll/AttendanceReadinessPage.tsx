@@ -1,7 +1,7 @@
 import ProcessingModeBadge from './ProcessingModeBadge';
 import {usePayrollField} from './usePayrollSelection';
 import React,{useCallback,useEffect,useRef,useState} from 'react';
-import {Link,useLocation} from 'react-router-dom';
+import {Link,useLocation,useSearchParams} from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import {useAuth} from '../../hooks/useAuth';
@@ -9,17 +9,20 @@ import PhaseChecklist from './PhaseChecklist';
 import {validCutoff} from './workspace';
 import {TimekeepingEmployeeTable} from './TimekeepingEmployeeTable';
 import {fetchTimeContext,previewTime,saveTime,submitTime,fetchTimePackage,recordTimeRules,recordTimeHoliday,openOffsetReview,reviewOffset,fetchOffsetReviews,fetchTimeTestEvidence,TimeScope,TimePreview,TimeRuleConfig,OffsetReview,TestTimeEvidence} from './attendanceReadiness';
+import PayrollCycleSelector from './PayrollCycleSelector';
+import QuickAttendanceFixes from './QuickAttendanceFixes';
+import PayrollCalendarSettings from './PayrollCalendarSettings';
 
 const inputClass='mt-1 block w-full rounded-md border border-gray-300 bg-white p-2 text-gray-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white';
 const minutes=(value:number)=>Number(value).toLocaleString('en-PH',{maximumFractionDigits:4});
 const TextField:React.FC<{label:string;value:string;change:(v:string)=>void;type?:string;required?:boolean}>=({label,value,change,type='text',required})=><label className="block text-sm font-medium">{label}<input className={inputClass} type={type} value={value} onChange={e=>change(e.target.value)} required={required} maxLength={1000}/></label>;
 
 export default function AttendanceReadinessPage(){
- const {user}=useAuth();const [scopeId,setScopeId]=usePayrollField('scope');const [from,setFrom]=usePayrollField('from');const [to,setTo]=usePayrollField('to');
- return <ReviewWorkspace key={`${user?.id}:${scopeId}:${from}:${to}`} scopeId={scopeId} from={from} to={to} setScopeId={setScopeId} setFrom={setFrom} setTo={setTo}/>;
+ const {user}=useAuth();const [scopeId,setScopeId]=usePayrollField('scope');const [from]=usePayrollField('from');const [to]=usePayrollField('to');
+ return <ReviewWorkspace key={`${user?.id}:${scopeId}:${from}:${to}`} scopeId={scopeId} from={from} to={to} setScopeId={setScopeId}/>;
 }
-const ReviewWorkspace:React.FC<{scopeId:string;from:string;to:string;setScopeId:(v:string)=>void;setFrom:(v:string)=>void;setTo:(v:string)=>void}>=({scopeId,from,to,setScopeId,setFrom,setTo})=>{
- const location=useLocation();const [scopes,setScopes]=useState<TimeScope[]>([]);const [contextRetry,setContextRetry]=useState(0);const [contextError,setContextError]=useState('');
+const ReviewWorkspace:React.FC<{scopeId:string;from:string;to:string;setScopeId:(v:string)=>void}>=({scopeId,from,to,setScopeId})=>{
+ const location=useLocation();const [params,setParams]=useSearchParams();const view=params.get('view')==='quick'?'quick':params.get('view')==='settings'?'settings':'readiness';const [scopes,setScopes]=useState<TimeScope[]>([]);const [contextRetry,setContextRetry]=useState(0);const [contextError,setContextError]=useState('');
  const [preview,setPreview]=useState<TimePreview|null>(null);const [history,setHistory]=useState<Awaited<ReturnType<typeof fetchTimePackage>>|null>(null);
  const [error,setError]=useState('');const [notice,setNotice]=useState('');const [busy,setBusy]=useState(false);const [reason,setReason]=useState('');const seq=useRef(0);const writeLock=useRef(false);
  const [showTest,setShowTest]=useState(false);const [test,setTest]=useState<TestTimeEvidence[]>([]);const [testError,setTestError]=useState('');const [testBusy,setTestBusy]=useState(false);const [testRetry,setTestRetry]=useState(0);
@@ -36,17 +39,19 @@ const ReviewWorkspace:React.FC<{scopeId:string;from:string;to:string;setScopeId:
  const rows=history?.result.rows||preview?.result.rows||[];
  const canSave=!!preview&&preview.result.totalDays>0&&preview.result.blockedDays===0&&preview.result.rows.length===preview.result.totalDays&&preview.result.rows.every(r=>r.ready&&r.issues.length===0);
  return <main className="space-y-6 text-gray-800 dark:text-slate-200">
-  <div className="flex flex-wrap justify-between gap-3"><div><h1 className="text-2xl font-bold">Timekeeping Review</h1><p className="mt-1 text-sm">Review one Business Unit and cutoff, resolve exceptions, then save and submit the verified version to Finance.</p></div><ProcessingModeBadge scopeId={scopeId}/></div>
+  <div className="flex flex-wrap justify-between gap-3"><div><p className="text-sm font-semibold text-violet-700">Payroll cycle dashboard</p><h1 className="mt-1 text-3xl font-bold">Payroll readiness</h1><p className="mt-1 text-sm">Resolve employee-level issues before approving this payroll cycle.</p></div><ProcessingModeBadge scopeId={scopeId}/></div>
   {contextError&&<div role="alert"><p>{contextError}</p><Button variant="secondary" onClick={()=>setContextRetry(v=>v+1)}>Retry access check</Button></div>}
   {error&&<p role="alert" className="rounded border border-red-300 p-3 text-red-700 dark:text-red-300">{error}</p>}{notice&&<p role="status" className="text-green-700 dark:text-green-300">{notice}</p>}
-  <Card title="Business Unit and cutoff"><fieldset disabled={busy} className="grid gap-4 sm:grid-cols-3"><label className="block text-sm font-medium">Business Unit<select className={inputClass} value={scopeId} onChange={e=>setScopeId(e.target.value)}><option value="">Choose a Business Unit</option>{scopes.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label><TextField label="From (inclusive)" type="date" value={from} change={setFrom}/><TextField label="To (inclusive, maximum 31 days)" type="date" value={to} change={setTo}/></fieldset>
-  {!scope?.canView?<p className="mt-4 text-sm">A scoped payroll/timekeeping duty and existing HRIS Timekeeping permission are required. <Link className="underline" to="/payroll/access">Manage Payroll Access</Link></p>:<Button className="mt-4" disabled={busy||!valid} onClick={()=>void refresh()}>{busy?'Loading review…':'Refresh review and saved versions'}</Button>}
-  {!valid&&<p className="mt-3 text-sm">Choose valid cutoff dates covering at most 31 days.</p>}</Card>
-  {preview&&<>
+  <PayrollCycleSelector/>
+  <nav className="flex flex-wrap gap-2" aria-label="Payroll readiness views">{([['readiness','Employee readiness'],['quick','Quick attendance fixes'],['settings','Payroll settings']] as const).map(([key,label])=><button type="button" className={`min-h-11 rounded-xl px-4 py-2 text-sm font-semibold ${view===key?'bg-violet-600 text-white':'border bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'}`} key={key} onClick={()=>setParams(key==='readiness'?{}:{view:key})}>{label}</button>)}</nav>
+  {view!=='settings'&&<Card title="Business unit"><fieldset disabled={busy}><label className="block text-sm font-medium">Review employees in<select className={inputClass} value={scopeId} onChange={e=>setScopeId(e.target.value)}><option value="">Choose an accessible business unit</option>{scopes.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label></fieldset><p className="mt-3 text-sm text-slate-500">The business unit filters employees and permissions; it does not determine the standard cutoff dates.</p>
+  {!scope?.canView?<p className="mt-4 text-sm">A scoped payroll/timekeeping duty and existing HRIS Timekeeping permission are required. <Link className="underline" to="/payroll/access">Manage Payroll Access</Link></p>:<Button className="mt-4" disabled={busy||!valid} onClick={()=>void refresh()}>{busy?'Loading review…':'Refresh readiness'}</Button>}
+  {!valid&&<p className="mt-3 text-sm">Choose a valid payroll cycle.</p>}</Card>}
+  {view==='readiness'&&preview&&<>
    <Card title="Cutoff readiness"><p><strong>{preview.result.totalDays} employee-days checked · {preview.result.blockedDays} blocked</strong>. {!preview.result.totalDays?'No employees fall within this BU/date range.':!canSave?'Resolve the listed inputs through their existing workflows, then refresh.':'Required attendance checks passed. Authorized HR may save and submit this cutoff.'}</p><p className="mt-2 text-sm">Saving creates a review version. Submitting hands that version to Finance. Neither action approves payroll or releases payment. Schedule publication and request approvals remain separate.</p></Card>
    <Card title={history?`Saved version ${history.version} · ${history.status}${history.current?' · current sources':' · sources changed'}`:'Employee cutoff review'}>
     {history?<div className="mb-4 space-y-2"><p>Showing the saved totals and original evidence. Later corrections do not rewrite this version.</p><Button variant="secondary" size="sm" disabled={busy} onClick={()=>setHistory(null)}>Back to current review</Button></div>:<div className="mb-4 space-y-2"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={showTest} onChange={e=>setShowTest(e.target.checked)}/>Show documented historical test evidence alongside live attendance</label>{testBusy&&<p role="status">Loading historical sources…</p>}{testError&&<div role="alert"><p className="text-red-700">Historical evidence unavailable: {testError}</p><Button size="sm" variant="secondary" onClick={()=>setTestRetry(v=>v+1)}>Retry evidence</Button></div>}{showTest&&!testBusy&&!testError&&!test.length&&<p className="text-sm">No committed historical test records in this cutoff. <Link className="underline" to="/payroll/historical-attendance">Import historical attendance</Link></p>}</div>}
-    <TimekeepingEmployeeTable key={history?.id||'current'} rows={rows} test={!history&&showTest?test:[]} saved={!!history} canOpenOffset={!!scope?.canFinalize} busy={busy} hasReason={reason.trim().length>=3} onOpenOffset={id=>void mutate(()=>openOffsetReview(id,reason),'Offset review opened; complete the existing HR → GM → BOD approval process.')}/>
+    <TimekeepingEmployeeTable key={history?.id||'current'} rows={rows} test={!history&&showTest?test:[]} saved={!!history} canOpenOffset={!!scope?.canFinalize} busy={busy} hasReason={reason.trim().length>=3} scopeName={scope?.name} from={from} to={to} onOpenOffset={id=>void mutate(()=>openOffsetReview(id,reason),'Offset review opened; complete the existing HR → GM → BOD approval process.')}/>
    </Card>
    <Card title="Save and submit timekeeping"><p className="mb-3 text-sm">Only an assigned HR timekeeping finalizer may save or submit. The server rechecks blockers, permissions and source changes. Prior versions and original evidence remain available.</p>
     {scope?.canFinalize&&!history&&<div className="mb-5 space-y-3"><TextField label="Review / correction reason and supporting reference" value={reason} change={setReason}/><Button disabled={busy||reason.trim().length<3||!canSave} onClick={()=>void mutate(()=>saveTime(scopeId,from,to,preview.sourceHash,reason),'Review version saved and reloaded from the server. Submit it below when ready.')}>Save verified review version</Button>{!canSave&&<p className="text-sm">Save and submission stay blocked until the required checks pass.</p>}</div>}
@@ -55,7 +60,9 @@ const ReviewWorkspace:React.FC<{scopeId:string;from:string;to:string;setScopeId:
    <section id="attendance-references">{scope?.canConfigure&&<RulesCard key={`${scopeId}-${from}-${to}-${preview.sourceHash}`} scopeId={scopeId} from={from} to={to} preview={preview} busy={busy} mutate={mutate}/>}</section>
    <details id="offset-approvals" open={location.hash==='#offset-approvals'?true:undefined} className="rounded-xl border p-4 dark:border-slate-700"><summary className="cursor-pointer font-semibold">Offset approvals for this cutoff</summary><p className="my-3 text-sm">Existing HR Manager → General Manager → two distinct BOD approvals. Approval authority is checked on the server.</p><Button size="sm" variant="secondary" disabled={offsetBusy||busy} onClick={()=>void loadOffsets()}>{offsetBusy?'Loading…':'Load cutoff offset reviews'}</Button>{offsetError&&<p role="alert">{offsetError}</p>}{offsets.map(o=><OffsetCard key={o.id} review={o} refresh={async()=>{await loadOffsets();await refresh();}}/>)}</details>
   </>}
-  <details id="team-checklist" open={location.hash==='#team-checklist'?true:undefined} className="rounded-xl border p-4 dark:border-slate-700"><summary className="cursor-pointer font-semibold">Team setup checklist</summary><PhaseChecklist/></details>
+  {view==='quick'&&preview&&scope&&<QuickAttendanceFixes rows={preview.result.rows} scopeId={scopeId} scopeName={scope.name} from={from} to={to} onApplied={refresh}/>}
+  {view==='settings'&&<PayrollCalendarSettings scopes={scopes}/>}
+  {view==='readiness'&&<details id="team-checklist" open={location.hash==='#team-checklist'?true:undefined} className="rounded-xl border p-4 dark:border-slate-700"><summary className="cursor-pointer font-semibold">Team setup checklist</summary><PhaseChecklist/></details>}
  </main>;
 };
 
