@@ -10,6 +10,7 @@ import SetupChecklistLink from './SetupChecklistLink';
 import {approvalStages,getApproval,submitApproval,actApproval} from './approvals';
 import type {Approval,ApprovalSummary} from './approvals';
 import DebtApprovalPanel from './DebtApprovalPanel';
+import NTEDeductionApprovalPanel from './NTEDeductionApprovalPanel';
 const input='mt-1 block w-full rounded border border-gray-300 p-2 dark:bg-slate-800 dark:border-slate-600';
 export default function ApprovalsPage(){
  const {user}=useAuth();const [params,setParams]=useSearchParams();const [items,setItems]=useState<ApprovalSummary[]>([]);const [run,setRun]=useState<Approval|null>(null);const [error,setError]=useState('');const [busy,setBusy]=useState(false);const [reason,setReason]=useState('');const [ref,setRef]=useState('');const [contact,setContact]=useState('');
@@ -30,6 +31,7 @@ export default function ApprovalsPage(){
  {!run.canAct&&!run.paid&&run.step<6&&<p className="mt-3 text-sm">Action is available only to the current eligible reviewer. Preparers and material PR editors cannot approve their own version.</p>}</Card>
  <Card title="Private payroll preview"><p className="mb-3 text-sm">Internal review only. This preview is not an employee payslip or proof of payment.</p><p>Period {run.source.from}–{run.source.to} · payday {run.source.payDate} · version {run.source.version}</p><div className="mt-3 grid gap-3 sm:grid-cols-3">{[['Gross',run.source.gross],['Employee deductions',run.source.deductions],['Net',run.source.net]].map(([label,value])=><div key={label}><p>{label}</p><strong>PHP {value}</strong></div>)}</div>{run.source.employees.map(e=><details key={e.employeeId} className="mt-3 border-t pt-3"><summary>{e.employeeName} · PHP {e.net}</summary><p className="my-2">Gross {e.gross} − deductions {e.deductions} = net {e.net}. Tax {e.tax}.</p>{e.lines.map((l,i)=><p className="text-sm" key={i}>{l.label}: PHP {l.remaining??l.amount}</p>)}</details>)}<p className="mt-3 text-sm">Submission: {run.reference}. Payroll contact: {run.contact}.</p></Card>
  <DebtApprovalPanel scopeId={run.scopeId} payrollDate={run.source.payDate} employees={run.source.employees}/>
+ <NTEDeductionApprovalPanel scopeId={run.scopeId} payrollDate={run.source.payDate} employees={run.source.employees}/>
  {run.mode==='shadow'?<Card title="Test approval — no payment or employee release"><p>Even after all six decisions, this test version cannot release payments or employee payslips. HR and Finance must accept its formal comparison before a separate live handover proposal.</p><Link className="mt-3 inline-block text-indigo-600" to="/payroll/pilot#handover">Continue to Compare & Pilot</Link></Card>:<Card title="Finance payments & payslip release"><p>Record attempts, actual outcomes and linked reissues in Payments & Reports. Complete full-batch reconciliation to release private payslips. Original receipts remain intact if a payment is later returned.</p><Link className="mt-3 inline-block text-indigo-600" to={`/payroll/payments?run=${run.id}`}>Open Payments & Reports</Link></Card>}</>}
 
  </div>;
