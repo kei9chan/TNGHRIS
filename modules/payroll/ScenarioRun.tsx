@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../services/supabaseClient";
+import EmployeeTestOutputs from "./EmployeeTestOutputs";
 
 type Employee = {
   id: string;
@@ -1813,7 +1814,7 @@ export default function ScenarioRun({
           .find((x) => x.type === "CLOCK_OUT")
           ?.timestamp.slice(11, 16) || "",
     };
-  if (issues.length === 0 && demo && showCompletion)
+  if (issues.length === 0 && demo && showCompletion && !selected)
     return (
       <PayrollCompletion
         scope={scope}
@@ -2340,14 +2341,30 @@ export default function ScenarioRun({
           </div>
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-violet-200 bg-violet-50 p-4 text-violet-950">
             <div>
-              <b className="block">Finish {selected.name} before moving on</b>
+              <b className="block">
+                {selectedIssues.length
+                  ? `Finish ${selected.name} before moving on`
+                  : `${selected.name} is ready for pay review`}
+              </b>
               <span className="text-sm">
                 {selectedIssues.length
                   ? `${selectedIssues.length} unresolved issue${selectedIssues.length === 1 ? "" : "s"} remain. Saving opens only this employee's next issue.`
-                  : "All issues for this employee are cleared. You can return to the employee list."}
+                  : "Attendance is cleared. Review pay and contributions below, then generate this employee’s draft payslip. You do not need to wait for other employees."}
               </span>
             </div>
             <div className="flex flex-wrap gap-2">
+              {!selectedIssues.length && (
+                <button
+                  className="min-h-11 rounded-xl bg-violet-600 px-5 font-bold text-white"
+                  onClick={() =>
+                    document
+                      .getElementById("employee-pay-outputs")
+                      ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                  }
+                >
+                  Review pay, benefits & payslip →
+                </button>
+              )}
               {selectedIssues.length > 0 && (
                 <button
                   disabled={busy}
@@ -2377,32 +2394,44 @@ export default function ScenarioRun({
             <li
               className={`rounded-lg p-3 ${selectedStatus === "Ready after correction" ? "bg-violet-100 text-violet-700" : ""}`}
             >
-              2. Review pay
+              <button
+                disabled={selectedIssues.length > 0}
+                onClick={() =>
+                  document
+                    .getElementById("employee-pay-outputs")
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                }
+              >
+                2. Review pay &amp; benefits
+              </button>
             </li>
-            <li className="rounded-lg p-3">3. Ready for approval</li>
+            <li className="rounded-lg p-3">3. Generate draft outputs</li>
           </ol>
-          <div className="grid gap-3 sm:grid-cols-3">
-            {[
-              ["Gross pay", selectedGross?.gross],
-              [
-                "Total deductions",
-                selectedGross?.gross ? selectedNet?.deductions : null,
-              ],
-              [
-                "Net pay",
-                selectedGross?.gross && selectedNet
-                  ? Number(selectedGross.gross) - Number(selectedNet.deductions)
-                  : null,
-              ],
-            ].map(([label, value]) => (
-              <div className="rounded-xl border p-4" key={label as string}>
-                <p className="text-sm text-slate-500">{label}</p>
-                <b className="text-xl">
-                  {money(value as string | number | null)}
-                </b>
-              </div>
-            ))}
-          </div>
+          {!selectedIssues.length ? (
+            <div id="employee-pay-outputs" key={`${scope}:${from}:${to}:${selected.id}:${demo?.calculatedAt}`}>
+              <EmployeeTestOutputs
+                scope={scope}
+                from={from}
+                to={to}
+                employeeId={selected.id}
+              />
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-3">
+              {[
+                ["Gross pay", selectedGross?.gross],
+                ["Total deductions", null],
+                ["Net pay", null],
+              ].map(([label, value]) => (
+                <div className="rounded-xl border p-4" key={label as string}>
+                  <p className="text-sm text-slate-500">{label}</p>
+                  <b className="text-xl">
+                    {money(value as string | number | null)}
+                  </b>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="mt-6 overflow-x-auto">
             <table className="w-full min-w-[900px] text-left text-sm">
               <thead>
