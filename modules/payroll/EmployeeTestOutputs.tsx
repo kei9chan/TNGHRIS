@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "../../services/supabaseClient";
+import EmployeePayslipDocument from "./EmployeePayslipDocument";
+import DetailedPayrollCalculationReport from "./DetailedPayrollCalculationReport";
+import { buildStyledPayslipPdf } from "./payslipPdf";
 
 type Line = { label: string; amount: string; date?: string };
 type Slip = {
@@ -20,6 +23,10 @@ type Slip = {
   assumptions: string[];
   calculationVersion: string;
   snapshotHash: string;
+  department?: string;
+  position?: string;
+  payrollStatus?: string;
+  attendanceSummary?: Record<string, string | number>;
 };
 type Output = {
   payload: Slip;
@@ -64,47 +71,8 @@ export function csvCell(value: unknown) {
   );
 }
 export async function payslipPdf(s: Slip, snapshotId: string) {
-  const { jsPDF } = await import("jspdf");
-  const doc = new jsPDF();
-  let y = 20;
-  const line = (text: string, bold = false) => {
-    doc.setFont("helvetica", bold ? "bold" : "normal");
-    doc.setFontSize(bold ? 13 : 10);
-    for (const part of doc.splitTextToSize(text, 175)) {
-      if (y > 275) {
-        doc.addPage();
-        y = 20;
-      }
-      doc.text(part, 17, y);
-      y += 6;
-    }
-  };
-  line("TNG HRIS - TEST / DRAFT PAYSLIP", true);
-  line("NOT FOR PAYMENT OR GOVERNMENT SUBMISSION");
-  line(`${s.employeeName} | ${s.employeeCode}`, true);
-  line(s.businessUnit);
-  line(`Cutoff ${s.from} to ${s.to} | Pay date ${s.payDate}`);
-  line(`Snapshot ${snapshotId}`);
-  line(`Calculation ${s.calculationVersion}`);
-  const amount = (v: string) => "PHP " + Number(v).toFixed(2);
-  line(
-    `Gross ${amount(s.gross)} | Deductions ${amount(s.deductions)} | Net ${amount(s.net)}`,
-    true,
-  );
-  line("Earnings and attendance adjustments", true);
-  s.lines.forEach((x) =>
-    line(`${x.date || ""} ${x.label}: ${amount(x.amount)}`),
-  );
-  line("Government contributions (employee and employer)", true);
-  s.contributions.forEach((x) =>
-    line(`${labels[x.label] || x.label}: ${amount(x.amount)}`),
-  );
-  line(`Withholding tax: ${amount(s.tax)}`);
-  line(`Employer contributions: ${amount(s.employer)}`);
-  line(`Company cost: ${amount(s.employerTotalCost)}`);
-  line("Mock payroll assumptions - not verified compensation", true);
-  s.assumptions.forEach((x) => line(x));
-  return doc.output("blob");
+  void snapshotId;
+  return (await buildStyledPayslipPdf(s, true)).output("blob");
 }
 export default function EmployeeTestOutputs({
   scope,
@@ -372,56 +340,17 @@ export default function EmployeeTestOutputs({
             </div>
           )}
           {showSlip && output.snapshotId && (
-            <article
-              aria-label="Draft payslip preview"
-              className="rounded-xl border p-5"
-            >
-              <h4 className="text-xl font-bold">TEST / DRAFT PAYSLIP</h4>
-              <p>
-                {s.employeeName} · {s.employeeCode} · {s.businessUnit}
-              </p>
-              <p>
-                {from} – {to} · Pay date {s.payDate}
-              </p>
-              <table className="my-4 w-full text-left text-sm">
-                <thead>
-                  <tr>
-                    <th>Date / earnings and adjustments</th>
-                    <th>Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {s.lines.map((x, i) => (
-                    <tr key={i} className="border-t">
-                      <td className="py-2">
-                        {x.date} {x.label}
-                      </td>
-                      <td>{money(x.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <p>
-                Gross {money(s.gross)} − deductions {money(s.deductions)} = net{" "}
-                {money(s.net)}
-              </p>
-              <p className="mt-2 font-bold">
-                Not approved · Not paid · Not for submission
-              </p>
-            </article>
+            <div aria-label="Draft payslip preview">
+              <EmployeePayslipDocument slip={s} test />
+            </div>
           )}
           <details>
-            <summary className="cursor-pointer font-semibold">
-              Calculation assumptions and source
+            <summary className="cursor-pointer font-semibold text-violet-700">
+              View detailed payroll calculation in HRIS
             </summary>
-            <ul className="mt-2 list-disc pl-5 text-sm">
-              {s.assumptions.map((x) => (
-                <li key={x}>{x}</li>
-              ))}
-            </ul>
-            <p className="mt-2 text-xs">
-              Corrected scenario attendance · {s.snapshotHash}
-            </p>
+            <div className="mt-4">
+              <DetailedPayrollCalculationReport slip={s} assumptions={s.assumptions} calculationVersion={s.calculationVersion} snapshotId={output.snapshotId} />
+            </div>
           </details>
           <div className="rounded-lg bg-slate-50 p-4 dark:bg-slate-800">
             <strong>
