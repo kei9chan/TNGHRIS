@@ -20,10 +20,13 @@ import {
   uploadPayPackageDocument,
 } from "./payPackages";
 import {
+  builderLandingMode,
   consultantArrangementVisible,
   groupPayPackageHistory,
   initialBuilderMode,
+  isSecureDocumentLink,
   packageVersionState,
+  payFrequencySummary,
 } from "./payPackageWorkspaceModel";
 
 const field =
@@ -910,6 +913,11 @@ const VersionDetails: React.FC<{
               View source document
             </a>
           )}
+          {item.treatment.supportingDocumentLink && (
+            <a className="font-semibold text-violet-700" href={item.treatment.supportingDocumentLink} target="_blank" rel="noreferrer">
+              Open document link
+            </a>
+          )}
           {item.documents?.map((document) => (
             <button
               type="button"
@@ -929,6 +937,119 @@ const VersionDetails: React.FC<{
             </Button>
           )}
         </div>
+      </div>
+    </div>
+  );
+};
+
+const CurrentPackageSummary: React.FC<{
+  item: PayPackage;
+  data: PayContext;
+  onViewDetails: () => void;
+  onUpdate: () => void;
+}> = ({ item, data, onViewDetails, onUpdate }) => {
+  const scope = data.scopes.find((value) => value.id === item.scope_id);
+  const preview = calculatePackagePreview({
+    baseAmount: item.base_amount,
+    components: item.components,
+    treatment: item.treatment,
+  });
+  const recurringComponents = item.components.filter(
+    (component) => component.status !== "rejected" && component.status !== "not_payable",
+  );
+  return (
+    <div className="space-y-5 xl:col-span-2">
+      <Card>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-2xl font-bold">Current approved package</h2>
+              <StatusChip tone="green">Active</StatusChip>
+            </div>
+            <p className="mt-1 text-sm text-slate-500">
+              {scope?.name || "Payroll scope"} · Effective {item.effective_from}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={onViewDetails}>
+              View full details
+            </Button>
+            <Button onClick={onUpdate}>Create package update</Button>
+          </div>
+        </div>
+
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
+          <div className="rounded-2xl bg-violet-50 p-5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-violet-600">Basic salary</p>
+            <p className="mt-2 text-3xl font-bold text-violet-950">{money(item.base_amount)}</p>
+            <p className="mt-1 text-sm text-violet-700">{payFrequencySummary(item.rate_type)}</p>
+          </div>
+          <div className="rounded-2xl bg-emerald-50 p-5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Payroll availability</p>
+            <p className="mt-2 text-xl font-bold text-emerald-950">Ready for payroll</p>
+            <p className="mt-1 text-sm text-emerald-700">The approved package is the active compensation record.</p>
+          </div>
+          <div className="rounded-2xl bg-slate-900 p-5 text-white">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-300">Package source</p>
+            <p className="mt-2 text-xl font-bold">{sourceLabel(item)}</p>
+            <p className="mt-1 text-sm text-slate-300">Version {item.version_no || 1} · Approved</p>
+          </div>
+        </div>
+
+        <section className="mt-5 rounded-2xl border border-violet-200 bg-violet-50/50 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-bold text-violet-950">Twice-monthly payroll schedule</p>
+              <p className="mt-1 text-sm text-violet-700">The salary basis is monthly; payroll releases it across two cutoffs.</p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-sm font-semibold">
+              <span className="rounded-full bg-white px-3 py-2 text-violet-800">11–25 cutoff → paid on the 5th</span>
+              <span className="rounded-full bg-white px-3 py-2 text-violet-800">26–10 cutoff → paid on the 20th</span>
+            </div>
+          </div>
+        </section>
+      </Card>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Card>
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-lg font-bold">Compensation summary</h3>
+            <StatusChip tone="green">Approved</StatusChip>
+          </div>
+          <dl className="mt-4 space-y-3 text-sm">
+            <div className="flex justify-between gap-4"><dt className="text-slate-500">Basic pay</dt><dd className="font-bold">{money(item.base_amount)}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-slate-500">Allowances and approved additions</dt><dd className="font-bold">{money(preview.employee.taxableAllowances + preview.employee.deMinimis + preview.employee.reimbursements + preview.employee.serviceCharge)}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-slate-500">Known monthly package value</dt><dd className="font-bold text-emerald-700">{money(preview.company.grossEmployeePay + preview.company.serviceCharge)}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-slate-500">Tax treatment</dt><dd className="max-w-[60%] text-right font-semibold">{arrangementSummary(item.treatment)}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-slate-500">Employee deductions</dt><dd className="font-semibold">Calculated during payroll</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-slate-500">Employer contributions</dt><dd className="font-semibold">Calculated during payroll</dd></div>
+          </dl>
+          <p className="mt-4 rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
+            Statutory tax and government contributions are calculated in the payroll run. Their absence here does not make this approved package incomplete.
+          </p>
+        </Card>
+        <Card>
+          <h3 className="text-lg font-bold">Components and documents</h3>
+          {recurringComponents.length ? (
+            <div className="mt-4 divide-y divide-slate-100 dark:divide-slate-700">
+              {recurringComponents.map((component, index) => (
+                <div className="flex items-center justify-between gap-3 py-3 text-sm" key={`${component.name}:${index}`}>
+                  <div><p className="font-semibold">{component.name}</p><p className="text-xs text-slate-500">{component.frequency || component.recurrence}</p></div>
+                  <strong>{money(component.amount)}</strong>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-4 rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">No additional allowances or benefits are attached to this package.</p>
+          )}
+          <div className="mt-4 flex flex-wrap gap-3 border-t border-slate-200 pt-4 dark:border-slate-700">
+            {item.source_pan_id && <a className="font-semibold text-violet-700" href={`/employees/pan?item=${item.source_pan_id}`}>View approved PAN</a>}
+            {item.source_metadata?.sourceDocument?.url && <a className="font-semibold text-violet-700" href={item.source_metadata.sourceDocument.url} target="_blank" rel="noreferrer">Open source document</a>}
+            {item.treatment.supportingDocumentLink && <a className="font-semibold text-violet-700" href={item.treatment.supportingDocumentLink} target="_blank" rel="noreferrer">Open document link</a>}
+            {item.documents?.map((document) => <button type="button" className="font-semibold text-violet-700" key={document.id} onClick={() => void openPayPackageDocument(document.path)}>View {document.name}</button>)}
+            {!item.source_pan_id && !item.source_metadata?.sourceDocument?.url && !item.treatment.supportingDocumentLink && !item.documents?.length && <span className="text-sm text-slate-500">No supporting document attached.</span>}
+          </div>
+        </Card>
       </div>
     </div>
   );
@@ -955,8 +1076,8 @@ const LiveSummary: React.FC<{
       <Card>
         <div className="flex items-center justify-between gap-2">
           <h2 className="font-bold">Live package summary</h2>
-          <StatusChip tone={source?.status === "approved" ? "green" : "amber"}>
-            {source ? approvalLabel(source) : "Draft"}
+          <StatusChip tone="amber">
+            {mode === "update" ? "Draft update" : "Draft"}
           </StatusChip>
         </div>
         <p className="mt-1 text-xs text-slate-500">
@@ -987,7 +1108,7 @@ const LiveSummary: React.FC<{
           <div className="flex justify-between gap-3"><dt className="text-slate-500">Tax treatment</dt><dd className="text-right font-semibold">{arrangementSummary(treatment)}</dd></div>
           <div className="flex justify-between gap-3"><dt className="text-slate-500">Effective date</dt><dd className="font-semibold">{effective || "Missing"}</dd></div>
           <div className="flex justify-between gap-3"><dt className="text-slate-500">Package source</dt><dd className="text-right font-semibold">{sourceLabel(source)}</dd></div>
-          <div className="flex justify-between gap-3"><dt className="text-slate-500">Approval status</dt><dd className="font-semibold">{source ? approvalLabel(source) : "Draft"}</dd></div>
+          <div className="flex justify-between gap-3"><dt className="text-slate-500">Approval status</dt><dd className="font-semibold">Draft — not submitted</dd></div>
         </dl>
         {pending && (
           <p className="mt-4 rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
@@ -1095,6 +1216,9 @@ const PayPackageBuilder: React.FC<{
   const [mode, setMode] = useState<BuilderMode>(
     initial ? "update" : initialBuilderMode(data.packages),
   );
+  const [workspaceMode, setWorkspaceMode] = useState<"current" | "edit">(
+    initial || builderLandingMode(data.packages) === "initial" ? "edit" : "current",
+  );
   const [sourcePackage, setSourcePackage] = useState<PayPackage | undefined>(
     seedPackage,
   );
@@ -1140,6 +1264,9 @@ const PayPackageBuilder: React.FC<{
       : seedPackage?.treatment?.payBasis || "gross",
   );
   const [document, setDocument] = useState<File | null>(null);
+  const [documentLink, setDocumentLink] = useState(
+    seedPackage?.treatment?.supportingDocumentLink || "",
+  );
   const [consultantEnabled, setConsultantEnabled] = useState(false);
   const [consultantScope, setConsultantScope] = useState(
     data.scopes.find((item) => item.canEdit && item.id !== data.scopeId)?.id || "",
@@ -1150,6 +1277,7 @@ const PayPackageBuilder: React.FC<{
   const [consultantFrequency, setConsultantFrequency] = useState("Per invoice");
   const [consultantTax, setConsultantTax] = useState("");
   const [consultantDocument, setConsultantDocument] = useState<File | null>(null);
+  const [consultantDocumentLink, setConsultantDocumentLink] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -1157,6 +1285,7 @@ const PayPackageBuilder: React.FC<{
   const editableScopes = data.scopes.filter((s) => s.canEdit && s.employeePayroll !== false);
   const consultantScopes = data.scopes.filter((s) => s.canEdit);
   const copyPackage = (item: PayPackage) => {
+    setWorkspaceMode("edit");
     if (item.stream === "professional_fee") {
       setMode("update");
       setConsultantEnabled(true);
@@ -1190,6 +1319,7 @@ const PayPackageBuilder: React.FC<{
         : item.source_ref || "Copied from previous approved package",
     );
     setReason("");
+    setDocumentLink(item.treatment.supportingDocumentLink || "");
     setStep(1);
   };
   const updateBasis = (choice: string) => {
@@ -1211,6 +1341,11 @@ const PayPackageBuilder: React.FC<{
           : old.netTarget || base,
     }));
   };
+  const consultantEvidenceReady = Boolean(
+    consultantDocument || isSecureDocumentLink(consultantDocumentLink),
+  );
+  const documentLinkReady =
+    !documentLink || isSecureDocumentLink(documentLink);
   const canContinue =
     step === 1
       ? Boolean(
@@ -1224,7 +1359,8 @@ const PayPackageBuilder: React.FC<{
               consultantEntity.trim().length >= 2 &&
               Number(consultantFee) > 0 &&
               consultantTax.trim().length >= 3 &&
-              consultantDocument)),
+              consultantEvidenceReady)) &&
+          documentLinkReady,
         )
       : step === 2
         ? Boolean(
@@ -1265,6 +1401,9 @@ const PayPackageBuilder: React.FC<{
         components: normalized,
         treatment: {
           ...treatment,
+          supportingDocumentLink: documentLink.trim(),
+          payFrequency:
+            rate === "Monthly" ? "twice_monthly_5th_20th" : rate,
           coverageMode: basisChoice,
           submissionIntent: intent,
           calculationVersion: "pay-package-builder-v2",
@@ -1311,6 +1450,7 @@ const PayPackageBuilder: React.FC<{
               payFrequency: consultantFrequency,
               contractingEntity: consultantEntity,
               consultantTaxTreatment: consultantTax,
+              supportingDocumentLink: consultantDocumentLink.trim(),
               calculationVersion: "pay-package-builder-v3",
               entrySource: "direct_consultant_arrangement",
             },
@@ -1350,8 +1490,59 @@ const PayPackageBuilder: React.FC<{
   ];
   const consultantScopeName =
     data.scopes.find((item) => item.id === consultantScope)?.name || "";
+  if (workspaceMode === "current" && currentPackage) {
+    return (
+      <div className="space-y-5">
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <strong>Approved compensation is active</strong>
+              <p className="mt-1 text-sm text-emerald-800">
+                Review the current package below. Start an update only when compensation needs to change.
+              </p>
+            </div>
+            <StatusChip tone="green">Ready for payroll</StatusChip>
+          </div>
+        </div>
+        <div className="grid gap-5 xl:grid-cols-[290px,minmax(0,1fr),310px]">
+          <PackageHistory
+            data={data}
+            employee={employee}
+            selected={currentPackage}
+            onSelect={setViewingVersion}
+            onCopy={copyPackage}
+          />
+          <CurrentPackageSummary
+            item={currentPackage}
+            data={data}
+            onViewDetails={() => setViewingVersion(currentPackage)}
+            onUpdate={() => copyPackage(currentPackage)}
+          />
+        </div>
+        {viewingVersion && (
+          <VersionDetails
+            item={viewingVersion}
+            data={data}
+            onClose={() => setViewingVersion(null)}
+            onCopy={copyPackage}
+          />
+        )}
+      </div>
+    );
+  }
   return (
     <div className="space-y-5">
+      {currentPackage ? (
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-violet-200 bg-violet-50 p-4">
+          <div>
+            <strong className="text-violet-950">Create a new package version</strong>
+            <p className="mt-1 text-sm text-violet-700">The current approved package remains active until this change is approved and reaches its effective date.</p>
+          </div>
+          <Button variant="secondary" onClick={() => setWorkspaceMode("current")}>
+            ← Back to current package
+          </Button>
+        </div>
+      ) : (
       <div className="grid gap-3 md:grid-cols-2">
         <button
           type="button"
@@ -1378,6 +1569,7 @@ const PayPackageBuilder: React.FC<{
           <span className="mt-1 block text-sm">Create a new dated version without replacing history.</span>
         </button>
       </div>
+      )}
       <div className="grid gap-2 sm:grid-cols-4">
         {steps.map((label, index) => {
           const value = index + 1;
@@ -1455,18 +1647,33 @@ const PayPackageBuilder: React.FC<{
                     onChange={(e) => setEffective(e.target.value)}
                   />
                 </Label>
-                <Label title="Pay frequency">
+                <Label title="Salary basis">
                   <select
                     className={field}
                     value={rate}
                     onChange={(e) => setRate(e.target.value)}
                   >
-                    {["Monthly", "Daily", "Hourly", "Per invoice"].map((v) => (
-                      <option key={v}>{v}</option>
-                    ))}
+                    <option value="Monthly">Monthly salary</option>
+                    <option value="Daily">Daily rate</option>
+                    <option value="Hourly">Hourly rate</option>
+                    <option value="Per invoice">Per invoice</option>
                   </select>
                 </Label>
               </div>
+              {rate === "Monthly" && (
+                <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="font-bold text-violet-950">Paid twice monthly</p>
+                      <p className="mt-1 text-sm text-violet-700">“Monthly” is the salary basis—not one payment per month.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs font-semibold text-violet-800">
+                      <span className="rounded-full bg-white px-3 py-2">11–25 → release on the 5th</span>
+                      <span className="rounded-full bg-white px-3 py-2">26–10 → release on the 20th</span>
+                    </div>
+                  </div>
+                </div>
+              )}
               <>
                   <div className="rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-900">
                     <strong>
@@ -1493,9 +1700,21 @@ const PayPackageBuilder: React.FC<{
               <Label title="Supporting document or source">
                 <input className={field} value={sourceRef} onChange={(e) => setSourceRef(e.target.value)} placeholder="Approved source, policy, or document reference" />
               </Label>
-              <Label title="Upload supporting document" hint="PDF, JPG, or PNG. The document remains attached to this package version.">
-                <input className={field} type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(event) => setDocument(event.target.files?.[0] || null)} />
-              </Label>
+              <div>
+                <p className="text-sm font-medium">Supporting evidence</p>
+                <p className="mt-1 text-xs text-slate-500">Choose an upload, a secure link, or provide both.</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <Label title="Upload document" hint="PDF, JPG, or PNG.">
+                    <input className={field} type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(event) => setDocument(event.target.files?.[0] || null)} />
+                  </Label>
+                  <Label title="Add secure document link" hint="Google Drive, SharePoint, Dropbox, or another approved HTTPS source.">
+                    <input className={field} type="url" value={documentLink} onChange={(event) => setDocumentLink(event.target.value)} placeholder="https://..." />
+                  </Label>
+                </div>
+                {documentLink && !isSecureDocumentLink(documentLink) && (
+                  <p className="mt-2 text-xs font-semibold text-rose-700">Use a complete secure link beginning with https://</p>
+                )}
+              </div>
             </div>
             <section className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
               <label className="flex cursor-pointer items-start gap-3">
@@ -1510,7 +1729,8 @@ const PayPackageBuilder: React.FC<{
                   <Label title="Fee amount"><input className={field} type="number" min="0" value={consultantFee} onChange={(event) => setConsultantFee(event.target.value)} /></Label>
                   <Label title="Fee frequency"><select className={field} value={consultantFrequency} onChange={(event) => setConsultantFrequency(event.target.value)}>{["Per invoice", "Monthly", "Daily", "Hourly"].map((value) => <option key={value}>{value}</option>)}</select></Label>
                   <Label title="Tax treatment"><input className={field} value={consultantTax} onChange={(event) => setConsultantTax(event.target.value)} placeholder="Reviewed withholding treatment" /></Label>
-                  <Label title="Invoice or supporting document"><input className={field} type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(event) => setConsultantDocument(event.target.files?.[0] || null)} /></Label>
+                  <Label title="Upload invoice or supporting document"><input className={field} type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(event) => setConsultantDocument(event.target.files?.[0] || null)} /></Label>
+                  <Label title="Or add secure document link" hint="Required when no file is uploaded."><input className={field} type="url" value={consultantDocumentLink} onChange={(event) => setConsultantDocumentLink(event.target.value)} placeholder="https://..." /></Label>
                 </div>
               )}
             </section>
@@ -1600,25 +1820,17 @@ const PayPackageBuilder: React.FC<{
                 ]}
               />
             </Label>
-            <Label title="Pay frequency">
-              <select
-                className={field}
-                value={treatment.payFrequency || rate}
-                onChange={(e) =>
-                  setTreatment({ ...treatment, payFrequency: e.target.value })
-                }
-              >
-                {[
-                  "Monthly",
-                  "Daily",
-                  "Hourly",
-                  "Per invoice",
-                  "Other approved frequency",
-                ].map((v) => (
-                  <option key={v}>{v}</option>
-                ))}
-              </select>
-            </Label>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900">
+              <p className="text-sm font-medium">Payroll release schedule</p>
+              <p className="mt-2 font-bold">
+                {rate === "Monthly"
+                  ? "Twice monthly — releases on the 5th and 20th"
+                  : payFrequencySummary(rate)}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Monthly salary is split across the standard 11–25 and 26–10 payroll cutoffs.
+              </p>
+            </div>
             {["net_tax", "net_all"].includes(basisChoice) && (
               <>
                 <Label title="Agreed net amount">
