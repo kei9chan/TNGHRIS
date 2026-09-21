@@ -19,6 +19,7 @@ export default function BodScheduleWorkflow() {
  const [data,setData] = useState<Workflow|null>(null), [week,setWeek] = useState(''), [revision,setRevision] = useState(0);
  const [error,setError] = useState(''), [notice,setNotice] = useState(''), [busy,setBusy] = useState(false), [open,setOpen] = useState(false);
  const [entries,setEntries] = useState<Entry[]>([]), [reason,setReason] = useState(''), [reviewReasons,setReviewReasons] = useState<Record<string,string>>({});
+ const [reviewBusy,setReviewBusy] = useState<string|null>(null), [reviewErrors,setReviewErrors] = useState<Record<string,string>>({}), [reviewNotices,setReviewNotices] = useState<Record<string,string>>({});
  useEffect(() => {
   let active=true;
   const load=() => { void rpc('get_bod_schedule_workflow',{p_week:week||null}).then((value:Workflow) => {
@@ -34,6 +35,19 @@ export default function BodScheduleWorkflow() {
   try {await rpc(name,args);setNotice(message);setOpen(false);setRevision(v=>v+1);}
   catch(e) {setError((e as Error).message);} finally {setBusy(false);}
  }
+ async function review(id: string, version: number, approve: boolean) {
+  const typedReason=(reviewReasons[id]||'').trim();
+  const decisionReason=typedReason || (approve ? 'Approved' : 'Please revise the submitted schedule');
+  setReviewBusy(id);setReviewErrors(r=>({...r,[id]:''}));setReviewNotices(r=>({...r,[id]:''}));
+  try {
+   await rpc('review_bod_schedule_submission',{p_id:id,p_version:version,p_approve:approve,p_reason:decisionReason});
+   setReviewNotices(r=>({...r,[id]:approve?'Schedule approved and published.':'Schedule returned to the employee for revision.'}));
+   setReviewReasons(r=>({...r,[id]:''}));
+   setRevision(v=>v+1);
+  } catch(e) {
+   setReviewErrors(r=>({...r,[id]:(e as Error).message || 'The schedule decision could not be saved. Please retry.'}));
+  } finally {setReviewBusy(null);}
+ }
  const approver=data?.managerRole==='GM'?'GM':'BOD';
  function edit() {
   if(!data)return;
@@ -45,7 +59,7 @@ export default function BodScheduleWorkflow() {
   setReason(data.submission?.reason||'');setOpen(true);
  }
  return <>
-  {error&&<div className={box} role="alert">{error} <button className="underline" onClick={()=>setRevision(v=>v+1)}>Retry</button></div>}
+  {error&&<div className={box} role="alert">{error} <button type="button" className="underline" onClick={()=>setRevision(v=>v+1)}>Retry</button></div>}
   {notice&&<p className={box} role="status">{notice}</p>}
   {data&&!data.isBod&&!data.isGm&&<ScheduleTask />}
   {data?.eligible&&!data.isBod&&<section id="my-schedule-submission" className={box}>
@@ -55,7 +69,7 @@ export default function BodScheduleWorkflow() {
    {data.task?.exempt&&<p>No schedule is required for your exempt dates.</p>}
    {data.submission?.review_reason&&<p className="my-2">{approver} feedback: {data.submission.review_reason}</p>}
    {data.submission?.status==='Rejected'&&<p className="my-2 font-semibold">Please revise and resubmit your schedule.</p>}
-   {!open?<button className={button} onClick={edit}>{data.submission?'View / revise schedule':'Prepare my schedule'}</button>:<div className="mt-4 space-y-3">
+   {!open?<button type="button" className={button} onClick={edit}>{data.submission?'View / revise schedule':'Prepare my schedule'}</button>:<div className="mt-4 space-y-3">
     {entries.map((entry,i)=><label key={entry.date} className="grid gap-2 sm:grid-cols-[10rem_1fr]"><span>{dateLabel(entry.date)}</span><select className={input} value={entry.restDay?'rest':entry.templateId||''} onChange={e=>setEntries(rows=>rows.map((row,index)=>index===i?{...row,templateId:e.target.value==='rest'?null:e.target.value||null,restDay:e.target.value==='rest'}:row))}>
      <option value="">Keep existing schedule / approved leave / exemption</option>
      <option value="rest">Rest Day</option>
@@ -64,7 +78,7 @@ export default function BodScheduleWorkflow() {
     <p className="text-sm">Choose a shift or rest-day preset for every unscheduled date. Existing HR statuses must be kept. Changes take effect only after approval.</p>
     {!data.templates.length&&<p role="alert">No business-unit presets are available. Ask HR to configure them before submitting.</p>}
     <label className="block">Schedule notes <span className="font-normal text-slate-500 dark:text-slate-300">(optional)</span><textarea className={input} maxLength={1000} value={reason} onChange={e=>setReason(e.target.value)}/></label>
-    <div className="flex gap-3"><button disabled={busy} className={button} onClick={()=>action('submit_my_bod_schedule',{p_week:data.week,p_entries:entries.map(({date,templateId,restDay})=>({date,templateId,restDay:!!restDay})),p_reason:reason},`Schedule submitted to your ${approver} for approval.`)}>{busy?'Submitting…':`Submit for ${approver} approval`}</button><button disabled={busy} className="underline" onClick={()=>setOpen(false)}>Close</button></div>
+    <div className="flex gap-3"><button type="button" disabled={busy} className={button} onClick={()=>action('submit_my_bod_schedule',{p_week:data.week,p_entries:entries.map(({date,templateId,restDay})=>({date,templateId,restDay:!!restDay})),p_reason:reason},`Schedule submitted to your ${approver} for approval.`)}>{busy?'Submitting…':`Submit for ${approver} approval`}</button><button type="button" disabled={busy} className="underline" onClick={()=>setOpen(false)}>Close</button></div>
    </div>}
   </section>}
   {data?.isGm&&!data.isBod&&<section className={box}><h2 className="text-xl font-bold">Review your direct reports’ schedules</h2><p className="mt-2">Employees who report directly to you prepare and submit their own schedules. Approve or return their submissions here; schedules take effect only after approval.</p>{!data.pending.length&&<p className="mt-2">No schedules are awaiting your approval.</p>}</section>}
@@ -75,8 +89,10 @@ export default function BodScheduleWorkflow() {
     <summary className="cursor-pointer font-semibold">{s.employeeName} · Week of {dateLabel(s.week)} · Review schedule</summary>
     <p className="my-3">{s.reason}</p>
     <ul className="space-y-2">{s.schedule.map(e=><li key={e.date}>{dateLabel(e.date)} — {e.name}{e.start&&` · ${e.start}–${e.end}`}</li>)}</ul>
-    <label className="mt-3 block">Decision / revision reason<textarea maxLength={1000} className={input} value={reviewReasons[s.id]||''} onChange={e=>setReviewReasons(r=>({...r,[s.id]:e.target.value}))}/></label>
-    <div className="mt-3 flex gap-3">{[true,false].map(approve=><button key={String(approve)} disabled={busy||(reviewReasons[s.id]||'').trim().length<3} className={button} onClick={()=>action('review_bod_schedule_submission',{p_id:s.id,p_version:s.version,p_approve:approve,p_reason:reviewReasons[s.id]},approve?'Schedule approved and published.':'Schedule returned to the employee for revision.')}>{busy?'Saving…':approve?'Approve schedule':'Reject / request revision'}</button>)}</div>
+    <label className="mt-3 block">Decision / revision reason <span className="font-normal text-slate-500 dark:text-slate-300">(optional — a standard audit note is used when blank)</span><textarea aria-label={`Decision / revision reason for ${s.employeeName}`} maxLength={1000} className={input} value={reviewReasons[s.id]||''} onChange={e=>setReviewReasons(r=>({...r,[s.id]:e.target.value}))}/></label>
+    {reviewErrors[s.id]&&<p className="mt-3 rounded-lg border border-red-300 bg-red-50 p-3 text-red-800" role="alert">{reviewErrors[s.id]}</p>}
+    {reviewNotices[s.id]&&<p className="mt-3 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-emerald-800" role="status">{reviewNotices[s.id]}</p>}
+    <div className="mt-3 flex flex-wrap gap-3">{[true,false].map(approve=><button type="button" key={String(approve)} disabled={reviewBusy!==null} aria-busy={reviewBusy===s.id} className={button} onClick={()=>void review(s.id,s.version,approve)}>{reviewBusy===s.id?'Saving…':approve?'Approve schedule':'Reject / request revision'}</button>)}</div>
    </details>)}
   </section>}
  </>;
