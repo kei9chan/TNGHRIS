@@ -55,3 +55,24 @@ export const initialBuilderMode = (packages: PayPackage[]) =>
     : "initial";
 
 export const consultantArrangementVisible = (enabled: boolean) => enabled;
+
+export const builderLandingMode = (packages: PayPackage[]) =>
+  packages.some(
+    (item) => item.stream === "employee_payroll" && item.status === "approved",
+  )
+    ? "current"
+    : "initial";
+
+export const isSecureDocumentLink = (value: string) => {
+  if (!value.trim()) return false;
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+};
+
+export const payFrequencySummary = (rateType: string) =>
+  rateType === "Monthly"
+    ? "Monthly salary · released twice monthly on the 5th and 20th"
+    : rateType;
