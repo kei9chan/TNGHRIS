@@ -16,9 +16,9 @@ function PayTable({title, rows, totalLabel, total}: {title: string; rows: {label
   if (!rows.length) return null;
   return <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
     <h3 className="bg-gradient-to-r from-blue-50 to-violet-50 px-5 py-4 text-base font-extrabold uppercase tracking-wide text-[#172d63]">{title}</h3>
-    <table className="w-full text-sm">
-      <thead className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3">Description</th><th className="px-3 py-3">Units</th><th className="px-5 py-3 text-right">Amount</th></tr></thead>
-      <tbody>{rows.map((row, index) => <tr className="border-b border-slate-100 last:border-0" key={`${row.label}:${index}`}><td className="px-5 py-3 font-medium text-slate-800">{row.label}</td><td className="px-3 py-3 text-slate-500">{row.units || '—'}</td><td className="whitespace-nowrap px-5 py-3 text-right font-semibold tabular-nums text-slate-900">{peso(row.amount)}</td></tr>)}</tbody>
+    <table className="w-full table-fixed text-sm">
+      <thead className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500"><tr><th className="w-[48%] px-5 py-3">Description</th><th className="w-[20%] px-3 py-3">Units</th><th className="w-[32%] px-5 py-3 text-right">Amount</th></tr></thead>
+      <tbody>{rows.map((row, index) => <tr className="border-b border-slate-100 last:border-0" key={`${row.label}:${index}`}><td className="break-words px-5 py-3 font-medium text-slate-800">{row.label}</td><td className="whitespace-nowrap px-3 py-3 text-slate-500">{row.units || '—'}</td><td className="whitespace-nowrap px-5 py-3 text-right font-semibold tabular-nums text-slate-900">{peso(row.amount)}</td></tr>)}</tbody>
       <tfoot><tr className="bg-slate-50 font-extrabold text-[#172d63]"><td className="px-5 py-4" colSpan={2}>{totalLabel}</td><td className="whitespace-nowrap px-5 py-4 text-right tabular-nums">{peso(total)}</td></tr></tfoot>
     </table>
   </section>;

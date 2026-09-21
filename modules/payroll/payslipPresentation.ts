@@ -68,12 +68,16 @@ export const isActualAmount = (value: unknown) =>
 
 export const friendlyContribution = (label = '') => contributionLabels[label] || label;
 
+const displayQuantity = (value: string | number) =>
+  new Intl.NumberFormat('en-PH', {maximumFractionDigits: 2}).format(Number(value));
+
 const units = (line: PayslipLine) => {
   if (line.quantity === null || line.quantity === undefined || line.quantity === '') return undefined;
   const label = line.label || '';
-  if (/late/i.test(label)) return `${line.quantity} min`;
-  if (/day|leave|absence|holiday/i.test(label)) return `${line.quantity} day${Number(line.quantity) === 1 ? '' : 's'}`;
-  return `${line.quantity} hr${Number(line.quantity) === 1 ? '' : 's'}`;
+  const quantity = displayQuantity(line.quantity);
+  if (/late/i.test(label)) return `${quantity} min`;
+  if (/day|leave|absence|holiday/i.test(label)) return `${quantity} day${Number(line.quantity) === 1 ? '' : 's'}`;
+  return `${quantity} hr${Number(line.quantity) === 1 ? '' : 's'}`;
 };
 
 const aggregate = (rows: DisplayRow[]) => {
