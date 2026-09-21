@@ -125,6 +125,7 @@ const PayPackagesPage: React.FC = () => {
           ].some((value) => value?.toLowerCase().includes(query))),
     );
   }, [directory, businessUnit, department, search]);
+  const selectedEmployee = directory.find((item) => item.id === employeeId);
   const select = (id: string) => {
     setEmployeeId(id);
     setInitial(undefined);
@@ -178,8 +179,8 @@ const PayPackagesPage: React.FC = () => {
         ))}
       </nav>
       {view !== "batch" && (
-        <div className="grid gap-5 lg:grid-cols-[310px,minmax(0,1fr)]">
-          <aside className="space-y-4">
+        <div className={`grid gap-5 ${view === "review" ? "lg:grid-cols-[310px,minmax(0,1fr)]" : ""}`}>
+          <aside className={`space-y-4 ${view === "builder" ? "hidden" : ""}`}>
             <Card>
               <h2 className="font-semibold">Find a person</h2>
               <label className="mt-4 block text-sm font-medium">
@@ -262,7 +263,57 @@ const PayPackagesPage: React.FC = () => {
               </Link>
             </p>
           </aside>
-          <main>
+          <main className="space-y-5">
+            {view === "builder" && (
+              <Card>
+                <div className="grid items-end gap-3 md:grid-cols-[minmax(220px,1.5fr),1fr,1fr,minmax(250px,1.5fr)]">
+                  <label className="text-sm font-medium">
+                    Find a person
+                    <input
+                      className={`${field} mt-1`}
+                      type="search"
+                      value={search}
+                      onChange={(event) => setSearch(event.target.value)}
+                      placeholder="Search name or employee ID"
+                    />
+                  </label>
+                  <label className="text-sm font-medium">
+                    Business unit
+                    <select
+                      className={`${field} mt-1`}
+                      value={businessUnit}
+                      onChange={(event) => {
+                        setBusinessUnit(event.target.value);
+                        setDepartment("");
+                      }}
+                    >
+                      <option value="">All business units</option>
+                      {units.map((value) => <option key={value}>{value}</option>)}
+                    </select>
+                  </label>
+                  <label className="text-sm font-medium">
+                    Department
+                    <select className={`${field} mt-1`} value={department} onChange={(event) => setDepartment(event.target.value)}>
+                      <option value="">All departments</option>
+                      {departments.map((value) => <option key={value}>{value}</option>)}
+                    </select>
+                  </label>
+                  <label className="text-sm font-medium">
+                    Employee
+                    <select className={`${field} mt-1`} value={employeeId} onChange={(event) => select(event.target.value)}>
+                      {filtered.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name} · {item.employeeCode} · {item.businessUnit || "Unit pending"}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <p className="mt-3 text-xs text-slate-500">
+                  Employee results follow payroll permissions, business-unit scope, and row-level security.
+                </p>
+              </Card>
+            )}
             {error && (
               <p
                 role="alert"
@@ -283,6 +334,7 @@ const PayPackagesPage: React.FC = () => {
                 <PayPackageBuilder
                   key={`${data.employeeId}:${initial?.id || "new"}`}
                   data={data}
+                  employee={selectedEmployee}
                   initial={initial}
                   onSaved={refresh}
                 />
