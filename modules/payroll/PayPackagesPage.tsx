@@ -485,14 +485,18 @@ const ReviewWorkspace: React.FC<{
       ) : (
         visible.map((item) => {
           const scope = data.scopes.find((value) => value.id === item.scope_id);
-          const nextApprover = item.approval_steps?.find(
-            (step) => step.status === "Pending",
+          const assignedApproval = item.approval_steps?.find(
+            (step) => step.status === "Pending" && step.userId === user?.id,
           );
           const canApprove =
             item.source_kind !== "approved_pan" &&
             item.status === "draft" &&
             item.approval_state === "pending" &&
-            (!!scope?.canApprove || nextApprover?.userId === user?.id);
+            (!!assignedApproval ||
+              (!!scope?.canApprove &&
+                item.approval_steps?.some(
+                  (step) => step.status === "Pending" && step.userId === user?.id,
+                )));
           const sourceLabel =
             item.source_kind === "approved_pan"
               ? "Generated from approved PAN"
@@ -632,6 +636,12 @@ const ReviewWorkspace: React.FC<{
               {!!item.approval_steps?.length && (
                 <div className="mt-4 rounded-xl border border-slate-200 p-4 text-sm dark:border-slate-700">
                   <strong>Compensation approval</strong>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Two-person approval is required. An authorized approver's
+                    submission plus one independent review completes the
+                    package; HR Staff submissions require two assigned
+                    reviewers. The submitter cannot review their own package.
+                  </p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {item.approval_steps.map((step) => (
                       <span
