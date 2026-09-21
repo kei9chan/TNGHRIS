@@ -330,7 +330,9 @@ const PersonnelActionNotice: React.FC = () => {
       setPanForApproval(null);
       setIsModalOpen(false);
       setSelectedRecord(null);
-      decisionSaved('Your PAN approval was recorded.');
+      decisionSaved(data.status === PANStatus.PendingEmployee
+        ? 'PAN approved. Pay package and employee compensation profile were updated automatically.'
+        : 'Your PAN approval was recorded.');
       // Re-read backend eligibility: never advance using stale local routing steps.
       try {
         const tasks = await fetchActionableApprovalTasks(user.id);

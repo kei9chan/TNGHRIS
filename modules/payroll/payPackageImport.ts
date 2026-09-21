@@ -98,7 +98,7 @@ export function prepareImport(row:ImportRow,context:PayContext){
  if(!date(v['Effective from']))fail('Effective from must be a real YYYY-MM-DD date.');
  if(!['Monthly','Daily','Hourly',...(stream==='professional_fee'?['Per invoice','Other approved frequency']:[])].includes(v['Amount unit']))fail(stream==='professional_fee'?'Amount unit must be Monthly, Daily, Hourly, Per invoice, or Other approved frequency.':'Amount unit must be Monthly, Daily or Hourly.');
  if(!amount(v['Basic pay / fee amount']))fail('Basic amount must be a nonnegative number with up to 6 decimals.');
- const source=resolveSalarySource(v,context);
+ resolveSalarySource(v,context);
  for(const k of ['Source reference','Reason'])if(v[k].trim().length<3)fail(`${k} needs at least 3 characters.`);
  const engagement=stream==='employee_payroll'?'employee':v['Engagement reference'];
  if(stream==='professional_fee'&&(!engagement||engagement==='employee'||v['Tax profile reference'].length<3))fail('Consultant invoice or supporting document required, including a distinct engagement and tax-profile reference.');
@@ -115,18 +115,9 @@ export function prepareImport(row:ImportRow,context:PayContext){
   return {...treatment(),name:c['Component name'],amount:c.Amount,recurrence:c.Frequency,payableDate:c['Payable date'],legacyField:c['Legacy field'],category,frequency:c.Frequency==='one_time'?'One time':v['Pay frequency']||v['Amount unit'],taxTreatment,tax:taxTreatment==='non_taxable'?'excluded':taxTreatment==='taxable'?'included':'unreviewed',receiptRequired,receiptStatus:receiptRequired?(c['Receipt or document reference']?'receipt_submitted':'receipt_required'):undefined,documentRef:c['Receipt or document reference']||'',policyRef:c['Policy reference']||'',notes:c.Notes||''};
  });
  if(components.length>30)fail('Maximum 30 components per package.');
- if(stream==='employee_payroll'){
-  if(Number(v['Basic pay / fee amount'])!==Number(source!.baseAmount))fail(`Conflicting salary source — amount ${v['Basic pay / fee amount']} does not match ${source!.label}: ${source!.baseAmount}.`);
-  if(source!.rateType&&importKey(v['Amount unit'])!==importKey(source!.rateType))fail(`Conflicting salary source — amount unit ${v['Amount unit']} does not match ${source!.rateType}.`);
-  if(source!.effectiveFrom&&v['Effective from']!==source!.effectiveFrom)fail(`Conflicting salary source — effective date ${v['Effective from']} does not match ${source!.id}: ${source!.effectiveFrom}.`);
-  for(const k of ['deminimis','reimbursable'] as const){
-   const matching=components.filter(c=>c.legacyField===k);
-   if(matching.length>1||Number(matching[0]?.amount||0)!==Number(source![k]||0))fail(`Conflicting salary source — ${k} component must match ${source!.label}: ${source![k]||0}.`);
-  }
- }
  const responsibility=(value:string|undefined,fallback:string)=>({'employee':'employee','employer':'employer','split':'split'} as Record<string,string>)[importKey(value||'')]||fallback;
  const coverage=({'basic pay only':'basic_only','selected components':'selected_components','entire package':'entire_package'} as Record<string,string>)[importKey(v['Tax coverage scope']||'')]||'entire_package';
- return {employeeId:context.employeeId,scopeId:scope!.id,hash:context.sourceHash!,payload:{effectiveFrom:v['Effective from'],rateType:v['Amount unit'],baseAmount:v['Basic pay / fee amount'],stream,engagementKey:engagement,taxProfileRef:v['Tax profile reference'],sourcePanId:source?.id||null,sourceRef:v['Source reference'],reason:v.Reason,components,treatment:{...treatment(),salarySource:stream==='employee_payroll'?(source?.id?'Approved PAN':'Current HRIS record'):'Consultant agreement',sourcePanReference:v['PAN ID (optional)'],payBasis:basis!,netTarget:target,arrangementRef:agreement,taxRequest:taxMode,taxBasisRef:v['Exemption / tax basis']||'',taxResponsibility:responsibility(v['Tax responsibility'],basis==='gross'?'employee':'employer'),taxCoverage:coverage,benefitResponsibility:responsibility(v['Benefit responsibility'],basis==='net_all'?'employer':'employee'),payFrequency:v['Pay frequency']||v['Amount unit'],calculationVersion:'pay-package-builder-v1',supportingDocumentRef:v['Receipt or document reference']||'',notes:v.Notes||'',entrySource:'excel_upload'},replacesId:null,entrySource:'excel_upload'}};
+ return {employeeId:context.employeeId,scopeId:scope!.id,hash:context.sourceHash!,payload:{effectiveFrom:v['Effective from'],rateType:v['Amount unit'],baseAmount:v['Basic pay / fee amount'],stream,engagementKey:engagement,taxProfileRef:v['Tax profile reference'],sourcePanId:null,sourceKind:'direct_entry',sourceRef:v['Source reference'],reason:v.Reason,components,treatment:{...treatment(),submissionIntent:'draft',salarySource:stream==='employee_payroll'?'Direct compensation entry':'Consultant agreement',sourcePanReference:'',payBasis:basis!,netTarget:target,arrangementRef:agreement,taxRequest:taxMode,taxBasisRef:v['Exemption / tax basis']||'',taxResponsibility:responsibility(v['Tax responsibility'],basis==='gross'?'employee':'employer'),taxCoverage:coverage,benefitResponsibility:responsibility(v['Benefit responsibility'],basis==='net_all'?'employer':'employee'),payFrequency:v['Pay frequency']||v['Amount unit'],calculationVersion:'pay-package-builder-v2',supportingDocumentRef:v['Receipt or document reference']||'',notes:v.Notes||'',entrySource:'excel_upload'},replacesId:null,entrySource:'excel_upload'}};
 }
 
 export type ImportValidationStatus='ready'|'review'|'blocked'|'skipped';
@@ -165,6 +156,7 @@ function resolveSalarySource(v:Record<string,string>,context:PayContext){
  const invalid=(s:string):never=>{throw new Error(s);};
  if(!kind)invalid('Missing salary source — choose the approved source for this row.');
  if(!['current hris record','approved pan','consultant agreement'].includes(kind))invalid('Invalid salary source — choose Current HRIS record, Approved PAN, or Consultant agreement.');
+ if(kind==='approved pan')invalid('Approved PAN compensation is generated automatically after final approval; do not upload or reapprove it as a pay-package draft.');
  if(v['Pay stream']==='professional_fee'){
   if(kind!=='consultant agreement')invalid('Conflicting salary source — Consultant fee requires a Consultant agreement, not an employee salary source.');
   if(v['PAN ID (optional)'])invalid('Conflicting salary source — a salary PAN cannot authorize a consultant-fee stream.');
