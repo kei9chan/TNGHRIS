@@ -5,6 +5,10 @@ const migration = fs.readFileSync(
   new URL('../supabase/migrations/20260920145257_grant_loans_debt_role_access.sql', import.meta.url),
   'utf8',
 );
+const creatorFix = fs.readFileSync(
+  new URL('../supabase/migrations/20260921033140_fix_loans_debt_finance_routing_and_admin_bod_create.sql', import.meta.url),
+  'utf8',
+);
 const navigation = fs.readFileSync(new URL('../constants.ts', import.meta.url), 'utf8');
 
 for (const role of ['Admin', 'Board of Director', 'HR Manager', 'HR Staff']) {
@@ -21,5 +25,8 @@ assert.match(migration, /private\.payroll_debt_manager\(p_scope\)/);
 assert.match(migration, /'canManage', manager/);
 assert.match(migration, /payroll_debt_document_oversight_read/);
 assert.match(navigation, /Loans & Debt'[\s\S]*resource: 'Loans'[\s\S]*Permission\.View/);
+assert.doesNotMatch(creatorFix, /min\(h\.id\)/i);
+assert.match(creatorFix, /array_agg\(h\.id order by h\.id\)/i);
+assert.match(creatorFix, /payroll_debt_creator\(p_scope uuid\)[\s\S]*payroll_debt_oversight_view\(p_scope\)/i);
 
-console.log('PASS: Loans & Debt is visible to Admin, BOD, HR Manager and HR Staff, with scoped backend access and unchanged approval separation.');
+console.log('PASS: Scoped Admin and BOD users can add Loans & Debt records, with Finance approval separation preserved.');
