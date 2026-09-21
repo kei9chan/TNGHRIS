@@ -51,6 +51,7 @@ const PayPackagesPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
   const [businessUnit, setBusinessUnit] = useState("");
   const [department, setDepartment] = useState("");
   const [initial, setInitial] = useState<PayPackage | undefined>();
@@ -128,6 +129,8 @@ const PayPackagesPage: React.FC = () => {
   const selectedEmployee = directory.find((item) => item.id === employeeId);
   const select = (id: string) => {
     setEmployeeId(id);
+    setSearch("");
+    setSearchFocused(false);
     setInitial(undefined);
     setParams((current) => {
       const next = new URLSearchParams(current);
@@ -269,13 +272,54 @@ const PayPackagesPage: React.FC = () => {
                 <div className="grid items-end gap-3 md:grid-cols-[minmax(220px,1.5fr),1fr,1fr,minmax(250px,1.5fr)]">
                   <label className="text-sm font-medium">
                     Find a person
-                    <input
-                      className={`${field} mt-1`}
-                      type="search"
-                      value={search}
-                      onChange={(event) => setSearch(event.target.value)}
-                      placeholder="Search name or employee ID"
-                    />
+                    <span className="relative mt-1 block">
+                      <input
+                        className={field}
+                        type="search"
+                        value={search}
+                        onFocus={() => setSearchFocused(true)}
+                        onBlur={() => setSearchFocused(false)}
+                        onChange={(event) => setSearch(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" && filtered[0]) {
+                            event.preventDefault();
+                            select(filtered[0].id);
+                          }
+                        }}
+                        placeholder="Search name or employee ID"
+                        aria-label="Search and select an employee"
+                        aria-expanded={searchFocused && Boolean(search.trim())}
+                      />
+                      {searchFocused && search.trim() && (
+                        <span className="absolute left-0 right-0 top-full z-30 mt-2 max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+                          {filtered.length ? (
+                            filtered.slice(0, 8).map((item) => (
+                              <button
+                                type="button"
+                                key={item.id}
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => select(item.id)}
+                                className="block w-full rounded-lg px-3 py-2 text-left hover:bg-violet-50 dark:hover:bg-violet-950/30"
+                              >
+                                <strong className="block text-sm">{item.name}</strong>
+                                <span className="mt-0.5 block text-xs text-slate-500">
+                                  {item.employeeCode} · {item.businessUnit || "Unit pending"} · {item.department || "Department pending"}
+                                </span>
+                              </button>
+                            ))
+                          ) : (
+                            <span className="block px-3 py-2 text-sm text-slate-500">
+                              No accessible employee matches this search.
+                            </span>
+                          )}
+                          {filtered[0] && (
+                            <span className="block border-t border-slate-100 px-3 pt-2 text-xs text-slate-400 dark:border-slate-800">
+                              Click a person, or press Enter to open the first result.
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </span>
                   </label>
                   <label className="text-sm font-medium">
                     Business unit
