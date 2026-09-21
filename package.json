@@ -61,6 +61,7 @@
     "test:official-business": "node tests/officialBusinessTest.mjs",
     "test:payroll-completion": "node tests/payrollCompletionUiTest.mjs && node tests/payrollScenarioAccessTest.mjs",
     "test:payroll-loans": "node tests/payrollLoansPhase1Test.mjs",
+    "test:payroll-loans-workflow": "node tests/payrollLoansDebtWorkflowTest.mjs",
     "test:payroll-nte-deductions": "node tests/payrollNteDeductionsPhase2Test.mjs",
     "test:payroll-service-charge": "node tests/payrollServiceChargePhase3Test.mjs"
   },
