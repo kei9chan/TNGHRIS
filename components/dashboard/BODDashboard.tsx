@@ -23,7 +23,7 @@ import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { mergePanParticulars } from '../../services/panUtils';
 import { resolveEmployeePosition } from '../../services/employeeProfile';
-import { approveManpowerRequest, rejectManpowerRequest, requestManpowerClarification } from '../../services/manpowerService';
+import { approveManpowerRequest, mapManpowerRequestRow, rejectManpowerRequest, requestManpowerClarification, type ManpowerRequestRow } from '../../services/manpowerService';
 
 const GavelIcon: React.FC<{className?: string}> = ({className}) => <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>;
 const DocumentTextIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m5.231 13.5h-8.021a1.125 1.125 0 0 1-1.125-1.125v-1.5A1.125 1.125 0 0 1 5.625 15h12.75a1.125 1.125 0 0 1 1.125 1.125v1.5a1.125 1.125 0 0 1-1.125 1.125H13.5m-3.031-1.125a3 3 0 1 0-5.962 0 3 3 0 0 0 5.962 0ZM15 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" /></svg>);
@@ -448,37 +448,7 @@ const BODDashboard: React.FC = () => {
                 approverSteps: r.approver_steps || [],
                 approverId: r.approver_id || undefined,
             })));
-            if (!manRes.error && manRes.data) setManpowerRequests(manRes.data.map((r: any) => ({
-                ...r,
-                businessUnitId: r.business_unit_id,
-                departmentId: r.department_id || undefined,
-                requestedBy: r.requester_id,
-                requesterName: r.requester_name,
-                businessUnitName: r.business_unit_name,
-                date: mapDate(r.start_date || r.date_needed),
-                dateMode: r.date_mode || 'single',
-                startDate: r.start_date || r.date_needed,
-                endDate: r.end_date || r.date_needed,
-                coverageDays: Array.isArray(r.coverage_days) ? r.coverage_days : [],
-                coverageDayCount: r.coverage_day_count || 1,
-                totalStaffDays: r.total_staff_days || 0,
-                forecastedPax: r.forecasted_pax || 0,
-                generalNote: r.general_note || undefined,
-                attachmentUrl: r.attachment_url || undefined,
-                items: Array.isArray(r.items) ? r.items : (r.items ? JSON.parse(r.items) : []),
-                grandTotal: r.grand_total || 0,
-                status: r.status as ManpowerRequestStatus,
-                approvalStage: r.approval_stage || undefined,
-                approvalIssue: r.approval_issue || undefined,
-                clarificationStatus: r.clarification_status || 'none',
-                clarificationQuestion: r.clarification_question || undefined,
-                revision: r.revision || 1,
-                approvalTrail: Array.isArray(r.approval_history) ? r.approval_history : [],
-                createdAt: mapDate(r.created_at),
-                approvedBy: r.approved_by || undefined,
-                approvedAt: r.approved_at ? mapDate(r.approved_at) : undefined,
-                rejectionReason: r.rejection_reason || undefined,
-            })));
+            if (!manRes.error && manRes.data) setManpowerRequests((manRes.data as ManpowerRequestRow[]).map(mapManpowerRequestRow));
             if (!wfhRes.error && wfhRes.data) setWfhRequests(wfhRes.data.map((r: any) => ({ ...r, employeeId: r.employee_id, employeeName: r.employee_name, date: mapDate(r.date), createdAt: mapDate(r.created_at) })));
             if (!benRes.error && benRes.data) setBenefitRequests(benRes.data.map((r: any) => ({ ...r, employeeId: r.employee_id, employeeName: r.employee_name, benefitTypeName: r.benefit_type_name || '', dateNeeded: mapDate(r.date_needed) })));
             if (!envRes.error && envRes.data) setEnvelopes(envRes.data.map((r: any) => ({ ...r, createdAt: mapDate(r.created_at), routingSteps: r.routing_steps || [], employeeName: r.employee_name || '' })));

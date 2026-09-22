@@ -14,7 +14,9 @@ import {
 import { getTimeApprovalReason } from '../utils/approvalPresentation';
 import {
     approveManpowerRequest,
+    mapManpowerRequestRow,
     rejectManpowerRequest,
+    type ManpowerRequestRow,
 } from '../services/manpowerService';
 
 interface UseApprovalsOptions {
@@ -111,7 +113,7 @@ export function useApprovals({ user }: UseApprovalsOptions) {
             .select('id, employee_id, employee_name, date, start_time, end_time, reason, status, submitted_at, approved_hours, manager_note, history_log, attachment_url, approval_route, approval_reason, approval_context');
         let manpowerQuery = supabase
             .from('manpower_requests')
-            .select('id, business_unit_id, business_unit_name, department_id, requester_id, requester_name, date_needed, forecasted_pax, general_note, items, grand_total, status, created_at, approved_by, approved_at, rejection_reason, approval_stage, approval_issue, approval_history')
+            .select('id, business_unit_id, business_unit_name, department_id, requester_id, requester_name, date_needed, date_mode, start_date, end_date, coverage_days, coverage_day_count, total_staff_days, forecasted_pax, general_note, attachment_url, items, grand_total, status, created_at, approved_by, approved_at, rejection_reason, approval_stage, approval_issue, approval_history, clarification_status, clarification_question, revision')
             .eq('status', ManpowerRequestStatus.Pending);
 
         if (assignedLeaveIds.length) leaveQuery = leaveQuery.in('id', assignedLeaveIds);
@@ -229,27 +231,7 @@ export function useApprovals({ user }: UseApprovalsOptions) {
 
         if (!manpowerRes.error && manpowerRes.data) {
             setPendingManpowerApprovals(
-                manpowerRes.data.map((row: any) => ({
-                    id: row.id,
-                    businessUnitId: row.business_unit_id || '',
-                    departmentId: row.department_id || undefined,
-                    businessUnitName: row.business_unit_name || 'Unknown BU',
-                    requestedBy: row.requester_id,
-                    requesterName: row.requester_name,
-                    date: row.date_needed ? new Date(row.date_needed) : new Date(),
-                    forecastedPax: row.forecasted_pax || 0,
-                    generalNote: row.general_note || '',
-                    items: Array.isArray(row.items) ? row.items : (row.items ? JSON.parse(row.items) : []),
-                    grandTotal: row.grand_total || 0,
-                    status: row.status as ManpowerRequestStatus,
-                    approvalStage: row.approval_stage || undefined,
-                    approvalIssue: row.approval_issue || undefined,
-                    approvalTrail: Array.isArray(row.approval_history) ? row.approval_history : [],
-                    createdAt: row.created_at ? new Date(row.created_at) : new Date(),
-                    approvedBy: row.approved_by || undefined,
-                    approvedAt: row.approved_at ? new Date(row.approved_at) : undefined,
-                    rejectionReason: row.rejection_reason || undefined,
-                }))
+                (manpowerRes.data as ManpowerRequestRow[]).map(mapManpowerRequestRow)
             );
         }
         setApprovalsLoading(false);

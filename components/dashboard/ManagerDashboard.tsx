@@ -28,7 +28,7 @@ import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { mergePanParticulars } from '../../services/panUtils';
 import { resolveEmployeePosition } from '../../services/employeeProfile';
 import COEQueue from './COEQueue';
-import { approveManpowerRequest, fetchMyPendingManpowerApprovalIds, rejectManpowerRequest, requestManpowerClarification } from '../../services/manpowerService';
+import { approveManpowerRequest, fetchMyPendingManpowerApprovalIds, mapManpowerRequestRow, rejectManpowerRequest, requestManpowerClarification, type ManpowerRequestRow } from '../../services/manpowerService';
 import { fetchMyPendingTimeApprovalAssignments } from '../../services/timeApprovalService';
 
 
@@ -762,37 +762,7 @@ const ManagerDashboard: React.FC = () => {
 
             if (!manpowerRes.error && manpowerRes.data) {
                 setPendingManpowerApprovals(
-                    manpowerRes.data.map((row: any) => ({
-                        id: row.id,
-                        businessUnitId: row.business_unit_id || '',
-                        departmentId: row.department_id || undefined,
-                        businessUnitName: row.business_unit_name || 'Unknown BU',
-                        requestedBy: row.requester_id,
-                        requesterName: row.requester_name,
-                        date: row.start_date ? new Date(row.start_date) : row.date_needed ? new Date(row.date_needed) : new Date(),
-                        dateMode: row.date_mode || 'single',
-                        startDate: row.start_date || row.date_needed,
-                        endDate: row.end_date || row.date_needed,
-                        coverageDays: Array.isArray(row.coverage_days) ? row.coverage_days : [],
-                        coverageDayCount: row.coverage_day_count || 1,
-                        totalStaffDays: row.total_staff_days || 0,
-                        forecastedPax: row.forecasted_pax || 0,
-                        generalNote: row.general_note || '',
-                        attachmentUrl: row.attachment_url || undefined,
-                        items: Array.isArray(row.items) ? row.items : (row.items ? JSON.parse(row.items) : []),
-                        grandTotal: row.grand_total || 0,
-                        status: row.status as ManpowerRequestStatus,
-                        approvalStage: row.approval_stage || undefined,
-                        approvalIssue: row.approval_issue || undefined,
-                        clarificationStatus: row.clarification_status || 'none',
-                        clarificationQuestion: row.clarification_question || undefined,
-                        revision: row.revision || 1,
-                        approvalTrail: Array.isArray(row.approval_history) ? row.approval_history : [],
-                        createdAt: row.created_at ? new Date(row.created_at) : new Date(),
-                        approvedBy: row.approved_by || undefined,
-                        approvedAt: row.approved_at ? new Date(row.approved_at) : undefined,
-                        rejectionReason: row.rejection_reason || undefined,
-                    }))
+                    (manpowerRes.data as ManpowerRequestRow[]).map(mapManpowerRequestRow)
                 );
             } else {
                 setPendingManpowerApprovals([]);

@@ -30,7 +30,8 @@ const check = (name, fn) => { fn(); checks.push(name); };
 check('1. Single-date request retains prominent weekday/full date and approval path', () => {
   assert.deepEqual(enumerateCoverageDates('2026-09-22', '2026-09-22'), ['2026-09-22']);
   assert.equal(formatCoverageDate('2026-09-22'), 'Tuesday, September 22, 2026');
-  assert.match(reviewUi, /text-5xl/);
+  assert.match(reviewUi, /size="4xl"/);
+  assert.doesNotMatch(reviewUi, /size="full"/);
   assert.match(migration, /create_manpower_request_v2/);
   assert.match(reviewUi, />Approve</);
 });
