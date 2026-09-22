@@ -16,6 +16,7 @@ import {
   PayPackage,
   openPayPackageDocument,
   savePayPackage,
+  submitPayPackageDraft,
   Treatment,
   uploadPayPackageDocument,
 } from "./payPackages";
@@ -820,7 +821,8 @@ const VersionDetails: React.FC<{
   data: PayContext;
   onClose: () => void;
   onCopy: (item: PayPackage) => void;
-}> = ({ item, data, onClose, onCopy }) => {
+  onSubmitDraft: (item: PayPackage) => void;
+}> = ({ item, data, onClose, onCopy, onSubmitDraft }) => {
   const scope = data.scopes.find((value) => value.id === item.scope_id);
   return (
     <div
@@ -931,7 +933,11 @@ const VersionDetails: React.FC<{
         </div>
         <div className="mt-6 flex justify-end gap-3 border-t border-slate-200 pt-4 dark:border-slate-700">
           <Button variant="secondary" onClick={onClose}>Close</Button>
-          {item.stream === "employee_payroll" && (
+          {item.status === "draft" && item.approval_state !== "pending" ? (
+            <Button onClick={() => onSubmitDraft(item)}>
+              Submit existing draft for approval
+            </Button>
+          ) : item.stream === "employee_payroll" && (
             <Button onClick={() => { onCopy(item); onClose(); }}>
               {item.source_kind === "approved_pan" ? "Create correction" : "Copy as starting point"}
             </Button>
@@ -1281,6 +1287,21 @@ const PayPackageBuilder: React.FC<{
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const submitExistingDraft = async (item: PayPackage) => {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await submitPayPackageDraft(item.id);
+      setViewingVersion(null);
+      setNotice("Existing draft submitted for approval. No copy was created.");
+      await onSaved();
+    } catch (value) {
+      setError(value instanceof Error ? value.message : "The draft could not be submitted.");
+    } finally {
+      setBusy(false);
+    }
+  };
   const selectedScope = data.scopes.find((s) => s.id === scope);
   const editableScopes = data.scopes.filter((s) => s.canEdit && s.employeePayroll !== false);
   const consultantScopes = data.scopes.filter((s) => s.canEdit);
@@ -1525,6 +1546,7 @@ const PayPackageBuilder: React.FC<{
             data={data}
             onClose={() => setViewingVersion(null)}
             onCopy={copyPackage}
+            onSubmitDraft={(item) => void submitExistingDraft(item)}
           />
         )}
       </div>
@@ -1971,7 +1993,7 @@ const PayPackageBuilder: React.FC<{
         />
       </div>
       {viewingVersion && (
-        <VersionDetails item={viewingVersion} data={data} onClose={() => setViewingVersion(null)} onCopy={copyPackage} />
+        <VersionDetails item={viewingVersion} data={data} onClose={() => setViewingVersion(null)} onCopy={copyPackage} onSubmitDraft={(item) => void submitExistingDraft(item)} />
       )}
     </div>
   );

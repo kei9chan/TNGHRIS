@@ -22,6 +22,7 @@ import {
   PayDirectoryEntry,
   PayPackage,
   reviewPayPackage,
+  submitPayPackageDraft,
 } from "./payPackages";
 import {
   fetchPendingPayPackageApprovals,
@@ -487,6 +488,18 @@ const ReviewWorkspace: React.FC<{
       setBusy(false);
     }
   };
+  const submitDraft = async (item: PayPackage) => {
+    setBusy(true);
+    setError("");
+    try {
+      await submitPayPackageDraft(item.id);
+      await onRefresh();
+    } catch (value) {
+      setError(value instanceof Error ? value.message : "Draft submission failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div className="space-y-5">
       <EmployeePolicyPanel
@@ -576,7 +589,15 @@ const ReviewWorkspace: React.FC<{
                     {money(item.base_amount)} / {item.rate_type}
                   </p>
                 </div>
-                {item.source_kind === "approved_pan" ? (
+                {item.status === "draft" && item.approval_state !== "pending" ? (
+                  <Button
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => void submitDraft(item)}
+                  >
+                    Submit draft for approval
+                  </Button>
+                ) : item.source_kind === "approved_pan" ? (
                   <Button
                     size="sm"
                     variant="secondary"
