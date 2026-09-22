@@ -28,6 +28,12 @@ export type ReceiptStatus =
   | "approved_and_payable"
   | "rejected"
   | "not_payable";
+export type ComponentClassification =
+  | "guaranteed"
+  | "guaranteed_benefit"
+  | "conditional"
+  | "receipt_based"
+  | "payroll_calculated";
 export type PayComponent = {
   tax?: string;
   sss?: string;
@@ -55,6 +61,11 @@ export type PayComponent = {
   receiptStatus?: ReceiptStatus;
   documentRef?: string;
   status?: string;
+  classification?: ComponentClassification;
+  includedInGuaranteedPay?: boolean;
+  affectsEmployerCost?: boolean;
+  employerPaidTax?: boolean;
+  description?: string;
 };
 export type PayPackageDocument = {
   id: string;
@@ -293,7 +304,11 @@ export const emptyTreatment = (): Treatment => ({
   taxResponsibility: "employee",
   taxCoverage: "entire_package",
   benefitResponsibility: "employee",
-  calculationVersion: "pay-package-builder-v1",
+  estimatedEmployeeDeductions: "0",
+  estimatedEmployerContributions: "0",
+  estimatedEmployerTax: "0",
+  expectedReimbursableCost: "0",
+  calculationVersion: "pay-package-builder-v3",
 });
 export const newComponent = (
   category: ComponentCategory = "fixed_allowance",
@@ -325,6 +340,20 @@ export const newComponent = (
     category === "reimbursable_allowance" ? "receipt_required" : undefined,
   documentRef: "",
   status: "active",
+  classification:
+    category === "reimbursable_allowance"
+      ? "receipt_based"
+      : category === "service_charge" || category === "variable_pay"
+        ? "conditional"
+        : category === "employer_contribution" || category === "employee_deduction"
+          ? "payroll_calculated"
+          : category === "de_minimis"
+            ? "guaranteed_benefit"
+            : "guaranteed",
+  includedInGuaranteedPay: ["fixed_allowance", "de_minimis"].includes(category),
+  affectsEmployerCost: category !== "employee_deduction",
+  employerPaidTax: false,
+  description: "",
 });
 export const treatmentPending = (treatment: Treatment) =>
   treatmentFields.some(

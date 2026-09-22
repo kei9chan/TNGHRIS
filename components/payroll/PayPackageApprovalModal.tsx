@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { reviewPayPackage } from '../../modules/payroll/payPackages';
+import { fetchPayPackages, reviewPayPackage } from '../../modules/payroll/payPackages';
+import type { PayPackage } from '../../modules/payroll/payPackages';
+import { calculatePackagePreview, classificationLabels, componentClassification, componentTaxLabel, includedInGuaranteedPay } from '../../modules/payroll/payPackageBuilderModel';
 import type { PendingPayPackageApproval } from '../../services/payPackageApprovalService';
 import Button from '../ui/Button';
 import Modal from '../ui/Modal';
@@ -13,9 +15,7 @@ interface PayPackageApprovalModalProps {
 }
 
 const money = (value: string | number | null | undefined) =>
-  value == null
-    ? 'Pending'
-    : `₱${Number(value).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  `₱${Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const PayPackageApprovalModal: React.FC<PayPackageApprovalModalProps> = ({
   isOpen,
@@ -26,12 +26,29 @@ const PayPackageApprovalModal: React.FC<PayPackageApprovalModalProps> = ({
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [payPackage, setPayPackage] = useState<PayPackage | null>(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
     setNote('');
     setError('');
+    setPayPackage(null);
+    if (!item) return;
+    let cancelled = false;
+    setLoadingDetails(true);
+    void fetchPayPackages(item.employeeId)
+      .then((context) => {
+        if (!cancelled) setPayPackage(context.packages.find((entry) => entry.id === item.id) || null);
+      })
+      .catch((reason) => {
+        if (!cancelled) setError(reason instanceof Error ? reason.message : 'Package details could not be loaded.');
+      })
+      .finally(() => { if (!cancelled) setLoadingDetails(false); });
+    return () => { cancelled = true; };
   }, [isOpen, item?.id]);
+
+  const preview = payPackage ? calculatePackagePreview({ baseAmount: payPackage.base_amount, components: payPackage.components, treatment: payPackage.treatment }) : null;
 
   const decide = async (approved: boolean) => {
     if (!item || note.trim().length < 3) {
@@ -59,7 +76,7 @@ const PayPackageApprovalModal: React.FC<PayPackageApprovalModalProps> = ({
   );
 
   return (
-    <Modal isOpen={isOpen && Boolean(item)} onClose={busy ? () => {} : onClose} title="Review Pay Package" size="2xl" footer={footer}>
+    <Modal isOpen={isOpen && Boolean(item)} onClose={busy ? () => {} : onClose} title="Review Pay Package" size="xl" footer={footer}>
       {item && <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="rounded-full bg-fuchsia-100 px-3 py-1 font-bold text-fuchsia-800">Pay package approval</span>
@@ -77,6 +94,25 @@ const PayPackageApprovalModal: React.FC<PayPackageApprovalModalProps> = ({
             <p><span className="block text-xs text-slate-500">Submitted by</span><strong>{item.submittedBy}</strong></p>
           </div>
         </section>
+
+        {loadingDetails && <p className="rounded-xl bg-blue-50 p-4 text-sm text-blue-900">Loading the complete compensation breakdown…</p>}
+        {payPackage && preview && <>
+          <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              ['Guaranteed monthly pay', preview.guaranteedMonthlyPay, 'bg-emerald-50 text-emerald-950'],
+              ['Conditional maximum', preview.conditionalMaximum, 'bg-amber-50 text-amber-950'],
+              ['Reimbursable maximum', preview.reimbursableMaximum, 'bg-amber-50 text-amber-950'],
+              ['Employee deductions · estimated', preview.estimatedEmployeeDeductions, 'bg-blue-50 text-blue-950'],
+              ['Employer contributions · estimated', preview.estimatedEmployerContributions, 'bg-blue-50 text-blue-950'],
+              ['Total monthly company cost · estimated', preview.estimatedCompanyCost, 'bg-violet-50 text-violet-950'],
+            ].map(([label, amount, tone]) => <div key={String(label)} className={`rounded-xl p-4 ${tone}`}><p className="text-xs font-bold uppercase tracking-wide opacity-70">{label}</p><p className="mt-2 text-xl font-black tabular-nums">{money(amount as number)}</p></div>)}
+          </section>
+          <section>
+            <h4 className="mb-3 font-bold">Exact compensation breakdown</h4>
+            <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="p-3">Component</th><th className="p-3">Exact amount</th><th className="p-3">Frequency</th><th className="p-3">Classification</th><th className="p-3">Tax treatment</th><th className="p-3">Guaranteed</th></tr></thead><tbody className="divide-y divide-slate-200"><tr><th className="p-3">Basic salary</th><td className="p-3 font-bold">{money(payPackage.base_amount)}</td><td className="p-3">{payPackage.rate_type}</td><td className="p-3">Guaranteed</td><td className="p-3">Taxable</td><td className="p-3 font-semibold">Yes</td></tr>{payPackage.components.map((component, index) => <tr key={`${component.name}:${index}`}><th className="p-3">{component.name}</th><td className="p-3 font-bold">{componentClassification(component) === 'receipt_based' ? `Up to ${money(component.amount)}` : money(component.amount)}</td><td className="p-3">{component.frequency || component.recurrence}</td><td className="p-3">{classificationLabels[componentClassification(component)]}</td><td className="p-3">{componentTaxLabel(component)}</td><td className="p-3 font-semibold">{includedInGuaranteedPay(component) ? 'Yes' : 'No'}</td></tr>)}</tbody></table></div>
+          </section>
+          <section className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950"><h4 className="font-bold">Payroll-period items</h4><p className="mt-2">Government contributions, withholding tax, approved loans, authorized deductions, attendance adjustments, overtime, and eligible service charge are applied only to the relevant payroll run. The estimates above are not guaranteed take-home pay.</p></section>
+        </>}
 
         <section className="rounded-xl border border-slate-200 p-4">
           <h4 className="font-bold">Approval progress</h4>
