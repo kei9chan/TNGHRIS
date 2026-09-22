@@ -85,6 +85,7 @@ const OvertimeRequests = React.lazy(() => import('./pages/payroll/OvertimeReques
 const WFHRequests = React.lazy(() => import('./pages/payroll/WFHRequests'));
 const Leave = React.lazy(() => import('./pages/payroll/Leave'));
 const LeaveCredits = React.lazy(() => import('./pages/payroll/LeaveCredits'));
+const LeaveBalanceImport = React.lazy(() => import('./pages/payroll/LeaveBalanceImport'));
 const Loans = React.lazy(() => import('./pages/payroll/Loans'));
 const AttendanceExceptions = React.lazy(() => import('./pages/payroll/AttendanceExceptions'));
 const AttendanceDevices = React.lazy(() => import('./pages/payroll/AttendanceDevices'));
@@ -433,6 +434,7 @@ const AppRoutes: React.FC = () => {
             <Route path="wfh-requests" element={<ProtectedRoute><WFHRequests /></ProtectedRoute>} /> {/* NEW */}
             <Route path="leave" element={<ProtectedRoute><Leave /></ProtectedRoute>} />
             <Route path="leave-credits" element={<ProtectedRoute><LeaveCredits /></ProtectedRoute>} />
+            <Route path="leave-balances/import" element={<ProtectedRoute><LeaveBalanceImport /></ProtectedRoute>} />
             <Route path="loans" element={<ProtectedRoute><Loans /></ProtectedRoute>} />
             <Route path="service-charge" element={<ProtectedRoute><ServiceChargeSetupPage /></ProtectedRoute>} />
             <Route path="payroll-prep" element={<ProtectedRoute><PayrollAccessPage staffOnly /></ProtectedRoute>} />

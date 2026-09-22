@@ -1,220 +1,39 @@
-import { supabase } from '../../services/supabaseClient';
-
-import React, { useState, useEffect, useRef } from 'react';
-import { LeaveRequest, LeaveRequestStatus } from '../../types';
-import { useAuth } from '../../hooks/useAuth';
+import React,{useEffect,useMemo,useRef,useState} from 'react';
+import {supabase} from '../../services/supabaseClient';
+import {LeaveRequest,LeaveRequestStatus} from '../../types';
+import {useAuth} from '../../hooks/useAuth';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
 import FileUploader from '../ui/FileUploader';
-import {
-    approvalContextNumber,
-    formatApprovalNumber,
-    getApprovalStatusLabel,
-    getApprovalStepLabel,
-    getTimeApprovalNextStep,
-    getTimeApprovalReason,
-} from '../../utils/approvalPresentation';
-
-interface LeaveRequestModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  request: LeaveRequest | null;
-  leaveTypes: { id: string; name: string }[];
-  onSave: (request: Partial<LeaveRequest>, status: LeaveRequestStatus) => void | Promise<void>;
-  onApprove: (request: LeaveRequest, approved: boolean, notes: string) => void | Promise<void>;
+import {classifyLeaveRequest,ExceptionOutcome,leavePresentation} from '../../modules/payroll/leaveManagementModel';
+import {getApprovalStatusLabel,getApprovalStepLabel} from '../../utils/approvalPresentation';
+interface Props{isOpen:boolean;onClose:()=>void;request:LeaveRequest|null;leaveTypes:{id:string;name:string;paid?:boolean}[];availableBalances?:Record<string,number>;onSave:(request:Partial<LeaveRequest>&Record<string,unknown>,status:LeaveRequestStatus)=>void|Promise<void>;onApprove:(request:LeaveRequest,approved:boolean,notes:string,outcome?:ExceptionOutcome)=>void|Promise<void>;onFileSelect?:(file:File|null)=>void;}
+const icons:Record<string,string>={vacation:'🌴',sick:'✚',offset:'💼',lwop:'◷'};
+const fmt=(value:unknown)=>Number(value||0).toLocaleString('en-PH',{maximumFractionDigits:3});
+export default function LeaveRequestModal({isOpen,onClose,request,leaveTypes,availableBalances={},onSave,onApprove,onFileSelect}:Props){
+ const {user}=useAuth();const [current,setCurrent]=useState<any>({}),[progress,setProgress]=useState<any>(null),[note,setNote]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),[confirmed,setConfirmed]=useState(false),[outcome,setOutcome]=useState<ExceptionOutcome>('lwop');
+ const lock=useRef(false),isNew=!request,canEdit=isNew||request?.status===LeaveRequestStatus.Draft,isReviewer=!!request&&request.employeeId!==user?.id&&[LeaveRequestStatus.Pending,LeaveRequestStatus.PendingGM,LeaveRequestStatus.PendingBOD].includes(request.status);
+ useEffect(()=>{if(!isOpen)return;setCurrent(request||{leaveTypeId:leaveTypes[0]?.id||'',startDate:new Date(),endDate:new Date(),durationDays:1,status:LeaveRequestStatus.Draft});setNote('');setError('');setConfirmed(false);setOutcome('lwop');setProgress(null);if(request?.id)supabase.rpc('get_time_approval_progress',{p_request_type:'leave',p_request_id:request.id}).then(({data,error})=>error?setError(error.message):setProgress(data));},[isOpen,request?.id,leaveTypes]);
+ const selected=leaveTypes.find(type=>type.id===current.leaveTypeId)||leaveTypes[0];const selectedInfo=leavePresentation(selected?.name||'Leave Without Pay',availableBalances[selected?.id||'']||0);
+ const calculation=useMemo(()=>classifyLeaveRequest(selected?.name||'',current.durationDays||1,availableBalances[selected?.id||'']||0,confirmed),[selected?.name,selected?.id,current.durationDays,availableBalances,confirmed]);
+ const requestType=leaveTypes.find(type=>type.id===request?.leaveTypeId)?.name||progress?.selectedLeaveType||'Leave request';const exception=!!progress?.creditException;const isBod=user?.role==='Board of Director'||user?.roles?.includes('Board of Director');const authorizedBod=exception&&request?.status===LeaveRequestStatus.PendingBOD&&progress?.canAct&&isBod;
+ const setDate=(key:'startDate'|'endDate',value:string)=>{const next=new Date(value+'T00:00:00');const start=key==='startDate'?next:new Date(current.startDate);let end=key==='endDate'?next:new Date(current.endDate);if(end<start)end=start;setCurrent((old:any)=>({...old,[key]:next,startDate:start,endDate:end,durationDays:Math.floor((end.getTime()-start.getTime())/86400000)+1}));setConfirmed(false);};
+ async function save(status:LeaveRequestStatus){if(lock.current)return;if(status===LeaveRequestStatus.Pending&&calculation.requiresConfirmation){setError('Confirm that this request will be filed as Leave Without Pay before submitting.');return;}lock.current=true;setBusy(true);setError('');try{await onSave({...current,selectedLeaveTypeId:current.leaveTypeId,selectedLeaveType:selected?.name,paidDays:calculation.paidDays,unpaidDays:calculation.unpaidDays,creditShortfall:calculation.creditShortfall,finalClassification:calculation.finalClassification,lwopConfirmed:confirmed||selectedInfo.kind==='lwop'},status);}catch(e:any){setError(e.message||'The request was not saved.');}finally{lock.current=false;setBusy(false);}}
+ async function decide(approved:boolean){if(lock.current||!request)return;if(!approved&&!note.trim()){setError('A rejection reason is required.');return;}lock.current=true;setBusy(true);setError('');try{await onApprove(request,approved,note,exception?outcome:undefined);}catch(e:any){setError(e.message||'The decision was not saved.');}finally{lock.current=false;setBusy(false);}}
+ const footer=isReviewer?<div className="w-full space-y-3"><Textarea label={request?.status===LeaveRequestStatus.PendingBOD?'BOD note (optional for approval)':'Approval note'} value={note} onChange={e=>setNote(e.target.value)} rows={2}/><p className="text-xs text-slate-500">A rejection reason is required.</p><div className="grid grid-cols-2 gap-3"><Button variant="danger" disabled={busy||progress?.alreadyApproved} onClick={()=>void decide(false)}>Reject</Button><Button disabled={busy||progress?.alreadyApproved||(request?.status===LeaveRequestStatus.PendingBOD&&!progress?.canAct)} onClick={()=>void decide(true)}>{progress?.alreadyApproved?'Already approved by you':'Approve'}</Button></div></div>:canEdit?<div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Button variant="secondary" disabled={busy} onClick={onClose}>Change dates / cancel</Button><Button variant="secondary" disabled={busy} onClick={()=>void save(LeaveRequestStatus.Draft)}>Save draft</Button><Button disabled={busy||calculation.requiresConfirmation} onClick={()=>void save(LeaveRequestStatus.Pending)}>{calculation.unpaidDays>0?'Continue as Leave Without Pay':'Submit request'}</Button></div>:<Button variant="secondary" onClick={onClose}>Close</Button>;
+ return <Modal acknowledgmentRequestType={canEdit?'Leave':undefined} acknowledgmentDraft={!isNew} isOpen={isOpen} onClose={busy?()=>{}:onClose} title={isNew?'Request Leave':'Leave Request Details'} size="full" viewportFit footer={footer}><div className="space-y-5">{error&&<div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-rose-800">{error}</div>}{isNew?<div className="grid gap-6 xl:grid-cols-[minmax(0,1.65fr)_minmax(340px,0.85fr)]"><div className="space-y-6">
+  <section><div className="mb-3 flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-violet-600 font-bold text-white">1</span><div><h3 className="font-bold">What type of leave are you applying for?</h3><p className="text-sm text-slate-500">Select the leave type, then choose your dates.</p></div></div><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{leaveTypes.map(type=>{const info=leavePresentation(type.name,availableBalances[type.id]||0),active=type.id===current.leaveTypeId;return <button key={type.id} type="button" onClick={()=>{setCurrent((old:any)=>({...old,leaveTypeId:type.id}));setConfirmed(false);}} className={`relative min-h-36 rounded-2xl border-2 p-4 text-left transition ${active?'border-violet-600 bg-violet-50 shadow-sm':'border-slate-200 hover:border-violet-300'}`}><span className="text-2xl">{icons[info.kind]}</span><strong className="mt-3 block">{info.label}</strong><span className="block text-sm text-slate-500">{info.paid?'Paid time off':'Unpaid leave'}</span><span className="mt-2 block text-sm font-semibold text-slate-600">{info.available==null?'Does not use credits':`${fmt(info.available)} available`}</span>{active&&<span className="absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full bg-violet-600 text-white">✓</span>}</button>})}</div></section>
+  {calculation.creditShortfall>0&&selectedInfo.kind!=='lwop'&&<div className="rounded-2xl border border-amber-300 bg-amber-50 p-5 text-amber-950"><strong className="text-lg">⚠ You do not have enough available credits.</strong><p className="mt-1">You selected <strong>{selected?.name}</strong>, but you have {fmt(calculation.availableCredits)} available credits. This request will be filed as <strong>Leave Without Pay</strong>.</p></div>}
+  <section><div className="mb-3 flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-violet-600 font-bold text-white">2</span><h3 className="font-bold">When are you taking leave?</h3></div><div className="grid gap-4 sm:grid-cols-3"><Input label="Start date" type="date" value={current.startDate?new Date(current.startDate).toISOString().slice(0,10):''} onChange={e=>setDate('startDate',e.target.value)}/><Input label="End date" type="date" value={current.endDate?new Date(current.endDate).toISOString().slice(0,10):''} onChange={e=>setDate('endDate',e.target.value)}/><Input label="Number of days" type="number" value={String(current.durationDays||1)} disabled/></div></section>
+  <section><div className="mb-3 flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-violet-600 font-bold text-white">3</span><h3 className="font-bold">Reason for leave</h3></div><Textarea label="Reason" value={current.reason||''} onChange={e=>setCurrent((old:any)=>({...old,reason:e.target.value}))} rows={4} required/></section>
+  <section><div className="mb-3 flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-violet-600 font-bold text-white">4</span><h3 className="font-bold">Attach document <span className="font-normal text-slate-500">(optional)</span></h3></div><FileUploader onFileUpload={(file:any)=>onFileSelect?.(file||null)}/></section>
+ </div><aside className="rounded-2xl border bg-gradient-to-b from-violet-50 to-white p-5"><h3 className="text-xl font-black">Request Summary</h3><p className="text-sm text-slate-500">Review the details before submitting.</p><dl className="mt-5 space-y-4 text-sm"><div className="rounded-xl border border-amber-200 bg-amber-50 p-3"><dt className="text-slate-500">Leave type</dt><dd className="font-bold">{calculation.unpaidDays>0?'Leave Without Pay (LWOP)':selected?.name}</dd>{calculation.unpaidDays>0&&<small>Selected request: {selected?.name}</small>}</div>{[['Dates',`${current.startDate?new Date(current.startDate).toLocaleDateString('en-PH'):''} – ${current.endDate?new Date(current.endDate).toLocaleDateString('en-PH'):''}`],['Number of days',`${fmt(calculation.requestedDays)} day(s)`],['Paid days',`${fmt(calculation.paidDays)} day(s)`],['Unpaid days',`${fmt(calculation.unpaidDays)} day(s)`],['Reason',current.reason||'Not specified'],['Attachment','Optional supporting document'],['Approval route',calculation.creditShortfall?'Manager review → BOD exception review':'Manager approval'],['Expected payroll impact',calculation.unpaidDays?`${fmt(calculation.unpaidDays)} unpaid day(s) may be deducted from payroll`:'Paid leave; credits will be consumed']].map(([label,value])=><div key={label} className="flex justify-between gap-4 border-b pb-3"><dt className="text-slate-500">{label}</dt><dd className="max-w-[60%] text-right font-semibold">{value}</dd></div>)}</dl>{calculation.creditShortfall>0&&<label className="mt-5 flex cursor-pointer gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm"><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)} className="mt-1 h-4 w-4"/><span><strong>Please confirm</strong><span className="block">I understand this will be filed as Leave Without Pay because I do not have enough available credits.</span></span></label>}</aside></div>:
+ <div className="mx-auto max-w-4xl space-y-5"><div className="rounded-2xl border bg-white p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xl font-black">{request?.employeeName}</p><p className="text-slate-500">Employee</p></div>{exception&&<span className="rounded-full bg-amber-100 px-4 py-2 text-sm font-bold text-amber-800">BOD exception review</span>}</div><div className="mt-5 grid gap-4 border-t pt-5 sm:grid-cols-2"><div><small className="text-slate-500">Leave type</small><strong className="block">{requestType}</strong></div><div><small className="text-slate-500">Leave period</small><strong className="block">{new Date(request!.startDate).toLocaleDateString('en-PH')} – {new Date(request!.endDate).toLocaleDateString('en-PH')} · {fmt(request?.durationDays)} day(s)</strong></div></div></div>
+  {exception&&<><div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-950"><strong className="text-lg">Credit shortfall — BOD exception approval required.</strong><p>The employee has insufficient earned credits. The request remains available for an authorized BOD decision.</p></div>{authorizedBod&&<div className="rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50 p-5 text-amber-950"><strong>♛ You are an authorized BOD approver.</strong><p>You may approve this exception.</p></div>}</>}
+  <div className="rounded-2xl border p-5"><h3 className="font-bold">Leave Credits Summary</h3><dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">{[['Available credits',progress?.availableCredits],['Requested days',progress?.requestedCredits??request?.durationDays],['Credit shortfall',progress?.creditShortfall],['Balance after request',progress?.remainingBalance]].map(([label,value])=><div key={label} className="border-r last:border-0"><dd className={`text-3xl font-black ${label==='Credit shortfall'?'text-rose-600':''}`}>{fmt(value)}</dd><dt className="text-sm text-slate-500">{label}</dt></div>)}</dl></div>
+  {exception&&isReviewer&&<fieldset className="rounded-2xl border p-5"><legend className="px-2 font-bold">Result after approval</legend><div className="grid gap-3 sm:grid-cols-2"><label className={`cursor-pointer rounded-xl border-2 p-4 ${outcome==='paid_exception'?'border-violet-600 bg-violet-50':'border-slate-200'}`}><input type="radio" className="mr-2" checked={outcome==='paid_exception'} onChange={()=>setOutcome('paid_exception')}/><strong>Approved paid leave exception</strong><span className="mt-1 block text-sm text-slate-500">No credits are added. The shortfall and negative balance remain in the audit.</span></label><label className={`cursor-pointer rounded-xl border-2 p-4 ${outcome==='lwop'?'border-violet-600 bg-violet-50':'border-slate-200'}`}><input type="radio" className="mr-2" checked={outcome==='lwop'} onChange={()=>setOutcome('lwop')}/><strong>Approved Leave Without Pay</strong><span className="mt-1 block text-sm text-slate-500">No paid-leave credits are consumed.</span></label></div></fieldset>}
+  <div className="rounded-2xl border p-5"><h3 className="font-bold">Approval details</h3><dl className="mt-3 grid gap-3 sm:grid-cols-2"><div><dt className="text-sm text-slate-500">Current approval step</dt><dd className="font-semibold">{getApprovalStepLabel(request!.status)}</dd></div><div><dt className="text-sm text-slate-500">Status</dt><dd className="font-semibold">{getApprovalStatusLabel(request!.status)}</dd></div><div className="sm:col-span-2"><dt className="text-sm text-slate-500">Approval history</dt><dd className="mt-2 space-y-2">{request?.historyLog?.length?request.historyLog.map((item:any,index)=><p key={index} className="rounded-lg bg-slate-50 p-2 text-sm"><strong>{item.action}</strong> · {item.userName||item.userId} · {new Date(item.timestamp).toLocaleString('en-PH')}{item.details?` · ${item.details}`:''}</p>):'No recorded decisions yet.'}</dd></div></dl></div>
+ </div>}</div></Modal>;
 }
-
-const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({ isOpen, onClose, request, leaveTypes, onSave, onApprove }) => {
-    const { user } = useAuth();
-    const [current, setCurrent] = useState<Partial<LeaveRequest>>(request || {});
-    const [decisionError,setDecisionError] = useState('');
-    const [busy,setBusy] = useState(false);
-    const [progress,setProgress] = useState<any>(null);
-    const decisionLock = useRef(false);
-    useEffect(() => {
-      let active=true; setDecisionError('');setProgress(null);
-      if (isOpen && request?.id) {
-        supabase.rpc('get_time_approval_progress',{p_request_type:'leave',p_request_id:request.id}).then(({data,error})=>{if(active){if(error)setDecisionError(error.message);else setProgress(data);}});
-      }
-      return ()=>{active=false;};
-    }, [isOpen,request?.id,request?.status]);
-    const decide = async (approved:boolean) => {
-      if (!request || decisionLock.current) return;
-      decisionLock.current=true;setBusy(true);setDecisionError('');
-      try { if(approved&&progress?.creditException&&request.status===LeaveRequestStatus.PendingBOD&&!window.confirm('This request exceeds the employee’s available earned credits. You are approving this as a BOD exception. No additional earned credits will be granted.'))return; await onApprove(request,approved,managerNotes); }
-      catch(error:any){setDecisionError(error.message || 'Decision was not saved. Please retry.');}
-      finally{decisionLock.current=false;setBusy(false);}
-    };
-    const saveLock=useRef(false);
-    const save=async(status:LeaveRequestStatus)=>{if(saveLock.current)return;saveLock.current=true;setBusy(true);setDecisionError('');try{await onSave(current,status);}catch(e:any){setDecisionError(e.message||'Leave request was not saved. Your entry is retained; retry.');}finally{saveLock.current=false;setBusy(false);}};
-    const [managerNotes, setManagerNotes] = useState('');
-
-    const isNewRequest = !request;
-    const isManagerView = Boolean(request && request.employeeId !== user?.id && [LeaveRequestStatus.Pending, LeaveRequestStatus.PendingGM, LeaveRequestStatus.PendingBOD].includes(request.status));
-    const canEdit = isNewRequest || request?.status === LeaveRequestStatus.Draft;
-    const approvalStep = request ? getApprovalStepLabel(request.status) : '';
-    const approvalStatus = request ? getApprovalStatusLabel(request.status) : '';
-    const requiresBod = request?.approvalRoute === 'BOD_REQUIRED';
-    const approvalReason = request ? getTimeApprovalReason('leave', request.approvalContext, request.approvalReason, requiresBod) : undefined;
-    const nextStep = request ? getTimeApprovalNextStep(request.status, requiresBod) : undefined;
-    const requestDays = approvalContextNumber(request?.approvalContext, 'requestDays');
-    const yearLeaveDays = approvalContextNumber(request?.approvalContext, 'yearLeaveDays');
-    const threshold = approvalContextNumber(request?.approvalContext, 'threshold');
-    const monthsRemaining = approvalContextNumber(request?.approvalContext, 'monthsRemaining');
-
-    useEffect(() => {
-        if (isOpen) {
-            setCurrent(request || {
-                leaveTypeId: leaveTypes[0]?.id || '',
-                startDate: new Date(),
-                endDate: new Date(),
-                status: LeaveRequestStatus.Draft
-            });
-            setManagerNotes('');
-        }
-    }, [request, isOpen, leaveTypes]);
-
-    useEffect(() => {
-        if (!current.leaveTypeId && leaveTypes.length > 0) {
-            setCurrent(prev => ({ ...prev, leaveTypeId: leaveTypes[0].id }));
-        }
-    }, [leaveTypes, current.leaveTypeId]);
-    
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-        const { name, value } = e.target;
-        setCurrent(prev => ({...prev, [name]: value}));
-    };
-
-    const handleDateChange = (field: 'startDate' | 'endDate', value: string) => {
-        const newDate = new Date(value);
-        let newStartDate = current.startDate || new Date();
-        let newEndDate = current.endDate || new Date();
-        
-        if (field === 'startDate') {
-            newStartDate = newDate;
-            if (newDate > newEndDate) {
-                newEndDate = newDate;
-            }
-        } else {
-            newEndDate = newDate;
-        }
-        
-        // Calculate diff in days (inclusive, so +1)
-        // Note: For a more advanced HRIS, this should skip weekends and holidays. 
-        // For now, doing simple math.
-        const diffTime = Math.abs(newEndDate.getTime() - newStartDate.getTime());
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-
-        setCurrent(prev => ({ 
-            ...prev, 
-            startDate: newStartDate, 
-            endDate: newEndDate,
-            durationDays: diffDays
-        }));
-    };
-    
-    const footer = () => {
-        if (isManagerView) {
-            return (
-                <div className="flex w-full flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
-                    <Textarea label={request?.status===LeaveRequestStatus.PendingBOD?"BOD note (optional for approval; required for rejection)":"Manager Notes (Required for Rejection)"} value={managerNotes} onChange={e => setManagerNotes(e.target.value)} rows={1} />
-                    <div className="flex space-x-2 ml-4">
-                        <Button variant="danger" onClick={() => void decide(false)} disabled={busy || !managerNotes.trim() || progress?.alreadyApproved}>Reject</Button>
-                        <Button onClick={() => void decide(true)} disabled={busy || progress?.alreadyApproved || (request?.status===LeaveRequestStatus.PendingBOD && !progress?.canAct)} isLoading={busy}>{progress?.alreadyApproved ? 'Already approved by you' : 'Approve'}</Button>
-                    </div>
-                </div>
-            );
-        }
-        if (canEdit) {
-            return (
-                <div className="flex w-full justify-end space-x-2">
-                    <Button variant="secondary" disabled={busy} onClick={onClose}>Cancel</Button>
-                    <Button disabled={busy} onClick={() => void save(LeaveRequestStatus.Draft)}>Save Draft</Button>
-                    <Button 
-                        disabled={busy} onClick={() => void save(LeaveRequestStatus.Pending)}
-                        variant="primary"
-                    >
-                        {busy ? 'Submitting leave request…' : 'Submit'}
-                    </Button>
-                </div>
-            )
-        }
-        return <div className="flex w-full justify-end"><Button variant="secondary" onClick={onClose}>Close</Button></div>;
-    };
-    
-    return (
-        <Modal acknowledgmentRequestType={canEdit ? "Leave" : undefined} acknowledgmentDraft={!isNewRequest}
-            isOpen={isOpen}
-            onClose={busy ? () => {} : onClose}
-            title={isNewRequest ? 'Request Leave' : 'Leave Request Details'}
-            size="3xl" viewportFit
-            footer={footer()}
-        >
-            <div className="space-y-4">
-                {decisionError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-red-800 dark:bg-red-950 dark:text-red-200">{decisionError}</p>}
-                {progress?.required > 0 && <p role="status">{progress.completed} of {progress.required} BOD approvals completed{progress.alreadyApproved ? ' · Already approved by you' : ''}</p>}
-                {progress?.creditException && <p className="rounded-lg bg-amber-50 p-3 text-amber-900 dark:bg-amber-950 dark:text-amber-100">Insufficient earned credits. This request requires BOD exception approval. An authorized BOD may approve or reject this request.</p>}
-                {progress?.creditTracked && <dl className="grid grid-cols-2 gap-3 rounded-xl border p-4">{[['Available earned credits',progress.availableCredits],['Requested days',progress.requestedCredits],['Credit shortfall',progress.creditShortfall],['Balance after this request',progress.remainingBalance],['Exception status',progress.creditOverrides?.length?'BOD exception recorded':progress.creditException?'BOD exception required':'Within available credits']].map(([label,value])=><div key={String(label)}><dt className="text-sm">{label}</dt><dd className="font-semibold">{String(value)}</dd></div>)}</dl>}
-                {progress?.creditOverrides?.map((o:any)=><p key={o.approver_id} className="text-sm">BOD credit exception · {new Date(o.created_at).toLocaleString('en-PH')} · {o.note||'No approval note'} · Approver {o.approver_id}</p>)}
-                {request && (
-                    <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-600 dark:bg-slate-800">
-                        <p><span className="font-semibold">Employee:</span> {request.employeeName}</p>
-                        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                            <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Current step</p><p className="mt-1 font-semibold">{approvalStep}</p></div>
-                            <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Status</p><p className="mt-1"><span className="inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200">{approvalStatus}</span></p></div>
-                            <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Leave period</p><p className="mt-1 font-semibold">{new Date(request.startDate).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}–{new Date(request.endDate).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}</p></div>
-                            {monthsRemaining !== undefined && <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Months remaining</p><p className="mt-1 font-semibold">{formatApprovalNumber(monthsRemaining)}</p></div>}
-                            {approvalReason && <div className="sm:col-span-2"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Details</p><p className="mt-1">{approvalReason}</p></div>}
-                            {(requestDays !== undefined || request.durationDays !== undefined) && <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Leave requested</p><p className="mt-1 font-semibold">{formatApprovalNumber(requestDays ?? request.durationDays)} days</p></div>}
-                            {yearLeaveDays !== undefined && <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Year leave total</p><p className="mt-1 font-semibold">{formatApprovalNumber(yearLeaveDays)} days{threshold !== undefined ? ` / ${formatApprovalNumber(threshold)}-day allowance` : ''}</p></div>}
-                        </div>
-                        {nextStep && <span className="mt-4 inline-flex rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700 dark:bg-violet-950 dark:text-violet-200">{nextStep}</span>}
-                    </div>
-                 )}
-
-                 {isNewRequest && (
-                    <div className="p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-md mb-4">
-                        {user?.managerId ? (
-                            <p className="text-sm text-blue-800 dark:text-blue-200">
-                                <span className="font-bold">Approver:</span> Your assigned manager will review this request.
-                            </p>
-                        ) : (
-                            <p className="text-sm text-red-600 dark:text-red-400 font-bold">
-                                Warning: You do not have a reporting manager assigned. Please contact HR before submitting.
-                            </p>
-                        )}
-                    </div>
-                 )}
-                 
-                <div>
-                    <label className="block text-sm font-medium">Leave Type</label>
-                    <select
-                      name="leaveTypeId"
-                      value={current.leaveTypeId || ''}
-                      onChange={handleChange}
-                      disabled={!canEdit || leaveTypes.length === 0}
-                      className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:bg-gray-200 dark:disabled:bg-gray-800"
-                    >
-                        {leaveTypes.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                    </select>
-                </div>
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Input label="Start Date" type="date" value={current.startDate ? new Date(current.startDate).toISOString().split('T')[0] : ''} onChange={e => handleDateChange('startDate', e.target.value)} disabled={!canEdit} />
-                    <Input label="End Date" type="date" value={current.endDate ? new Date(current.endDate).toISOString().split('T')[0] : ''} onChange={e => handleDateChange('endDate', e.target.value)} disabled={!canEdit} />
-                </div>
-                <Textarea label="Reason" name="reason" value={current.reason || ''} onChange={handleChange} rows={3} required disabled={!canEdit} />
-                
-                {!isManagerView && 
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Attach Document (Optional)</label>
-                        <FileUploader onFileUpload={() => {}} />
-                    </div>
-                }
-            </div>
-        </Modal>
-    );
-};
-
-export default LeaveRequestModal;
