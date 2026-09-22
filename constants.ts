@@ -116,6 +116,7 @@ export const NAV_LINKS: NavLink[] = [
             { name: 'WFH Requests', path: '/payroll/wfh-requests', requiredPermission: { resource: 'WFH', permission: Permission.View } },
             { name: 'Leave', path: '/payroll/leave', requiredPermission: { resource: 'Leave', permission: Permission.View } },
             { name: 'Leave Credits', path: '/payroll/leave-credits', requiredPermission: { resource: 'Employees', permission: Permission.Edit } },
+            { name: 'Import Leave Balances', path: '/payroll/leave-balances/import', requiredPermission: { resource: 'Employees', permission: Permission.Edit }, visibilityRoles: [Role.Admin, Role.HRManager, Role.HRStaff, Role.BOD] },
             { name: 'Exceptions', path: '/payroll/exceptions', requiredPermission: { resource: 'Exceptions', permission: Permission.View } },
             { name: 'Payroll Prep', path: '/payroll/payroll-prep', requiredPermission: { resource: 'PayrollPrep', permission: Permission.View } },
             { name: 'Payroll Staging', path: '/payroll/staging', requiredPermission: { resource: 'PayrollStaging', permission: Permission.View } },

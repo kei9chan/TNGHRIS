@@ -2,48 +2,20 @@ import React from 'react';
 import { LeaveBalance } from '../../types';
 
 interface LeaveBalanceCardProps {
-  balance: LeaveBalance & { available: number; name: string };
+  balance: LeaveBalance & { available: number; name: string; pending?: number; asOfDate?: string; lastUpdatedBy?: string; approvalStatus?: string };
 }
 
 const LeaveBalanceCard: React.FC<LeaveBalanceCardProps> = ({ balance }) => {
-  const isLowBalance = balance.available < 3;
-  const totalPotential = balance.opening + balance.accrued + balance.adjusted;
-  const percentage = totalPotential > 0 ? Math.min(100, Math.max(0, (balance.available / totalPotential) * 100)) : 0;
-
   return (
-    <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-4 relative overflow-hidden">
-      <div className="flex justify-between items-start relative z-10">
-        <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">{balance.name}</h3>
-        <div className={`text-3xl font-bold ${isLowBalance ? 'text-red-500' : 'text-indigo-600 dark:text-indigo-400'}`}>
-          {balance.available.toFixed(3)}
-        </div>
+    <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+      <div className="flex justify-between gap-4">
+        <div><h3 className="text-lg font-bold text-slate-900 dark:text-white">{balance.name}</h3><p className="text-sm text-slate-500">Balance as of {balance.asOfDate ? new Date(balance.asOfDate).toLocaleDateString('en-PH',{month:'long',day:'numeric',year:'numeric'}) : 'today'}</p></div>
+        <div className="text-right"><div className="text-3xl font-black text-violet-700 dark:text-violet-300">{balance.available.toFixed(3)}</div><p className="text-sm text-slate-500">Remaining balance</p></div>
       </div>
-      
-      <p className={`text-right text-sm ${isLowBalance ? 'text-red-500 font-medium' : 'text-gray-500 dark:text-gray-400'} relative z-10`}>
-          {isLowBalance ? 'Low Balance' : 'days available'}
-      </p>
-
-      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mt-3 mb-3">
-            <div 
-                className={`${isLowBalance ? 'bg-red-500' : 'bg-indigo-500'} h-1.5 rounded-full transition-all duration-500`} 
-                style={{ width: `${percentage}%` }}
-            ></div>
+      <div className="mt-5 grid grid-cols-2 gap-3 border-t pt-4 text-sm sm:grid-cols-5">
+        {[['Opening balance',balance.opening],['Accrued',balance.accrued],['Used',balance.used],['Approved adjustments',balance.adjusted],['Pending requests',balance.pending||0]].map(([label,value])=><div key={String(label)}><span className="block text-xs text-slate-500">{label}</span><strong>{Number(value).toFixed(3)}</strong></div>)}
       </div>
-
-      <div className="pt-2 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400 grid grid-cols-3 gap-1 relative z-10">
-        <div>
-            <span className="block text-[10px] uppercase tracking-wider text-gray-400">Opening</span>
-            <span className="font-medium text-sm">{balance.opening}</span>
-        </div>
-        <div className="text-center">
-            <span className="block text-[10px] uppercase tracking-wider text-gray-400">Accrued</span>
-            <span className="font-medium text-sm">{balance.accrued.toFixed(3)}</span>
-        </div>
-        <div className="text-right">
-             <span className="block text-[10px] uppercase tracking-wider text-gray-400">Used</span>
-             <span className="font-medium text-sm">{balance.used.toFixed(3)}</span>
-        </div>
-      </div>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2 text-xs dark:bg-slate-900"><span>Last updated by <strong>{balance.lastUpdatedBy||'System ledger'}</strong></span><span className={`rounded-full px-2 py-1 font-bold ${balance.approvalStatus?.toLowerCase().includes('pending')?'bg-amber-100 text-amber-800':'bg-emerald-100 text-emerald-700'}`}>{balance.approvalStatus||'Active'}</span></div>
     </div>
   );
 };

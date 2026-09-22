@@ -17,6 +17,7 @@ import LeaveCalendar from '../../components/payroll/LeaveCalendar';
 import { processTimeRequestApproval, sendConditionalApprovalEmails } from '../../services/approverConfigService';
 import { getApprovalRequestId } from '../../services/approvalDeepLinks';
 import { fetchLeaveRequestById } from '../../services/leaveService';
+import { ExceptionOutcome } from '../../modules/payroll/leaveManagementModel';
 import { hasPendingTimeApprovalAssignment } from '../../services/timeApprovalAssignmentService';
 import { getApprovalStatusLabel, getTimeApprovalReason } from '../../utils/approvalPresentation';
 
@@ -43,6 +44,7 @@ const Leave: React.FC = () => {
   });
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [liveQuotas, setLiveQuotas] = useState({ vacation: 0, sick: 0, offset: 0 });
+  const [balanceSummary, setBalanceSummary] = useState<any[]>([]);
   const [reporteeIds, setReporteeIds] = useState<string[]>([]);
 
   const roleCanApprove = access.canApprove;
@@ -143,6 +145,9 @@ const Leave: React.FC = () => {
       supabase.rpc('get_confirmed_leave_ledger').then(({data,error}) => {
         if (data && !error) setLiveQuotas({vacation:Number(data.vacation),sick:Number(data.sick),offset:Number(data.offset)});
       });
+      supabase.rpc('get_leave_balance_summary').then(({data,error}) => {
+        if (data && !error) setBalanceSummary(data || []);
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, reporteeIds.join(',')]);
@@ -169,17 +174,18 @@ const Leave: React.FC = () => {
       else if (isOffset) available = liveQuotas.offset;
 
       return {
+        ...(balanceSummary.find(item => item.leaveTypeId === lt.id) || {}),
         employeeId: user.id,
         leaveTypeId: lt.id,
-        opening: available,
-        accrued: 0,
-        used: 0,
-        adjusted: 0,
-        available: available,
+        opening: Number(balanceSummary.find(item => item.leaveTypeId === lt.id)?.opening ?? available),
+        accrued: Number(balanceSummary.find(item => item.leaveTypeId === lt.id)?.accrued ?? 0),
+        used: Number(balanceSummary.find(item => item.leaveTypeId === lt.id)?.used ?? 0),
+        adjusted: Number(balanceSummary.find(item => item.leaveTypeId === lt.id)?.adjusted ?? 0),
+        available: Number(balanceSummary.find(item => item.leaveTypeId === lt.id)?.available ?? available),
         name: lt.name,
       };
       });
-  }, [leaveTypes, user, liveQuotas]);
+  }, [leaveTypes, user, liveQuotas, balanceSummary]);
 
   const myRequests = useMemo(() => {
     if (!user) return [];
@@ -304,6 +310,13 @@ const Leave: React.FC = () => {
       approver_id: user.managerId || null,
       business_unit_id: user.businessUnitId || null,
       department_id: user.departmentId || null,
+      selected_leave_type_id: (requestToSave as any).selectedLeaveTypeId || requestToSave.leaveTypeId,
+      selected_leave_type: (requestToSave as any).selectedLeaveType,
+      paid_days: (requestToSave as any).paidDays,
+      unpaid_days: (requestToSave as any).unpaidDays,
+      credit_shortfall: (requestToSave as any).creditShortfall,
+      final_classification: (requestToSave as any).finalClassification,
+      lwop_confirmed: (requestToSave as any).lwopConfirmed,
     };
 
     const {data: submission,error: saveError}=await supabase.rpc('submit_leave_request',{p_key:submissionKey.current,p_id:requestToSave.id||null,p_data:payload});
@@ -318,12 +331,23 @@ const Leave: React.FC = () => {
     } finally {submissionLock.current=false;}
   };
 
-  const handleApproval = async (request: LeaveRequest, approved: boolean, notes: string) => {
+  const handleApproval = async (request: LeaveRequest, approved: boolean, notes: string, outcome?: ExceptionOutcome) => {
     if (!user) return;
     let result: any;
     let error: any = null;
     try {
-      result = await processTimeRequestApproval('leave', request.id, approved ? 'approve' : 'reject', notes);
+      if (request.status === LeaveRequestStatus.PendingBOD && outcome) {
+        const { data, error: decisionError } = await supabase.rpc('process_leave_exception_approval', {
+          p_request_id: request.id,
+          p_decision: approved ? 'approve' : 'reject',
+          p_outcome: outcome,
+          p_note: notes || null,
+        });
+        if (decisionError) throw decisionError;
+        result = data;
+      } else {
+        result = await processTimeRequestApproval('leave', request.id, approved ? 'approve' : 'reject', notes);
+      }
       if (result?.notifyEscalation) sendConditionalApprovalEmails('leave', request.id).catch(console.error);
     } catch (caught) {
       error = caught;
@@ -450,6 +474,7 @@ const Leave: React.FC = () => {
         onClose={() => setIsModalOpen(false)}
         request={selectedRequest}
         leaveTypes={leaveTypes}
+        availableBalances={Object.fromEntries(myBalances.map(balance => [balance.leaveTypeId, balance.available]))}
         onSave={handleSave}
         onApprove={handleApproval}
         onFileSelect={setAttachmentFile}
