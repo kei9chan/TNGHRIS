@@ -4,6 +4,8 @@ import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
 import {supabase} from '../../services/supabaseClient';
 import {RawBalanceRow,ValidatedBalanceRow,validateBalanceRows} from '../../modules/payroll/leaveManagementModel';
+import {useAuth} from '../../hooks/useAuth';
+import {Role} from '../../types';
 
 const columns=[
   'Employee ID','Employee name','Business unit','Leave type','Opening balance','Accrued credits',
@@ -26,12 +28,15 @@ function parseCsv(text:string){
 }
 
 export default function LeaveBalanceImport(){
+ const {user}=useAuth();
  const [step,setStep]=useState(1),[fileName,setFileName]=useState(''),[rows,setRows]=useState<ValidatedBalanceRow[]>([]),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[batch,setBatch]=useState<any>(null),[batches,setBatches]=useState<any[]>([]),[manual,setManual]=useState(false);
  const fileRef=useRef<HTMLInputElement>(null);
  const [entry,setEntry]=useState<RawBalanceRow>({leaveType:'Vacation Leave',asOfDate:'2026-08-31',source:'Manual record'});
  const counts=useMemo(()=>rows.reduce((value,row)=>({...value,[row.status]:value[row.status]+1}),{valid:0,review:0,invalid:0,not_applicable:0}),[rows]);
- const loadBatches=async()=>{const {data,error}=await supabase.rpc('get_leave_balance_migration_workspace');if(!error)setBatches(data?.batches||[]);};
- useEffect(()=>{void loadBatches();},[]);
+ const allowedRoles=new Set([Role.Admin,Role.BOD,Role.HRManager,Role.HRStaff]);
+ const authorized=[user?.role,...(user?.roles||[])].some(role=>allowedRoles.has(role as Role));
+ const loadBatches=async()=>{if(!authorized)return;const {data,error}=await supabase.rpc('get_leave_balance_migration_workspace');if(!error)setBatches(data?.batches||[]);};
+ useEffect(()=>{void loadBatches();},[authorized]);
  async function handleFile(file:File){
   setBusy(true);setMessage('');
   try{
@@ -57,6 +62,7 @@ export default function LeaveBalanceImport(){
   if(!batch?.id)return;const note=window.prompt(action==='approve'?'Approval note (optional)':'Reason is required')||'';if(action!=='approve'&&!note.trim())return;
   setBusy(true);const {data,error}=await supabase.rpc('review_leave_balance_migration',{p_batch_id:batch.id,p_action:action,p_note:note});setBusy(false);if(error)setMessage(error.message);else{setBatch(data);setMessage(action==='approve'?'Approval recorded. Eligible balances are active only when the route is complete.':action==='return'?'Returned for correction.':'Migration rejected.');await loadBatches();}
  }
+ if(!authorized)return <Card><h1 className="text-xl font-bold">Leave balance access restricted</h1><p className="mt-2 text-slate-600">Only HR Manager, HR Staff, Admin, and Board of Director users can add or import leave balances.</p></Card>;
  return <div className="space-y-6 pb-10">
   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><p className="text-sm font-semibold text-violet-600">Leaves / Balance migration</p><h1 className="text-3xl font-black text-slate-950 dark:text-white">Import existing leave balances</h1><p className="mt-1 max-w-3xl text-slate-600 dark:text-slate-300">Import opening and current leave balances from existing records. Balances become active only after the required approval.</p></div><div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-950"><strong>Imported balances are not yet active</strong><span className="mt-1 block">Existing approved leave records are never overwritten.</span></div></div>
   <nav aria-label="Import progress" className="grid gap-3 md:grid-cols-3">{[['Upload file','Excel, CSV, or manual entry'],['Review balances','Validate and correct rows'],['Approval and activation','Complete the required route']].map(([title,copy],index)=><div key={title} className="flex items-center gap-3"><span className={stepStyle(step===index+1,step>index+1)}>{index+1}</span><div><strong>{title}</strong><p className="text-xs text-slate-500">{copy}</p></div>{index<2&&<div className="ml-auto hidden h-px flex-1 bg-slate-200 md:block"/>}</div>)}</nav>

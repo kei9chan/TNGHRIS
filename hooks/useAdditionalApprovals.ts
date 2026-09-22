@@ -6,6 +6,7 @@ import { fetchOfferApprovalPackage, fetchPendingOfferApprovalIds } from '../serv
 import { fetchMyAssetApprovalQueue } from '../services/assetApprovalService';
 import { fetchMyPendingBenefitApprovals } from '../services/benefitApprovalService';
 import type { PendingBenefitApproval } from '../services/benefitApprovalService';
+import {fetchPendingPayPackageApprovals,PendingPayPackageApproval} from '../services/payPackageApprovalService';
 
 type PendingStep = {
   userId?: string;
@@ -132,6 +133,7 @@ export function useAdditionalApprovals(user: User | null) {
   const [pendingOfferApprovals, setPendingOfferApprovals] = useState<PendingOfferApproval[]>([]);
   const [pendingAssetApprovals, setPendingAssetApprovals] = useState<PendingAssetApproval[]>([]);
   const [pendingBenefitApprovals, setPendingBenefitApprovals] = useState<PendingBenefitApproval[]>([]);
+  const [pendingPayPackageApprovals, setPendingPayPackageApprovals] = useState<PendingPayPackageApproval[]>([]);
   const [additionalApprovalError, setAdditionalApprovalError] = useState<string | null>(null);
   const [additionalApprovalsLoading, setAdditionalApprovalsLoading] = useState(true);
 
@@ -150,6 +152,7 @@ export function useAdditionalApprovals(user: User | null) {
       setPendingOfferApprovals([]);
       setPendingAssetApprovals([]);
       setPendingBenefitApprovals([]);
+      setPendingPayPackageApprovals([]);
     }
     if (!user?.id) {
       setPendingNTEApprovals([]);
@@ -159,6 +162,7 @@ export function useAdditionalApprovals(user: User | null) {
       setPendingOfferApprovals([]);
       setPendingAssetApprovals([]);
       setPendingBenefitApprovals([]);
+      setPendingPayPackageApprovals([]);
       setAdditionalApprovalError(null);
       return;
     }
@@ -178,7 +182,12 @@ export function useAdditionalApprovals(user: User | null) {
       benefitLoadError = error;
       return [] as Awaited<ReturnType<typeof fetchMyPendingBenefitApprovals>>;
     });
-    const [nteResult, [panResult, requisitionResult, awardResult], offerIds, assetQueue, benefitQueue, taskResult] = await Promise.all([
+    let payPackageLoadError: any = null;
+    const payPackageQueuePromise = fetchPendingPayPackageApprovals().catch((error: any) => {
+      payPackageLoadError = error;
+      return [] as PendingPayPackageApproval[];
+    });
+    const [nteResult, [panResult, requisitionResult, awardResult], offerIds, assetQueue, benefitQueue, payPackageQueue, taskResult] = await Promise.all([
       supabase.rpc('get_my_pending_nte_approvals'),
       Promise.all([
       supabase
@@ -197,6 +206,7 @@ export function useAdditionalApprovals(user: User | null) {
       offerIdsPromise,
       assetQueuePromise,
       benefitQueuePromise,
+      payPackageQueuePromise,
       fetchActionableApprovalTasks(user.id).then(data => ({ data, error: null as any })).catch(error => ({ data: [], error })),
     ]);
 
@@ -211,7 +221,7 @@ export function useAdditionalApprovals(user: User | null) {
     if (sequence !== refreshSequence.current) return;
     const actionable = (type: string, id: string) => taskResult.data.some(t => t.request_type === type && t.request_id === id);
     const nteRows = (nteResult.data || []).filter((r: any) => actionable('nte', r.id));
-    const errors = [taskResult.error, nteResult.error, panResult.error, requisitionResult.error, awardResult.error, offerLoadError, assetLoadError, benefitLoadError, ...offerPackageErrors].filter(Boolean);
+    const errors = [taskResult.error, nteResult.error, panResult.error, requisitionResult.error, awardResult.error, offerLoadError, assetLoadError, benefitLoadError, payPackageLoadError, ...offerPackageErrors].filter(Boolean);
     setAdditionalApprovalError(errors.length ? errors.map(error => error!.message).join(' · ') : null);
     // A failed refresh is not an empty queue. Keep the last successful result
     // with a visible error; decisions still require backend authorization.
@@ -337,6 +347,7 @@ export function useAdditionalApprovals(user: User | null) {
       canonicalKey: `asset:${row.requestId}:${row.approvalStage}:${row.viewerActionStatus || 'READ_ONLY'}`,
     })));
     if (!benefitLoadError) setPendingBenefitApprovals(benefitQueue);
+    if (!payPackageLoadError) setPendingPayPackageApprovals(payPackageQueue.filter(row => row.isActionable));
     } catch (error: any) {
       if (sequence === refreshSequence.current) setAdditionalApprovalError(error?.message || 'Approval requests could not be loaded. Please retry.');
     } finally {
@@ -375,6 +386,9 @@ export function useAdditionalApprovals(user: User | null) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'benefit_requests' }, () => {
         void refreshAdditionalApprovals();
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payroll_pay_packages' }, () => {
+        void refreshAdditionalApprovals();
+      })
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
   }, [refreshAdditionalApprovals, user?.id]);
@@ -387,6 +401,7 @@ export function useAdditionalApprovals(user: User | null) {
     pendingOfferApprovals,
     pendingAssetApprovals,
     pendingBenefitApprovals,
+    pendingPayPackageApprovals,
     additionalApprovalError,
     additionalApprovalsLoading,
     refreshAdditionalApprovals,

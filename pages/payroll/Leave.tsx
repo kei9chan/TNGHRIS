@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { LeaveRequest, LeaveRequestStatus, Role, Permission } from '../../types';
@@ -49,6 +49,8 @@ const Leave: React.FC = () => {
 
   const roleCanApprove = access.canApprove;
   const canApprove = (can('Leave', Permission.Approve) || hasDirectReports() || roleCanApprove) ?? false;
+  const leaveAdminRoles = new Set([Role.Admin, Role.HRManager, Role.HRStaff, Role.BOD]);
+  const canAddLeaveBalances = [user?.role, ...(user?.roles || [])].some(role => leaveAdminRoles.has(role as Role));
 
   const loadLeaveTypes = async () => {
     const fallback = [
@@ -412,9 +414,12 @@ const Leave: React.FC = () => {
         icon={toastInfo.icon}
       />
 
-      <div className="flex justify-between items-center">
+      <div className="flex flex-wrap justify-between items-center gap-3">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Leave Management</h1>
-        <Button onClick={() => handleOpenModal(null)}>Request Leave</Button>
+        <div className="flex flex-wrap gap-2">
+          {canAddLeaveBalances && <Link to="/payroll/leave-balances/import" className="inline-flex min-h-11 items-center rounded-lg border border-violet-300 bg-white px-4 py-2 font-semibold text-violet-700 hover:border-violet-500 dark:bg-slate-800 dark:text-violet-300">Add Leave</Link>}
+          <Button onClick={() => handleOpenModal(null)}>Request Leave</Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
