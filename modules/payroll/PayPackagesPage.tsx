@@ -34,9 +34,7 @@ type View = "builder" | "batch" | "review" | "pending";
 const field =
   "min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white";
 const money = (value: string | number | null | undefined) =>
-  value == null
-    ? "Pending"
-    : `₱${Number(value).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  `₱${Number(value || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const streamLabel = (value: string) =>
   value === "professional_fee" ? "Consultant fee" : "Employee payroll";
 const statusTone: Record<string, string> = {

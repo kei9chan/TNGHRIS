@@ -4,7 +4,12 @@ import Card from "../../components/ui/Card";
 import {
   arrangementSummary,
   calculatePackagePreview,
+  classificationLabels,
+  componentClassification,
+  componentTaxLabel,
+  includedInGuaranteedPay,
   payBasisOptions,
+  validatePayPackage,
 } from "./payPackageBuilderModel";
 import {
   ComponentCategory,
@@ -34,9 +39,7 @@ import {
 const field =
   "mt-1 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white";
 const money = (value: number | string | null | undefined) =>
-  value == null
-    ? "Pending"
-    : `₱${Number(value).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  `₱${Number(value || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const displayDate = (value?: string | null) =>
   value
     ? new Date(`${value.slice(0, 10)}T00:00:00`).toLocaleDateString("en-PH", {
@@ -115,7 +118,7 @@ const Segmented: React.FC<{
   </div>
 );
 const StatusChip: React.FC<{
-  tone: "green" | "amber" | "red" | "gray" | "violet";
+  tone: "green" | "amber" | "red" | "gray" | "violet" | "blue";
   children: React.ReactNode;
 }> = ({ tone, children }) => {
   const tones = {
@@ -124,6 +127,7 @@ const StatusChip: React.FC<{
     red: "bg-rose-100 text-rose-800",
     gray: "bg-slate-100 text-slate-700",
     violet: "bg-violet-100 text-violet-800",
+    blue: "bg-blue-100 text-blue-800",
   };
   return (
     <span
@@ -131,6 +135,89 @@ const StatusChip: React.FC<{
     >
       {children}
     </span>
+  );
+};
+
+const SummaryCards: React.FC<{
+  base: string | number;
+  components: PayComponent[];
+  treatment: Treatment;
+}> = ({ base, components, treatment }) => {
+  const preview = useMemo(
+    () => calculatePackagePreview({ baseAmount: base, components, treatment }),
+    [base, components, treatment],
+  );
+  const cards = [
+    ["Guaranteed monthly pay", preview.guaranteedMonthlyPay, "green", "Fixed approved compensation"],
+    ["Conditional maximum", preview.conditionalMaximum, "amber", "Paid only when conditions are met"],
+    ["Reimbursable maximum", preview.reimbursableMaximum, "amber", "Receipt and approval required"],
+    ["Estimated employee deductions", preview.estimatedEmployeeDeductions, "blue", "Final amount is payroll-period specific"],
+    ["Estimated employer contributions", preview.estimatedEmployerContributions, "blue", "Company-paid statutory estimate"],
+    ["Estimated total monthly company cost", preview.estimatedCompanyCost, "violet", "Earnings and employer costs combined"],
+  ] as const;
+  const tones = {
+    green: "bg-emerald-50 text-emerald-950",
+    amber: "bg-amber-50 text-amber-950",
+    blue: "bg-blue-50 text-blue-950",
+    violet: "bg-violet-50 text-violet-950",
+  };
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {cards.map(([label, amount, tone, note]) => (
+        <div key={label} className={`rounded-2xl p-4 ${tones[tone]}`}>
+          <p className="text-xs font-bold uppercase tracking-wide opacity-70">{label}</p>
+          <p className="mt-2 text-2xl font-black tabular-nums">{money(amount)}</p>
+          <p className="mt-1 text-xs opacity-75">{note}</p>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const CompensationBreakdown: React.FC<{
+  base: string | number;
+  components: PayComponent[];
+}> = ({ base, components }) => {
+  const rows: PayComponent[] = [
+    {
+      ...newComponent("fixed_allowance"),
+      name: "Basic salary",
+      amount: String(base || 0),
+      frequency: "Monthly",
+      classification: "guaranteed",
+      includedInGuaranteedPay: true,
+      affectsEmployerCost: true,
+      taxTreatment: "taxable",
+    },
+    ...components,
+  ];
+  return (
+    <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+      <table className="w-full min-w-[900px] text-left text-sm">
+        <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-800">
+          <tr>
+            <th className="p-3">Component</th><th className="p-3">Exact amount</th><th className="p-3">Frequency</th><th className="p-3">Classification</th><th className="p-3">Tax treatment</th><th className="p-3">Guaranteed pay</th><th className="p-3">Employer cost</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+          {rows.map((component, index) => {
+            const classification = componentClassification(component);
+            const tone = classification === "receipt_based" || classification === "conditional" ? "amber" : classification === "payroll_calculated" ? "blue" : "green";
+            return (
+              <tr key={`${component.name}:${index}`}>
+                <th className="p-3 font-semibold">{component.name}</th>
+                <td className="p-3 font-bold tabular-nums">{classification === "receipt_based" ? `Up to ${money(component.amount)}` : money(component.amount)}</td>
+                <td className="p-3">{component.frequency || component.recurrence || "Monthly"}</td>
+                <td className="p-3"><StatusChip tone={tone}>{classificationLabels[classification]}</StatusChip></td>
+                <td className="p-3">{componentTaxLabel(component)}</td>
+                <td className="p-3 font-semibold">{includedInGuaranteedPay(component) ? "Yes" : "No"}</td>
+                <td className="p-3 font-semibold">{component.affectsEmployerCost === false ? "No" : "Yes"}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 };
 
@@ -186,7 +273,7 @@ const ComponentEditor: React.FC<{
       )}
       {components.length === 0 && (
         <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
-          No additional components yet. Basic pay remains separate.
+          Only basic salary is active. Add a component only when it applies.
         </div>
       )}
       <div className="space-y-3">
@@ -238,9 +325,13 @@ const ComponentEditor: React.FC<{
                   </div>
                   <p className="mt-1 text-sm text-slate-500">
                     {money(component.amount)} ·{" "}
-                    {component.frequency || component.recurrence} ·{" "}
-                    {component.paidBy || "employer"}-paid
+                    {component.frequency || component.recurrence}
                   </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <StatusChip tone={componentClassification(component) === "receipt_based" || componentClassification(component) === "conditional" ? "amber" : componentClassification(component) === "payroll_calculated" ? "blue" : "green"}>{classificationLabels[componentClassification(component)]}</StatusChip>
+                    <StatusChip tone={includedInGuaranteedPay(component) ? "green" : "gray"}>{includedInGuaranteedPay(component) ? "Included in guaranteed pay" : "Not included in guaranteed pay"}</StatusChip>
+                    <StatusChip tone={component.affectsEmployerCost === false ? "gray" : "violet"}>{component.affectsEmployerCost === false ? "Does not affect employer cost" : "Affects employer cost"}</StatusChip>
+                  </div>
                 </div>
                 <div className="flex gap-2">
                   <Button
@@ -343,6 +434,21 @@ const ComponentEditor: React.FC<{
                       ))}
                     </select>
                   </Label>
+                  <Label title="Classification">
+                    <select
+                      className={field}
+                      value={componentClassification(component)}
+                      onChange={(e) => {
+                        const classification = e.target.value as PayComponent["classification"];
+                        update(index, {
+                          classification,
+                          includedInGuaranteedPay: ["guaranteed", "guaranteed_benefit"].includes(classification || ""),
+                        });
+                      }}
+                    >
+                      {Object.entries(classificationLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    </select>
+                  </Label>
                   <Label title="Tax treatment">
                     <select
                       className={field}
@@ -381,6 +487,24 @@ const ComponentEditor: React.FC<{
                       <option value="split">Split</option>
                     </select>
                   </Label>
+                  <Label title="Included in guaranteed pay?">
+                    <select className={field} value={includedInGuaranteedPay(component) ? "yes" : "no"} onChange={(e) => update(index, { includedInGuaranteedPay: e.target.value === "yes" })}>
+                      <option value="yes">Yes — included</option><option value="no">No — separate or conditional</option>
+                    </select>
+                  </Label>
+                  <Label title="Affects employer cost?">
+                    <select className={field} value={component.affectsEmployerCost === false ? "no" : "yes"} onChange={(e) => update(index, { affectsEmployerCost: e.target.value === "yes" })}>
+                      <option value="yes">Yes</option><option value="no">No</option>
+                    </select>
+                  </Label>
+                  <Label title="Plain-language explanation">
+                    <input className={field} value={component.description || ""} onChange={(e) => update(index, { description: e.target.value })} placeholder="How and when this item is paid" />
+                  </Label>
+                  {component.taxTreatment === "taxable" && (
+                    <label className="flex min-h-11 items-center gap-3 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium">
+                      <input type="checkbox" checked={Boolean(component.employerPaidTax)} onChange={(e) => update(index, { employerPaidTax: e.target.checked })} /> Employer pays tax on this component
+                    </label>
+                  )}
                   <Label title="Effective date">
                     <input
                       className={field}
@@ -517,16 +641,7 @@ const Review: React.FC<{
     () => calculatePackagePreview({ baseAmount: base, components, treatment }),
     [base, components, treatment],
   );
-  const Line: React.FC<{ label: string; value: number; pending?: boolean }> = ({
-    label,
-    value,
-    pending,
-  }) => (
-    <div className="flex items-center justify-between gap-4 border-b border-slate-100 py-2 text-sm dark:border-slate-700">
-      <span>{label}</span>
-      <strong>{pending ? "Pending" : money(value)}</strong>
-    </div>
-  );
+  const errors = validatePayPackage({ baseAmount: base, components, treatment });
   if (stream === "professional_fee")
     return (
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 dark:border-amber-800 dark:bg-amber-950/20">
@@ -546,123 +661,33 @@ const Review: React.FC<{
       </div>
     );
   return (
-    <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-xl bg-emerald-50 p-5">
-          <p className="text-sm text-emerald-800">Employee receives</p>
-          <p className="mt-1 text-2xl font-bold text-emerald-900">
-            {preview.pending.some((x) => x.includes("Employee-paid"))
-              ? "Needs review"
-              : money(preview.employee.estimatedNet)}
-          </p>
-        </div>
-        <div className="rounded-xl bg-violet-50 p-5">
-          <p className="text-sm text-violet-800">Employer pays</p>
-          <p className="mt-1 text-2xl font-bold text-violet-900">
-            {preview.pending.some((x) => x.includes("Employer-paid"))
-              ? "Needs review"
-              : money(preview.employerPays)}
-          </p>
-        </div>
-        <div className="rounded-xl bg-slate-900 p-5 text-white">
-          <p className="text-sm text-slate-300">Total actual company cost</p>
-          <p className="mt-1 text-2xl font-bold">
-            {preview.pending.some((x) => x.includes("Employer-paid"))
-              ? "Needs review"
-              : money(preview.company.totalActualCost)}
-          </p>
-        </div>
-      </div>
+    <div className="space-y-5">
+      <div><h3 className="text-xl font-bold">Review exact compensation</h3><p className="text-sm text-slate-500">Fixed pay, conditional exposure, payroll estimates, and company cost are intentionally separated.</p></div>
+      <SummaryCards base={base} components={components} treatment={treatment} />
+      <section><h3 className="mb-3 font-bold">Compensation breakdown</h3><CompensationBreakdown base={base} components={components} /></section>
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card title="What the employee receives">
-          <Line label="Basic pay" value={preview.employee.basic} />
-          <Line
-            label="Taxable allowances"
-            value={preview.employee.taxableAllowances}
-          />
-          <Line
-            label="Non-taxable de minimis"
-            value={preview.employee.deMinimis}
-          />
-          <Line
-            label="Approved reimbursements"
-            value={preview.employee.reimbursements}
-          />
-          <Line
-            label="Employee-paid tax"
-            value={preview.employee.employeeTax}
-            pending={preview.pending.includes("Employee-paid income tax")}
-          />
-          <Line
-            label="Employee-paid benefits"
-            value={preview.employee.employeeBenefits}
-          />
-          <Line label="Other deductions" value={preview.employee.deductions} />
-          <div className="mt-3 flex justify-between text-lg font-bold">
-            <span>Estimated net pay</span>
-            <span>
-              {preview.pending.includes("Employee-paid income tax")
-                ? "Needs review"
-                : money(preview.employee.estimatedNet)}
-            </span>
-          </div>
-        </Card>
-        <Card title="What the company pays">
-          <Line
-            label="Gross employee pay"
-            value={preview.company.grossEmployeePay}
-          />
-          <Line
-            label="Employer-paid income tax"
-            value={preview.company.employerTax}
-            pending={preview.pending.includes("Employer-paid income tax")}
-          />
-          <Line
-            label="Employer contributions"
-            value={preview.company.employerContributions}
-          />
-          <Line
-            label="Employer-paid benefits"
-            value={preview.company.employerBenefits}
-          />
-          <Line
-            label="Company-paid employee-share benefits"
-            value={preview.company.companyPaidEmployeeShare}
-          />
-          <Line
-            label="13th-month accrual"
-            value={preview.company.thirteenthMonthAccrual}
-          />
-          <Line
-            label="Service-charge cost"
-            value={preview.company.serviceCharge}
-          />
-          <Line
-            label="Other employer costs"
-            value={preview.company.otherEmployerCosts}
-          />
-          <div className="mt-3 flex justify-between text-lg font-bold">
-            <span>Total actual company cost</span>
-            <span>
-              {preview.pending.includes("Employer-paid income tax")
-                ? "Needs review"
-                : money(preview.company.totalActualCost)}
-            </span>
-          </div>
-        </Card>
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
+          <h3 className="font-bold">Items calculated per payroll run</h3>
+          <p className="mt-2">Employee deductions estimate: <strong>{money(preview.estimatedEmployeeDeductions)}</strong></p>
+          <p>Employer contributions estimate: <strong>{money(preview.estimatedEmployerContributions)}</strong></p>
+          <p className="mt-2 text-xs">Withholding tax and government contributions depend on payroll-period earnings. Loans, attendance, overtime, and authorized deductions apply only when approved and active.</p>
+        </div>
+        <div className="rounded-xl border border-violet-200 bg-violet-50 p-4 text-sm text-violet-950">
+          <h3 className="font-bold">Approval route</h3>
+          <p className="mt-2"><strong>1. HR Manager — Jedidiah</strong></p><p><strong>2. Finance — Lenny Rose Casas</strong></p>
+          <p className="mt-2 text-xs">A submitter cannot approve their own package. The other required independent approver remains due; an assigned authorized BOD alternative is shown in the live approval trail.</p>
+        </div>
       </div>
-      {preview.excludedReimbursements > 0 && (
-        <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
-          {money(preview.excludedReimbursements)} in reimbursements is excluded
-          until receipt approval.
-        </p>
-      )}
-      {preview.pending.length > 0 && (
-        <p className="text-sm text-slate-500">
-          Missing information remains marked Pending or Needs review; it is
-          never treated as zero.
-        </p>
-      )}
+      <div className="rounded-xl border border-slate-200 p-4 text-sm dark:border-slate-700">
+        <h3 className="font-bold">Pay basis and financial effect</h3>
+        <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div><dt className="text-slate-500">Basis</dt><dd className="font-semibold">{arrangementSummary(treatment)}</dd></div>
+          <div><dt className="text-slate-500">Approved gross amount</dt><dd className="font-bold">{money(preview.approvedGrossAmount)}</dd></div>
+          {preview.targetNetAmount > 0 && <div><dt className="text-slate-500">Target net amount</dt><dd className="font-bold">{money(preview.targetNetAmount)}</dd></div>}
+          <div><dt className="text-slate-500">Estimated employer-paid tax</dt><dd className="font-bold">{money(preview.estimatedEmployerTax)}</dd></div>
+        </dl>
+      </div>
+      {errors.length > 0 && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900"><h3 className="font-bold">Complete before submission</h3><ul className="mt-2 list-disc space-y-1 pl-5">{errors.map((error) => <li key={error}>{error}</li>)}</ul></div>}
     </div>
   );
 };
@@ -849,17 +874,6 @@ const VersionDetails: React.FC<{
   onSubmitDraft: (item: PayPackage) => void;
 }> = ({ item, data, onClose, onCopy, onEditDraft, onSubmitDraft }) => {
   const scope = data.scopes.find((value) => value.id === item.scope_id);
-  const preview = calculatePackagePreview({
-    baseAmount: item.base_amount,
-    components: item.components,
-    treatment: item.treatment,
-  });
-  const additions =
-    preview.employee.taxableAllowances +
-    preview.employee.deMinimis +
-    preview.employee.reimbursements +
-    preview.employee.serviceCharge;
-  const packageTotal = preview.company.grossEmployeePay + preview.company.serviceCharge;
   const editableDraft = item.status === "draft" && item.approval_state !== "pending";
   return (
     <div
@@ -890,11 +904,7 @@ const VersionDetails: React.FC<{
         {editableDraft && (
           <p className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><strong>This is editable work.</strong> Edit this same draft, then submit it when it is ready. No copy is created.</p>
         )}
-        <div className="mt-5 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-xl bg-violet-50 p-4"><p className="text-xs font-semibold text-violet-700">Basic pay</p><p className="mt-1 text-lg font-bold text-violet-950">{money(item.base_amount)}</p></div>
-          <div className="rounded-xl bg-slate-50 p-4 dark:bg-slate-800"><p className="text-xs text-slate-500">Allowances &amp; additions</p><p className="mt-1 text-lg font-bold">{money(additions)}</p></div>
-          <div className="rounded-xl bg-emerald-50 p-4"><p className="text-xs font-semibold text-emerald-700">Approved package total</p><p className="mt-1 text-lg font-bold text-emerald-900">{money(packageTotal)}</p></div>
-        </div>
+        <div className="mt-5"><SummaryCards base={item.base_amount} components={item.components} treatment={item.treatment} /></div>
         <dl className="mt-4 divide-y divide-slate-100 rounded-xl border border-slate-200 px-4 text-sm dark:divide-slate-700 dark:border-slate-700">
           <div className="flex justify-between gap-4 py-3"><dt className="text-slate-500">Effective period</dt><dd className="text-right font-semibold">{displayDate(item.effective_from)}{item.effective_until ? ` to ${displayDate(item.effective_until)}` : " onward"}</dd></div>
           <div className="flex justify-between gap-4 py-3"><dt className="text-slate-500">Record source</dt><dd className="text-right font-semibold">{sourceLabel(item)}</dd></div>
@@ -902,19 +912,8 @@ const VersionDetails: React.FC<{
           <div className="flex justify-between gap-4 py-3"><dt className="text-slate-500">Tax setup</dt><dd className="max-w-[65%] text-right font-semibold">{arrangementSummary(item.treatment)}</dd></div>
         </dl>
         <section className="mt-5">
-          <h3 className="font-bold">What is included</h3>
-          {item.components.length ? (
-            <div className="mt-2 divide-y divide-slate-200 rounded-xl border border-slate-200 dark:divide-slate-700 dark:border-slate-700">
-              {item.components.map((component, index) => (
-                <div key={`${component.name}:${index}`} className="flex justify-between gap-4 p-3 text-sm">
-                  <span>{component.name}</span>
-                  <strong>{money(component.amount)} · {component.frequency || component.recurrence}</strong>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-2 rounded-xl bg-slate-50 p-3 text-sm text-slate-500 dark:bg-slate-800">Basic pay only. No recurring allowances or benefits are attached.</p>
-          )}
+          <h3 className="mb-2 font-bold">Exact compensation breakdown</h3>
+          <CompensationBreakdown base={item.base_amount} components={item.components} />
         </section>
         <section className="mt-5 rounded-xl border border-slate-200 p-4 text-sm dark:border-slate-700">
           <h3 className="font-bold">Approval history</h3>
@@ -990,16 +989,13 @@ const CurrentPackageSummary: React.FC<{
     components: item.components,
     treatment: item.treatment,
   });
-  const recurringComponents = item.components.filter(
-    (component) => component.status !== "rejected" && component.status !== "not_payable",
-  );
   return (
     <div className="space-y-5 xl:col-span-2">
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-2xl font-bold">Active pay package</h2>
+              <h2 className="text-2xl font-bold">{data.isSelf ? "My Pay Package" : "Compensation overview"}</h2>
               <StatusChip tone="green">Active</StatusChip>
             </div>
             <p className="mt-1 text-sm text-slate-500">
@@ -1010,27 +1006,11 @@ const CurrentPackageSummary: React.FC<{
             <Button variant="secondary" onClick={onViewDetails}>
               Approval &amp; source details
             </Button>
-            <Button onClick={onUpdate}>Create salary change</Button>
+            {data.canEdit && <Button onClick={onUpdate}>Create salary change</Button>}
           </div>
         </div>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-[1.2fr_1fr_1fr]">
-          <div className="rounded-2xl bg-violet-50 p-5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-violet-600">Approved basic pay</p>
-            <p className="mt-2 text-3xl font-bold text-violet-950">{money(item.base_amount)}</p>
-            <p className="mt-1 text-sm text-violet-700">{item.rate_type === "Monthly" ? "Monthly salary before payroll deductions" : payFrequencySummary(item.rate_type)}</p>
-          </div>
-          <div className="rounded-2xl bg-emerald-50 p-5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Estimated amount per payout</p>
-            <p className="mt-2 text-2xl font-bold text-emerald-950">{item.rate_type === "Monthly" ? money(Number(item.base_amount) / 2) : "Calculated in payroll"}</p>
-            <p className="mt-1 text-sm text-emerald-700">Before tax, attendance, and other payroll adjustments</p>
-          </div>
-          <div className="rounded-2xl bg-slate-50 p-5 dark:bg-slate-800">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Effective from</p>
-            <p className="mt-2 text-xl font-bold">{displayDate(item.effective_from)}</p>
-            <p className="mt-1 text-sm text-slate-500">Active and ready for payroll</p>
-          </div>
-        </div>
+        <div className="mt-6"><SummaryCards base={item.base_amount} components={item.components} treatment={item.treatment} /></div>
 
         <section className="mt-5 rounded-2xl border border-violet-200 bg-violet-50/50 p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1046,43 +1026,25 @@ const CurrentPackageSummary: React.FC<{
         </section>
       </Card>
 
+      <Card>
+        <div className="flex items-center justify-between gap-3"><h3 className="text-lg font-bold">Exact compensation breakdown</h3><StatusChip tone="green">Approved</StatusChip></div>
+        <div className="mt-4"><CompensationBreakdown base={item.base_amount} components={item.components} /></div>
+      </Card>
       <div className="grid gap-5 lg:grid-cols-2">
         <Card>
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-lg font-bold">What this package contains</h3>
-            <StatusChip tone="green">Approved</StatusChip>
-          </div>
-          <dl className="mt-4 space-y-3 text-sm">
-            <div className="flex justify-between gap-4"><dt className="text-slate-500">Basic pay</dt><dd className="font-bold">{money(item.base_amount)}</dd></div>
-            <div className="flex justify-between gap-4"><dt className="text-slate-500">Allowances and approved additions</dt><dd className="font-bold">{money(preview.employee.taxableAllowances + preview.employee.deMinimis + preview.employee.reimbursements + preview.employee.serviceCharge)}</dd></div>
-            <div className="flex justify-between gap-4"><dt className="text-slate-500">Package total before payroll deductions</dt><dd className="font-bold text-emerald-700">{money(preview.company.grossEmployeePay + preview.company.serviceCharge)}</dd></div>
-            <div className="flex justify-between gap-4"><dt className="text-slate-500">Who pays income tax</dt><dd className="font-semibold capitalize">{item.treatment.taxResponsibility || "Needs review"}</dd></div>
-            <div className="flex justify-between gap-4"><dt className="text-slate-500">Who pays benefits</dt><dd className="font-semibold capitalize">{item.treatment.benefitResponsibility || "Needs review"}</dd></div>
-          </dl>
-          <p className="mt-4 rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
-            The final take-home pay is calculated during each payroll run using attendance, tax, government contributions, and other approved deductions.
-          </p>
+          <h3 className="text-lg font-bold">What may change each payroll</h3>
+          <ul className="mt-4 space-y-2 text-sm"><li>Government contributions — recorded estimate {money(preview.estimatedEmployerContributions)}</li><li>Withholding tax and employee deductions — recorded estimate {money(preview.estimatedEmployeeDeductions)}</li><li>Approved loans, authorized NTE deductions, attendance adjustments, overtime, and eligible service charge apply only to the relevant payroll period.</li></ul>
+          <p className="mt-4 rounded-lg bg-blue-50 p-3 text-xs text-blue-900">Take-home pay is not presented as guaranteed. It is calculated for a specific payroll period using approved attendance and deductions.</p>
         </Card>
         <Card>
-          <h3 className="text-lg font-bold">Allowances, benefits &amp; source</h3>
-          {recurringComponents.length ? (
-            <div className="mt-4 divide-y divide-slate-100 dark:divide-slate-700">
-              {recurringComponents.map((component, index) => (
-                <div className="flex items-center justify-between gap-3 py-3 text-sm" key={`${component.name}:${index}`}>
-                  <div><p className="font-semibold">{component.name}</p><p className="text-xs text-slate-500">{component.frequency || component.recurrence}</p></div>
-                  <strong>{money(component.amount)}</strong>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-4 rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">No additional allowances or benefits are attached to this package.</p>
-          )}
+          <h3 className="text-lg font-bold">Source and approval</h3>
+          <dl className="mt-4 space-y-2 text-sm"><div className="flex justify-between gap-3"><dt>Source</dt><dd className="font-semibold">{sourceLabel(item)}</dd></div><div className="flex justify-between gap-3"><dt>Version</dt><dd className="font-semibold">{item.version_no || 1}</dd></div><div className="flex justify-between gap-3"><dt>Effective date</dt><dd className="font-semibold">{displayDate(item.effective_from)}</dd></div></dl>
           <div className="mt-4 flex flex-wrap gap-3 border-t border-slate-200 pt-4 dark:border-slate-700">
             {item.source_pan_id && <a className="font-semibold text-violet-700" href={`/employees/pan?item=${item.source_pan_id}`}>View approved PAN</a>}
             {item.source_metadata?.sourceDocument?.url && <a className="font-semibold text-violet-700" href={item.source_metadata.sourceDocument.url} target="_blank" rel="noreferrer">Open source document</a>}
             {item.treatment.supportingDocumentLink && <a className="font-semibold text-violet-700" href={item.treatment.supportingDocumentLink} target="_blank" rel="noreferrer">Open document link</a>}
             {item.documents?.map((document) => <button type="button" className="font-semibold text-violet-700" key={document.id} onClick={() => void openPayPackageDocument(document.path)}>View {document.name}</button>)}
-            {!item.source_pan_id && !item.source_metadata?.sourceDocument?.url && !item.treatment.supportingDocumentLink && !item.documents?.length && <span className="text-sm text-slate-500">No supporting document attached.</span>}
+            {!item.source_pan_id && !item.source_metadata?.sourceDocument?.url && !item.treatment.supportingDocumentLink && !item.documents?.length && <span className="text-sm text-slate-500">Source document was not attached to this version.</span>}
           </div>
         </Card>
       </div>
@@ -1105,7 +1067,6 @@ const LiveSummary: React.FC<{
     () => calculatePackagePreview({ baseAmount: base, components, treatment }),
     [base, components, treatment],
   );
-  const pending = preview.pending.length > 0;
   return (
     <aside className="space-y-4 lg:sticky lg:top-4 lg:self-start">
       <Card>
@@ -1120,34 +1081,31 @@ const LiveSummary: React.FC<{
         </p>
         <div className="mt-4 space-y-3">
           <div className="rounded-xl bg-emerald-50 p-4">
-            <p className="text-xs font-semibold text-emerald-700">Employee receives</p>
-            <p className="mt-1 text-xl font-bold text-emerald-900">
-              {pending ? "Needs review" : money(preview.employee.estimatedNet)}
-            </p>
+            <p className="text-xs font-semibold text-emerald-700">Guaranteed monthly pay</p>
+            <p className="mt-1 text-xl font-bold text-emerald-900">{money(preview.guaranteedMonthlyPay)}</p>
           </div>
           <div className="rounded-xl bg-violet-50 p-4">
-            <p className="text-xs font-semibold text-violet-700">Employer pays</p>
-            <p className="mt-1 text-xl font-bold text-violet-900">
-              {pending ? "Needs review" : money(preview.employerPays)}
-            </p>
+            <p className="text-xs font-semibold text-violet-700">Conditional + reimbursable maximum</p>
+            <p className="mt-1 text-xl font-bold text-violet-900">{money(preview.conditionalMaximum + preview.reimbursableMaximum)}</p>
           </div>
           <div className="rounded-xl bg-slate-900 p-4 text-white">
             <p className="text-xs font-semibold text-slate-300">Total company cost</p>
             <p className="mt-1 text-xl font-bold">
-              {pending ? "Needs review" : money(preview.company.totalActualCost)}
+              {money(preview.estimatedCompanyCost)}
             </p>
           </div>
         </div>
         <dl className="mt-4 space-y-3 border-t border-slate-200 pt-4 text-sm dark:border-slate-700">
-          <div className="flex justify-between gap-3"><dt className="text-slate-500">Employee deductions</dt><dd className="font-semibold">{pending ? "Pending" : money(preview.employee.employeeTax + preview.employee.employeeBenefits + preview.employee.deductions)}</dd></div>
+          <div className="flex justify-between gap-3"><dt className="text-slate-500">Estimated employee deductions</dt><dd className="font-semibold">{money(preview.estimatedEmployeeDeductions)}</dd></div>
+          <div className="flex justify-between gap-3"><dt className="text-slate-500">Estimated employer contributions</dt><dd className="font-semibold">{money(preview.estimatedEmployerContributions)}</dd></div>
           <div className="flex justify-between gap-3"><dt className="text-slate-500">Tax treatment</dt><dd className="text-right font-semibold">{arrangementSummary(treatment)}</dd></div>
           <div className="flex justify-between gap-3"><dt className="text-slate-500">Effective date</dt><dd className="font-semibold">{effective || "Missing"}</dd></div>
           <div className="flex justify-between gap-3"><dt className="text-slate-500">Package source</dt><dd className="text-right font-semibold">{sourceLabel(source)}</dd></div>
           <div className="flex justify-between gap-3"><dt className="text-slate-500">Approval status</dt><dd className="font-semibold">Draft — not submitted</dd></div>
         </dl>
-        {pending && (
+        {preview.pending.length > 0 && (
           <p className="mt-4 rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
-            Missing or pending values remain visible and are not treated as zero.
+            {preview.pending.length} component treatment field(s) must be completed before submission.
           </p>
         )}
       </Card>
@@ -1422,6 +1380,11 @@ const PayPackageBuilder: React.FC<{
   );
   const documentLinkReady =
     !documentLink || isSecureDocumentLink(documentLink);
+  const packageValidationErrors = validatePayPackage({
+    baseAmount: base,
+    components,
+    treatment,
+  });
   const canContinue =
     step === 1
       ? Boolean(
@@ -1448,9 +1411,7 @@ const PayPackageBuilder: React.FC<{
           ? Boolean(
               sourceRef.trim().length >= 3 &&
               reason.trim().length >= 3 &&
-              components.every(
-                (item) => item.name.trim() && Number(item.amount) >= 0,
-              ),
+              packageValidationErrors.length === 0,
             )
           : true;
   const save = async (intent: "draft" | "approval") => {
@@ -1955,16 +1916,28 @@ const PayPackageBuilder: React.FC<{
                 </Label>
               </>
             )}
+            <Label title="Estimated employee deductions" hint="Exact approved estimate; the final amount is payroll-period specific.">
+              <input className={field} type="number" min="0" step="0.01" value={treatment.estimatedEmployeeDeductions || "0"} onChange={(e) => setTreatment({ ...treatment, estimatedEmployeeDeductions: e.target.value })} />
+            </Label>
+            <Label title="Estimated employer contributions" hint="Company-paid statutory contribution estimate.">
+              <input className={field} type="number" min="0" step="0.01" value={treatment.estimatedEmployerContributions || "0"} onChange={(e) => setTreatment({ ...treatment, estimatedEmployerContributions: e.target.value })} />
+            </Label>
+            <Label title="Estimated employer-paid tax">
+              <input className={field} type="number" min="0" step="0.01" value={treatment.estimatedEmployerTax || "0"} onChange={(e) => setTreatment({ ...treatment, estimatedEmployerTax: e.target.value })} />
+            </Label>
+            <Label title="Expected reimbursable cost" hint="Separate from guaranteed salary.">
+              <input className={field} type="number" min="0" step="0.01" value={treatment.expectedReimbursableCost || "0"} onChange={(e) => setTreatment({ ...treatment, expectedReimbursableCost: e.target.value })} />
+            </Label>
           </div>
           <p className="mt-6 rounded-xl bg-violet-50 p-4 text-sm font-medium text-violet-900">
             {arrangementSummary(treatment)}
           </p>
           {basisChoice === "gross_selected" && (
-            <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
-              Selected-component coverage is recorded structurally and remains
-              Needs review until Finance confirms the supported payroll-engine
-              treatment.
-            </p>
+            <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-4 text-sm text-violet-950">
+              <h3 className="font-bold">Select components with employer-paid tax</h3>
+              <div className="mt-3 space-y-2">{components.filter((component) => component.taxTreatment === "taxable").map((component, index) => <label key={`${component.name}:${index}`} className="flex items-center gap-3 rounded-lg bg-white p-3"><input type="checkbox" checked={Boolean(component.employerPaidTax)} onChange={(e) => setComponents(components.map((item) => item === component ? { ...item, employerPaidTax: e.target.checked } : item))} /><span><strong>{component.name || `Component ${index + 1}`}</strong> · {money(component.amount)}</span></label>)}</div>
+              {components.every((component) => component.taxTreatment !== "taxable") && <p className="mt-2">Add a taxable component first.</p>}
+            </div>
           )}
         </Card>
       )}
@@ -2024,7 +1997,7 @@ const PayPackageBuilder: React.FC<{
               >
                 {editingDraft ? "Save changes" : "Save draft"}
               </Button>
-              <Button isLoading={busy} onClick={() => void save("approval")}>
+              <Button disabled={packageValidationErrors.length > 0} isLoading={busy} onClick={() => void save("approval")}>
                 Submit for approval
               </Button>
             </div>
