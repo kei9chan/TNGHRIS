@@ -415,7 +415,10 @@ const PayPackagesPage: React.FC = () => {
         <PayPackageBatchUpload
           key={user?.id}
           directory={directory}
-          onSaved={() => void refresh()}
+          onSubmitted={async ({ unresolved }) => {
+            await refresh();
+            if (unresolved === 0) show("pending");
+          }}
         />
       )}
       {view === "pending" && (
