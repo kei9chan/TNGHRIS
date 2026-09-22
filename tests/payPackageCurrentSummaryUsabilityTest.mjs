@@ -26,9 +26,9 @@ const approvedPackage = {
 
 // 1. An approved employee lands on the current-package summary, not an empty correction draft.
 assert.equal(builderLandingMode([approvedPackage]), "current");
-assert.match(builder, /Current approved package/);
+assert.match(builder, /Active pay package/);
 assert.match(builder, /Approved compensation is active/);
-assert.match(builder, /Create package update/);
+assert.match(builder, /Create salary change/);
 
 // 2. Search results are directly clickable and Enter opens the first result.
 assert.match(page, /Click a person, or press Enter to open the first result/);
@@ -52,11 +52,10 @@ assert.match(builder, /Add secure document link/);
 assert.match(builder, /supportingDocumentLink: documentLink\.trim\(\)/);
 
 // 5. Approved-package viewing avoids false review warnings for payroll-calculated values.
-assert.match(builder, /Ready for payroll/);
-assert.match(builder, /Calculated during payroll/);
-assert.match(
-  builder,
-  /Their absence here does not make this approved package incomplete/,
-);
+assert.match(builder, /Estimated amount per payout/);
+assert.match(builder, /Package total before payroll deductions/);
+assert.match(builder, /The final take-home pay is calculated during each payroll run/);
+assert.match(builder, /Approval &amp; source details/);
+assert.match(builder, /shortReference/);
 
 console.log("Passed 5 focused Pay Package usability tests.");

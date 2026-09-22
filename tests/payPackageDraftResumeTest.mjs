@@ -7,19 +7,26 @@ const [batch,builder,page,service,migration]=await Promise.all([
   read('modules/payroll/PayPackageBuilder.tsx'),
   read('modules/payroll/PayPackagesPage.tsx'),
   read('modules/payroll/payPackages.ts'),
-  read('supabase/migrations/20260922061518_resume_and_submit_existing_pay_package_drafts.sql'),
+  read('supabase/migrations/20260922143000_editable_pay_package_drafts.sql'),
 ]);
 
-assert.match(batch,/Drafts ready to submit/);
-assert.match(batch,/Submit \{summary\.draft\} existing draft/);
+assert.match(batch,/Valid rows go directly to approval/);
+assert.match(batch,/saveAndSubmitValidRows/);
+assert.match(batch,/await submitPayPackageDraft\(id\)/);
 assert.match(batch,/matching saved draft already exists/);
-assert.match(builder,/Submit existing draft for approval/);
-assert.match(page,/Submit draft for approval/);
+assert.match(builder,/Edit draft/);
+assert.match(builder,/updatePayPackageDraft/);
+assert.match(builder,/Changes update this same draft/);
+assert.match(page,/Edit draft/);
 assert.match(service,/submit_payroll_pay_package_draft/);
+assert.match(service,/update_payroll_pay_package_draft/);
 assert.match(migration,/approval_state='pending'/);
 assert.match(migration,/private\.direct_package_approval_steps\(payroll_actor\)/);
-assert.match(migration,/Only the person who saved this draft may submit it for approval/);
+assert.match(migration,/draft_updated/);
 assert.match(migration,/submitted_for_approval/);
+assert.match(migration,/private\.payroll_package_scope_permission/);
+assert.match(migration,/Only the person who saved this draft may edit it/);
+assert.match(migration,/business-unit scope cannot be changed/);
 assert.match(migration,/revoke all on function public\.submit_payroll_pay_package_draft\(uuid\) from public,anon,authenticated/);
 
-console.log('Passed resumable draft classification, direct submission actions, ownership guard, routing, and audit checks.');
+console.log('Passed editable draft, automatic batch submission, scoped authorization, routing, and audit checks.');

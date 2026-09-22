@@ -217,6 +217,18 @@ export const submitPayPackageDraft = (id: string) =>
   rpc<void>("submit_payroll_pay_package_draft", {
     p_package_id: id,
   });
+export const updatePayPackageDraft = (
+  id: string,
+  scope: string,
+  payload: Record<string, unknown>,
+  hash: string,
+) =>
+  rpc<void>("update_payroll_pay_package_draft", {
+    p_package_id: id,
+    p_scope_id: scope,
+    p_package: payload,
+    p_source_hash: hash,
+  });
 export const verifyPaymentDetails = (
   id: string,
   fingerprint: string,
