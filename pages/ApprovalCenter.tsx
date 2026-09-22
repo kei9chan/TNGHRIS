@@ -59,9 +59,10 @@ const KIND_META: Record<Kind, { title: string; badge: string; rule: string }> = 
   offer: { title: 'Offer Approval', badge: 'bg-violet-100 text-violet-800', rule: 'Hiring packets awaiting your configured offer approval.' },
   asset: { title: 'Asset Requests', badge: 'bg-cyan-100 text-cyan-800', rule: 'Asset requests awaiting direct-manager or BOD review under the configured workflow.' },
   benefit: { title: 'Benefit Requests', badge: 'bg-emerald-100 text-emerald-800', rule: 'Benefit requests awaiting HR Manager or final BOD / General Manager approval.' },
+  pay_package: { title: 'Pay Packages', badge: 'bg-fuchsia-100 text-fuchsia-800', rule: 'Compensation packages awaiting your assigned independent approval.' },
 };
 
-const GROUP_ORDER: Kind[] = ['attendance','nte', 'pan', 'benefit', 'award', 'offer', 'asset', 'wfh', 'leave', 'overtime', 'requisition', 'manpower'];
+const GROUP_ORDER: Kind[] = ['pay_package','attendance','nte', 'pan', 'benefit', 'award', 'offer', 'asset', 'wfh', 'leave', 'overtime', 'requisition', 'manpower'];
 const BULK_KINDS = new Set<Kind>(['leave', 'wfh', 'overtime']);
 const TIME_KINDS = new Set<Kind>(['leave', 'wfh', 'overtime']);
 const TIME_DESKTOP_HEADINGS = ['Select', 'Request / Employee', 'Business unit / Department', 'Request details', 'Submitted / Pending', 'Approval step', 'Eligibility', 'Action'];
@@ -221,6 +222,7 @@ export default function ApprovalCenter() {
       ...additional.pendingAwardApprovals.map(row => row.employeeId),
       ...additional.pendingAssetApprovals.map(row => row.employeeId),
       ...additional.pendingBenefitApprovals.map(row => row.employeeId),
+      ...additional.pendingPayPackageApprovals.map(row => row.employeeId),
     ].filter(Boolean))) as string[];
     if (!ids.length) return setEmployeeMeta({});
     supabase.from('hris_users').select('id,employee_id,business_unit_id,business_unit,department_id,department,status').in('id', ids).then(({ data, error }) => {
@@ -232,7 +234,7 @@ export default function ApprovalCenter() {
         active: String(row.status || 'active').toLowerCase() === 'active',
       }])));
     });
-  }, [approvals.pendingLeaveApprovals, approvals.pendingWfhApprovals, approvals.pendingOtApprovals, approvals.pendingManpowerApprovals, additional.pendingNTEApprovals, additional.pendingPANApprovals, additional.pendingAwardApprovals, additional.pendingAssetApprovals, additional.pendingBenefitApprovals, businessUnitLabels, departmentLabels]);
+  }, [approvals.pendingLeaveApprovals, approvals.pendingWfhApprovals, approvals.pendingOtApprovals, approvals.pendingManpowerApprovals, additional.pendingNTEApprovals, additional.pendingPANApprovals, additional.pendingAwardApprovals, additional.pendingAssetApprovals, additional.pendingBenefitApprovals, additional.pendingPayPackageApprovals, businessUnitLabels, departmentLabels]);
 
   const items = useMemo<ApprovalItem[]>(() => {
     const metaFor = (id?: string) => employeeMeta[id || ''] || { businessUnit: 'Not assigned', department: 'Not assigned', active: true };
@@ -350,9 +352,32 @@ export default function ApprovalCenter() {
         reviewUrl: getApprovalReviewUrl('benefit', row.id),
       };
     });
+    const payPackageItems: ApprovalItem[] = additional.pendingPayPackageApprovals.map(row => ({
+      id: row.id,
+      canonicalKey: `pay_package:${row.id}:pending`,
+      kind: 'pay_package',
+      reference: `PAY-${String(row.id).slice(0, 8).toUpperCase()}`,
+      employeeId: row.employeeId,
+      employee: row.employeeName,
+      employeeCode: row.employeeCode,
+      businessUnitId: row.businessUnitId,
+      businessUnit: row.businessUnit,
+      departmentId: row.departmentId,
+      department: row.department,
+      start: new Date(row.createdAt),
+      end: new Date(`${row.effectiveFrom}T00:00:00`),
+      duration: `Effective ${fmtDate(new Date(`${row.effectiveFrom}T00:00:00`))} · ₱${Number(row.baseAmount).toLocaleString('en-PH')} / ${row.rateType}`,
+      status: 'Pending approval',
+      currentStep: 'Independent pay-package approval',
+      approvalStep: 'Your compensation review',
+      details: `Submitted by ${row.submittedBy} · Waiting for ${row.pendingApprovers.join(' or ') || 'assigned reviewer'}`,
+      reason: 'You are an assigned independent approver for this package.',
+      bulkSelectable: false,
+      reviewUrl: getApprovalReviewUrl('pay_package', row.id),
+    }));
     const canonical = new Map<string, ApprovalItem>();
     attendance.pending.forEach(r=>canonical.set('attendance:'+r.id,{id:r.id,canonicalKey:'attendance:'+r.id,kind:'attendance',reference:'ATT-'+r.id.slice(0,8).toUpperCase(),employeeId:r.employee_id,employee:r.employeeName,employeeCode:r.employeeCode,businessUnit:r.businessUnit||'Not assigned',department:r.department||'Not assigned',start:new Date(r.submitted_at),end:new Date(r.due_at),duration:r.work_date,status:'Pending approval',currentStep:'Direct manager / HR review',details:issueLabels[r.kind]+' · '+shiftText(r.schedule),reason:r.category,exception:new Date(r.due_at).getTime()<Date.now()?'Overdue attendance response':undefined,bulkSelectable:false,reviewUrl:getApprovalReviewUrl('attendance',r.id)}));
-    [...ntes, ...pans, ...benefitItems, ...awardItems, ...offerItems, ...assetItems, ...wfh, ...leave, ...overtime, ...requisitions, ...manpower].forEach(item => { if (!canonical.has(item.canonicalKey)) canonical.set(item.canonicalKey, item); });
+    [...payPackageItems, ...ntes, ...pans, ...benefitItems, ...awardItems, ...offerItems, ...assetItems, ...wfh, ...leave, ...overtime, ...requisitions, ...manpower].forEach(item => { if (!canonical.has(item.canonicalKey)) canonical.set(item.canonicalKey, item); });
     return Array.from(canonical.values());
   }, [approvals, additional, attendance.rows, employeeMeta, businessUnitLabels, departmentLabels]);
 

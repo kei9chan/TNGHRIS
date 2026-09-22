@@ -7,7 +7,7 @@ import { useAdditionalApprovals } from '../../hooks/useAdditionalApprovals';
 import { ApprovalRequestKind } from '../../services/approvalDeepLinks';
 
 type Item = { id: string; kind: ApprovalRequestKind; employee: string; details: string; submitted?: Date | string; relevantDate?: Date | string };
-const labels: Record<ApprovalRequestKind,string> = {attendance:'Attendance',leave:'Leave',wfh:'WFH',overtime:'Overtime',manpower:'On-call',nte:'NTE',pan:'PAN',requisition:'Job Requisition',award:'Award',offer:'Offer',asset:'Asset Requests',benefit:'Benefit'};
+const labels: Record<ApprovalRequestKind,string> = {attendance:'Attendance',leave:'Leave',wfh:'WFH',overtime:'Overtime',manpower:'On-call',nte:'NTE',pan:'PAN',requisition:'Job Requisition',award:'Award',offer:'Offer',asset:'Asset Requests',benefit:'Benefit',pay_package:'Pay Packages'};
 const dateText = (v?: Date | string) => v && Number.isFinite(new Date(v).getTime()) ? new Date(v).toLocaleDateString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric'}) : '';
 export default function ApprovalWidget() {
   const {user}=useAuth();
@@ -27,6 +27,7 @@ export default function ApprovalWidget() {
     ...b.pendingAwardApprovals.map(r=>({id:r.id,kind:'award' as const,employee:r.employeeName,details:r.awardTitle,submitted:r.createdAt})),
     ...b.pendingOfferApprovals.map(r=>({id:r.id,kind:'offer' as const,employee:r.candidateName,details:r.jobTitle,submitted:r.createdAt})),
     ...b.pendingAssetApprovals.map(r=>({id:r.id,kind:'asset' as const,employee:r.employeeName,details:r.assetDescription,submitted:r.createdAt})),
+    ...b.pendingPayPackageApprovals.map(r=>({id:r.id,kind:'pay_package' as const,employee:r.employeeName,details:'Pay package · Waiting for '+(r.pendingApprovers.join(' or ')||'assigned reviewer'),submitted:r.createdAt,relevantDate:r.effectiveFrom})),
   ];
   const unique=[...new Map(items.map(r=>[r.kind+':'+r.id,r])).values()];
   const groups = (Object.keys(labels) as ApprovalRequestKind[]).map(kind => ({kind, requests: unique.filter(item => item.kind === kind)})).filter(group => group.requests.length);
