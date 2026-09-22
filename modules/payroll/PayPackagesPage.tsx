@@ -27,6 +27,7 @@ import {
   fetchPendingPayPackageApprovals,
   PendingPayPackageApproval,
 } from "../../services/payPackageApprovalService";
+import PayPackageApprovalModal from "../../components/payroll/PayPackageApprovalModal";
 
 type View = "builder" | "batch" | "review" | "pending";
 const field =
@@ -279,7 +280,7 @@ const PayPackagesPage: React.FC = () => {
           </aside>
           <main className="space-y-5">
             {view === "builder" && (
-              <Card>
+              <Card className="relative z-40 overflow-visible">
                 <div className="grid items-end gap-3 md:grid-cols-[minmax(220px,1.5fr),1fr,1fr,minmax(250px,1.5fr)]">
                   <label className="text-sm font-medium">
                     Find a person
@@ -302,7 +303,7 @@ const PayPackagesPage: React.FC = () => {
                         aria-expanded={searchFocused && Boolean(search.trim())}
                       />
                       {searchFocused && search.trim() && (
-                        <span className="absolute left-0 right-0 top-full z-30 mt-2 max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+                        <span className="absolute left-0 right-0 top-full z-[100] mt-2 max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900">
                           {filtered.length ? (
                             filtered.slice(0, 8).map((item) => (
                               <button
@@ -434,40 +435,22 @@ const PendingApprovalWorkspace: React.FC<{
   requestedId?: string;
   onRefresh: () => Promise<void>;
 }> = ({ items, requestedId, onRefresh }) => {
-  const [notes, setNotes] = useState<Record<string, string>>({});
-  const [busyId, setBusyId] = useState("");
-  const [error, setError] = useState("");
-  const decide = async (item: PendingPayPackageApproval, approve: boolean) => {
-    const note = notes[item.id]?.trim() || "";
-    if (note.length < 3) {
-      setError("Add an approval or rejection note before recording the decision.");
-      return;
-    }
-    setBusyId(item.id);
-    setError("");
-    try {
-      await reviewPayPackage(item.id, approve, note);
-      setNotes((current) => ({ ...current, [item.id]: "" }));
-      await onRefresh();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "The decision could not be recorded.");
-    } finally {
-      setBusyId("");
-    }
-  };
+  const [selected, setSelected] = useState<PendingPayPackageApproval | null>(() => items.find(item => item.id === requestedId && item.isActionable) || null);
+  useEffect(() => {
+    if (requestedId) setSelected(items.find(item => item.id === requestedId && item.isActionable) || null);
+  }, [items, requestedId]);
   return <div className="space-y-5">
     <Card><div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="text-xl font-bold">Pending pay-package approvals</h2><p className="mt-1 text-sm text-slate-500">See every pending package you are allowed to view, who has approved, and whose decision is still outstanding.</p></div><span className="rounded-full bg-amber-100 px-4 py-2 text-sm font-bold text-amber-900">{items.length} pending</span></div></Card>
-    {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-rose-800">{error}</p>}
     {!items.length && <Card><p className="font-semibold">No pay packages are pending approval.</p></Card>}
     {items.map((item) => {
-      const note = notes[item.id] || "";
       return <article id={`package-${item.id}`} key={item.id} className={`rounded-2xl border bg-white p-5 shadow-sm dark:bg-slate-800 ${requestedId === item.id ? "border-violet-500 ring-2 ring-violet-200" : "border-slate-200 dark:border-slate-700"}`}>
         <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-wide text-violet-600">Pay package · {item.scopeName}</p><h3 className="mt-1 text-xl font-black">{item.employeeName}</h3><p className="text-sm text-slate-500">{item.employeeCode || "No employee ID"} · {item.businessUnit} · {item.department}</p></div><div className="text-right"><span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-900">Pending approval</span><p className="mt-2 text-sm text-slate-500">Effective {new Date(`${item.effectiveFrom}T00:00:00`).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}</p></div></div>
         <div className="mt-5 grid gap-3 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-2 lg:grid-cols-4 dark:bg-slate-900"><p><span className="text-slate-500">Base amount</span><strong className="block">{money(item.baseAmount)} / {item.rateType}</strong></p><p><span className="text-slate-500">Pay stream</span><strong className="block">{streamLabel(item.stream)}</strong></p><p><span className="text-slate-500">Submitted by</span><strong className="block">{item.submittedBy}</strong></p><p><span className="text-slate-500">Waiting for</span><strong className="block text-amber-800">{item.pendingApprovers.join(" or ") || "No pending reviewer"}</strong></p></div>
         <div className="mt-4"><strong className="text-sm">Approval progress</strong><div className="mt-2 flex flex-wrap gap-2">{item.approvalSteps.map((step) => <span key={`${step.userId}:${step.role}`} className={`rounded-full px-3 py-1 text-xs font-semibold ${step.status === "Approved" ? "bg-emerald-100 text-emerald-800" : step.status === "Pending" ? "bg-amber-100 text-amber-900" : "bg-slate-100 text-slate-600"}`}>{step.name} · {step.role} · {step.status}</span>)}</div></div>
-        {item.isActionable ? <div className="mt-5 border-t border-slate-200 pt-4"><p className="mb-3 rounded-lg bg-violet-50 p-3 text-sm font-semibold text-violet-900">This package is waiting for your decision.</p><label className="block text-sm font-medium">Approval note<input className={`${field} mt-1`} value={note} onChange={(event) => setNotes((current) => ({ ...current, [item.id]: event.target.value }))} placeholder="Reason and approval reference" /></label><div className="mt-3 flex flex-wrap gap-3"><Button disabled={busyId === item.id || note.trim().length < 3} onClick={() => void decide(item, true)}>Approve package</Button><Button variant="danger" disabled={busyId === item.id || note.trim().length < 3} onClick={() => void decide(item, false)}>Reject package</Button></div></div> : <p className="mt-5 rounded-lg bg-slate-100 p-3 text-sm text-slate-700">Visible for tracking. The outstanding decision belongs to {item.pendingApprovers.join(" or ") || "the assigned reviewer"}.</p>}
+        {item.isActionable ? <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4"><p className="rounded-lg bg-violet-50 p-3 text-sm font-semibold text-violet-900">This package is waiting for your decision.</p><Button onClick={() => setSelected(item)}>Review &amp; decide</Button></div> : <p className="mt-5 rounded-lg bg-slate-100 p-3 text-sm text-slate-700">Visible for tracking. The outstanding decision belongs to {item.pendingApprovers.join(" or ") || "the assigned reviewer"}.</p>}
       </article>;
     })}
+    <PayPackageApprovalModal isOpen={Boolean(selected)} item={selected} onClose={() => setSelected(null)} onProcessed={async () => { setSelected(null); await onRefresh(); }} />
   </div>;
 };
 

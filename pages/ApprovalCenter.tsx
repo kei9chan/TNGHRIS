@@ -18,6 +18,7 @@ import ManpowerReviewModal from '../components/payroll/ManpowerReviewModal';
 import { requestManpowerClarification } from '../services/manpowerService';
 import OfferApprovalReviewModal from '../components/recruitment/OfferApprovalReviewModal';
 import AssetRequestApprovalModal from '../components/employees/AssetRequestApprovalModal';
+import PayPackageApprovalModal from '../components/payroll/PayPackageApprovalModal';
 import { useSettings } from '../context/SettingsContext';
 import { ApprovalRequestKind, getApprovalRequestId, getApprovalReviewUrl } from '../services/approvalDeepLinks';
 import {
@@ -161,6 +162,7 @@ export default function ApprovalCenter() {
   const requestedWfh = requestedType === 'wfh' ? approvals.pendingWfhApprovals.find(request => request.id === requestedItem) || null : null;
   const requestedOvertime = requestedType === 'overtime' ? approvals.pendingOtApprovals.find(request => request.id === requestedItem) || null : null;
   const requestedManpower = requestedType === 'manpower' ? approvals.pendingManpowerApprovals.find(request => request.id === requestedItem) || null : null;
+  const requestedPayPackage = requestedType === 'pay_package' ? additional.pendingPayPackageApprovals.find(request => request.id === requestedItem) || null : null;
 
   const closeRequestedReview = () => {
     const next = new URLSearchParams(searchParams);
@@ -594,6 +596,16 @@ export default function ApprovalCenter() {
       requestId={requestedType === 'asset' ? requestedItem : null}
       onClose={closeRequestedReview}
       onProcessed={() => { void additional.refreshAdditionalApprovals(); }}
+    />
+    <PayPackageApprovalModal
+      isOpen={Boolean(requestedPayPackage)}
+      item={requestedPayPackage}
+      onClose={closeRequestedReview}
+      onProcessed={async approved => {
+        await additional.refreshAdditionalApprovals();
+        setDecisionMessage(`Your pay-package ${approved ? 'approval' : 'rejection'} was recorded. Any other required decisions remain pending.`);
+        closeRequestedReview();
+      }}
     />
   </div>;
 }

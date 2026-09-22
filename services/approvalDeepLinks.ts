@@ -26,7 +26,7 @@ const approvalPaths: Record<ApprovalRequestKind, string> = {
   offer: '/approvals',
   asset: '/approvals',
   benefit: '/employees/benefits',
-  pay_package: '/payroll/pay-packages',
+  pay_package: '/approvals',
 };
 
 /** Build a direct link to one request, never merely to a module landing page. */
@@ -40,7 +40,7 @@ export const getApprovalReviewUrl = (kind: ApprovalRequestKind, requestId: strin
   if (kind === 'offer') return `/approvals?type=offer&item=${encodedId}`;
   if (kind === 'asset') return `/approvals?type=asset&item=${encodedId}`;
   if (kind === 'benefit') return `/employees/benefits?tab=approvals&requestId=${encodedId}`;
-  if (kind === 'pay_package') return `/payroll/pay-packages?view=pending&package=${encodedId}`;
+  if (kind === 'pay_package') return `/approvals?type=pay_package&item=${encodedId}`;
   return `${approvalPaths[kind]}?review=${encodedId}`;
 };
 
