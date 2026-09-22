@@ -18,6 +18,7 @@ import {
   savePayPackage,
   submitPayPackageDraft,
   Treatment,
+  updatePayPackageDraft,
   uploadPayPackageDocument,
 } from "./payPackages";
 import {
@@ -36,6 +37,29 @@ const money = (value: number | string | null | undefined) =>
   value == null
     ? "Pending"
     : `₱${Number(value).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const displayDate = (value?: string | null) =>
+  value
+    ? new Date(`${value.slice(0, 10)}T00:00:00`).toLocaleDateString("en-PH", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      })
+    : "Not set";
+const displayDateTime = (value?: string | null) =>
+  value
+    ? new Date(value).toLocaleString("en-PH", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : "Pending";
+const shortReference = (value?: string | null) => {
+  if (!value) return "Not provided";
+  const uuid = value.match(/[0-9a-f]{8}-[0-9a-f-]{27,}/i)?.[0];
+  return uuid ? value.replace(uuid, uuid.slice(0, 8).toUpperCase()) : value;
+};
 const categoryLabels: Record<ComponentCategory, string> = {
   de_minimis: "De minimis benefits",
   fixed_allowance: "Fixed allowance",
@@ -821,9 +845,22 @@ const VersionDetails: React.FC<{
   data: PayContext;
   onClose: () => void;
   onCopy: (item: PayPackage) => void;
+  onEditDraft: (item: PayPackage) => void;
   onSubmitDraft: (item: PayPackage) => void;
-}> = ({ item, data, onClose, onCopy, onSubmitDraft }) => {
+}> = ({ item, data, onClose, onCopy, onEditDraft, onSubmitDraft }) => {
   const scope = data.scopes.find((value) => value.id === item.scope_id);
+  const preview = calculatePackagePreview({
+    baseAmount: item.base_amount,
+    components: item.components,
+    treatment: item.treatment,
+  });
+  const additions =
+    preview.employee.taxableAllowances +
+    preview.employee.deMinimis +
+    preview.employee.reimbursements +
+    preview.employee.serviceCharge;
+  const packageTotal = preview.company.grossEmployeePay + preview.company.serviceCharge;
+  const editableDraft = item.status === "draft" && item.approval_state !== "pending";
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4"
@@ -831,20 +868,15 @@ const VersionDetails: React.FC<{
       aria-modal="true"
       aria-labelledby="package-version-title"
     >
-      <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900 sm:p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold text-violet-700">
-              Package version {item.version_no || 1}
-            </p>
-            <h2 id="package-version-title" className="mt-1 text-2xl font-bold">
-              {scope?.name || "Payroll scope"} · {item.effective_from}
-            </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              {item.stream === "professional_fee"
-                ? "Consultant fee"
-                : "Employee payroll"} · {money(item.base_amount)} / {item.rate_type}
-            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm font-semibold text-violet-700">Package version {item.version_no || 1}</p>
+              <StatusChip tone={editableDraft ? "amber" : item.status === "approved" ? "green" : "gray"}>{approvalLabel(item)}</StatusChip>
+            </div>
+            <h2 id="package-version-title" className="mt-2 text-2xl font-bold">{money(item.base_amount)} <span className="text-base font-semibold text-slate-500">/ {item.rate_type}</span></h2>
+            <p className="mt-1 text-sm text-slate-500">{scope?.name || "Payroll scope"} · Effective {displayDate(item.effective_from)}</p>
           </div>
           <button
             type="button"
@@ -855,23 +887,22 @@ const VersionDetails: React.FC<{
             ×
           </button>
         </div>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          {[
-            ["Status", approvalLabel(item)],
-            ["Effective date", item.effective_from],
-            ["Effective until", item.effective_until || "Current / open-ended"],
-            ["Package source", sourceLabel(item)],
-            ["Tax treatment", arrangementSummary(item.treatment)],
-            ["Source reference", item.source_ref || "Missing"],
-          ].map(([label, value]) => (
-            <div key={label} className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800">
-              <p className="text-xs text-slate-500">{label}</p>
-              <p className="mt-1 text-sm font-semibold">{value}</p>
-            </div>
-          ))}
+        {editableDraft && (
+          <p className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><strong>This is editable work.</strong> Edit this same draft, then submit it when it is ready. No copy is created.</p>
+        )}
+        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-xl bg-violet-50 p-4"><p className="text-xs font-semibold text-violet-700">Basic pay</p><p className="mt-1 text-lg font-bold text-violet-950">{money(item.base_amount)}</p></div>
+          <div className="rounded-xl bg-slate-50 p-4 dark:bg-slate-800"><p className="text-xs text-slate-500">Allowances &amp; additions</p><p className="mt-1 text-lg font-bold">{money(additions)}</p></div>
+          <div className="rounded-xl bg-emerald-50 p-4"><p className="text-xs font-semibold text-emerald-700">Approved package total</p><p className="mt-1 text-lg font-bold text-emerald-900">{money(packageTotal)}</p></div>
         </div>
+        <dl className="mt-4 divide-y divide-slate-100 rounded-xl border border-slate-200 px-4 text-sm dark:divide-slate-700 dark:border-slate-700">
+          <div className="flex justify-between gap-4 py-3"><dt className="text-slate-500">Effective period</dt><dd className="text-right font-semibold">{displayDate(item.effective_from)}{item.effective_until ? ` to ${displayDate(item.effective_until)}` : " onward"}</dd></div>
+          <div className="flex justify-between gap-4 py-3"><dt className="text-slate-500">Record source</dt><dd className="text-right font-semibold">{sourceLabel(item)}</dd></div>
+          <div className="flex justify-between gap-4 py-3"><dt className="text-slate-500">Source reference</dt><dd className="max-w-[65%] text-right font-semibold">{shortReference(item.source_ref)}</dd></div>
+          <div className="flex justify-between gap-4 py-3"><dt className="text-slate-500">Tax setup</dt><dd className="max-w-[65%] text-right font-semibold">{arrangementSummary(item.treatment)}</dd></div>
+        </dl>
         <section className="mt-5">
-          <h3 className="font-bold">Components and benefits</h3>
+          <h3 className="font-bold">What is included</h3>
           {item.components.length ? (
             <div className="mt-2 divide-y divide-slate-200 rounded-xl border border-slate-200 dark:divide-slate-700 dark:border-slate-700">
               {item.components.map((component, index) => (
@@ -882,23 +913,21 @@ const VersionDetails: React.FC<{
               ))}
             </div>
           ) : (
-            <p className="mt-2 text-sm text-slate-500">No additional components recorded.</p>
+            <p className="mt-2 rounded-xl bg-slate-50 p-3 text-sm text-slate-500 dark:bg-slate-800">Basic pay only. No recurring allowances or benefits are attached.</p>
           )}
         </section>
         <section className="mt-5 rounded-xl border border-slate-200 p-4 text-sm dark:border-slate-700">
-          <h3 className="font-bold">Approval and change history</h3>
-          <p className="mt-2 text-slate-600 dark:text-slate-300">
-            Approved {item.approved_at || "Pending"} · {sourceLabel(item)}
-          </p>
+          <h3 className="font-bold">Approval history</h3>
+          <p className="mt-2 text-slate-600 dark:text-slate-300">{item.approved_at ? `Approved ${displayDateTime(item.approved_at)}` : editableDraft ? "Not submitted yet" : "Approval in progress"}</p>
           {item.source_metadata?.panReference && (
-            <p className="mt-2 font-semibold">PAN reference: {item.source_metadata.panReference}</p>
+            <p className="mt-2 font-semibold">PAN reference: {shortReference(item.source_metadata.panReference)}</p>
           )}
           {!!item.approval_steps?.length && (
             <ul className="mt-3 space-y-2">
               {item.approval_steps.map((step) => (
                 <li key={`${step.userId}:${step.role}`}>
-                  {step.name} · {step.role} · {step.status}
-                  {step.timestamp ? ` · ${step.timestamp}` : ""}
+                  <span className="font-semibold">{step.name}</span> · {step.role} · {step.status}
+                  {step.timestamp ? ` · ${displayDateTime(step.timestamp)}` : ""}
                 </li>
               ))}
             </ul>
@@ -933,13 +962,14 @@ const VersionDetails: React.FC<{
         </div>
         <div className="mt-6 flex justify-end gap-3 border-t border-slate-200 pt-4 dark:border-slate-700">
           <Button variant="secondary" onClick={onClose}>Close</Button>
-          {item.status === "draft" && item.approval_state !== "pending" ? (
-            <Button onClick={() => onSubmitDraft(item)}>
-              Submit existing draft for approval
-            </Button>
+          {editableDraft ? (
+            <>
+              <Button variant="secondary" onClick={() => { onEditDraft(item); onClose(); }}>Edit draft</Button>
+              <Button onClick={() => onSubmitDraft(item)}>Submit for approval</Button>
+            </>
           ) : item.stream === "employee_payroll" && (
             <Button onClick={() => { onCopy(item); onClose(); }}>
-              {item.source_kind === "approved_pan" ? "Create correction" : "Copy as starting point"}
+              {item.source_kind === "approved_pan" ? "Create salary correction" : "Create salary change"}
             </Button>
           )}
         </div>
@@ -969,36 +999,36 @@ const CurrentPackageSummary: React.FC<{
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-2xl font-bold">Current approved package</h2>
+              <h2 className="text-2xl font-bold">Active pay package</h2>
               <StatusChip tone="green">Active</StatusChip>
             </div>
             <p className="mt-1 text-sm text-slate-500">
-              {scope?.name || "Payroll scope"} · Effective {item.effective_from}
+              {scope?.name || "Payroll scope"} · Effective {displayDate(item.effective_from)}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={onViewDetails}>
-              View full details
+              Approval &amp; source details
             </Button>
-            <Button onClick={onUpdate}>Create package update</Button>
+            <Button onClick={onUpdate}>Create salary change</Button>
           </div>
         </div>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-3">
+        <div className="mt-6 grid gap-4 md:grid-cols-[1.2fr_1fr_1fr]">
           <div className="rounded-2xl bg-violet-50 p-5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-violet-600">Basic salary</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-violet-600">Approved basic pay</p>
             <p className="mt-2 text-3xl font-bold text-violet-950">{money(item.base_amount)}</p>
-            <p className="mt-1 text-sm text-violet-700">{payFrequencySummary(item.rate_type)}</p>
+            <p className="mt-1 text-sm text-violet-700">{item.rate_type === "Monthly" ? "Monthly salary before payroll deductions" : payFrequencySummary(item.rate_type)}</p>
           </div>
           <div className="rounded-2xl bg-emerald-50 p-5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Payroll availability</p>
-            <p className="mt-2 text-xl font-bold text-emerald-950">Ready for payroll</p>
-            <p className="mt-1 text-sm text-emerald-700">The approved package is the active compensation record.</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Estimated amount per payout</p>
+            <p className="mt-2 text-2xl font-bold text-emerald-950">{item.rate_type === "Monthly" ? money(Number(item.base_amount) / 2) : "Calculated in payroll"}</p>
+            <p className="mt-1 text-sm text-emerald-700">Before tax, attendance, and other payroll adjustments</p>
           </div>
-          <div className="rounded-2xl bg-slate-900 p-5 text-white">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-300">Package source</p>
-            <p className="mt-2 text-xl font-bold">{sourceLabel(item)}</p>
-            <p className="mt-1 text-sm text-slate-300">Version {item.version_no || 1} · Approved</p>
+          <div className="rounded-2xl bg-slate-50 p-5 dark:bg-slate-800">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Effective from</p>
+            <p className="mt-2 text-xl font-bold">{displayDate(item.effective_from)}</p>
+            <p className="mt-1 text-sm text-slate-500">Active and ready for payroll</p>
           </div>
         </div>
 
@@ -1006,7 +1036,7 @@ const CurrentPackageSummary: React.FC<{
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-sm font-bold text-violet-950">Twice-monthly payroll schedule</p>
-              <p className="mt-1 text-sm text-violet-700">The salary basis is monthly; payroll releases it across two cutoffs.</p>
+              <p className="mt-1 text-sm text-violet-700">One monthly salary, released in two payroll payouts.</p>
             </div>
             <div className="flex flex-wrap gap-2 text-sm font-semibold">
               <span className="rounded-full bg-white px-3 py-2 text-violet-800">11–25 cutoff → paid on the 5th</span>
@@ -1019,23 +1049,22 @@ const CurrentPackageSummary: React.FC<{
       <div className="grid gap-5 lg:grid-cols-2">
         <Card>
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-lg font-bold">Compensation summary</h3>
+            <h3 className="text-lg font-bold">What this package contains</h3>
             <StatusChip tone="green">Approved</StatusChip>
           </div>
           <dl className="mt-4 space-y-3 text-sm">
             <div className="flex justify-between gap-4"><dt className="text-slate-500">Basic pay</dt><dd className="font-bold">{money(item.base_amount)}</dd></div>
             <div className="flex justify-between gap-4"><dt className="text-slate-500">Allowances and approved additions</dt><dd className="font-bold">{money(preview.employee.taxableAllowances + preview.employee.deMinimis + preview.employee.reimbursements + preview.employee.serviceCharge)}</dd></div>
-            <div className="flex justify-between gap-4"><dt className="text-slate-500">Known monthly package value</dt><dd className="font-bold text-emerald-700">{money(preview.company.grossEmployeePay + preview.company.serviceCharge)}</dd></div>
-            <div className="flex justify-between gap-4"><dt className="text-slate-500">Tax treatment</dt><dd className="max-w-[60%] text-right font-semibold">{arrangementSummary(item.treatment)}</dd></div>
-            <div className="flex justify-between gap-4"><dt className="text-slate-500">Employee deductions</dt><dd className="font-semibold">Calculated during payroll</dd></div>
-            <div className="flex justify-between gap-4"><dt className="text-slate-500">Employer contributions</dt><dd className="font-semibold">Calculated during payroll</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-slate-500">Package total before payroll deductions</dt><dd className="font-bold text-emerald-700">{money(preview.company.grossEmployeePay + preview.company.serviceCharge)}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-slate-500">Who pays income tax</dt><dd className="font-semibold capitalize">{item.treatment.taxResponsibility || "Needs review"}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-slate-500">Who pays benefits</dt><dd className="font-semibold capitalize">{item.treatment.benefitResponsibility || "Needs review"}</dd></div>
           </dl>
           <p className="mt-4 rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
-            Statutory tax and government contributions are calculated in the payroll run. Their absence here does not make this approved package incomplete.
+            The final take-home pay is calculated during each payroll run using attendance, tax, government contributions, and other approved deductions.
           </p>
         </Card>
         <Card>
-          <h3 className="text-lg font-bold">Components and documents</h3>
+          <h3 className="text-lg font-bold">Allowances, benefits &amp; source</h3>
           {recurringComponents.length ? (
             <div className="mt-4 divide-y divide-slate-100 dark:divide-slate-700">
               {recurringComponents.map((component, index) => (
@@ -1218,6 +1247,10 @@ const PayPackageBuilder: React.FC<{
   const currentPackage =
     approvedEmployeePackages.find((item) => item.effective_from <= manilaToday()) ||
     approvedEmployeePackages[0];
+  const initialDraft =
+    initial?.status === "draft" && initial.approval_state !== "pending"
+      ? initial
+      : undefined;
   const seedPackage = initial || currentPackage;
   const [mode, setMode] = useState<BuilderMode>(
     initial ? "update" : initialBuilderMode(data.packages),
@@ -1228,16 +1261,15 @@ const PayPackageBuilder: React.FC<{
   const [sourcePackage, setSourcePackage] = useState<PayPackage | undefined>(
     seedPackage,
   );
+  const [editingDraft, setEditingDraft] = useState<PayPackage | undefined>(initialDraft);
   const correctionSource =
-    sourcePackage?.source_kind === "approved_pan" ? sourcePackage : undefined;
+    !editingDraft && sourcePackage?.source_kind === "approved_pan" ? sourcePackage : undefined;
   const [viewingVersion, setViewingVersion] = useState<PayPackage | null>(null);
   const [step, setStep] = useState(1);
   const [scope, setScope] = useState(
     seedPackage?.scope_id || data.scopes.find((s) => s.canEdit)?.id || "",
   );
-  const [effective, setEffective] = useState(
-    seedPackage ? "" : "",
-  );
+  const [effective, setEffective] = useState(initialDraft?.effective_from || "");
   const [rate, setRate] = useState(
     seedPackage?.rate_type || data.legacy.rateType || "Monthly",
   );
@@ -1255,7 +1287,7 @@ const PayPackageBuilder: React.FC<{
       ? `Correction to ${seedPackage.source_ref || "approved PAN package"}`
       : seedPackage?.source_ref || "",
   );
-  const [reason, setReason] = useState("");
+  const [reason, setReason] = useState(initialDraft?.reason || "");
   const [components, setComponents] = useState<PayComponent[]>(
     seedPackage?.components?.map((x) => ({ ...x })) || [],
   );
@@ -1307,6 +1339,7 @@ const PayPackageBuilder: React.FC<{
   const consultantScopes = data.scopes.filter((s) => s.canEdit);
   const copyPackage = (item: PayPackage) => {
     setWorkspaceMode("edit");
+    setEditingDraft(undefined);
     if (item.stream === "professional_fee") {
       setMode("update");
       setConsultantEnabled(true);
@@ -1340,6 +1373,28 @@ const PayPackageBuilder: React.FC<{
         : item.source_ref || "Copied from previous approved package",
     );
     setReason("");
+    setDocumentLink(item.treatment.supportingDocumentLink || "");
+    setStep(1);
+  };
+  const editDraft = (item: PayPackage) => {
+    setWorkspaceMode("edit");
+    setEditingDraft(item);
+    setMode("update");
+    setSourcePackage(item);
+    setScope(item.scope_id);
+    setEffective(item.effective_from);
+    setRate(item.rate_type);
+    setBase(String(item.base_amount ?? ""));
+    setTaxRef(item.tax_profile_ref || "");
+    setComponents(item.components.map((component) => ({ ...component })));
+    setTreatment({ ...emptyTreatment(), ...item.treatment, submissionIntent: "draft" });
+    setBasisChoice(
+      item.treatment.coverageMode === "gross_selected"
+        ? "gross_selected"
+        : item.treatment.payBasis || "gross",
+    );
+    setSourceRef(item.source_ref || "");
+    setReason(item.reason || "");
     setDocumentLink(item.treatment.supportingDocumentLink || "");
     setStep(1);
   };
@@ -1442,20 +1497,28 @@ const PayPackageBuilder: React.FC<{
           correctionSource && effective === correctionSource.effective_from
             ? correctionSource.id
             : null,
-        sourceKind: correctionSource
+        sourceKind: editingDraft
+          ? editingDraft.source_kind || "direct_entry"
+          : correctionSource
           ? "correction"
           : sourcePackage
             ? "copied_package"
             : "direct_entry",
         correctionOfId: correctionSource?.id || null,
       };
-      const id = await savePayPackage(
-        data.employeeId,
-        scope,
-        payload,
-        data.sourceHash,
-      );
+      const id = editingDraft?.id || await savePayPackage(
+          data.employeeId,
+          scope,
+          payload,
+          data.sourceHash,
+        );
+      if (editingDraft) {
+        await updatePayPackageDraft(editingDraft.id, scope, payload, data.sourceHash);
+      }
       if (document) await uploadPayPackageDocument(id, document);
+      if (editingDraft && intent === "approval") {
+        await submitPayPackageDraft(editingDraft.id);
+      }
       if (consultantEnabled) {
         const consultantId = await savePayPackage(
           data.employeeId,
@@ -1489,11 +1552,11 @@ const PayPackageBuilder: React.FC<{
         if (consultantDocument)
           await uploadPayPackageDocument(consultantId, consultantDocument);
       }
-      setNotice(
-        intent === "approval"
-          ? "Submitted to the HR Manager and Finance approval route."
-          : "Draft saved.",
-      );
+      setNotice(intent === "approval"
+        ? "Submitted to the HR Manager and Finance approval route."
+        : editingDraft
+          ? "Draft changes saved."
+          : "Draft saved.");
       await onSaved();
     } catch (e) {
       setError(
@@ -1546,6 +1609,7 @@ const PayPackageBuilder: React.FC<{
             data={data}
             onClose={() => setViewingVersion(null)}
             onCopy={copyPackage}
+            onEditDraft={editDraft}
             onSubmitDraft={(item) => void submitExistingDraft(item)}
           />
         )}
@@ -1554,7 +1618,15 @@ const PayPackageBuilder: React.FC<{
   }
   return (
     <div className="space-y-5">
-      {currentPackage ? (
+      {editingDraft ? (
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <div>
+            <strong className="text-amber-950">Editing saved draft</strong>
+            <p className="mt-1 text-sm text-amber-800">Changes update this same draft. No duplicate package version will be created.</p>
+          </div>
+          <StatusChip tone="amber">Not submitted</StatusChip>
+        </div>
+      ) : currentPackage ? (
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-violet-200 bg-violet-50 p-4">
           <div>
             <strong className="text-violet-950">Create a new package version</strong>
@@ -1634,18 +1706,21 @@ const PayPackageBuilder: React.FC<{
             <div className="space-y-4">
               <div>
                 <h2 className="text-xl font-bold">
-                  {mode === "initial" ? "Initial package setup" : "Create new package version"}
+                  {editingDraft ? "Edit pay-package draft" : mode === "initial" ? "Initial package setup" : "Create new package version"}
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  {mode === "initial"
+                  {editingDraft
+                    ? "Update the saved values below, then save again or submit this same draft for approval."
+                    : mode === "initial"
                     ? "This creates the employee’s first dated compensation record. It will not replace an existing package."
                     : "The current approved package remains unchanged. Payroll will use this version only from its effective date."}
                 </p>
               </div>
-              <Label title="Business unit / payroll group">
+              <Label title={editingDraft ? "Business unit / payroll group (locked for this draft)" : "Business unit / payroll group"}>
                 <select
                   className={field}
                   value={scope}
+                  disabled={Boolean(editingDraft)}
                   onChange={(e) => setScope(e.target.value)}
                 >
                   {editableScopes.map((item) => (
@@ -1756,7 +1831,7 @@ const PayPackageBuilder: React.FC<{
                 </div>
               )}
             </section>
-            {mode === "update" && sourcePackage && (
+            {mode === "update" && sourcePackage && !editingDraft && (
               <>
                 <div className="flex flex-wrap gap-3">
                   <Button variant="secondary" onClick={() => setViewingVersion(sourcePackage)}>
@@ -1929,7 +2004,7 @@ const PayPackageBuilder: React.FC<{
               <Button variant="secondary" onClick={() => setStep(3)}>
                 Back to edit
               </Button>
-              {initial && !correctionSource && (
+              {initial && !correctionSource && !editingDraft && (
                 <Button
                   variant="secondary"
                   onClick={() => {
@@ -1947,7 +2022,7 @@ const PayPackageBuilder: React.FC<{
                 disabled={busy}
                 onClick={() => void save("draft")}
               >
-                Save draft
+                {editingDraft ? "Save changes" : "Save draft"}
               </Button>
               <Button isLoading={busy} onClick={() => void save("approval")}>
                 Submit for approval
@@ -1993,7 +2068,7 @@ const PayPackageBuilder: React.FC<{
         />
       </div>
       {viewingVersion && (
-        <VersionDetails item={viewingVersion} data={data} onClose={() => setViewingVersion(null)} onCopy={copyPackage} onSubmitDraft={(item) => void submitExistingDraft(item)} />
+        <VersionDetails item={viewingVersion} data={data} onClose={() => setViewingVersion(null)} onCopy={copyPackage} onEditDraft={editDraft} onSubmitDraft={(item) => void submitExistingDraft(item)} />
       )}
     </div>
   );

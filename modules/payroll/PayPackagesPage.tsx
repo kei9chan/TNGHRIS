@@ -590,13 +590,14 @@ const ReviewWorkspace: React.FC<{
                   </p>
                 </div>
                 {item.status === "draft" && item.approval_state !== "pending" ? (
-                  <Button
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => void submitDraft(item)}
-                  >
-                    Submit draft for approval
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="secondary" disabled={busy} onClick={() => onEdit(item)}>
+                      Edit draft
+                    </Button>
+                    <Button size="sm" disabled={busy} onClick={() => void submitDraft(item)}>
+                      Submit for approval
+                    </Button>
+                  </div>
                 ) : item.source_kind === "approved_pan" ? (
                   <Button
                     size="sm"
