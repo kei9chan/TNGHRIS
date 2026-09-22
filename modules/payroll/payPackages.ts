@@ -213,6 +213,10 @@ export const reviewPayPackage = (
     p_approve: approve,
     p_reason: reason,
   });
+export const submitPayPackageDraft = (id: string) =>
+  rpc<void>("submit_payroll_pay_package_draft", {
+    p_package_id: id,
+  });
 export const verifyPaymentDetails = (
   id: string,
   fingerprint: string,

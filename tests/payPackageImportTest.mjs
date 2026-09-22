@@ -13,7 +13,9 @@ assert.throws(()=>prepareImport({...row,values:{...values,'Basic pay / fee amoun
 assert.throws(()=>prepareImport({...row,values:{...values,'Effective from':'2026-02-30'}},context),/real/);
 assert.throws(()=>prepareImport(row,{...context,scopes:[]}),/Business unit/);
 assert.throws(()=>prepareImport(row,{...context,scopes:[{...context.scopes[0],canEdit:false}]}),/editing is not allowed/);
-assert.throws(()=>prepareImport(row,{...context,packages:[{scope_id:'scope',stream:'employee_payroll',engagement_key:'employee',effective_from:'2026-09-01',status:'draft'}]}),/Duplicate active package/);
+assert.equal(prepareImport(row,{...context,packages:[{id:'draft-1',scope_id:'scope',stream:'employee_payroll',engagement_key:'employee',effective_from:'2026-09-01',status:'draft',approval_state:'draft'}]}).existingDraftId,'draft-1');
+assert.throws(()=>prepareImport(row,{...context,packages:[{id:'pending-1',scope_id:'scope',stream:'employee_payroll',engagement_key:'employee',effective_from:'2026-09-01',status:'draft',approval_state:'pending'}]}),/already been submitted/);
+assert.throws(()=>prepareImport(row,{...context,packages:[{id:'approved-1',scope_id:'scope',stream:'employee_payroll',engagement_key:'employee',effective_from:'2026-09-01',status:'approved',approval_state:'approved'}]}),/approved package already exists/);
 assert.throws(()=>prepareImport(row,{...context,sources:[{...context.sources[0],deminimis:1000}]}),/deminimis/);
 assert.throws(()=>prepareImport({...row,values:{...values,'Pay stream':'professional_fee'}},context),/Consultant invoice or supporting document/);
 assert.equal(prepareImport({...row,values:{...values,'Pay stream':'professional_fee','Engagement reference':'Consulting agreement','Tax profile reference':'Reviewed profile'}},context).payload.stream,'professional_fee');
