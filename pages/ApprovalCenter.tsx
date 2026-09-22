@@ -15,6 +15,7 @@ import LeaveRequestModal from '../components/payroll/LeaveRequestModal';
 import OTRequestModal from '../components/payroll/OTRequestModal';
 import WFHReviewModal from '../components/payroll/WFHReviewModal';
 import ManpowerReviewModal from '../components/payroll/ManpowerReviewModal';
+import { requestManpowerClarification } from '../services/manpowerService';
 import OfferApprovalReviewModal from '../components/recruitment/OfferApprovalReviewModal';
 import AssetRequestApprovalModal from '../components/employees/AssetRequestApprovalModal';
 import { useSettings } from '../context/SettingsContext';
@@ -547,6 +548,11 @@ export default function ApprovalCenter() {
       onReject={async (requestId, reason) => {
         await approvals.handleRejectManpower(requestId, reason);
         setDecisionMessage(('Your manpower rejection was recorded.') + ' Any other required decisions remain pending.');
+        closeRequestedReview();
+      }}
+      onClarify={async (requestId, question) => {
+        await requestManpowerClarification(requestId, question);
+        setDecisionMessage('Clarification was requested. The same request will return to this approval step after the requester responds.');
         closeRequestedReview();
       }}
       canApprove={Boolean(requestedManpower)}

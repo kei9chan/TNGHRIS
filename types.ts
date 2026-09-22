@@ -517,6 +517,9 @@ export enum ManpowerApprovalStage {
   Rejected = 'REJECTED',
 }
 
+export type ManpowerDateMode = 'single' | 'range';
+export type ManpowerClarificationStatus = 'none' | 'requested' | 'responded';
+
 export interface ManpowerApprovalTrailEntry {
   stage: ManpowerApprovalStage | string;
   action: string;
@@ -553,6 +556,17 @@ export interface ManpowerRequestItem {
   justification: string;
 }
 
+export interface ManpowerCoverageDay {
+  date: string;
+  coverageRequired: boolean;
+  forecastedPax: number;
+  operationalContext?: string;
+  reason?: string;
+  items: ManpowerRequestItem[];
+  totalStaff: number;
+  totalCost: number;
+}
+
 export interface ManpowerRequest {
   id: string;
   businessUnitId: string;
@@ -561,13 +575,23 @@ export interface ManpowerRequest {
   requestedBy: string;
   requesterName: string;
   date: Date; // The date the on-calls are needed for
+  dateMode?: ManpowerDateMode;
+  startDate?: string;
+  endDate?: string;
+  coverageDays?: ManpowerCoverageDay[];
+  coverageDayCount?: number;
+  totalStaffDays?: number;
   forecastedPax: number;
   generalNote?: string; // The "Header Reason"
+  attachmentUrl?: string;
   items: ManpowerRequestItem[];
   grandTotal: number; // Sum of all items
   status: ManpowerRequestStatus;
   approvalStage?: ManpowerApprovalStage | string;
   approvalIssue?: string;
+  clarificationStatus?: ManpowerClarificationStatus;
+  clarificationQuestion?: string;
+  revision?: number;
   approvalTrail?: ManpowerApprovalTrailEntry[];
   createdAt: Date;
   approvedBy?: string;

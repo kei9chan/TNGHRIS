@@ -1,8 +1,15 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { ManpowerApprovalStage, ManpowerRequest, ManpowerRequestItem, ManpowerRequestStatus } from '../../types';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ManpowerApprovalStage, ManpowerRequest, ManpowerRequestStatus } from '../../types';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Textarea from '../ui/Textarea';
+import {
+  coverageRangeLabel,
+  coverageTotals,
+  deriveCoverageDay,
+  formatCoverageDate,
+  getOnCallWarnings,
+} from '../../modules/payroll/onCallRequestModel';
 
 interface ManpowerReviewModalProps {
   isOpen: boolean;
@@ -10,33 +17,16 @@ interface ManpowerReviewModalProps {
   request: ManpowerRequest | null;
   onApprove: (requestId: string, comments?: string) => void | Promise<void>;
   onReject: (requestId: string, reason: string) => void | Promise<void>;
+  onClarify: (requestId: string, question: string) => void | Promise<void>;
+  onEditRequest?: (request: ManpowerRequest) => void;
   canApprove?: boolean;
+  isRequester?: boolean;
 }
-
-const numberValue = (value: unknown, fallback = 0) => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-};
-
-const normalizedItem = (item: ManpowerRequestItem) => {
-  const reporting = numberValue(item.reportingFte ?? item.currentFte);
-  const needed = numberValue(item.onCallNeeded ?? item.requestedCount);
-  return {
-    department: item.departmentName || item.role || 'Department not specified',
-    required: numberValue(item.requiredFte, reporting + needed),
-    reporting,
-    needed,
-    rate: numberValue(item.ratePerDay ?? item.costPerHead),
-    total: numberValue(item.totalItemCost, needed * numberValue(item.ratePerDay ?? item.costPerHead)),
-    shift: item.shiftTime || 'Not specified',
-    reason: item.reason || item.justification || '—',
-    note: item.departmentNote || '',
-  };
-};
 
 const stageLabel = (request: ManpowerRequest) => {
   if (request.status === ManpowerRequestStatus.Approved || request.approvalStage === ManpowerApprovalStage.Completed) return 'Approved';
   if (request.status === ManpowerRequestStatus.Rejected || request.approvalStage === ManpowerApprovalStage.Rejected) return 'Rejected';
+  if (request.clarificationStatus === 'requested') return 'Clarification requested';
   if (request.approvalStage === ManpowerApprovalStage.BodGm) return 'Pending BOD / GM Approval';
   return 'Pending Business Unit Manager';
 };
@@ -45,127 +35,113 @@ const statusClasses = (label: string) => label === 'Approved'
   ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
   : label === 'Rejected'
     ? 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200'
-    : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200';
+    : label === 'Clarification requested'
+      ? 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200'
+      : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200';
 
-const ManpowerReviewModal: React.FC<ManpowerReviewModalProps> = ({ isOpen, onClose, request, onApprove, onReject, canApprove = false }) => {
+const peso = (value: number) => `₱${value.toLocaleString('en-PH', { maximumFractionDigits: 2 })}`;
+
+const ManpowerReviewModal: React.FC<ManpowerReviewModalProps> = ({
+  isOpen, onClose, request, onApprove, onReject, onClarify, onEditRequest,
+  canApprove = false, isRequester = false,
+}) => {
   const actionLock = useRef(false);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState('');
-  const runAction = async (action: () => void | Promise<void>) => {
-    if (actionLock.current) return;
-    actionLock.current = true; setBusy(true); setActionError('');
-    try { await action(); } catch (error) { setActionError(error instanceof Error ? error.message : 'Unable to save decision. Please retry.'); }
-    finally { actionLock.current = false; setBusy(false); }
-  };
-  const [rejectReason, setRejectReason] = useState('');
+  const [actionMode, setActionMode] = useState<'none' | 'approve' | 'reject' | 'clarify'>('none');
+  const [actionText, setActionText] = useState('');
   const [approvalComment, setApprovalComment] = useState('');
-  const [isRejecting, setIsRejecting] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
-    setRejectReason('');
-    setApprovalComment('');
-    setIsRejecting(false);
+    setActionMode('none'); setActionText(''); setApprovalComment(''); setActionError('');
   }, [isOpen, request?.id]);
 
+  const runAction = async (action: () => void | Promise<void>) => {
+    if (actionLock.current) return;
+    actionLock.current = true; setBusy(true); setActionError('');
+    try { await action(); }
+    catch (error) { setActionError(error instanceof Error ? error.message : 'Unable to save this action. Please retry.'); }
+    finally { actionLock.current = false; setBusy(false); }
+  };
+
   if (!request) return null;
-
+  const days = (request.coverageDays || []).map(deriveCoverageDay);
+  const totals = coverageTotals(days);
   const currentStage = stageLabel(request);
+  const canAct = canApprove && request.status === ManpowerRequestStatus.Pending
+    && request.clarificationStatus !== 'requested'
+    && [ManpowerApprovalStage.BusinessUnitManager, ManpowerApprovalStage.BodGm].includes(request.approvalStage as ManpowerApprovalStage);
+  const warnings = getOnCallWarnings(days, request.generalNote);
+  const reasons = [...new Set(days.flatMap(day => day.items.map(item => item.reason || item.justification).filter(Boolean)))];
+  const mainReason = reasons.join(' · ') || request.generalNote || 'No operational reason was provided.';
+  const primaryShift = [...new Set(days.flatMap(day => day.items.map(item => item.shiftTime).filter(Boolean)))].join(' · ') || 'Not specified';
   const directRouting = request.approvalTrail?.some(entry => /manager stage not required|Routing corrected/.test(entry.action));
-  const canAct = canApprove
-    && request.status === ManpowerRequestStatus.Pending
-    && (request.approvalStage === ManpowerApprovalStage.BusinessUnitManager || request.approvalStage === ManpowerApprovalStage.BodGm);
-  const items = request.items.map(normalizedItem);
-  const totalNeeded = items.reduce((sum, item) => sum + item.needed, 0);
 
-  const handleApprove = () => {
-    if (window.confirm(`Approve this on-call request with ${totalNeeded} on-call FTE and an estimated cost of ₱${request.grandTotal?.toLocaleString()}?`)) {
+  const submitAction = () => {
+    if (actionMode === 'reject') {
+      if (!actionText.trim()) return setActionError('A rejection reason is required.');
+      void runAction(() => onReject(request.id, actionText.trim()));
+    } else if (actionMode === 'clarify') {
+      if (!actionText.trim()) return setActionError('Enter the specific question the requester must answer.');
+      void runAction(() => onClarify(request.id, actionText.trim()));
+    } else if (actionMode === 'approve') {
       void runAction(() => onApprove(request.id, approvalComment.trim() || undefined));
     }
   };
 
-  const confirmReject = () => {
-    if (!rejectReason.trim()) {
-      alert('Please provide a reason for rejection.');
-      return;
-    }
-    void runAction(() => onReject(request.id, rejectReason.trim()));
-    setIsRejecting(false);
-    setRejectReason('');
-  };
-
   const footer = (
-    <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-      <Button variant="secondary" onClick={onClose}>Close</Button>
-      {canAct && (
-        <>
-          <Button variant="danger" disabled={busy} onClick={() => setIsRejecting(true)}>Reject</Button>
-          <Button variant="success" disabled={busy} onClick={handleApprove}>{busy ? 'Saving…' : 'Approve'}</Button>
-        </>
-      )}
+    <div className="flex flex-col gap-3">
+      {actionError && <p role="alert" className="rounded-lg bg-red-100 px-3 py-2 text-sm font-semibold text-red-800 dark:bg-red-950 dark:text-red-100">{actionError}</p>}
+      {actionMode !== 'none' && canAct && <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+        {actionMode === 'approve' ? <div className="space-y-3"><div><p className="font-bold">Approve on-call coverage?</p><p className="text-sm text-slate-600 dark:text-slate-300">You are about to approve {coverageRangeLabel(days)}.</p></div><div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4"><span><strong>{totals.staffDays}</strong><br />staff-days</span><span><strong>{primaryShift}</strong><br />shift</span><span><strong>{peso(totals.cost)}</strong><br />estimated cost</span><span className="col-span-2 sm:col-span-1"><strong className="line-clamp-2">{mainReason}</strong><br />reason</span></div><Textarea label="Approval comment (optional)" value={approvalComment} onChange={event => setApprovalComment(event.target.value)} /></div> : <Textarea label={actionMode === 'reject' ? 'Required rejection reason' : 'What must the requester clarify?'} value={actionText} onChange={event => setActionText(event.target.value)} autoFocus required placeholder={actionMode === 'clarify' ? 'Ask a specific operational, staffing, date, shift, or cost question.' : 'Explain why this request is rejected.'} />}
+        <div className="mt-3 flex justify-end gap-2"><Button size="sm" variant="secondary" onClick={() => { setActionMode('none'); setActionText(''); }}>Cancel</Button><Button size="sm" variant={actionMode === 'reject' ? 'danger' : actionMode === 'approve' ? 'success' : 'primary'} disabled={busy} onClick={submitAction}>{busy ? 'Saving…' : actionMode === 'approve' ? 'Confirm approval' : actionMode === 'reject' ? 'Confirm rejection' : 'Send clarification'}</Button></div>
+      </div>}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
+        <Button variant="secondary" onClick={onClose}>Close</Button>
+        {canAct && <><Button variant="danger" disabled={busy} onClick={() => { setActionMode('reject'); setActionText(''); }}>Reject</Button><Button variant="secondary" disabled={busy} onClick={() => { setActionMode('clarify'); setActionText(''); }}>Request clarification</Button><Button variant="success" disabled={busy} onClick={() => setActionMode('approve')}>Approve</Button></>}
+        {isRequester && request.clarificationStatus === 'requested' && onEditRequest && <Button onClick={() => onEditRequest(request)}>Respond and update request</Button>}
+      </div>
     </div>
   );
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`On-Call Request · ${request.businessUnitName}`} size="5xl" footer={footer}>
-      <div className="space-y-6 text-slate-900 dark:text-slate-100">
-        {actionError && <p role="alert" className="rounded-lg bg-red-950 p-3 text-red-100">{actionError}</p>}
-        {directRouting && <p className="rounded-lg bg-indigo-950/40 p-3 text-sm">Routed directly to BOD / GM approval. One eligible BOD or GM approval is required.</p>}
-        <div className="grid grid-cols-2 gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-4 dark:border-slate-600 dark:bg-slate-900/40">
-          <div><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Date needed</p><p className="mt-1 font-semibold">{new Date(request.date).toLocaleDateString()}</p></div>
-          <div><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Forecasted PAX</p><p className="mt-1 font-semibold">{request.forecastedPax}</p></div>
-          <div><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Requested by</p><p className="mt-1 font-semibold">{request.requesterName}</p></div>
-          <div><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Status</p><span className={`mt-1 inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${statusClasses(currentStage)}`}>{currentStage}</span></div>
-          {request.generalNote && <div className="col-span-2 border-t border-slate-200 pt-3 sm:col-span-4 dark:border-slate-600"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Event / operational context</p><p className="mt-1 font-medium">{request.generalNote}</p></div>}
-        </div>
-
-        <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-600">
-          <p className="mb-3 text-sm font-bold">Approval progress</p>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-            {(directRouting ? ['Submitted', 'Pending BOD / GM Approval', 'Approved'] : ['Pending Business Unit Manager', 'Pending BOD / GM Approval', 'Approved']).map((step, index) => {
-              const complete = (currentStage === 'Approved') || (currentStage === 'Pending BOD / GM Approval' && index === 0);
-              const active = currentStage === step;
-              return <div key={step} className={`rounded-lg border px-3 py-2 text-sm ${active ? 'border-indigo-400 bg-indigo-50 font-bold text-indigo-800 dark:bg-indigo-950 dark:text-indigo-100' : complete ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-100' : 'border-slate-200 text-slate-500 dark:border-slate-600 dark:text-slate-400'}`}><span className="mr-2">{complete ? '✓' : index + 1}</span>{step}</div>;
-            })}
+    <Modal isOpen={isOpen} onClose={onClose} title={`On-Call Request · ${request.businessUnitName}`} size="full" viewportFit footer={footer}>
+      <div className="space-y-5 pb-2 text-slate-950 dark:text-white">
+        <section className="overflow-hidden rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 via-white to-indigo-50 dark:border-indigo-900 dark:from-indigo-950/50 dark:via-slate-900 dark:to-indigo-950/30">
+          <div className="flex flex-col gap-5 p-5 lg:flex-row lg:items-center lg:justify-between lg:p-7">
+            <div><p className="text-xs font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-300">On-call coverage needed</p><h2 className="mt-2 text-3xl font-black uppercase tracking-tight sm:text-4xl lg:text-5xl">{coverageRangeLabel(days)}</h2><div className="mt-4 flex flex-wrap gap-2">{days.map(day => <span key={day.date} className={`rounded-xl border px-3 py-2 text-sm font-bold ${day.coverageRequired ? 'border-indigo-300 bg-white text-indigo-800 dark:bg-slate-800 dark:text-indigo-200' : 'border-slate-300 bg-slate-100 text-slate-500 line-through dark:bg-slate-800'}`}>{formatCoverageDate(day.date, true)}{!day.coverageRequired && ' · No coverage'}</span>)}</div></div>
+            <div className="shrink-0 lg:text-right"><p className="text-3xl font-black text-orange-600 dark:text-orange-300">{totals.staffDays} <span className="text-lg">staff-days</span></p><p className="mt-1 text-sm font-semibold text-slate-500">{totals.coverageDays} coverage {totals.coverageDays === 1 ? 'day' : 'days'}</p><span className={`mt-3 inline-flex rounded-full px-3 py-2 text-sm font-bold ${statusClasses(currentStage)}`}>{currentStage}</span></div>
           </div>
-          {request.approvalIssue && <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 dark:bg-amber-950/40 dark:text-amber-100">⚠ {request.approvalIssue}</p>}
-        </div>
+        </section>
 
-        {isRejecting && canAct && (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950/40">
-            <Textarea label="Reason for rejection" value={rejectReason} onChange={event => setRejectReason(event.target.value)} required autoFocus />
-            <div className="mt-3 flex justify-end gap-2"><Button size="sm" variant="secondary" onClick={() => setIsRejecting(false)}>Cancel</Button><Button size="sm" variant="danger" onClick={confirmReject}>Confirm rejection</Button></div>
-          </div>
-        )}
+        <section className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-6 dark:border-slate-700 dark:bg-slate-900">
+          <div className="lg:col-span-2"><p className="text-xs font-bold uppercase text-slate-500">On-Call Request</p><p className="mt-1 text-xl font-black">{request.businessUnitName}</p></div>
+          <div><p className="text-xs font-bold uppercase text-slate-500">Requested by</p><p className="mt-1 font-bold">{request.requesterName}</p></div>
+          <div className="lg:col-span-2"><p className="text-xs font-bold uppercase text-slate-500">Event / Operational Context</p><p className="mt-1 font-bold">{request.generalNote || 'Not provided'}</p></div>
+          <div><p className="text-xs font-bold uppercase text-slate-500">Forecasted pax</p><p className="mt-1 font-bold">{days.reduce((sum, day) => sum + day.forecastedPax, 0)}</p></div>
+        </section>
 
-        {canAct && (
-          <Textarea
-            label="Approval comments (optional)"
-            value={approvalComment}
-            onChange={event => setApprovalComment(event.target.value)}
-            placeholder="Add context for the approval decision"
-          />
-        )}
+        <section className={`rounded-2xl border-2 p-5 ${warnings.some(warning => warning.id.startsWith('reason-')) ? 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/20' : 'border-indigo-100 bg-white dark:border-indigo-900 dark:bg-slate-900'}`}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-sm font-black text-slate-600 dark:text-slate-300">Why is on-call needed?</p><p className="mt-2 text-2xl font-black sm:text-3xl">{mainReason}</p></div>{warnings.some(warning => warning.id.startsWith('reason-')) && <span className="rounded-full bg-amber-200 px-3 py-1.5 text-sm font-black text-amber-900">Needs clarification</span>}</div>
+          {warnings.some(warning => warning.id.startsWith('reason-')) && <p className="mt-3 font-semibold text-amber-800 dark:text-amber-200">Needs clarification — the reason should explain the operational need.</p>}
+          {canAct && <div className="mt-4 flex flex-wrap gap-2"><Button size="sm" variant="secondary" onClick={() => setActionMode('clarify')}>Request clarification</Button><Button size="sm" variant="secondary" onClick={() => setActionMode('approve')}>Continue to approve</Button></div>}
+        </section>
 
-        <div>
-          <div className="mb-3 flex items-end justify-between gap-3"><div><h3 className="text-lg font-bold">Coverage by Department</h3><p className="text-sm text-slate-500 dark:text-slate-300">Required FTE − Reporting FTE = On-call needed</p></div><p className="text-right text-sm font-semibold text-emerald-700 dark:text-emerald-300">₱{request.grandTotal?.toLocaleString()} estimated</p></div>
-          <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-600">
-            <table className="min-w-[980px] w-full divide-y divide-slate-200 text-sm dark:divide-slate-600">
-              <thead className="bg-slate-100 text-left text-xs font-bold uppercase tracking-wide text-slate-600 dark:bg-slate-700 dark:text-slate-200"><tr><th className="px-4 py-3">Department / Area</th><th className="px-4 py-3 text-center">Required FTE</th><th className="px-4 py-3 text-center">Reporting FTE</th><th className="px-4 py-3 text-center">On-call needed</th><th className="px-4 py-3 text-right">Rate / Day</th><th className="px-4 py-3 text-right">Total</th><th className="px-4 py-3">Shift / Coverage</th><th className="px-4 py-3">Reason / Note</th></tr></thead>
-              <tbody className="divide-y divide-slate-200 bg-white dark:divide-slate-600 dark:bg-slate-800">
-                {items.map(item => <tr key={`${item.department}-${item.shift}`} className="align-top"><td className="px-4 py-3 font-semibold">{item.department}</td><td className="px-4 py-3 text-center">{item.required}</td><td className="px-4 py-3 text-center">{item.reporting}</td><td className="px-4 py-3 text-center font-bold text-orange-600 dark:text-orange-300">{item.needed}</td><td className="px-4 py-3 text-right">₱{item.rate.toLocaleString()}</td><td className="px-4 py-3 text-right font-semibold">₱{item.total.toLocaleString()}</td><td className="px-4 py-3">{item.shift}</td><td className="max-w-xs px-4 py-3"><div>{item.reason}</div>{item.note && <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{item.note}</div>}</td></tr>)}
-              </tbody>
-              <tfoot className="bg-slate-50 font-bold dark:bg-slate-900"><tr><td className="px-4 py-3">Totals</td><td></td><td></td><td className="px-4 py-3 text-center text-orange-600 dark:text-orange-300">{totalNeeded}</td><td></td><td className="px-4 py-3 text-right text-emerald-700 dark:text-emerald-300">₱{request.grandTotal?.toLocaleString()}</td><td colSpan={2}></td></tr></tfoot>
-            </table>
-          </div>
-        </div>
+        {request.clarificationStatus === 'requested' && <section className="rounded-2xl border border-violet-300 bg-violet-50 p-4 dark:border-violet-800 dark:bg-violet-950/30"><p className="text-xs font-black uppercase tracking-wide text-violet-700 dark:text-violet-300">Approver question</p><p className="mt-2 text-lg font-bold">{request.clarificationQuestion}</p>{isRequester && onEditRequest && <Button className="mt-4" onClick={() => onEditRequest(request)}>Respond and update request</Button>}</section>}
 
-        {!!request.approvalTrail?.length && (
-          <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-600">
-            <h3 className="text-lg font-bold">Approval trail</h3>
-            <div className="mt-3 space-y-3">{request.approvalTrail.map((entry, index) => <div key={`${entry.timestamp}-${index}`} className="flex gap-3 border-l-2 border-indigo-200 pl-4 dark:border-indigo-800"><div className="min-w-0"><p className="font-semibold">{/manager stage not required|Routing corrected/.test(entry.action) ? 'Submitted for BOD / GM approval' : entry.action} · {/manager stage not required|Routing corrected/.test(entry.action) ? 'Direct routing' : entry.stage === ManpowerApprovalStage.BodGm ? 'BOD / GM Approval' : entry.stage === ManpowerApprovalStage.BusinessUnitManager ? 'Business Unit Manager' : entry.stage}</p><p className="text-sm text-slate-600 dark:text-slate-300">{entry.approverName} · {entry.approverRole} · {new Date(entry.timestamp).toLocaleString()}</p>{entry.comments && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{/manager stage not required|Routing corrected/.test(entry.action) ? 'This requester proceeds directly to BOD / GM review.' : entry.comments}</p>}</div></div>)}</div>
-          </div>
-        )}
+        {warnings.length > 0 && <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/20"><h3 className="text-lg font-black text-amber-950 dark:text-amber-100">Needs attention</h3><div className="mt-3 grid gap-2 sm:grid-cols-2">{warnings.map(warning => <div key={warning.id} className="rounded-xl bg-white/80 px-3 py-2 text-sm font-semibold text-amber-900 dark:bg-slate-900/60 dark:text-amber-100">⚠ {warning.label}</div>)}</div>{canAct && <div className="mt-4 flex flex-wrap gap-2"><Button size="sm" variant="secondary" onClick={() => setActionMode('clarify')}>Request clarification</Button><Button size="sm" variant="secondary" onClick={() => setActionMode('approve')}>Continue to approve</Button><Button size="sm" variant="danger" onClick={() => setActionMode('reject')}>Reject</Button></div>}</section>}
+
+        <section className="grid gap-4 lg:grid-cols-3">
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 dark:border-emerald-900 dark:bg-emerald-950/20"><p className="text-sm font-bold text-emerald-800 dark:text-emerald-200">Total estimated cost</p><p className="mt-2 text-4xl font-black text-emerald-700 dark:text-emerald-300">{peso(totals.cost)}</p><p className="mt-1 text-sm text-emerald-800 dark:text-emerald-200">{totals.staffDays} staff-days across {totals.coverageDays} days</p></div>
+          <div className="rounded-2xl border border-orange-200 bg-orange-50 p-5 dark:border-orange-900 dark:bg-orange-950/20"><p className="text-sm font-bold text-orange-800 dark:text-orange-200">Manpower gap</p><p className="mt-2 text-4xl font-black text-orange-600 dark:text-orange-300">{totals.staffDays}</p><p className="mt-1 text-sm text-orange-800 dark:text-orange-200">On-call needed = Required FTE − Reporting FTE</p></div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900"><p className="text-sm font-bold text-slate-500">Shift coverage</p><p className="mt-2 text-xl font-black">{primaryShift}</p><p className="mt-1 text-sm text-slate-500">Review each date for exceptions.</p></div>
+        </section>
+
+        <section><div className="mb-3"><h3 className="text-xl font-black">Daily coverage details</h3><p className="text-sm text-slate-500">Every date is shown. Expand a day to inspect departments, reasons, rates, and calculations.</p></div><div className="space-y-3">{days.map(day => <details key={day.date} open={days.length <= 2} className="group rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"><summary className="flex cursor-pointer list-none flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-lg font-black">{formatCoverageDate(day.date)}</p><p className="text-sm text-slate-500">{day.coverageRequired ? `${day.totalStaff} staff · ${day.items.length} department${day.items.length === 1 ? '' : 's'}` : 'No coverage needed'}</p></div><div className="flex items-center gap-4"><strong className="text-xl text-emerald-700 dark:text-emerald-300">{peso(day.totalCost)}</strong><span className="text-slate-400 group-open:rotate-180">⌄</span></div></summary>{day.coverageRequired && <div className="border-t border-slate-200 p-4 dark:border-slate-700"><div className="grid gap-3 lg:grid-cols-2">{day.items.map((item, index) => <article key={`${day.date}-${item.departmentId}-${index}`} className="rounded-xl border border-slate-200 p-4 dark:border-slate-700"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{item.departmentName || item.role || 'Department not specified'}</p><p className="mt-1 text-sm text-slate-500">{item.shiftTime || 'Shift not specified'}</p></div><strong className="text-emerald-700 dark:text-emerald-300">{peso(Number(item.totalItemCost || 0))}</strong></div><div className="mt-4 grid grid-cols-3 gap-2 text-center"><div><p className="text-xs font-bold uppercase text-slate-500">Required</p><p className="text-xl font-black">{item.requiredFte || 0}</p></div><div><p className="text-xs font-bold uppercase text-slate-500">Reporting</p><p className="text-xl font-black">{item.reportingFte || 0}</p></div><div className="rounded-lg bg-orange-50 p-2 dark:bg-orange-950/30"><p className="text-xs font-bold uppercase text-orange-600">On-call</p><p className="text-xl font-black text-orange-600">{item.onCallNeeded || 0}</p></div></div><div className="mt-4 border-t border-slate-100 pt-3 text-sm dark:border-slate-800"><p><strong>Rate:</strong> {peso(Number(item.ratePerDay || 0))}/day</p><p className="mt-1"><strong>Reason:</strong> {item.reason || item.justification || day.reason || 'Not provided'}</p>{item.departmentNote && <p className="mt-1 text-slate-500">{item.departmentNote}</p>}</div></article>)}</div></div>}</details>)}</div></section>
+
+        <details className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/50"><summary className="cursor-pointer font-black">Approval history · {request.approvalTrail?.length || 0} records</summary><div className="mt-4 space-y-3">{request.approvalTrail?.map((entry, index) => <div key={`${entry.timestamp}-${index}`} className="border-l-2 border-indigo-300 pl-4"><p className="font-bold">{entry.action} · {entry.stage === ManpowerApprovalStage.BodGm ? 'BOD / GM Approval' : entry.stage}</p><p className="text-sm text-slate-500">{entry.approverName} · {entry.approverRole} · {new Date(entry.timestamp).toLocaleString()}</p>{entry.comments && <p className="mt-1 text-sm">{entry.comments}</p>}</div>)}{!request.approvalTrail?.length && <p className="text-sm text-slate-500">No approval records yet.</p>}</div></details>
+        {directRouting && <p className="rounded-xl bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-200">Routed directly to BOD / GM approval. One eligible BOD or GM approval is required.</p>}
       </div>
     </Modal>
   );

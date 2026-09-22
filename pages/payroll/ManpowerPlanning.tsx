@@ -13,12 +13,15 @@ import {
   fetchManpowerRequestById,
   fetchManpowerRequests,
   fetchMyPendingManpowerApprovalIds,
+  requestManpowerClarification,
   rejectManpowerRequest,
 } from '../../services/manpowerService';
+import { coverageRangeLabel, coverageTotals, deriveCoverageDay } from '../../modules/payroll/onCallRequestModel';
 
 const stageLabel = (request: ManpowerRequest) => {
   if (request.status === ManpowerRequestStatus.Approved || request.approvalStage === ManpowerApprovalStage.Completed) return 'Approved';
   if (request.status === ManpowerRequestStatus.Rejected || request.approvalStage === ManpowerApprovalStage.Rejected) return 'Rejected';
+  if (request.clarificationStatus === 'requested') return 'Clarification requested';
   return request.approvalStage === ManpowerApprovalStage.BodGm ? 'Pending BOD / GM Approval' : 'Pending Business Unit Manager';
 };
 
@@ -39,6 +42,7 @@ const ManpowerPlanning: React.FC = () => {
   const [actionableIds, setActionableIds] = useState<Set<string>>(new Set());
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [requestBeingEdited, setRequestBeingEdited] = useState<ManpowerRequest | null>(null);
   const [selectedRequest, setSelectedRequest] = useState<ManpowerRequest | null>(null);
   const [openedReviewId, setOpenedReviewId] = useState<string | null>(null);
   const [reviewLoadError, setReviewLoadError] = useState('');
@@ -136,33 +140,46 @@ const ManpowerPlanning: React.FC = () => {
     }
   };
 
+  const handleClarify = async (requestId: string, question: string) => {
+    try {
+      const updated = await requestManpowerClarification(requestId, question);
+      setSelectedRequest(updated);
+      setRequests(previous => [updated, ...previous.filter(candidate => candidate.id !== updated.id)]);
+      await loadRequests();
+    } catch (error: any) {
+      alert(error?.message || 'Error requesting clarification.');
+      throw error;
+    }
+  };
+
   return (
     <div className="space-y-6">
       {reviewLoadError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200"><strong>Unable to open on-call review.</strong> {reviewLoadError}</div>}
       {loadError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">{loadError}</div>}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div><h1 className="text-3xl font-bold text-gray-900 dark:text-white">Manpower Planning</h1><p className="mt-1 text-gray-600 dark:text-gray-400">Manage daily on-call staffing requests and their staged approvals.</p></div>
-        {canCreate && <Button onClick={() => setIsCreateModalOpen(true)}>+ Request On-Call</Button>}
+        {canCreate && <Button onClick={() => { setRequestBeingEdited(null); setIsCreateModalOpen(true); }}>+ Request On-Call</Button>}
       </div>
 
       <Card>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50 dark:bg-gray-800"><tr>
-              {['Date Needed', 'Business Unit', 'On-call FTE', 'Requester', 'Approval status', 'Created At', ''].map(heading => <th key={heading} className="px-6 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-300">{heading}</th>)}
+              {['Coverage dates', 'Business Unit', 'Staff-days', 'Estimated cost', 'Requester', 'Approval status', ''].map(heading => <th key={heading} className="px-6 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-300">{heading}</th>)}
             </tr></thead>
             <tbody className="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
               {sortedRequests.map(request => {
-                const totalNeeded = request.items.reduce((sum, item) => sum + Number(item.onCallNeeded ?? item.requestedCount ?? 0), 0);
+                const days = (request.coverageDays || []).map(deriveCoverageDay);
+                const totals = coverageTotals(days);
                 const status = stageLabel(request);
                 const canAct = actionableIds.has(request.id);
                 return <tr key={request.id} className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50" onClick={() => { setSelectedRequest(request); setIsReviewModalOpen(true); }}>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900 dark:text-white">{new Date(request.date).toLocaleDateString()}</td>
+                  <td className="whitespace-nowrap px-6 py-4 text-sm font-bold text-gray-900 dark:text-white">{coverageRangeLabel(days)}<span className="block text-xs font-medium text-slate-500">{totals.coverageDays} coverage {totals.coverageDays === 1 ? 'day' : 'days'}</span></td>
                   <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{request.businessUnitName}</td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm font-semibold text-orange-600 dark:text-orange-300">{totalNeeded}</td>
+                  <td className="whitespace-nowrap px-6 py-4 text-sm font-semibold text-orange-600 dark:text-orange-300">{totals.staffDays}</td>
+                  <td className="whitespace-nowrap px-6 py-4 text-sm font-semibold text-emerald-700 dark:text-emerald-300">₱{totals.cost.toLocaleString()}</td>
                   <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{request.requesterName}</td>
                   <td className="px-6 py-4 text-sm"><span className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${statusClasses(status)}`}>{status}</span>{request.approvalIssue && <span className="mt-1 block text-xs text-amber-700 dark:text-amber-300">{request.approvalIssue}</span>}</td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{new Date(request.createdAt).toLocaleDateString()}</td>
                   <td className="whitespace-nowrap px-6 py-4 text-right text-sm font-medium"><Button size="sm" variant="secondary" onClick={event => { event.stopPropagation(); setSelectedRequest(request); setIsReviewModalOpen(true); }}>{canAct ? 'Review' : 'View'}</Button></td>
                 </tr>;
               })}
@@ -172,14 +189,17 @@ const ManpowerPlanning: React.FC = () => {
         </div>
       </Card>
 
-      <ManpowerRequestModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} onSave={handleSaveRequest} />
+      <ManpowerRequestModal isOpen={isCreateModalOpen} onClose={() => { setIsCreateModalOpen(false); setRequestBeingEdited(null); }} onSave={handleSaveRequest} requestToEdit={requestBeingEdited} />
       <ManpowerReviewModal
         isOpen={isReviewModalOpen}
         onClose={() => setIsReviewModalOpen(false)}
         request={selectedRequest}
         onApprove={handleApprove}
         onReject={handleReject}
+        onClarify={handleClarify}
+        onEditRequest={request => { setIsReviewModalOpen(false); setRequestBeingEdited(request); setIsCreateModalOpen(true); }}
         canApprove={Boolean(selectedRequest && actionableIds.has(selectedRequest.id))}
+        isRequester={Boolean(selectedRequest && selectedRequest.requestedBy === user?.id)}
       />
     </div>
   );
