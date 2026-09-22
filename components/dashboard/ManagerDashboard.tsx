@@ -28,7 +28,7 @@ import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { mergePanParticulars } from '../../services/panUtils';
 import { resolveEmployeePosition } from '../../services/employeeProfile';
 import COEQueue from './COEQueue';
-import { approveManpowerRequest, fetchMyPendingManpowerApprovalIds, rejectManpowerRequest } from '../../services/manpowerService';
+import { approveManpowerRequest, fetchMyPendingManpowerApprovalIds, rejectManpowerRequest, requestManpowerClarification } from '../../services/manpowerService';
 import { fetchMyPendingTimeApprovalAssignments } from '../../services/timeApprovalService';
 
 
@@ -681,7 +681,7 @@ const ManagerDashboard: React.FC = () => {
 
             let manpowerQuery = supabase
                 .from('manpower_requests')
-                .select('id, business_unit_id, business_unit_name, department_id, requester_id, requester_name, date_needed, forecasted_pax, general_note, items, grand_total, status, created_at, approved_by, approved_at, rejection_reason, approval_stage, approval_issue, approval_history');
+                .select('id, business_unit_id, business_unit_name, department_id, requester_id, requester_name, date_needed, date_mode, start_date, end_date, coverage_days, coverage_day_count, total_staff_days, forecasted_pax, general_note, attachment_url, items, grand_total, status, created_at, approved_by, approved_at, rejection_reason, approval_stage, approval_issue, approval_history, clarification_status, clarification_question, revision');
             // Manpower approval is assignment-based, not department- or
             // reportee-based. This also covers a BUM with no direct reports.
             manpowerQuery = assignedManpowerIds.length
@@ -769,14 +769,24 @@ const ManagerDashboard: React.FC = () => {
                         businessUnitName: row.business_unit_name || 'Unknown BU',
                         requestedBy: row.requester_id,
                         requesterName: row.requester_name,
-                        date: row.date_needed ? new Date(row.date_needed) : new Date(),
+                        date: row.start_date ? new Date(row.start_date) : row.date_needed ? new Date(row.date_needed) : new Date(),
+                        dateMode: row.date_mode || 'single',
+                        startDate: row.start_date || row.date_needed,
+                        endDate: row.end_date || row.date_needed,
+                        coverageDays: Array.isArray(row.coverage_days) ? row.coverage_days : [],
+                        coverageDayCount: row.coverage_day_count || 1,
+                        totalStaffDays: row.total_staff_days || 0,
                         forecastedPax: row.forecasted_pax || 0,
                         generalNote: row.general_note || '',
+                        attachmentUrl: row.attachment_url || undefined,
                         items: Array.isArray(row.items) ? row.items : (row.items ? JSON.parse(row.items) : []),
                         grandTotal: row.grand_total || 0,
                         status: row.status as ManpowerRequestStatus,
                         approvalStage: row.approval_stage || undefined,
                         approvalIssue: row.approval_issue || undefined,
+                        clarificationStatus: row.clarification_status || 'none',
+                        clarificationQuestion: row.clarification_question || undefined,
+                        revision: row.revision || 1,
                         approvalTrail: Array.isArray(row.approval_history) ? row.approval_history : [],
                         createdAt: row.created_at ? new Date(row.created_at) : new Date(),
                         approvedBy: row.approved_by || undefined,
@@ -942,6 +952,13 @@ const ManagerDashboard: React.FC = () => {
         setPendingManpowerApprovals(prev => prev.filter(r => r.id !== requestId));
         setIsManpowerReviewModalOpen(false);
         alert("Manpower Request Rejected.");
+    };
+
+    const handleClarifyManpower = async (requestId: string, question: string) => {
+        const updated = await requestManpowerClarification(requestId, question);
+        setManpowerRequests(prev => prev.map(request => request.id === updated.id ? updated : request));
+        setPendingManpowerApprovals(prev => prev.filter(request => request.id !== requestId));
+        setIsManpowerReviewModalOpen(false);
     };
 
     const openReviewModal = (req: ManpowerRequest) => {
@@ -1636,6 +1653,7 @@ const ManagerDashboard: React.FC = () => {
                 request={selectedManpowerRequest}
                 onApprove={handleApproveManpower}
                 onReject={handleRejectManpower}
+                onClarify={handleClarifyManpower}
                 canApprove={true}
             />
 

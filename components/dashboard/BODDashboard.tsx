@@ -23,7 +23,7 @@ import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { mergePanParticulars } from '../../services/panUtils';
 import { resolveEmployeePosition } from '../../services/employeeProfile';
-import { approveManpowerRequest, rejectManpowerRequest } from '../../services/manpowerService';
+import { approveManpowerRequest, rejectManpowerRequest, requestManpowerClarification } from '../../services/manpowerService';
 
 const GavelIcon: React.FC<{className?: string}> = ({className}) => <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>;
 const DocumentTextIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m5.231 13.5h-8.021a1.125 1.125 0 0 1-1.125-1.125v-1.5A1.125 1.125 0 0 1 5.625 15h12.75a1.125 1.125 0 0 1 1.125 1.125v1.5a1.125 1.125 0 0 1-1.125 1.125H13.5m-3.031-1.125a3 3 0 1 0-5.962 0 3 3 0 0 0 5.962 0ZM15 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" /></svg>);
@@ -455,13 +455,24 @@ const BODDashboard: React.FC = () => {
                 requestedBy: r.requester_id,
                 requesterName: r.requester_name,
                 businessUnitName: r.business_unit_name,
-                date: mapDate(r.date_needed),
+                date: mapDate(r.start_date || r.date_needed),
+                dateMode: r.date_mode || 'single',
+                startDate: r.start_date || r.date_needed,
+                endDate: r.end_date || r.date_needed,
+                coverageDays: Array.isArray(r.coverage_days) ? r.coverage_days : [],
+                coverageDayCount: r.coverage_day_count || 1,
+                totalStaffDays: r.total_staff_days || 0,
                 forecastedPax: r.forecasted_pax || 0,
+                generalNote: r.general_note || undefined,
+                attachmentUrl: r.attachment_url || undefined,
                 items: Array.isArray(r.items) ? r.items : (r.items ? JSON.parse(r.items) : []),
                 grandTotal: r.grand_total || 0,
                 status: r.status as ManpowerRequestStatus,
                 approvalStage: r.approval_stage || undefined,
                 approvalIssue: r.approval_issue || undefined,
+                clarificationStatus: r.clarification_status || 'none',
+                clarificationQuestion: r.clarification_question || undefined,
+                revision: r.revision || 1,
                 approvalTrail: Array.isArray(r.approval_history) ? r.approval_history : [],
                 createdAt: mapDate(r.created_at),
                 approvedBy: r.approved_by || undefined,
@@ -501,6 +512,12 @@ const BODDashboard: React.FC = () => {
         setManpowerRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: ManpowerRequestStatus.Rejected } : r));
         setIsManpowerReviewModalOpen(false);
         alert('Manpower Request Rejected.');
+    };
+
+    const handleClarifyManpower = async (requestId: string, question: string) => {
+        const updated = await requestManpowerClarification(requestId, question);
+        setManpowerRequests(prev => prev.map(request => request.id === updated.id ? updated : request));
+        setIsManpowerReviewModalOpen(false);
     };
 
     const openReviewModal = (req: ManpowerRequest) => {
@@ -1288,6 +1305,7 @@ const BODDashboard: React.FC = () => {
                 request={selectedManpowerRequest}
                 onApprove={handleApproveManpower}
                 onReject={handleRejectManpower}
+                onClarify={handleClarifyManpower}
                 canApprove={true}
             />
             
