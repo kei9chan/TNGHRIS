@@ -6,7 +6,7 @@ import { normalizeCalendarDate, parseLocalCalendarDate } from '../utils/calendar
 // ---------------------------------------------------------------------------
 // Row Type
 // ---------------------------------------------------------------------------
-type ManpowerRequestRow = {
+export type ManpowerRequestRow = {
   id: string;
   business_unit_id?: string | null;
   business_unit_name?: string | null;
@@ -38,13 +38,21 @@ type ManpowerRequestRow = {
   created_at: string;
 };
 
-const parseTrail = (value: unknown): ManpowerApprovalTrailEntry[] => {
-  if (!Array.isArray(value)) return [];
-  return value as ManpowerApprovalTrailEntry[];
+const parseJsonArray = <T>(value: unknown): T[] => {
+  if (Array.isArray(value)) return value as T[];
+  if (typeof value !== 'string' || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed as T[] : [];
+  } catch {
+    return [];
+  }
 };
 
-const parseCoverageDays = (value: unknown): ManpowerCoverageDay[] => Array.isArray(value)
-  ? value.map((day: any) => ({
+const parseTrail = (value: unknown): ManpowerApprovalTrailEntry[] => parseJsonArray<ManpowerApprovalTrailEntry>(value);
+
+const parseCoverageDays = (value: unknown): ManpowerCoverageDay[] => parseJsonArray<any>(value)
+  .map((day: any) => ({
       date: String(day.date || ''),
       coverageRequired: day.coverageRequired !== false,
       forecastedPax: Number(day.forecastedPax || 0),
@@ -53,15 +61,14 @@ const parseCoverageDays = (value: unknown): ManpowerCoverageDay[] => Array.isArr
       items: Array.isArray(day.items) ? day.items as ManpowerRequestItem[] : [],
       totalStaff: Number(day.totalStaff || 0),
       totalCost: Number(day.totalCost || 0),
-    })).filter(day => day.date)
-  : [];
+    })).filter(day => day.date);
 
 // ---------------------------------------------------------------------------
 // Mapper
 // ---------------------------------------------------------------------------
-const mapManpowerRequest = (row: ManpowerRequestRow): ManpowerRequest => {
+export const mapManpowerRequestRow = (row: ManpowerRequestRow): ManpowerRequest => {
   const coverageDays = parseCoverageDays(row.coverage_days);
-  const items = Array.isArray(row.items) ? (row.items as ManpowerRequestItem[]) : [];
+  const items = parseJsonArray<ManpowerRequestItem>(row.items);
   const fallbackDate = normalizeCalendarDate(row.date_needed);
   const normalizedDays = coverageDays.length ? coverageDays : [{
     date: fallbackDate,
@@ -116,7 +123,7 @@ export const fetchManpowerRequests = async (): Promise<ManpowerRequest[]> => {
     .order('created_at', { ascending: false });
 
   if (error) throw new Error(error.message || 'Failed to fetch manpower requests');
-  return (data as ManpowerRequestRow[]).map(mapManpowerRequest);
+  return (data as ManpowerRequestRow[]).map(mapManpowerRequestRow);
 };
 
 export const fetchManpowerRequestsByBU = async (businessUnitId: string): Promise<ManpowerRequest[]> => {
@@ -127,7 +134,7 @@ export const fetchManpowerRequestsByBU = async (businessUnitId: string): Promise
     .order('created_at', { ascending: false });
 
   if (error) throw new Error(error.message || 'Failed to fetch manpower requests');
-  return (data as ManpowerRequestRow[]).map(mapManpowerRequest);
+  return (data as ManpowerRequestRow[]).map(mapManpowerRequestRow);
 };
 
 export const fetchManpowerRequestById = async (id: string): Promise<ManpowerRequest | null> => {
@@ -139,7 +146,7 @@ export const fetchManpowerRequestById = async (id: string): Promise<ManpowerRequ
 
   if (error) throw new Error(error.message || 'Failed to load the manpower request');
   if (!data) return null;
-  return mapManpowerRequest(data as ManpowerRequestRow);
+  return mapManpowerRequestRow(data as ManpowerRequestRow);
 };
 
 type CreateManpowerRequestInput = Partial<ManpowerRequest> & { dateNeeded?: string };
