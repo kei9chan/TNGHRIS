@@ -155,7 +155,18 @@ export const processTimeRequestApproval = async (
   requestId: string,
   decision: 'approve' | 'reject' | 'return',
   note?: string,
+  approvedHours?: number,
 ) => {
+  if (requestType === 'overtime') {
+    const { data, error } = await supabase.rpc('process_overtime_request_approval', {
+      p_request_id: requestId,
+      p_decision: decision,
+      p_note: note || null,
+      p_approved_hours: decision === 'approve' ? approvedHours ?? null : null,
+    });
+    if (error) throw new Error(error.message || 'Failed to process overtime approval');
+    return data;
+  }
   const { data, error } = await supabase.rpc('process_time_request_approval', {
     p_request_type: requestType,
     p_request_id: requestId,
