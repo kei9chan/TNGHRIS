@@ -20,6 +20,7 @@ assert.match(compliance,/All required schedules are complete/);
 assert.match(compliance,/Complete pending schedules/);
 for(const phrase of ['Select completed payroll','Select employees','Build historical schedules','Enter or upload historical punches','Original payroll result','Historical pay package missing','Run payroll reconciliation','Explain every difference','Reconciliation summary'])assert.match(page,new RegExp(phrase));
 for(const phrase of ['change live attendance','current schedules','leave balances','payment','live payslips','government reports','payroll approvals','readiness counts','original payroll result'])assert.match(page,new RegExp(phrase));
+for(const phrase of ['downloadHistoricalTemplate','Approved Overtime Minutes','Night Differential Minutes','Approved Leave Hours','Attendance Correction','Historical-Schedule-','Historical-Attendance-'])assert.match(page,new RegExp(phrase));
 assert.match(migration,/p_scope='all' and not broad/);
 assert.match(migration,/private\.payroll_schedule_can_edit\(h\.id\)/);
 assert.match(migration,/payroll_history_private\.reconciliation_runs/);
