@@ -331,7 +331,7 @@ export function useApprovals({ user }: UseApprovalsOptions) {
     ) => {
         if (!request.id) throw new Error('Request is unavailable. Refresh the queue.');
         try {
-            const result: any = await processTimeRequestApproval('overtime', request.id, newStatus === OTStatus.Approved ? 'approve' : 'reject', details.managerNote);
+            const result: any = await processTimeRequestApproval('overtime', request.id, newStatus === OTStatus.Approved ? 'approve' : 'reject', details.managerNote, details.approvedHours);
             if (result?.notifyEscalation) sendConditionalApprovalEmails('overtime', request.id).catch(error => console.error('Approval email failed', error));
             if (request.employeeId) createNotification({
                 userId: request.employeeId,
