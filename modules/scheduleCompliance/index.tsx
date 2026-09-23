@@ -18,9 +18,11 @@ export function ScheduleTask({week,manager,refresh=0,details=false}:{week?:strin
  if(error)return <div className={box} role="alert">Schedule task could not be checked: {error} <button className="underline" onClick={()=>setRetry(v=>v+1)}>Retry</button></div>;
  if(!task)return null;
  const hasOverdueAction=Boolean(task.overdueTasks?.some(t=>t.remaining>0));
+ const unpublished=task.employees.filter(e=>!e.exempt&&e.complete&&e.publication!=='Published').length;
  const hasCurrentAction=task.required>0&&task.remaining>0;
  // Completed schedule tasks should leave the dashboard. Keep the card only when
  // this week's work is still outstanding or an older overdue week needs action.
+ if(!hasCurrentAction&&!hasOverdueAction&&unpublished>0)return <p className="mb-3 text-sm font-semibold text-violet-700">{unpublished} employees have saved draft schedules awaiting publication. <Link className="underline" to={scheduleLink(task)}>Review and publish</Link></p>;
  if(!hasCurrentAction&&!hasOverdueAction)return <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 font-semibold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">✓ All required schedules are complete{task.hr&&<> · <Link className="underline" to="/payroll/schedule-compliance">Schedule Compliance</Link></>}</div>;
  const urgent=['Overdue','Due Today','Due Tomorrow'].includes(task.status)||Boolean(task.overdueTasks?.some(t=>t.remaining>0));
  const overdue=task.status==='Overdue'||Boolean(task.overdueTasks?.some(t=>t.remaining>0));

@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';import fs from 'node:fs';import {PGlite} from '@electric-sql/pglite';
+process.on('uncaughtException',e=>{console.error(e.message,e.where||'');process.exit(1);});
+const db=new PGlite();await db.exec(`create schema private;create role anon;create role authenticated;
+create table public.hris_users(id uuid,employment_status text);
+create table public.leave_types(id uuid,name text);
+create table public.leave_requests(id uuid,employee_id uuid,selected_leave_type_id uuid,leave_type_id uuid,status text,duration_days numeric,start_date date,end_date date,final_classification text,paid_days numeric);
+create table public.leave_balance_migration_batches(id uuid,status text);
+create table public.leave_balance_migration_rows(id uuid,batch_id uuid,employee_id uuid,leave_kind text,as_of_date date,remaining_balance numeric,source text,activated_at timestamptz,validation_status text,row_number int);
+create table public.payroll_leave_ledger(employee_id uuid,leave_kind text,amount numeric,credit_date date,source text,event_key text unique,approved_by uuid);
+create table private.payroll_input_records(kind text,source_id uuid);
+create function public.current_hris_user_id() returns uuid language sql as $$select '00000000-0000-4000-8000-000000000001'::uuid$$;
+create function public.has_active_role(text) returns boolean language sql as $$select false$$;
+create function private.sync_confirmed_leave(uuid,date) returns void language sql as $$select null::void$$;
+create function private.confirmed_leave_balance(uuid,text,date) returns numeric language sql as $$select coalesce(sum(amount),0) from public.payroll_leave_ledger where employee_id=$1 and leave_kind=$2 and credit_date<=$3$$;
+create function private.activate_leave_balance_migration(uuid,uuid) returns void language sql as $$select null::void$$;`);
+const original=fs.readFileSync('supabase/migrations/20260922000731_leave_management_redesign_and_balance_migration.sql','utf8');let start=original.indexOf('create or replace function private.confirmed_leave_request_accounting()'),end=original.indexOf('end $$;',start)+7;await db.exec(original.slice(start,end));
+await db.exec(fs.readFileSync('supabase/payroll_import_leave_accounting.sql','utf8'));await db.exec('create trigger account after update on public.leave_requests for each row execute function private.confirmed_leave_request_accounting();');
+const e='00000000-0000-4000-8000-000000000002',b='00000000-0000-4000-8000-000000000003',l='00000000-0000-4000-8000-000000000004',t='00000000-0000-4000-8000-000000000005';
+await db.exec(`insert into public.hris_users values('${e}','Regular');insert into public.leave_types values('${t}','Vacation Leave');insert into public.payroll_leave_ledger(employee_id,leave_kind,amount,credit_date,event_key) values('${e}','vacation',5,'2026-08-01','existing');insert into public.leave_balance_migration_batches values('${b}','pending_hr_manager');insert into public.leave_balance_migration_rows values('${b}','${b}','${e}','vacation','2026-08-25',3.5,'Fixture',null,'valid',1);insert into private.payroll_input_records values('leave-balances','${b}'),('leave-taken','${l}');insert into public.leave_requests values('${l}','${e}','${t}','${t}','Pending',1,'2026-08-20','2026-08-20','paid',1);`);
+await assert.rejects(()=>db.exec("update public.leave_requests set status='Approved'"),/Approve the imported opening balance/);
+await db.query('select private.activate_leave_balance_migration($1,public.current_hris_user_id())',[b]);await db.exec("update public.leave_balance_migration_batches set status='approved'");
+await db.exec("update public.leave_requests set status='Approved'");assert.equal(Number((await db.query('select sum(amount) n from public.payroll_leave_ledger')).rows[0].n),3.5);
+await db.query('select private.activate_leave_balance_migration($1,public.current_hris_user_id())',[b]);assert.equal(Number((await db.query('select sum(amount) n from public.payroll_leave_ledger')).rows[0].n),3.5);
+// Opposite order: dated usage first, then migration. The opening absorbs prior usage once.
+await db.exec("delete from public.payroll_leave_ledger where event_key<>'existing';update public.leave_requests set status='Pending';update public.leave_balance_migration_batches set status='draft';update public.leave_balance_migration_rows set activated_at=null");await db.exec("update public.leave_requests set status='Approved'");assert.equal((await db.query("select credit_date::text d from public.payroll_leave_ledger where event_key like 'usage:%'")).rows[0].d,'2026-08-20');await db.query('select private.activate_leave_balance_migration($1,public.current_hris_user_id())',[b]);assert.equal(Number((await db.query('select sum(amount) n from public.payroll_leave_ledger')).rows[0].n),3.5);
+await db.close();console.log('PASS: remaining-balance adjustment, no repeated credits, historical usage included once in either import order, pending balance approval gate.');
