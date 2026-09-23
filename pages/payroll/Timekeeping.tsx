@@ -27,6 +27,7 @@ import LiveShiftStatusDashboard from '../../components/payroll/LiveShiftStatusDa
 import { logActivity } from '../../services/auditService';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
+import {canViewAllScheduleUnits,scopeBusinessUnitId,scopeLabel} from '../../modules/payroll/scheduleScope';
 
 // --- Helper Types ---
 interface Gap {
@@ -128,8 +129,8 @@ const Timekeeping: React.FC = () => {
     const [builderPeople,setBuilderPeople]=useState<(User & {canEdit:boolean})[]>([]);
     const [builderContext,setBuilderContext]=useState('');
     const [employeeScope,setEmployeeScope]=useState<EmployeeScope>(()=>{
-        if(requestedEmployee)return 'business_unit';
-        try{return sessionStorage.getItem(`schedule-scope:${user?.id}`)==='business_unit'?'business_unit':'direct';}catch{return 'direct';}
+        if(requestedEmployee)return 'direct';
+        try{const saved=sessionStorage.getItem(`schedule-scope:${user?.id}`);return saved==='all'||saved==='direct'||saved?.startsWith('business_unit:')?saved as EmployeeScope:'direct';}catch{return 'direct';}
     });
     useEffect(()=>{try{sessionStorage.setItem(`schedule-scope:${user?.id}`,employeeScope);}catch{}},[employeeScope,user?.id]);
     const [retryShift, setRetryShift] = useState<{employeeId:string;date:Date;templateId:string;scope?:EmployeeScope;week?:string}|null>(null);
@@ -219,13 +220,14 @@ const Timekeeping: React.FC = () => {
 
     // --- Permission Logic ---
     const isHrPresetEditor = !!user && [user.role, ...(user.roles ?? [])].some(role => role === Role.Admin || role === Role.HRStaff || role === Role.HRManager);
+    const hasGlobalScheduleView=canViewAllScheduleUnits(user);
     const accessibleBus = useMemo(() => {
-        if (isHrPresetEditor) return businessUnits;
+        if (hasGlobalScheduleView) return businessUnits;
         const existing = getAccessibleBusinessUnits(businessUnits as any);
         if (!user) return existing;
         const teamBus = new Set(employees.filter(e => e.reportsTo === user.id || e.id === user.id).map(e => e.businessUnitId));
         return businessUnits.filter(b => existing.some(x => x.id === b.id) || teamBus.has(b.id));
-    }, [user, isHrPresetEditor, getAccessibleBusinessUnits, businessUnits, employees]);
+    }, [user, hasGlobalScheduleView, getAccessibleBusinessUnits, businessUnits, employees]);
     const [selectedBuId, setSelectedBuId] = useState<string>('all');
     const [departmentFilter, setDepartmentFilter] = useState<string>('all');
 
@@ -233,7 +235,7 @@ const Timekeeping: React.FC = () => {
         if(!requestedEmployee)return;
         const target=employees.find(employee=>employee.id===requestedEmployee);
         if(!target)return;
-        setEmployeeScope('business_unit');
+        if(target.businessUnitId)setEmployeeScope(`business_unit:${target.businessUnitId}`);
         setDepartmentFilter('all');
         if(target.businessUnitId)setSelectedBuId(target.businessUnitId);
     },[requestedEmployee,employees]);
@@ -612,11 +614,11 @@ const Timekeeping: React.FC = () => {
 
     const builderIsCurrent=builderContext===`${user?.id}:${employeeScope}:${toDateOnly(weekStart)}`;
     const employeesInBU=useMemo(()=>!builderIsCurrent?[]:builderPeople.filter(e=>
-      (employeeScope==='business_unit'||selectedBuId==='all'||e.businessUnitId===selectedBuId)&&
+      (selectedBuId==='all'||e.businessUnitId===selectedBuId)&&
       (departmentFilter==='all'||e.departmentId===departmentFilter)&&
       (!requestedEmployee||e.id===requestedEmployee)&&
       !clockingExemptEmployeeIds.includes(e.id)),[builderIsCurrent,builderPeople,employeeScope,selectedBuId,departmentFilter,requestedEmployee,clockingExemptEmployeeIds]);
-    const canEditEmployee=(id:string)=>builderIsCurrent&&!builderLoading&&!shiftBusy&&builderPeople.some(e=>e.id===id&&e.canEdit&&(employeeScope==='business_unit'||e.reportsTo===user?.id));
+    const canEditEmployee=(id:string)=>builderIsCurrent&&!builderLoading&&!shiftBusy&&builderPeople.some(e=>e.id===id&&e.canEdit);
     const editableEmployees=employeesInBU.filter(e=>canEditEmployee(e.id));
     const displayAssignments=retryShift&&shiftSaveError?[...assignments.filter(a=>!(a.employeeId===retryShift.employeeId&&toDateOnly(new Date(a.date))===toDateOnly(retryShift.date))),{id:'unsaved-selection',employeeId:retryShift.employeeId,date:retryShift.date,shiftTemplateId:retryShift.templateId,locationId:'OFFICE-MAIN'}]:assignments;
     const employeeStates=Object.fromEntries(employeesInBU.map(e=>{
@@ -1135,20 +1137,6 @@ const Timekeeping: React.FC = () => {
 
     const dropdowns = (
         <div className="flex items-center space-x-4">
-            <div className={`relative rounded-lg border-4 ${buColorStyle.border}`}>
-                <select
-                    id="bu-filter"
-                    value={selectedBuId}
-                    disabled={shiftBusy||!!retryShift||!!operationRetry.current} onChange={e => setSelectedBuId(e.target.value)}
-                    className={`block w-full pl-4 pr-10 py-2 text-xl appearance-none focus:outline-none rounded-md ${buColorStyle.bg} ${buColorStyle.text}`}
-                >
-                    {accessibleBus.length > 0 && <option value="all">All BUs</option>}
-                    {accessibleBus.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
-                </select>
-                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-inherit">
-                    <ChevronDownIcon />
-                </div>
-            </div>
             <div className="relative">
                 <label htmlFor="dept-filter" className="sr-only">Department</label>
                 <select id="dept-filter" value={departmentFilter} disabled={shiftBusy||!!retryShift||!!operationRetry.current} onChange={e => setDepartmentFilter(e.target.value)} className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white">
@@ -1201,6 +1189,18 @@ const Timekeeping: React.FC = () => {
 
     return (
         <div className="space-y-6">
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
+                <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
+                    <div><p className="text-sm font-bold uppercase tracking-wide text-violet-600">Schedule week</p><h1 className="mt-1 text-3xl font-bold">Schedule Builder</h1><p className="mt-1 text-lg">{formatDateRange(weekStart,addDays(weekStart,6))}</p><p className="mt-2 font-semibold text-slate-600 dark:text-slate-300">Viewing: {scopeLabel(employeeScope,businessUnits)} · {builderIsCurrent?employeesInBU.length:0} employees{employeeScope==='all'?` across ${new Set(employeesInBU.map(person=>person.businessUnitId).filter(Boolean)).size} business units`:''}</p></div>
+                    <label className="block min-w-72 text-sm font-bold">Viewing
+                        <select aria-label="Schedule viewing scope" value={employeeScope} disabled={shiftBusy||!!retryShift||!!operationRetry.current} onChange={event=>{const scope=event.target.value as EmployeeScope;setEmployeeScope(scope);const unit=scopeBusinessUnitId(scope);setSelectedBuId(unit||'all');setDepartmentFilter('all');}} className="mt-2 block min-h-12 w-full rounded-xl border-2 border-violet-300 bg-white px-4 text-base font-semibold dark:bg-slate-900">
+                            <option value="direct">My direct reports</option>
+                            {hasGlobalScheduleView&&<option value="all">All business units</option>}
+                            {accessibleBus.map(unit=><option key={unit.id} value={`business_unit:${unit.id}`}>{unit.name}</option>)}
+                        </select>
+                    </label>
+                </div>
+            </section>
             <ScheduleTask week={toDateOnly(weekStart)} manager={complianceManager} refresh={statusRefresh+publicationRefresh+scheduleMutation.current} details />
             {fromReadiness&&requestedEmployee&&<div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-violet-200 bg-violet-50 p-4 text-violet-950"><div><b className="block">Schedule correction for {employees.find(employee=>employee.id===requestedEmployee)?.name||'selected employee'}</b><span className="text-sm">Only this employee is shown. Save their schedule before returning to payroll readiness.</span></div><a href="/payroll/home" className="min-h-11 rounded-lg border border-violet-300 bg-white px-4 py-3 text-sm font-bold text-violet-700">Back to payroll readiness</a></div>}
             {shiftSaveError && retryShift && <div role="alert" className="rounded border border-red-300 bg-red-50 p-4 text-red-900"><p>Shift not saved: {shiftSaveError}</p><button className="mt-2 underline" disabled={shiftBusy} onClick={()=>void handleSaveShift(retryShift.employeeId,retryShift.date,retryShift.templateId)}>Retry save</button> <button disabled={shiftBusy} className="ml-3 underline" onClick={()=>{const employee=builderPeople.find(e=>e.id===retryShift.employeeId);if(employee)setDrawerState({open:true,employee,date:retryShift.date});}}>Edit selection</button></div>}
@@ -1216,7 +1216,7 @@ const Timekeeping: React.FC = () => {
                 <LiveShiftStatusDashboard flaggedEmployees={flaggedEmployees}
                     selectedBuId={selectedBuId}
                     actions={dropdowns}
-                    employees={scopedEmployees}
+                    employees={employeesInBU}
                     assignments={displayAssignments}
                     templates={templates}
                 />
@@ -1227,8 +1227,7 @@ const Timekeeping: React.FC = () => {
 
             {gapBar}
 
-            <CompensableWorkPanel employees={scopedEmployees}/>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">WeeklyShiftRoster</h1>
+            <CompensableWorkPanel employees={employeesInBU}/>
             
             {isScheduleEditable && (
                 <Card title="Status Presets" className="mb-4"><div className="flex flex-wrap gap-3">{statusPresets.filter(p=>p.tag!=='suspended'||isHrPresetEditor||isSuperAdmin).map(p=><button key={p.tag} draggable={isScheduleEditable} disabled={!isScheduleEditable} onDragStart={e=>e.dataTransfer.setData('application/x-tng-status',p.tag)} onClick={()=>setSelectedStatus(selectedStatus===p.tag?null:p.tag)} aria-pressed={selectedStatus===p.tag} className={`min-h-12 rounded-lg border px-4 font-semibold ${p.color} ${selectedStatus===p.tag?'ring-2 ring-violet-600':''}`}>{p.label}</button>)}</div><p className="mt-3 text-sm">{selectedStatus?'Select an employee day to apply this status, or click the selected status to cancel.':'Drag a status onto a day, or select it and tap the day. Skeletal and Absence keep the expected working hours. Approved paid/unpaid leave appears automatically.'}</p><a className="mt-3 inline-block min-h-11 underline" href="/payroll/attendance-review">Attendance flags & review settings</a></Card>
@@ -1275,7 +1274,7 @@ const Timekeeping: React.FC = () => {
                     {builderLoading&&<p role="status">Loading saved schedules…</p>}
                     {shiftBusy&&<p role="status">Saving schedule…</p>}
                     {builderError&&<p role="alert" className="text-red-500">{builderError} <button className="underline" disabled={shiftBusy} onClick={()=>{if(operationRetry.current)void operationRetry.current();else setBuilderRefresh(v=>v+1);}}>Retry</button></p>}
-                    <p>Showing {builderIsCurrent?employeesInBU.length:0} {employeeScope==='direct'?'direct reports':'employees in your business unit'}{departmentFilter!=='all'?' (department filter applied)':''}. Employees marked view-only cannot be edited.</p>
+                    <p>Viewing: <strong>{scopeLabel(employeeScope,businessUnits)}</strong> · Showing {builderIsCurrent?employeesInBU.length:0} employees{departmentFilter!=='all'?' (department filter applied)':''}. View access does not change edit permissions; employees marked view-only cannot be edited.</p>
                     <p className="text-sm font-semibold">{publicationLoading?'Checking publication status…':scheduleStatus==='published'?'PUBLISHED — Employees can now see their schedules':publicationRows.some(r=>r.activeVersion)?'DRAFT CHANGES — Employees still see their last published schedules':'DRAFT — Employees cannot see this yet'}</p>
                      <div className="grid grid-cols-1 items-center gap-4">
                         <span className="font-semibold text-2xl text-gray-800 dark:text-gray-200">
@@ -1291,7 +1290,6 @@ const Timekeeping: React.FC = () => {
                                 <Button variant="secondary" disabled={shiftBusy||!!retryShift||!!operationRetry.current} onClick={handleToday}>Today</Button>
                                 <Button variant="secondary" disabled={shiftBusy||!!retryShift||!!operationRetry.current} onClick={handleNextWeek}>Next &rarr;</Button>
                             </div>
-                            <label className="text-sm font-semibold">Employee scope<select aria-label="Employee scope" value={employeeScope} disabled={shiftBusy||!!retryShift||!!operationRetry.current} onChange={e=>setEmployeeScope(e.target.value as EmployeeScope)} className="ml-2 rounded border p-2 dark:bg-slate-800"><option value="direct">My direct reports</option><option value="business_unit">Entire business unit</option></select></label>
                             <div className="inline-flex space-x-1 p-1 bg-gray-200 dark:bg-slate-800 rounded-lg">
                                 <button className={viewButtonClass('grid')} onClick={() => setView('grid')}><ViewGridIcon/> Grid</button>
                                 <button className={viewButtonClass('role')} onClick={() => setView('role')}><ViewListIcon/> Role</button>

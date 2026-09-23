@@ -416,7 +416,8 @@ const AppRoutes: React.FC = () => {
             <Route path="net-pay" element={<ProtectedRoute><NetPayPage /></ProtectedRoute>} />
             <Route path="attendance-readiness" element={<ProtectedRoute><AttendanceReadinessPage /></ProtectedRoute>} />
             <Route index element={<Navigate to="home" replace />} />
-            <Route path="historical-attendance" element={<ProtectedRoute><HistoricalAttendancePage /></ProtectedRoute>} />
+            <Route path="historical-attendance" element={<Navigate to="/payroll/historical-reconciliation" replace />} />
+            <Route path="historical-reconciliation" element={<ProtectedRoute><HistoricalAttendancePage /></ProtectedRoute>} />
             <Route path="historical-corrections" element={<ProtectedRoute><HistoricalCorrectionPage /></ProtectedRoute>} />
             <Route path="home" element={<ProtectedRoute><PayrollHome /></ProtectedRoute>} />
             <Route path="my-schedule" element={<ProtectedRoute><MySchedule /></ProtectedRoute>} />

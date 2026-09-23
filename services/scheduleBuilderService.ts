@@ -1,6 +1,7 @@
 import {supabase} from './supabaseClient';
 import type {ShiftAssignment} from '../types';
-export type EmployeeScope='direct'|'business_unit';
+import type {ScheduleScope} from '../modules/payroll/scheduleScope';
+export type EmployeeScope=ScheduleScope;
 export const mapBuilderAssignment=(row:any):ShiftAssignment=>({id:row.id,employeeId:row.employee_id,shiftTemplateId:row.shift_template_id,date:new Date(row.date+'T00:00:00'),locationId:'OFFICE-MAIN',assignedAreaId:row.assigned_area_id||undefined});
 export async function loadBuilder(scope:EmployeeScope,week:string){
  const {data,error}=await supabase.rpc('get_schedule_builder_data',{p_scope:scope,p_week:week});
