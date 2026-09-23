@@ -110,7 +110,8 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
             historyLog: [],
         };
         setRequest(initialRequest);
-        setApprovedHours(requestToEdit?.approvedHours?.toString() || '');
+        const savedApprovedHours = Number(requestToEdit?.approvedHours || 0);
+        setApprovedHours(savedApprovedHours > 0 ? savedApprovedHours.toString() : '');
         setManagerNote(requestToEdit?.managerNote || '');
         setError('');
         setRejecting(false);
@@ -322,7 +323,7 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
 
     // Auto-set approved hours for manager convenience
     useEffect(() => {
-        if (isManagerReviewing && !approvedHours) {
+        if (isManagerReviewing && (!Number.isFinite(Number(approvedHours)) || Number(approvedHours) <= 0) && plannedHours > 0) {
             setApprovedHours(plannedHours.toString());
         }
     }, [isManagerReviewing, plannedHours, approvedHours]);
@@ -527,6 +528,9 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
                             name="approvedHours"
                             type="number"
                             step="0.25"
+                            min="0.25"
+                            inputMode="decimal"
+                            placeholder={plannedHours > 0 ? plannedHours.toString() : 'e.g. 2.75'}
                             value={approvedHours}
                             onChange={(e) => setApprovedHours(e.target.value)}
                             disabled={isFinalized || !canApprove}
