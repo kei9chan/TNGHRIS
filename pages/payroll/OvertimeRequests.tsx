@@ -463,7 +463,7 @@ const OvertimeRequests: React.FC = () => {
         const detailText = `${action}${details.approvedHours ? ` ${details.approvedHours.toFixed(2)} hours.` : '.'} Note: ${details.managerNote || 'N/A'}`;
 
         try {
-            const result: any = await processTimeRequestApproval('overtime', requestToUpdate.id!, newStatus === OTStatus.Approved ? 'approve' : 'reject', details.managerNote);
+            const result: any = await processTimeRequestApproval('overtime', requestToUpdate.id!, newStatus === OTStatus.Approved ? 'approve' : 'reject', details.managerNote, details.approvedHours);
             if (result?.notifyEscalation) sendConditionalApprovalEmails('overtime', requestToUpdate.id!).catch(console.error);
             logActivity(user, newStatus === OTStatus.Approved ? 'APPROVE' : 'REJECT', 'OTRequest', requestToUpdate.id!, `${detailText} ${result?.context?.reason || ''}`);
             if (requestToUpdate.employeeId) createNotification({
