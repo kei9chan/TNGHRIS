@@ -63,7 +63,8 @@
     "test:payroll-loans": "node tests/payrollLoansPhase1Test.mjs",
     "test:payroll-loans-workflow": "node tests/payrollLoansDebtWorkflowTest.mjs",
     "test:payroll-nte-deductions": "node tests/payrollNteDeductionsPhase2Test.mjs",
-    "test:payroll-service-charge": "node tests/payrollServiceChargePhase3Test.mjs"
+    "test:payroll-service-charge": "node tests/payrollServiceChargePhase3Test.mjs",
+    "test:schedule-historical-reconciliation": "node tests/scheduleHistoricalReconciliationSmokeTest.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.84.0",

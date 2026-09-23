@@ -1,0 +1,29 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+const read=path=>fs.readFileSync(new URL(`../${path}`,import.meta.url),'utf8');
+const nav=read('constants.ts');
+const groups=read('modules/payroll/workspace.ts');
+const page=read('modules/payroll/HistoricalAttendancePage.tsx');
+const schedule=read('pages/payroll/Timekeeping.tsx');
+const compliance=read('modules/scheduleCompliance/index.tsx');
+const migration=read('supabase/migrations/20260922231650_schedule_scope_historical_reconciliation.sql');
+
+assert.match(nav,/Historical Payroll Reconciliation.*historical-reconciliation/);
+assert.doesNotMatch(groups,/Import Historical Attendance/);
+assert.match(groups,/Schedule Builder'.*Historical Payroll Reconciliation/);
+assert.match(schedule,/My direct reports/);
+assert.match(schedule,/All business units/);
+assert.match(schedule,/Viewing:/);
+assert.match(schedule,/View access does not change edit permissions/);
+assert.match(compliance,/All required schedules are complete/);
+assert.match(compliance,/Complete pending schedules/);
+for(const phrase of ['Select completed payroll','Select employees','Build historical schedules','Enter or upload historical punches','Original payroll result','Historical pay package missing','Run payroll reconciliation','Explain every difference','Reconciliation summary'])assert.match(page,new RegExp(phrase));
+for(const phrase of ['change live attendance','current schedules','leave balances','payment','live payslips','government reports','payroll approvals','readiness counts','original payroll result'])assert.match(page,new RegExp(phrase));
+assert.match(migration,/p_scope='all' and not broad/);
+assert.match(migration,/private\.payroll_schedule_can_edit\(h\.id\)/);
+assert.match(migration,/payroll_history_private\.reconciliation_runs/);
+assert.match(migration,/run_historical_payroll_reconciliation/);
+assert.doesNotMatch(migration,/insert into public\.payroll_(gross|net|payment|payslip)/i);
+assert.match(migration,/enable row level security/g);
+console.log('Schedule visibility and historical reconciliation smoke test passed.');

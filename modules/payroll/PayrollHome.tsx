@@ -59,7 +59,6 @@ export default function PayrollHome(){
  </ul>}<p className="mt-4 text-sm text-slate-500">Checked {new Date(data.checkedAt).toLocaleString()}. Refresh after changes. Submitted means a saved version still matches its source records.</p></section>
  </>}
  {scope?.gross?.canView&&<ApprovalHandover scope={scopeId} from={from} to={to} revision={refresh} onNext={onApprovalNext}/>}
- <section className="rounded-xl border p-5 dark:border-slate-700"><h2 className="font-semibold">Historical attendance for the pilot</h2><p className="mt-2">Import actual punch logs or reviewed DTR summaries into a separate test dataset for this cutoff. Test imports do not change the live readiness counts above, attendance, leave or payments.</p>{scope?.canView&&validCutoff(from,to)&&<Link className="mt-4 inline-flex min-h-11 items-center rounded-lg bg-violet-600 px-4 font-semibold text-white" to="/payroll/historical-attendance">Import Historical Attendance →</Link>}</section>
  <div className="flex flex-wrap gap-5 text-sm underline"><Link to="/payroll/pilot">Compare & Pilot</Link><Link to="/payroll/access">Payroll access & duties</Link></div>
  </main>;
 }

@@ -21,16 +21,16 @@ export function ScheduleTask({week,manager,refresh=0,details=false}:{week?:strin
  const hasCurrentAction=task.required>0&&task.remaining>0;
  // Completed schedule tasks should leave the dashboard. Keep the card only when
  // this week's work is still outstanding or an older overdue week needs action.
- if(!details&&!hasCurrentAction&&!hasOverdueAction)return task.hr?<div className="mb-4"><Link className="font-semibold text-violet-600 dark:text-violet-300" to="/payroll/schedule-compliance">Schedule Compliance →</Link></div>:null;
+ if(!hasCurrentAction&&!hasOverdueAction)return <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 font-semibold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">✓ All required schedules are complete{task.hr&&<> · <Link className="underline" to="/payroll/schedule-compliance">Schedule Compliance</Link></>}</div>;
  const urgent=['Overdue','Due Today','Due Tomorrow'].includes(task.status)||Boolean(task.overdueTasks?.some(t=>t.remaining>0));
  const overdue=task.status==='Overdue'||Boolean(task.overdueTasks?.some(t=>t.remaining>0));
  return <section id="schedule-task" className={urgent?'mb-5 rounded-2xl border-2 border-red-500 bg-red-50 p-5 text-slate-900 dark:border-red-400 dark:bg-red-950/30 dark:text-white':box}>
   <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-bold">{urgent&&<span aria-label="Urgent" className="mr-2 text-red-600 dark:text-red-300">⚠</span>}{details?'Employee Schedule Progress':'Complete Next Week’s Employee Schedules'}</h2><p className="mt-1">Week of {date(task.week)} · Monday–Sunday</p></div><span className={`rounded-full px-3 py-1 text-sm font-semibold ${urgent?'bg-red-100 text-red-900 dark:bg-red-900 dark:text-red-100':'bg-violet-100 text-violet-900'}`}>{urgent?(overdue?'OVERDUE':'URGENT'):task.status}</span></div>
   {task.overdueTasks?.filter(t=>t.remaining>0).map(t=><p className="mt-3 font-semibold text-orange-700 dark:text-orange-300" key={t.week}>Overdue: week of {date(t.week)} · {t.remaining} employees remaining. <Link className="underline" to={scheduleLink(t)}>Complete schedules</Link></p>)}
-  <p className="mt-4 text-xl font-semibold">{task.completed} of {task.required} completed · {task.remaining} remaining</p>
+  <p className="mt-4 text-xl font-semibold">{task.remaining} employee{task.remaining===1?'':'s'} remaining</p>
   <progress className="mt-3 h-3 w-full accent-violet-600" max={100} value={task.percentage} aria-label="Saved schedule completion"/>
   <p className="mt-2">{task.percentage}% complete · {task.exempt} exempt employees excluded</p><p className={urgent?"mt-2 text-red-800 dark:text-red-200":"mt-2"}>Deadline: <strong>{deadline(task.deadline)} Philippine time</strong></p>
-  <div className="mt-4 flex flex-wrap items-center gap-4"><Link className={button} to={scheduleLink(task)}>Set Schedules</Link>{task.hr&&<Link className="underline" to="/payroll/schedule-compliance">Schedule Compliance</Link>}<button className="underline" onClick={()=>setRetry(v=>v+1)}>Refresh progress</button>{details&&task.hr&&<Link className="underline" to="/payroll/clocking-exceptions">Clock-in exemptions</Link>}</div>
+  <div className="mt-4 flex flex-wrap items-center gap-4"><Link className={button} to={scheduleLink(task)}>Complete pending schedules</Link>{task.hr&&<Link className="underline" to="/payroll/schedule-compliance">Schedule Compliance</Link>}<button className="underline" onClick={()=>setRetry(v=>v+1)}>Refresh progress</button>{details&&task.hr&&<Link className="underline" to="/payroll/clocking-exceptions">Clock-in exemptions</Link>}</div>
   {details&&task.hr&&<p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Employees exempt from clock-in/out are also excluded from scheduling requirements for their exempt dates.</p>}
  </section>;
 }
