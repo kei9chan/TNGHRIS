@@ -140,8 +140,8 @@ export function inspectImportSheet(workbook:import('exceljs').Workbook,name='Pay
  const sheets=workbook.worksheets.filter(sheet=>importKey(sheet.name)===importKey(name));
  if(sheets.length!==1)throw new Error(`Missing or ambiguous ${name} sheet.`);
  const sheet=sheets[0];if(sheet.rowCount>1001)throw new Error(`${name}: maximum 1,000 rows.`);
- const cell=(row:number,column:number)=>{const value=sheet.getCell(row,column).value;if(value==null)return '';if(value instanceof Date)return value.toISOString().slice(0,10);if(typeof value==='object'){if('richText' in value)return value.richText.map(part=>part.text).join('');if('hyperlink' in value)return value.text;throw new Error(`${name} row ${row}: use values, not formulas.`);}return String(value);};
- const headers=Array.from({length:sheet.columnCount},(_,index)=>cleanImportText(cell(1,index+1)));
+ const cell=(row:number,column:number)=>{const value=sheet.getCell(row,column).value;if(value==null)return '';if(value instanceof Date)return value.toISOString().slice(0,10);if(typeof value==='object')throw new Error(`${name} row ${row}: use values, not formulas or linked cells.`);return String(value);};
+ const headers=Array.from({length:sheet.columnCount},(_,index)=>cleanImportText(cell(1,index+1)).replace(/\*$/,'').replace(/ \(optional\)$/,''));
  if(headers.some((header,index)=>header&&headers.findIndex(value=>importKey(value)===importKey(header))!==index))throw new Error(`${name}: duplicate column headers are not supported.`);
  const rows=[];for(let row=2;row<=sheet.rowCount;row++){const values=Object.fromEntries(headers.map((header,index)=>[header,cell(row,index+1)]));if(Object.values(values).some(value=>cleanImportText(value)))rows.push({row,values});}
  return {headers:headers.filter(Boolean),rows};

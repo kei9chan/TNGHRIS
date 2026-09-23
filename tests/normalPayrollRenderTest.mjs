@@ -17,6 +17,7 @@ for(const step of [0,1,2]){
   './useCalculationSelection':{useCalculationSelection:()=>[{},()=>{}]},
   './attendanceReadiness':{},'./grossPay':{},'./netPay':{},'../../services/supabaseClient':{},'./workspace':{},
   './NormalPayrollPeriodSelector':{__esModule:true,default:()=>React.createElement('span',null,'September 20, 2026 · August 26–September 10')},
+  './PreviousPaymentCard':{__esModule:true,default:()=>React.createElement('span',null,'Record previous payment')},
   './payrollCycle':{},'./actualAttendanceImport':{},
  };
  const exports={};vm.runInNewContext(code,{exports,require:name=>{if(!(name in dependencies))throw new Error(name);return dependencies[name];}},{filename:'RunPayroll.tsx'});

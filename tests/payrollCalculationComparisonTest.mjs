@@ -9,10 +9,11 @@ const read=p=>fs.readFileSync(p,'utf8');
 // Load the real checked-in engine implementations, including later replacements.
 const wanted=new Set(['private.payroll_audit_immutable','private.validate_payroll_gross_config','private.payroll_gross_intervals','private.payroll_gross_line','private.calculate_payroll_gross_v1','private.payroll_net_money','private.payroll_withholding_2023','private.payroll_contributions_2026','private.validate_payroll_net_arrangement','private.calculate_payroll_net_v1','private.payroll_comparison_rows','private.payroll_compare_values']);
 const definitions=new Map();
-let serviceChargeBase;
+let serviceChargeBase,inputAdditionsBase;
 for(const file of fs.readdirSync('supabase/migrations').sort()){
  const sql=read(`supabase/migrations/${file}`);
  if(sql.includes('alter function private.calculate_payroll_gross_v1(jsonb) rename to calculate_payroll_gross_without_service_charge_phase3'))serviceChargeBase=definitions.get('private.calculate_payroll_gross_v1').replace('private.calculate_payroll_gross_v1','private.calculate_payroll_gross_without_service_charge_phase3');
+ if(sql.includes('alter function private.calculate_payroll_gross_v1(jsonb) rename to calculate_payroll_gross_before_input_additions'))inputAdditionsBase=definitions.get('private.calculate_payroll_gross_v1').replace('private.calculate_payroll_gross_v1','private.calculate_payroll_gross_before_input_additions');
  const re=/create\s+(?:or\s+replace\s+)?function\s+([a-z_0-9]+\.[a-z_0-9]+)\s*\(/gi;let m;
  while((m=re.exec(sql))){if(!wanted.has(m[1].toLowerCase()))continue;const tail=sql.slice(m.index),delim=tail.match(/\bas\s+(\$[a-z_0-9]*\$)/i);if(!delim)continue;const start=delim.index+delim[0].length,end=tail.indexOf(delim[1],start)+delim[1].length;definitions.set(m[1].toLowerCase(),tail.slice(0,end)+';');}
 }
@@ -34,6 +35,7 @@ create table payroll_pay_packages(id uuid primary key,scope_id uuid,employee_id 
 create function public.get_payroll_gross_run(uuid) returns jsonb language plpgsql as $$declare s uuid;begin select scope_id into s from public.payroll_gross_runs where id=$1;if not coalesce(private.payroll_gross_permission(s,'view'),false) then raise exception 'access denied';end if;return jsonb_build_object('current',coalesce(current_setting('test.stale',true),'')<>'yes');end$$;
 create function public.get_payroll_net_run(uuid) returns jsonb language plpgsql as $$declare s uuid;begin select scope_id into s from public.payroll_net_runs where id=$1;if not coalesce(private.payroll_gross_permission(s,'view'),false) then raise exception 'access denied';end if;return jsonb_build_object('current',coalesce(current_setting('test.stale',true),'')<>'yes');end$$;`);
 if(serviceChargeBase)await db.exec(serviceChargeBase);
+if(inputAdditionsBase)await db.exec(inputAdditionsBase);
 for(const name of wanted)await db.exec(definitions.get(name));
 await db.exec(read('supabase/migrations/20260916034858_payroll_calculation_comparison_workspace.sql'));
 const call=async(name,args)=>(await db.query(`select ${name}(${args.map((_,i)=>'$'+(i+1)).join(',')}) value`,args)).rows[0].value;

@@ -79,6 +79,7 @@ const HistoricalCorrectionPage = React.lazy(() => import('./modules/payroll/Hist
 const PayrollHome = React.lazy(() => import('./modules/payroll/PayrollHome'));
 const RunPayroll = React.lazy(() => import('./modules/payroll/RunPayroll'));
 const ActualAttendancePage = React.lazy(() => import('./modules/payroll/ActualAttendancePage'));
+const PayrollInputImport = React.lazy(() => import('./modules/payroll/PayrollInputImport'));
 const MySchedule = React.lazy(() => import('./pages/payroll/MySchedule'));
 const Timekeeping = React.lazy(() => import('./pages/payroll/ScheduleEntry'));
 const ClockInOut = React.lazy(() => import('./pages/payroll/ClockInOut'));
@@ -424,6 +425,7 @@ const AppRoutes: React.FC = () => {
             <Route path="home" element={<Navigate to="/payroll/run" replace />} />
             <Route path="run" element={<ProtectedRoute><RunPayroll /></ProtectedRoute>} />
             <Route path="import-attendance" element={<ProtectedRoute><ActualAttendancePage /></ProtectedRoute>} />
+            <Route path="import/:kind" element={<ProtectedRoute><PayrollInputImport /></ProtectedRoute>} />
             <Route path="my-schedule" element={<ProtectedRoute><MySchedule /></ProtectedRoute>} />
             <Route path="timekeeping" element={<ProtectedRoute><Timekeeping /></ProtectedRoute>} />
             <Route path="schedule-compliance" element={<ProtectedRoute><ScheduleCompliance /></ProtectedRoute>} />
