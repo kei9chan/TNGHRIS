@@ -229,6 +229,16 @@ const Timekeeping: React.FC = () => {
         return businessUnits.filter(b => existing.some(x => x.id === b.id) || teamBus.has(b.id));
     }, [user, hasGlobalScheduleView, getAccessibleBusinessUnits, businessUnits, employees]);
     const [selectedBuId, setSelectedBuId] = useState<string>('all');
+    const payrollUnitApplied=useRef('');
+    useEffect(()=>{
+        const requested=scheduleParams.get('businessUnit');
+        if(scheduleParams.get('source')!=='payroll'||!requested||payrollUnitApplied.current===requested)return;
+        const matches=accessibleBus.filter(b=>b.name===requested);
+        if(matches.length!==1)return;
+        payrollUnitApplied.current=requested;
+        setEmployeeScope(`business_unit:${matches[0].id}`);
+        setSelectedBuId(matches[0].id);
+    },[scheduleParams,accessibleBus]);
     const [departmentFilter, setDepartmentFilter] = useState<string>('all');
 
     useEffect(()=>{

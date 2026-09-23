@@ -77,6 +77,8 @@ const MyNTEs = React.lazy(() => import('./pages/feedback/MyNTEs'));
 const HistoricalAttendancePage = React.lazy(() => import('./modules/payroll/HistoricalAttendancePage'));
 const HistoricalCorrectionPage = React.lazy(() => import('./modules/payroll/HistoricalCorrectionPage'));
 const PayrollHome = React.lazy(() => import('./modules/payroll/PayrollHome'));
+const RunPayroll = React.lazy(() => import('./modules/payroll/RunPayroll'));
+const ActualAttendancePage = React.lazy(() => import('./modules/payroll/ActualAttendancePage'));
 const MySchedule = React.lazy(() => import('./pages/payroll/MySchedule'));
 const Timekeeping = React.lazy(() => import('./pages/payroll/ScheduleEntry'));
 const ClockInOut = React.lazy(() => import('./pages/payroll/ClockInOut'));
@@ -415,11 +417,13 @@ const AppRoutes: React.FC = () => {
             <Route path="gross-pay" element={<ProtectedRoute><GrossPayPage /></ProtectedRoute>} />
             <Route path="net-pay" element={<ProtectedRoute><NetPayPage /></ProtectedRoute>} />
             <Route path="attendance-readiness" element={<ProtectedRoute><AttendanceReadinessPage /></ProtectedRoute>} />
-            <Route index element={<Navigate to="home" replace />} />
+            <Route index element={<Navigate to="run" replace />} />
             <Route path="historical-attendance" element={<Navigate to="/payroll/historical-reconciliation" replace />} />
             <Route path="historical-reconciliation" element={<ProtectedRoute><HistoricalAttendancePage /></ProtectedRoute>} />
             <Route path="historical-corrections" element={<ProtectedRoute><HistoricalCorrectionPage /></ProtectedRoute>} />
-            <Route path="home" element={<ProtectedRoute><PayrollHome /></ProtectedRoute>} />
+            <Route path="home" element={<Navigate to="/payroll/run" replace />} />
+            <Route path="run" element={<ProtectedRoute><RunPayroll /></ProtectedRoute>} />
+            <Route path="import-attendance" element={<ProtectedRoute><ActualAttendancePage /></ProtectedRoute>} />
             <Route path="my-schedule" element={<ProtectedRoute><MySchedule /></ProtectedRoute>} />
             <Route path="timekeeping" element={<ProtectedRoute><Timekeeping /></ProtectedRoute>} />
             <Route path="schedule-compliance" element={<ProtectedRoute><ScheduleCompliance /></ProtectedRoute>} />

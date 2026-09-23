@@ -1359,6 +1359,7 @@ export enum TimeEventType {
 }
 
 export enum TimeEventSource {
+  Import = 'Import',
   Photo = 'Photo',
   GPS = 'GPS',
   QR = 'QR',

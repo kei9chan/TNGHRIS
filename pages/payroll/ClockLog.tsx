@@ -39,6 +39,7 @@ const ClockLog: React.FC = () => {
         if (s.includes('photo')) return TimeEventSource.Photo;
         if (s.includes('bio')) return TimeEventSource.Biometric;
         if (s.includes('manual')) return TimeEventSource.Manual;
+        if (s === 'import') return TimeEventSource.Import;
         if (s.includes('system')) return TimeEventSource.System;
         if (s.includes('mobile')) return TimeEventSource.Mobile;
         return TimeEventSource.GPS;

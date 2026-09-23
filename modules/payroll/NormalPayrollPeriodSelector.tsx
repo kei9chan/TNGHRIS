@@ -1,0 +1,15 @@
+import React,{useEffect,useState} from 'react';
+import {supabase} from '../../services/supabaseClient';
+import {usePayrollField} from './usePayrollSelection';
+import {defaultPayrollCycle,formatCutoff,formatPayrollDate,payrollCycleForCutoff} from './payrollCycle';
+export type ConfiguredPeriod={releaseDate:string;from:string;to:string;policy:string;override:boolean};
+export default function NormalPayrollPeriodSelector({disabled=false,onPeriod}:{disabled?:boolean;onPeriod?:(period:ConfiguredPeriod|null)=>void}){
+ const [scope]=usePayrollField('scope'),[from,setFrom]=usePayrollField('from'),[to,setTo]=usePayrollField('to');
+ const [periods,setPeriods]=useState<ConfiguredPeriod[]>([]),[year,setYear]=useState(()=>Number((payrollCycleForCutoff(from,to)?.releaseDate||to).slice(0,4))||new Date().getFullYear()),[error,setError]=useState(''),[loading,setLoading]=useState(false);
+ useEffect(()=>{let active=true;setPeriods([]);setError('');onPeriod?.(null);if(!scope)return;setLoading(true);
+  Promise.resolve(supabase.rpc('get_normal_payroll_periods',{p_scope:scope,p_year:year})).then(({data,error})=>{if(!active)return;if(error){setError(error.message);return;}setPeriods(data);if(!from&&!to){const next=defaultPayrollCycle();const p=data.find((p:ConfiguredPeriod)=>p.releaseDate===next.releaseDate)||data.find((p:ConfiguredPeriod)=>p.releaseDate>=new Date().toISOString().slice(0,10));if(p){setFrom(p.from);setTo(p.to);}}}).catch(e=>{if(active)setError(e.message);}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;};
+ },[scope,year]);
+ const selected=periods.find(p=>p.from===from&&p.to===to)||null;
+ useEffect(()=>{onPeriod?.(selected);},[selected]);
+ return <section aria-label="Payroll period" className="rounded-xl border border-slate-200 bg-white p-3 dark:bg-slate-900"><div className="flex items-center justify-between gap-3"><label className="text-sm font-semibold" htmlFor="normal-payroll-period">Payroll period</label><label className="text-xs">Release year <input aria-label="Payroll release year" className="w-20 rounded border p-1 dark:bg-slate-900" type="number" min="2000" max="2100" value={year} disabled={disabled} onChange={e=>{const n=Number(e.target.value);if(n>=2000&&n<=2100)setYear(n);}}/></label></div><select id="normal-payroll-period" disabled={disabled||loading||!scope} className="mt-2 min-h-12 w-full rounded-lg border bg-white p-2 dark:bg-slate-900" value={selected?.releaseDate||''} onChange={e=>{const p=periods.find(p=>p.releaseDate===e.target.value);if(p){setFrom(p.from);setTo(p.to);}}}><option value="">{loading?'Loading configured calendar…':from&&to?`${from}–${to} · choose a configured period`:'Choose payroll period'}</option>{periods.map(p=><option key={p.releaseDate} value={p.releaseDate}>{formatPayrollDate(p.releaseDate)} · {formatCutoff(p.from,p.to)}</option>)}</select>{selected&&<p className="mt-2 text-xs text-slate-500">{selected.override?'Business-unit calendar override':'Shared payroll calendar'} · {selected.policy}</p>}{error&&<p role="alert" className="mt-2 text-sm text-red-700">{error}</p>}</section>;
+}
