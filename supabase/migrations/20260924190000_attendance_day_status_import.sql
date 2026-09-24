@@ -1,27 +1,5 @@
--- Additive intake for actual attendance. No historical datasets are promoted.
-set local lock_timeout = '5s';
--- A confirmed HR import is an audited source, not a fabricated manager-approved manual correction.
--- Keep all existing source values and the existing manual-correction approval checks.
-alter table public.time_events drop constraint if exists time_events_source_check;
-alter table public.time_events add constraint time_events_source_check check(source in('MobileGPS','QRKiosk','WebPhoto','Manual','Biometrics','System','Import')) not valid;
-alter table public.time_events validate constraint time_events_source_check;
-create table if not exists private.payroll_actual_imports (
- id uuid primary key default gen_random_uuid(), scope_id uuid not null references public.payroll_access_scopes(id),
- date_from date not null,date_to date not null,filename text not null,rows jsonb not null,
- fingerprint text not null,accepted_rows integer not null default 0,duplicate_rows integer not null default 0,
- created_by uuid not null,created_at timestamptz not null default now(),
- unique(scope_id,date_from,date_to,fingerprint)
-);
-alter table private.payroll_actual_imports enable row level security;
-revoke all on private.payroll_actual_imports from public,anon,authenticated;
-
-create or replace function private.actual_attendance_access(p_scope uuid) returns boolean
-language sql stable security definer set search_path='' as $$
- select auth.uid() is not null and private.payroll_actor_id() is not null
- and private.historical_reconciliation_user(public.current_hris_user_id())
- and private.payroll_time_permission(p_scope,'view')
-$$;
-
+-- Import explicit day statuses against the saved roster and holiday calendar.
+-- Pending absences and missing punches never authorize deductions.
 create or replace function public.get_actual_attendance_import_context(p_scope uuid,p_from date,p_to date)
 returns jsonb language plpgsql stable security definer set search_path='' as $$
 begin
@@ -49,7 +27,6 @@ begin
  order by b.created_at desc limit 25)x));
 end $$;
 
--- Validate again at confirmation, under the same locks used by clock/schedule writers.
 create or replace function public.import_actual_attendance(p_scope uuid,p_from date,p_to date,p_filename text,p_rows jsonb,p_confirm boolean default false)
 returns jsonb language plpgsql security definer set search_path='' as $$
 declare r jsonb;e public.hris_users;ev jsonb;stamp timestamptz;previous_stamp timestamptz;
@@ -153,32 +130,4 @@ begin
  end if;
  return jsonb_build_object('batchId',batch,'ready',ready,'duplicates',duplicates,'errors',errors,'rows',results,'confirmed',p_confirm);
 end $$;
-revoke all on function private.actual_attendance_access(uuid) from public,anon,authenticated;
-revoke all on function public.get_actual_attendance_import_context(uuid,date,date),public.import_actual_attendance(uuid,date,date,text,jsonb,boolean) from public,anon;
-grant execute on function public.get_actual_attendance_import_context(uuid,date,date),public.import_actual_attendance(uuid,date,date,text,jsonb,boolean) to authenticated;
-
-create or replace function public.get_normal_payroll_periods(p_scope uuid,p_year integer)
-returns jsonb language plpgsql stable security definer set search_path='' as $$
-begin
- if auth.uid() is null or not private.payroll_time_permission(p_scope,'view') then raise exception 'Scoped payroll access is required.' using errcode='42501';end if;
- if p_year is null or p_year not between 2000 and 2100 then raise exception 'Choose a year from 2000 to 2100.';end if;
- return (
-  with candidates as (
-   select (m.month_start+((c->>'releaseDay')::int-1))::date release_date,
-    ((m.month_start+make_interval(months=>(c->>'startMonthOffset')::int))::date+((c->>'startDay')::int-1))::date date_from,
-    ((m.month_start+make_interval(months=>(c->>'endMonthOffset')::int))::date+((c->>'endDay')::int-1))::date date_to,
-    r.scope_id,r.effective_from,r.policy_ref,r.created_at
-   from public.payroll_calendar_rules r
-   cross join lateral jsonb_array_elements(r.calendar)c
-   cross join lateral (select make_date(p_year,n,1) month_start from generate_series(1,12)n)m
-   where r.scope_id is null or r.scope_id=p_scope
-  ), resolved as (
-   select distinct on (release_date) * from candidates a where date_from>=effective_from
-   and not exists(select 1 from public.payroll_calendar_rules newer where newer.effective_from<=a.date_from
-     and ((a.scope_id is null and newer.scope_id=p_scope) or (newer.scope_id is not distinct from a.scope_id and newer.effective_from>a.effective_from)))
-   order by release_date,scope_id nulls last,effective_from desc,created_at desc
-  ) select coalesce(jsonb_agg(jsonb_build_object('releaseDate',release_date,'from',date_from,'to',date_to,'policy',policy_ref,'override',scope_id is not null) order by release_date),'[]'::jsonb) from resolved
- );
-end $$;
-revoke all on function public.get_normal_payroll_periods(uuid,integer) from public,anon;
-grant execute on function public.get_normal_payroll_periods(uuid,integer) to authenticated;
+notify pgrst,'reload schema';
