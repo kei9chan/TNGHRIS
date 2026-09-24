@@ -74,8 +74,6 @@ const CodeOfDiscipline = React.lazy(() => import('./pages/feedback/CodeOfDiscipl
 const Pipeline = React.lazy(() => import('./pages/feedback/Pipeline'));
 const MyIncidentReports = React.lazy(() => import('./pages/feedback/MyIncidentReports'));
 const MyNTEs = React.lazy(() => import('./pages/feedback/MyNTEs'));
-const HistoricalAttendancePage = React.lazy(() => import('./modules/payroll/HistoricalAttendancePage'));
-const HistoricalCorrectionPage = React.lazy(() => import('./modules/payroll/HistoricalCorrectionPage'));
 const PayrollHome = React.lazy(() => import('./modules/payroll/PayrollHome'));
 const RunPayroll = React.lazy(() => import('./modules/payroll/RunPayroll'));
 const ActualAttendancePage = React.lazy(() => import('./modules/payroll/ActualAttendancePage'));
@@ -419,9 +417,9 @@ const AppRoutes: React.FC = () => {
             <Route path="net-pay" element={<ProtectedRoute><NetPayPage /></ProtectedRoute>} />
             <Route path="attendance-readiness" element={<ProtectedRoute><AttendanceReadinessPage /></ProtectedRoute>} />
             <Route index element={<Navigate to="run" replace />} />
-            <Route path="historical-attendance" element={<Navigate to="/payroll/historical-reconciliation" replace />} />
-            <Route path="historical-reconciliation" element={<ProtectedRoute><HistoricalAttendancePage /></ProtectedRoute>} />
-            <Route path="historical-corrections" element={<ProtectedRoute><HistoricalCorrectionPage /></ProtectedRoute>} />
+            <Route path="historical-attendance" element={<Navigate to="/payroll/run" replace />} />
+            <Route path="historical-reconciliation" element={<Navigate to="/payroll/run" replace />} />
+            <Route path="historical-corrections" element={<Navigate to="/payroll/run" replace />} />
             <Route path="home" element={<Navigate to="/payroll/run" replace />} />
             <Route path="run" element={<ProtectedRoute><RunPayroll /></ProtectedRoute>} />
             <Route path="import-attendance" element={<ProtectedRoute><ActualAttendancePage /></ProtectedRoute>} />
