@@ -82,6 +82,8 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
   const [attachmentPreview, setAttachmentPreview] = useState<string | null>(null);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [uploadingSignature, setUploadingSignature] = useState(false);
+  const [submittingReport, setSubmittingReport] = useState(false);
+  const [submissionError, setSubmissionError] = useState('');
   const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
   const [assignmentState, setAssignmentState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [assignmentMessage, setAssignmentMessage] = useState('');
@@ -282,6 +284,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
 
   const handleAttachmentUpload = async (file: File) => {
     if (!user) return;
+    setSubmissionError('');
     setUploadingAttachment(true);
     try {
       const ext = file.name.split('.').pop() || 'bin';
@@ -291,17 +294,22 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
       const { data, error: signErr } = await supabase.storage.from('incident_reports_attachments').createSignedUrl(key, 60 * 60);
       if (signErr) throw signErr;
       const url = data?.signedUrl || key;
-      setCurrentReport(prev => ({ ...prev, attachmentUrl: key }));
+      setCurrentReport(prev => ({
+        ...prev,
+        attachmentUrl: key,
+        attachmentUrls: [{ path: key, name: file.name }],
+      }));
       setAttachmentPreview(url);
     } catch (err: any) {
-      alert(err?.message || 'Failed to upload attachment.');
+      setSubmissionError(`Evidence upload failed: ${err?.message || 'Storage rejected the file.'} Your report draft is still here. Choose the file again to retry.`);
     } finally {
       setUploadingAttachment(false);
     }
   };
 
   const handleCreateReport = async () => {
-    if (!user) return;
+    if (!user || submittingReport || uploadingAttachment || uploadingSignature) return;
+    setSubmissionError('');
 
     const errors: string[] = [];
 
@@ -322,10 +330,11 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
     }
 
     if (errors.length > 0) {
-      alert(`Please fill out the following required fields:\n- ${errors.join('\n- ')}`);
+      setSubmissionError(`Complete these required fields before creating the report: ${errors.join(', ')}.`);
       return;
     }
 
+    setSubmittingReport(true);
     let signaturePath: string | undefined = currentReport.signatureDataUrl;
     if (signaturePadRef.current && !signaturePadRef.current.isEmpty()) {
       setUploadingSignature(true);
@@ -338,8 +347,9 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
         if (error) throw error;
         signaturePath = key;
       } catch (err: any) {
-        alert(err?.message || 'Failed to upload signature.');
+        setSubmissionError(`Signature upload failed: ${err?.message || 'Storage rejected the signature.'} Your report draft and evidence are still here. Retry.`);
         setUploadingSignature(false);
+        setSubmittingReport(false);
         return;
       }
       setUploadingSignature(false);
@@ -356,7 +366,13 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
       pipelineStage: 'ir-review',
       signatureDataUrl: signaturePath,
     };
-    onSave(reportToSave);
+    try {
+      await onSave(reportToSave);
+    } catch (err: any) {
+      setSubmissionError(`Couldn’t create the incident report: ${err?.message || 'The save did not complete.'} Your draft and uploaded evidence are still here. Retry Create Report.`);
+    } finally {
+      setSubmittingReport(false);
+    }
   };
 
   const handleSaveExisting = async (resubmit = false) => {
@@ -771,7 +787,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
     return (
         <div className="flex justify-end w-full space-x-2">
         <Button variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button onClick={handleCreateReport}>Create Report</Button>
+        <Button onClick={handleCreateReport} isLoading={submittingReport || uploadingAttachment || uploadingSignature} disabled={submittingReport || uploadingAttachment || uploadingSignature}>Create Report</Button>
       </div>
     );
   };
@@ -783,6 +799,7 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
       title={report ? `Incident Report: ${formatIRDisplayId(report.caseNumber) || report.id}` : 'File New Incident Report'}
       footer={renderFooter()}
     >
+      {!report && submissionError && <div role="alert" aria-live="polite" className="mb-4 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-200">{submissionError}</div>}
       {renderModalContent()}
       {report && /^[0-9a-f-]{36}$/i.test(report.id) && <CaseQuestions caseId={report.id} />}
       {report && assignmentMessage && (

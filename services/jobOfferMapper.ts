@@ -44,6 +44,8 @@ export const mapJobOfferRow = (row: any): Offer => ({
   offerTemplateId: row.offer_template_id || undefined,
   offerTemplateName: row.offer_template_name || undefined,
   offerTemplateSnapshot: row.offer_template_snapshot || undefined,
+  jobRequisitionId: row.job_requisition_id || undefined,
+  jobRequisitionSnapshot: row.job_requisition_snapshot || undefined,
   approvalStatus: (row.approval_status || 'Not Requested') as OfferApprovalStatus,
   approvalRequestId: row.approval_request_id || undefined,
 });

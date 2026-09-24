@@ -259,8 +259,10 @@ const Offers: React.FC = () => {
     if (!canManage) throw new Error('You do not have permission to send offers.');
     const result = await sendApprovedOffer({ offer: offerToSend, userId: user?.id, recipient, subject, message, previewHtml, attachments });
     setOffers(previous => previous.map(item => item.id === result.offer.id ? result.offer : item));
-    await logActivity(user, 'UPDATE', 'Offer', result.offer.id, result.provider ? `Sent offer ${result.offer.offerNumber} to ${recipient} through ${result.provider}` : `Activated secure link for ${result.offer.offerNumber}; email delivery failed`);
-    setSuccessMessage(result.provider ? `Offer sent successfully to ${recipient}.` : 'The secure offer link is live, but the email could not be delivered. Copy the link from View Details and retry sending after the Google email connection is updated.');
+    if (!result.alreadySent) {
+      await logActivity(user, 'UPDATE', 'Offer', result.offer.id, `Job Order ${result.offer.jobRequisitionSnapshot?.reference || result.offer.jobRequisitionId || 'unavailable'} · Offer status ${result.offer.status} · sender ${user?.name || user?.email || 'HR'} · ${new Date().toISOString()} · recipient ${recipient} · ${result.provider ? `sent through ${result.provider}` : `delivery failed: ${result.deliveryError || 'see offer delivery status'}`}`);
+    }
+    setSuccessMessage(result.alreadySent ? `This offer was already sent to ${result.offer.recipientEmail || recipient}. No new email was sent.` : result.provider ? `Offer sent successfully to ${recipient}.` : 'The secure offer link is live, but the email could not be delivered. Copy the link from View Details and retry sending after the Google email connection is updated.');
     setTimeout(() => setSuccessMessage(''), 5000);
     return result.offer;
   };

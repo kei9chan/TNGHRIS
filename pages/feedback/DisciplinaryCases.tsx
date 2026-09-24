@@ -514,14 +514,12 @@ const CaseWorkflow: React.FC = () => {
   };
 
   const handleSaveReport = async (reportToSave: Partial<IncidentReport>): Promise<IncidentReport | void> => {
-    if (!user) return;
+    if (!user) throw new Error('Sign in again before saving this incident report.');
     if (!reportToSave.id && !irAccess.canCreate) {
-      alert('You do not have permission to file a new incident report.');
-      return;
+      throw new Error('You do not have permission to file an incident report. Ask an authorized HR user for access.');
     }
     if (reportToSave.id && !(irAccess.canCreate || reportToSave.reportedBy === user.id)) {
-      alert('You do not have permission to update this report.');
-      return;
+      throw new Error('You do not have permission to update this report. Ask an authorized HR user for access.');
     }
 
     try {
@@ -539,7 +537,6 @@ const CaseWorkflow: React.FC = () => {
       if (!reportToSave.id) handleCloseModals();
       return saved;
     } catch (err: any) {
-      if (!reportToSave.id) alert(err?.message || 'Failed to save incident report');
       throw err;
     }
   };

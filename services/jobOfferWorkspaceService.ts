@@ -77,6 +77,8 @@ const payloadForOffer = (offer: Offer, userId?: string) => ({
   offer_template_id: offer.offerTemplateId || null,
   offer_template_name: offer.offerTemplateName || null,
   offer_template_snapshot: offer.offerTemplateSnapshot || {},
+  job_requisition_id: offer.jobRequisitionId || null,
+  job_requisition_snapshot: offer.jobRequisitionSnapshot || {},
   ...(offer.id ? {} : { created_by_user_id: userId || null }),
 });
 
@@ -129,19 +131,31 @@ interface SendOfferInput {
   attachments: HrisEmailAttachment[];
 }
 
-export const sendApprovedOffer = async ({ offer, userId, recipient, subject, message, previewHtml, attachments }: SendOfferInput): Promise<{ offer: Offer; provider: string; deliveryError: string }> => {
+export const sendApprovedOffer = async ({ offer, userId, recipient, subject, message, previewHtml, attachments }: SendOfferInput): Promise<{ offer: Offer; provider: string; deliveryError: string; alreadySent?: boolean }> => {
+  if (offer.id && [OfferStatus.Sent, OfferStatus.Viewed].includes(offer.status)) {
+    const { data, error } = await supabase.from('job_offers').select('*').eq('id', offer.id).in('status', [OfferStatus.Sent, OfferStatus.Viewed]).single();
+    if (error || !data) throw new Error(`Unable to reload the sent offer: ${error?.message || 'Offer not found.'}`);
+    const existing = mapJobOfferRow(data);
+    const delivery = (existing.offerDetails as any)?.emailDelivery;
+    return { offer: existing, provider: delivery?.provider || '', deliveryError: delivery?.status === 'failed' ? delivery.error || 'Email delivery failed.' : '', alreadySent: true };
+  }
   if (!recipient) throw new Error('The candidate email address is missing.');
+  if (!offer.jobRequisitionId || String(offer.jobRequisitionSnapshot?.status || '').toLowerCase() !== 'approved') {
+    throw new Error('This offer must be linked to an approved Job Order snapshot before it can be sent. Reopen the approved requisition and save the offer draft.');
+  }
+  if (String(offer.jobRequisitionSnapshot?.id || '') !== offer.jobRequisitionId) {
+    throw new Error('The Job Order snapshot does not match the requisition selected for this offer. Reopen the approved requisition and save the offer draft.');
+  }
+  const { data: jobOrder, error: jobOrderError } = await supabase.from('job_requisitions')
+    .select('id,status').eq('id', offer.jobRequisitionId).maybeSingle();
+  if (jobOrderError || !jobOrder || String(jobOrder.status).toLowerCase() !== 'approved') {
+    throw new Error('The linked Job Order is no longer approved. No offer was sent.');
+  }
   // Fail before activating the secure offer when the sender has no usable
   // Gmail connection. The Edge Function repeats this check server-side.
   await requireConnectedGmail(true);
   let draft: Offer;
-  if (offer.id && [OfferStatus.Sent, OfferStatus.Viewed].includes(offer.status)) {
-    const { data, error } = await supabase.from('job_offers').select('*').eq('id', offer.id).in('status', [OfferStatus.Sent, OfferStatus.Viewed]).single();
-    if (error || !data) throw new Error(`Unable to reload the published offer: ${error?.message || 'Offer not found.'}`);
-    draft = mapJobOfferRow(data);
-  } else {
-    ({ offer: draft } = await saveOfferDraft({ ...offer, status: OfferStatus.Draft, recipientEmail: recipient, emailSubject: subject, emailMessage: message }, userId));
-  }
+  ({ offer: draft } = await saveOfferDraft({ ...offer, status: OfferStatus.Draft, recipientEmail: recipient, emailSubject: subject, emailMessage: message }, userId));
   if (draft.approvalStatus !== 'Approved') throw new Error('This offer must complete the existing approval workflow before it can be sent.');
   if (!draft.secureToken) throw new Error('Unable to create the secure candidate link. Save the draft and retry.');
 

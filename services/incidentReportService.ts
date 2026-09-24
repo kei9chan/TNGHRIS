@@ -300,6 +300,9 @@ export const saveIncidentReport = async (
       }));
     }
     if (report.attachmentUrl !== undefined) payload.attachment_url = report.attachmentUrl;
+    if (report.attachmentUrls !== undefined) {
+      payload.attachment_urls = report.attachmentUrls.map(item => ({ path: item.path, name: item.name, kind: item.kind }));
+    }
     if (report.signatureDataUrl !== undefined) {
       payload.signature_data_url = report.signatureDataUrl;
     }
@@ -357,6 +360,7 @@ export const saveIncidentReport = async (
     payload.resolution_id = report.resolutionId || null;
     payload.chat_thread = chatThread;
     payload.attachment_url = report.attachmentUrl || null;
+    payload.attachment_urls = (report.attachmentUrls || []).map(item => ({ path: item.path, name: item.name, kind: item.kind }));
     payload.signature_data_url = report.signatureDataUrl || null;
     payload.assigned_to_id = null;
     payload.assigned_to_name = null;

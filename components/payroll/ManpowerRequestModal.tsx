@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { BusinessUnit, Department, ManpowerCoverageDay, ManpowerRequest, ManpowerRequestItem } from '../../types';
 import { supabase } from '../../services/supabaseClient';
-import { createManpowerRequest, respondToManpowerClarification } from '../../services/manpowerService';
+import { createManpowerRequest, previewManpowerApprovalRoute, respondToManpowerClarification } from '../../services/manpowerService';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import { useAuth } from '../../hooks/useAuth';
@@ -73,6 +73,8 @@ const ManpowerRequestModal: React.FC<ManpowerRequestModalProps> = ({ isOpen, onC
   const [loadingKeys, setLoadingKeys] = useState<Set<string>>(new Set());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+  const [approvalRoute, setApprovalRoute] = useState<Awaited<ReturnType<typeof previewManpowerApprovalRoute>> | null>(null);
+  const [approvalRouteLoading, setApprovalRouteLoading] = useState(false);
 
   const accessibleBusinessUnits = getAccessibleBusinessUnits(businessUnits);
   const accessibleBuKey = accessibleBusinessUnits.map(unit => unit.id).join(',');
@@ -125,6 +127,28 @@ const ManpowerRequestModal: React.FC<ManpowerRequestModalProps> = ({ isOpen, onC
     void load();
     return () => { cancelled = true; };
   }, [isOpen, selectedBuId]);
+
+  useEffect(() => {
+    if (!isOpen || !selectedBuId || isClarificationResponse) {
+      setApprovalRoute(null);
+      return;
+    }
+    let cancelled = false;
+    setApprovalRouteLoading(true);
+    setFormError('');
+    previewManpowerApprovalRoute(selectedBuId).then(route => {
+      if (!cancelled) {
+        setApprovalRoute(route);
+        if (route.valid) setFormError('');
+      }
+    }).catch(error => {
+      if (!cancelled) {
+        setApprovalRoute(null);
+        setFormError(error?.message || 'The approval route could not be checked. Retry before submitting.');
+      }
+    }).finally(() => { if (!cancelled) setApprovalRouteLoading(false); });
+    return () => { cancelled = true; };
+  }, [isOpen, selectedBuId, isClarificationResponse]);
 
   useEffect(() => {
     const dates = enumerateCoverageDates(startDate, dateMode === 'single' ? startDate : endDate);
@@ -198,6 +222,8 @@ const ManpowerRequestModal: React.FC<ManpowerRequestModalProps> = ({ isOpen, onC
     if (error) return setFormError(error);
     const businessUnit = accessibleBusinessUnits.find(unit => unit.id === selectedBuId) || businessUnits.find(unit => unit.id === selectedBuId);
     if (!businessUnit) return setFormError('Select a valid Business Unit.');
+    if (!isClarificationResponse && approvalRouteLoading) return setFormError('Checking the approval route. Wait a moment and submit again.');
+    if (!isClarificationResponse && !approvalRoute?.valid) return setFormError(approvalRoute?.message || 'The required approvers could not be resolved.');
     setIsSubmitting(true); setFormError('');
     try {
       const payload = {
@@ -222,7 +248,7 @@ const ManpowerRequestModal: React.FC<ManpowerRequestModalProps> = ({ isOpen, onC
     <Modal acknowledgmentRequestType="Manpower" isOpen={isOpen} onClose={onClose} title={isClarificationResponse ? 'Update On-Call Request' : 'Request On-Call Coverage'} size="5xl" footer={(
       <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p role="alert" aria-live="polite" className="text-sm font-semibold text-red-700 dark:text-red-300">{formError}</p>
-        <div className="flex flex-col-reverse gap-3 sm:flex-row"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={handleSubmit} disabled={isSubmitting || loadingKeys.size > 0}>{isSubmitting ? 'Submitting…' : isClarificationResponse ? 'Send response' : 'Submit request'}</Button></div>
+        <div className="flex flex-col-reverse gap-3 sm:flex-row"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={handleSubmit} disabled={isSubmitting || loadingKeys.size > 0 || approvalRouteLoading || (!isClarificationResponse && (!approvalRoute || !approvalRoute.valid))}>{isSubmitting ? 'Submitting…' : isClarificationResponse ? 'Send response' : 'Submit request'}</Button></div>
       </div>
     )}>
       <div className="space-y-6 text-slate-900 dark:text-slate-100">
@@ -231,6 +257,7 @@ const ManpowerRequestModal: React.FC<ManpowerRequestModalProps> = ({ isOpen, onC
         <section className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 dark:border-indigo-900 dark:bg-indigo-950/20">
           <div className="grid gap-4 lg:grid-cols-4">
             <label><span className={labelClasses}>Business Unit</span><select value={selectedBuId} disabled={isClarificationResponse} onChange={event => setSelectedBuId(event.target.value)} className={controlClasses}><option value="">Select Business Unit</option>{accessibleBusinessUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select></label>
+            {!isClarificationResponse && <section aria-live="polite" className={`rounded-xl border p-4 ${approvalRoute?.valid ? 'border-indigo-200 bg-indigo-50 text-indigo-950' : approvalRouteLoading ? 'border-slate-200 bg-slate-50 text-slate-700' : 'border-rose-200 bg-rose-50 text-rose-900'}`}><p className="text-xs font-bold uppercase tracking-wide">Approval route</p>{approvalRouteLoading ? <p className="mt-1 text-sm">Checking active reporting assignments…</p> : approvalRoute?.valid ? <><ol className="mt-2 flex flex-wrap items-center gap-2 text-sm font-bold">{approvalRoute.route.map((step, index) => <React.Fragment key={step.approverUserId}><li>{index + 1}. {step.organizationalLevel === 'BUSINESS_UNIT_HEAD' ? 'Business Unit Manager' : step.organizationalLevel === 'GENERAL_MANAGER' ? 'General Manager' : 'Board of Director'}{step.approverName ? ` — ${step.approverName}` : ''}</li>{index < approvalRoute.route.length - 1 && <li aria-hidden="true">→</li>}</React.Fragment>)}</ol><p className="mt-1 text-xs">{approvalRoute.rule === 'DIRECT_BOD_REPORT' ? 'Direct BOD report' : approvalRoute.rule === 'BUM_REQUESTER' ? 'Requester is the Business Unit Manager' : approvalRoute.rule === 'BUM_THEN_GM_THEN_BOD' ? 'Business Unit Manager → configured General Manager review → final BOD approval' : 'Business Unit Manager → final BOD approval'}</p></> : <p className="mt-1 text-sm">{approvalRoute?.message || 'Select a business unit to resolve the required approvers.'}</p>}</section>}
             <div><span className={labelClasses}>Coverage type</span><div className="grid grid-cols-2 rounded-xl bg-white p-1 shadow-sm dark:bg-slate-800">{(['single', 'range'] as const).map(mode => <button key={mode} type="button" onClick={() => { setDateMode(mode); if (mode === 'single') setEndDate(startDate); }} className={`rounded-lg px-3 py-2 text-sm font-bold ${dateMode === mode ? 'bg-indigo-600 text-white' : 'text-slate-600 dark:text-slate-300'}`}>{mode === 'single' ? 'Single date' : 'Date range'}</button>)}</div></div>
             <label><span className={labelClasses}>{dateMode === 'single' ? 'Coverage date' : 'Start date'}</span><input type="date" value={startDate} onChange={event => { setStartDate(event.target.value); if (dateMode === 'single') setEndDate(event.target.value); }} className={controlClasses} /></label>
             {dateMode === 'range' && <label><span className={labelClasses}>End date</span><input type="date" min={startDate} value={endDate} onChange={event => setEndDate(event.target.value)} className={controlClasses} /></label>}
