@@ -593,6 +593,9 @@ export interface ManpowerRequest {
   clarificationQuestion?: string;
   revision?: number;
   approvalTrail?: ManpowerApprovalTrailEntry[];
+  approvalRouteSnapshot?: Array<{ approverUserId: string; approverName?: string; organizationalLevel?: string; authorityKind?: string }>;
+  approvalRouteStep?: number;
+  routingBasis?: string;
   createdAt: Date;
   approvedBy?: string;
   approvedAt?: Date;
@@ -2537,6 +2540,8 @@ export interface Offer {
   offerTemplateId?: string;
   offerTemplateName?: string;
   offerTemplateSnapshot?: Record<string, unknown>;
+  jobRequisitionId?: string;
+  jobRequisitionSnapshot?: Record<string, unknown>;
   approvalStatus?: OfferApprovalStatus;
   approvalRequestId?: string;
 }

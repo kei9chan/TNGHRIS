@@ -33,7 +33,7 @@ assert.match(approvalCenter, /Select all pending requests/);
 assert.doesNotMatch(approvalCenter, /Standard requests|Select all standard requests|Approve standard/);
 assert.doesNotMatch(widget, /review=eligible|Review standard requests/);
 assert.doesNotMatch(widget, /Auto-routing & delegation|Bulk actions log|View full audit log/);
-assert.match(widget, /activeQueues=queues\.filter\(q=>q\.count>0\)/);
+assert.ok(widget.includes("const groups = (Object.keys(labels) as ApprovalRequestKind[]).map(kind => ({kind, requests: unique.filter(item => item.kind === kind)})).filter(group => group.requests.length)"));
 assert.match(approvalCenter, /No pending approvals/);
 assert.match(approvalCenter, /activeGroupKinds/);
 assert.match(approvalCenter, /sticky right-0/);
@@ -53,13 +53,16 @@ assert.match(approvalCenter, /Weekly total —/);
 assert.match(approvalCenter, /Weekly OT:/);
 assert.match(approvalCenter, /requestStart/);
 
-assert.match(widget, /approvalRoute==='BOD_REQUIRED'/);
+assert.match(widget, /getApprovalReviewUrl\(kind, requests\[0\]\.id\)/);
 assert.match(wfhPage, /Pending Direct Manager approval/);
-for (const modal of [wfhModal, leaveModal, otModal]) {
+for (const modal of [wfhModal, otModal]) {
   assert.match(modal, /Current step/);
   assert.match(modal, /Status/);
   assert.match(modal, /Details/);
 }
+assert.match(leaveModal, /Current approval stage/);
+assert.match(leaveModal, /Status/);
+assert.match(leaveModal, /Approval details/);
 assert.match(otModal, /Week covered/);
 assert.match(otModal, /Weekly total —/);
 assert.match(emailService, /getOvertimeWeekDetails/);

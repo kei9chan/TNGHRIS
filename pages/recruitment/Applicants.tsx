@@ -21,6 +21,7 @@ import { EnrichedOffer } from '../../components/recruitment/OfferTable';
 import { fetchRatingRecordsForCandidate } from '../../services/interviewRatingService';
 import { mapJobOfferRow } from '../../services/jobOfferMapper';
 import { candidateOfferUrl, isPublishedOffer, offerWorkspaceStatus, saveOfferDraft, selectCurrentOffer, sendApprovedOffer } from '../../services/jobOfferWorkspaceService';
+import { loadBusinessUnitLogos } from '../../services/businessUnitLogoService';
 import type { HrisEmailAttachment } from '../../services/gmailConnectionService';
 import { employmentTypeLabel } from '../../components/recruitment/offerEmployment';
 
@@ -160,7 +161,7 @@ const Applicants: React.FC = () => {
     const loadData = useCallback(async () => {
         setIsLoading(true);
         try {
-            const [buRes, deptRes, reqRes, postRes, candRes, appRes, userRes, offerRes, themeRes] = await Promise.all([
+            const [buRes, deptRes, reqRes, postRes, candRes, appRes, userRes, offerRes, themeRes, permanentLogoRes] = await Promise.all([
                 supabase.from('business_units').select('id,name'),
                 supabase.from('departments').select('id,name,business_unit_id'),
                 supabase.from('job_requisitions').select('*'),
@@ -170,6 +171,7 @@ const Applicants: React.FC = () => {
                 supabase.from('hris_users').select('id,full_name,role,email,department,position,business_unit,business_unit_id,department_id,status'),
                 supabase.from('job_offers').select('*').order('updated_at', { ascending: false }),
                 supabase.from('applicant_page_themes').select('business_unit_id,logo_url').not('business_unit_id', 'is', null).order('updated_at', { ascending: false }),
+                loadBusinessUnitLogos().catch(() => ({})),
             ]);
             if (buRes.error) throw buRes.error;
             if (deptRes.error) throw deptRes.error;
@@ -272,10 +274,10 @@ const Applicants: React.FC = () => {
                 dateHired: new Date(),
             } as User)));
             setOffers((offerRes.data || []).map(mapJobOfferRow));
-            if (!themeRes.error) setBusinessUnitLogos((themeRes.data || []).reduce((logos: Record<string, string>, row: any) => {
+            if (!themeRes.error) setBusinessUnitLogos({ ...(themeRes.data || []).reduce((logos: Record<string, string>, row: any) => {
                 if (row.business_unit_id && row.logo_url && !logos[row.business_unit_id]) logos[row.business_unit_id] = row.logo_url;
                 return logos;
-            }, {}));
+            }, {}), ...permanentLogoRes });
         } catch (err) {
             console.error('Failed to load applicants', err);
             alert('Failed to load applicant data.');
@@ -447,7 +449,7 @@ const Applicants: React.FC = () => {
         const result = await sendApprovedOffer({ offer: offerToSend, userId: user?.id, recipient, subject, message, previewHtml, attachments });
         setOffers(previous => previous.map(item => item.id === result.offer.id ? result.offer : item));
         setEditingOffer(result.offer);
-        await logActivity(user, 'UPDATE', 'Offer', result.offer.id, result.provider ? `Sent offer ${result.offer.offerNumber} from Applicant Tracking through ${result.provider}` : `Activated secure link for ${result.offer.offerNumber}; email delivery failed`);
+        if (!result.alreadySent) await logActivity(user, 'UPDATE', 'Offer', result.offer.id, `Job Order ${result.offer.jobRequisitionSnapshot?.reference || result.offer.jobRequisitionId || 'unavailable'} · Offer status ${result.offer.status} · sender ${user?.name || user?.email || 'HR'} · ${new Date().toISOString()} · recipient ${recipient} · ${result.provider ? `sent through ${result.provider}` : `delivery failed: ${result.deliveryError || 'see offer delivery status'}`}`);
         return result.offer;
     };
 
@@ -682,7 +684,7 @@ const Applicants: React.FC = () => {
             <React.Suspense fallback={null}>
                 {profileApplication && candidateForApplication(profileApplication) && <CandidateProfileModal isOpen={true} onClose={() => setProfileApplication(null)} candidate={candidateForApplication(profileApplication)!} applications={applications} jobPosts={jobPosts} />}
                 {ratingApplication && candidateForApplication(ratingApplication) && <CreateInterviewRatingModal isOpen={true} onClose={() => setRatingApplication(null)} candidate={candidateForApplication(ratingApplication)!} applications={applications} jobPosts={jobPosts} initialApplicationId={ratingApplication.id} onAssigned={() => setRatingApplication(null)} />}
-                {offerApplication && canManageOffers && <OfferCreationDrawer isOpen={true} onClose={() => { setOfferApplication(null); setEditingOffer(null); }} onSave={handleSaveOffer} onSend={handleSendOffer} onRequestApproval={offer => void handleRequestOfferApproval(offer)} applications={applications} candidates={candidates} requisitions={jobRequisitions} businessUnits={businessUnits} departments={departments as Department[]} businessUnitLogos={businessUnitLogos} initialOffer={editingOffer} initialApplicationId={offerApplication.id} />}
+                {offerApplication && canManageOffers && <OfferCreationDrawer isOpen={true} onClose={() => { setOfferApplication(null); setEditingOffer(null); }} onSave={handleSaveOffer} onSend={handleSendOffer} onRequestApproval={offer => void handleRequestOfferApproval(offer)} applications={applications} candidates={candidates} requisitions={jobRequisitions} businessUnits={businessUnits} departments={departments as Department[]} businessUnitLogos={businessUnitLogos} onBusinessUnitLogoChange={(businessUnitId, url) => setBusinessUnitLogos(previous => ({ ...previous, [businessUnitId]: url || '' }))} initialOffer={editingOffer} initialApplicationId={offerApplication.id} />}
                 {approvalPackage && <OfferApprovalPackageModal isOpen={true} onClose={() => setApprovalPackage(null)} offer={approvalPackage.offer} candidate={approvalPackage.candidate} application={approvalPackage.application} ratings={approvalPackage.ratings} onSubmitted={requestId => { setOffers(current => current.map(item => item.id === approvalPackage.offer.id ? { ...item, approvalStatus: 'Pending Approval', approvalRequestId: requestId } : item)); setEditingOffer(current => current?.id === approvalPackage.offer.id ? { ...current, approvalStatus: 'Pending Approval', approvalRequestId: requestId } : current); setOfferApplication(null); setEditingOffer(null); setApprovalPackage(null); }} />}
             </React.Suspense>
             <AddApplicantModal

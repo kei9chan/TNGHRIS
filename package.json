@@ -39,6 +39,7 @@
     "test:nte-bod-outcomes": "node tests/nteBodOutcomeSmokeTest.mjs",
     "test:nte-multi-approver": "node tests/nteMultiApproverEmployeeSpecificSmokeTest.mjs",
     "test:incident-universal-filing": "node tests/incidentReportUniversalFilingSmokeTest.mjs",
+    "test:workflow-fixes": "node tests/hrisWorkflowIntegritySmokeTest.mjs",
     "test:password-recovery": "node tests/passwordRecoverySmokeTest.mjs",
     "test:mobile-approval-ux": "node tests/mobileApprovalUxSmokeTest.mjs",
     "test:approval-presentation": "node tests/approvalPresentationSmokeTest.mjs",

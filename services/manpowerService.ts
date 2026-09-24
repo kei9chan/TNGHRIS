@@ -35,8 +35,18 @@ export type ManpowerRequestRow = {
   clarification_question?: string | null;
   revision?: number | null;
   approval_history?: unknown;
+  approval_route_snapshot?: unknown;
+  approval_route_step?: number | null;
+  routing_basis?: string | null;
   created_at: string;
 };
+
+export interface ManpowerApprovalRoutePreview {
+  valid: boolean;
+  message?: string;
+  rule?: string;
+  route: Array<{ approverUserId: string; approverName: string; organizationalLevel: string; authorityKind: string }>;
+}
 
 const parseJsonArray = <T>(value: unknown): T[] => {
   if (Array.isArray(value)) return value as T[];
@@ -105,6 +115,9 @@ export const mapManpowerRequestRow = (row: ManpowerRequestRow): ManpowerRequest 
   clarificationQuestion: row.clarification_question || undefined,
   revision: Number(row.revision || 1),
   approvalTrail: parseTrail(row.approval_history),
+  approvalRouteSnapshot: parseJsonArray(row.approval_route_snapshot),
+  approvalRouteStep: Number(row.approval_route_step || 0),
+  routingBasis: row.routing_basis || undefined,
   createdAt: new Date(row.created_at),
   approvedBy: row.approved_by || undefined,
   approvedAt: row.approved_at ? new Date(row.approved_at) : undefined,
@@ -147,6 +160,17 @@ export const fetchManpowerRequestById = async (id: string): Promise<ManpowerRequ
   if (error) throw new Error(error.message || 'Failed to load the manpower request');
   if (!data) return null;
   return mapManpowerRequestRow(data as ManpowerRequestRow);
+};
+
+export const previewManpowerApprovalRoute = async (businessUnitId: string): Promise<ManpowerApprovalRoutePreview> => {
+  const { data, error } = await supabase.rpc('preview_manpower_approval_route', { p_business_unit_id: businessUnitId });
+  if (error) throw new Error(error.message || 'Unable to load the approval route.');
+  return {
+    valid: Boolean(data?.valid),
+    message: data?.message || undefined,
+    rule: data?.rule || undefined,
+    route: Array.isArray(data?.route) ? data.route : [],
+  };
 };
 
 type CreateManpowerRequestInput = Partial<ManpowerRequest> & { dateNeeded?: string };
