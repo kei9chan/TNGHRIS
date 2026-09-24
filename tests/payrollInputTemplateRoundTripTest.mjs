@@ -22,6 +22,8 @@ try{for(const schema of Object.values(inputTemplates)){
  await assert.rejects(async()=>readInputFile(new File([await book.xlsx.writeBuffer()],'template.xlsx'),schema),/Formulas/);
  sheet.getCell('A2').value='00001';book.getWorksheet('Instructions').getCell('B1').value=schema.type+':999';
  await assert.rejects(async()=>readInputFile(new File([await book.xlsx.writeBuffer()],'template.xlsx'),schema),/Unsupported template/);
+ book.getWorksheet('Instructions').getCell('B1').value='';
+ result=await readInputFile(new File([await book.xlsx.writeBuffer()],'unversioned.xlsx'),schema);assert.equal(result.needsMapping,true,'Unversioned workbooks must be mapped explicitly');
  result=await readInputFile(new File([templateCsv(schema,[fixture])],'template.csv'),schema);assert.equal(result.needsMapping,false);assert.equal(result.raw.length,1);
  const custom=templateCsv(schema,[fixture]).replace(schema.fields[0].label,'Staff code');assert.equal((await readInputFile(new File([custom],'custom.csv'),schema)).needsMapping,true);
  }

@@ -1,7 +1,7 @@
 import {loadBuilder,saveBuilderShift,mapBuilderAssignment,EmployeeScope} from '../../services/scheduleBuilderService';
 import {CompensableWorkPanel} from '../../modules/payroll/ConfirmedPolicyPanels';
 import {ScheduleTask} from '../../modules/scheduleCompliance';
-import {useSearchParams} from 'react-router-dom';
+import {Link,useSearchParams} from 'react-router-dom';
 import {DayStatus,DayTag,dateKey,getDayStatuses,setDayStatus,statusPresets,leaveForDay} from '../../services/scheduleStatuses';
 import {mapShiftTemplate} from '../../services/shiftService';
 import {scheduleLabel} from '../../services/schedulePolicy';
@@ -27,7 +27,7 @@ import LiveShiftStatusDashboard from '../../components/payroll/LiveShiftStatusDa
 import { logActivity } from '../../services/auditService';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
-import {canViewAllScheduleUnits,scopeBusinessUnitId,scopeLabel} from '../../modules/payroll/scheduleScope';
+import {canImportActualAttendance,canViewAllScheduleUnits,scopeBusinessUnitId,scopeLabel} from '../../modules/payroll/scheduleScope';
 
 // --- Helper Types ---
 interface Gap {
@@ -1199,6 +1199,10 @@ const Timekeeping: React.FC = () => {
 
     return (
         <div className="space-y-6">
+            <nav aria-label="Timekeeping sections" className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-800">
+                <span aria-current="page" className="rounded-lg bg-violet-600 px-4 py-3 font-semibold text-white">Schedules</span>
+                {canImportActualAttendance(user)&&<Link className="rounded-lg px-4 py-3 font-semibold text-violet-700 dark:text-violet-300" to="/payroll/import-attendance">Import Attendance</Link>}
+            </nav>
             <section className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
                 <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
                     <div><p className="text-sm font-bold uppercase tracking-wide text-violet-600">Schedule week</p><h1 className="mt-1 text-3xl font-bold">Schedule Builder</h1><p className="mt-1 text-lg">{formatDateRange(weekStart,addDays(weekStart,6))}</p><p className="mt-2 font-semibold text-slate-600 dark:text-slate-300">Viewing: {scopeLabel(employeeScope,businessUnits)} · {builderIsCurrent?employeesInBU.length:0} employees{employeeScope==='all'?` across ${new Set(employeesInBU.map(person=>person.businessUnitId).filter(Boolean)).size} business units`:''}</p></div>

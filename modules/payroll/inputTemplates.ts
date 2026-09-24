@@ -57,13 +57,14 @@ export function validateInputRow(schema:InputTemplate,values:Record<string,strin
 }
 export async function readInputFile(file:File,schema:InputTemplate){
  if(file.size>5*1024*1024)throw new Error('Use a file smaller than 5 MB.');
- let headers:string[]=[],raw:{row:number;cells:string[]}[]=[];
+ let headers:string[]=[],raw:{row:number;cells:string[]}[]=[],unversionedWorkbook=false;
  if(file.name.toLowerCase().endsWith('.csv')){const rows=parseDelimited(await file.text(),',');headers=rows.shift()||[];raw=rows.map((cells,i)=>({row:i+2,cells}));}
  else if(file.name.toLowerCase().endsWith('.xlsx')){
   const book=await readImportWorkbook(await file.arrayBuffer());const sheet=book.getWorksheet('Data Entry');
   if(!sheet)throw new Error('Missing Data Entry sheet. Download the current template. Only Data Entry is imported.');
   const version=book.getWorksheet('Instructions')?.getCell('B1').text;
   if(version&&version!==`${schema.type}:${schema.version}`)throw new Error(`Unsupported template ${version}. Download ${schema.title} version ${schema.version}.`);
+  unversionedWorkbook=!version;
   if(sheet.rowCount>2001)throw new Error('Use at most 2,000 rows.');
   sheet.eachRow({includeEmpty:false},row=>{const cells:Array<string>=[];for(let i=1;i<=Math.max(row.cellCount,schema.fields.length);i++){
    const value=row.getCell(i).value;
@@ -77,5 +78,5 @@ export async function readInputFile(file:File,schema:InputTemplate){
  if(raw.length>2000)throw new Error('Use at most 2,000 rows.');
  if(new Set(headers).size!==headers.length)throw new Error('Duplicate column names. Give each column a unique header before mapping.');
  const mapping=schema.fields.map(f=>headers.indexOf(f.label));
- return {headers,raw,mapping,needsMapping:headers.length!==schema.fields.length||mapping.some((n,i)=>n!==i)};
+ return {headers,raw,mapping,needsMapping:unversionedWorkbook||headers.length!==schema.fields.length||mapping.some((n,i)=>n!==i)};
 }
