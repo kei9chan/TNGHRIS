@@ -527,8 +527,8 @@ export default function ApprovalCenter() {
       request={requestedLeave}
       leaveTypes={approvals.leaveTypes}
       onSave={() => {}}
-      onApprove={async (request, approved, notes) => {
-        await approvals.handleLeaveApproval(request, approved, notes);
+      onApprove={async (request, approved, notes, outcome) => {
+        await approvals.handleLeaveApproval(request, approved, notes, outcome);
         setDecisionMessage((approved ? 'Your leave approval was recorded.' : 'Your leave rejection was recorded.') + ' Any other required decisions remain pending.');
         closeRequestedReview();
       }}
@@ -558,54 +558,3 @@ export default function ApprovalCenter() {
       canApproveOverride={Boolean(requestedOvertime)}
       onSave={() => {}}
       onApproveOrReject={async (request, status, details) => {
-        await approvals.handleApproveRejectOT(request, status as OTStatus.Approved | OTStatus.Rejected, details);
-        setDecisionMessage((`Your overtime decision (${status}) was recorded.`) + ' Any other required decisions remain pending.');
-        closeRequestedReview();
-      }}
-    />
-    <ManpowerReviewModal
-      isOpen={Boolean(requestedManpower)}
-      onClose={closeRequestedReview}
-      request={requestedManpower}
-      onApprove={async (requestId, comments) => {
-        await approvals.handleApproveManpower(requestId, comments);
-        setDecisionMessage(('Your manpower approval was recorded.') + ' Any other required decisions remain pending.');
-        closeRequestedReview();
-      }}
-      onReject={async (requestId, reason) => {
-        await approvals.handleRejectManpower(requestId, reason);
-        setDecisionMessage(('Your manpower rejection was recorded.') + ' Any other required decisions remain pending.');
-        closeRequestedReview();
-      }}
-      onClarify={async (requestId, question) => {
-        await requestManpowerClarification(requestId, question);
-        setDecisionMessage('Clarification was requested. The same request will return to this approval step after the requester responds.');
-        closeRequestedReview();
-      }}
-      canApprove={Boolean(requestedManpower)}
-    />
-    <RecentDecisions userId={user.id} refreshKey={`${items.length}:${decisionMessage}:${JSON.stringify(result)}`} />
-    <OfferApprovalReviewModal
-      isOpen={requestedType === 'offer' && Boolean(requestedItem)}
-      requestId={requestedType === 'offer' ? requestedItem : null}
-      onClose={closeRequestedReview}
-      onProcessed={() => { void additional.refreshAdditionalApprovals(); }}
-    />
-    <AssetRequestApprovalModal
-      isOpen={requestedType === 'asset' && Boolean(requestedItem)}
-      requestId={requestedType === 'asset' ? requestedItem : null}
-      onClose={closeRequestedReview}
-      onProcessed={() => { void additional.refreshAdditionalApprovals(); }}
-    />
-    <PayPackageApprovalModal
-      isOpen={Boolean(requestedPayPackage)}
-      item={requestedPayPackage}
-      onClose={closeRequestedReview}
-      onProcessed={async approved => {
-        await additional.refreshAdditionalApprovals();
-        setDecisionMessage(`Your pay-package ${approved ? 'approval' : 'rejection'} was recorded. Any other required decisions remain pending.`);
-        closeRequestedReview();
-      }}
-    />
-  </div>;
-}

@@ -12,6 +12,7 @@ import {
     User
 } from '../types';
 import { getTimeApprovalReason } from '../utils/approvalPresentation';
+import type { ExceptionOutcome } from '../modules/payroll/leaveManagementModel';
 import {
     approveManpowerRequest,
     mapManpowerRequestRow,
@@ -264,9 +265,24 @@ export function useApprovals({ user }: UseApprovalsOptions) {
     // Approval Handlers
     // ===================================================================
 
-    const handleLeaveApproval = async (request: Partial<LeaveRequest>, approved: boolean, notes?: string) => {
+    const handleLeaveApproval = async (request: Partial<LeaveRequest>, approved: boolean, notes?: string, outcome?: ExceptionOutcome) => {
         if (!user || !request.id) throw new Error('Approval is unavailable. Refresh the queue.');
-        const result: any = await processTimeRequestApproval('leave', request.id, approved ? 'approve' : 'reject', notes);
+        // BOD exception decisions use the dedicated atomic path. The generic
+        // approval RPC intentionally requires a rejection note and therefore
+        // must not receive an exception approval click with an omitted note.
+        let result: any;
+        if (request.status === LeaveRequestStatus.PendingBOD && outcome) {
+            const { data, error } = await supabase.rpc('process_leave_exception_approval', {
+                p_request_id: request.id,
+                p_decision: approved ? 'approve' : 'reject',
+                p_outcome: outcome,
+                p_note: notes || null,
+            });
+            if (error) throw new Error(error.message || 'Failed to process BOD leave exception approval');
+            result = data;
+        } else {
+            result = await processTimeRequestApproval('leave', request.id, approved ? 'approve' : 'reject', notes);
+        }
         if (result?.notifyEscalation) sendConditionalApprovalEmails('leave', request.id).catch(error => console.error('Approval email failed', error));
         if (request.employeeId && !result?.alreadyDecided) createNotification({
             userId: request.employeeId,
