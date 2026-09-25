@@ -141,12 +141,15 @@ export const getOvertimeWeekDetails = (context: ApprovalContext): OvertimeWeekDe
   let dateRange: string | undefined;
   if (weekStart && weekEnd) {
     const sameMonth = weekStart.getMonth() === weekEnd.getMonth() && weekStart.getFullYear() === weekEnd.getFullYear();
-    const startLabel = weekStart.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
-    const endLabel = weekEnd.toLocaleDateString('en-PH', sameMonth
+    // Use en-US for this compact range because en-PH's date formatter can
+    // emit a non-standard "year (day: n)" shape when fields are combined.
+    // The underlying dates remain the configured Monday–Sunday week.
+    const startLabel = weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const endLabel = weekEnd.toLocaleDateString('en-US', sameMonth
       ? { day: 'numeric', year: 'numeric' }
       : { month: 'short', day: 'numeric', year: 'numeric' });
-    const startDay = weekStart.toLocaleDateString('en-PH', { weekday: 'short' });
-    const endDay = weekEnd.toLocaleDateString('en-PH', { weekday: 'short' });
+    const startDay = weekStart.toLocaleDateString('en-US', { weekday: 'short' });
+    const endDay = weekEnd.toLocaleDateString('en-US', { weekday: 'short' });
     dateRange = `${startLabel}–${endLabel}`;
     range = `${dateRange} (${startDay}–${endDay})`;
   }
@@ -171,7 +174,7 @@ export const getOvertimeWeekDetails = (context: ApprovalContext): OvertimeWeekDe
     range,
     dateRange,
     workweekNote: weekStart && weekEnd
-      ? `Based on the configured ${weekStart.toLocaleDateString('en-PH', { weekday: 'long' })}–${weekEnd.toLocaleDateString('en-PH', { weekday: 'long' })} workweek`
+      ? `Based on the configured ${weekStart.toLocaleDateString('en-US', { weekday: 'long' })}–${weekEnd.toLocaleDateString('en-US', { weekday: 'long' })} workweek`
       : undefined,
     weeklyOt: weeklyOt !== undefined ? `${formatApprovalNumber(weeklyOt)} hours` : undefined,
     total: totalLabel,
