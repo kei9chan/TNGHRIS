@@ -51,8 +51,9 @@ const PayPackageApprovalModal: React.FC<PayPackageApprovalModalProps> = ({
   const preview = payPackage ? calculatePackagePreview({ baseAmount: payPackage.base_amount, components: payPackage.components, treatment: payPackage.treatment }) : null;
 
   const decide = async (approved: boolean) => {
-    if (!item || note.trim().length < 3) {
-      setError('Add an approval or rejection note before recording the decision.');
+    if (!item) return;
+    if (!approved && note.trim().length < 3) {
+      setError('Add a rejection reason of at least 3 characters before rejecting.');
       return;
     }
     setBusy(true);
@@ -71,7 +72,7 @@ const PayPackageApprovalModal: React.FC<PayPackageApprovalModalProps> = ({
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
       <Button className="min-h-11" variant="secondary" disabled={busy} onClick={onClose}>Close</Button>
       <Button className="min-h-11" variant="danger" disabled={busy || note.trim().length < 3} onClick={() => void decide(false)}>Reject</Button>
-      <Button className="min-h-11" variant="success" disabled={busy || note.trim().length < 3} onClick={() => void decide(true)}>Approve</Button>
+      <Button className="min-h-11" variant="success" disabled={busy} onClick={() => void decide(true)}>Approve</Button>
     </div>
   );
 
@@ -122,8 +123,8 @@ const PayPackageApprovalModal: React.FC<PayPackageApprovalModalProps> = ({
           <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900"><strong>Waiting for:</strong> {item.pendingApprovers.join(' or ') || 'No pending reviewer'}</p>
         </section>
 
-        <Textarea id="pay-package-approval-note" label="Approval note" value={note} onChange={event => setNote(event.target.value)} rows={3} placeholder="Reason and approval reference" />
-        <p className="text-xs text-slate-500">A note of at least 3 characters is required for approval or rejection.</p>
+        <Textarea id="pay-package-approval-note" label="Approval note (optional)" value={note} onChange={event => setNote(event.target.value)} rows={3} placeholder="Add an optional note" />
+        <p className="text-xs text-slate-500">Optional when approving. A rejection reason of at least 3 characters is required when rejecting.</p>
         {error && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
       </div>}
     </Modal>
