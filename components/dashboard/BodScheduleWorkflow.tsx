@@ -47,6 +47,7 @@ export default function BodScheduleWorkflow() {
   try {
    await rpc('review_bod_schedule_submission',{p_id:id,p_version:version,p_approve:approve,p_reason:decisionReason});
    setReviewNotices(r=>({...r,[id]:approve?'Schedule approved and published.':'Schedule returned to the employee for revision.'}));
+   setNotice(approve?'Schedule approved and published.':'Schedule returned to the employee for revision.');
    setReviewReasons(r=>({...r,[id]:''}));
    setRevision(v=>v+1);
  } catch(e) {
@@ -67,8 +68,13 @@ export default function BodScheduleWorkflow() {
    } catch(e) { failures.push(`${item.employeeName}: ${(e as Error).message||'approval failed'}`); }
   }
   setSelectedPending(new Set());
-  if(failures.length)setBulkError(`${approved} approved. ${failures.join(' · ')}`);
-  else setBulkNotice(`${approved} schedule${approved===1?'':'s'} approved and published.`);
+  if(failures.length){
+   const message=`${approved} approved. ${failures.join(' · ')}`;
+   setBulkError(message);setNotice(message);
+  } else {
+   const message=`${approved} schedule${approved===1?'':'s'} approved and published.`;
+   setBulkNotice(message);setNotice(message);
+  }
   setRevision(v=>v+1);setBulkBusy(false);
  }
  const approver=data?.managerRole==='GM'?'GM':'BOD';
