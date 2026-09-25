@@ -271,11 +271,14 @@ export function useApprovals({ user }: UseApprovalsOptions) {
         // approval RPC intentionally requires a rejection note and therefore
         // must not receive an exception approval click with an omitted note.
         let result: any;
-        if (request.status === LeaveRequestStatus.PendingBOD && outcome) {
+        if (request.status === LeaveRequestStatus.PendingBOD) {
             const { data, error } = await supabase.rpc('process_leave_exception_approval', {
                 p_request_id: request.id,
                 p_decision: approved ? 'approve' : 'reject',
-                p_outcome: outcome,
+                // Keep the approval action safe even if an older cached modal
+                // does not have the outcome selector. Credit-shortfall BOD
+                // approvals default to LWOP; paid exceptions remain explicit.
+                p_outcome: outcome || 'lwop',
                 p_note: notes || null,
             });
             if (error) throw new Error(error.message || 'Failed to process BOD leave exception approval');
