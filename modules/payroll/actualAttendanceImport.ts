@@ -19,12 +19,13 @@ export function attendanceStamp(value:string,workDate?:string){
  if(!match||Number(match[2])>23||Number(match[3])>59||Number(match[4]||0)>59)throw new Error('Use YYYY-MM-DD HH:mm with explicit overnight dates. Times use Asia/Manila.');
  return `${strictDate(match[1])}T${match[2]}:${match[3]}:${match[4]||'00'}+08:00`;
 }
-export function normalizeAttendance(rows:string[][],businessUnit:string,rowNumbers?:number[]):AttendanceInput[]{
+export function normalizeAttendance(rows:string[][],businessUnit:string,rowNumbers?:number[],savedStatuses:Record<string,string>={}):AttendanceInput[]{
  return rows.flatMap((cells,i)=>{
   if(!cells.some(value=>value.trim()))return [];
   try {
    if(cells.some(value=>/^[=+@]/.test(value.trim())))throw new Error('Formulas are not accepted. Paste values only.');
-   const [employeeId,unit,workDate,dayStatus,clockIn,breakStart,breakEnd,clockOut,reference='',notes='']=cells.map(value=>value.trim());
+   const [employeeId,unit,workDate,rawDayStatus,clockIn,breakStart,breakEnd,clockOut,reference='',notes='']=cells.map(value=>value.trim());
+   const dayStatus=rawDayStatus||savedStatuses[`${employeeId}:${workDate}`]||'Workday';
    if(!employeeId||/^DEMO-/i.test(employeeId))throw new Error('Use an actual HRIS Employee ID, not an example ID.');
    if(unit!==businessUnit)throw new Error('Business unit does not match the selected business unit.');
    strictDate(workDate);
@@ -37,7 +38,7 @@ export function normalizeAttendance(rows:string[][],businessUnit:string,rowNumbe
   }catch(e){throw new Error(`Row ${rowNumbers?.[i]??i+2} — ${(e as Error).message}`);}
  });
 }
-export async function readAttendanceFile(file:File,businessUnit:string):Promise<AttendanceInput[]>{
+export async function readAttendanceFile(file:File,businessUnit:string,savedStatuses:Record<string,string>={}):Promise<AttendanceInput[]>{
  if(file.size>5*1024*1024)throw new Error('Upload a file smaller than 5 MB.');
  let rows:string[][],rowNumbers:number[]|undefined,version=2;
  if(file.name.toLowerCase().endsWith('.csv'))rows=parseDelimited(await file.text(),',');
@@ -64,9 +65,12 @@ export async function readAttendanceFile(file:File,businessUnit:string):Promise<
  const current=attendanceFields.map(([label])=>label),legacy=attendanceFields.filter(([,key])=>key!=='dayStatus').map(([label])=>label);
  const matches=(expected:string[])=>headers?.length===expected.length&&headers.every((v,i)=>v.replace(/^\uFEFF/,'')===expected[i]);
  if(!matches(current)&&!matches(legacy))throw new Error('Columns do not match the attendance template. Download version 2 and paste your values into its columns.');
- if(matches(legacy)){version=1;rows=rows.map(row=>[...row.slice(0,3),'Workday',...row.slice(3)]);}
+ // Version 1 had no Day status column. Leave it empty so a saved roster
+ // status (Rest day, holiday, suspension, or no scheduled work) can be used
+ // for blank-punch rows; otherwise the row remains a Workday review item.
+ if(matches(legacy)){version=1;rows=rows.map(row=>[...row.slice(0,3),'',...row.slice(3)]);}
  if(!rows.length)throw new Error('Data Entry contains no attendance records. Examples are never imported.');
  if(rows.length>2000)throw new Error('Use at most 2,000 attendance rows.');
- return normalizeAttendance(rows,businessUnit,rowNumbers);
+ return normalizeAttendance(rows,businessUnit,rowNumbers,savedStatuses);
 }
 export function downloadText(filename:string,text:string){const url=URL.createObjectURL(new Blob([text],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
