@@ -43,6 +43,9 @@ const Leave: React.FC = () => {
     message: '',
   });
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  // Keep the employee profile quotas as an immediate fallback while the
+  // authoritative ledger RPC loads. This prevents a transient/legacy ledger
+  // response from presenting every balance as zero.
   const [liveQuotas, setLiveQuotas] = useState({ vacation: 0, sick: 0, offset: 0 });
   const [balanceSummary, setBalanceSummary] = useState<any[]>([]);
   const [reporteeIds, setReporteeIds] = useState<string[]>([]);
@@ -144,6 +147,11 @@ const Leave: React.FC = () => {
     loadLeaveRequests();
     
     if (user) {
+      setLiveQuotas({
+        vacation: Number(user.leaveQuotaVacation ?? 0),
+        sick: Number(user.leaveQuotaSick ?? 0),
+        offset: Number(user.leaveQuotaOffset ?? 0),
+      });
       supabase.rpc('get_confirmed_leave_ledger').then(({data,error}) => {
         if (data && !error) setLiveQuotas({vacation:Number(data.vacation),sick:Number(data.sick),offset:Number(data.offset)});
       });
@@ -175,15 +183,17 @@ const Leave: React.FC = () => {
       else if (isSick) available = liveQuotas.sick;
       else if (isOffset) available = liveQuotas.offset;
 
+      const summary = balanceSummary.find(item => item.leaveTypeId === lt.id ||
+        (item.name || '').trim().toLowerCase() === lt.name.trim().toLowerCase());
       return {
-        ...(balanceSummary.find(item => item.leaveTypeId === lt.id) || {}),
+        ...(summary || {}),
         employeeId: user.id,
         leaveTypeId: lt.id,
-        opening: Number(balanceSummary.find(item => item.leaveTypeId === lt.id)?.opening ?? available),
-        accrued: Number(balanceSummary.find(item => item.leaveTypeId === lt.id)?.accrued ?? 0),
-        used: Number(balanceSummary.find(item => item.leaveTypeId === lt.id)?.used ?? 0),
-        adjusted: Number(balanceSummary.find(item => item.leaveTypeId === lt.id)?.adjusted ?? 0),
-        available: Number(balanceSummary.find(item => item.leaveTypeId === lt.id)?.available ?? available),
+        opening: Number(summary?.opening ?? available),
+        accrued: Number(summary?.accrued ?? 0),
+        used: Number(summary?.used ?? 0),
+        adjusted: Number(summary?.adjusted ?? 0),
+        available: Number(summary?.available ?? available),
         name: lt.name,
       };
       });
