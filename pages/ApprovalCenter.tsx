@@ -197,8 +197,7 @@ export default function ApprovalCenter() {
     if (!user) return;
     let active = true;
     const load = async () => {
-      const { data, error } = await supabase.rpc('get_bod_schedule_workflow', { p_week: null });
-      if (!active) return;
+      const { data, error } = await supabase.rpc('get_bod_schedule_workflow', { p_week: null });      if (!active) return;
       if (error) { setSchedulePending([]); return; }
       setSchedulePending(Array.isArray(data?.pending) ? data.pending : []);
     };
@@ -397,8 +396,7 @@ export default function ApprovalCenter() {
     return true;
   }).sort((a, b) => filters.sort === 'newest' ? b.start.getTime() - a.start.getTime() : a.start.getTime() - b.start.getTime()), [items, filters]);
 
-  const activeGroupKinds = useMemo(() => GROUP_ORDER.filter(kind => filtered.some(item => item.kind === kind)), [filtered]);
-  const groups = useMemo(() => activeGroupKinds.map(kind => ({ kind, items: filtered.filter(item => item.kind === kind) })), [activeGroupKinds, filtered]);
+  const activeGroupKinds = useMemo(() => GROUP_ORDER.filter(kind => filtered.some(item => item.kind === kind)), [filtered]);  const groups = useMemo(() => activeGroupKinds.map(kind => ({ kind, items: filtered.filter(item => item.kind === kind) })), [activeGroupKinds, filtered]);
   const exceptionCount = items.filter(needsIndividualReview).length;
   const dueTodayCount = items.filter(item => dayAge(item.start) === 0).length;
   const overdueCount = items.filter(item => dayAge(item.start) >= 3).length;
@@ -558,3 +556,54 @@ export default function ApprovalCenter() {
       canApproveOverride={Boolean(requestedOvertime)}
       onSave={() => {}}
       onApproveOrReject={async (request, status, details) => {
+        await approvals.handleApproveRejectOT(request, status as OTStatus.Approved | OTStatus.Rejected, details);
+        setDecisionMessage((`Your overtime decision (${status}) was recorded.`) + ' Any other required decisions remain pending.');
+        closeRequestedReview();
+      }}
+    />
+    <ManpowerReviewModal
+      isOpen={Boolean(requestedManpower)}
+      onClose={closeRequestedReview}
+      request={requestedManpower}
+      onApprove={async (requestId, comments) => {
+        await approvals.handleApproveManpower(requestId, comments);
+        setDecisionMessage(('Your manpower approval was recorded.') + ' Any other required decisions remain pending.');
+        closeRequestedReview();
+      }}
+      onReject={async (requestId, reason) => {
+        await approvals.handleRejectManpower(requestId, reason);
+        setDecisionMessage(('Your manpower rejection was recorded.') + ' Any other required decisions remain pending.');
+        closeRequestedReview();
+      }}
+      onClarify={async (requestId, question) => {
+        await requestManpowerClarification(requestId, question);
+        setDecisionMessage('Clarification was requested. The same request will return to this approval step after the requester responds.');
+        closeRequestedReview();
+      }}
+      canApprove={Boolean(requestedManpower)}
+    />
+    <RecentDecisions userId={user.id} refreshKey={`${items.length}:${decisionMessage}:${JSON.stringify(result)}`} />
+    <OfferApprovalReviewModal
+      isOpen={requestedType === 'offer' && Boolean(requestedItem)}
+      requestId={requestedType === 'offer' ? requestedItem : null}
+      onClose={closeRequestedReview}
+      onProcessed={() => { void additional.refreshAdditionalApprovals(); }}
+    />
+    <AssetRequestApprovalModal
+      isOpen={requestedType === 'asset' && Boolean(requestedItem)}
+      requestId={requestedType === 'asset' ? requestedItem : null}
+      onClose={closeRequestedReview}
+      onProcessed={() => { void additional.refreshAdditionalApprovals(); }}
+    />
+    <PayPackageApprovalModal
+      isOpen={Boolean(requestedPayPackage)}
+      item={requestedPayPackage}
+      onClose={closeRequestedReview}
+      onProcessed={async approved => {
+        await additional.refreshAdditionalApprovals();
+        setDecisionMessage(`Your pay-package ${approved ? 'approval' : 'rejection'} was recorded. Any other required decisions remain pending.`);
+        closeRequestedReview();
+      }}
+    />
+  </div>;
+}
