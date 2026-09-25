@@ -547,13 +547,8 @@ const NTEDetail: React.FC = () => {
                 )}
             </section>
 
-            {/* 3. Case questions, responses, and supporting case information */}
-            <section aria-labelledby="case-details-heading" className="space-y-6">
-                <div>
-                    <p className="text-sm font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">Supporting case information</p>
-                    <h2 id="case-details-heading" className="text-2xl font-bold text-slate-950 dark:text-white">Case questions and replies</h2>
-                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Supporting evidence, employee responses, internal notes, and the audit trail are kept below the approval decision.</p>
-                </div>
+            {/* 3. Supporting case workflow details */}
+            <section aria-label="Supporting case workflow details" className="space-y-6">
                 {nte.status === NTEStatus.Rejected && rejectionStep && (
                     <Card title="NTE rejected" className="border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/30">
                         <p className="text-sm text-red-900 dark:text-red-100"><strong>Rejected by:</strong> {rejectionStep.userName}</p>
@@ -587,6 +582,15 @@ const NTEDetail: React.FC = () => {
                 </Card>}
 
                 {user && user.id !== nte.employeeId && user.id !== incidentReport.reportedBy && <div className="flex flex-col rounded-lg bg-white shadow-md dark:bg-slate-800"><div className="flex-grow space-y-4 overflow-y-auto p-4"><div className="my-2 text-center"><span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-500 dark:bg-gray-700 dark:text-gray-400">Internal case discussion</span></div><div className="flex items-start space-x-3"><div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-indigo-500 text-xs font-bold text-white">{nteIssuer?.name.substring(0, 2) || 'HR'}</div><div><div className="rounded-lg rounded-tl-none bg-gray-100 p-3 dark:bg-slate-700"><p className="text-sm text-gray-800 dark:text-gray-200">Only authorized reviewers can view this thread.</p></div><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{nteIssuer ? `${nteIssuer.name} (${nteIssuer.role})` : 'System message'}</p></div></div>{incidentReport.chatThread.map(msg => <div key={msg.id} className={`flex items-start space-x-3 ${msg.userId === user?.id ? 'flex-row-reverse space-x-reverse' : ''}`}><div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gray-300 text-xs font-bold dark:bg-gray-600">{msg.userName.substring(0, 2)}</div><div><div className={`rounded-lg p-3 ${msg.userId === user?.id ? 'rounded-br-none bg-indigo-600 text-white' : 'rounded-bl-none bg-gray-100 dark:bg-slate-700'}`}><p className="text-sm">{msg.text}</p></div><p className={`mt-1 text-xs text-gray-500 dark:text-gray-400 ${msg.userId === user?.id ? 'text-right' : ''}`}>{msg.userName} at {new Date(msg.timestamp).toLocaleTimeString()}</p></div></div>)}<div ref={messagesEndRef} /></div><div className="border-t border-gray-200 bg-gray-50 p-4 dark:border-slate-700 dark:bg-slate-800/50"><div className="relative"><textarea value={newMessage} onChange={e => { setNewMessage(e.target.value); }} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }} placeholder="Type an internal message..." className="w-full rounded-md border p-2 pr-20 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white" rows={2} /><div className="absolute bottom-2 right-2 flex space-x-1"><Button size="sm" variant="secondary" className="!p-2"><PaperclipIcon /></Button><Button size="sm" className="!p-2" onClick={handleSendMessage}><PaperAirplaneIcon /></Button></div></div></div></div>}
+            </section>
+
+            {/* 4. Case questions and replies stay at the bottom */}
+            <section aria-labelledby="case-details-heading" className="space-y-6">
+                <div>
+                    <p className="text-sm font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">Case communication</p>
+                    <h2 id="case-details-heading" className="text-2xl font-bold text-slate-950 dark:text-white">Case Questions and Replies</h2>
+                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Employee questions, responses, internal notes, and the audit timeline are kept here after the approval review.</p>
+                </div>
                 <CaseQuestions key={nte.id} caseId={incidentReport.id} nteId={nte.id} showOriginalIncidentReport={false} />
             </section>
         </div>
