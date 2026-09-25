@@ -20,6 +20,7 @@ export default function BodScheduleWorkflow() {
  const [error,setError] = useState(''), [submitError,setSubmitError] = useState(''), [notice,setNotice] = useState(''), [busy,setBusy] = useState(false), [open,setOpen] = useState(false);
  const [entries,setEntries] = useState<Entry[]>([]), [reason,setReason] = useState(''), [reviewReasons,setReviewReasons] = useState<Record<string,string>>({});
  const [reviewBusy,setReviewBusy] = useState<string|null>(null), [reviewErrors,setReviewErrors] = useState<Record<string,string>>({}), [reviewNotices,setReviewNotices] = useState<Record<string,string>>({});
+ const [selectedPending,setSelectedPending] = useState<Set<string>>(new Set()), [bulkBusy,setBulkBusy] = useState(false), [bulkNotice,setBulkNotice] = useState(''), [bulkError,setBulkError] = useState('');
  useEffect(() => {
   let active=true;
   const load=() => { void rpc('get_bod_schedule_workflow',{p_week:week||null}).then((value:Workflow) => {
@@ -30,6 +31,10 @@ export default function BodScheduleWorkflow() {
   const interval=window.setInterval(load,30000);
   return () => {active=false;window.removeEventListener('focus',load);window.clearInterval(interval);};
  },[week,revision]);
+ useEffect(() => {
+  const pendingIds=new Set((data?.pending||[]).map(item=>item.id));
+  setSelectedPending(current=>new Set([...current].filter(id=>pendingIds.has(id))));
+ },[data?.pending]);
  async function action(name: string,args: Record<string,unknown>,message: string) {
   setBusy(true);setError('');setSubmitError('');setNotice('');
   try {await rpc(name,args);setNotice(message);setOpen(false);setRevision(v=>v+1);}
@@ -44,9 +49,27 @@ export default function BodScheduleWorkflow() {
    setReviewNotices(r=>({...r,[id]:approve?'Schedule approved and published.':'Schedule returned to the employee for revision.'}));
    setReviewReasons(r=>({...r,[id]:''}));
    setRevision(v=>v+1);
-  } catch(e) {
+ } catch(e) {
    setReviewErrors(r=>({...r,[id]:(e as Error).message || 'The schedule decision could not be saved. Please retry.'}));
   } finally {setReviewBusy(null);}
+ }
+ async function approveSelected() {
+  if(!data||bulkBusy||reviewBusy)return;
+  const selected=data.pending.filter(item=>selectedPending.has(item.id));
+  if(!selected.length)return;
+  setBulkBusy(true);setBulkNotice('');setBulkError('');
+  let approved=0;const failures:string[]=[];
+  for(const item of selected){
+   try {
+    const typedReason=(reviewReasons[item.id]||'').trim();
+    await rpc('review_bod_schedule_submission',{p_id:item.id,p_version:item.version,p_approve:true,p_reason:typedReason||'Approved from dashboard'});
+    approved++;
+   } catch(e) { failures.push(`${item.employeeName}: ${(e as Error).message||'approval failed'}`); }
+  }
+  setSelectedPending(new Set());
+  if(failures.length)setBulkError(`${approved} approved. ${failures.join(' · ')}`);
+  else setBulkNotice(`${approved} schedule${approved===1?'':'s'} approved and published.`);
+  setRevision(v=>v+1);setBulkBusy(false);
  }
  const approver=data?.managerRole==='GM'?'GM':'BOD';
  const keepableDates=new Set(data?.keepableDates||[]);
@@ -95,17 +118,28 @@ export default function BodScheduleWorkflow() {
   </section>}
   {data?.isGm&&!data.isBod&&<section className={box}><h2 className="text-xl font-bold">Review your direct reports’ schedules</h2><p className="mt-2">Employees who report directly to you prepare and submit their own schedules. Approve or return their submissions here; schedules take effect only after approval.</p>{!data.pending.length&&<p className="mt-2">No schedules are awaiting your approval.</p>}</section>}
   {!!data?.pending.length&&<section id="schedule-approvals" className={box}>
-   <h2 className="text-xl font-bold">Employee schedules awaiting your approval · {data.pending.length}</h2>
-   <p className="my-2">Your direct reports prepared these schedules. Review their submissions below.</p>
-   {data.pending.map(s=><details className="border-t border-slate-400 py-3" key={s.id}>
-    <summary className="cursor-pointer font-semibold">{s.employeeName} · Week of {dateLabel(s.week)} · Review schedule</summary>
-    <p className="my-3">{s.reason}</p>
-    <ul className="space-y-2">{s.schedule.map(e=><li key={e.date}>{dateLabel(e.date)} — {e.name}{e.flexible?` · Flexi · ${(e.paidMinutes??480)/60} paid hours`:e.start&&` · ${e.start}–${e.end}`}</li>)}</ul>
-    <label className="mt-3 block">Decision / revision reason <span className="font-normal text-slate-500 dark:text-slate-300">(optional — a standard audit note is used when blank)</span><textarea aria-label={`Decision / revision reason for ${s.employeeName}`} maxLength={1000} className={input} value={reviewReasons[s.id]||''} onChange={e=>setReviewReasons(r=>({...r,[s.id]:e.target.value}))}/></label>
-    {reviewErrors[s.id]&&<p className="mt-3 rounded-lg border border-red-300 bg-red-50 p-3 text-red-800" role="alert">{reviewErrors[s.id]}</p>}
-    {reviewNotices[s.id]&&<p className="mt-3 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-emerald-800" role="status">{reviewNotices[s.id]}</p>}
-    <div className="mt-3 flex flex-wrap gap-3">{[true,false].map(approve=><button type="button" key={String(approve)} disabled={reviewBusy!==null} aria-busy={reviewBusy===s.id} className={button} onClick={()=>void review(s.id,s.version,approve)}>{reviewBusy===s.id?'Saving…':approve?'Approve schedule':'Reject / request revision'}</button>)}</div>
-   </details>)}
+   <div className="flex flex-wrap items-start justify-between gap-4">
+    <div><h2 className="text-xl font-bold">Employee schedules awaiting your approval · {data.pending.length}</h2><p className="mt-2">The schedule summary and approval action are shown here—no dropdown is required.</p></div>
+    <div className="flex flex-wrap items-center gap-2">
+     <label className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-semibold dark:border-slate-600"><input type="checkbox" checked={data.pending.length>0&&selectedPending.size===data.pending.length} onChange={e=>setSelectedPending(e.target.checked?new Set(data.pending.map(item=>item.id)):new Set())} /> Select all</label>
+     <button type="button" disabled={!selectedPending.size||bulkBusy||reviewBusy!==null} className={button} onClick={()=>void approveSelected()}>{bulkBusy?'Approving…':`Approve all selected${selectedPending.size?` (${selectedPending.size})`:''}`}</button>
+    </div>
+   </div>
+   {bulkError&&<p className="mt-3 rounded-lg border border-red-300 bg-red-50 p-3 text-red-800" role="alert">{bulkError}</p>}
+   {bulkNotice&&<p className="mt-3 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-emerald-800" role="status">{bulkNotice}</p>}
+   <div className="mt-4 space-y-3">
+    {data.pending.map(s=><article className="rounded-xl border border-slate-300 p-4 dark:border-slate-600" key={s.id}>
+     <div className="flex flex-wrap items-start justify-between gap-3">
+      <label className="flex items-start gap-3"><input className="mt-1 h-5 w-5" type="checkbox" checked={selectedPending.has(s.id)} onChange={e=>setSelectedPending(current=>{const next=new Set(current);if(e.target.checked)next.add(s.id);else next.delete(s.id);return next;})} /><span><strong className="text-lg">{s.employeeName}</strong><span className="block text-sm text-slate-500 dark:text-slate-300">Week of {dateLabel(s.week)} · Submitted for review</span></span></label>
+      <div className="flex flex-wrap gap-2"><button type="button" disabled={bulkBusy||reviewBusy!==null} aria-busy={reviewBusy===s.id} className={button} onClick={()=>void review(s.id,s.version,true)}>{reviewBusy===s.id?'Saving…':'Approve schedule'}</button><button type="button" disabled={bulkBusy||reviewBusy!==null} className="min-h-11 rounded-lg border border-slate-400 px-4 py-2 font-semibold text-slate-800 dark:text-white" onClick={()=>void review(s.id,s.version,false)}>Reject / request revision</button></div>
+     </div>
+     <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{s.reason||'No schedule note provided.'}</p>
+     <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{s.schedule.map(e=><li className="rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-900" key={e.date}><strong>{dateLabel(e.date)}</strong><span className="block">{e.name}{e.flexible?` · Flexi · ${(e.paidMinutes??480)/60} paid hours`:e.start&&` · ${e.start}–${e.end}`}</span></li>)}</ul>
+     <label className="mt-3 block text-sm">Decision / revision note <span className="font-normal text-slate-500 dark:text-slate-300">(optional)</span><textarea aria-label={`Decision / revision note for ${s.employeeName}`} maxLength={1000} className={input} value={reviewReasons[s.id]||''} onChange={e=>setReviewReasons(r=>({...r,[s.id]:e.target.value}))}/></label>
+     {reviewErrors[s.id]&&<p className="mt-3 rounded-lg border border-red-300 bg-red-50 p-3 text-red-800" role="alert">{reviewErrors[s.id]}</p>}
+     {reviewNotices[s.id]&&<p className="mt-3 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-emerald-800" role="status">{reviewNotices[s.id]}</p>}
+    </article>)}
+   </div>
   </section>}
  </>;
 }
