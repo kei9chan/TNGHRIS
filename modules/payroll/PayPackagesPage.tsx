@@ -723,17 +723,17 @@ const ReviewWorkspace: React.FC<{
               {canApprove && (
                 <div className="mt-5 border-t border-slate-200 pt-4 dark:border-slate-700">
                   <label className="block text-sm font-medium">
-                    Approval note
+                    Approval note (optional)
                     <input
                       className={`${field} mt-1`}
                       value={reason}
                       onChange={(event) => setReason(event.target.value)}
-                      placeholder="Reason and approval reference"
+                      placeholder="Add an optional note"
                     />
                   </label>
                   <div className="mt-3 flex gap-3">
                     <Button
-                      disabled={busy || reason.trim().length < 3}
+                      disabled={busy}
                       onClick={() => void review(item, true)}
                     >
                       Approve package
@@ -746,6 +746,7 @@ const ReviewWorkspace: React.FC<{
                       Reject draft
                     </Button>
                   </div>
+                  <p className="mt-2 text-xs text-slate-500">Optional when approving. A rejection reason of at least 3 characters is required when rejecting.</p>
                 </div>
               )}
             </Card>
