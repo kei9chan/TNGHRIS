@@ -378,8 +378,222 @@ const NTEDetail: React.FC = () => {
     const userHasAcknowledgedHearing = nte.hearingDetails?.acknowledgments?.some(ack => ack.userId === user?.id);
     const isHearingParticipant = user && (user.id === nte.employeeId || nte.hearingDetails?.panelIds.includes(user.id));
 
+    const formatPHT = (value?: Date | string) => value
+        ? new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) + ' PHT'
+        : '—';
+    const pendingApprover = nte.approverSteps?.find(step => step.status === ApproverStatus.Pending);
+    const pendingApproverRole = pendingApprover?.roleSnapshot || pendingApprover?.role || 'Approver';
+    const approvalStatusLabel = nte.status === NTEStatus.PendingApproval
+        ? `Pending ${pendingApproverRole.replace(/\s*approver\s*$/i, '')} Approval`
+        : nte.status === NTEStatus.Issued
+            ? 'Issued to employee'
+            : nte.status === NTEStatus.Closed
+                ? 'Case closed'
+                : nte.responseStage || nte.status;
+    const approvalStatusClass = nte.status === NTEStatus.Rejected
+        ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200'
+        : nte.status === NTEStatus.Issued || nte.status === NTEStatus.Approved
+            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
+            : nte.status === NTEStatus.PendingApproval
+                ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200'
+                : 'bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-100';
+
+    const printNteDocument = () => {
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) return;
+        printWindow.document.write(`
+            <html>
+                <head>
+                    <title>Print NTE Document</title>
+                    <style>${NTE_SIGNATURE_CSS}@media print { @page { size: A4; margin: 20mm; } }</style>
+                </head>
+                <body onload="setTimeout(() => { window.print(); window.close(); }, 300);">
+                    <div class="nte-document">${nte.body}</div>
+                </body>
+            </html>
+        `);
+        printWindow.document.close();
+    };
+
+    const downloadNteDocument = () => {
+        const html = `<!doctype html><html><head><meta charset="utf-8"><title>${formatNTEDisplayId(nte.nteNumber) || 'NTE Document'}</title><style>${NTE_SIGNATURE_CSS}</style></head><body><div class="nte-document">${nte.body}</div></body></html>`;
+        const url = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = `${formatNTEDisplayId(nte.nteNumber) || 'NTE'}-${nte.employeeName.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '')}.html`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+    };
+
 
     return (
+        <div className="space-y-6">
+            <div>
+                <Link to="/feedback/cases" className="mb-2 flex items-center text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                    <ArrowLeftIcon />
+                    Back to Disciplinary Cases
+                </Link>
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                    <div>
+                        <p className="text-sm font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">NTE approval review</p>
+                        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{formatNTEDisplayId(nte.nteNumber) || nte.id}</h1>
+                        <p className="mt-1 text-gray-600 dark:text-gray-400">Review the notice, approval route, and supporting case information below.</p>
+                    </div>
+                    <span className={`inline-flex items-center rounded-full px-3 py-1.5 text-sm font-bold ${approvalStatusClass}`}>{approvalStatusLabel}</span>
+                </div>
+            </div>
+
+            {/* 1. Approval status and NTE document */}
+            <section aria-labelledby="nte-status-heading" className="grid items-start gap-6 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+                <Card className="h-full border border-slate-200 dark:border-slate-700">
+                    <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-4 dark:border-slate-700">
+                        <div>
+                            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Approval status</p>
+                            <h2 id="nte-status-heading" className="mt-1 text-2xl font-bold text-slate-950 dark:text-white">{recipient?.name || nte.employeeName}</h2>
+                            <p className="mt-1 font-mono text-sm text-slate-600 dark:text-slate-300">NTE {formatNTEDisplayId(nte.nteNumber) || nte.id}</p>
+                        </div>
+                        <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${approvalStatusClass}`}>{approvalStatusLabel}</span>
+                    </div>
+                    <dl className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Date issued</dt><dd className="mt-1 font-semibold text-slate-900 dark:text-white">{formatPHT(nte.issuedDate)}</dd></div>
+                        <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Linked incident</dt><dd className="mt-1 font-mono font-semibold text-slate-900 dark:text-white">{formatIRDisplayId(incidentReport.caseNumber) || nte.incidentReportId}</dd></div>
+                        <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Department</dt><dd className="mt-1 font-semibold text-slate-900 dark:text-white">{recipient?.department || '—'}</dd></div>
+                        <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Position</dt><dd className="mt-1 font-semibold text-slate-900 dark:text-white">{recipient?.position || '—'}</dd></div>
+                    </dl>
+                    <div className="mt-5 rounded-lg bg-slate-50 p-3 text-sm text-slate-600 dark:bg-slate-900/60 dark:text-slate-300">
+                        <span className="font-semibold text-slate-900 dark:text-white">What you are reviewing:</span> the Notice to Explain issued to {recipient?.name || nte.employeeName} for {incidentReport.category || 'the linked incident report'}.
+                    </div>
+                </Card>
+
+                <Card className="border border-slate-200 dark:border-slate-700">
+                    <div className="mb-4 flex flex-col gap-3 border-b border-slate-200 pb-3 sm:flex-row sm:items-center sm:justify-between dark:border-slate-700">
+                        <div>
+                            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Document viewer</p>
+                            <h2 className="text-xl font-bold text-slate-950 dark:text-white">Notice to Explain Document</h2>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                            <Button variant="secondary" size="sm" onClick={downloadNteDocument}>Download</Button>
+                            <Button variant="secondary" size="sm" onClick={printNteDocument}>Print</Button>
+                        </div>
+                    </div>
+                    <style>{NTE_SIGNATURE_CSS}</style>
+                    <div className="max-h-[min(72vh,900px)] overflow-y-auto overflow-x-hidden rounded-lg border border-gray-300 bg-gray-100 p-1 dark:border-gray-700 dark:bg-gray-900 sm:p-2">
+                        <ResponsiveDocumentPreview ariaLabel="Published Notice to Explain preview">
+                            <div className="nte-document" dangerouslySetInnerHTML={{ __html: nte.body }} />
+                        </ResponsiveDocumentPreview>
+                    </div>
+                </Card>
+            </section>
+
+            {/* 2. Approval */}
+            <section aria-labelledby="approval-heading" className="space-y-6">
+                {approvalActionMessage && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 font-medium text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">{approvalActionMessage}</p>}
+                {currentUserStep ? (
+                    <Card title="Approval action required" className="border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30">
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                            <div>
+                                <h2 id="approval-heading" className="text-xl font-bold text-amber-950 dark:text-amber-100">Your NTE approval is required</h2>
+                                <p className="mt-1 text-sm text-amber-900 dark:text-amber-200">Review the document above, then record your decision. Approval comments are optional.</p>
+                            </div>
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                                <Button className="w-full" disabled={isApprovalActionBusy} variant="secondary" onClick={() => { setApprovalOutcome('return'); setIsRejectModalOpen(true); }}>Return for Revision</Button>
+                                <Button className="w-full" disabled={isApprovalActionBusy} variant="danger" onClick={() => { setApprovalOutcome('reject'); setIsRejectModalOpen(true); }}>Reject</Button>
+                                <Button className="w-full" isLoading={isApprovalActionBusy} onClick={handleApprove}>Approve NTE</Button>
+                            </div>
+                        </div>
+                    </Card>
+                ) : nte.status === NTEStatus.PendingApproval ? (
+                    <Card title="Approval action" className="border-slate-200 dark:border-slate-700">
+                        <p className="text-sm text-slate-600 dark:text-slate-300">This NTE is awaiting {pendingApprover?.userName || 'the assigned approver'}. No action is assigned to your account at this time.</p>
+                    </Card>
+                ) : null}
+
+                {nte.approverSteps && nte.approverSteps.length > 0 && (
+                    <Card title="Approval progress" className="border border-slate-200 dark:border-slate-700">
+                        <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">See who has approved, who is pending, and any optional comments before making your decision.</p>
+                        <div className="mb-5 grid gap-3 md:grid-cols-3">
+                            {nte.approverSteps.map((step, index) => {
+                                const isApproved = step.status === ApproverStatus.Approved;
+                                const isPending = step.status === ApproverStatus.Pending;
+                                const badge = isApproved ? 'Approved' : isPending ? 'Pending' : step.status;
+                                const badgeClass = isApproved
+                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
+                                    : isPending
+                                        ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200'
+                                        : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200';
+                                return <div key={step.approvalId || step.userId} className="relative rounded-lg border border-slate-200 p-4 dark:border-slate-700">
+                                    {index < nte.approverSteps!.length - 1 && <span aria-hidden="true" className="absolute -right-3 top-1/2 hidden h-px w-3 bg-slate-300 md:block dark:bg-slate-600" />}
+                                    <div className="flex items-start justify-between gap-2"><div className="flex items-center gap-2"><ApproverStatusIcon status={step.status} /><span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Step {index + 1}</span></div><span className={`rounded-full px-2 py-1 text-xs font-bold ${badgeClass}`}>{badge}</span></div>
+                                    <p className="mt-3 font-semibold text-slate-900 dark:text-white">{step.userName}</p>
+                                    <p className="text-sm text-slate-500 dark:text-slate-400">{step.roleSnapshot || step.role || 'Selected approver'}{step.isBod ? ' · Required BOD approver' : ''}</p>
+                                    {step.timestamp && <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{isApproved ? 'Approved' : step.status} {formatPHT(step.timestamp)}</p>}
+                                    {(step.comments || step.rejectionReason) && <p className="mt-2 rounded-md bg-slate-50 p-2 text-sm italic text-slate-700 dark:bg-slate-900/60 dark:text-slate-300">“{step.comments || step.rejectionReason}”</p>}
+                                </div>;
+                            })}
+                        </div>
+                        <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:bg-slate-900/60 dark:text-slate-300"><span className="font-semibold">Current approval status:</span> {approvalStatusLabel}</div>
+                    </Card>
+                )}
+            </section>
+
+            {/* 3. Case questions, responses, and supporting case information */}
+            <section aria-labelledby="case-details-heading" className="space-y-6">
+                <div>
+                    <p className="text-sm font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">Supporting case information</p>
+                    <h2 id="case-details-heading" className="text-2xl font-bold text-slate-950 dark:text-white">Case questions and replies</h2>
+                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Supporting evidence, employee responses, internal notes, and the audit trail are kept below the approval decision.</p>
+                </div>
+                <CaseQuestions key={nte.id} caseId={incidentReport.id} nteId={nte.id} />
+
+                {nte.status === NTEStatus.Rejected && rejectionStep && (
+                    <Card title="NTE rejected" className="border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/30">
+                        <p className="text-sm text-red-900 dark:text-red-100"><strong>Rejected by:</strong> {rejectionStep.userName}</p>
+                        <p className="mt-2 whitespace-pre-wrap text-sm text-red-800 dark:text-red-200"><strong>Reason:</strong> {rejectionStep.comments || rejectionStep.rejectionReason || 'No reason recorded.'}</p>
+                        {rejectionStep.timestamp && <p className="mt-2 text-xs text-red-700 dark:text-red-300">Rejected on {formatPHT(rejectionStep.timestamp)}</p>}
+                    </Card>
+                )}
+
+                {nte.status === NTEStatus.Draft && nte.revisionNote && (
+                    <Card title="Revision required" className="border-amber-400 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/30">
+                        <p className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-200">{nte.revisionNote}</p>
+                        {nte.revisionRequestedAt && <p className="mt-2 text-xs text-gray-500">Returned on {formatPHT(nte.revisionRequestedAt)}</p>}
+                    </Card>
+                )}
+
+                {nte.status === NTEStatus.Closed && nte.closureReason && (
+                    <Card title="Closure decision" className="border-gray-300 bg-gray-50 dark:border-gray-700 dark:bg-gray-800">
+                        <p className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-200">{nte.closureReason}</p>
+                        {nte.closedAt && <p className="mt-2 text-xs text-gray-500">Closed on {formatPHT(nte.closedAt)}</p>}
+                    </Card>
+                )}
+
+                <Card title="Original case summary" className="border border-slate-200 dark:border-slate-700">
+                    <div className="space-y-4">
+                        {user?.id !== nte.employeeId && <div><h3 className="font-semibold text-gray-800 dark:text-gray-200">Detailed context</h3><p className="mt-1 whitespace-pre-wrap text-gray-600 dark:text-gray-400">{incidentReport.description}</p></div>}
+                        <div><h3 className="font-semibold text-gray-800 dark:text-gray-200">Allegations</h3><p className="mt-1 whitespace-pre-wrap text-gray-600 dark:text-gray-400">{nte.details}</p></div>
+                        {references.length > 0 && <div><h3 className="font-semibold text-gray-800 dark:text-gray-200">Reference(s)</h3><ul className="mt-1 space-y-1">{references.map(ref => <li key={ref.id} className="text-sm text-gray-600 dark:text-gray-400"><span className="rounded-sm bg-red-100 px-1 font-mono text-red-800 dark:bg-red-900/50 dark:text-red-300">{ref.code}</span>: {ref.description}</li>)}</ul></div>}
+                        {nte.evidenceUrl && <div className="rounded-lg bg-gray-50 p-4 dark:bg-gray-700/50"><h3 className="font-semibold text-gray-800 dark:text-gray-200">Supporting evidence</h3><a href={formatExternalUrl(nte.evidenceUrl)} target="_blank" rel="noopener noreferrer" className="mt-1 block break-all text-indigo-600 hover:underline dark:text-indigo-400">{nte.evidenceUrl}</a></div>}
+                    </div>
+                </Card>
+
+                <NTEWorkflowPanel key={`workflow-${nte.id}`} nte={nte} onChanged={() => setReload(x => x + 1)} />
+
+                {canScheduleHearing && <div><Button variant="secondary" onClick={() => setIsHearingModalOpen(true)}><CalendarIcon /> Schedule administrative hearing</Button></div>}
+
+                {nte.hearingDetails && <Card title="Hearing scheduled" className="border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-900/40">
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2"><div><p className="text-sm font-medium text-gray-500">Date &amp; time</p><p className="text-lg font-bold text-gray-900 dark:text-white">{formatPHT(nte.hearingDetails.date)}</p></div><div><p className="text-sm font-medium text-gray-500">Location / link</p><p className="font-semibold text-gray-900 dark:text-white">{nte.hearingDetails.type === 'Virtual' ? <a href={nte.hearingDetails.location} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">Join meeting</a> : nte.hearingDetails.location}</p></div><div className="md:col-span-2"><p className="text-sm font-medium text-gray-500">Panelists</p><p className="text-gray-900 dark:text-white">{nte.hearingDetails.panelIds.map(id => users.find(u => u.id === id)?.name).join(', ')}</p></div></div>
+                    <div className="mt-5 border-t border-orange-200 pt-4 dark:border-orange-800"><h3 className="mb-2 text-sm font-bold">Participant status</h3><div className="space-y-2 text-sm"><div className="flex items-center justify-between rounded border border-orange-100 bg-white p-2 dark:border-orange-900 dark:bg-slate-800"><span>{nte.employeeName} (Employee)</span>{nte.hearingDetails.acknowledgments?.some(a => a.userId === nte.employeeId) ? <span className="flex items-center font-bold text-green-600"><CheckCircleIcon /> Confirmed</span> : <span className="italic text-orange-600">Pending acknowledgement</span>}</div>{nte.hearingDetails.panelIds.map(pid => { const panelistName = users.find(u => u.id === pid)?.name; const hasAck = nte.hearingDetails!.acknowledgments?.some(a => a.userId === pid); return <div key={pid} className="flex items-center justify-between rounded border border-orange-100 bg-white p-2 dark:border-orange-900 dark:bg-slate-800"><span>{panelistName} (Panel)</span>{hasAck ? <span className="flex items-center font-bold text-green-600"><CheckCircleIcon /> Confirmed</span> : <span className="italic text-orange-600">Pending acknowledgement</span>}</div>; })}</div></div>
+                    <div className="mt-5 flex justify-between">{isHearingParticipant && !userHasAcknowledgedHearing && <Button onClick={handleAcknowledgeHearing}>Acknowledge schedule</Button>}{isHearingParticipant && userHasAcknowledgedHearing && <span className="text-sm font-medium text-green-600">You have acknowledged this schedule.</span>}</div>
+                </Card>}
+
+                {user && user.id !== nte.employeeId && user.id !== incidentReport.reportedBy && <div className="flex flex-col rounded-lg bg-white shadow-md dark:bg-slate-800"><div className="flex-grow space-y-4 overflow-y-auto p-4"><div className="my-2 text-center"><span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-500 dark:bg-gray-700 dark:text-gray-400">Internal case discussion</span></div><div className="flex items-start space-x-3"><div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-indigo-500 text-xs font-bold text-white">{nteIssuer?.name.substring(0, 2) || 'HR'}</div><div><div className="rounded-lg rounded-tl-none bg-gray-100 p-3 dark:bg-slate-700"><p className="text-sm text-gray-800 dark:text-gray-200">Only authorized reviewers can view this thread.</p></div><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{nteIssuer ? `${nteIssuer.name} (${nteIssuer.role})` : 'System message'}</p></div></div>{incidentReport.chatThread.map(msg => <div key={msg.id} className={`flex items-start space-x-3 ${msg.userId === user?.id ? 'flex-row-reverse space-x-reverse' : ''}`}><div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gray-300 text-xs font-bold dark:bg-gray-600">{msg.userName.substring(0, 2)}</div><div><div className={`rounded-lg p-3 ${msg.userId === user?.id ? 'rounded-br-none bg-indigo-600 text-white' : 'rounded-bl-none bg-gray-100 dark:bg-slate-700'}`}><p className="text-sm">{msg.text}</p></div><p className={`mt-1 text-xs text-gray-500 dark:text-gray-400 ${msg.userId === user?.id ? 'text-right' : ''}`}>{msg.userName} at {new Date(msg.timestamp).toLocaleTimeString()}</p></div></div>)}<div ref={messagesEndRef} /></div><div className="border-t border-gray-200 bg-gray-50 p-4 dark:border-slate-700 dark:bg-slate-800/50"><div className="relative"><textarea value={newMessage} onChange={e => setNewMessage(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }} placeholder="Type an internal message..." className="w-full rounded-md border p-2 pr-20 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white" rows={2} /><div className="absolute bottom-2 right-2 flex space-x-1"><Button size="sm" variant="secondary" className="!p-2"><PaperclipIcon /></Button><Button size="sm" className="!p-2" onClick={handleSendMessage}><PaperAirplaneIcon /></Button></div></div></div></div>}
+            </section>
+        </div>
+    );
+
+    if (false) return (
         <div className="space-y-6">
             {/* Back link and header - full width */}
             <div>
