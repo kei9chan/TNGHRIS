@@ -47,6 +47,20 @@ const calculatePlannedHours = (start: string, end: string): number => {
     return Math.round(diffHours * 4) / 4; // Round to nearest quarter hour
 };
 
+const overtimeDateFormatter = new Intl.DateTimeFormat('en-PH', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'Asia/Manila',
+});
+
+const formatOvertimeDate = (value: unknown): string => {
+    if (!value) return 'Date not specified';
+    const date = value instanceof Date ? value : new Date(String(value));
+    return Number.isNaN(date.getTime()) ? 'Date not specified' : overtimeDateFormatter.format(date);
+};
+
 const isTimeOverlap = (start1: string, end1: string, start2: string, end2: string): boolean => {
     if (!start1 || !end1 || !start2 || !end2) return false;
     
@@ -320,6 +334,7 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
     const approvalReason = requestToEdit ? getTimeApprovalReason('overtime', request.approvalContext, request.approvalReason, requiresBod) : undefined;
     const nextStep = requestToEdit ? getTimeApprovalNextStep(request.status, requiresBod) : undefined;
     const overtimeWeek = getOvertimeWeekDetails(request.approvalContext);
+    const overtimeReason = request.reason || approvalReason || 'No reason provided';
 
     // Auto-set approved hours for manager convenience
     useEffect(() => {
@@ -376,9 +391,14 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
             <div className="space-y-4">
                 {requestToEdit && (
                     <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-600 dark:bg-slate-800">
+                        <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-950/40">
+                            <p className="text-xs font-bold uppercase tracking-wide text-amber-800 dark:text-amber-200">Reason for overtime</p>
+                            <p className="mt-1 text-base font-semibold text-amber-950 dark:text-amber-50">{overtimeReason}</p>
+                        </div>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Current step</p><p className="mt-1 font-semibold text-slate-900 dark:text-white">{approvalStep}</p></div>
                             <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Status</p><p className="mt-1"><span className="inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200">{approvalStatus}</span></p></div>
+                            <div className="sm:col-span-2 rounded-xl border border-indigo-200 bg-indigo-50 p-3 dark:border-indigo-800 dark:bg-indigo-950/40"><p className="text-xs font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-200">Requested overtime date</p><p className="mt-1 text-lg font-bold text-indigo-950 dark:text-indigo-50">{formatOvertimeDate(request.date)}</p></div>
                             {overtimeWeek.range && <div className="sm:col-span-2"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Week covered</p><p className="mt-1 font-semibold text-slate-900 dark:text-white">{overtimeWeek.range}</p><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{overtimeWeek.workweekNote}</p></div>}
                             {(overtimeWeek.detail || approvalReason) && <div className="sm:col-span-2"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Details</p><p className="mt-1 text-slate-800 dark:text-slate-100">{overtimeWeek.detail || approvalReason}</p></div>}
                             {overtimeWeek.weeklyOt && <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Weekly OT</p><p className="mt-1 font-semibold text-slate-900 dark:text-white">{overtimeWeek.weeklyOt}</p></div>}
