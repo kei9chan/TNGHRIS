@@ -49,13 +49,12 @@ const ManpowerReviewModal: React.FC<ManpowerReviewModalProps> = ({
   const actionLock = useRef(false);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState('');
-  const [actionMode, setActionMode] = useState<'none' | 'approve' | 'reject' | 'clarify'>('none');
+  const [actionMode, setActionMode] = useState<'none' | 'reject' | 'clarify'>('none');
   const [actionText, setActionText] = useState('');
-  const [approvalComment, setApprovalComment] = useState('');
 
   useEffect(() => {
     if (!isOpen) return;
-    setActionMode('none'); setActionText(''); setApprovalComment(''); setActionError('');
+    setActionMode('none'); setActionText(''); setActionError('');
   }, [isOpen, request?.id]);
 
   const runAction = async (action: () => void | Promise<void>) => {
@@ -93,9 +92,6 @@ const ManpowerReviewModal: React.FC<ManpowerReviewModalProps> = ({
     } else if (actionMode === 'clarify') {
       if (!actionText.trim()) return setActionError('Enter the specific question the requester must answer.');
       void runAction(() => onClarify(request.id, actionText.trim()));
-    } else if (actionMode === 'approve') {
-      if (!hasReviewableCoverage) return setActionError('Approval is disabled because the coverage dates or staffing details are incomplete. Request clarification instead.');
-      void runAction(() => onApprove(request.id, approvalComment.trim() || undefined));
     }
   };
 
@@ -103,12 +99,12 @@ const ManpowerReviewModal: React.FC<ManpowerReviewModalProps> = ({
     <div className="flex flex-col gap-3">
       {actionError && <p role="alert" className="rounded-lg bg-red-100 px-3 py-2 text-sm font-semibold text-red-800 dark:bg-red-950 dark:text-red-100">{actionError}</p>}
       {actionMode !== 'none' && canAct && <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
-        {actionMode === 'approve' ? <div className="space-y-3"><div><p className="font-bold">Approve on-call coverage?</p><p className="text-sm text-slate-600 dark:text-slate-300">You are about to approve {coverageRangeLabel(days)}.</p></div><div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4"><span><strong>{totals.staffDays}</strong><br />staff-days</span><span><strong>{primaryShift}</strong><br />shift</span><span><strong>{peso(totals.cost)}</strong><br />estimated cost</span><span className="col-span-2 sm:col-span-1"><strong className="line-clamp-2">{mainReason}</strong><br />reason</span></div><Textarea label="Approval comment (optional)" value={approvalComment} onChange={event => setApprovalComment(event.target.value)} /></div> : <Textarea label={actionMode === 'reject' ? 'Required rejection reason' : 'What must the requester clarify?'} value={actionText} onChange={event => setActionText(event.target.value)} autoFocus required placeholder={actionMode === 'clarify' ? 'Ask a specific operational, staffing, date, shift, or cost question.' : 'Explain why this request is rejected.'} />}
-        <div className="mt-3 flex justify-end gap-2"><Button size="sm" variant="secondary" onClick={() => { setActionMode('none'); setActionText(''); }}>Cancel</Button><Button size="sm" variant={actionMode === 'reject' ? 'danger' : actionMode === 'approve' ? 'success' : 'primary'} disabled={busy} onClick={submitAction}>{busy ? 'Saving…' : actionMode === 'approve' ? 'Confirm approval' : actionMode === 'reject' ? 'Confirm rejection' : 'Send clarification'}</Button></div>
+        <Textarea label={actionMode === 'reject' ? 'Required rejection reason' : 'What must the requester clarify?'} value={actionText} onChange={event => setActionText(event.target.value)} autoFocus required placeholder={actionMode === 'clarify' ? 'Ask a specific operational, staffing, date, shift, or cost question.' : 'Explain why this request is rejected.'} />
+        <div className="mt-3 flex justify-end gap-2"><Button size="sm" variant="secondary" onClick={() => { setActionMode('none'); setActionText(''); }}>Cancel</Button><Button size="sm" variant={actionMode === 'reject' ? 'danger' : 'primary'} disabled={busy} onClick={submitAction}>{busy ? 'Saving…' : actionMode === 'reject' ? 'Confirm rejection' : 'Send clarification'}</Button></div>
       </div>}
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
         <Button variant="secondary" onClick={onClose}>Close</Button>
-        {canAct && <><Button variant="danger" disabled={busy} onClick={() => { setActionMode('reject'); setActionText(''); }}>Reject</Button><Button variant="secondary" disabled={busy} onClick={() => { setActionMode('clarify'); setActionText(''); }}>Request clarification</Button><Button variant="success" disabled={busy || !hasReviewableCoverage} title={!hasReviewableCoverage ? 'Coverage dates and staffing details are required before approval.' : undefined} onClick={() => setActionMode('approve')}>Approve</Button></>}
+        {canAct && <><Button variant="danger" disabled={busy} onClick={() => { setActionMode('reject'); setActionText(''); }}>Reject</Button><Button variant="secondary" disabled={busy} onClick={() => { setActionMode('clarify'); setActionText(''); }}>Request clarification</Button><Button variant="success" isLoading={busy} disabled={!hasReviewableCoverage} title={!hasReviewableCoverage ? 'Coverage dates and staffing details are required before approval.' : undefined} onClick={() => { if (!hasReviewableCoverage) { setActionError('Approval is disabled because the coverage dates or staffing details are incomplete. Request clarification instead.'); return; } void runAction(() => onApprove(request.id)); }}>Approve</Button></>}
         {isRequester && request.clarificationStatus === 'requested' && onEditRequest && <Button onClick={() => onEditRequest(request)}>Respond and update request</Button>}
       </div>
     </div>
