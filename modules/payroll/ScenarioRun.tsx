@@ -240,15 +240,23 @@ const issueActionForLabel = (label: string): Issue["action"] => {
   if (text.includes("schedule")) return "Review schedule";
   if (text.includes("overtime") || text.includes("ot approval"))
     return "Review overtime";
+  if (text.includes("payroll setup") || text.includes("approved time rules") || text.includes("holiday calendar"))
+    return "Review pay package";
   return "Fix attendance";
 };
 const issueLabel = (issues: string[]) => {
   const text = issues.join(" ").toLowerCase();
+  if (text.includes("approved time rules missing"))
+    return "Payroll setup — approved time rules missing";
+  if (text.includes("holiday calendar coverage"))
+    return "Payroll setup — holiday calendar coverage needs review";
   if (text.includes("clock-out") || text.includes("unpaired"))
     return "Missing punches";
   if (text.includes("lunch") || text.includes("break"))
     return "Missing or extended break";
-  if (text.includes("schedule")) return "Published schedule missing";
+  if (text.includes("missing or unpublished schedule") || text.includes("unpublished schedule"))
+    return "Published schedule — needs publication review";
+  if (text.includes("missing schedule")) return "Published schedule — missing";
   if (text.includes("ot ") || text.includes("overtime"))
     return "OT approval incomplete";
   if (text.includes("employment start"))
@@ -262,7 +270,7 @@ const issueLabel = (issues: string[]) => {
 const issueCategory = (item: Issue): IssueCategory => {
   const label = item.label.toLowerCase();
   if (label.includes("schedule")) return "Schedule";
-  if (/setup|salary source|employment start/.test(label))
+  if (/setup|salary source|employment start|approved time rules|holiday calendar/.test(label))
     return "Payroll setup";
   if (label.includes("overtime") || label.includes("ot approval"))
     return "Overtime";
