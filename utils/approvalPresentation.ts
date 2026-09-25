@@ -145,9 +145,7 @@ export const getOvertimeWeekDetails = (context: ApprovalContext): OvertimeWeekDe
     // emit a non-standard "year (day: n)" shape when fields are combined.
     // The underlying dates remain the configured Monday–Sunday week.
     const startLabel = weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const endLabel = weekEnd.toLocaleDateString('en-US', sameMonth
-      ? { day: 'numeric', year: 'numeric' }
-      : { month: 'short', day: 'numeric', year: 'numeric' });
+    const endLabel = weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     const startDay = weekStart.toLocaleDateString('en-US', { weekday: 'short' });
     const endDay = weekEnd.toLocaleDateString('en-US', { weekday: 'short' });
     dateRange = `${startLabel}–${endLabel}`;
