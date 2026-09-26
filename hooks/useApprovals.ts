@@ -141,6 +141,17 @@ export function useApprovals({ user }: UseApprovalsOptions) {
             skipManpower ? Promise.resolve(emptyResult) : manpowerQuery,
         ]);
 
+        const requestEmployeeIds = Array.from(new Set([
+            ...(leaveRes.data || []).map((row: any) => row.employee_id),
+            ...(wfhRes.data || []).map((row: any) => row.employee_id),
+            ...(otRes.data || []).map((row: any) => row.employee_id),
+        ].filter(Boolean)));
+        const positionByEmployee: Record<string, string> = {};
+        if (requestEmployeeIds.length) {
+            const { data: employeeRows } = await supabase.from('hris_users').select('id,position').in('id', requestEmployeeIds);
+            (employeeRows || []).forEach((row: any) => { if (row.position) positionByEmployee[row.id] = row.position; });
+        }
+
         const queryFailures = [
             ['Leave', leaveRes.error],
             ['WFH', wfhRes.error],
@@ -160,7 +171,8 @@ export function useApprovals({ user }: UseApprovalsOptions) {
             const mapped = leaveRes.data.map((row: any) => ({
                 id: row.id,
                 employeeId: row.employee_id,
-                employeeName: row.employee_name,
+            employeeName: row.employee_name,
+            employeePosition: positionByEmployee[row.employee_id] || undefined,
                 leaveTypeId: row.leave_type_id,
                 startDate: new Date(row.start_date),
                 endDate: new Date(row.end_date),
@@ -191,6 +203,7 @@ export function useApprovals({ user }: UseApprovalsOptions) {
                 id: row.id,
                 employeeId: row.employee_id,
                 employeeName: row.employee_name,
+                employeePosition: positionByEmployee[row.employee_id] || undefined,
                 date: row.date ? new Date(row.date) : new Date(),
                 endDate: row.end_date ? new Date(row.end_date) : undefined,
                 reason: row.reason,
@@ -213,6 +226,7 @@ export function useApprovals({ user }: UseApprovalsOptions) {
                     id: row.id,
                     employeeId: row.employee_id,
                     employeeName: row.employee_name,
+                    employeePosition: positionByEmployee[row.employee_id] || undefined,
                     date: row.date ? new Date(row.date) : new Date(),
                     startTime: row.start_time,
                     endTime: row.end_time,
