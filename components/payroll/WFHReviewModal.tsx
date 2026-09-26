@@ -107,6 +107,10 @@ const WFHReviewModal: React.FC<WFHReviewModalProps> = ({ isOpen, onClose, reques
                             <span className="block mt-1 text-lg font-bold text-gray-900 dark:text-white">{request.employeeName}</span>
                         </div>
                         <div>
+                            <span className="block text-xs uppercase text-gray-500 dark:text-gray-400 font-semibold">Position</span>
+                            <span className="block mt-1 text-lg font-bold text-gray-900 dark:text-white">{request.employeePosition || 'Position not recorded'}</span>
+                        </div>
+                        <div>
                             <span className="block text-xs uppercase text-gray-500 dark:text-gray-400 font-semibold">
                                 {hasEndDate ? 'From' : 'Requested Date'}
                             </span>

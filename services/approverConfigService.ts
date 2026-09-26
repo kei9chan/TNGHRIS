@@ -196,7 +196,8 @@ export const sendConditionalApprovalEmails = async (
   const week = requestType === 'overtime' ? getOvertimeWeekDetails(payload.context) : undefined;
   await Promise.all((payload.recipients || []).map(async (recipient: any) => {
     const weekCopy = week?.range ? ` Week covered: ${week.range}.` : '';
-    const message = `${payload.employeeName} submitted a ${payload.requestLabel} requiring your approval. Status: ${statusLabel}.${weekCopy} ${threshold} Open: ${openUrl}`;
+    const positionCopy = payload.employeePosition ? ` (${payload.employeePosition})` : '';
+    const message = `${payload.employeeName}${positionCopy} submitted a ${payload.requestLabel} requiring your approval. Status: ${statusLabel}.${weekCopy} ${threshold} Open: ${openUrl}`;
     const weekHtml = week?.range
       ? `<p><b>Week covered:</b> ${escapeHtml(week.range)}<br><span style="color:#64748b">${escapeHtml(week.workweekNote)}</span></p><p><b>Details:</b> ${escapeHtml(week.detail || threshold)}</p><p><b>Weekly OT:</b> ${escapeHtml(week.weeklyOt || '—')}</p><p><b>Weekly total:</b> ${escapeHtml(week.total || '—')}</p>`
       : `<p><b>Exception / reason:</b> ${escapeHtml(threshold)}</p>`;
@@ -207,7 +208,7 @@ export const sendConditionalApprovalEmails = async (
         to: recipient.email,
         subject: `[TNG HRIS] ${payload.requestLabel} requires your approval`,
         message,
-        html: `<div style="font-family:Arial,sans-serif;line-height:1.5"><h2>Approval required</h2><p><b>Employee:</b> ${escapeHtml(payload.employeeName)}</p><p><b>Request:</b> ${escapeHtml(payload.requestLabel)}</p><p><b>Dates / duration:</b> ${escapeHtml(payload.requestDates)}</p><p><b>Business unit / department:</b> ${escapeHtml(payload.businessUnit)} / ${escapeHtml(payload.department)}</p><p><b>Current step:</b> ${escapeHtml(currentStep)}</p><p><b>Status:</b> ${escapeHtml(statusLabel)}</p>${weekHtml}${managerStage && payload.context?.requiresBod ? '<p><b>Next step:</b> BOD approval</p>' : ''}${managerStage ? '' : '<p><b>Manager recommendation:</b> Approved — proceed to final review</p>'}<p><a href="${escapeHtml(openUrl)}" style="display:inline-block;background:#4f46e5;color:white;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">Open Request</a></p></div>`,
+        html: `<div style="font-family:Arial,sans-serif;line-height:1.5"><h2>Approval required</h2><p><b>Employee:</b> ${escapeHtml(payload.employeeName)}</p><p><b>Position:</b> ${escapeHtml(payload.employeePosition || 'Position not recorded')}</p><p><b>Request:</b> ${escapeHtml(payload.requestLabel)}</p><p><b>Dates / duration:</b> ${escapeHtml(payload.requestDates)}</p><p><b>Business unit / department:</b> ${escapeHtml(payload.businessUnit)} / ${escapeHtml(payload.department)}</p><p><b>Current step:</b> ${escapeHtml(currentStep)}</p><p><b>Status:</b> ${escapeHtml(statusLabel)}</p>${weekHtml}${managerStage && payload.context?.requiresBod ? '<p><b>Next step:</b> BOD approval</p>' : ''}${managerStage ? '' : '<p><b>Manager recommendation:</b> Approved — proceed to final review</p>'}<p><a href="${escapeHtml(openUrl)}" style="display:inline-block;background:#4f46e5;color:white;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">Open Request</a></p></div>`,
       }),
     });
     if (!response.ok) throw new Error(`Approval email failed for ${recipient.email}`);

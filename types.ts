@@ -115,6 +115,7 @@ export interface WFHRequest {
   id: string;
   employeeId: string;
   employeeName: string;
+  employeePosition?: string;
   date: Date;
   endDate?: Date;
   reason: string;
@@ -1432,6 +1433,7 @@ export interface OTRequest {
   id: string;
   employeeId: string;
   employeeName: string;
+  employeePosition?: string;
   date: Date;
   startTime: string;
   endTime: string;

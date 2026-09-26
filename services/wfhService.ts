@@ -8,6 +8,7 @@ type WfhRequestRow = {
   id: string;
   employee_id: string;
   employee_name: string;
+  position?: string | null;
   date: string;
   end_date?: string | null;
   reason?: string | null;
@@ -31,6 +32,7 @@ const mapWfhRequest = (row: WfhRequestRow): WFHRequest => ({
   id: row.id,
   employeeId: row.employee_id,
   employeeName: row.employee_name,
+  employeePosition: row.position || undefined,
   date: new Date(row.date),
   endDate: row.end_date ? new Date(row.end_date) : undefined,
   reason: row.reason || '',
