@@ -5,6 +5,7 @@ type OtRequestRow = {
   id: string;
   employee_id: string;
   employee_name: string;
+  position?: string | null;
   date: string;
   start_time: string;
   end_time: string;
@@ -30,6 +31,7 @@ const mapRow = (row: OtRequestRow): OTRequest => ({
   id: row.id,
   employeeId: row.employee_id,
   employeeName: row.employee_name,
+  employeePosition: row.position || undefined,
   date: row.date ? new Date(row.date) : new Date(),
   startTime: row.start_time,
   endTime: row.end_time,
