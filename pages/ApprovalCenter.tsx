@@ -34,9 +34,9 @@ import {
 } from '../utils/approvalPresentation';
 
 type Kind = ApprovalRequestKind;
-type EmployeeMeta = { employeeId?: string; businessUnitId?: string; businessUnit: string; departmentId?: string; department: string; active: boolean };
+type EmployeeMeta = { employeeId?: string; position?: string; businessUnitId?: string; businessUnit: string; departmentId?: string; department: string; active: boolean };
 type ApprovalItem = {
-  id: string; canonicalKey: string; kind: Kind; reference: string; employeeId?: string; employee: string; employeeCode?: string;
+  id: string; canonicalKey: string; kind: Kind; reference: string; employeeId?: string; employee: string; employeeCode?: string; position?: string;
   businessUnitId?: string; businessUnit: string; departmentId?: string; department: string;
   start: Date; end: Date; duration: string; status: string; currentStep: string; details?: string;
   requestStart?: Date; requestEnd?: Date; approvalStep?: string;
@@ -104,6 +104,7 @@ const ApprovalMobileCard: React.FC<{
       <div className="min-w-0"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${KIND_META[item.kind].badge}`}>{KIND_META[item.kind].title}</span><p className="mt-2 text-xs font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">{item.reference}</p><h3 className="break-words text-base font-bold text-slate-900 dark:text-white">{item.employee}</h3>{item.kind === 'offer' && <p className="mt-1 text-sm font-bold text-violet-700 dark:text-violet-300">Hiring for: {item.details || 'Position not recorded'}</p>}</div>
       {item.bulkSelectable && <label className="flex min-h-11 flex-shrink-0 items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-200"><input type="checkbox" aria-label={`Select ${item.reference} for bulk approval`} checked={selected} onChange={event => onSelect(event.target.checked)} /> Select</label>}
     </div>
+    {(item.kind === 'wfh' || item.kind === 'overtime') && <p className="mt-1 text-sm font-semibold text-slate-600 dark:text-slate-300">{item.position || 'Position not recorded'}</p>}
     <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.businessUnit} · {item.department}</p>
     {item.employeeCode && <p className="text-xs text-slate-500 dark:text-slate-400">Employee ID: {item.employeeCode}</p>}
     <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
@@ -197,7 +198,8 @@ export default function ApprovalCenter() {
     if (!user) return;
     let active = true;
     const load = async () => {
-      const { data, error } = await supabase.rpc('get_bod_schedule_workflow', { p_week: null });      if (!active) return;
+      const { data, error } = await supabase.rpc('get_bod_schedule_workflow', { p_week: null });
+      if (!active) return;
       if (error) { setSchedulePending([]); return; }
       setSchedulePending(Array.isArray(data?.pending) ? data.pending : []);
     };
@@ -226,10 +228,10 @@ export default function ApprovalCenter() {
       ...additional.pendingPayPackageApprovals.map(row => row.employeeId),
     ].filter(Boolean))) as string[];
     if (!ids.length) return setEmployeeMeta({});
-    supabase.from('hris_users').select('id,employee_id,business_unit_id,business_unit,department_id,department,status').in('id', ids).then(({ data, error }) => {
+    supabase.from('hris_users').select('id,employee_id,position,business_unit_id,business_unit,department_id,department,status').in('id', ids).then(({ data, error }) => {
       if (error) return setLoadError(`Employee scope data could not be loaded: ${error.message}`);
       setEmployeeMeta(Object.fromEntries((data || []).map((row: any) => [row.id, {
-        employeeId: row.employee_id, businessUnitId: row.business_unit_id,
+        employeeId: row.employee_id, position: row.position || undefined, businessUnitId: row.business_unit_id,
         businessUnit: row.business_unit || businessUnitLabels[row.business_unit_id] || 'Not assigned',
         departmentId: row.department_id, department: row.department || departmentLabels[row.department_id] || 'Not assigned',
         active: String(row.status || 'active').toLowerCase() === 'active',
@@ -253,13 +255,13 @@ export default function ApprovalCenter() {
       const overlap = approvals.pendingLeaveApprovals.some(leaveRow => leaveRow.employeeId === row.employeeId && new Date(leaveRow.startDate) <= requestEnd && new Date(leaveRow.endDate) >= requestStart);
       const exception = !meta.active ? 'Employee is inactive' : requestEnd < requestStart ? 'Request dates are invalid' : days > 31 ? 'Unusual duration' : overlap ? 'Overlapping leave request' : String(row.status) === 'WFH_FOR_TIMEKEEPING' ? 'Timekeeping verification requires individual review' : undefined;
       const requiresBod = row.approvalRoute === 'BOD_REQUIRED';
-      return { id: row.id, canonicalKey: `wfh:${row.id}:${row.status}`, kind: 'wfh', reference: `WFH-${String(row.id).slice(0, 8).toUpperCase()}`, employeeId: row.employeeId, employee: row.employeeName, employeeCode: meta.employeeId, businessUnitId: meta.businessUnitId, businessUnit: meta.businessUnit, departmentId: meta.departmentId, department: meta.department, start: submittedAt, end: requestEnd, requestStart, requestEnd, duration: `${days} day${days === 1 ? '' : 's'}`, status: String(row.status), currentStep: getApprovalStepLabel(row.status), approvalStep: getApprovalActionLabel(row.status), details: row.reason, reason: getTimeApprovalReason('wfh', row.approvalContext, row.approvalReason, requiresBod), exception, nextStep: getTimeApprovalNextStep(row.status, requiresBod), bulkSelectable: true, route: row.approvalRoute, approvalContext: row.approvalContext, reviewUrl: getApprovalReviewUrl('wfh', row.id) };
+      return { id: row.id, canonicalKey: `wfh:${row.id}:${row.status}`, kind: 'wfh', reference: `WFH-${String(row.id).slice(0, 8).toUpperCase()}`, employeeId: row.employeeId, employee: row.employeeName, employeeCode: meta.employeeId, position: meta.position, businessUnitId: meta.businessUnitId, businessUnit: meta.businessUnit, departmentId: meta.departmentId, department: meta.department, start: submittedAt, end: requestEnd, requestStart, requestEnd, duration: `${days} day${days === 1 ? '' : 's'}`, status: String(row.status), currentStep: getApprovalStepLabel(row.status), approvalStep: getApprovalActionLabel(row.status), details: row.reason, reason: getTimeApprovalReason('wfh', row.approvalContext, row.approvalReason, requiresBod), exception, nextStep: getTimeApprovalNextStep(row.status, requiresBod), bulkSelectable: true, route: row.approvalRoute, approvalContext: row.approvalContext, reviewUrl: getApprovalReviewUrl('wfh', row.id) };
     });
     const overtime: ApprovalItem[] = approvals.pendingOtApprovals.map(row => {
       const meta = metaFor(row.employeeId), start = new Date(row.submittedAt || row.date), requestStart = new Date(row.date);
       const exception = !meta.active ? 'Employee is inactive' : !String(row.reason || '').trim() ? 'Missing reason' : undefined;
       const requiresBod = row.approvalRoute === 'BOD_REQUIRED';
-      return { id: row.id, canonicalKey: `overtime:${row.id}:${row.status}`, kind: 'overtime', reference: `OT-${String(row.id).slice(0, 8).toUpperCase()}`, employeeId: row.employeeId, employee: row.employeeName, employeeCode: meta.employeeId, businessUnitId: meta.businessUnitId, businessUnit: meta.businessUnit, departmentId: meta.departmentId, department: meta.department, start, end: requestStart, requestStart, requestEnd: requestStart, duration: `${row.startTime || '—'}–${row.endTime || '—'}`, status: String(row.status), currentStep: getApprovalStepLabel(row.status), approvalStep: getApprovalActionLabel(row.status), details: row.reason, reason: getTimeApprovalReason('overtime', row.approvalContext, row.approvalReason, requiresBod), exception, nextStep: getTimeApprovalNextStep(row.status, requiresBod), bulkSelectable: true, route: row.approvalRoute, approvalContext: row.approvalContext, reviewUrl: getApprovalReviewUrl('overtime', row.id) };
+      return { id: row.id, canonicalKey: `overtime:${row.id}:${row.status}`, kind: 'overtime', reference: `OT-${String(row.id).slice(0, 8).toUpperCase()}`, employeeId: row.employeeId, employee: row.employeeName, employeeCode: meta.employeeId, position: meta.position, businessUnitId: meta.businessUnitId, businessUnit: meta.businessUnit, departmentId: meta.departmentId, department: meta.department, start, end: requestStart, requestStart, requestEnd: requestStart, duration: `${row.startTime || '—'}–${row.endTime || '—'}`, status: String(row.status), currentStep: getApprovalStepLabel(row.status), approvalStep: getApprovalActionLabel(row.status), details: row.reason, reason: getTimeApprovalReason('overtime', row.approvalContext, row.approvalReason, requiresBod), exception, nextStep: getTimeApprovalNextStep(row.status, requiresBod), bulkSelectable: true, route: row.approvalRoute, approvalContext: row.approvalContext, reviewUrl: getApprovalReviewUrl('overtime', row.id) };
     });
     const manpower: ApprovalItem[] = approvals.pendingManpowerApprovals.map(row => {
       const meta = metaFor(row.requestedBy), start = new Date(row.createdAt || row.date), exception = !meta.active ? 'Employee is inactive' : undefined;
@@ -396,7 +398,8 @@ export default function ApprovalCenter() {
     return true;
   }).sort((a, b) => filters.sort === 'newest' ? b.start.getTime() - a.start.getTime() : a.start.getTime() - b.start.getTime()), [items, filters]);
 
-  const activeGroupKinds = useMemo(() => GROUP_ORDER.filter(kind => filtered.some(item => item.kind === kind)), [filtered]);  const groups = useMemo(() => activeGroupKinds.map(kind => ({ kind, items: filtered.filter(item => item.kind === kind) })), [activeGroupKinds, filtered]);
+  const activeGroupKinds = useMemo(() => GROUP_ORDER.filter(kind => filtered.some(item => item.kind === kind)), [filtered]);
+  const groups = useMemo(() => activeGroupKinds.map(kind => ({ kind, items: filtered.filter(item => item.kind === kind) })), [activeGroupKinds, filtered]);
   const exceptionCount = items.filter(needsIndividualReview).length;
   const dueTodayCount = items.filter(item => dayAge(item.start) === 0).length;
   const overdueCount = items.filter(item => dayAge(item.start) >= 3).length;
@@ -493,7 +496,7 @@ export default function ApprovalCenter() {
                 const week = getOvertimeWeekDetails(item.approvalContext);
                 return <tr id={`approval-${item.id}`} key={item.canonicalKey} className={`border-t border-slate-200 align-top dark:border-slate-600 ${requestedItem === item.id ? 'bg-indigo-50 ring-1 ring-inset ring-indigo-300 dark:bg-indigo-950' : ''}`}>
                   <td className="px-4 py-4">{item.bulkSelectable && <input type="checkbox" aria-label={`Select ${item.reference} for bulk approval`} checked={selected.has(item.canonicalKey)} onChange={event => { const next = new Set(selected); event.target.checked ? next.add(item.canonicalKey) : next.delete(item.canonicalKey); setSelected(next); }} />}</td>
-                  <td className="px-4 py-4 font-semibold"><div className="text-xs font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">{item.reference}</div>{item.employee}<div className="text-xs font-normal text-slate-500 dark:text-slate-300">{item.kind === 'offer' ? `Hiring for: ${item.details || 'Position not recorded'}` : item.employeeCode || 'No employee ID'}</div></td>
+                  <td className="px-4 py-4 font-semibold"><div className="text-xs font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">{item.reference}</div>{item.employee}{(item.kind === 'wfh' || item.kind === 'overtime') && <div className="text-xs font-semibold text-slate-600 dark:text-slate-200">{item.position || 'Position not recorded'}</div>}<div className="text-xs font-normal text-slate-500 dark:text-slate-300">{item.kind === 'offer' ? `Hiring for: ${item.details || 'Position not recorded'}` : item.employeeCode || 'No employee ID'}</div></td>
                   <td className="px-4 py-4">{item.businessUnit}<div className="text-xs text-slate-500 dark:text-slate-300">{item.department}</div></td>
                   {isTimeGroup ? <>
                     <td className="min-w-48 px-4 py-4">
