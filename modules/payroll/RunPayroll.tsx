@@ -11,6 +11,7 @@ import {supabase} from '../../services/supabaseClient';
 import {Readiness,validCutoff} from './workspace';
 import NormalPayrollPeriodSelector,{ConfiguredPeriod} from './NormalPayrollPeriodSelector';
 import PreviousPaymentCard from './PreviousPaymentCard';
+import AttendanceImportApprovals from './AttendanceImportApprovals';
 import {payrollCycleForCutoff,formatPayrollDate} from './payrollCycle';
 import {downloadText} from './actualAttendanceImport';
 
@@ -82,6 +83,7 @@ function PayrollWorkspace({scope,setScope,from,to}:{key?:string;scope:string;set
   {step===0&&<>
    <ReadinessCard title="1. Schedules" status={readiness?`${readiness.publishedDays} of ${readiness.totalDays} employee-days published`:'Checking schedules'} ready={!!readiness&&readiness.totalDays>0&&readiness.publishedDays===readiness.totalDays}><Link className={button} to={`/payroll/timekeeping?week=${from}&source=payroll&businessUnit=${encodeURIComponent(unit?.name||'')}`}>Open Schedule Builder</Link><Link className={button} to="/payroll/import/schedules">Import schedules</Link></ReadinessCard>
    <ReadinessCard title="2. Attendance" status={time?pendingEmployees?`${pendingEmployees} employees need review`:`${people.size} employees ready for timekeeping review`:'Attendance readiness not yet checked'} ready={!!time&&!pendingEmployees&&people.size>0}>{canImportActualAttendance(user)&&<><Link className={`${button} bg-violet-600 !text-white`} to="/payroll/import-attendance">Import attendance</Link><Link className={button} to="/payroll/import-attendance">Enter manually</Link></>}<Link className={button} to="/payroll/attendance-readiness">Review & finalize timekeeping</Link></ReadinessCard>
+   {scope&&validCutoff(from,to)&&<AttendanceImportApprovals scope={scope} from={from} to={to} onApplied={()=>setRevision(x=>x+1)} key={`${scope}:${from}:${to}:${revision}`}/>}
    <ReadinessCard title="3. Pay packages" status={readiness?.payVisible?`${readiness.reviewedPayEmployees} of ${readiness.employees} employees have approved base-pay coverage`:'Package readiness requires compensation access'} ready={!!readiness?.payVisible&&readiness.employees>0&&readiness.reviewedPayEmployees===readiness.employees}><Link className={button} to="/payroll/pay-packages">View packages</Link></ReadinessCard>
    <details className={panel}><summary className="cursor-pointer text-lg font-bold">Additional records, if needed</summary><div className="mt-4 grid gap-3 sm:grid-cols-2">{[['Import leave opening balances','/payroll/import/leave-balances'],['Add or import leave taken','/payroll/import/leave-taken'],['Loans and authorized deductions','/payroll/import/deductions'],['Allowances and reimbursements','/payroll/import/additions'],['Service-charge allocations','/payroll/import/service-charge']].map(([label,path])=><Link className={button} key={label} to={path}>{label}</Link>)}</div></details>
   </>}
