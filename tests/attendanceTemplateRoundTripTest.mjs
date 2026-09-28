@@ -7,9 +7,25 @@ import JSZip from 'jszip';
 const dir=await fs.mkdtemp(path.join(process.cwd(),'node_modules/.attendance-template-test-'));
 try{
  const target=path.join(dir,'reader.mjs');await build({entryPoints:['modules/payroll/actualAttendanceImport.ts'],bundle:true,platform:'node',format:'esm',outfile:target,packages:'external'});
- const {readAttendanceFile}=await import(pathToFileURL(target));
- const original=await fs.readFile('public/templates/attendance-v3.xlsx');
- assert.deepEqual(Buffer.from((await fs.readFile('public/templates/attendance-v3.xlsx.b64','utf8')).trim(),'base64'),original);
+ const {readAttendanceFile,prefillAttendanceWorkbook,normalizeAttendance}=await import(pathToFileURL(target));
+ const current=await fs.readFile('public/templates/attendance-v4.xlsx');
+ assert.deepEqual(Buffer.from((await fs.readFile('public/templates/attendance-v4.xlsx.b64','utf8')).trim(),'base64'),current);
+ await assert.rejects(()=>readAttendanceFile(new File([current],'attendance-v4.xlsx'),'Bakebe – SM Aura'),/no attendance records/);
+ const prefilled=await prefillAttendanceWorkbook(Uint8Array.from(current).buffer,[{code:'00001',name:'Fixture Employee',businessUnit:'Bakebe – SM Aura',date:'2026-08-27',status:'Rest day'}]);
+ const filledRows=await readAttendanceFile(new File([prefilled],'prefilled.xlsx'),'Bakebe – SM Aura');
+ assert.equal(filledRows[0].employeeId,'00001');assert.equal(filledRows[0].dayStatus,'Rest day');assert.equal(filledRows[0].events.length,0);
+ for(const [classification,canonical] of [['Worked','Workday'],['Absent','Absent (review)'],['Sick or unable to report','Absent (review)'],['Approved leave','Absent (review)'],['Leave without pay','Absent (review)'],['Suspension','Suspended'],['Regular holiday','Legal holiday'],['Special nonworking day','Legal holiday'],['For review','Missing punches (review)']]){
+  const cells=['00001','Fixture Employee','Bakebe – SM Aura','2026-08-27',classification,'','','','','','','None',''];
+  if(classification==='Worked')cells[5]='2026-08-27 09:00';
+  const result=normalizeAttendance([cells],'Bakebe – SM Aura')[0];assert.equal(result.dayStatus,canonical);assert.equal(result.classification,classification);
+ }
+ const currentZip=await JSZip.loadAsync(current);const currentEntry='xl/worksheets/sheet2.xml';
+ const currentXml=await currentZip.file(currentEntry).async('string');
+ const populatedRow='<x:row r="2"><x:c r="A2" t="str"><x:v>00001</x:v></x:c><x:c r="B2" t="str"><x:v>Fixture Employee</x:v></x:c><x:c r="C2" t="str"><x:v>Bakebe – SM Aura</x:v></x:c><x:c r="D2" t="str"><x:v>2026-08-27</x:v></x:c><x:c r="E2" t="str"><x:v>Rest day</x:v></x:c></x:row>';
+ currentZip.file(currentEntry,currentXml.replace(/<x:row r="2"[\s\S]*?<\/x:row>/,populatedRow));
+ const currentRows=await readAttendanceFile(new File([await currentZip.generateAsync({type:'uint8array'})],'prefilled-v4.xlsx'),'Bakebe – SM Aura');
+ assert.equal(currentRows[0].employeeId,'00001');assert.equal(currentRows[0].dayStatus,'Rest day');assert.equal(currentRows[0].events.length,0);
+ const original=Buffer.from((await fs.readFile('public/templates/attendance-v3.xlsx.b64','utf8')).trim(),'base64');
  await assert.rejects(()=>readAttendanceFile(new File([original],'attendance.xlsx'),'Bakebe – SM Aura'),/no attendance records/);
  // Isolated fixture mutation of the exported template; never uploaded to a server.
  const zip=await JSZip.loadAsync(original);const entry='xl/worksheets/sheet2.xml';
