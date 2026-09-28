@@ -4,7 +4,7 @@ import {ScheduleTask} from '../../modules/scheduleCompliance';
 
 type Entry = {date: string; templateId: string | null; restDay?: boolean; name?: string; start?: string; end?: string; flexible?: boolean; paidMinutes?: number};
 type Submission = {id: string; version: number; week: string; status: string; reason: string; review_reason?: string; entries: Entry[]; schedule: Entry[]; employeeName: string};
-type Workflow = {isBod: boolean; isGm?: boolean; managerRole?: string; needsResubmission?: boolean; eligible: boolean; managerName: string; week: string; deadline: string; keepableDates?: string[]; task?: {exempt: boolean; complete: boolean; missingDates: string[]}; submission?: Submission; templates: {id: string; name: string; start: string; end: string; flexible?: boolean; paidMinutes?: number}[]; pending: Submission[]};
+type Workflow = {isBod: boolean; isGm?: boolean; isBuManager?: boolean; managerRole?: string; needsResubmission?: boolean; eligible: boolean; managerName: string; week: string; deadline: string; keepableDates?: string[]; task?: {exempt: boolean; complete: boolean; missingDates: string[]}; submission?: Submission; templates: {id: string; name: string; start: string; end: string; flexible?: boolean; paidMinutes?: number}[]; pending: Submission[]};
 const box = 'mb-5 rounded-2xl border border-slate-300 bg-white p-5 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white';
 const input = 'min-h-11 w-full rounded-lg border border-slate-400 bg-white p-2 text-slate-900 dark:bg-slate-900 dark:text-white';
 const button = 'min-h-11 rounded-lg bg-violet-600 px-4 py-2 font-semibold text-white disabled:opacity-50';
@@ -77,7 +77,7 @@ export default function BodScheduleWorkflow() {
   }
   setRevision(v=>v+1);setBulkBusy(false);
  }
- const approver=data?.managerRole==='GM'?'GM':'BOD';
+ const approver=data?.managerRole==='GM'?'GM':data?.managerRole==='BUM'?'business unit manager':'BOD';
  const keepableDates=new Set(data?.keepableDates||[]);
  const missingDates=entries.filter(entry=>!entry.restDay&&!entry.templateId&&!keepableDates.has(entry.date)).map(entry=>entry.date);
  async function submitSchedule() {
@@ -122,7 +122,7 @@ export default function BodScheduleWorkflow() {
     <div className="flex gap-3"><button type="button" disabled={busy || missingDates.length>0} className={button} onClick={()=>void submitSchedule()}>{busy?'Submitting…':`Submit for ${approver} approval`}</button><button type="button" disabled={busy} className="underline" onClick={()=>setOpen(false)}>Close</button></div>
    </div>}
   </section>}
-  {data?.isGm&&!data.isBod&&<section className={box}><h2 className="text-xl font-bold">Review your direct reports’ schedules</h2><p className="mt-2">Employees who report directly to you prepare and submit their own schedules. Approve or return their submissions here; schedules take effect only after approval.</p>{!data.pending.length&&<p className="mt-2">No schedules are awaiting your approval.</p>}</section>}
+  {(data?.isGm||data?.isBuManager)&&!data.isBod&&<section className={box}><h2 className="text-xl font-bold">Review your direct reports’ schedules</h2><p className="mt-2">Eligible managers who report directly to you prepare and submit their own schedules. Approve or return their submissions here; schedules take effect only after approval.</p>{!data.pending.length&&<p className="mt-2">No schedules are awaiting your approval.</p>}</section>}
   {!!data?.pending.length&&<section id="schedule-approvals" className={box}>
    <div className="flex flex-wrap items-start justify-between gap-4">
     <div><h2 className="text-xl font-bold">Employee schedules awaiting your approval · {data.pending.length}</h2><p className="mt-2">The schedule summary and approval action are shown here—no dropdown is required.</p></div>
