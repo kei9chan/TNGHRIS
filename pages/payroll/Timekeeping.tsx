@@ -27,7 +27,7 @@ import LiveShiftStatusDashboard from '../../components/payroll/LiveShiftStatusDa
 import { logActivity } from '../../services/auditService';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
-import {canImportActualAttendance,canViewAllScheduleUnits,scopeBusinessUnitId,scopeLabel} from '../../modules/payroll/scheduleScope';
+import {canImportActualAttendance,canViewAllScheduleUnits,presetBusinessUnitId,scopeBusinessUnitId,scopeLabel} from '../../modules/payroll/scheduleScope';
 
 // --- Helper Types ---
 interface Gap {
@@ -318,6 +318,8 @@ const Timekeeping: React.FC = () => {
         return businessUnits.find(bu => bu.id === user.businessUnitId) ?? businessUnits.find(bu => bu.name === user.businessUnit);
     }, [user, businessUnits]);
     const userBuId = useMemo(() => userBu?.id, [userBu]);
+    const [chosenPresetUnit,setChosenPresetUnit]=useState('');
+    const presetUnitId=presetBusinessUnitId(selectedBuId,chosenPresetUnit,userBuId,accessibleBus);
 
     // Team Manager Logic
     const isTeamManager = useMemo(() => {
@@ -920,7 +922,7 @@ const Timekeeping: React.FC = () => {
         if (!isPresetEditable) return;
         const resolvedBuId = templateData.businessUnitId && templateData.businessUnitId !== 'all'
             ? templateData.businessUnitId
-            : (selectedBuId && selectedBuId !== 'all' ? selectedBuId : null);
+            : presetUnitId;
         if (!resolvedBuId) { setToastInfo({show:true,message:'Select a business unit before creating a preset.'}); return; }
         const payload = {
             created_by: user?.id,
@@ -1123,7 +1125,7 @@ const Timekeeping: React.FC = () => {
         return buId ? templates.filter(t => t.canUse !== false && t.businessUnitId === buId) : [];
     }, [templates, drawerState.employee]);
 
-    const presetTemplates = useMemo(() => selectedBuId === 'all' ? [] : templates.filter(t => t.canUse !== false && t.businessUnitId === selectedBuId), [templates, selectedBuId]);
+    const presetTemplates = useMemo(() => presetUnitId ? templates.filter(t => t.canUse !== false && t.businessUnitId === presetUnitId) : [], [templates, presetUnitId]);
 
     const buNameForModal = businessUnits.find(b => b.id === selectedBuId)?.name;
     
@@ -1247,7 +1249,13 @@ const Timekeeping: React.FC = () => {
                 <Card title="Status Presets" className="mb-4"><div className="flex flex-wrap gap-3">{statusPresets.filter(p=>p.tag!=='suspended'||isHrPresetEditor||isSuperAdmin).map(p=><button key={p.tag} draggable={isScheduleEditable} disabled={!isScheduleEditable} onDragStart={e=>e.dataTransfer.setData('application/x-tng-status',p.tag)} onClick={()=>setSelectedStatus(selectedStatus===p.tag?null:p.tag)} aria-pressed={selectedStatus===p.tag} className={`min-h-12 rounded-lg border px-4 font-semibold ${p.color} ${selectedStatus===p.tag?'ring-2 ring-violet-600':''}`}>{p.label}</button>)}</div><p className="mt-3 text-sm">{selectedStatus?'Select an employee day to apply this status, or click the selected status to cancel.':'Drag a status onto a day, or select it and tap the day. Skeletal and Absence keep the expected working hours. Approved paid/unpaid leave appears automatically.'}</p><a className="mt-3 inline-block min-h-11 underline" href="/payroll/attendance-review">Attendance flags & review settings</a></Card>
             )}
             {isPresetEditable && (<Card title="Shift Presets">
-                    <p className="text-sm text-slate-600 dark:text-slate-300">{selectedBuId === 'all' ? 'Choose a business unit to create or view its presets.' : presetTemplates.length === 0 ? 'No accessible presets for this business unit yet.' : 'Your presets and those shared by your direct manager. Admin and HR can manage presets for support.'}</p>
+                    {selectedBuId==='all'&&<label className="mb-3 block max-w-sm text-sm font-semibold">Business unit for shift presets
+                        <select aria-label="Business unit for shift presets" value={presetUnitId||''} onChange={event=>setChosenPresetUnit(event.target.value)} className="mt-2 block min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 dark:bg-slate-900">
+                            {!presetUnitId&&<option value="">Select a business unit</option>}
+                            {accessibleBus.map(unit=><option key={unit.id} value={unit.id}>{unit.name}</option>)}
+                        </select>
+                    </label>}
+                    <p className="text-sm text-slate-600 dark:text-slate-300">{!presetUnitId ? 'Choose a business unit to create or view its presets.' : presetTemplates.length === 0 ? 'No accessible presets for this business unit yet.' : 'Your presets and those shared by your direct manager. Admin and HR can manage presets for support.'}</p>
                     <div className="flex flex-wrap gap-x-2 gap-y-4 pt-8">
                         {presetTemplates.map(template => {
                             const tooltip = template.isFlexible
@@ -1275,7 +1283,7 @@ const Timekeeping: React.FC = () => {
                         })}
                     </div>
                     <div className="mt-4">
-                        <Button disabled={selectedBuId === 'all'} onClick={() => setTemplateModalState({ open: true, template: null })}>
+                        <Button disabled={!presetUnitId} onClick={() => setTemplateModalState({ open: true, template: null })}>
                             + Add New Preset
                         </Button>
                     </div>
@@ -1398,7 +1406,7 @@ const Timekeeping: React.FC = () => {
                 onClose={() => setTemplateModalState({ open: false, template: null })}
                 template={templateModalState.template}
                 onSave={handleSaveTemplate}
-                businessUnitId={selectedBuId}
+                businessUnitId={presetUnitId||''}
             />
 
             {operatingHours && (
