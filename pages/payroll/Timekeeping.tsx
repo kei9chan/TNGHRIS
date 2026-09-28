@@ -470,7 +470,7 @@ const Timekeeping: React.FC = () => {
                 const snapshot=assignmentRes.data;
                 if(!operationRetry.current)setBuilderError('');
                 setBuilderContext(`${user?.id}:${employeeScope}:${toDateOnly(weekStart)}`);
-                setBuilderPeople(snapshot.people.map((row:any)=>({id:row.id,name:formatEmployeeName(row.full_name||'Employee'),role:row.role,status:'Active',businessUnitId:row.business_unit_id,businessUnit:row.business_unit,departmentId:row.department_id,department:row.department,position:row.position,reportsTo:row.reports_to,canEdit:row.can_edit===true} as User & {canEdit:boolean})));
+                setBuilderPeople(snapshot.people.map((row:any)=>({id:row.id,name:formatEmployeeName(row.full_name||'Employee'),role:row.role,status:row.status==='Active'?'Active':'Inactive',dateHired:row.date_hired?new Date(`${row.date_hired}T00:00:00`):undefined,endDate:row.end_date?new Date(`${row.end_date}T00:00:00`):undefined,businessUnitId:row.business_unit_id,businessUnit:row.business_unit,departmentId:row.department_id,department:row.department,position:row.position,reportsTo:row.reports_to,canEdit:row.can_edit===true} as User & {canEdit:boolean})));
                 setAssignments(snapshot.assignments.map(mapBuilderAssignment));
                 setDayStatuses(snapshot.statuses);
                 if (Array.isArray(snapshot.templates)) setTemplates(snapshot.templates.map(mapShiftTemplate));
@@ -639,7 +639,8 @@ const Timekeeping: React.FC = () => {
       const row=publicationRows.find(r=>r.employeeId===e.id);
       const saved=assignments.some(a=>a.employeeId===e.id&&toDateOnly(new Date(a.date))>=toDateOnly(weekStart)&&toDateOnly(new Date(a.date))<=toDateOnly(addDays(weekStart,6)))||dayStatuses.some(d=>d.employee_id===e.id&&d.work_date>=toDateOnly(weekStart)&&d.work_date<=toDateOnly(addDays(weekStart,6)));
       const failed=shiftSaveError&&retryShift?.employeeId===e.id&&toDateOnly(retryShift.date)>=toDateOnly(weekStart)&&toDateOnly(retryShift.date)<=toDateOnly(addDays(weekStart,6));
-      return [e.id,failed||failedEmployees.includes(e.id)?'Save failed — Retry':!builderIsCurrent||builderLoading||publicationLoading?'Checking saved schedule…':row?.pending?'Submitted':row?.published?'Published':(row as any)?.ready?'Ready for review':saved?'Draft saved':'Missing schedule'];
+      const state=failed||failedEmployees.includes(e.id)?'Save failed — Retry':!builderIsCurrent||builderLoading||publicationLoading?'Checking saved schedule…':row?.pending?'Submitted':row?.published?'Published':(row as any)?.ready?'Ready for review':saved?'Draft saved':'Missing schedule';
+      return [e.id,e.status==='Inactive'?`Separated · ${state}`:state];
     }));
 
     const publicationDataKey=JSON.stringify([assignments.map(a=>[a.id,a.shiftTemplateId]),dayStatuses.map(d=>[d.id,d.revision])]);
@@ -756,6 +757,7 @@ const Timekeeping: React.FC = () => {
     useEffect(()=>{let active=true;const load=async()=>{const {data}=await supabase.rpc('get_attendance_review');if(active&&data)setFlaggedEmployees([...new Set<string>((data.flags??[]).filter((f:any)=>f.status==='review').map((f:any)=>f.employee_id))]);};void load();const t=setInterval(()=>{if(document.visibilityState==='visible')void load();},60000);return()=>{active=false;clearInterval(t);};},[user?.id]);
     const handleOpenDrawer = (employee: User, date: Date) => {
         if (!canEditEmployee(employee.id)||retryShift) return;
+        if ((employee.dateHired&&toDateOnly(date)<toDateOnly(employee.dateHired))||(employee.endDate&&toDateOnly(date)>toDateOnly(employee.endDate))) return;
         if(selectedStatus){void applyDayStatus(employee,date,selectedStatus);return;}
         // Special Check: If user is a manager (and lacks global edit rights), they can only edit their own team
         if (isTeamManager && !can('Timekeeping', Permission.Edit) && user && employee.department !== user.department && employee.reportsTo !== user.id) {
@@ -843,7 +845,7 @@ const Timekeeping: React.FC = () => {
     };
 
     const handleChangeShift = (assignment: ShiftAssignment) => {
-        const employee = employees.find(u => u.id === assignment.employeeId);
+        const employee = builderPeople.find(u => u.id === assignment.employeeId);
         if (employee) {
             handleCloseDetailModal();
             setTimeout(() => {

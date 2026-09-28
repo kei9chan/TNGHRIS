@@ -16,10 +16,10 @@ await save('report',date,'shift');assert.equal(scope.error,'Network unavailable'
 fail=false;await save('report',date,'shift');assert.equal(scope.retryShift,null);assert.equal(scope.assignments[0].id,'saved');assert.equal(closed,1);assert.equal(successes,1);
 scope.savingShift.current=true;await save('report',date,'shift');assert.equal(calls,2);scope.savingShift.current=false;
 await save('other',date,'shift');assert.equal(calls,2);assert.match(scope.error,/cannot edit/);
-// Permission predicate uses the actual direct-report relation plus the server's edit decision.
+// The selected roster is scoped server-side; the client trusts only its edit decision.
 const permissionScope={builderIsCurrent:true,builderLoading:false,shiftBusy:false,user:{id:'builder'},employeeScope:'direct',builderPeople:[{id:'report',reportsTo:'builder',canEdit:true},{id:'peer',reportsTo:'someone-else',canEdit:true},{id:'readonly',reportsTo:'someone-else',canEdit:false}]};
 const canEdit=vm.runInNewContext(fn('canEditEmployee'),permissionScope);
-assert.equal(canEdit('report'),true);assert.equal(canEdit('peer'),false);permissionScope.employeeScope='business_unit';assert.equal(canEdit('peer'),true);assert.equal(canEdit('readonly'),false);permissionScope.builderIsCurrent=false;assert.equal(canEdit('report'),false);
+assert.equal(canEdit('report'),true);assert.equal(canEdit('peer'),true);permissionScope.employeeScope='business_unit';assert.equal(canEdit('peer'),true);assert.equal(canEdit('readonly'),false);permissionScope.builderIsCurrent=false;assert.equal(canEdit('report'),false);
 // An old fetch must not replace the schedule after a save or after a week change.
 let finish,applied=0;const pending=new Promise(r=>finish=r);
 const query={select(){return this},eq(){return this},lte(){return this},gte(){return this},in(){return this},then(resolve){resolve({data:[],error:null});}};

@@ -55,6 +55,9 @@ const RoleViewTable: React.FC<RoleViewTableProps> = ({
                 </div>
             </td>
             {weekDates.map(date => {
+                const workDate=dateKey(date);
+                const employed=(!employee.dateHired||dateKey(employee.dateHired)<=workDate)&&(!employee.endDate||dateKey(employee.endDate)>=workDate);
+                if(!employed)return <td key={date.toISOString()} className="px-2 py-2 align-top bg-slate-50 text-center text-xs text-slate-500 dark:bg-slate-900">Outside employment dates</td>;
                 const assignment = assignments.find(a => a.employeeId === employee.id && new Date(a.date).toDateString() === date.toDateString());
                 const suggestion = suggestedAssignments.find(a => a.employeeId === employee.id && new Date(a.date).toDateString() === date.toDateString());
                 const leave=leaveForDay(leaves,employee.id,date);

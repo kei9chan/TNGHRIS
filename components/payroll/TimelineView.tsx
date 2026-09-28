@@ -86,6 +86,9 @@ const TimelineView: React.FC<TimelineViewProps> = ({ dayStatuses,leaves,onStatus
 
                         {/* Shift Rows */}
                         {employees.map(employee => {
+                            const workDate=dateKey(date);
+                            const employed=(!employee.dateHired||dateKey(employee.dateHired)<=workDate)&&(!employee.endDate||dateKey(employee.endDate)>=workDate);
+                            if(!employed)return <div key={employee.id} className="h-16 border-b border-r bg-slate-100 p-3 text-xs text-slate-500 dark:bg-slate-900">Outside employment dates</div>;
                             const isEditable=globalEditable&&(canEditEmployee?.(employee.id)??true);
                             const assignment = assignments.find(a => a.employeeId === employee.id && new Date(a.date).toDateString() === date.toDateString());
                             const leave=leaveForDay(leaves,employee.id,date);
