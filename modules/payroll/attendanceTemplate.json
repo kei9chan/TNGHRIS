@@ -1,6 +1,6 @@
 {
   "type": "attendance",
-  "version": 2,
+  "version": 3,
   "title": "Actual daily attendance",
   "meaning": "One employee and work date per row. Select a day status, then enter actual punches only when recorded. Missing punches and absences require review; do not guess times.",
   "fields": [
@@ -13,11 +13,13 @@
     {"label":"Break end date/time","key":"breakEnd","format":"yyyy-mm-dd hh:mm","guide":"Actual break end, if recorded. Explicit next-day date for overnight breaks."},
     {"label":"Clock-out date/time","key":"clockOut","format":"yyyy-mm-dd hh:mm","guide":"Actual clock-out with explicit end date. A late clock-out is not automatic approved overtime."},
     {"label":"Source reference (optional)","key":"reference","format":"@","guide":"Reference to the original clock export or attendance evidence. Keep as text."},
-    {"label":"Notes (optional)","key":"notes","format":"@","guide":"Explain missing punches or corrections requiring review. Do not enter formulas."}
+    {"label":"Notes (optional)","key":"notes","format":"@","guide":"Explain missing punches or corrections requiring review. Do not enter formulas."},
+    {"label":"Needs review (optional)","key":"reviewRequest","format":"@","choices":["None","Missing punch","Absence","Rest-day work","Holiday work","Suspension","Worked lunch","Overtime","Other"],"guide":"Choose an issue for HR Manager and BOD to review. The choice does not approve paid leave, overtime, deductions, or a schedule change."},
+    {"label":"Review explanation (optional)","key":"reviewExplanation","format":"@","guide":"Explain the selected issue or point to its approved source request. The original attendance evidence remains unchanged."}
   ],
   "samples": [
-    ["DEMO-001","Bakebe – SM Aura","2026-08-26","Workday","2026-08-26 09:00","2026-08-26 12:00","2026-08-26 13:00","2026-08-26 18:00","Example only","Use actual HRIS IDs in Data Entry"],
-    ["DEMO-001","Bakebe – SM Aura","2026-08-27","Rest day","","","","","Example only","No punches on an existing rest day"],
-    ["DEMO-002","Bakebe – SM Aura","2026-08-28","Workday","2026-08-28 22:00","2026-08-29 02:00","2026-08-29 03:00","2026-08-29 07:00","Example only","Overnight session uses explicit next-day dates"]
+    ["DEMO-001","Bakebe – SM Aura","2026-08-26","Workday","2026-08-26 09:00","2026-08-26 12:00","2026-08-26 13:00","2026-08-26 18:00","Example only","Use actual HRIS IDs in Data Entry","None",""],
+    ["DEMO-001","Bakebe – SM Aura","2026-08-27","Rest day","","","","","Example only","No punches on an existing rest day","None",""],
+    ["DEMO-002","Bakebe – SM Aura","2026-08-28","Workday","2026-08-28 22:00","2026-08-29 02:00","2026-08-29 03:00","2026-08-29 07:00","Example only","Overnight session uses explicit next-day dates","Overtime","Check approved request and duration"]
   ]
 }
