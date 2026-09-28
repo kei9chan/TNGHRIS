@@ -1,13 +1,14 @@
 {
   "type": "attendance",
-  "version": 3,
+  "version": 4,
   "title": "Actual daily attendance",
   "meaning": "One employee and work date per row. Select a day status, then enter actual punches only when recorded. Missing punches and absences require review; do not guess times.",
   "fields": [
     {"label":"Employee ID*","key":"employeeId","required":true,"format":"@","guide":"Actual HRIS Employee ID. Keep this cell as text to preserve leading zeros. DEMO IDs are rejected."},
+    {"label":"Employee name (reference only)","key":"employeeName","format":"@","guide":"Prefilled from the HRIS directory for your reference. Employee ID determines the record; do not substitute a name for the ID."},
     {"label":"Business unit*","key":"businessUnit","required":true,"format":"@","guide":"Exact business-unit name shown in the selected import scope."},
     {"label":"Work date*","key":"workDate","required":true,"format":"yyyy-mm-dd","guide":"Shift's work date. Use a real Excel date or ISO YYYY-MM-DD, inside the selected cutoff."},
-    {"label":"Day status*","key":"dayStatus","required":true,"format":"@","choices":["Workday","Rest day","Legal holiday","Company holiday","No scheduled work","Absent (review)","Missing punches (review)","Suspended"],"guide":"Choose Workday for actual punches. Rest day, No scheduled work, holidays, and Suspended are no-punch statuses and must agree with the saved roster/authorizations. Absent and Missing punches remain for review and do not authorize deductions."},
+    {"label":"Day status*","key":"dayStatus","required":true,"format":"@","choices":["Worked","Rest day","Absent","Sick or unable to report","Approved leave","Leave without pay","Suspension","Regular holiday","Special nonworking day","For review","Workday","Legal holiday","Company holiday","No scheduled work","Absent (review)","Missing punches (review)","Suspended"],"guide":"Choose the plain-language day classification. Worked needs actual punches. Rest day needs a saved roster. Approved leave, suspension and holiday require separate authorized records; selecting them here never grants pay or leave. For review and missing punches remain unresolved until checked."},
     {"label":"Clock-in date/time","key":"clockIn","format":"yyyy-mm-dd hh:mm","guide":"Actual clock-in. Use a real Excel date/time or YYYY-MM-DD HH:mm. Asia/Manila."},
     {"label":"Break start date/time","key":"breakStart","format":"yyyy-mm-dd hh:mm","guide":"Actual break start, if recorded. Leave missing evidence blank for review."},
     {"label":"Break end date/time","key":"breakEnd","format":"yyyy-mm-dd hh:mm","guide":"Actual break end, if recorded. Explicit next-day date for overnight breaks."},
@@ -18,8 +19,8 @@
     {"label":"Review explanation (optional)","key":"reviewExplanation","format":"@","guide":"Explain the selected issue or point to its approved source request. The original attendance evidence remains unchanged."}
   ],
   "samples": [
-    ["DEMO-001","Bakebe – SM Aura","2026-08-26","Workday","2026-08-26 09:00","2026-08-26 12:00","2026-08-26 13:00","2026-08-26 18:00","Example only","Use actual HRIS IDs in Data Entry","None",""],
-    ["DEMO-001","Bakebe – SM Aura","2026-08-27","Rest day","","","","","Example only","No punches on an existing rest day","None",""],
-    ["DEMO-002","Bakebe – SM Aura","2026-08-28","Workday","2026-08-28 22:00","2026-08-29 02:00","2026-08-29 03:00","2026-08-29 07:00","Example only","Overnight session uses explicit next-day dates","Overtime","Check approved request and duration"]
+    ["DEMO-001","Example Employee","Bakebe – SM Aura","2026-08-26","Workday","2026-08-26 09:00","2026-08-26 12:00","2026-08-26 13:00","2026-08-26 18:00","Example only","Use actual HRIS IDs in Data Entry","None",""],
+    ["DEMO-001","Example Employee","Bakebe – SM Aura","2026-08-27","Rest day","","","","","Example only","No punches on an existing rest day","None",""],
+    ["DEMO-002","Example Employee","Bakebe – SM Aura","2026-08-28","Workday","2026-08-28 22:00","2026-08-29 02:00","2026-08-29 03:00","2026-08-29 07:00","Example only","Overnight session uses explicit next-day dates","Overtime","Check approved request and duration"]
   ]
 }
