@@ -13,11 +13,11 @@ await db.exec(`create function private.attendance_schedule(uuid,date) returns js
  select jsonb_build_object('published',current_setting('test.published',true)='yes',
    'publicationId','00000000-0000-4000-8000-000000000099','version',2,'entries','[{"kind":"rest"}]'::jsonb)$$;`);
 await db.exec(`create table auth.users(id uuid primary key);
- insert into auth.users values('00000000-0000-4000-8000-000000000001'),('00000000-0000-4000-8000-000000000006'),('00000000-0000-4000-8000-000000000007');
+ insert into auth.users values('00000000-0000-4000-8000-000000000001'),('00000000-0000-4000-8000-000000000006'),('00000000-0000-4000-8000-000000000007'),('00000000-0000-4000-8000-000000000008');
  alter table public.hris_users add column auth_user_id uuid;
  create function public.has_active_role(text) returns boolean language sql stable as $$
-  select ($1='HR Manager' and current_setting('test.actor')='00000000-0000-4000-8000-000000000006')
-  or ($1='Board of Director' and current_setting('test.actor')='00000000-0000-4000-8000-000000000007')$$;
+  select ($1='HR Manager' and current_setting('test.actor') in('00000000-0000-4000-8000-000000000006','00000000-0000-4000-8000-000000000008'))
+  or ($1='Board of Director' and current_setting('test.actor') in('00000000-0000-4000-8000-000000000007','00000000-0000-4000-8000-000000000008'))$$;
  create table public.payroll_time_rules(id uuid primary key default gen_random_uuid(),scope_id uuid,effective_from date,effective_to date,config jsonb,source_ref text,approved_by uuid);
  create table public.payroll_time_audit(scope_id uuid,actor_id uuid,action text,record_id uuid,reason text);
  create table private.payroll_actual_days(scope_id uuid,employee_id uuid,work_date date,batch_id uuid,source_row int,day_status text,events jsonb,updated_at timestamptz default now(),primary key(scope_id,employee_id,work_date));`);
@@ -26,6 +26,7 @@ const final=fs.readFileSync('supabase/migrations/20260928180000_attendance_impor
 await db.exec(final.slice(final.indexOf('-- Preserve all the existing validation'),final.indexOf("notify pgrst,'reload schema';")));
 await db.exec(fs.readFileSync('supabase/migrations/20260928210000_payroll_attendance_import_approval.sql','utf8').replace("notify pgrst,'reload schema';",''));
 await db.exec(fs.readFileSync('supabase/migrations/20260929060500_attendance_change_review_snapshot.sql','utf8').replace("notify pgrst,'reload schema';",''));
+await db.exec(fs.readFileSync('supabase/migrations/20260929074500_bod_attendance_dual_role_route.sql','utf8').replace("notify pgrst,'reload schema';",''));
 const scope='00000000-0000-4000-8000-000000000002';
 const row={employeeId:'00001',businessUnit:'Fixture',workDate:'2026-08-29',dayStatus:'Workday',events:[{type:'ClockIn',timestamp:'2026-08-29T09:00:00+08:00'},{type:'ClockOut',timestamp:'2026-08-29T18:00:00+08:00'}],reviewRequest:'Overtime',reviewExplanation:'Review requested time',sourceRow:2};
 const args=[scope,'2026-08-26','2026-09-10','fixture-v3.xlsx',JSON.stringify([row])];
@@ -76,5 +77,11 @@ const another={...row,workDate:'2026-08-30',events:[{type:'ClockIn',timestamp:'2
 await assert.rejects(()=>db.query('select public.submit_actual_attendance_import($1,$2,$3,$4,$5)',[scope,'2026-08-26','2026-09-10','invalid.xlsx',JSON.stringify([another])]),/supported Needs review/);
 const old=await db.query('select public.import_actual_attendance($1,$2,$3,$4,$5,true) result',[scope,'2026-08-26','2026-09-10','old-client.xlsx',JSON.stringify([{...another,reviewRequest:'None'}])]);
 assert.equal(old.rows[0].result.status,'pending_hr_manager');assert.equal(await count(),1);
+await db.exec("set test.actor='00000000-0000-4000-8000-000000000008'");
+const dual={...row,workDate:'2026-09-02',events:[{type:'ClockIn',timestamp:'2026-09-02T09:00:00+08:00'},{type:'ClockOut',timestamp:'2026-09-02T18:00:00+08:00'}]};
+const bothRoles=(await db.query('select public.submit_actual_attendance_import($1,$2,$3,$4,$5) result',[scope,'2026-08-26','2026-09-10','dual-role.xlsx',JSON.stringify([dual])])).rows[0].result;
+assert.equal(bothRoles.status,'pending_hr_manager');await assert.rejects(()=>decide(bothRoles.reviewId,'approve'),/separate reviewer/);
+await db.exec("set test.actor='00000000-0000-4000-8000-000000000006'");assert.equal((await decide(bothRoles.reviewId,'approve')).status,'pending_bod');
+await db.exec("set test.actor='00000000-0000-4000-8000-000000000007'");assert.equal((await decide(bothRoles.reviewId,'approve')).status,'approved');
 await db.close();
 console.log('PASS: staff submission, distinct HR and BOD reviews, final selected source, no direct legacy confirmation, dropdown validation and duplicate decisions.');
