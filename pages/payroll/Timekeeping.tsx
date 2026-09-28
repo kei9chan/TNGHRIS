@@ -631,7 +631,9 @@ const Timekeeping: React.FC = () => {
       (!requestedEmployee||e.id===requestedEmployee)&&
       !clockingExemptEmployeeIds.includes(e.id)),[builderIsCurrent,builderPeople,employeeScope,selectedBuId,departmentFilter,requestedEmployee,clockingExemptEmployeeIds]);
     const canEditEmployee=(id:string)=>builderIsCurrent&&!builderLoading&&!shiftBusy&&builderPeople.some(e=>e.id===id&&e.canEdit);
-    const editableEmployees=employeesInBU.filter(e=>canEditEmployee(e.id));
+    // Use the server's roster permission, not a transient loading/busy flag.
+    // The bulk copy button handles loading separately so it never sends [].
+    const editableEmployees=employeesInBU.filter(e=>e.canEdit);
     const displayAssignments=retryShift&&shiftSaveError?[...assignments.filter(a=>!(a.employeeId===retryShift.employeeId&&toDateOnly(new Date(a.date))===toDateOnly(retryShift.date))),{id:'unsaved-selection',employeeId:retryShift.employeeId,date:retryShift.date,shiftTemplateId:retryShift.templateId,locationId:'OFFICE-MAIN'}]:assignments;
     const employeeStates=Object.fromEntries(employeesInBU.map(e=>{
       const row=publicationRows.find(r=>r.employeeId===e.id);
@@ -911,10 +913,13 @@ const Timekeeping: React.FC = () => {
     };
     const handleCopyWeek=(assignment:ShiftAssignment)=>runScheduleOperation('Schedule saved',[assignment.employeeId],()=>copyRemaining(assignment));
 
-    const copyWeek=(ids:string[])=>runScheduleOperation('Schedule saved',ids,async()=>{
+    const copyWeek=(ids:string[])=>{
+      if(!ids.length){setBuilderError('No editable employees are loaded for this view. Wait for schedules to finish loading or choose a team.');return;}
+      return runScheduleOperation('Schedule saved',ids,async()=>{
       const {error}=await supabase.rpc('copy_schedule_week_with_statuses',{p_employees:ids,p_week:toDateOnly(weekStart)});
       if(error)throw error;
-    });
+      });
+    };
     const handleCopyLastWeekSchedule=async(employeeId:string)=>{if(isScheduleEditable&&window.confirm('Copy last week’s shifts and recurring status tags over this employee’s current draft week?'))await copyWeek([employeeId]);};
     const handleCopyPreviousWeekAll=async()=>{if(isScheduleEditable&&window.confirm('Copy last week’s shifts and recurring status tags over the displayed employees’ current draft week?'))await copyWeek(editableEmployees.map(e=>e.id));};
 
@@ -1323,7 +1328,7 @@ const Timekeeping: React.FC = () => {
                         <div className="flex items-center space-x-4">
                             {isScheduleEditable && (
                                 <>
-                                    <Button variant="secondary" onClick={handleCopyPreviousWeekAll}>
+                                    <Button variant="secondary" disabled={builderLoading||shiftBusy||!!retryShift||!!operationRetry.current||!editableEmployees.length} onClick={handleCopyPreviousWeekAll}>
                                         Copy Last Week's Schedule
                                     </Button>
 
