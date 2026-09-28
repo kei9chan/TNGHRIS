@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { JobPost, JobPostStatus, JobRequisitionStatus, JobRequisition, BusinessUnit, RoleApplicationQuestion, RoleApplicationQuestionType, RoleDetails, RoleFAQ } from '../../types';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
@@ -41,11 +41,7 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
     const [starterTemplates, setStarterTemplates] = useState<StarterTemplate[]>([]);
     const [selectedStarterId, setSelectedStarterId] = useState('');
     const [starterTemplateError, setStarterTemplateError] = useState('');
-    
-    // Searchable Requisition State
-    const [reqSearchTerm, setReqSearchTerm] = useState('');
-    const [isReqDropdownOpen, setIsReqDropdownOpen] = useState(false);
-    const reqWrapperRef = useRef<HTMLDivElement>(null);
+    const [validationError, setValidationError] = useState('');
 
     const accessibleBus = useMemo(() => getAccessibleBusinessUnits(businessUnits), [getAccessibleBusinessUnits, businessUnits]);
     const accessibleBuIds = useMemo(() => new Set(accessibleBus.map(b => b.id)), [accessibleBus]);
@@ -71,15 +67,7 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
             setRoleImageUploadError('');
             setSelectedStarterId('');
             setStarterTemplateError('');
-
-            // Initialize search term if a requisition is already selected
-            if (initialData.requisitionId) {
-                const r = jobRequisitions.find(req => req.id === initialData.requisitionId);
-                setReqSearchTerm(r ? `${r.reqCode}: ${r.title}` : '');
-            } else {
-                setReqSearchTerm('');
-            }
-            setIsReqDropdownOpen(false);
+            setValidationError('');
         }
     }, [jobPost, isOpen]);
 
@@ -114,16 +102,8 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
         return () => { cancelled = true; };
     }, [isOpen, jobPost]);
 
-    // Sync search term when requisitions load after opening
     useEffect(() => {
-        if (isOpen && current.requisitionId && !reqSearchTerm) {
-            const r = jobRequisitions.find(req => req.id === current.requisitionId);
-            if (r) setReqSearchTerm(`${r.reqCode}: ${r.title}`);
-        }
-    }, [jobRequisitions, current.requisitionId, isOpen, reqSearchTerm]);
-
-    useEffect(() => {
-        if (current.requisitionId) {
+        if (!jobPost && current.requisitionId) {
             const requisition = approvedRequisitions.find(r => r.id === current.requisitionId);
             if (requisition) {
                 setCurrent(prev => ({
@@ -133,51 +113,13 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
                     locationLabel: requisition.workLocation,
                     businessUnitId: requisition.businessUnitId,
                 }));
-                // Ensure search term matches selection (useful if updated indirectly)
-                if (!isReqDropdownOpen) {
-                    setReqSearchTerm(`${requisition.reqCode}: ${requisition.title}`);
-                }
             }
         }
-    }, [current.requisitionId, approvedRequisitions, isReqDropdownOpen]);
-
-    // Close dropdown on click outside
-    useEffect(() => {
-        function handleClickOutside(event: MouseEvent) {
-            if (reqWrapperRef.current && !reqWrapperRef.current.contains(event.target as Node)) {
-                setIsReqDropdownOpen(false);
-                 // Reset search term to currently selected if closed without selection
-                 if (current.requisitionId) {
-                    const r = approvedRequisitions.find(r => r.id === current.requisitionId);
-                    if (r) setReqSearchTerm(`${r.reqCode}: ${r.title}`);
-               } else {
-                   setReqSearchTerm('');
-               }
-            }
-        }
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => {
-            document.removeEventListener("mousedown", handleClickOutside);
-        };
-    }, [reqWrapperRef, current.requisitionId, approvedRequisitions]);
-
-    const filteredRequisitions = useMemo(() => {
-        if (!reqSearchTerm) return approvedRequisitions;
-        const lower = reqSearchTerm.toLowerCase();
-        return approvedRequisitions.filter(r => 
-            r.reqCode.toLowerCase().includes(lower) || 
-            r.title.toLowerCase().includes(lower)
-        );
-    }, [reqSearchTerm, approvedRequisitions]);
-
-    const handleSelectRequisition = (req: typeof approvedRequisitions[0]) => {
-        setCurrent(prev => ({ ...prev, requisitionId: req.id }));
-        setReqSearchTerm(`${req.reqCode}: ${req.title}`);
-        setIsReqDropdownOpen(false);
-    };
+    }, [jobPost, current.requisitionId, approvedRequisitions]);
 
     const applyStarterTemplate = (templateId: string) => {
         setSelectedStarterId(templateId);
+        setValidationError('');
         const starter = starterTemplates.find(template => template.id === templateId);
         if (!starter) return;
         const perks = starter.sections.find(section => section.title.trim().toLowerCase() === 'perks')?.content || '';
@@ -199,6 +141,7 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setCurrent(prev => ({ ...prev, [name]: value }));
+        setValidationError('');
     };
 
     const handleChannelChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -283,16 +226,24 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
     };
 
     const handleSave = (status: JobPostStatus) => {
-        if (!current.requisitionId || !current.title || !current.description) {
-            alert('Please select a requisition and fill in the title and description.');
-            return;
-        }
-
-        const requisition = approvedRequisitions.find(r => r.id === current.requisitionId);
+        const requisition = approvedRequisitions.find(r => r.id === current.requisitionId)
+            || (jobPost ? jobRequisitions.find(r => r.id === current.requisitionId) : undefined);
         if (!requisition) {
-            alert('Associated requisition not found.');
+            setValidationError('Select an approved requisition from the dropdown.');
+            document.getElementById('job-post-requisition')?.focus();
             return;
         }
+        if (!current.title?.trim()) {
+            setValidationError('Enter the job title before saving.');
+            document.getElementById('job-post-title')?.focus();
+            return;
+        }
+        if (!current.description?.trim()) {
+            setValidationError('Enter the Job Description before saving or publishing. The approved requisition does not include a public job description.');
+            document.getElementById('job-post-description')?.focus();
+            return;
+        }
+        setValidationError('');
 
         const isNewPost = !jobPost;
 
@@ -342,46 +293,25 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
             footer={footer}
         >
             <div className="space-y-4">
-                <div className="relative" ref={reqWrapperRef}>
-                    <Input 
-                        label="Based on Approved Requisition"
-                        value={reqSearchTerm}
-                        onChange={(e) => {
-                            setReqSearchTerm(e.target.value);
-                            setIsReqDropdownOpen(true);
-                            if (e.target.value === '') {
-                                setCurrent(prev => ({ ...prev, requisitionId: '' }));
-                            }
+                {validationError && <p role="alert" className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-700 dark:bg-red-950/30 dark:text-red-200">{validationError}</p>}
+                <div>
+                    <label htmlFor="job-post-requisition" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Based on Approved Requisition *</label>
+                    <select
+                        id="job-post-requisition"
+                        value={current.requisitionId || ''}
+                        onChange={event => {
+                            setCurrent(prev => ({ ...prev, requisitionId: event.target.value }));
+                            setValidationError('');
                         }}
-                        onFocus={() => setIsReqDropdownOpen(true)}
-                        placeholder="Search requisition code or title..."
                         disabled={!!jobPost}
-                        autoComplete="off"
                         required
-                    />
-                    {isReqDropdownOpen && !jobPost && (
-                        <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-auto">
-                            {filteredRequisitions.length > 0 ? (
-                                filteredRequisitions.map(r => (
-                                    <div 
-                                        key={r.id} 
-                                        className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer border-b border-gray-100 dark:border-gray-700 last:border-0"
-                                        onClick={() => handleSelectRequisition(r)}
-                                    >
-                                        <div className="font-medium text-indigo-600 dark:text-indigo-400">{r.reqCode}</div>
-                                        <div className="text-gray-900 dark:text-gray-200 font-semibold">{r.title}</div>
-                                        <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2 mt-0.5">
-                                            <span>{businessUnits.find(b => b.id === r.businessUnitId)?.name || 'Unknown BU'}</span>
-                                            <span>•</span>
-                                            <span>{r.employmentType}</span>
-                                        </div>
-                                    </div>
-                                ))
-                            ) : (
-                                <div className="px-4 py-3 text-sm text-gray-500 text-center">No approved requisitions found.</div>
-                            )}
-                        </div>
-                    )}
+                        className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    >
+                        <option value="">Select an approved requisition…</option>
+                        {jobPost && !approvedRequisitions.some(r => r.id === current.requisitionId) && <option value={current.requisitionId}>{jobRequisitions.find(r => r.id === current.requisitionId)?.reqCode || 'Existing requisition'}</option>}
+                        {approvedRequisitions.map(r => <option key={r.id} value={r.id}>{r.reqCode}: {r.title} · {businessUnits.find(b => b.id === r.businessUnitId)?.name || 'Unknown BU'}</option>)}
+                    </select>
+                    {!jobPost && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">The job title and business unit come from this requisition. Add the public Job Description below.</p>}
                 </div>
 
                 {!jobPost && (
@@ -407,9 +337,12 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
                         {businessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
                     </select>
                 </div>
-                <Input label="Job Title" name="title" value={current.title || ''} onChange={handleChange} required />
+                <div id="job-post-title" tabIndex={-1}><Input label="Job Title" name="title" value={current.title || ''} onChange={handleChange} required /></div>
                 <Input label="Role URL Slug" name="slug" value={current.slug || ''} onChange={handleChange} placeholder="e.g., guest-experience-host" />
-                <Textarea label="Job Description" name="description" value={current.description || ''} onChange={handleChange} rows={5} required />
+                <div id="job-post-description" tabIndex={-1}>
+                    <Textarea label="Job Description" name="description" value={current.description || ''} onChange={handleChange} rows={5} required />
+                    {validationError.startsWith('Enter the Job Description') && <p className="mt-1 text-sm text-red-700 dark:text-red-300">This field is required to publish the post.</p>}
+                </div>
                 <Textarea label="Requirements" name="requirements" value={current.requirements || ''} onChange={handleChange} rows={4} />
                 <Textarea label="Benefits" name="benefits" value={current.benefits || ''} onChange={handleChange} rows={3} />
 
