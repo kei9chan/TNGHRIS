@@ -4,7 +4,8 @@ import {readImportWorkbook} from './readImportWorkbook';
 
 export const attendanceFields = schema.fields.map(field=>[field.label,field.key] as const);
 export const dayStatuses=schema.fields.find(field=>field.key==='dayStatus')!.choices!;
-export type AttendanceInput = {employeeId:string;businessUnit:string;workDate:string;dayStatus:string;events:{type:string;timestamp:string}[];reference:string;notes:string;sourceRow:number};
+export const reviewChoices=schema.fields.find(field=>field.key==='reviewRequest')!.choices!;
+export type AttendanceInput = {employeeId:string;businessUnit:string;workDate:string;dayStatus:string;events:{type:string;timestamp:string}[];reference:string;notes:string;reviewRequest:string;reviewExplanation:string;sourceRow:number};
 export const attendanceSample = schema.samples[0];
 export const attendanceRestSample=schema.samples[1];
 const quote=(value:string)=>`"${value.replaceAll('"','""')}"`;
@@ -24,33 +25,36 @@ export function normalizeAttendance(rows:string[][],businessUnit:string,rowNumbe
   if(!cells.some(value=>value.trim()))return [];
   try {
    if(cells.some(value=>/^[=+@]/.test(value.trim())))throw new Error('Formulas are not accepted. Paste values only.');
-   const [employeeId,unit,workDate,rawDayStatus,clockIn,breakStart,breakEnd,clockOut,reference='',notes='']=cells.map(value=>value.trim());
+   const [employeeId,unit,workDate,rawDayStatus,clockIn,breakStart,breakEnd,clockOut,reference='',notes='',rawReview='',reviewExplanation='']=cells.map(value=>value.trim());
    const dayStatus=rawDayStatus||savedStatuses[`${employeeId}:${workDate}`]||'Workday';
+   const reviewRequest=rawReview||'None';
    if(!employeeId||/^DEMO-/i.test(employeeId))throw new Error('Use an actual HRIS Employee ID, not an example ID.');
    if(unit!==businessUnit)throw new Error('Business unit does not match the selected business unit.');
    strictDate(workDate);
    if(!dayStatuses.includes(dayStatus))throw new Error(`Choose a Day status: ${dayStatuses.join(', ')}.`);
+   if(!reviewChoices.includes(reviewRequest))throw new Error(`Choose a Needs review option: ${reviewChoices.join(', ')}.`);
+   if(reviewRequest!=='None'&&!reviewExplanation&&!notes)throw new Error('Explain the review request in Review explanation or Notes.');
    const events=([['ClockIn',clockIn],['BreakStart',breakStart],['BreakEnd',breakEnd],['ClockOut',clockOut]] as const).filter(([,v])=>v).map(([type,v])=>({type,timestamp:attendanceStamp(v,workDate)}));
    if(dayStatus==='Workday'&&!events.length)throw new Error('Workday has no actual punches. Choose the correct no-punch Day status or enter actual times.');
    if(!['Workday','Rest day','Legal holiday'].includes(dayStatus)&&events.length)throw new Error(`${dayStatus} cannot contain punches. Use Workday for actual work, then review the date and roster.`);
    if(events.some((event,n)=>n>0&&Date.parse(event.timestamp)<=Date.parse(events[n-1].timestamp)))throw new Error('Clock-out or break is earlier than the preceding punch. Check the date for an overnight shift.');
-   return [{employeeId,businessUnit:unit,workDate,dayStatus,events,reference,notes,sourceRow:rowNumbers?.[i]??i+2}];
+   return [{employeeId,businessUnit:unit,workDate,dayStatus,events,reference,notes,reviewRequest,reviewExplanation,sourceRow:rowNumbers?.[i]??i+2}];
   }catch(e){throw new Error(`Row ${rowNumbers?.[i]??i+2} — ${(e as Error).message}`);}
  });
 }
 export async function readAttendanceFile(file:File,businessUnit:string,savedStatuses:Record<string,string>={}):Promise<AttendanceInput[]>{
  if(file.size>5*1024*1024)throw new Error('Upload a file smaller than 5 MB.');
- let rows:string[][],rowNumbers:number[]|undefined,version=2;
+ let rows:string[][],rowNumbers:number[]|undefined,version=3;
  if(file.name.toLowerCase().endsWith('.csv'))rows=parseDelimited(await file.text(),',');
  else if(file.name.toLowerCase().endsWith('.xlsx')){
   const book=await readImportWorkbook(await file.arrayBuffer());
   const data=book.getWorksheet('Data Entry');if(!data)throw new Error('Missing Data Entry sheet. Download the attendance template.');
   const template=book.getWorksheet('Instructions')?.getCell('B1').text;
-  if(template!=='attendance:1'&&template!=='attendance:2')throw new Error('Unsupported template type or version. Download attendance template version 2.');
-  version=template==='attendance:1'?1:2;
+  if(!['attendance:1','attendance:2','attendance:3'].includes(template))throw new Error('Unsupported template type or version. Download attendance template version 3.');
+  version=Number(template.slice(-1));
   if(data.rowCount>2001)throw new Error('Use at most 2,000 attendance rows.');
   rows=[];rowNumbers=[];data.eachRow({includeEmpty:false},row=>{
-   const fields=version===1?attendanceFields.filter(([,key])=>key!=='dayStatus'):attendanceFields;
+   const fields=attendanceFields.filter(([,key])=>version===3||!['reviewRequest','reviewExplanation',...(version===1?['dayStatus']:[])].includes(key));
    const values=fields.map(([,key],n)=>{const v=row.getCell(n+1).value;
     if(v==null)return '';
     if(v instanceof Date)return v.toISOString().slice(0,key==='workDate'?10:19).replace('T',' ');
@@ -62,13 +66,16 @@ export async function readAttendanceFile(file:File,businessUnit:string,savedStat
   });
  }else throw new Error('Upload CSV or XLSX.');
  const headers=rows.shift();rowNumbers?.shift();
- const current=attendanceFields.map(([label])=>label),legacy=attendanceFields.filter(([,key])=>key!=='dayStatus').map(([label])=>label);
+ const current=attendanceFields.map(([label])=>label);
+ const v2=attendanceFields.filter(([,key])=>!['reviewRequest','reviewExplanation'].includes(key)).map(([label])=>label);
+ const legacy=attendanceFields.filter(([,key])=>!['dayStatus','reviewRequest','reviewExplanation'].includes(key)).map(([label])=>label);
  const matches=(expected:string[])=>headers?.length===expected.length&&headers.every((v,i)=>v.replace(/^\uFEFF/,'')===expected[i]);
- if(!matches(current)&&!matches(legacy))throw new Error('Columns do not match the attendance template. Download version 2 and paste your values into its columns.');
+ if(!matches(current)&&!matches(v2)&&!matches(legacy))throw new Error('Columns do not match the attendance template. Download version 3 and paste your values into its columns.');
  // Version 1 had no Day status column. Leave it empty so a saved roster
  // status (Rest day, holiday, suspension, or no scheduled work) can be used
  // for blank-punch rows; otherwise the row remains a Workday review item.
- if(matches(legacy)){version=1;rows=rows.map(row=>[...row.slice(0,3),'',...row.slice(3)]);}
+ if(matches(legacy)){version=1;rows=rows.map(row=>[...row.slice(0,3),'',...row.slice(3),'','']);}
+ else if(matches(v2)){version=2;rows=rows.map(row=>[...row,'','']);}
  if(!rows.length)throw new Error('Data Entry contains no attendance records. Examples are never imported.');
  if(rows.length>2000)throw new Error('Use at most 2,000 attendance rows.');
  return normalizeAttendance(rows,businessUnit,rowNumbers,savedStatuses);
