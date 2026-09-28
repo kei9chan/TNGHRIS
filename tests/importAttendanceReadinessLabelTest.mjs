@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import ts from 'typescript';
+
+const model=readFileSync(new URL('../modules/payroll/readinessDashboardModel.ts',import.meta.url),'utf8');
+const js=ts.transpileModule(model,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText.replace(/^import type .*;\n/gm,'');
+const {specificIssue,groupEmployeeReadiness}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
+const date='2026-08-26';
+assert.equal(specificIssue('Worked and scheduled minutes need reconciliation',date).category,'attendance');
+assert.equal(specificIssue('Worked time outside the reviewed schedule / OT needs reconciliation',date).label,'Worked time outside the reviewed schedule / OT needs reconciliation');
+assert.equal(specificIssue('Missing or unpublished schedule — publish the reviewed week first',date).category,'schedule');
+assert.equal(specificIssue('Approved time rules missing',date).label,'Cutoff time rules — Not confirmed');
+assert.equal(specificIssue('Holiday calendar coverage needs review',date).category,'payroll_setup');
+assert.equal(specificIssue('Approved OT times or duration missing',date).label,'Approved OT duration is missing');
+const row={employeeId:'id',employeeName:'Employee',date,issues:['Approved time rules missing','Holiday calendar coverage needs review'],ready:false};
+const card=groupEmployeeReadiness([row,{...row,date:'2026-08-27'}],'Bakebe - SM Aura',date,'2026-08-27')[0];
+assert.equal(card.setup.length,2,'cutoff-wide dependencies group into two actions per employee');
+assert.equal(card.counts.attendance,0,'missing rule versions are not mislabeled as punch corrections');
+const migration=readFileSync(new URL('../supabase/migrations/20260928200000_attribute_import_punches_to_work_date.sql',import.meta.url),'utf8');
+assert.match(migration,/importWorkDate''=d::text/);
+assert.match(migration,/importWorkDate'' is null/);
+assert.doesNotMatch(migration,/regularMinutes|approvedOtMinutes|holidayCoverageConfirmed/);
+console.log('PASS: imported work-date boundary and honest readiness labels preserve pay-policy controls.');

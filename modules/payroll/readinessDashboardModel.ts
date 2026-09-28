@@ -7,10 +7,14 @@ export type EmployeeReadinessCard={key:string;employeeId:string;employeeName:str
 
 export function specificIssue(issue:string,date:string):ReadinessIssue{
  const text=issue.toLowerCase();
+ if(text==='approved time rules missing')return {category:'payroll_setup',label:'Cutoff time rules — Not confirmed',raw:issue,date,blocking:true,action:'Confirm cutoff rules',path:'/payroll/attendance-readiness#attendance-references'};
+ if(text==='holiday calendar coverage needs review')return {category:'payroll_setup',label:'Holiday coverage — Not confirmed',raw:issue,date,blocking:true,action:'Review holiday calendar',path:'/payroll/attendance-readiness#attendance-references'};
+ if(text==='approved ot times or duration missing')return {category:'overtime',label:'Approved OT duration is missing',raw:issue,date,blocking:true,action:'Review approved hours',path:'/payroll/overtime-requests'};
  if(/salary|pay package|base.pay/.test(text))return {category:'payroll_setup',label:'Approved salary source — Missing',raw:issue,date,blocking:true,action:'Add salary source',path:'/payroll/pay-packages'};
  if(/employment start|employee profile information incomplete|hire date/.test(text))return {category:'payroll_setup',label:'Timekeeping setup needed — Employment start date is missing',raw:issue,date,blocking:true,action:'Open employee setup',path:'/employees'};
  if(/classification|payroll group|business.unit assignment|pay frequency|tax|benefit/.test(text))return {category:'payroll_setup',label:`Payroll setup needed — ${issue}`,raw:issue,date,blocking:true,action:'Open employee setup',path:'/employees'};
- if(/schedule|shift|roster/.test(text)&&!/ot|overtime/.test(text))return {category:'schedule',label:'Published schedule — Missing',raw:issue,date,blocking:true,action:'Open schedule',path:'/payroll/timekeeping'};
+ if(/missing schedule|missing or unpublished schedule|unpublished schedule/.test(text))return {category:'schedule',label:'Published schedule — Missing',raw:issue,date,blocking:true,action:'Open schedule',path:'/payroll/timekeeping'};
+ if(/schedule|shift|roster/.test(text))return {category:'attendance',label:issue,raw:issue,date,blocking:true,action:'Review scheduled and worked time',path:'/payroll/daily-review'};
  if(/ot|overtime|rest.day|offset/.test(text))return {category:'overtime',label:'Overtime approval needs review',raw:issue,date,blocking:true,action:'Review overtime',path:'/payroll/overtime-requests'};
  if(/break|lunch/.test(text))return {category:'attendance',label:'Missing or extended break',raw:issue,date,blocking:true,action:'Open correction',path:'/payroll/historical-corrections'};
  if(/punch|clock/.test(text))return {category:'attendance',label:'Missing punch',raw:issue,date,blocking:true,action:'Open correction',path:'/payroll/historical-corrections'};
