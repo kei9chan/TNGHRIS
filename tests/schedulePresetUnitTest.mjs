@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+
+const source=readFileSync('modules/payroll/scheduleScope.ts','utf8');
+const output=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+const module={exports:{}};
+vm.runInNewContext(output,{module,exports:module.exports,require:()=>({Role:{}})});
+const select=module.exports.presetBusinessUnitId;
+const resort={id:'resort'},bakery={id:'bakery'};
+assert.equal(select('all','',resort.id,[resort,bakery]),resort.id,'direct reports default to the manager’s unit');
+assert.equal(select('all',bakery.id,resort.id,[resort,bakery]),bakery.id,'an explicit preset choice wins');
+assert.equal(select(resort.id,bakery.id,resort.id,[resort,bakery]),resort.id,'a selected schedule unit wins');
+assert.equal(select('all','',undefined,[bakery]),bakery.id,'one accessible unit is selected');
+assert.equal(select('all','',undefined,[resort,bakery]),null,'multiple units without an owner need a choice');
+assert.equal(select('all','invalid',resort.id,[resort,bakery]),resort.id,'stale choice falls back to the manager’s unit');
+assert.equal(select('invalid','',resort.id,[resort,bakery]),null,'inaccessible schedule unit cannot be used');
+const page=readFileSync('pages/payroll/Timekeeping.tsx','utf8');
+assert.match(page,/disabled=\{!presetUnitId\}/);
+assert.match(page,/businessUnitId=\{presetUnitId\|\|''\}/);
+console.log('PASS: preset creation selects an accessible business unit in direct-report and all-unit views.');
