@@ -27,6 +27,7 @@ await db.exec(final.slice(final.indexOf('-- Preserve all the existing validation
 await db.exec(fs.readFileSync('supabase/migrations/20260928210000_payroll_attendance_import_approval.sql','utf8').replace("notify pgrst,'reload schema';",''));
 await db.exec(fs.readFileSync('supabase/migrations/20260929060500_attendance_change_review_snapshot.sql','utf8').replace("notify pgrst,'reload schema';",''));
 await db.exec(fs.readFileSync('supabase/migrations/20260929074500_bod_attendance_dual_role_route.sql','utf8').replace("notify pgrst,'reload schema';",''));
+await db.exec(fs.readFileSync('supabase/migrations/20260929083000_attendance_schedule_error_context.sql','utf8').replace("notify pgrst,'reload schema';",''));
 const scope='00000000-0000-4000-8000-000000000002';
 const row={employeeId:'00001',businessUnit:'Fixture',workDate:'2026-08-29',dayStatus:'Workday',events:[{type:'ClockIn',timestamp:'2026-08-29T09:00:00+08:00'},{type:'ClockOut',timestamp:'2026-08-29T18:00:00+08:00'}],reviewRequest:'Overtime',reviewExplanation:'Review requested time',sourceRow:2};
 const args=[scope,'2026-08-26','2026-09-10','fixture-v3.xlsx',JSON.stringify([row])];
@@ -39,7 +40,7 @@ await db.exec("insert into private.fixture_day_status values('00000000-0000-4000
 const rest={...row,workDate:'2026-08-27',dayStatus:'Rest day',classification:'Rest day',events:[],reviewRequest:'None'};
 const restArgs=[scope,'2026-08-26','2026-09-10','rest.xlsx',JSON.stringify([rest])];
 const restPreview=async()=>(await db.query('select public.import_actual_attendance($1,$2,$3,$4,$5) result',restArgs)).rows[0].result;
-assert.match((await restPreview()).errors[0].message,/Published rest-day roster missing/);
+assert.match((await restPreview()).errors[0].message,/Published rest-day roster missing for Fixture \(00001\), date 2026-08-27, business unit Fixture/);
 await db.exec("set test.published='yes'");assert.equal((await restPreview()).ready,1);
 const count=async()=>(await db.query('select count(*)::int n from private.payroll_actual_imports')).rows[0].n;
 const source=fs.readFileSync('public/templates/attendance-v4.xlsx');
