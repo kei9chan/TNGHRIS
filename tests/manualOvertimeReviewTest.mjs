@@ -58,4 +58,9 @@ await db.exec(`set test.actor='${id(1)}'`);await insert(22,'2026-10-06','19:00',
 await db.query('insert into payroll_schedule_freezes values($1,$2,$2)',[id(1),'2026-10-06']);week=(await weeks([id(22)]))[0];assert.match(week.requests.find(r=>r.id===id(22)).blocked,/locked/);await assert.rejects(decide([id(22)],{[id(22)]:60},week.version,id(111)),/locked/);
 await db.exec('set role authenticated');await db.exec(`set test.actor='${id(2)}'`);await weeks();await assert.rejects(db.query('select * from private.ot_batch_decisions'),/permission denied/);await db.exec('reset role');
 assert.equal((await db.query("select has_function_privilege('anon','public.decide_ot_week(uuid[],jsonb,text,uuid,text,text)','execute') allowed")).rows[0].allowed,false);
+await db.exec(fs.readFileSync('supabase/migrations/20260929152000_guard_unknown_legacy_ot_quantities.sql','utf8'));
+await db.exec(`set test.actor='${id(2)}';set test.roster='published';alter table ot_requests disable trigger a_manual_ot_guard;`);
+await db.query("insert into ot_requests(id,employee_id,date,start_time,end_time,status,reason) values($1,$2,'2026-09-21','10:00','11:00','Approved','Legacy approved record')",[id(99),id(1)]);
+await db.exec('alter table ot_requests enable trigger a_manual_ot_guard');
+week=(await weeks())[0];assert.equal(week.summary.quantitiesMissing,true);assert.equal(week.summary.approvedMinutes,null);assert.equal(week.summary.projectedMinutes,null);assert.equal(week.summary.knownApprovedMinutes,180);assert.equal(week.summary.quantityIssueIds[0],id(99));
 await db.close();console.log('PASS manual OT: exact/overnight/break minutes, no inferred baseline, distinct weekly buckets, adjusted manager amount, atomic batch, stale version, idempotent retry, optional approval note, zero minutes, self-approval denied, return reason, overlap and locked payroll guards; authenticated RPC and private ACLs.');
