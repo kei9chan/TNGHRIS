@@ -6,6 +6,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useSettings } from '../../context/SettingsContext';
 import { useUsers, useBusinessUnits, useShiftTemplates, useAttendanceRecords, useShiftAssignments } from '../../hooks/useHRData';
+import Modal from '../../components/ui/Modal';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import OTRequestTable from '../../components/payroll/OTRequestTable';
@@ -23,7 +24,7 @@ import { getApprovalRequestId } from '../../services/approvalDeepLinks';
 import { hasPendingTimeApprovalAssignment } from '../../services/timeApprovalAssignmentService';
 import { getApprovalStatusLabel, getOvertimeWeekDetails, getTimeApprovalReason } from '../../utils/approvalPresentation';
 
-type Tab = 'my_ot' | 'team_approvals' | 'hr_verification' | 'calendar' | 'ledger';
+type Tab = 'all_requests' | 'my_ot' | 'team_approvals' | 'hr_verification' | 'calendar' | 'ledger';
 
 const SuccessToast: React.FC<{ message: string; show: boolean; onClose: () => void }> = ({ message, show, onClose }) => {
     useEffect(() => {
@@ -52,6 +53,12 @@ const OvertimeRequests: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
     
+    const [reportScope,setReportScope]=useState<{overview:boolean;global:boolean;businessUnits:{id:string;name:string}[]}>({overview:false,global:false,businessUnits:[]});
+    const [loadingRequests,setLoadingRequests]=useState(true);
+    const [loadError,setLoadError]=useState('');
+    const [reload,setReload]=useState(0);
+    const [viewRequest,setViewRequest]=useState<OTRequest|null>(null);
+    const [search,setSearch]=useState('');
     const [requests, setRequests] = useState<OTRequest[]>([]);
     const [reporteeIds, setReporteeIds] = useState<string[]>([]);
     const [reporteeIdsLoaded, setReporteeIdsLoaded] = useState(false);
@@ -80,19 +87,20 @@ const OvertimeRequests: React.FC = () => {
     const canManage = canModule('OT', Permission.Manage);
     // Configured BOD approvers can also approve
     const canApprove = otAccess.canApprove || reporteeIds.length > 0 || isConfiguredBOD;
-    const canViewLedger = canApprove;
+    const canViewLedger = reportScope.overview || canApprove;
     
     useEffect(() => {
-        const loadRequests = async () => {
-            try {
-                const data = await fetchOtRequests();
-                setRequests(data);
-            } catch (error) {
-                console.error('Failed to load OT requests', error);
-            }
-        };
-        loadRequests();
-    }, []);
+        let active=true;
+        setLoadingRequests(true);setLoadError('');
+        Promise.all([fetchOtRequests(),supabase.rpc('get_ot_reporting_scope')]).then(([data,scope])=>{
+            if(!active)return;if(scope.error)throw scope.error;
+            setRequests(data);setReportScope(scope.data);
+            if(!scope.data.overview)setActiveTab('my_ot');
+        }).catch(error=>{if(active)setLoadError(error.message||'Unable to load overtime requests.');})
+        .finally(()=>{if(active)setLoadingRequests(false);});
+        return()=>{active=false;};
+    }, [user?.id,reload]);
+    useEffect(()=>{const refresh=()=>setReload(x=>x+1);window.addEventListener('focus',refresh);return()=>window.removeEventListener('focus',refresh);},[]);
 
     useEffect(() => {
         const loadReportees = async () => {
@@ -117,14 +125,14 @@ const OvertimeRequests: React.FC = () => {
     }, [user?.id]);
     
     // Dashboard State
-    const [activeTab, setActiveTab] = useState<Tab>('my_ot');
+    const [activeTab, setActiveTab] = useState<Tab>('all_requests');
     const [viewFilter, setViewFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
     
     // BU Filter State (for privileged roles)
     const [selectedBuFilter, setSelectedBuFilter] = useState<string>('all');
     
-    const accessibleBus = useMemo(() => getAccessibleBusinessUnits(hrBusinessUnits), [getAccessibleBusinessUnits, hrBusinessUnits]);
-    const scopedRequests = useMemo(() => otAccess.filterRequests(requests), [otAccess, requests]);
+    const accessibleBus = reportScope.businessUnits;
+    const scopedRequests = requests; // Server RLS is the authority for viewing records.
 
     useEffect(() => {
          // Default to first accessible BU if limited scope and not "all"
@@ -148,49 +156,8 @@ const OvertimeRequests: React.FC = () => {
         }
     }, [location.state, navigate, location.search]);
 
-    // When arriving from a notification (no modal state), BOD approvers should land on Team Approvals
-    useEffect(() => {
-        if (isConfiguredBOD && !location.state?.openNewOTModal) {
-            const searchParams = new URLSearchParams(location.search);
-            if (!searchParams.get('tab')) {
-                setActiveTab('team_approvals');
-            }
-        }
-    }, [isConfiguredBOD, location.search]);
-
-    // Identify if user is "Privileged" to see BU-wide stats
-    const isPrivilegedViewer = useMemo(() => {
-        if (!user) return false;
-        if (isConfiguredBOD) return true;
-        const hasAdministrativeOtCapability = canManage
-            || canModule('OT', Permission.Approve)
-            || canModule('OT', Permission.Review)
-            || canModule('OT', Permission.Finalize);
-        return hasAdministrativeOtCapability && ['global', 'bu', 'dept'].includes(otAccess.scope);
-    }, [user, isConfiguredBOD, canManage, canModule, otAccess.scope]);
-
-    // Filter requests based on selected BU (for privileged users)
-    const buFilteredRequests = useMemo(() => {
-        const accessibleBuIds = new Set(accessibleBus.map(b => b.id));
-        
-        // Filter down to accessible BUs first
-        let filtered = scopedRequests.filter(r => {
-             const employee = hrUsers.find(u => u.id === r.employeeId);
-             const employeeBuId = hrBusinessUnits.find(b => b.name === employee?.businessUnit)?.id;
-             return employeeBuId && accessibleBuIds.has(employeeBuId);
-        });
-
-        if (selectedBuFilter !== 'all') {
-            const buName = hrBusinessUnits.find(b => b.id === selectedBuFilter)?.name;
-            if (buName) {
-                filtered = filtered.filter(r => {
-                    const employee = hrUsers.find(u => u.id === r.employeeId);
-                    return employee?.businessUnit === buName;
-                });
-            }
-        }
-        return filtered;
-    }, [requests, selectedBuFilter, accessibleBus, hrUsers, hrBusinessUnits]);
+    const isPrivilegedViewer = reportScope.overview;
+    const buFilteredRequests = useMemo(() => selectedBuFilter==='all'?scopedRequests:scopedRequests.filter(r=>r.businessUnitId===selectedBuFilter),[scopedRequests,selectedBuFilter]);
 
 
     // 1. "My OT" Data
@@ -314,10 +281,11 @@ const OvertimeRequests: React.FC = () => {
     // 7. Filtered Display Data based on Active Tab & Sub-filter (For Table View)
     const displayedTableRequests = useMemo(() => {
         let data = myRequests;
+        if (activeTab === 'all_requests') data = buFilteredRequests;
         if (activeTab === 'team_approvals') data = teamRequests;
         if (activeTab === 'hr_verification') data = hrVerificationRequests;
 
-        if (activeTab === 'my_ot' && viewFilter !== 'all') {
+        if ((activeTab === 'my_ot' || activeTab === 'all_requests') && viewFilter !== 'all') {
             if (viewFilter === 'pending') data = data.filter(r =>
                 r.status === OTStatus.Submitted ||
                 r.status === OTStatus.Draft ||
@@ -327,8 +295,9 @@ const OvertimeRequests: React.FC = () => {
             if (viewFilter === 'rejected') data = data.filter(r => r.status === OTStatus.Rejected);
         }
         
-        return data.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [activeTab, viewFilter, myRequests, teamRequests, hrVerificationRequests]);
+        data=data.filter(r=>`${r.employeeName} ${r.reason}`.toLowerCase().includes(search.toLowerCase()));
+        return [...data].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    }, [activeTab, viewFilter, myRequests, teamRequests, hrVerificationRequests,buFilteredRequests,search]);
 
 
     const handleNewRequest = () => {
@@ -488,6 +457,8 @@ const OvertimeRequests: React.FC = () => {
 
     return (
         <div className="space-y-6">
+            {loadError&&<div role="alert" className="rounded-lg bg-red-50 p-4 text-red-800">Overtime requests could not be loaded: {loadError} <Button onClick={()=>setReload(x=>x+1)}>Retry</Button></div>}
+            {loadingRequests&&<p role="status">Loading overtime requests…</p>}
             <SuccessToast show={showSuccessToast} message="Submitted successfully." onClose={() => setShowSuccessToast(false)} />
             {reviewLoadError && (
                 <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
@@ -509,7 +480,7 @@ const OvertimeRequests: React.FC = () => {
                             onChange={(e) => setSelectedBuFilter(e.target.value)}
                             className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                         >
-                            <option value="all">All Business Units</option>
+                            <option value="all">{reportScope.global?"All Business Units":"All assigned business units"}</option>
                             {accessibleBus.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
                         </select>
                     )}
@@ -521,9 +492,11 @@ const OvertimeRequests: React.FC = () => {
             
             {/* Dashboard Stats - Data source depends on role and filter */}
             <OTStats requests={statsData} />
+            <div className="flex flex-wrap items-center gap-3"><label>Find employee or reason<input className="ml-3 rounded border p-2" value={search} onChange={e=>setSearch(e.target.value)}/></label><Button variant="secondary" onClick={()=>setReload(x=>x+1)}>Refresh requests</Button><span>{buFilteredRequests.length} accessible requests</span></div>
 
             {/* Tabs */}
             <div className="flex flex-wrap gap-2 border-b border-gray-200 dark:border-gray-700 p-1 bg-white dark:bg-slate-800 rounded-lg shadow-sm w-fit">
+                {reportScope.overview&&<button className={getTabClass('all_requests')} onClick={()=>setActiveTab('all_requests')}>All requests</button>}
                 <button className={getTabClass('my_ot')} onClick={() => setActiveTab('my_ot')}>
                     My OT
                 </button>
@@ -554,7 +527,7 @@ const OvertimeRequests: React.FC = () => {
             </div>
 
             {/* Filters (Only for My OT) */}
-            {(activeTab === 'my_ot' || activeTab === 'hr_verification') && (
+            {(activeTab === 'all_requests' || activeTab === 'my_ot' || activeTab === 'hr_verification') && (
                 <Card>
                     <div className="flex space-x-4 p-1">
                         <button onClick={() => setViewFilter('all')} className={`text-sm font-medium ${viewFilter === 'all' ? 'text-indigo-600 underline' : 'text-gray-500'}`}>All</button>
@@ -578,6 +551,7 @@ const OvertimeRequests: React.FC = () => {
                     <OTRequestTable
                         requests={displayedTableRequests}
                         onEdit={handleEditRequest}
+                        onView={setViewRequest}
                         onDelete={handleDeleteRequest}
                         onWithdraw={handleWithdrawRequest}
                         onConvert={canManage || canModule('OT', Permission.Finalize) ? handleConvertRequest : undefined}
@@ -590,6 +564,9 @@ const OvertimeRequests: React.FC = () => {
                 </Card>
             )}
 
+            <Modal isOpen={!!viewRequest} onClose={()=>setViewRequest(null)} title="Overtime request details">
+                {viewRequest&&<div className="space-y-4"><h2 className="text-xl font-bold">{viewRequest.employeeName}</h2><p>{new Date(viewRequest.date).toLocaleDateString('en-PH',{weekday:'long',year:'numeric',month:'long',day:'numeric',timeZone:'Asia/Manila'})} · {viewRequest.startTime}–{viewRequest.endTime}</p><p>{accessibleBus.find(b=>b.id===viewRequest.businessUnitId)?.name||'Business unit not recorded'} · {viewRequest.status}</p><p>Requested: {viewRequest.requestedHours??'Not recorded'} hours · Approved: {viewRequest.approvedHours??'Not approved'} hours</p><div className="rounded-xl bg-violet-50 p-4 text-slate-900"><b>Reason</b><p className="whitespace-pre-wrap">{viewRequest.reason}</p></div><p>Manager note: {viewRequest.managerNote||'None'}</p><details><summary>Request history</summary><pre className="whitespace-pre-wrap text-xs">{JSON.stringify(viewRequest.historyLog,null,2)}</pre></details></div>}
+            </Modal>
             <OTRequestModal
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}

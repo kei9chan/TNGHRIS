@@ -2,6 +2,8 @@ import { supabase } from './supabaseClient';
 import { OTRequest, OTStatus, OTRequestHistory, User, Role } from '../types';
 
 type OtRequestRow = {
+  business_unit_id?: string;
+  hours?: number;
   id: string;
   employee_id: string;
   employee_name: string;
@@ -29,6 +31,8 @@ type OtRequestRow = {
 
 const mapRow = (row: OtRequestRow): OTRequest => ({
   id: row.id,
+  businessUnitId: row.business_unit_id,
+  requestedHours: row.hours == null ? undefined : Number(row.hours),
   employeeId: row.employee_id,
   employeeName: row.employee_name,
   employeePosition: row.position || undefined,
@@ -52,12 +56,14 @@ const mapRow = (row: OtRequestRow): OTRequest => ({
 });
 
 export const fetchOtRequests = async (): Promise<OTRequest[]> => {
-  const { data, error } = await supabase
-    .from('ot_requests')
-    .select('*')
-    .order('created_at', { ascending: false });
-  if (error) throw new Error(error.message || 'Failed to load OT requests');
-  return (data as OtRequestRow[]).map(mapRow);
+  const rows: OtRequestRow[] = [];
+  for (let offset = 0; ; offset += 500) {
+    const { data, error } = await supabase.rpc('list_visible_ot_requests',{p_offset:offset,p_limit:500});
+    if (error) throw new Error(error.message || 'Failed to load OT requests');
+    rows.push(...(data || []) as OtRequestRow[]);
+    if (!data || data.length < 500) break;
+  }
+  return rows.map(mapRow);
 };
 
 export const fetchOtRequestById = async (id: string): Promise<OTRequest | null> => {

@@ -6,6 +6,7 @@ import Button from '../ui/Button';
 
 interface OTRequestTableProps {
     requests: OTRequest[];
+    onView?: (request: OTRequest) => void;
     onEdit: (request: OTRequest) => void;
     onDelete: (requestId: string) => void;
     onWithdraw: (requestId: string) => void;
@@ -31,7 +32,7 @@ const statusLabels: { [key in OTStatus]: string } = {
     [OTStatus.Rejected]: 'Rejected',
 };
 
-const OTRequestTable: React.FC<OTRequestTableProps> = ({ requests, onEdit, onDelete, onWithdraw, onConvert, canReviewRequest }) => {
+const OTRequestTable: React.FC<OTRequestTableProps> = ({ requests, onView, onEdit, onDelete, onWithdraw, onConvert, canReviewRequest }) => {
     const { user } = useAuth();
     const { can } = usePermissions();
 
@@ -78,6 +79,7 @@ const OTRequestTable: React.FC<OTRequestTableProps> = ({ requests, onEdit, onDel
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                      <div className="flex space-x-2 justify-end">
+                                        {onView&&<Button variant="secondary" size="sm" onClick={()=>onView(req)}>View</Button>}
                                         {!isOwner && (req.status === OTStatus.Submitted || req.status === OTStatus.PendingBOD) && (canReviewRequest ? canReviewRequest(req) : can('OT', Permission.Approve)) && (
                                             <Button variant="secondary" size="sm" onClick={() => onEdit(req)}>Review</Button>
                                         )}
@@ -101,7 +103,7 @@ const OTRequestTable: React.FC<OTRequestTableProps> = ({ requests, onEdit, onDel
                                                 {req.isConverted && (
                                                     <span className="text-xs text-green-600 font-medium px-2 py-1">Converted</span>
                                                 )}
-                                                <Button variant="secondary" size="sm" onClick={() => onEdit(req)}>View</Button>
+                                                {!onView&&<Button variant="secondary" size="sm" onClick={() => onEdit(req)}>View</Button>}
                                             </>
                                         )}
                                     </div>
