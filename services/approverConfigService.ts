@@ -165,6 +165,7 @@ export const processTimeRequestApproval = async (
       p_approved_hours: decision === 'approve' ? approvedHours ?? null : null,
     });
     if (error) throw new Error(error.message || 'Failed to process overtime approval');
+    if(data?.quantityReviewNeeded) throw new Error('Manager verification was saved. HR must reconcile older approved requests with missing approved hours before final routing.');
     if (data?.baselineNeeded) throw new Error('Manager verification was saved. Open the weekly OT review and confirm the regular-hour baseline to complete routing. No final approval was recorded.');
     return data;
   }

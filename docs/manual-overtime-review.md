@@ -2,7 +2,7 @@
 
 Employee requests declare actual extra work. Managers verify minutes; HRIS punches are not required for the OT decision. The production payroll engine still independently verifies regular attendance and entitlement rules.
 
-Approval Center and Overtime Management group by employee and Monday–Sunday work week in Philippine time. Current server totals distinguish schedule/manager-confirmed baseline, final approved OT, manager-reviewed pending OT and unreviewed requests. Old request snapshots remain audit evidence, not the current total. No 40/48-hour fallback is used.
+Approval Center and Overtime Management group by employee and Monday–Sunday work week in Philippine time. Current server totals distinguish schedule/manager-confirmed baseline, final approved OT, manager-reviewed pending OT and unreviewed requests. Old request snapshots remain audit evidence, not the current total. No 40/48-hour fallback is used. Legacy approved/escalated records without an approved quantity make the weekly total unknown and require quantity reconciliation; they are never silently counted as zero.
 
 Published schedule snapshots provide the regular-hour baseline. If incomplete, the direct manager records a weekly baseline and evidence once. Manager review can be saved while the baseline is missing; final routing waits for that confirmation.
 
