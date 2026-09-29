@@ -15,8 +15,9 @@ for(const step of [0,1,2]){
   './scheduleScope':{canImportActualAttendance:()=>true},
   './usePayrollSelection':{usePayrollField:field=>[{scope:'fixture-scope',from:'2026-08-26',to:'2026-09-10'}[field],()=>{}]},
   './useCalculationSelection':{useCalculationSelection:()=>[{},()=>{}]},
-  './attendanceReadiness':{},'./grossPay':{},'./netPay':{},'../../services/supabaseClient':{},'./workspace':{},
+  './attendanceReadiness':{},'./grossPay':{},'./netPay':{},'../../services/supabaseClient':{},'./workspace':{validCutoff:()=>true},
   './NormalPayrollPeriodSelector':{__esModule:true,default:()=>React.createElement('span',null,'September 20, 2026 · August 26–September 10')},
+  './AttendanceImportApprovals':{__esModule:true,default:()=>null},
   './PreviousPaymentCard':{__esModule:true,default:()=>React.createElement('span',null,'Record previous payment')},
   './payrollCycle':{},'./actualAttendanceImport':{},
  };

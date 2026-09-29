@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {PGlite} from '@electric-sql/pglite';
+process.on('uncaughtException',e=>{console.error(e.message,e.where||'',e.query||'');process.exit(1);});
+const db=new PGlite();
+const extract=(path,name)=>{const sql=fs.readFileSync(path,'utf8');const match=sql.match(new RegExp(`create (?:or replace )?function private\\.${name}\\(`,'i'));const start=match?match.index+match[0].toLowerCase().indexOf('function'):-1;assert.ok(start>=0);const open=sql.indexOf('$$',start),end=sql.indexOf('$$',open+2);return 'create or replace '+sql.slice(start,end+2)+';';};
+await db.exec(`create schema private;
+ create table public.payroll_schedule_publications(id uuid primary key default gen_random_uuid(),employee_id uuid,effective_from date,effective_to date,version int,approval_required boolean,source_hash text,snapshot jsonb);
+ create table public.payroll_schedule_overrides(publication_id uuid,decision text);
+ create table public.payroll_schedule_freezes(employee_id uuid,date_from date,date_to date);
+ create function private.payroll_schedule_draft(uuid,date) returns jsonb language sql as $$select '[{"date":"2026-08-26","start":"10:00","end":"19:00"}]'::jsonb$$;
+ create function private.payroll_pre_schedule_sources(uuid,date,date) returns jsonb language sql as $$select '{"employees":[{"id":"00000000-0000-4000-8000-000000000004"}]}'::jsonb$$;`);
+await db.exec(extract('supabase/migrations/20260906125934_employee_attendance_dashboard.sql','attendance_schedule').replace('private.attendance_schedule','private.attendance_pre_leave_schedule'));
+// The production source wrapper was originally declared under this name before clock integration.
+await db.exec(extract('supabase/migrations/20260906112648_payroll_schedule_versions.sql','payroll_time_sources').replace('private.payroll_time_sources','private.payroll_pre_clock_sources'));
+await db.exec(fs.readFileSync('supabase/migrations/20260929123000_preserve_published_schedule_snapshots.sql','utf8'));
+const emp='00000000-0000-4000-8000-000000000004';
+await db.query(`insert into payroll_schedule_publications(employee_id,effective_from,effective_to,version,approval_required,source_hash,snapshot) values($1,'2026-08-24','2026-08-30',1,false,'original-hash','[{"date":"2026-08-26","start":"09:00","end":"18:00","kind":"work"}]')`,[emp]);
+let r=(await db.query("select private.attendance_pre_leave_schedule($1,'2026-08-26') r",[emp])).rows[0].r;
+assert.equal(r.published,true);assert.equal(r.entries[0].start,'09:00');
+let src=(await db.query("select private.payroll_pre_clock_sources($1,'2026-08-26','2026-08-26') r",[emp])).rows[0].r;
+assert.equal(src.scheduleDays[0].status,'published');assert.equal(src.shifts[0].start,'09:00');
+await db.query(`insert into payroll_schedule_publications(employee_id,effective_from,effective_to,version,approval_required,source_hash,snapshot) values($1,'2026-08-24','2026-08-30',2,true,'new-hash','[{"date":"2026-08-26","start":"10:00","end":"19:00","kind":"work"}]')`,[emp]);
+r=(await db.query("select private.attendance_pre_leave_schedule($1,'2026-08-26') r",[emp])).rows[0].r;assert.equal(r.version,1);
+await db.exec("insert into payroll_schedule_overrides select id,'approve' from payroll_schedule_publications where version=2");
+r=(await db.query("select private.attendance_pre_leave_schedule($1,'2026-08-26') r",[emp])).rows[0].r;assert.equal(r.version,2);assert.equal(r.entries[0].start,'10:00');
+r=(await db.query("select private.attendance_pre_leave_schedule($1,'2026-08-27') r",[emp])).rows[0].r;assert.equal(r.published,false);
+await db.close();console.log('PASS: published snapshots survive draft/preset changes; unapproved replacements do not override; approved versions replace; missing dates stay missing.');
