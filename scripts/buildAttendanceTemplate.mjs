@@ -10,12 +10,13 @@ const instructions=book.worksheets.add('Instructions');
 const data=book.worksheets.add('Data Entry');
 const examples=book.worksheets.add('Examples — Do Not Upload');
 const guide=book.worksheets.add('Field Guide');
-const lastColumn=String.fromCharCode(64+schema.fields.length);
+const columnName=n=>{let label='';for(;n>0;n=Math.floor((n-1)/26))label=String.fromCharCode(65+(n-1)%26)+label;return label;};
+const lastColumn=columnName(schema.fields.length);
 for(const sheet of [instructions,data,examples,guide]){sheet.showGridLines=false;sheet.getRange(`A1:${lastColumn}30`).format.font.name='Aptos';sheet.getRange(`A1:${lastColumn}30`).format.font.size=11;sheet.freezePanes.freezeRows(1);}
 instructions.getRange('A1:B1').values=[['Template type and version',`${schema.type}:${schema.version}`]];
 instructions.getRange('A2:B11').values=[
  ['Template',schema.title],['Fill this sheet only','Data Entry. Do not rename columns or sheets.'],
- ['One row means',schema.meaning],['1. Prepare','Choose the correct business unit and payroll period in HRIS.'],
+ ['One row means',schema.meaning],['1. Prepare','Publish schedules in Schedule Builder, then choose the business unit and payroll period. Download the prefilled template to see each published shift and roster version.'],
  ['2. Fill Data Entry','Use actual HRIS Employee IDs. Fields marked * are required. Choose a Day status for every row. Workday requires actual punches.'],
  ['3. Upload and preview','Upload in Run Payroll, review before-and-after changes, then submit. HR Manager reviews first unless they uploaded it; one BOD approves and applies last.'],
  ['Dates and time','Real Excel dates or ISO YYYY-MM-DD. Date/time: YYYY-MM-DD HH:mm. Asia/Manila. Include explicit next-day dates for overnight shifts.'],
@@ -34,15 +35,15 @@ for(const sheet of [data,examples]){
  for(const [i,f] of schema.fields.entries()){
   const col=sheet.getRangeByIndexes(0,i,101,1);col.format.columnWidth=['notes','reviewExplanation'].includes(f.key)?45:f.key==='dayStatus'?28:i===1?27:25;
   sheet.getRangeByIndexes(1,i,100,1).setNumberFormat(f.format);
-  const header=sheet.getCell(0,i);header.format.fill=f.required?'#6D28D9':'#EDE9FE';header.format.font.color=f.required?'#FFFFFF':'#312E81';header.format.font.bold=true;
+  const header=sheet.getCell(0,i);header.format.fill=f.required?'#6D28D9':f.reference?'#E2E8F0':'#EDE9FE';header.format.font.color=f.required?'#FFFFFF':'#312E81';header.format.font.bold=true;
   if(f.choices)sheet.getRangeByIndexes(1,i,100,1).dataValidation={rule:{type:'list',values:f.choices}};
  }
  sheet.getRange(`A2:${lastColumn}101`).format.rowHeight=28;
  sheet.tabColor=sheet===data?'#7C3AED':'#D97706';
 }
-examples.getRangeByIndexes(1,0,schema.samples.length,schema.fields.length).values=schema.samples.map(row=>row.map((value,i)=>['workDate','clockIn','breakStart','breakEnd','clockOut'].includes(schema.fields[i].key)&&value?new Date(value.replace(' ','T')+(schema.fields[i].key==='workDate'?'T00:00:00Z':':00Z')):value));
+examples.getRangeByIndexes(1,0,schema.samples.length,schema.fields.length).values=schema.samples.map(row=>row.map((value,i)=>['workDate','clockIn','breakStart','breakEnd','clockOut','otStart','otEnd'].includes(schema.fields[i].key)&&value?new Date(value.replace(' ','T')+(schema.fields[i].key==='workDate'?'T00:00:00Z':':00Z')):value));
 guide.getRange('A1:C1').values=[['Field','Requirement','Accepted values and explanation']];
-guide.getRangeByIndexes(1,0,schema.fields.length,3).values=schema.fields.map(f=>[f.label,f.required?'Required':['employeeName','reference','notes','reviewRequest'].includes(f.key)?'Optional':f.key==='reviewExplanation'?'Conditional: if Needs review is selected':'Conditional: actual recorded punch',f.guide]);
+guide.getRangeByIndexes(1,0,schema.fields.length,3).values=schema.fields.map(f=>[f.label,f.required?'Required':f.reference?'Read-only reference (server verified)':['employeeName','reference','notes','reviewRequest'].includes(f.key)?'Optional':f.key==='reviewExplanation'?'Conditional: if Needs review is selected':['requestedOtHours','otStart','otEnd','otReason'].includes(f.key)?'Optional OT request (complete all OT fields)':['leaveType','leaveDays','leaveStart','leaveEnd','leaveReason'].includes(f.key)?'Optional leave request (times for partial days)':'Conditional: actual recorded punch',f.guide]);
 const guideEnd=schema.fields.length+1;
 guide.getRange(`A1:C${guideEnd}`).format.wrapText=true;guide.getRange(`A1:C${guideEnd}`).format.rowHeight=60;
 guide.getRange(`A1:A${guideEnd}`).format.columnWidth=29;guide.getRange(`B1:B${guideEnd}`).format.columnWidth=34;guide.getRange(`C1:C${guideEnd}`).format.columnWidth=82;
@@ -54,6 +55,6 @@ await fs.mkdir(output,{recursive:true});
 for(const [sheet,range] of [['Instructions','A1:B11'],['Data Entry',`A1:${lastColumn}6`],['Examples — Do Not Upload',`A1:${lastColumn}4`],['Field Guide',`A1:C${guideEnd}`]]){
  const render=await book.render({sheetName:sheet,range,scale:1.25});await fs.writeFile(path.join(output,sheet.replaceAll(' ','-')+'.png'),new Uint8Array(await render.arrayBuffer()));
 }
-await (await SpreadsheetFile.exportXlsx(book)).save(path.join(output,'attendance-v4.xlsx'));
-await fs.copyFile(path.join(output,'attendance-v4.xlsx'),path.join(root,'public/templates/attendance-v4.xlsx'));
-await fs.writeFile(path.join(root,'public/templates/attendance-v4.xlsx.b64'),(await fs.readFile(path.join(output,'attendance-v4.xlsx'))).toString('base64'));
+await (await SpreadsheetFile.exportXlsx(book)).save(path.join(output,`attendance-v${schema.version}.xlsx`));
+await fs.copyFile(path.join(output,`attendance-v${schema.version}.xlsx`),path.join(root,`public/templates/attendance-v${schema.version}.xlsx`));
+await fs.writeFile(path.join(root,`public/templates/attendance-v${schema.version}.xlsx.b64`),(await fs.readFile(path.join(output,`attendance-v${schema.version}.xlsx`))).toString('base64'));

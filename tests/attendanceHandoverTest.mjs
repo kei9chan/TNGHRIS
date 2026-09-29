@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {PGlite} from '@electric-sql/pglite';
+const db=new PGlite();
+process.on('uncaughtException',e=>{console.error(e.message,e.where||'');process.exit(1);});
+await db.exec(`create schema private;create schema auth;create role anon;create role authenticated;
+create function auth.uid() returns uuid language sql as $$select '00000000-0000-4000-8000-000000000001'::uuid$$;
+create function private.payroll_actor_id() returns uuid language sql as $$select auth.uid()$$;
+create function private.payroll_time_permission(uuid,text) returns boolean language sql as $$select current_setting('test.allowed',true)='yes'$$;
+create function private.payroll_time_review(uuid,date,date) returns jsonb language sql as $$select jsonb_build_object('sourceHash','current','source','{}'::jsonb,'result',jsonb_build_object('totalDays',1,'blockedDays',0))$$;
+create table private.payroll_attendance_import_reviews(scope_id uuid,date_from date,date_to date,status text);
+create table public.payroll_time_packages(id uuid primary key default gen_random_uuid(),scope_id uuid,date_from date,date_to date,version int,source_hash text,source_snapshot jsonb,result jsonb,previous_id uuid,created_by uuid,reason text,status text default 'draft',submitted_by uuid,submitted_at timestamptz);
+create table public.payroll_time_audit(scope_id uuid,actor_id uuid,action text,record_id uuid,reason text);
+set test.allowed='yes';`);
+const sql=fs.readFileSync('supabase/migrations/20260906021209_payroll_attendance_readiness_phase3.sql','utf8');
+for(const name of ['save_payroll_time_package','submit_payroll_time_package']){const tail=sql.slice(sql.indexOf(`create function public.${name}(`));const end=tail.indexOf('$$;',tail.indexOf('$$')+2);await db.exec(tail.slice(0,end+3));}
+await db.exec(fs.readFileSync('supabase/migrations/20260929122000_one_action_attendance_handover.sql','utf8'));
+const scope='00000000-0000-4000-8000-000000000002';
+const prepare=hash=>db.query("select public.prepare_payroll_attendance_for_calculation($1,'2026-08-26','2026-09-10',$2) id",[scope,hash]);
+await assert.rejects(prepare('stale'),/sources changed/);
+await db.exec("set test.allowed='no'");await assert.rejects(prepare('current'),/assigned HR/);await db.exec("set test.allowed='yes'");
+await db.query("insert into private.payroll_attendance_import_reviews values($1,'2026-09-03','2026-09-03','pending_bod')",[scope]);await assert.rejects(prepare('current'),/still await approval/);
+await db.exec("update private.payroll_attendance_import_reviews set status='approved'");
+const id=(await prepare('current')).rows[0].id;assert.equal((await prepare('current')).rows[0].id,id);
+assert.equal((await db.query('select status from payroll_time_packages')).rows[0].status,'submitted');
+assert.equal((await db.query("select count(*)::int n from payroll_time_audit where action='submitted_to_finance'")).rows[0].n,1);
+await db.close();console.log('PASS: one-action handover uses real save/submit, requires authority and current sources, blocks pending fixes, repeats without duplicate handover.');

@@ -7,7 +7,7 @@ export type EmployeeReadinessCard={key:string;employeeId:string;employeeName:str
 
 export function specificIssue(issue:string,date:string):ReadinessIssue{
  const text=issue.toLowerCase();
- if(text==='approved time rules missing')return {category:'payroll_setup',label:'Cutoff time rules — Not confirmed',raw:issue,date,blocking:true,action:'Confirm cutoff rules',path:'/payroll/attendance-readiness#attendance-references'};
+ if(text==='approved time rules missing')return {category:'payroll_setup',label:'Attendance policy — Needs setup',raw:issue,date,blocking:true,action:'Open attendance settings',path:'/payroll/attendance-readiness#attendance-references'};
  if(text==='holiday calendar coverage needs review')return {category:'payroll_setup',label:'Holiday coverage — Not confirmed',raw:issue,date,blocking:true,action:'Review holiday calendar',path:'/payroll/attendance-readiness#attendance-references'};
  if(text==='approved ot times or duration missing')return {category:'overtime',label:'Approved OT duration is missing',raw:issue,date,blocking:true,action:'Review approved hours',path:'/payroll/overtime-requests'};
  if(/salary|pay package|base.pay/.test(text))return {category:'payroll_setup',label:'Approved salary source — Missing',raw:issue,date,blocking:true,action:'Add salary source',path:'/payroll/pay-packages'};
@@ -16,9 +16,9 @@ export function specificIssue(issue:string,date:string):ReadinessIssue{
  if(/missing schedule|missing or unpublished schedule|unpublished schedule/.test(text))return {category:'schedule',label:'Published schedule — Missing',raw:issue,date,blocking:true,action:'Open schedule',path:'/payroll/timekeeping'};
  if(/schedule|shift|roster/.test(text))return {category:'attendance',label:issue,raw:issue,date,blocking:true,action:'Review scheduled and worked time',path:'/payroll/daily-review'};
  if(/ot|overtime|rest.day|offset/.test(text))return {category:'overtime',label:'Overtime approval needs review',raw:issue,date,blocking:true,action:'Review overtime',path:'/payroll/overtime-requests'};
- if(/break|lunch/.test(text))return {category:'attendance',label:'Missing or extended break',raw:issue,date,blocking:true,action:'Open correction',path:'/payroll/historical-corrections'};
- if(/punch|clock/.test(text))return {category:'attendance',label:'Missing punch',raw:issue,date,blocking:true,action:'Open correction',path:'/payroll/historical-corrections'};
- if(/late|undertime|absence/.test(text))return {category:'attendance',label:issue.replace(/employee profile information incomplete/ig,'Timekeeping setup needed'),raw:issue,date,blocking:false,action:'Review attendance',path:'/payroll/historical-corrections'};
+ if(/break|lunch/.test(text))return {category:'attendance',label:'Missing or extended break',raw:issue,date,blocking:true,action:'Open correction',path:'/payroll/import-attendance'};
+ if(/punch|clock/.test(text))return {category:'attendance',label:'Missing punch',raw:issue,date,blocking:true,action:'Open correction',path:'/payroll/import-attendance'};
+ if(/late|undertime|absence/.test(text))return {category:'attendance',label:issue.replace(/employee profile information incomplete/ig,'Timekeeping setup needed'),raw:issue,date,blocking:false,action:'Review attendance',path:'/payroll/import-attendance'};
  return {category:'attendance',label:issue.replace(/employee profile information incomplete/ig,'Timekeeping setup needed'),raw:issue,date,blocking:true,action:'Review issue',path:'/payroll/daily-review'};
 }
 
@@ -37,7 +37,7 @@ export function groupEmployeeReadiness(rows:ReviewTimeRow[],businessUnit:string,
   days.sort((a,b)=>a.date.localeCompare(b.date));
   const setup=setupDependencies(days,extra[days[0].employeeId]||[]);
   const issues=days.flatMap(day=>day.issues.map(raw=>specificIssue(raw,day.date))).filter(issue=>(issue.category!=='payroll_setup'&&issue.category!=='schedule')||!setup.some(item=>item.label===issue.label));
-  const counts={attendance:issues.filter(i=>i.category==='attendance').length,schedule:setup.filter(i=>i.key.startsWith('schedule:')).length,payroll_setup:setup.filter(i=>!i.key.startsWith('schedule:')).length,overtime:issues.filter(i=>i.category==='overtime').length};
+  const counts={attendance:new Set(issues.filter(i=>i.category==='attendance').map(i=>i.label)).size,schedule:setup.filter(i=>i.key.startsWith('schedule:')).length,payroll_setup:setup.filter(i=>!i.key.startsWith('schedule:')).length,overtime:new Set(issues.filter(i=>i.category==='overtime').map(i=>i.label)).size};
   const total=counts.attendance+counts.schedule+counts.payroll_setup+counts.overtime;
   const blocking=setup.some(item=>item.blocking)||issues.some(item=>item.blocking);
   const status:EmployeeReadinessCard['status']=blocking?'Blocking payroll':total?'Needs attention':'Ready';

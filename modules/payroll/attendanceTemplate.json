@@ -1,26 +1,347 @@
 {
   "type": "attendance",
-  "version": 4,
+  "version": 5,
   "title": "Actual daily attendance",
-  "meaning": "One employee and work date per row. Select a day status, then enter actual punches only when recorded. Missing punches and absences require review; do not guess times.",
+  "meaning": "One employee and work date per row. Published shift columns are reference only. Enter actual attendance, then optional OT or leave requests for separate approval. Never copy scheduled times into actual punches.",
   "fields": [
-    {"label":"Employee ID*","key":"employeeId","required":true,"format":"@","guide":"Actual HRIS Employee ID. Keep this cell as text to preserve leading zeros. DEMO IDs are rejected."},
-    {"label":"Employee name (reference only)","key":"employeeName","format":"@","guide":"Prefilled from the HRIS directory for your reference. Employee ID determines the record; do not substitute a name for the ID."},
-    {"label":"Business unit*","key":"businessUnit","required":true,"format":"@","guide":"Exact business-unit name shown in the selected import scope."},
-    {"label":"Work date*","key":"workDate","required":true,"format":"yyyy-mm-dd","guide":"Shift's work date. Use a real Excel date or ISO YYYY-MM-DD, inside the selected cutoff."},
-    {"label":"Day status*","key":"dayStatus","required":true,"format":"@","choices":["Worked","Rest day","Absent","Sick or unable to report","Approved leave","Leave without pay","Suspension","Regular holiday","Special nonworking day","For review","Workday","Legal holiday","Company holiday","No scheduled work","Absent (review)","Missing punches (review)","Suspended"],"guide":"Choose the plain-language day classification. Worked needs actual punches. Rest day needs a saved roster. Approved leave, suspension and holiday require separate authorized records; selecting them here never grants pay or leave. For review and missing punches remain unresolved until checked."},
-    {"label":"Clock-in date/time","key":"clockIn","format":"yyyy-mm-dd hh:mm","guide":"Actual clock-in. Use a real Excel date/time or YYYY-MM-DD HH:mm. Asia/Manila."},
-    {"label":"Break start date/time","key":"breakStart","format":"yyyy-mm-dd hh:mm","guide":"Actual break start, if recorded. Leave missing evidence blank for review."},
-    {"label":"Break end date/time","key":"breakEnd","format":"yyyy-mm-dd hh:mm","guide":"Actual break end, if recorded. Explicit next-day date for overnight breaks."},
-    {"label":"Clock-out date/time","key":"clockOut","format":"yyyy-mm-dd hh:mm","guide":"Actual clock-out with explicit end date. A late clock-out is not automatic approved overtime."},
-    {"label":"Source reference (optional)","key":"reference","format":"@","guide":"Reference to the original clock export or attendance evidence. Keep as text."},
-    {"label":"Notes (optional)","key":"notes","format":"@","guide":"Explain missing punches or corrections requiring review. Do not enter formulas."},
-    {"label":"Needs review (optional)","key":"reviewRequest","format":"@","choices":["None","Missing punch","Absence","Rest-day work","Holiday work","Suspension","Worked lunch","Overtime","Other"],"guide":"Choose an issue for HR Manager and BOD to review. The choice does not approve paid leave, overtime, deductions, or a schedule change."},
-    {"label":"Review explanation (optional)","key":"reviewExplanation","format":"@","guide":"Explain the selected issue or point to its approved source request. The original attendance evidence remains unchanged."}
+    {
+      "label": "Employee ID*",
+      "key": "employeeId",
+      "required": true,
+      "format": "@",
+      "guide": "Actual HRIS Employee ID. Keep this cell as text to preserve leading zeros. DEMO IDs are rejected."
+    },
+    {
+      "label": "Employee name (reference only)",
+      "key": "employeeName",
+      "format": "@",
+      "guide": "Prefilled from the HRIS directory for your reference. Employee ID determines the record; do not substitute a name for the ID."
+    },
+    {
+      "label": "Business unit*",
+      "key": "businessUnit",
+      "required": true,
+      "format": "@",
+      "guide": "Exact business-unit name shown in the selected import scope."
+    },
+    {
+      "label": "Work date*",
+      "key": "workDate",
+      "required": true,
+      "format": "yyyy-mm-dd",
+      "guide": "Shift's work date. Use a real Excel date or ISO YYYY-MM-DD, inside the selected cutoff."
+    },
+    {
+      "label": "Day status*",
+      "key": "dayStatus",
+      "required": true,
+      "format": "@",
+      "choices": [
+        "Worked",
+        "Rest day",
+        "Absent",
+        "Sick or unable to report",
+        "Approved leave",
+        "Leave without pay",
+        "Suspension",
+        "Regular holiday",
+        "Special nonworking day",
+        "For review",
+        "Workday",
+        "Legal holiday",
+        "Company holiday",
+        "No scheduled work",
+        "Absent (review)",
+        "Missing punches (review)",
+        "Suspended"
+      ],
+      "guide": "Choose the plain-language day classification. Worked needs actual punches. Rest day needs a saved roster. Approved leave, suspension and holiday require separate authorized records; selecting them here never grants pay or leave. For review and missing punches remain unresolved until checked."
+    },
+    {
+      "label": "Clock-in date/time",
+      "key": "clockIn",
+      "format": "yyyy-mm-dd hh:mm",
+      "guide": "Actual clock-in. Use a real Excel date/time or YYYY-MM-DD HH:mm. Asia/Manila."
+    },
+    {
+      "label": "Break start date/time",
+      "key": "breakStart",
+      "format": "yyyy-mm-dd hh:mm",
+      "guide": "Actual break start, if recorded. Leave missing evidence blank for review."
+    },
+    {
+      "label": "Break end date/time",
+      "key": "breakEnd",
+      "format": "yyyy-mm-dd hh:mm",
+      "guide": "Actual break end, if recorded. Explicit next-day date for overnight breaks."
+    },
+    {
+      "label": "Clock-out date/time",
+      "key": "clockOut",
+      "format": "yyyy-mm-dd hh:mm",
+      "guide": "Actual clock-out with explicit end date. A late clock-out is not automatic approved overtime."
+    },
+    {
+      "label": "Source reference (optional)",
+      "key": "reference",
+      "format": "@",
+      "guide": "Reference to the original clock export or attendance evidence. Keep as text."
+    },
+    {
+      "label": "Notes (optional)",
+      "key": "notes",
+      "format": "@",
+      "guide": "Explain missing punches or corrections requiring review. Do not enter formulas."
+    },
+    {
+      "label": "Needs review (optional)",
+      "key": "reviewRequest",
+      "format": "@",
+      "choices": [
+        "None",
+        "Missing punch",
+        "Absence",
+        "Rest-day work",
+        "Holiday work",
+        "Suspension",
+        "Worked lunch",
+        "Overtime",
+        "Other"
+      ],
+      "guide": "Choose an issue for HR Manager and BOD to review. The choice does not approve paid leave, overtime, deductions, or a schedule change."
+    },
+    {
+      "label": "Review explanation (optional)",
+      "key": "reviewExplanation",
+      "format": "@",
+      "guide": "Explain the selected issue or point to its approved source request. The original attendance evidence remains unchanged."
+    },
+    {
+      "label": "Requested OT hours (optional)",
+      "key": "requestedOtHours",
+      "format": "0.00",
+      "guide": "Requested paid OT hours, not total shift hours. Requires OT start/end and a reason; manager decides the authorized hours.",
+      "reference": false
+    },
+    {
+      "label": "OT start date/time (optional)",
+      "key": "otStart",
+      "format": "yyyy-mm-dd hh:mm",
+      "guide": "Actual requested OT interval start, including date. Never copy a full shift as overtime.",
+      "reference": false
+    },
+    {
+      "label": "OT end date/time (optional)",
+      "key": "otEnd",
+      "format": "yyyy-mm-dd hh:mm",
+      "guide": "Requested OT interval end, including next-day date if applicable.",
+      "reference": false
+    },
+    {
+      "label": "OT reason (optional)",
+      "key": "otReason",
+      "format": "@",
+      "guide": "Why overtime was needed. Creates or links a separate approval request; attendance approval never grants OT pay.",
+      "reference": false
+    },
+    {
+      "label": "Leave type (optional)",
+      "key": "leaveType",
+      "format": "@",
+      "guide": "Exact configured HRIS leave type. Prefilled workbook lists current leave types. Existing matching requests are linked.",
+      "reference": false
+    },
+    {
+      "label": "Leave days (optional)",
+      "key": "leaveDays",
+      "format": "0.00",
+      "guide": "Requested leave quantity for this date, greater than zero and no more than one. Fractional leave needs start/end times.",
+      "reference": false
+    },
+    {
+      "label": "Leave start time (optional)",
+      "key": "leaveStart",
+      "format": "@",
+      "guide": "HH:mm for partial-day leave. Leave blank for a full day.",
+      "reference": false
+    },
+    {
+      "label": "Leave end time (optional)",
+      "key": "leaveEnd",
+      "format": "@",
+      "guide": "HH:mm for partial-day leave. Must be later than start.",
+      "reference": false
+    },
+    {
+      "label": "Leave reason (optional)",
+      "key": "leaveReason",
+      "format": "@",
+      "guide": "Reason for the separate leave request. Selecting Approved leave in attendance does not approve this request.",
+      "reference": false
+    },
+    {
+      "label": "Weekday (reference only)",
+      "key": "weekday",
+      "format": "@",
+      "guide": "Day of the work date in Philippine time.",
+      "reference": true
+    },
+    {
+      "label": "Published shift (reference only)",
+      "key": "shiftName",
+      "format": "@",
+      "guide": "From the published Schedule Builder snapshot, using this employee and work date. Do not choose a preset again.",
+      "reference": true
+    },
+    {
+      "label": "Scheduled start (reference only)",
+      "key": "scheduledStart",
+      "format": "@",
+      "guide": "Published scheduled date/time, not an actual clock-in.",
+      "reference": true
+    },
+    {
+      "label": "Scheduled end (reference only)",
+      "key": "scheduledEnd",
+      "format": "@",
+      "guide": "Published scheduled date/time with next-day date for overnight shifts, not an actual clock-out.",
+      "reference": true
+    },
+    {
+      "label": "Scheduled day type (reference only)",
+      "key": "scheduledDayType",
+      "format": "@",
+      "guide": "Published roster classification. Actual classification can differ and needs review.",
+      "reference": true
+    },
+    {
+      "label": "Scheduled paid hours (reference only)",
+      "key": "scheduledPaidHours",
+      "format": "@",
+      "guide": "Published scheduled paid hours. This reference does not authorize actual pay.",
+      "reference": true
+    },
+    {
+      "label": "Break allowance minutes (reference only)",
+      "key": "breakMinutes",
+      "format": "@",
+      "guide": "Published break allowance. Actual break punches remain separate; never subtract a break twice.",
+      "reference": true
+    },
+    {
+      "label": "Roster version (reference only)",
+      "key": "rosterVersion",
+      "format": "@",
+      "guide": "Published schedule identifier and version. Server always rechecks the authoritative published roster.",
+      "reference": true
+    },
+    {
+      "label": "Schedule check (reference only)",
+      "key": "scheduleCheck",
+      "format": "@",
+      "guide": "Published, or an exact missing-publication explanation. Resolve schedule problems in Schedule Builder, not by editing reference cells.",
+      "reference": true
+    }
   ],
   "samples": [
-    ["DEMO-001","Example Employee","Bakebe – SM Aura","2026-08-26","Workday","2026-08-26 09:00","2026-08-26 12:00","2026-08-26 13:00","2026-08-26 18:00","Example only","Use actual HRIS IDs in Data Entry","None",""],
-    ["DEMO-001","Example Employee","Bakebe – SM Aura","2026-08-27","Rest day","","","","","Example only","No punches on an existing rest day","None",""],
-    ["DEMO-002","Example Employee","Bakebe – SM Aura","2026-08-28","Workday","2026-08-28 22:00","2026-08-29 02:00","2026-08-29 03:00","2026-08-29 07:00","Example only","Overnight session uses explicit next-day dates","Overtime","Check approved request and duration"]
+    [
+      "DEMO-001",
+      "Example Employee",
+      "Bakebe \u2013 SM Aura",
+      "2026-08-26",
+      "Workday",
+      "2026-08-26 09:00",
+      "2026-08-26 12:00",
+      "2026-08-26 13:00",
+      "2026-08-26 18:00",
+      "Example only",
+      "Use actual HRIS IDs in Data Entry",
+      "None",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    [
+      "DEMO-001",
+      "Example Employee",
+      "Bakebe \u2013 SM Aura",
+      "2026-08-27",
+      "Rest day",
+      "",
+      "",
+      "",
+      "",
+      "Example only",
+      "No punches on an existing rest day",
+      "None",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    [
+      "DEMO-002",
+      "Example Employee",
+      "Bakebe \u2013 SM Aura",
+      "2026-08-28",
+      "Workday",
+      "2026-08-28 22:00",
+      "2026-08-29 02:00",
+      "2026-08-29 03:00",
+      "2026-08-29 07:00",
+      "Example only",
+      "Overnight session uses explicit next-day dates",
+      "Overtime",
+      "Check approved request and duration",
+      "1",
+      "2026-08-29 06:00",
+      "2026-08-29 07:00",
+      "Requested extra coverage; separate manager approval",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ]
   ]
 }
