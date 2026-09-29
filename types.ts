@@ -1430,6 +1430,8 @@ export interface OTRequestHistory {
 }
 
 export interface OTRequest {
+  businessUnitId?: string;
+  requestedHours?: number;
   id: string;
   employeeId: string;
   employeeName: string;

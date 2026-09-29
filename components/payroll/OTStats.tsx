@@ -43,9 +43,9 @@ const OTStats: React.FC<OTStatsProps> = ({ requests }) => {
         requests.forEach(req => {
             const reqDate = new Date(req.date);
             // Use approved hours if available, otherwise calculate from planned time
-            const hours = req.approvedHours || calculateDuration(req.startTime, req.endTime);
+            const hours = req.status === OTStatus.Approved ? (req.approvedHours ?? 0) : (req.approvedHours ?? req.requestedHours ?? calculateDuration(req.startTime, req.endTime));
 
-            if (req.status === OTStatus.Submitted) {
+            if ([OTStatus.Submitted,OTStatus.PendingGM,OTStatus.PendingBOD].includes(req.status)) {
                 pendingHours += hours;
             }
 
