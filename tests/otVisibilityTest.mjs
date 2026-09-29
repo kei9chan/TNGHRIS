@@ -19,11 +19,26 @@ await db.query("insert into hris_users values($1,$3,'Manager'),($2,$4,'Staff'),(
 for(const role of ['Admin','HR Staff','HR Manager','Board of Director','Manager','Business Unit Manager','Employee'])await db.query('insert into roles values($1,true)',[role]);
 await db.query("insert into ot_requests(id,employee_id,business_unit_id,status) values($1,$2,null,'Submitted'),($3,$4,null,'Approved'),($5,$4,$6,'Rejected')",[id(30),id(21),id(31),id(20),id(32),id(3)]);
 await db.exec(fs.readFileSync('supabase/migrations/20260929133000_overtime_management_visibility.sql','utf8'));
+// Match production ACLs: the actor-parameter helper cannot be called by clients.
+await db.exec('revoke all on function private.is_active_time_request_approver(uuid,text,uuid) from public,anon,authenticated');
+await db.exec('set role authenticated');
+await assert.rejects(db.query('select count(*) from ot_requests'),/permission denied for function is_active_time_request_approver/);
+await db.exec('reset role');
+await db.exec(fs.readFileSync('supabase/migrations/20260929140000_restore_approval_queue_ot_rls.sql','utf8'));
 await db.exec(`set test.actor='${id(10)}'`);
 const setRole=async(role,active=true)=>{await db.exec('delete from user_roles');await db.query("insert into user_roles values($1,$2,$3,'HOME_ONLY','{}')",[id(10),role,active]);};
 const read=async()=>{await db.exec('set role authenticated');try{return (await db.query('select * from list_visible_ot_requests()')).rows.map(r=>r.list_visible_ot_requests);}finally{await db.exec('reset role');}};
 for(const role of ['Admin','HR Staff','HR Manager','Board of Director']){await setRole(role);assert.equal((await read()).length,3,role);await db.exec('set role authenticated');assert.equal((await db.query('select count(*)::int n from ot_requests')).rows[0].n,3);await db.exec('reset role');}
 for(const role of ['Manager','Business Unit Manager']){await setRole(role);let rows=await read();assert.equal(rows.length,1);assert.equal(rows[0].business_unit_id,id(1));await db.query("update user_roles set scope_type='SPECIFIC',allowed_business_unit_ids=$1",[[id(2)]]);rows=await read();assert.equal(rows.length,2);assert.ok(!rows.some(r=>r.id===id(32)),'Foreign snapshot excluded');}
+// A scoped assigned approver can read only the assigned foreign-BU request.
+await db.exec(`create or replace function private.is_active_time_request_approver(uuid,text,uuid) returns boolean language sql stable as $$select $1='${id(10)}'::uuid and $3='${id(31)}'::uuid$$`);
+await setRole('Employee');
+await db.exec('set role authenticated');
+assert.deepEqual((await db.query('select id from ot_requests')).rows.map(r=>r.id),[id(31)]);
+await assert.rejects(db.query(`select private.is_active_time_request_approver('${id(10)}','overtime','${id(31)}')`),/permission denied/);
+await db.exec('reset role');
+assert.equal((await db.query("select has_function_privilege('anon','private.current_actor_can_read_assigned_ot(uuid)','execute') allowed")).rows[0].allowed,false);
+await db.exec('create or replace function private.is_active_time_request_approver(uuid,text,uuid) returns boolean language sql stable as $$select false$$');
 await setRole('HR Staff',false);assert.equal((await read()).length,0,'Inactive role denied');await setRole('Employee');assert.equal((await read()).length,0,'Employee cannot view others');
 await db.query('insert into ot_requests(id,employee_id,status) values($1,$2,\'Draft\')',[id(33),id(10)]);assert.equal((await read()).length,1,'Employee own request retained');
 await setRole('Admin');const page1=(await db.query('select * from list_visible_ot_requests(0,2)')).rows;const page2=(await db.query('select * from list_visible_ot_requests(2,2)')).rows;assert.equal(new Set([...page1,...page2].map(r=>r.list_visible_ot_requests.id)).size,4);

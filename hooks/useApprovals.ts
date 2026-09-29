@@ -81,6 +81,12 @@ export function useApprovals({ user }: UseApprovalsOptions) {
             fetchActionableApprovalTasks(user.id).then(data => ({ data, error: null as any })).catch(error => ({ data: [], error })),
             fetchActionableApprovalTasks(user.id).then(rows => rows.filter(r => r.request_type === 'manpower').map(r => r.request_id)).then(data => ({ data, error: null as any })).catch(error => ({ data: [], error })),
         ]);
+        if (timeAssignments.error || manpowerAssignments.error) {
+            const error = timeAssignments.error || manpowerAssignments.error;
+            setApprovalError(`Approval assignments could not be loaded. ${error.message}`);
+            setApprovalsLoading(false);
+            return; // Preserve the last successful queue; a failed load is not an empty inbox.
+        }
         const assignmentRows = timeAssignments.data;
         const assignmentError = timeAssignments.error;
         if (assignmentError) {

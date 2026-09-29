@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+import {createRequire} from 'node:module';
+import {fixture,fixturePlugin} from './approvalUiFixtures.mjs';
+const require=createRequire(import.meta.url),Module=require('node:module');
+const empty=Object.fromEntries([...Object.keys(fixture),'pendingPayPackageApprovals'].map(k=>[k,[]]));
+globalThis.inboxFixture={...empty};globalThis.attendanceFixture=[];
+const result=await build({stdin:{contents:"import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import {MemoryRouter} from 'react-router-dom';import Widget from './components/dashboard/ApprovalWidget';export const render=()=>renderToStaticMarkup(<MemoryRouter><Widget/></MemoryRouter>);",resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,platform:'node',format:'cjs',packages:'external',plugins:[fixturePlugin()]});
+const mod=new Module(process.cwd()+'/queue-test.cjs');mod.paths=Module._nodeModulePaths(process.cwd());mod._compile(result.outputFiles[0].text,'queue-test.cjs');
+assert.equal(mod.exports.render(),'');
+globalThis.inboxFixture.approvalError='Failed to load';
+let html=mod.exports.render();assert.match(html,/Unavailable/);assert.match(html,/count is incomplete/);assert.doesNotMatch(html,/>0<\/span>/);
+globalThis.inboxFixture.pendingOtApprovals=fixture.pendingOtApprovals;
+html=mod.exports.render();assert.match(html,/1\+/);assert.match(html,/Overtime/);
+globalThis.inboxFixture.approvalError=null;
+html=mod.exports.render();assert.match(html,/>1<\/span>/);assert.doesNotMatch(html,/Unavailable/);
+console.log('PASS: failed load is unavailable, partial count is marked incomplete, recovered queue shows the actual count.');
