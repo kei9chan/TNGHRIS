@@ -44,7 +44,7 @@ const calculatePlannedHours = (start: string, end: string): number => {
     
     const diffMs = endTime.getTime() - startTime.getTime();
     const diffHours = diffMs / (1000 * 60 * 60);
-    return Math.round(diffHours * 4) / 4; // Round to nearest quarter hour
+    return Math.round(diffHours * 60) / 60; // Keep exact minutes; never round to quarter-hours.
 };
 
 const overtimeDateFormatter = new Intl.DateTimeFormat('en-PH', {
@@ -124,8 +124,8 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
             historyLog: [],
         };
         setRequest(initialRequest);
-        const savedApprovedHours = Number(requestToEdit?.approvedHours || 0);
-        setApprovedHours(savedApprovedHours > 0 ? savedApprovedHours.toString() : '');
+        const savedApprovedHours = requestToEdit?.approvedHours;
+        setApprovedHours(savedApprovedHours != null ? savedApprovedHours.toString() : '');
         setManagerNote(requestToEdit?.managerNote || '');
         setError('');
         setRejecting(false);
@@ -146,7 +146,7 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
                  if (template) {
                      setShiftInfo(`${template.name} (${template.startTime} - ${template.endTime})`);
                      // Auto-set OT Start Time to Shift End Time
-                     setRequest(prev => ({ ...prev, startTime: template.endTime }));
+                     // Published shift is context only; do not invent an extra-work start.
                  }
              }
         }
@@ -172,16 +172,6 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
             newWarnings.push('⚠️ High Duration: Overtime beyond 4 hours requires explicit manager approval to prevent fatigue.');
         }
 
-        // 2. Attendance Conflict
-        const conflict = attendanceRecords.some(rec => 
-            rec.employeeId === request.employeeId &&
-            new Date(rec.date).toDateString() === dateStr &&
-            rec.exceptions.includes(AttendanceException.Absent)
-        );
-        if (conflict) {
-            newWarnings.push('⚠️ Attendance Flag: You are marked as Absent on this date.');
-        }
-        
         // 3. Future Limit Check
         const futureLimit = new Date();
         futureLimit.setDate(futureLimit.getDate() + 14);
@@ -227,7 +217,7 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
                      setShiftInfo(`${template.name} (${template.startTime} - ${template.endTime})`);
                      // Only auto-fill if start time is empty to avoid overwriting user input
                      if (!request.startTime) {
-                         newStartTime = template.endTime;
+                         newStartTime = request.startTime; // Schedule is context, never evidence of extra work.
                      }
                  } else {
                      setShiftInfo('');
@@ -241,6 +231,7 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
              setRequest(prev => ({
                 ...prev,
                 [name]: type === 'date' ? new Date(value) : value,
+                ...(['startTime','endTime'].includes(name)?{requestedMinutes:undefined,requestedHours:undefined}:{}),
             }));
         }
     };
@@ -281,11 +272,11 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
 
     const handleSaveDraftOrSubmit = (status: OTStatus) => {
         setError('');
-        if (!request.date || !request.startTime || !request.endTime || !request.reason) {
+        if (!request.date || (!request.requestedMinutes && (!request.startTime || !request.endTime)) || !request.reason) {
             setError('Please fill out all required fields.');
             return;
         }
-        const duration = calculatePlannedHours(request.startTime || '', request.endTime || '');
+        const duration = request.startTime && request.endTime ? calculatePlannedHours(request.startTime, request.endTime)-(request.unpaidBreakMinutes??0)/60 : (request.requestedMinutes??0)/60;
         if (duration <= 0) {
             setError('End time must be after start time, or check AM/PM.');
             return;
@@ -302,8 +293,8 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
     };
     const handleApprove = () => {
         const hours = parseFloat(approvedHours);
-        if (isNaN(hours) || hours <= 0) {
-            setError('Approved Hours must be a positive number.');
+        if (isNaN(hours) || hours < 0) {
+            setError('Approved hours must be zero or more, within the requested amount.');
             return;
         }
         setError('');
@@ -320,7 +311,7 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
         void recordDecision(OTStatus.Rejected, 0);
     };
 
-    const plannedHours = useMemo(() => calculatePlannedHours(request.startTime || '', request.endTime || ''), [request.startTime, request.endTime]);
+    const plannedHours = useMemo(() => request.startTime && request.endTime ? calculatePlannedHours(request.startTime, request.endTime)-(request.unpaidBreakMinutes??0)/60 : (request.requestedMinutes??0)/60, [request.startTime, request.endTime,request.requestedMinutes,request.unpaidBreakMinutes]);
     
     const isFinalized = request.status === OTStatus.Approved || request.status === OTStatus.Rejected;
     const isManagerReviewing = user?.role !== Role.Employee && requestToEdit?.employeeId !== user?.id && (
@@ -338,7 +329,7 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
 
     // Auto-set approved hours for manager convenience
     useEffect(() => {
-        if (isManagerReviewing && (!Number.isFinite(Number(approvedHours)) || Number(approvedHours) <= 0) && plannedHours > 0) {
+        if (isManagerReviewing && approvedHours === '' && plannedHours > 0) {
             setApprovedHours(plannedHours.toString());
         }
     }, [isManagerReviewing, plannedHours, approvedHours]);
@@ -389,6 +380,7 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
             footer={renderFooter()}
         >
             <div className="space-y-4">
+                <div className="rounded-xl bg-violet-50 p-4 text-violet-950"><b>Temporary manual OT mode</b><p>Enter only the actual extra work beyond normal hours. Your manager verifies it; HRIS punches are not required. Never enter the whole workday as overtime.</p></div>
                 {requestToEdit && (
                     <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-600 dark:bg-slate-800">
                         <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-950/40">
@@ -427,7 +419,7 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
                 />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <Input
-                        label="Start Time"
+                        label="Extra work started"
                         id="startTime"
                         name="startTime"
                         type="time"
@@ -437,7 +429,7 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
                         disabled={isFinalized || isManagerReviewing || request.status === OTStatus.Submitted}
                     />
                     <Input
-                        label="End Time"
+                        label="Extra work ended"
                         id="endTime"
                         name="endTime"
                         type="time"
@@ -448,6 +440,12 @@ const OTRequestModal: React.FC<OTRequestModalProps> = ({ isOpen, onClose, onSave
                     />
                 </div>
                 
+                {!isManagerReviewing && !isFinalized && <div className="grid gap-3 sm:grid-cols-2">
+                    <Input label="End date (for overnight extra work)" type="date" value={request.endDate||''} onChange={e=>setRequest(prev=>({...prev,endDate:e.target.value}))}/>
+                    <Input label="Unpaid breaks during extra work (minutes)" type="number" min="0" step="1" value={request.unpaidBreakMinutes??0} onChange={e=>setRequest(prev=>({...prev,unpaidBreakMinutes:Number(e.target.value)}))}/>
+                    <Input label="Or enter total extra-work minutes (leave both times blank)" type="number" min="1" max="1440" step="1" disabled={!!request.startTime||!!request.endTime} value={request.requestedMinutes??''} onChange={e=>setRequest(prev=>({...prev,requestedMinutes:Number(e.target.value)}))}/>
+                    <p className="text-sm text-slate-500">For example, 75 means 1h 15m. Duration-only minutes exclude unpaid breaks. A next-day end date preserves overnight work.</p>
+                </div>}
                 <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" htmlFor="otType">
                         Overtime Type

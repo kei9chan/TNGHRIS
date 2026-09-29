@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import {PGlite} from '@electric-sql/pglite';
 
 const db=new PGlite();
+const manualOt=process.env.TEST_MANUAL_OT==='1';
 const fixture=fs.readFileSync('tests/actualAttendanceImportTest.mjs','utf8');
 const setup=fixture.slice(fixture.indexOf('await db.exec(`create schema private;'),fixture.indexOf('await db.exec(fs.readFileSync('));
 const sql=setup.slice(setup.indexOf('`')+1,setup.lastIndexOf('`);'))
@@ -52,13 +53,14 @@ const extract=(file,name,delimiter='$$')=>{const sql=fs.readFileSync(file,'utf8'
 await db.exec(extract('supabase/migrations/20260906112648_payroll_schedule_versions.sql','private.payroll_schedule_validate'));
 await db.exec(extract('supabase/migrations/20260907015502_confirmed_hr_payroll_rules.sql','private.interpret_payroll_time','$function$'));
 const source={employees:[{id:employee,name:'Fixture',hireDate:'2020-01-01',status:'Active'}],rules:[{id:'fixture-rule',revision:1,effective_from:'2026-01-01',effective_to:'2026-12-31',config:{holidayCoverageConfirmed:true,splitShiftConfirmed:true,restTemplates:[],meals:{}}}],shifts:[{id:'fixture-shift',employeeId:employee,date:'2026-09-03',templateId:'fixture',start:'09:00',end:'18:00',breakMinutes:60,kind:'work',endDayOffset:0,paidMinutes:480,published:true}],scheduleDays:[{employeeId:employee,date:'2026-09-03',status:'published'}],leave:[],ot:[],holidays:[],wfh:[],leavePolicies:[],events:selected.map((e,i)=>({...e,id:String(i),employeeId:employee,type:{ClockIn:'CLOCK_IN',ClockOut:'CLOCK_OUT',BreakStart:'START_BREAK',BreakEnd:'END_BREAK'}[e.type]}))};
-const interpreted=(await db.query("select private.interpret_payroll_time($1,'2026-09-03','2026-09-03') r",[source])).rows[0].r;
+let interpreted=(await db.query("select private.interpret_payroll_time($1,'2026-09-03','2026-09-03') r",[source])).rows[0].r;
 assert.equal(interpreted.blockedDays,0);assert.equal(interpreted.rows[0].regularMinutes,480);
 const read=p=>fs.readFileSync(p,'utf8');
 const wanted=new Set(['private.payroll_audit_immutable','private.validate_payroll_gross_config','private.payroll_gross_intervals','private.payroll_gross_line','private.calculate_payroll_gross_v1','private.payroll_net_money','private.payroll_withholding_2023','private.payroll_contributions_2026','private.validate_payroll_net_arrangement','private.calculate_payroll_net_v1','private.payroll_comparison_rows','private.payroll_compare_values']);
 const definitions=new Map();
 let serviceChargeBase,inputAdditionsBase;
 for(const file of fs.readdirSync('supabase/migrations').sort()){
+ if(file==='20260929151000_manual_ot_payroll_evidence.sql')continue;
  const sql=read(`supabase/migrations/${file}`);
  if(sql.includes('alter function private.calculate_payroll_gross_v1(jsonb) rename to calculate_payroll_gross_without_service_charge_phase3'))serviceChargeBase=definitions.get('private.calculate_payroll_gross_v1').replace('private.calculate_payroll_gross_v1','private.calculate_payroll_gross_without_service_charge_phase3');
  if(sql.includes('alter function private.calculate_payroll_gross_v1(jsonb) rename to calculate_payroll_gross_before_input_additions'))inputAdditionsBase=definitions.get('private.calculate_payroll_gross_v1').replace('private.calculate_payroll_gross_v1','private.calculate_payroll_gross_before_input_additions');
@@ -68,6 +70,14 @@ for(const file of fs.readdirSync('supabase/migrations').sort()){
 
 if(serviceChargeBase)await db.exec(serviceChargeBase);if(inputAdditionsBase)await db.exec(inputAdditionsBase);
 for(const name of wanted)await db.exec(definitions.get(name));
+if(manualOt){
+ await db.exec(`create function private.payroll_time_sources(uuid,date,date) returns jsonb language sql as $$select '{}'::jsonb$$;
+ alter function private.interpret_payroll_time(jsonb,date,date) rename to interpret_payroll_time_before_ob;`);
+ await db.exec(fs.readFileSync('supabase/migrations/20260929151000_manual_ot_payroll_evidence.sql','utf8'));
+ source.ot=[{id:'manual-ot-fixture',employeeId:employee,date:'2026-09-03',start:'19:00',end:'20:15',endDate:'2026-09-03',status:'Approved',type:'Paid',approvedHours:1,finalApprovedMinutes:60,evidenceMode:'manual'}];
+ interpreted=(await db.query("select private.interpret_payroll_time_before_ob($1,'2026-09-03','2026-09-03') r",[source])).rows[0].r;
+ assert.equal(interpreted.rows[0].payableOtMinutes,60);assert.equal(interpreted.rows[0].regularMinutes,480);assert.equal(interpreted.blockedDays,0,JSON.stringify(interpreted));
+}
 const grossConfig={monthlyMethod:'calendar_prorated',rounding:'employee_total_half_up',recurringMethod:'calendar_prorated',annualDivisor:'313',hoursPerDay:'8',nightStart:'22:00',nightEnd:'06:00',offsetCash:'excluded',gracePay:'base_only',rateBoundary:'shift_date',premiums:{ordinary:{regular:'1',ot:'1.25',nightRegular:'0.1',nightOt:'0.125'}}};
 const salary=[{id:'00000000-0000-4000-8000-000000000070',employee_id:employee,scope_id:scope,engagement_key:'employee',effective_from:'2026-01-01',rate_type:'Daily',base_amount:'800',treatment:{proration:'rule_defined'},source_ref:'Isolated approved salary fixture',components:[]}];
 const grossSnapshot={dateFrom:'2026-09-03',dateTo:'2026-09-03',time:{source,result:interpreted},packages:salary,rules:[{id:'rule',revision:1,effective_from:'2026-01-01',effective_to:'2026-12-31',source_ref:'Isolated approved policy',config:grossConfig}]};
@@ -87,16 +97,31 @@ const timeId=(await db.query("insert into payroll_time_packages(scope_id,date_fr
 await db.query("insert into private.fixture_snapshots values('gross',$1)",[grossSnapshot]);
 const grossId=(await db.query("select public.prepare_payroll_gross($1,'Controlled draft verification') id",[timeId])).rows[0].id;
 const gross=(await db.query('select result from payroll_gross_runs where id=$1',[grossId])).rows[0].result;
-assert.equal(Number(gross.gross),800,JSON.stringify(gross));
+assert.equal(Number(gross.gross),manualOt?925:800,JSON.stringify(gross));
+if(manualOt){
+ const before=await db.query('select private.payroll_gross_intervals($1,$2,$3) intervals',[source,interpreted.rows[0],grossConfig]);
+ assert.equal(before.rows[0].intervals.filter(x=>x.kind==='ot').reduce((n,x)=>n+Number(x.minutes),0),60);
+ const later=structuredClone(source),laterRow=structuredClone(interpreted.rows[0]);
+ later.events.push({id:'later-ot-in',employeeId:employee,type:'CLOCK_IN',timestamp:'2026-09-03T19:00:00+08:00'},{id:'later-ot-out',employeeId:employee,type:'CLOCK_OUT',timestamp:'2026-09-03T20:15:00+08:00'});
+ laterRow.eventIds.push('later-ot-in','later-ot-out');
+ const after=(await db.query('select private.payroll_gross_intervals($1,$2,$3) intervals',[later,laterRow,grossConfig])).rows[0].intervals;
+ assert.equal(after.filter(x=>x.kind==='ot').reduce((n,x)=>n+Number(x.minutes),0),60,'Later attendance never pays manual OT twice');
+ const durationOnly=structuredClone(interpreted.rows[0]);durationOnly.ot[0].start=null;durationOnly.ot[0].end=null;durationOnly.ot[0].finalNightMinutes=15;
+ const durationParts=(await db.query('select private.payroll_gross_intervals($1,$2,$3) intervals',[source,durationOnly,grossConfig])).rows[0].intervals.filter(x=>x.kind==='ot');
+ assert.equal(durationParts.reduce((n,x)=>n+Number(x.minutes),0),60);assert.equal(durationParts.filter(x=>x.night).reduce((n,x)=>n+Number(x.minutes),0),15);
+ const mixed=structuredClone(interpreted.rows[0]);mixed.ot[0].start='21:30';mixed.ot[0].end='23:00';
+ await assert.rejects(db.query('select private.payroll_gross_intervals($1,$2,$3)',[source,mixed,grossConfig]),/different holiday\/night rates/);
+}
+
 const inputs={ruleset:'PH-2026-09-06',payDate:'2026-09-20',contributionMonth:'2026-09-01',cutoff:'2',allocation:{sss:'0.5',philhealth:'0.5',pagibig:'0.5'},insufficientNet:'block',previousRunId:'',employees:[{employeeId:employee,sssBase:'0',philhealthBase:'0',pagibigBase:'0',sssCovered:false,philhealthCovered:false,pagibigCovered:false,openingTaxable:'0',openingWithheld:'0',openingPeriods:'0',previousEmployer:false,cumulativeAlready:false,sourceRef:'Isolated reviewed deduction fixture',openingRef:'Isolated zero opening',openingContributions:Object.fromEntries(['sssEE','sssER','mpfEE','mpfER','ecER','philhealthEE','philhealthER','pagibigEE','pagibigER'].map(k=>[k,'0'])),taxLines:gross.employees[0].lines.map(l=>({taxable:l.amount,kind:'regular'})),deductions:[]}]};
 const netSnapshot={reviewId:'00000000-0000-4000-8000-000000000080',review:inputs,gross,packages:salary,loans:[]};
 await db.query("insert into private.fixture_snapshots values('net',$1)",[netSnapshot]);
 const netId=(await db.query("select public.prepare_payroll_net($1,'Controlled draft verification') id",[grossId])).rows[0].id;
 const net=(await db.query('select result from payroll_net_runs where id=$1',[netId])).rows[0].result;
-assert.equal(Number(net.net),800);assert.equal(Number(net.gross),800);
+assert.equal(Number(net.net),manualOt?925:800);assert.equal(Number(net.gross),manualOt?925:800);
 assert.equal((await db.query("select public.prepare_payroll_gross($1,'Repeat') id",[timeId])).rows[0].id,grossId);
 assert.equal((await db.query("select public.prepare_payroll_net($1,'Repeat') id",[grossId])).rows[0].id,netId);
 assert.equal((await db.query('select count(*)::int n from payroll_net_runs')).rows[0].n,1);
 await db.query("update private.payroll_attendance_import_reviews set status='pending_bod' where id=$1",[staged.reviewId]);
 await assert.rejects(db.query("select public.prepare_payroll_gross($1,'Pending review')",[timeId]),/Attendance fixes still await approval/);
-await db.close();console.log('PASS: isolated attendance submission → HR → BOD → persisted punches → production time/gross/net engines → persistent payroll draft. 480 regular minutes, gross/net 800; repeated calculation reused draft. No release or publishing calls. Snapshot access adapters are isolated fixtures.');
+await db.close();console.log('PASS: isolated attendance submission → HR → BOD → persisted punches → production time/gross/net engines → persistent payroll draft. 480 regular minutes; manual-mode fixture verifies 60 OT minutes and gross/net 925, baseline fixture verifies 800; repeated calculation reused draft. No release or publishing calls. Snapshot access adapters are isolated fixtures.');

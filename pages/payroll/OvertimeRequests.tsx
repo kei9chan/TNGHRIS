@@ -1,3 +1,4 @@
+import OvertimeWeekReview from '../../components/overtime/OvertimeWeekReview';
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { OTRequest, OTStatus, OTRequestHistory, Permission } from '../../types';
@@ -215,7 +216,7 @@ const OvertimeRequests: React.FC = () => {
                 setRequests(previous => [request, ...previous.filter(candidate => candidate.id !== request.id)]);
                 setActiveTab(request.employeeId === user.id ? 'my_ot' : 'team_approvals');
                 setSelectedRequest(request);
-                setIsModalOpen(true);
+                setIsModalOpen(request.employeeId === user.id);
                 setOpenedReviewId(reviewId);
             })
             .catch((error: any) => {
@@ -234,6 +235,7 @@ const OvertimeRequests: React.FC = () => {
 
     // 3. Calendar Data Source
     const calendarRequests = useMemo(() => {
+        if (isPrivilegedViewer) return buFilteredRequests;
         if (!user) return [];
         if (canApprove) {
              if (isPrivilegedViewer) {
@@ -538,7 +540,7 @@ const OvertimeRequests: React.FC = () => {
                 </Card>
             )}
 
-            {activeTab === 'calendar' ? (
+            {activeTab === 'team_approvals' || activeTab === 'all_requests' ? <OvertimeWeekReview initialRequestId={openedReviewId||undefined} requestIds={displayedTableRequests.map(r=>r.id)} onChanged={()=>setReload(n=>n+1)}/> : activeTab === 'calendar' ? (
                  <OTCalendar 
                     requests={calendarRequests} 
                     shifts={relevantShifts}

@@ -2,6 +2,10 @@ import { supabase } from './supabaseClient';
 import { OTRequest, OTStatus, OTRequestHistory, User, Role } from '../types';
 
 type OtRequestRow = {
+  end_date?: string;
+  requested_minutes?: number;
+  unpaid_break_minutes?: number;
+  evidence_mode?: string;
   business_unit_id?: string;
   hours?: number;
   id: string;
@@ -30,6 +34,7 @@ type OtRequestRow = {
 };
 
 const mapRow = (row: OtRequestRow): OTRequest => ({
+  endDate:row.end_date,requestedMinutes:row.requested_minutes,unpaidBreakMinutes:row.unpaid_break_minutes,evidenceMode:row.evidence_mode,
   id: row.id,
   businessUnitId: row.business_unit_id,
   requestedHours: row.hours == null ? undefined : Number(row.hours),
@@ -37,8 +42,8 @@ const mapRow = (row: OtRequestRow): OTRequest => ({
   employeeName: row.employee_name,
   employeePosition: row.position || undefined,
   date: row.date ? new Date(row.date) : new Date(),
-  startTime: row.start_time,
-  endTime: row.end_time,
+  startTime: row.start_time || '',
+  endTime: row.end_time || '',
   reason: row.reason,
   status: row.status as OTStatus,
   submittedAt: row.submitted_at ? new Date(row.submitted_at) : undefined,
@@ -86,15 +91,16 @@ export const saveOtRequest = async (
 ): Promise<OTRequest> => {
   let finalStatus = status;
   if (status === OTStatus.Submitted && managerIsBOD) {
-    finalStatus = OTStatus.PendingBOD;
+    finalStatus = OTStatus.Submitted; // The direct manager reviews first, including a BOD manager.
   }
 
   const payload: Partial<OtRequestRow> = {
     employee_id: request.employeeId || user.id,
     employee_name: request.employeeName || user.name,
     date: request.date ? new Date(request.date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
-    start_time: request.startTime || '',
-    end_time: request.endTime || '',
+    start_time: request.startTime || null,
+    end_date:request.endDate||null,requested_minutes:request.requestedMinutes??null,unpaid_break_minutes:request.unpaidBreakMinutes??0,evidence_mode:'manual',
+    end_time: request.endTime || null,
     reason: request.reason || '',
     status: finalStatus,
     submitted_at: status === OTStatus.Submitted ? new Date().toISOString() : request.submittedAt?.toISOString(),

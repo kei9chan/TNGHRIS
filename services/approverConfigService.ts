@@ -165,6 +165,7 @@ export const processTimeRequestApproval = async (
       p_approved_hours: decision === 'approve' ? approvedHours ?? null : null,
     });
     if (error) throw new Error(error.message || 'Failed to process overtime approval');
+    if (data?.baselineNeeded) throw new Error('Manager verification was saved. Open the weekly OT review and confirm the regular-hour baseline to complete routing. No final approval was recorded.');
     return data;
   }
   const { data, error } = await supabase.rpc('process_time_request_approval', {
