@@ -1430,6 +1430,10 @@ export interface OTRequestHistory {
 }
 
 export interface OTRequest {
+  endDate?: string;
+  requestedMinutes?: number;
+  unpaidBreakMinutes?: number;
+  evidenceMode?: string;
   businessUnitId?: string;
   requestedHours?: number;
   id: string;

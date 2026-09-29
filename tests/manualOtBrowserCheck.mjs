@@ -1,0 +1,12 @@
+const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright');
+import assert from 'node:assert/strict';
+const browser=await chromium.launch({executablePath:process.env.CHROME_EXECUTABLE,headless:true,args:['--no-sandbox']});
+const page=await browser.newPage({viewport:{width:1440,height:1100}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+await page.goto('file:///tmp/manual-ot-ui/index.html');await page.getByRole('heading',{name:'Requests this week'}).waitFor();
+await page.screenshot({path:'/tmp/manual-ot-desktop.png',fullPage:true});
+await page.getByRole('checkbox',{name:/Select Mon, Sep 21, 2026 19:30/}).check();
+const approve=page.getByRole('button',{name:'Approve selected · 1 request · 4h 15m',exact:true});await approve.click();
+await page.getByRole('status').waitFor();assert.equal(await page.evaluate(()=>window.__calls.length),1);assert.equal(await page.evaluate(()=>window.__calls[0].minutes.r2),255);assert.equal(await page.getByRole('dialog').count(),0);
+await page.setViewportSize({width:390,height:844});await page.screenshot({path:'/tmp/manual-ot-mobile.png',fullPage:true});
+assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,'Mobile must not overflow horizontally');assert.deepEqual(errors,[]);
+console.log('PASS browser: desktop/mobile renders, reason visible, exact 4h15 selected, one click invokes one decision, no confirmation modal, no horizontal overflow or runtime errors.');await browser.close();

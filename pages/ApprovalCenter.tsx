@@ -1,3 +1,4 @@
+import OvertimeWeekReview from '../components/overtime/OvertimeWeekReview';
 import OBApprovalQueue from '../modules/official-business/OBApprovalQueue';
 import { ApprovalOutcome } from '../components/approvals/ApprovalNavigation';
 import RecentDecisions from '../components/approvals/RecentDecisions';
@@ -468,6 +469,7 @@ export default function ApprovalCenter() {
       </div>
 
       <div className="space-y-3">{groups.map(group => {
+        if(group.kind==='overtime') return <OvertimeWeekReview key="overtime" requestIds={group.items.map(item=>item.id)} initialRequestId={requestedItem||undefined} onChanged={()=>{setDecisionMessage('Your overtime decision was saved. Other required approvals remain pending.');void approvals.refreshApprovals();}} />;
         const selectableRequests = group.items.filter(item => item.bulkSelectable);
         const exceptions = group.items.filter(needsIndividualReview);
         const checked = selectableRequests.filter(item => selected.has(item.canonicalKey));
@@ -546,21 +548,6 @@ export default function ApprovalCenter() {
       onReject={async (requestId, reason) => {
         await approvals.handleRejectWFH(requestId, reason);
         setDecisionMessage(('Your WFH rejection was recorded.') + ' Any other required decisions remain pending.');
-        closeRequestedReview();
-      }}
-    />
-    <OTRequestModal
-      isOpen={Boolean(requestedOvertime)}
-      onClose={closeRequestedReview}
-      requestToEdit={requestedOvertime}
-      attendanceRecords={[]}
-      shiftAssignments={[]}
-      shiftTemplates={[]}
-      canApproveOverride={Boolean(requestedOvertime)}
-      onSave={() => {}}
-      onApproveOrReject={async (request, status, details) => {
-        await approvals.handleApproveRejectOT(request, status as OTStatus.Approved | OTStatus.Rejected, details);
-        setDecisionMessage((`Your overtime decision (${status}) was recorded.`) + ' Any other required decisions remain pending.');
         closeRequestedReview();
       }}
     />
