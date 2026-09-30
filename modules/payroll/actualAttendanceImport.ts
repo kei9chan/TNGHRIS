@@ -5,7 +5,8 @@ import {readImportWorkbook} from './readImportWorkbook';
 export const attendanceFields = schema.fields.map(field=>[field.label,field.key] as const);
 export const dayStatuses=schema.fields.find(field=>field.key==='dayStatus')!.choices!;
 export const reviewChoices=schema.fields.find(field=>field.key==='reviewRequest')!.choices!;
-export type AttendanceInput = {employeeId:string;businessUnit:string;workDate:string;dayStatus:string;classification?:string;events:{type:string;timestamp:string}[];reference:string;notes:string;reviewRequest:string;reviewExplanation:string;sourceRow:number;requestedOtHours?:number;otStart?:string;otEnd?:string;otReason?:string;leaveType?:string;leaveDays?:number;leaveStart?:string;leaveEnd?:string;leaveReason?:string};
+export type AttendanceInput = {employeeId:string;businessUnit:string;workDate:string;dayStatus:string;classification?:string;events:{type:string;timestamp:string}[];reference:string;notes:string;reviewRequest:string;reviewExplanation:string;sourceRow:number;requestedOtHours?:number;otStart?:string;otEnd?:string;otReason?:string;offlineManagerOtHours?:number;offlineOtReference?:string;leaveType?:string;leaveDays?:number;leaveStart?:string;leaveEnd?:string;leaveReason?:string};
+export const attendanceSamples=schema.samples;
 export const attendanceSample = schema.samples[0];
 export const attendanceRestSample=schema.samples[1];
 const dayAliases:Record<string,string>={'Worked':'Workday','Absent':'Absent (review)','Sick or unable to report':'Absent (review)','Approved leave':'Absent (review)','Leave without pay':'Absent (review)','Suspension':'Suspended','Regular holiday':'Legal holiday','Special nonworking day':'Legal holiday','For review':'Missing punches (review)'};
@@ -14,7 +15,7 @@ export type PrefilledAttendanceDay={code:string;name:string;businessUnit:string;
 export async function prefillAttendanceWorkbook(bytes:ArrayBuffer,days:PrefilledAttendanceDay[],leaveTypes:string[]=[]){
  if(days.length>2000)throw new Error('The prefilled cutoff has more than 2,000 employee-days. Choose a smaller scope.');
  const book=await readImportWorkbook(bytes);const entry=book.getWorksheet('Data Entry');
- if(!entry||book.getWorksheet('Instructions')?.getCell('B1').text!=='attendance:5')throw new Error('Download the current attendance template.');
+ if(!entry||book.getWorksheet('Instructions')?.getCell('B1').text!=='attendance:6')throw new Error('Download the current attendance template.');
  days.forEach((item,i)=>{const row=entry.getRow(i+2);
   [item.code,item.name,item.businessUnit,item.date,item.status].forEach((value,n)=>{row.getCell(n+1).value=value;});
   for(let n=1;n<=4;n++)row.getCell(n).numFmt='@';
@@ -59,35 +60,39 @@ export function normalizeAttendance(rows:string[][],businessUnit:string,rowNumbe
    if(!['Workday','Rest day','Legal holiday'].includes(dayStatus)&&events.length)throw new Error(`${dayStatus} cannot contain punches. Use Workday for actual work, then review the date and roster.`);
    if(events.some((event,n)=>n>0&&Date.parse(event.timestamp)<=Date.parse(events[n-1].timestamp)))throw new Error('Clock-out or break is earlier than the preceding punch. Check the date for an overnight shift.');
    const requestedOtHours=otHours?Number(otHours):undefined,leaveDays=leaveDaysValue?Number(leaveDaysValue):undefined;
+   const offlineHoursValue=values[31]||'',offlineManagerOtHours=offlineHoursValue?Number(offlineHoursValue):undefined,offlineOtReference=values[32]||undefined;
    const otStart=otStartValue?attendanceStamp(otStartValue,workDate):undefined,otEnd=otEndValue?attendanceStamp(otEndValue,workDate):undefined;
    if(otHours||otStart||otEnd||otReason){
     if(!requestedOtHours||!Number.isFinite(requestedOtHours)||requestedOtHours>24||requestedOtHours<0||!otReason)throw new Error('OT needs requested extra-work hours (greater than 0, at most 24) and a reason. Start and end times are optional, but enter both if known.');
     if(Boolean(otStart)!==Boolean(otEnd))throw new Error('Enter both OT start and end times, or leave both blank for a duration-only request.');
     if(otStart&&otEnd&&(Date.parse(otEnd)<=Date.parse(otStart)||requestedOtHours*3600000>Date.parse(otEnd)-Date.parse(otStart)+1))throw new Error('Requested OT hours must fit inside the optional OT start/end interval.');
    }
+   if(offlineHoursValue||offlineOtReference){
+    if(!requestedOtHours||offlineManagerOtHours===undefined||!Number.isFinite(offlineManagerOtHours)||offlineManagerOtHours<0||offlineManagerOtHours>requestedOtHours||Math.round(offlineManagerOtHours*60)!==offlineManagerOtHours*60||!offlineOtReference)throw new Error('Offline manager OT needs applied OT hours, a confirmed quantity from 0 up to applied hours, and an approval reference. It still goes to the direct manager for HRIS review.');
+   }
    if(leaveType||leaveDaysValue||leaveReason||leaveStart||leaveEnd){
     if(!leaveType||!leaveDays||!Number.isFinite(leaveDays)||leaveDays>1||leaveDays<0||!leaveReason)throw new Error('Leave needs a configured type, days (greater than 0, at most 1), and reason.');
     if(leaveDays<1&&(!/^\d{2}:\d{2}$/.test(leaveStart)||!/^\d{2}:\d{2}$/.test(leaveEnd)||leaveStart>=leaveEnd))throw new Error('Partial-day leave needs valid start and end times.');
     if(leaveStart)attendanceStamp(leaveStart,workDate);if(leaveEnd)attendanceStamp(leaveEnd,workDate);
    }
-   return [{employeeId,businessUnit:unit,workDate,dayStatus,classification,events,reference,notes,reviewRequest,reviewExplanation,requestedOtHours,otStart,otEnd,otReason,leaveType,leaveDays,leaveStart,leaveEnd,leaveReason,sourceRow:rowNumbers?.[i]??i+2}];
+   return [{employeeId,businessUnit:unit,workDate,dayStatus,classification,events,reference,notes,reviewRequest,reviewExplanation,requestedOtHours,otStart,otEnd,otReason,offlineManagerOtHours,offlineOtReference,leaveType,leaveDays,leaveStart,leaveEnd,leaveReason,sourceRow:rowNumbers?.[i]??i+2}];
   }catch(e){throw new Error(`Row ${rowNumbers?.[i]??i+2} — ${(e as Error).message}`);}
  });
 }
 export type AttendanceParseIssue={row:number;message:string;values:string[]};
 export async function readAttendanceFile(file:File,businessUnit:string,savedStatuses:Record<string,string>={},issues?:AttendanceParseIssue[]):Promise<AttendanceInput[]>{
  if(file.size>5*1024*1024)throw new Error('Upload a file smaller than 5 MB.');
- let rows:string[][],rowNumbers:number[]|undefined,version=5;
+ let rows:string[][],rowNumbers:number[]|undefined,version=6;
  if(file.name.toLowerCase().endsWith('.csv'))rows=parseDelimited(await file.text(),',');
  else if(file.name.toLowerCase().endsWith('.xlsx')){
   const book=await readImportWorkbook(await file.arrayBuffer());
   const data=book.getWorksheet('Data Entry');if(!data)throw new Error('Missing Data Entry sheet. Download the attendance template.');
   const template=book.getWorksheet('Instructions')?.getCell('B1').text;
-  if(!['attendance:1','attendance:2','attendance:3','attendance:4','attendance:5'].includes(template))throw new Error('Unsupported template type or version. Download attendance template version 5.');
+  if(!['attendance:1','attendance:2','attendance:3','attendance:4','attendance:5','attendance:6'].includes(template))throw new Error('Unsupported template type or version. Download attendance template version 6.');
   version=Number(template.slice(-1));
   if(data.rowCount>2001)throw new Error('Use at most 2,000 attendance rows.');
   rows=[];rowNumbers=[];data.eachRow({includeEmpty:false},row=>{
-   const fields=(version===5?attendanceFields:attendanceFields.slice(0,13)).filter(([,key])=>version>=4||!['employeeName',...(version<3?['reviewRequest','reviewExplanation']:[]),...(version===1?['dayStatus']:[])].includes(key));
+   const fields=(version>=5?attendanceFields.slice(0,version===5?31:undefined):attendanceFields.slice(0,13)).filter(([,key])=>version>=4||!['employeeName',...(version<3?['reviewRequest','reviewExplanation']:[]),...(version===1?['dayStatus']:[])].includes(key));
    const values=fields.map(([,key],n)=>{const v=row.getCell(n+1).value;
     if(v==null)return '';
     if(v instanceof Date)return v.toISOString().slice(0,key==='workDate'?10:19).replace('T',' ');
@@ -100,12 +105,13 @@ export async function readAttendanceFile(file:File,businessUnit:string,savedStat
  }else throw new Error('Upload CSV or XLSX.');
  const headers=rows.shift();rowNumbers?.shift();
  const current=attendanceFields.map(([label])=>label);
+ const v5=attendanceFields.slice(0,31).map(([label,key])=>key==='requestedOtHours'?'Requested OT hours (optional)':label);
  const v4=attendanceFields.slice(0,13).map(([label])=>label);
  const v3=attendanceFields.slice(0,13).filter(([,key])=>key!=='employeeName').map(([label])=>label);
  const v2=attendanceFields.slice(0,13).filter(([,key])=>!['employeeName','reviewRequest','reviewExplanation'].includes(key)).map(([label])=>label);
  const legacy=attendanceFields.slice(0,13).filter(([,key])=>!['employeeName','dayStatus','reviewRequest','reviewExplanation'].includes(key)).map(([label])=>label);
  const matches=(expected:string[])=>headers?.length===expected.length&&headers.every((v,i)=>v.replace(/^\uFEFF/,'')===expected[i]);
- if(!matches(current)&&!matches(v4)&&!matches(v3)&&!matches(v2)&&!matches(legacy))throw new Error('Columns do not match the attendance template. Download version 5 and paste your values into its columns.');
+ if(!matches(current)&&!matches(v5)&&!matches(v4)&&!matches(v3)&&!matches(v2)&&!matches(legacy))throw new Error('Columns do not match the attendance template. Download version 6 and paste your values into its columns.');
  // Version 1 had no Day status column. Leave it empty so a saved roster
  // status (Rest day, holiday, suspension, or no scheduled work) can be used
  // for blank-punch rows; otherwise the row remains a Workday review item.

@@ -21,8 +21,8 @@ instructions.getRange('A2:B11').values=[
  ['3. Upload and preview','Upload in Run Payroll, review before-and-after changes, then submit. HR Manager reviews first unless they uploaded it; one BOD approves and applies last.'],
  ['Dates and time','Real Excel dates or ISO YYYY-MM-DD. Date/time: YYYY-MM-DD HH:mm. Asia/Manila. Include explicit next-day dates for overnight shifts.'],
  ['Examples','Examples — Do Not Upload contains fictional DEMO IDs. These are rejected by real imports. Never copy them as employee records.'],
- ['Values only','No formulas. Paste values. Enter requested extra-work OT hours and reason only if applying; the manager approves a quantity separately. OT start/end are optional as a pair. A late clock-out never creates OT.'],
- ['No-punch days','Rest day must match the roster; holidays must match the official calendar; suspension must be authorized. Absent and missing punches remain pending review. Never invent clock times. Use Needs review to flag an issue; it does not grant paid OT or leave.']
+ ['Values only','No formulas. Paste values. Enter applied OT hours and a reason only when requested. Offline manager-confirmed OT hours and approval reference are evidence; the manager must review again in HRIS. A late clock-out never creates or pays OT.'],
+ ['No-punch days','Rest day must match the roster. For a forgotten break punch, leave it blank: normal unpaid break allowance comes from the published shift. Never invent clock times. Holiday, suspension and leave require their separate authorized records.']
 ];
 instructions.getRange('A1:A11').format.columnWidth=29;
 instructions.getRange('B1:B11').format.columnWidth=94;
@@ -43,7 +43,7 @@ for(const sheet of [data,examples]){
 }
 examples.getRangeByIndexes(1,0,schema.samples.length,schema.fields.length).values=schema.samples.map(row=>row.map((value,i)=>['workDate','clockIn','breakStart','breakEnd','clockOut','otStart','otEnd'].includes(schema.fields[i].key)&&value?new Date(value.replace(' ','T')+(schema.fields[i].key==='workDate'?'T00:00:00Z':':00Z')):value));
 guide.getRange('A1:C1').values=[['Field','Requirement','Accepted values and explanation']];
-guide.getRangeByIndexes(1,0,schema.fields.length,3).values=schema.fields.map(f=>[f.label,f.required?'Required':f.reference?'Read-only reference (server verified)':['employeeName','reference','notes','reviewRequest'].includes(f.key)?'Optional':f.key==='reviewExplanation'?'Conditional: if Needs review is selected':['requestedOtHours','otReason'].includes(f.key)?'If requesting OT: both required':['otStart','otEnd'].includes(f.key)?'Optional OT interval (both or neither)':['leaveType','leaveDays','leaveStart','leaveEnd','leaveReason'].includes(f.key)?'Optional leave request (times for partial days)':'Conditional: actual recorded punch',f.guide]);
+guide.getRangeByIndexes(1,0,schema.fields.length,3).values=schema.fields.map(f=>[f.label,f.required?'Required':f.reference?'Read-only reference (server verified)':['employeeName','reference','notes','reviewRequest'].includes(f.key)?'Optional':f.key==='reviewExplanation'?'Conditional: if Needs review is selected':['requestedOtHours','otReason'].includes(f.key)?'If requesting OT: both required':['offlineManagerOtHours','offlineOtReference'].includes(f.key)?'Optional pair: prior offline OT evidence':['otStart','otEnd'].includes(f.key)?'Optional OT interval (both or neither)':['leaveType','leaveDays','leaveStart','leaveEnd','leaveReason'].includes(f.key)?'Optional leave request (times for partial days)':'Conditional: actual recorded punch',f.guide]);
 const guideEnd=schema.fields.length+1;
 guide.getRange(`A1:C${guideEnd}`).format.wrapText=true;guide.getRange(`A1:C${guideEnd}`).format.rowHeight=60;
 guide.getRange(`A1:A${guideEnd}`).format.columnWidth=29;guide.getRange(`B1:B${guideEnd}`).format.columnWidth=34;guide.getRange(`C1:C${guideEnd}`).format.columnWidth=82;
@@ -52,7 +52,7 @@ book.recalculate();
 console.log((await book.inspect({kind:'table',range:`Data Entry!A1:${lastColumn}3`,tableMaxRows:3,tableMaxCols:schema.fields.length,maxChars:1500})).ndjson);
 console.log((await book.inspect({kind:'match',searchTerm:'#REF!|#DIV/0!|#VALUE!|#NAME\\?|#NUM!|#SPILL!',options:{useRegex:true,maxResults:10},maxChars:500})).ndjson);
 await fs.mkdir(output,{recursive:true});
-for(const [sheet,range] of [['Instructions','A1:B11'],['Data Entry',`A1:${lastColumn}6`],['Examples — Do Not Upload',`A1:${lastColumn}4`],['Field Guide',`A1:C${guideEnd}`]]){
+for(const [sheet,range] of [['Instructions','A1:B11'],['Data Entry',`A1:${lastColumn}6`],['Examples — Do Not Upload',`A1:${lastColumn}11`],['Field Guide',`A1:C${guideEnd}`]]){
  const render=await book.render({sheetName:sheet,range,scale:1.25});await fs.writeFile(path.join(output,sheet.replaceAll(' ','-')+'.png'),new Uint8Array(await render.arrayBuffer()));
 }
 await (await SpreadsheetFile.exportXlsx(book)).save(path.join(output,`attendance-v${schema.version}.xlsx`));
