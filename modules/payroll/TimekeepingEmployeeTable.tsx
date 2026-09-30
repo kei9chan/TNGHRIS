@@ -1,5 +1,6 @@
 import React,{useEffect,useMemo,useRef,useState} from 'react';
 import {Link} from 'react-router-dom';
+import RecordedBreakApprovals from './RecordedBreakApprovals';
 import Button from '../../components/ui/Button';
 import type {ReviewTimeRow,TestTimeEvidence} from './attendanceReadiness';
 import {correctionLink,employeeReviews,timeTotals} from './timeReviewModel';
@@ -9,7 +10,7 @@ import {downloadHistoricalSource,historyDetail} from './historicalAttendance';
 const link='text-indigo-700 underline dark:text-indigo-300';
 const num=(value:number)=>value.toLocaleString('en-PH',{maximumFractionDigits:4});
 const stamp=(value:string)=>new Date(value).toLocaleString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
-export const TimekeepingEmployeeTable:React.FC<{rows:ReviewTimeRow[];test:TestTimeEvidence[];saved:boolean;canOpenOffset:boolean;busy:boolean;hasReason:boolean;onOpenOffset:(id:string)=>void;scopeName?:string;from?:string;to?:string}>=({rows,test,saved,canOpenOffset,busy,hasReason,onOpenOffset,scopeName='Selected business unit',from='',to=''})=>{
+export const TimekeepingEmployeeTable:React.FC<{rows:ReviewTimeRow[];test:TestTimeEvidence[];saved:boolean;canOpenOffset:boolean;busy:boolean;hasReason:boolean;onOpenOffset:(id:string)=>void;scopeId?:string;onApplied?:()=>void;scopeName?:string;from?:string;to?:string}>=({rows,test,saved,canOpenOffset,busy,hasReason,onOpenOffset,scopeId,onApplied,scopeName='Selected business unit',from='',to=''})=>{
  const [review,setReview]=useState<{key:string;issue:string|null}|null>(null);
  const [search,setSearch]=useState('');const [status,setStatus]=useState('');const [expanded,setExpanded]=useState<string|null>(null);const totals=useMemo(()=>timeTotals(rows),[rows]);const cards=useMemo(()=>groupEmployeeReadiness(rows,scopeName,from,to),[rows,scopeName,from,to]);const historical=useMemo(()=>employeeReviews([],test),[test]);
  const shared=setupDependencies(rows).filter(item=>item.key==='payroll_setup:Attendance policy — Needs setup'||item.key==='payroll_setup:Holiday coverage — Not confirmed');
@@ -30,7 +31,7 @@ export const TimekeepingEmployeeTable:React.FC<{rows:ReviewTimeRow[];test:TestTi
     <details className="mt-5"><summary className="cursor-pointer font-semibold text-slate-600">View daily evidence and original source IDs</summary><div className="mt-4 space-y-4">{card.days.map(day=><DayDetail key={day.date} row={day} saved={saved} canOpenOffset={canOpenOffset} busy={busy} hasReason={hasReason} onOpenOffset={onOpenOffset}/>)}{historical.find(item=>item.id===card.employeeId)?.test.length?<HistoricalSources records={historical.find(item=>item.id===card.employeeId)!.test}/>:null}</div></details>
    </div>}
   </article>;})}
-  {review&&cards.find(card=>card.key===review.key)&&<EmployeeIssueReview key={review.key} card={cards.find(card=>card.key===review.key)!} initialIssue={review.issue} saved={saved} onClose={()=>setReview(null)}/>}
+  {review&&cards.find(card=>card.key===review.key)&&<EmployeeIssueReview key={review.key} card={cards.find(card=>card.key===review.key)!} initialIssue={review.issue} scopeId={scopeId} onApplied={onApplied} saved={saved} onClose={()=>setReview(null)}/>}
   {!filtered.length&&<div className="rounded-xl border border-dashed p-8 text-center text-slate-500">{cards.length?'No employees match these filters.':'No employee records for this payroll cycle.'}</div>}
  </div>;
 };
@@ -47,7 +48,7 @@ function taskCopy(raw:string){
  if(/Published schedule|unpublished schedule/i.test(raw))return {title:'Check the published schedule',detail:'Check the employee and dates in Schedule Builder, then correct or publish the applicable schedule.',owner:'Scheduling manager'};
  return {title:raw,detail:'Review the affected dates and use the source action below to resolve this task.',owner:'Authorized reviewer'};
 }
-function EmployeeIssueReview({card,initialIssue,saved,onClose}:{card:EmployeeReadinessCard;initialIssue:string|null;saved:boolean;onClose:()=>void}){
+function EmployeeIssueReview({card,initialIssue,saved,onClose,scopeId,onApplied}:{scopeId?:string;onApplied?:()=>void;card:EmployeeReadinessCard;initialIssue:string|null;saved:boolean;onClose:()=>void}){
  const dialog=useRef<HTMLDialogElement>(null);
  const [selected,setSelected]=useState(initialIssue||'');
  const [date,setDate]=useState('');
@@ -72,7 +73,7 @@ function EmployeeIssueReview({card,initialIssue,saved,onClose}:{card:EmployeeRea
     <label className="my-4 block font-semibold">Date to review<select className="mt-1 block w-full rounded-lg border bg-white p-3 text-slate-900" value={activeDate} onChange={event=>setDate(event.target.value)}>{dates.map(value=><option key={value} value={value}>{workDate(value)}</option>)}</select></label>
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{[['Scheduled work',duration(day.scheduledMinutes)],['Recorded work',duration(day.actualMinutes)],['Recorded break',duration(day.breakMinutes)],['Approved OT',duration(day.approvedOtMinutes)]].map(([label,value])=><div key={label} className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800"><p className="text-xs text-slate-500">{label}</p><strong>{value}</strong></div>)}</div>
     <p className="my-3 text-sm text-slate-500">These are the current recorded totals. Corrections and pay approvals remain separate.</p>
-    {!saved&&target&&<Link className="inline-flex min-h-11 items-center rounded-lg bg-violet-700 px-4 font-semibold text-white" to={target.path}>{target.label} →</Link>}
+    {!saved&&scopeId&&/lunch|break/i.test(raw)?<RecordedBreakApprovals scope={scopeId} from={card.from} to={card.to} employeeId={card.employeeId} onApplied={onApplied}/>:!saved&&target&&<Link className="inline-flex min-h-11 items-center rounded-lg bg-violet-700 px-4 font-semibold text-white" to={target.path}>{target.label} →</Link>}
     <details key={`${selected}:${activeDate}`} className="mt-5 rounded-xl border p-3"><summary className="cursor-pointer font-semibold">Show logs and technical details (optional)</summary><div className="mt-3"><DayDetail row={{...day,issues:day.issues.filter(issue=>issue===raw)}} saved={true} canOpenOffset={false} busy={false} hasReason={false} onOpenOffset={()=>{}}/></div></details>
    </>}
   </>}
