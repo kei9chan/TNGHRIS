@@ -69,6 +69,7 @@ const OvertimeRequests: React.FC = () => {
     const [showSuccessToast, setShowSuccessToast] = useState(false);
     const [openedReviewId, setOpenedReviewId] = useState<string | null>(null);
     const [reviewLoadError, setReviewLoadError] = useState('');
+    const [reviewPage,setReviewPage]=useState(0);
 
     const { users: hrUsers } = useUsers();
     const { businessUnits: hrBusinessUnits } = useBusinessUnits();
@@ -87,7 +88,8 @@ const OvertimeRequests: React.FC = () => {
     const canCreate = otAccess.canRequest;
     const canManage = canModule('OT', Permission.Manage);
     // Configured BOD approvers can also approve
-    const canApprove = otAccess.canApprove || reporteeIds.length > 0 || isConfiguredBOD;
+    const isBuManager=user?.position?.toLowerCase().includes('business unit manager')||false;
+    const canApprove = otAccess.canApprove || reporteeIds.length > 0 || isBuManager || isConfiguredBOD;
     const canViewLedger = reportScope.overview || canApprove;
     
     useEffect(() => {
@@ -180,6 +182,9 @@ const OvertimeRequests: React.FC = () => {
             );
             visibleRequests = [...visibleRequests, ...reporteeRequests];
         }
+        if (isBuManager) {
+            visibleRequests.push(...requests.filter(r=>r.businessUnitId===user.businessUnitId&&r.employeeId!==user.id&&([OTStatus.Submitted,OTStatus.PendingGM].includes(r.status)||(r.status===OTStatus.Approved&&r.approvedHours==null))));
+        }
 
         // Configured BOD approvers see ALL PendingBOD requests org-wide
         if (isConfiguredBOD) {
@@ -190,7 +195,7 @@ const OvertimeRequests: React.FC = () => {
         // Deduplicate in case a request is both from a direct report and PendingBOD
         const uniqueRequests = Array.from(new Map(visibleRequests.map(r => [r.id, r])).values());
         return uniqueRequests;
-    }, [requests, reporteeIds, user, canApprove, isConfiguredBOD]);
+    }, [requests, reporteeIds, user, canApprove, isConfiguredBOD,isBuManager]);
 
     // A Review link loads the exact record independently of My OT/team list filters.
     useEffect(() => {
@@ -297,9 +302,17 @@ const OvertimeRequests: React.FC = () => {
             if (viewFilter === 'rejected') data = data.filter(r => r.status === OTStatus.Rejected);
         }
         
+        const params=new URLSearchParams(location.search);
+        const employee=params.get('employee');
+        const workDate=params.get('date');
+        if(employee)data=data.filter(r=>r.employeeId===employee);
+        if(workDate)data=data.filter(r=>r.date.toISOString().slice(0,10)===workDate);
         data=data.filter(r=>`${r.employeeName} ${r.reason}`.toLowerCase().includes(search.toLowerCase()));
         return [...data].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [activeTab, viewFilter, myRequests, teamRequests, hrVerificationRequests,buFilteredRequests,search]);
+    }, [activeTab, viewFilter, myRequests, teamRequests, hrVerificationRequests,buFilteredRequests,search,location.search]);
+    useEffect(()=>setReviewPage(0),[activeTab,viewFilter,selectedBuFilter,search,location.search]);
+    const reviewStart=reviewPage*12;
+    const reviewIds=displayedTableRequests.slice(reviewStart,reviewStart+12).map(r=>r.id);
 
 
     const handleNewRequest = () => {
@@ -540,7 +553,7 @@ const OvertimeRequests: React.FC = () => {
                 </Card>
             )}
 
-            {activeTab === 'team_approvals' || activeTab === 'all_requests' ? <OvertimeWeekReview initialRequestId={openedReviewId||undefined} requestIds={displayedTableRequests.map(r=>r.id)} onChanged={()=>setReload(n=>n+1)}/> : activeTab === 'calendar' ? (
+            {activeTab === 'team_approvals' || activeTab === 'all_requests' ? <><div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl bg-slate-50 p-3 text-sm dark:bg-slate-800"><span>Reviewing requests {displayedTableRequests.length?reviewStart+1:0}–{Math.min(reviewStart+12,displayedTableRequests.length)} of {displayedTableRequests.length}</span><button className="rounded border px-3 py-2 disabled:opacity-40" disabled={!reviewPage} onClick={()=>setReviewPage(p=>p-1)}>Previous</button><button className="rounded border px-3 py-2 disabled:opacity-40" disabled={reviewStart+12>=displayedTableRequests.length} onClick={()=>setReviewPage(p=>p+1)}>Next</button></div><OvertimeWeekReview initialRequestId={openedReviewId||undefined} requestIds={reviewIds} onChanged={()=>setReload(n=>n+1)}/></> : activeTab === 'calendar' ? (
                  <OTCalendar 
                     requests={calendarRequests} 
                     shifts={relevantShifts}

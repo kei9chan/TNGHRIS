@@ -12,3 +12,4 @@ export async function decideOtWeek(ids:string[],minutes:Record<string,number|{mi
  const {data,error}=await supabase.rpc('decide_ot_week',{p_ids:ids,p_minutes:minutes,p_version:version,p_operation:operation,p_decision:decision,p_note:note||null});if(error)throw new Error(error.message);return data;
 }
 export async function confirmOtBaseline(employee:string,week:string,minutes:number,evidence:string){const {error}=await supabase.rpc('confirm_ot_week_baseline',{p_employee:employee,p_week:week,p_minutes:minutes,p_evidence:evidence});if(error)throw new Error(error.message);}
+export async function verifyLegacyOtHours(amounts:Record<string,number>,note:string){const {data,error}=await supabase.rpc('verify_legacy_ot_hours',{p_amounts:amounts,p_note:note||null});if(error)throw new Error(error.message);return data;}
