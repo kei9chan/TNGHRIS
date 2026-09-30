@@ -88,7 +88,7 @@ const OvertimeRequests: React.FC = () => {
     const canCreate = otAccess.canRequest;
     const canManage = canModule('OT', Permission.Manage);
     // Configured BOD approvers can also approve
-    const isBuManager=user?.position?.toLowerCase().includes('business unit manager')||false;
+    const isBuManager=[user?.role,...(user?.roles||[])].includes('Business Unit Manager' as any);
     const canApprove = otAccess.canApprove || reporteeIds.length > 0 || isBuManager || isConfiguredBOD;
     const canViewLedger = reportScope.overview || canApprove;
     
@@ -183,7 +183,7 @@ const OvertimeRequests: React.FC = () => {
             visibleRequests = [...visibleRequests, ...reporteeRequests];
         }
         if (isBuManager) {
-            visibleRequests.push(...requests.filter(r=>r.businessUnitId===user.businessUnitId&&r.employeeId!==user.id&&([OTStatus.Submitted,OTStatus.PendingGM].includes(r.status)||(r.status===OTStatus.Approved&&r.approvedHours==null))));
+            visibleRequests.push(...requests.filter(r=>reportScope.businessUnits.some(b=>b.id===r.businessUnitId)&&r.employeeId!==user.id&&([OTStatus.Submitted,OTStatus.PendingGM].includes(r.status)||(r.status===OTStatus.Approved&&r.approvedHours==null))));
         }
 
         // Configured BOD approvers see ALL PendingBOD requests org-wide
@@ -195,7 +195,7 @@ const OvertimeRequests: React.FC = () => {
         // Deduplicate in case a request is both from a direct report and PendingBOD
         const uniqueRequests = Array.from(new Map(visibleRequests.map(r => [r.id, r])).values());
         return uniqueRequests;
-    }, [requests, reporteeIds, user, canApprove, isConfiguredBOD,isBuManager]);
+    }, [requests, reporteeIds, user, canApprove, isConfiguredBOD,isBuManager,reportScope.businessUnits]);
 
     // A Review link loads the exact record independently of My OT/team list filters.
     useEffect(() => {
