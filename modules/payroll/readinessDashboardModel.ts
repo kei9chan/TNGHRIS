@@ -8,7 +8,7 @@ export type EmployeeReadinessCard={key:string;employeeId:string;employeeName:str
 export function specificIssue(issue:string,date:string):ReadinessIssue{
  const text=issue.toLowerCase();
  if(text==='approved time rules missing')return {category:'payroll_setup',label:'Attendance policy — Needs setup',raw:issue,date,blocking:true,action:'Open attendance settings',path:'/payroll/attendance-readiness#attendance-references'};
- if(text==='holiday calendar coverage needs review')return {category:'payroll_setup',label:'Holiday coverage — Not confirmed',raw:issue,date,blocking:true,action:'Review holiday calendar',path:'/payroll/attendance-readiness#attendance-references'};
+ if(text==='holiday calendar coverage needs review'||text==='government holiday calendar update needed')return {category:'payroll_setup',label:'Government holiday calendar — Update needed',raw:issue,date,blocking:true,action:'View government calendar status',path:'/payroll/attendance-readiness#attendance-references'};
  if(text==='approved ot times or duration missing')return {category:'overtime',label:'Approved OT duration is missing',raw:issue,date,blocking:true,action:'Review approved hours',path:'/payroll/overtime-requests'};
  if(/salary|pay package|base.pay/.test(text))return {category:'payroll_setup',label:'Approved salary source — Missing',raw:issue,date,blocking:true,action:'Add salary source',path:'/payroll/pay-packages'};
  if(/employment start|employee profile information incomplete|hire date/.test(text))return {category:'payroll_setup',label:'Timekeeping setup needed — Employment start date is missing',raw:issue,date,blocking:true,action:'Open employee setup',path:'/employees'};

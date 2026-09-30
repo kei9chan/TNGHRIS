@@ -13,7 +13,7 @@ const stamp=(value:string)=>new Date(value).toLocaleString('en-PH',{timeZone:'As
 export const TimekeepingEmployeeTable:React.FC<{rows:ReviewTimeRow[];test:TestTimeEvidence[];saved:boolean;canOpenOffset:boolean;busy:boolean;hasReason:boolean;onOpenOffset:(id:string)=>void;scopeId?:string;onApplied?:()=>void;scopeName?:string;from?:string;to?:string}>=({rows,test,saved,canOpenOffset,busy,hasReason,onOpenOffset,scopeId,onApplied,scopeName='Selected business unit',from='',to=''})=>{
  const [review,setReview]=useState<{key:string;issue:string|null}|null>(null);
  const [search,setSearch]=useState('');const [status,setStatus]=useState('');const [expanded,setExpanded]=useState<string|null>(null);const totals=useMemo(()=>timeTotals(rows),[rows]);const cards=useMemo(()=>groupEmployeeReadiness(rows,scopeName,from,to),[rows,scopeName,from,to]);const historical=useMemo(()=>employeeReviews([],test),[test]);
- const shared=setupDependencies(rows).filter(item=>item.key==='payroll_setup:Attendance policy — Needs setup'||item.key==='payroll_setup:Holiday coverage — Not confirmed');
+ const shared=setupDependencies(rows).filter(item=>item.key==='payroll_setup:Attendance policy — Needs setup'||item.key==='payroll_setup:Government holiday calendar — Update needed');
  const sharedLabels=new Set(shared.map(item=>item.label));
  const filtered=cards.filter(card=>(!status||card.status===status)&&(!search||`${card.employeeName} ${card.employeeCode}`.toLowerCase().includes(search.trim().toLowerCase())));
  return <div className="space-y-4">
