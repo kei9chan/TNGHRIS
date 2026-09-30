@@ -1,3 +1,4 @@
+import type {Readiness} from './workspace';
 import {supabase} from '../../services/supabaseClient';
 export type TimeScope={id:string;name:string;canView:boolean;canFinalize:boolean;canConfigure:boolean;canManage:boolean};
 export type TimeRow={officialBusiness?:{id:string;reference:string;status:string};requiresClock?:boolean;attendanceBasis?:string;employeeId:string;employeeName:string;date:string;restDay:boolean;holiday:boolean;approvedFullLeave:boolean;scheduledMinutes:number;actualMinutes:number;regularMinutes:number;breakMinutes:number;lateMinutes:number;undertimeMinutes:number;approvedOtMinutes:number;actualOtMinutes:number;workedLunch:boolean;issues:string[];ready:boolean;shiftIds:string[];eventIds:string[];leaveIds:string[];ot:{id:string;type:string;status:string}[];segments:{date:string;start:string;end:string}[]};
@@ -35,3 +36,15 @@ export const applyPayrollAttendancePreset=(scopeId:string,employeeId:string,date
 export const fetchPayrollAttendanceActions=(scopeId:string,from:string,to:string)=>rpc<PayrollAttendanceAction[]>('get_payroll_attendance_actions',{p_scope_id:scopeId,p_from:from,p_to:to});
 
 export const prepareAttendance=(scope:string,from:string,to:string,hash:string,note?:string)=>rpc<string>('prepare_payroll_attendance_for_calculation',{p_scope:scope,p_from:from,p_to:to,p_source_hash:hash,p_note:note||null});
+
+// Shared server snapshot: do not run readiness and the attendance engine twice.
+export async function fetchPreparation(scope:string,from:string,to:string,signal?:AbortSignal):Promise<{readiness:Readiness;time:TimePreview}>{
+ const controller=new AbortController();const abort=()=>controller.abort();
+ if(signal?.aborted)controller.abort();else signal?.addEventListener('abort',abort,{once:true});
+ const timer=setTimeout(abort,25000);
+ try{const {data,error}=await supabase.rpc('get_payroll_preparation',{p_scope:scope,p_from:from,p_to:to}).abortSignal(controller.signal);
+  if(error){if(error.code==='57014')throw new Error('Payroll readiness took too long to load. Your selected cutoff and saved attendance are unchanged. Refresh readiness to retry.');throw new Error(error.message);}
+  return data;
+ }catch(e){if(controller.signal.aborted)throw new Error('Payroll readiness did not finish loading. Refresh readiness to retry.');throw e;}
+ finally{clearTimeout(timer);signal?.removeEventListener('abort',abort);}
+}

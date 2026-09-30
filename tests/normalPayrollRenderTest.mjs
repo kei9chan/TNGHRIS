@@ -6,8 +6,9 @@ import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 const code=ts.transpileModule(fs.readFileSync('modules/payroll/RunPayroll.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
 const net={id:'net-fixture',current:true,payDate:'2026-09-20',result:{gross:'40000.00',deductions:'2141.99',net:'37858.01',employer:'2000.00',employerTotalCost:'42000.00',employees:[{employeeId:'fixture',employeeName:'Fixture Employee',gross:'40000.00',deductions:'2141.99',net:'37858.01',employer:'2000.00',contributions:[],loans:[],otherDeductions:[]}]}};
-for(const step of [0,1,2]){
- let index=0;const overrides={3:step?{id:'gross',result:{gross:'40000.00',employees:[]}}:null,4:step?net:null,6:step};
+for(const testCase of [0,1,2,'failed']){
+ const step=testCase==='failed'?0:testCase;
+ let index=0;const overrides={3:step?{id:'gross',result:{gross:'40000.00',employees:[]}}:null,4:step?net:null,6:step,...(testCase==='failed'?{8:'Readiness timed out'}:{})};
  const dependencies={
   react:{...React,useEffect:()=>{},useState:initial=>{const n=index++;return [n in overrides?overrides[n]:typeof initial==='function'?initial():initial,()=>{}];}},
   'react-router-dom':{Link:({to,children,...props})=>React.createElement('a',{href:to,...props},children)},
@@ -26,6 +27,7 @@ for(const step of [0,1,2]){
  assert.match(html,/Save draft/);assert.match(html,/Generate &amp; approve/);assert.doesNotMatch(html,/Historical Payroll Reconciliation/);
  if(step===0){assert.match(html,/Prepare payroll/);assert.match(html,/Import attendance/);assert.match(html,/Additional records, if needed/);}
  else{assert.match(html,/₱40,000.00/);assert.match(html,/₱37,858.01/);assert.match(html,/Fixture Employee/);assert.match(html,/Download draft payslips/);assert.match(html,/DRAFT — NOT RELEASED/);}
+ if(testCase==='failed'){assert.match(html,/Schedule check could not finish/);assert.match(html,/Pay-package readiness not checked/);assert.doesNotMatch(html,/Checking schedules|requires compensation access/);}
  if(step===2)assert.match(html,/Submit for approval/);
 }
 console.log('PASS: actual Prepare, Review and Generate components render; amounts, draft controls and preserved approval link are present. Auth/network are isolated fixtures.');
