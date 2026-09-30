@@ -39,6 +39,7 @@ export type ShiftVarianceReview={id:string;status:string;start:string;end:string
 export type ShiftVarianceContext={shift:{id:string;start:string;end:string;publicationId?:string;publicationVersion?:number;endDayOffset?:number}|null;manager:string|null;fingerprint:string;reviews:ShiftVarianceReview[];locked:boolean};
 export const fetchShiftVariance=(scope:string,employee:string,date:string)=>rpc<ShiftVarianceContext>('get_payroll_shift_variance',{p_scope:scope,p_employee:employee,p_date:date});
 export const submitShiftVariance=(scope:string,employee:string,date:string,fingerprint:string,start:string,end:string,reason:string)=>rpc<string>('submit_payroll_shift_variance',{p_scope:scope,p_employee:employee,p_date:date,p_fingerprint:fingerprint,p_start:start,p_end:end,p_reason:reason});
+export const submitOriginalShift=(scope:string,employee:string,date:string,fingerprint:string,reason:string)=>rpc<string>('submit_payroll_original_shift',{p_scope:scope,p_employee:employee,p_date:date,p_fingerprint:fingerprint,p_reason:reason});
 export const decideShiftVariance=(id:string,approve:boolean,note:string)=>rpc<void>('decide_payroll_shift_variance',{p_id:id,p_approve:approve,p_note:note||null});
 
 export const prepareAttendance=(scope:string,from:string,to:string,hash:string,note?:string)=>rpc<string>('prepare_payroll_attendance_for_calculation',{p_scope:scope,p_from:from,p_to:to,p_source_hash:hash,p_note:note||null});
