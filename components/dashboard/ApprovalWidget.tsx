@@ -1,3 +1,4 @@
+import PayrollAttendanceInbox from '../../modules/payroll/PayrollAttendanceInbox';
 import React from 'react';
 import {useAttendanceIssues,issueLabels,shiftText} from '../../services/attendanceIssues';
 import { Link } from 'react-router-dom';
@@ -32,8 +33,9 @@ export default function ApprovalWidget() {
   const unique=[...new Map(items.map(r=>[r.kind+':'+r.id,r])).values()];
   const groups = (Object.keys(labels) as ApprovalRequestKind[]).map(kind => ({kind, requests: unique.filter(item => item.kind === kind)})).filter(group => group.requests.length);
   const error=a.approvalError||b.additionalApprovalError||attendance.error;
-  if(!user||(!items.length&&!error))return null;
-  return <section aria-labelledby="approval-inbox-title" className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800 sm:p-6">
+  if(!user)return null;
+  if(!items.length&&!error)return <PayrollAttendanceInbox/>;
+  return <><PayrollAttendanceInbox/><section aria-labelledby="approval-inbox-title" className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800 sm:p-6">
     <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 id="approval-inbox-title" className="text-2xl font-bold text-slate-900 dark:text-white">Needs your approval <span className="ml-2 inline-flex rounded-full bg-violet-600 px-3 py-1 text-base text-white">{error ? (unique.length ? `${unique.length}+` : 'Unavailable') : unique.length}</span></h2><p className="mt-2 text-slate-500 dark:text-slate-300">Requests waiting for your decision</p></div><Link to="/approvals" className="hidden min-h-11 items-center rounded-lg border border-violet-500 px-4 font-semibold text-violet-700 dark:text-violet-300 sm:inline-flex">Open Approval Center →</Link></div>
     {error&&<div role="alert" className="mt-4 text-amber-700 dark:text-amber-300">Approval count is incomplete because some requests could not be loaded. <button className="min-h-11 underline" onClick={()=>Promise.all([a.refreshApprovals(),b.refreshAdditionalApprovals(),attendance.load()])}>Retry</button></div>}
     <div className="mt-5 flex flex-col gap-2">{groups.map(({kind,requests}) => {
@@ -44,5 +46,5 @@ export default function ApprovalWidget() {
       </Link>;
     })}</div>
     <Link to="/approvals" className="mt-5 inline-flex min-h-11 items-center font-semibold text-violet-700 dark:text-violet-300">Open Approval Center →</Link>
-  </section>;
+  </section></>;
 }
