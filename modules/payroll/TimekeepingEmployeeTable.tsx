@@ -1,5 +1,6 @@
 import React,{useEffect,useMemo,useRef,useState} from 'react';
 import {Link} from 'react-router-dom';
+import OvertimeWeekReview from '../../components/overtime/OvertimeWeekReview';
 import RecordedBreakApprovals from './RecordedBreakApprovals';
 import ShiftVarianceDecision from './ShiftVarianceDecision';
 import Button from '../../components/ui/Button';
@@ -50,9 +51,10 @@ function taskCopy(raw:string){
  if(/Published schedule|unpublished schedule/i.test(raw))return {title:'Check the published schedule',detail:'Check the employee and dates in Schedule Builder, then correct or publish the applicable schedule.',owner:'Scheduling manager'};
  return {title:raw,detail:'Review the affected dates and use the source action below to resolve this task.',owner:'Authorized reviewer'};
 }
-function EmployeeIssueReview({card,initialIssue,saved,onClose,scopeId,onApplied}:{scopeId?:string;onApplied?:()=>void;card:EmployeeReadinessCard;initialIssue:string|null;saved:boolean;onClose:()=>void}){
+function EmployeeIssueReview({card,initialIssue,saved,onClose,scopeId,onApplied}:{key?:string;scopeId?:string;onApplied?:()=>void;card:EmployeeReadinessCard;initialIssue:string|null;saved:boolean;onClose:()=>void}){
  const dialog=useRef<HTMLDialogElement>(null);
- const [selected,setSelected]=useState(initialIssue||'');
+ const initialGroups=[...new Set([...card.issues.map(issue=>issue.label),...card.setup.map(issue=>issue.label)])];
+ const [selected,setSelected]=useState(initialIssue||(initialGroups.length===1?initialGroups[0]:''));
  const [date,setDate]=useState('');
  useEffect(()=>{const node=dialog.current;node?.showModal();return()=>{node?.close();};},[]);
  const groups=[...new Set([...card.issues.map(issue=>issue.label),...card.setup.map(issue=>issue.label)])];
@@ -65,13 +67,13 @@ function EmployeeIssueReview({card,initialIssue,saved,onClose,scopeId,onApplied}
  const copy=taskCopy(raw);
  const target=day?correctionLink(raw,day):null;
  const choose=(label:string)=>{setSelected(label);setDate('');};
- return <dialog ref={dialog} onCancel={onClose} onClick={event=>{if((event.target as HTMLElement).closest('a'))onClose();}} aria-labelledby="employee-issue-title" className="fixed inset-0 m-auto max-h-[90dvh] w-[min(860px,94vw)] overflow-auto rounded-2xl border bg-white p-5 text-slate-900 shadow-xl backdrop:bg-black/50 dark:bg-slate-900 dark:text-white">
+ return <dialog ref={dialog} onCancel={onClose} onClick={event=>{if((event.target as HTMLElement).closest('a'))onClose();}} aria-labelledby="employee-issue-title" className="fixed inset-0 m-auto max-h-[90dvh] w-[min(1280px,96vw)] overflow-auto rounded-2xl border bg-white p-5 text-slate-900 shadow-xl backdrop:bg-black/50 dark:bg-slate-900 dark:text-white">
   <div className="flex items-start justify-between gap-4"><div><h2 id="employee-issue-title" className="text-xl font-bold">Payroll tasks · {card.employeeName}</h2><p className="mt-1 text-sm text-slate-500">{card.businessUnit} · {card.from} – {card.to}</p></div><Button variant="secondary" onClick={onClose}>Close review</Button></div>
   {saved&&<p role="status" className="my-3">Saved version · read-only. Open current readiness to make corrections.</p>}
   {!selected?<><p className="my-4 font-semibold">{groups.length} tasks to resolve. Repeated dates are grouped together.</p><div className="space-y-3">{groups.map(label=>{const task=taskCopy(card.issues.find(issue=>issue.label===label)?.raw||label);const affected=new Set([...card.issues.filter(issue=>issue.label===label).map(issue=>issue.date),...(card.setup.find(issue=>issue.label===label)?.dates||[])]);return <section key={label} className="rounded-xl border p-4"><h3 className="font-bold">{task.title}</h3><p className="mt-1 text-sm">{task.detail}</p><p className="my-3 text-sm text-slate-500">{affected.size} affected dates · Who acts: {task.owner}</p><Button onClick={()=>choose(label)}>Review task</Button></section>;})}</div>{!groups.length&&<p>No outstanding tasks for this employee.</p>}</>:<>
    <Button variant="secondary" className="my-4" onClick={()=>choose('')}>← All tasks</Button>
-   <section className="rounded-xl bg-violet-50 p-4 text-violet-950"><h3 className="text-lg font-bold">{copy.title}</h3><p className="mt-2">{copy.detail}</p><p className="mt-2 text-sm">Who acts: {copy.owner} · {dates.length} affected dates</p></section>
-   {setup?<section className="my-4"><p className="mb-3">Complete this setup once for all {dates.length} dates.</p>{!saved&&<Link className="inline-flex min-h-11 items-center rounded-lg bg-violet-700 px-4 font-semibold text-white" to={setup.path}>{setup.action} →</Link>}<details className="mt-4"><summary className="cursor-pointer">Show affected dates</summary><p>{dates.map(workDate).join(' · ')}</p></details></section>:day&&<>
+   {!/overtime|\bOT\b/i.test(raw)&&<section className="rounded-xl bg-violet-50 p-4 text-violet-950"><h3 className="text-lg font-bold">{copy.title}</h3><p className="mt-2">{copy.detail}</p><p className="mt-2 text-sm">Who acts: {copy.owner} · {dates.length} affected dates</p></section>}
+   {/overtime|\bOT\b/i.test(raw)?<div className="mt-4"><OvertimeWeekReview employeeId={card.employeeId} from={card.from} to={card.to} readOnly={saved} onChanged={onApplied}/></div>:setup?<section className="my-4"><p className="mb-3">Complete this setup once for all {dates.length} dates.</p>{!saved&&<Link className="inline-flex min-h-11 items-center rounded-lg bg-violet-700 px-4 font-semibold text-white" to={setup.path}>{setup.action} →</Link>}<details className="mt-4"><summary className="cursor-pointer">Show affected dates</summary><p>{dates.map(workDate).join(' · ')}</p></details></section>:day&&<>
     <div className="my-4"><h4 className="font-semibold">Affected dates · {dates.length}</h4><div className="mt-2 grid gap-2 sm:grid-cols-2" role="group" aria-label="Dates to review">{dates.map(value=><button key={value} type="button" aria-pressed={activeDate===value} onClick={()=>setDate(value)} className={`min-h-12 rounded-lg border px-4 py-3 text-left font-medium ${activeDate===value?'border-violet-600 bg-violet-100 text-violet-950':'border-slate-300 bg-white text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white'}`}>{workDate(value)}{activeDate===value?' · Viewing':''}</button>)}</div></div>
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{[['Scheduled work',duration(day.scheduledMinutes)],['Recorded work',duration(day.actualMinutes)],['Recorded break',duration(day.breakMinutes)],['Approved OT',duration(day.approvedOtMinutes)]].map(([label,value])=><div key={label} className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800"><p className="text-xs text-slate-500">{label}</p><strong>{value}</strong></div>)}</div>
     {scopeId&&/worked and scheduled|scheduled.*reconcil|outside.*schedule/i.test(raw)&&<ShiftVarianceDecision scopeId={scopeId} row={day} onApplied={onApplied}/>}
