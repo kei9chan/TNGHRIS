@@ -4,7 +4,7 @@ import {useAuth} from '../../hooks/useAuth';
 import {canImportActualAttendance} from './scheduleScope';
 import {usePayrollField} from './usePayrollSelection';
 import {useCalculationSelection} from './useCalculationSelection';
-import {fetchTimeContext,previewTime,saveTime,prepareAttendance,TimeScope,TimePreview} from './attendanceReadiness';
+import {fetchTimeContext,fetchPreparation,saveTime,prepareAttendance,TimeScope,TimePreview} from './attendanceReadiness';
 import {grossContext,grossRuns,getGrossRun,prepareGross,GrossScope,GrossRun} from './grossPay';
 import {netWorkspace,prepareNet,getNetRun,NetRun} from './netPay';
 import {supabase} from '../../services/supabaseClient';
@@ -34,15 +34,18 @@ function PayrollWorkspace({scope,setScope,from,to}:{key?:string;scope:string;set
  const [cycle,setCycle]=useState<ConfiguredPeriod|null>(null);
  const [approvedAttendance,setApprovedAttendance]=useState<{employees:number;days:number;fixes:number}|null>(null);
  const unit=scopes.find(s=>s.id===scope),fresh=!!net?.current;
- useEffect(()=>{let active=true;setBusy(true);setError('');
+ useEffect(()=>{let active=true;const controller=new AbortController();setBusy(true);setError('');
   (async()=>{const [t,g]=await Promise.all([fetchTimeContext(),grossContext()]);if(!active)return;
    const combined=t.scopes.filter(s=>s.canView).map(s=>({...s,gross:g.scopes.find(x=>x.id===s.id)}));setScopes(combined);
    if(!combined.some(s=>s.id===scope)){setScope(combined[0]?.id||'');return;}if(!validCutoff(from,to))return;
-   const [r,p,runs]=await Promise.all([supabase.rpc('get_payroll_home_readiness',{p_scope:scope,p_from:from,p_to:to}),previewTime(scope,from,to),g.scopes.find(s=>s.id===scope)?.canView?grossRuns(scope):Promise.resolve([])]);
-   if(!active)return;if(r.error)throw r.error;setReadiness(r.data);setTime(p);
+   const [preparation,runResult]=await Promise.allSettled([fetchPreparation(scope,from,to,controller.signal),g.scopes.find(s=>s.id===scope)?.canView?grossRuns(scope):Promise.resolve([])]);
+   if(!active)return;if(preparation.status==='rejected')throw preparation.reason;
+   setReadiness(preparation.value.readiness);setTime(preparation.value.time);
+   if(runResult.status==='rejected')throw new Error(`Attendance checked, but saved payroll drafts could not load: ${runResult.reason.message}`);
+   const runs=runResult.value;
    const saved=runs.filter(x=>x.from===from&&x.to===to).sort((a,b)=>b.version-a.version)[0];setExisting(saved?.id||'');
    if(selection.grossId&&saved){const gr=await getGrossRun(selection.grossId);if(!active)return;if(gr.from===from&&gr.to===to){setGross(gr);const w=await netWorkspace(gr.id);const id=w.runs.filter(n=>n.grossId===gr.id).sort((a,b)=>b.version-a.version)[0]?.id;if(id){const nr=await getNetRun(id);if(active)setNet(nr);}}}
-  })().catch(e=>{if(active)setError(e.message);}).finally(()=>{if(active)setBusy(false);});return()=>{active=false;};
+  })().catch(e=>{if(active)setError(e.message);}).finally(()=>{if(active)setBusy(false);});return()=>{active=false;controller.abort();};
  },[scope,from,to,revision]);
  useEffect(()=>{let active=true;if(!scope||!validCutoff(from,to)||!canImportActualAttendance(user)){setApprovedAttendance(null);return;}
   supabase.rpc('get_actual_attendance_import_reviews',{p_scope:scope,p_from:from,p_to:to}).then(({data,error})=>{
@@ -95,10 +98,10 @@ function PayrollWorkspace({scope,setScope,from,to}:{key?:string;scope:string;set
   {existing&&!gross&&<div className={`${panel} mb-5 flex flex-wrap items-center justify-between gap-3`}><p>A payroll calculation already exists for this cutoff.</p><button className={button} disabled={busy} onClick={()=>void openExisting()}>Open existing payroll</button></div>}
   <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]"><div className="space-y-4">
   {step===0&&<>
-   <ReadinessCard title="1. Schedules" status={readiness?`${readiness.publishedDays} of ${readiness.totalDays} employee-days published`:'Checking schedules'} ready={!!readiness&&readiness.totalDays>0&&readiness.publishedDays===readiness.totalDays}><Link className={button} to={`/payroll/timekeeping?week=${from}&source=payroll&businessUnit=${encodeURIComponent(unit?.name||'')}`}>Open Schedule Builder</Link><Link className={button} to="/payroll/import/schedules">Import schedules</Link></ReadinessCard>
+   <ReadinessCard title="1. Schedules" status={readiness?`${readiness.publishedDays} of ${readiness.totalDays} employee-days published`:busy?'Checking schedules…':error?'Schedule check could not finish — refresh readiness':'Schedules not checked'} ready={!!readiness&&readiness.totalDays>0&&readiness.publishedDays===readiness.totalDays}><Link className={button} to={`/payroll/timekeeping?week=${from}&source=payroll&businessUnit=${encodeURIComponent(unit?.name||'')}`}>Open Schedule Builder</Link><Link className={button} to="/payroll/import/schedules">Import schedules</Link></ReadinessCard>
    <ReadinessCard title="2. Attendance" status={time?pendingEmployees?`${pendingEmployees} employees need review`:`${people.size} employees ready for timekeeping review`:'Attendance readiness not yet checked'} ready={!!time&&!pendingEmployees&&people.size>0}>{approvedAttendance&&approvedAttendance.days>0&&<p className="w-full text-sm">Approved import: {approvedAttendance.employees} employees · {approvedAttendance.days} selected day rows · {approvedAttendance.fixes} audited changes</p>}{canImportActualAttendance(user)&&<><Link className={`${button} bg-violet-600 !text-white`} to="/payroll/import-attendance">Import attendance</Link><Link className={button} to="/payroll/import-attendance">Enter manually</Link></>}<Link className={button} to="/payroll/attendance-readiness">Review & finalize timekeeping</Link></ReadinessCard>
    {canImportActualAttendance(user)&&scope&&validCutoff(from,to)&&<AttendanceImportApprovals scope={scope} from={from} to={to} onApplied={()=>setRevision(x=>x+1)} key={`${scope}:${from}:${to}:${revision}`}/>}
-   <ReadinessCard title="3. Pay packages" status={readiness?.payVisible?`${readiness.reviewedPayEmployees} of ${readiness.employees} employees have approved base-pay coverage`:'Package readiness requires compensation access'} ready={!!readiness?.payVisible&&readiness.employees>0&&readiness.reviewedPayEmployees===readiness.employees}><Link className={button} to="/payroll/pay-packages">View packages</Link></ReadinessCard>
+   <ReadinessCard title="3. Pay packages" status={readiness?.payVisible?`${readiness.reviewedPayEmployees} of ${readiness.employees} employees have approved base-pay coverage`:readiness?'Package readiness requires compensation access':busy?'Checking pay packages…':'Pay-package readiness not checked'} ready={!!readiness?.payVisible&&readiness.employees>0&&readiness.reviewedPayEmployees===readiness.employees}><Link className={button} to="/payroll/pay-packages">View packages</Link></ReadinessCard>
    <details className={panel}><summary className="cursor-pointer text-lg font-bold">Additional records, if needed</summary><div className="mt-4 grid gap-3 sm:grid-cols-2">{[['Import leave opening balances','/payroll/import/leave-balances'],['Add or import leave taken','/payroll/import/leave-taken'],['Loans and authorized deductions','/payroll/import/deductions'],['Allowances and reimbursements','/payroll/import/additions'],['Service-charge allocations','/payroll/import/service-charge']].map(([label,path])=><Link className={button} key={label} to={path}>{label}</Link>)}</div></details>
   </>}
   {step>0&&<>
