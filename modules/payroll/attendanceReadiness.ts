@@ -35,6 +35,11 @@ export const savePayrollCalendarOverride=(scopeId:string,effectiveFrom:string,ca
 export const applyPayrollGraceBulk=(scopeId:string,from:string,to:string,records:{employeeId:string;date:string}[])=>rpc<GraceApplyResult>('apply_payroll_attendance_grace_bulk',{p_scope_id:scopeId,p_from:from,p_to:to,p_records:records});
 export const applyPayrollAttendancePreset=(scopeId:string,employeeId:string,date:string,preset:string,note:string)=>rpc<unknown>('apply_payroll_attendance_preset',{p_scope_id:scopeId,p_employee_id:employeeId,p_date:date,p_preset:preset,p_note:note});
 export const fetchPayrollAttendanceActions=(scopeId:string,from:string,to:string)=>rpc<PayrollAttendanceAction[]>('get_payroll_attendance_actions',{p_scope_id:scopeId,p_from:from,p_to:to});
+export type ShiftVarianceReview={id:string;status:string;start:string;end:string;reason:string;manager:string;submittedAt:string;decidedAt:string|null;stale:boolean;canDecide:boolean};
+export type ShiftVarianceContext={shift:{id:string;start:string;end:string;publicationId?:string;publicationVersion?:number;endDayOffset?:number}|null;manager:string|null;fingerprint:string;reviews:ShiftVarianceReview[];locked:boolean};
+export const fetchShiftVariance=(scope:string,employee:string,date:string)=>rpc<ShiftVarianceContext>('get_payroll_shift_variance',{p_scope:scope,p_employee:employee,p_date:date});
+export const submitShiftVariance=(scope:string,employee:string,date:string,fingerprint:string,start:string,end:string,reason:string)=>rpc<string>('submit_payroll_shift_variance',{p_scope:scope,p_employee:employee,p_date:date,p_fingerprint:fingerprint,p_start:start,p_end:end,p_reason:reason});
+export const decideShiftVariance=(id:string,approve:boolean,note:string)=>rpc<void>('decide_payroll_shift_variance',{p_id:id,p_approve:approve,p_note:note||null});
 
 export const prepareAttendance=(scope:string,from:string,to:string,hash:string,note?:string)=>rpc<string>('prepare_payroll_attendance_for_calculation',{p_scope:scope,p_from:from,p_to:to,p_source_hash:hash,p_note:note||null});
 

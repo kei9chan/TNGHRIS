@@ -61,8 +61,9 @@ export function normalizeAttendance(rows:string[][],businessUnit:string,rowNumbe
    const requestedOtHours=otHours?Number(otHours):undefined,leaveDays=leaveDaysValue?Number(leaveDaysValue):undefined;
    const otStart=otStartValue?attendanceStamp(otStartValue,workDate):undefined,otEnd=otEndValue?attendanceStamp(otEndValue,workDate):undefined;
    if(otHours||otStart||otEnd||otReason){
-    if(!requestedOtHours||!Number.isFinite(requestedOtHours)||requestedOtHours>24||requestedOtHours<0||!otStart||!otEnd||!otReason)throw new Error('OT needs requested hours (0–24), explicit start/end and a reason.');
-    if(Date.parse(otEnd)<=Date.parse(otStart)||requestedOtHours*3600000>Date.parse(otEnd)-Date.parse(otStart)+1)throw new Error('Requested OT hours must fit inside the OT start/end interval.');
+    if(!requestedOtHours||!Number.isFinite(requestedOtHours)||requestedOtHours>24||requestedOtHours<0||!otReason)throw new Error('OT needs requested extra-work hours (greater than 0, at most 24) and a reason. Start and end times are optional, but enter both if known.');
+    if(Boolean(otStart)!==Boolean(otEnd))throw new Error('Enter both OT start and end times, or leave both blank for a duration-only request.');
+    if(otStart&&otEnd&&(Date.parse(otEnd)<=Date.parse(otStart)||requestedOtHours*3600000>Date.parse(otEnd)-Date.parse(otStart)+1))throw new Error('Requested OT hours must fit inside the optional OT start/end interval.');
    }
    if(leaveType||leaveDaysValue||leaveReason||leaveStart||leaveEnd){
     if(!leaveType||!leaveDays||!Number.isFinite(leaveDays)||leaveDays>1||leaveDays<0||!leaveReason)throw new Error('Leave needs a configured type, days (greater than 0, at most 1), and reason.');

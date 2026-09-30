@@ -1,4 +1,5 @@
 import ApprovalWidget from './ApprovalWidget';
+import ShiftVarianceInbox from './ShiftVarianceInbox';
 // Phase A complete: mockDataCompat removed from HRDashboard
 
 import React, { useMemo, useState, useEffect } from 'react';
@@ -1491,6 +1492,7 @@ const HRDashboard: React.FC = () => {
 
     return (
         <div className="space-y-6">
+            <ShiftVarianceInbox />
             <ApprovalWidget />
 
             {actionItems.length > 0 ? (

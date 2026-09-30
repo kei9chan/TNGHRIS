@@ -21,7 +21,7 @@ instructions.getRange('A2:B11').values=[
  ['3. Upload and preview','Upload in Run Payroll, review before-and-after changes, then submit. HR Manager reviews first unless they uploaded it; one BOD approves and applies last.'],
  ['Dates and time','Real Excel dates or ISO YYYY-MM-DD. Date/time: YYYY-MM-DD HH:mm. Asia/Manila. Include explicit next-day dates for overnight shifts.'],
  ['Examples','Examples — Do Not Upload contains fictional DEMO IDs. These are rejected by real imports. Never copy them as employee records.'],
- ['Values only','No formulas. Paste values. Payroll derives hours, lateness and authorized overtime; do not supply calculated amounts.'],
+ ['Values only','No formulas. Paste values. Enter requested extra-work OT hours and reason only if applying; the manager approves a quantity separately. OT start/end are optional as a pair. A late clock-out never creates OT.'],
  ['No-punch days','Rest day must match the roster; holidays must match the official calendar; suspension must be authorized. Absent and missing punches remain pending review. Never invent clock times. Use Needs review to flag an issue; it does not grant paid OT or leave.']
 ];
 instructions.getRange('A1:A11').format.columnWidth=29;
@@ -43,7 +43,7 @@ for(const sheet of [data,examples]){
 }
 examples.getRangeByIndexes(1,0,schema.samples.length,schema.fields.length).values=schema.samples.map(row=>row.map((value,i)=>['workDate','clockIn','breakStart','breakEnd','clockOut','otStart','otEnd'].includes(schema.fields[i].key)&&value?new Date(value.replace(' ','T')+(schema.fields[i].key==='workDate'?'T00:00:00Z':':00Z')):value));
 guide.getRange('A1:C1').values=[['Field','Requirement','Accepted values and explanation']];
-guide.getRangeByIndexes(1,0,schema.fields.length,3).values=schema.fields.map(f=>[f.label,f.required?'Required':f.reference?'Read-only reference (server verified)':['employeeName','reference','notes','reviewRequest'].includes(f.key)?'Optional':f.key==='reviewExplanation'?'Conditional: if Needs review is selected':['requestedOtHours','otStart','otEnd','otReason'].includes(f.key)?'Optional OT request (complete all OT fields)':['leaveType','leaveDays','leaveStart','leaveEnd','leaveReason'].includes(f.key)?'Optional leave request (times for partial days)':'Conditional: actual recorded punch',f.guide]);
+guide.getRangeByIndexes(1,0,schema.fields.length,3).values=schema.fields.map(f=>[f.label,f.required?'Required':f.reference?'Read-only reference (server verified)':['employeeName','reference','notes','reviewRequest'].includes(f.key)?'Optional':f.key==='reviewExplanation'?'Conditional: if Needs review is selected':['requestedOtHours','otReason'].includes(f.key)?'If requesting OT: both required':['otStart','otEnd'].includes(f.key)?'Optional OT interval (both or neither)':['leaveType','leaveDays','leaveStart','leaveEnd','leaveReason'].includes(f.key)?'Optional leave request (times for partial days)':'Conditional: actual recorded punch',f.guide]);
 const guideEnd=schema.fields.length+1;
 guide.getRange(`A1:C${guideEnd}`).format.wrapText=true;guide.getRange(`A1:C${guideEnd}`).format.rowHeight=60;
 guide.getRange(`A1:A${guideEnd}`).format.columnWidth=29;guide.getRange(`B1:B${guideEnd}`).format.columnWidth=34;guide.getRange(`C1:C${guideEnd}`).format.columnWidth=82;

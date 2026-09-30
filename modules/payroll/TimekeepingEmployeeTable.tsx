@@ -1,6 +1,7 @@
 import React,{useEffect,useMemo,useRef,useState} from 'react';
 import {Link} from 'react-router-dom';
 import RecordedBreakApprovals from './RecordedBreakApprovals';
+import ShiftVarianceDecision from './ShiftVarianceDecision';
 import Button from '../../components/ui/Button';
 import type {ReviewTimeRow,TestTimeEvidence} from './attendanceReadiness';
 import {correctionLink,employeeReviews,timeTotals} from './timeReviewModel';
@@ -40,8 +41,8 @@ const duration=(minutes:number)=>{const n=Math.round(minutes);return `${Math.flo
 const workDate=(date:string)=>new Intl.DateTimeFormat('en-PH',{weekday:'short',month:'short',day:'numeric',timeZone:'UTC'}).format(new Date(`${date}T12:00:00Z`));
 function taskCopy(raw:string){
  if(/lunch|break/i.test(raw))return {title:'Review recorded breaks',detail:'Check the uploaded break times. If the employee worked during the break, the manager must approve that work separately.',owner:'HR · manager if worked-break approval is needed'};
- if(/worked and scheduled|scheduled.*reconcil/i.test(raw))return {title:'Check hours against the schedule',detail:'Recorded hours differ from scheduled hours. Check whether the attendance or schedule needs correction. Extra time is not automatically paid overtime.',owner:'HR / timekeeping reviewer'};
- if(/overtime|\bOT\b|outside.*schedule/i.test(raw))return {title:'Review overtime approval',detail:'Check the approved overtime request and hours. A later clock-out alone does not authorize overtime pay.',owner:'Overtime approver / HR'};
+ if(/worked and scheduled|scheduled.*reconcil|outside.*schedule/i.test(raw))return {title:'Confirm planned shift versus actual times',detail:'Compare the published shift with clock-in and clock-out. If the business unit moved the shift, send the corrected planned times to the direct manager. Extra work needs a separate OT request.',owner:'Direct manager confirms a moved shift · HR corrects punch mistakes'};
+ if(/overtime|\bOT\b/i.test(raw))return {title:'Review requested OT hours',detail:'Only hours in an OT request can be approved. A later clock-out alone never creates paid overtime.',owner:'Direct manager / OT approver'};
  if(/punch|clock/i.test(raw))return {title:'Complete missing attendance',detail:'Check the source file and correct only verified times. Do not fill in a guessed time.',owner:'HR'};
  if(/Attendance policy|time rules/i.test(raw))return {title:'Confirm attendance rules once',detail:'HR needs to confirm the applicable attendance rules for this business unit and cutoff. This is one setup task covering all listed dates.',owner:'Authorized HR'};
  if(/Holiday coverage|holiday calendar/i.test(raw))return {title:'Confirm the holiday calendar once',detail:'HR needs to confirm the approved holiday calendar for this cutoff. Do not enter a holiday rule for each employee.',owner:'Authorized HR'};
@@ -72,6 +73,7 @@ function EmployeeIssueReview({card,initialIssue,saved,onClose,scopeId,onApplied}
    {setup?<section className="my-4"><p className="mb-3">Complete this setup once for all {dates.length} dates.</p>{!saved&&<Link className="inline-flex min-h-11 items-center rounded-lg bg-violet-700 px-4 font-semibold text-white" to={setup.path}>{setup.action} →</Link>}<details className="mt-4"><summary className="cursor-pointer">Show affected dates</summary><p>{dates.map(workDate).join(' · ')}</p></details></section>:day&&<>
     <label className="my-4 block font-semibold">Date to review<select className="mt-1 block w-full rounded-lg border bg-white p-3 text-slate-900" value={activeDate} onChange={event=>setDate(event.target.value)}>{dates.map(value=><option key={value} value={value}>{workDate(value)}</option>)}</select></label>
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{[['Scheduled work',duration(day.scheduledMinutes)],['Recorded work',duration(day.actualMinutes)],['Recorded break',duration(day.breakMinutes)],['Approved OT',duration(day.approvedOtMinutes)]].map(([label,value])=><div key={label} className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800"><p className="text-xs text-slate-500">{label}</p><strong>{value}</strong></div>)}</div>
+    {scopeId&&/worked and scheduled|scheduled.*reconcil|outside.*schedule/i.test(raw)&&<ShiftVarianceDecision scopeId={scopeId} row={day} onApplied={onApplied}/>}
     <p className="my-3 text-sm text-slate-500">These are the current recorded totals. Corrections and pay approvals remain separate.</p>
     {!saved&&scopeId&&/lunch|break/i.test(raw)?<RecordedBreakApprovals scope={scopeId} from={card.from} to={card.to} employeeId={card.employeeId} onApplied={onApplied}/>:!saved&&target&&<Link className="inline-flex min-h-11 items-center rounded-lg bg-violet-700 px-4 font-semibold text-white" to={target.path}>{target.label} →</Link>}
     <details key={`${selected}:${activeDate}`} className="mt-5 rounded-xl border p-3"><summary className="cursor-pointer font-semibold">Show logs and technical details (optional)</summary><div className="mt-3"><DayDetail row={{...day,issues:day.issues.filter(issue=>issue===raw)}} saved={true} canOpenOffset={false} busy={false} hasReason={false} onOpenOffset={()=>{}}/></div></details>
