@@ -120,21 +120,21 @@
       "label": "Requested OT hours (optional)",
       "key": "requestedOtHours",
       "format": "0.00",
-      "guide": "Requested paid OT hours, not total shift hours. Requires OT start/end and a reason; manager decides the authorized hours.",
+      "guide": "Extra-work hours requested for separate manager approval, not total shift hours or a calculation from clock-out. Add a reason. OT start/end are optional as a pair; manager can approve fewer hours. Blank means no OT requested.",
       "reference": false
     },
     {
       "label": "OT start date/time (optional)",
       "key": "otStart",
       "format": "yyyy-mm-dd hh:mm",
-      "guide": "Actual requested OT interval start, including date. Never copy a full shift as overtime.",
+      "guide": "Optional actual OT interval start, including date. Enter both OT times or neither; never copy the full shift as overtime.",
       "reference": false
     },
     {
       "label": "OT end date/time (optional)",
       "key": "otEnd",
       "format": "yyyy-mm-dd hh:mm",
-      "guide": "Requested OT interval end, including next-day date if applicable.",
+      "guide": "Optional OT interval end, including next-day date if applicable. Leave both times blank when only requested extra-work hours are known.",
       "reference": false
     },
     {
@@ -323,10 +323,10 @@
       "Example only",
       "Overnight session uses explicit next-day dates",
       "Overtime",
-      "Check approved request and duration",
+      "Request one extra hour; manager decides separately",
       "1",
-      "2026-08-29 06:00",
-      "2026-08-29 07:00",
+      "",
+      "",
       "Requested extra coverage; separate manager approval",
       "",
       "",

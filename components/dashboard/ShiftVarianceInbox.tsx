@@ -1,0 +1,14 @@
+import React,{useEffect,useState} from 'react';
+import {supabase} from '../../services/supabaseClient';
+import {decideShiftVariance} from '../../modules/payroll/attendanceReadiness';
+import Button from '../ui/Button';
+
+type Item={id:string;employee:string;workDate:string;businessUnit:string;originalStart:string;originalEnd:string;proposedStart:string;proposedEnd:string;reason:string};
+export default function ShiftVarianceInbox(){
+ const [items,setItems]=useState<Item[]>([]),[busy,setBusy]=useState(''),[error,setError]=useState(''),[notes,setNotes]=useState<Record<string,string>>({});
+ const load=async()=>{const {data,error:problem}=await supabase.rpc('get_my_payroll_shift_variances');if(problem)throw new Error(problem.message);setItems((data||[]) as Item[]);};
+ useEffect(()=>{void load().catch(()=>{});},[]);
+ const decide=async(item:Item,approve:boolean)=>{setBusy(item.id);setError('');try{await decideShiftVariance(item.id,approve,notes[item.id]||'');await load();}catch(e){setError(e instanceof Error?e.message:'Decision could not be saved.');}finally{setBusy('');}};
+ if(!items.length)return null;
+ return <section className="rounded-xl border border-indigo-200 bg-white p-5 shadow-sm dark:bg-slate-900" aria-labelledby="shift-variance-title"><h2 id="shift-variance-title" className="text-xl font-bold">Shift changes awaiting your approval · {items.length}</h2><p className="mt-1 text-sm text-slate-600">Confirm only a changed planned shift for your direct report. This does not approve extra OT hours or change original clock punches.</p>{error&&<p role="alert" className="mt-2 text-red-700">{error}</p>}<div className="mt-4 space-y-3">{items.map(item=><article key={item.id} className="rounded-lg border p-4"><h3 className="font-semibold">{item.employee} · {new Intl.DateTimeFormat('en-PH',{weekday:'long',month:'short',day:'numeric',timeZone:'UTC'}).format(new Date(`${item.workDate}T12:00:00Z`))}</h3><p className="text-sm text-slate-600">{item.businessUnit}</p><div className="mt-2 grid gap-2 text-sm sm:grid-cols-2"><p>Published: <strong>{item.originalStart}–{item.originalEnd}</strong></p><p>Proposed: <strong>{item.proposedStart}–{item.proposedEnd}</strong></p></div><p className="mt-2 text-sm">Reason: {item.reason}</p><div className="mt-3 flex flex-wrap items-end gap-2"><Button disabled={!!busy} onClick={()=>void decide(item,true)}>Confirm shifted schedule</Button><label className="text-sm">Return reason<input className="ml-2 rounded border p-2" value={notes[item.id]||''} onChange={e=>setNotes({...notes,[item.id]:e.target.value})} placeholder="Specific reason"/></label><Button variant="secondary" disabled={!!busy||!notes[item.id]?.trim()} onClick={()=>void decide(item,false)}>Return for correction</Button></div></article>)}</div></section>;
+}

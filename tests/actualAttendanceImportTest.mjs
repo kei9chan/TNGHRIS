@@ -15,6 +15,13 @@ assert.equal(normalizeAttendance([['00001','Fixture','2026-08-27','Rest day','',
 assert.equal(normalizeAttendance([['00001','Fixture','2026-08-29','Workday','9:04','','','18:00']],'Fixture')[0].events[0].timestamp,'2026-08-29T09:04:00+08:00');
 assert.throws(()=>normalizeAttendance([['00001','Fixture','2026-08-27','Workday','','','','']],'Fixture'),/Workday has no actual punches/);
 assert.throws(()=>normalizeAttendance([['','','','','','','',''],['00001','Fixture','2026-08-27','Workday','','','','']],'Fixture'),/Row 3/);
+const otInput=['00001','Employee','Fixture','2026-08-29','Worked','2026-08-29 09:00','','','2026-08-29 18:00','','','None','','1.5','','','Extra coverage'];
+const durationOnlyOt=normalizeAttendance([otInput],'Fixture')[0];
+assert.equal(durationOnlyOt.requestedOtHours,1.5);
+assert.equal(durationOnlyOt.otStart,undefined);
+assert.equal(durationOnlyOt.otReason,'Extra coverage');
+assert.throws(()=>normalizeAttendance([[...otInput.slice(0,14),'2026-08-29 18:00','','Extra coverage']],'Fixture'),/both OT start and end/);
+assert.throws(()=>normalizeAttendance([[...otInput.slice(0,14),'','','']],'Fixture'),/reason/);
 const db=new PGlite();
 await db.exec(`create schema private;create schema auth;create role anon;create role authenticated;
 create function auth.uid() returns uuid language sql as $$select '00000000-0000-4000-8000-000000000001'::uuid$$;
