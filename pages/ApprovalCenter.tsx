@@ -1,3 +1,4 @@
+import PayrollAttendanceInbox from '../modules/payroll/PayrollAttendanceInbox';
 import OvertimeWeekReview from '../components/overtime/OvertimeWeekReview';
 import OBApprovalQueue from '../modules/official-business/OBApprovalQueue';
 import { ApprovalOutcome } from '../components/approvals/ApprovalNavigation';
@@ -437,6 +438,7 @@ export default function ApprovalCenter() {
   const error = approvals.approvalError || additional.additionalApprovalError || attendance.error || loadError;
   const controlClasses = 'rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:border-slate-500 dark:bg-slate-700 dark:text-white dark:placeholder:text-slate-300 dark:focus:border-indigo-400 dark:focus:ring-indigo-900';
   return <div className="space-y-5 pb-12 text-slate-900 dark:text-slate-100">
+    <PayrollAttendanceInbox/>
     {disapproving&&<BulkDisapprovalDialog kind={disapproving.kind} items={disapproving.items} onClose={()=>setDisapproving(null)} onDone={async()=>{setSelected(new Set());await approvals.refreshApprovals();}} />}
     {decisionMessage && <ApprovalOutcome message={decisionMessage} onReturn={() => { setDecisionMessage(''); closeRequestedReview(); }} />}
     <div className="flex flex-wrap items-end justify-between gap-3"><div><h1 className="text-3xl font-bold text-slate-900 dark:text-white">Approval Center</h1><p className="mt-1 text-slate-500 dark:text-slate-300">The single queue for every approval requiring your action.</p></div><Link to="/dashboard" className="font-semibold text-indigo-600 dark:text-indigo-300">← Dashboard</Link></div>

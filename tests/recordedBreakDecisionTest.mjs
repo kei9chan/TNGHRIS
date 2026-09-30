@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';import fs from 'node:fs';import {PGlite} from '@electric-sql/pglite';
 const db=new PGlite();const id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;const scope=id(90);const emp=id(91);const issue='One unpaid movable lunch hour needs logs or direct-manager approved worked-lunch OT';
 await db.exec(`create schema private;create schema auth;create role anon;create role authenticated;
-create table public.payroll_access_scopes(id uuid primary key);insert into public.payroll_access_scopes values('${scope}');
+create table public.payroll_access_scopes(id uuid primary key,name text);insert into public.payroll_access_scopes values('${scope}','Test BU');
 create table public.hris_users(id uuid,auth_user_id uuid,full_name text);create table public.payroll_schedule_freezes(employee_id uuid,date_from date,date_to date);
 create table fixture(src jsonb);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('test.actor',true),'')::uuid$$;
 create function public.has_active_role(text) returns boolean language sql stable as $$select $1=any(string_to_array(current_setting('test.roles',true),','))$$;
@@ -12,6 +12,8 @@ create function public.apply_payroll_attendance_preset(p_scope_id uuid,p_employe
 set test.access='yes';`);
 const src={rows:[{employeeId:emp,employeeName:'Employee A',date:'2026-09-01',breakMinutes:57,scheduledMinutes:480,actualMinutes:544,regularMinutes:483,approvedOtMinutes:0,ready:false,issues:[issue,'Worked and scheduled minutes need reconciliation']},{employeeId:emp,employeeName:'Employee A',date:'2026-09-02',breakMinutes:0,ready:false,issues:[issue,'Missing punch']}],events:['CLOCK_IN','START_BREAK','END_BREAK','CLOCK_OUT'].map((type,i)=>({id:`event-${i}`,employeeId:emp,importWorkDate:'2026-09-01',type,timestamp:`2026-09-01T0${i}:00:00Z`}))};
 await db.query('insert into fixture values($1)',[JSON.stringify(src)]);await db.exec(fs.readFileSync('supabase/migrations/20260930034839_attendance_break_batch_decisions.sql','utf8'));
+await db.exec(fs.readFileSync('supabase/migrations/20260930042837_payroll_break_inbox_and_standing_defaults.sql','utf8'));
+const inbox=async()=> (await db.query('select public.get_payroll_break_review_inbox() v')).rows[0].v;
 const actor=async(n,roles)=>{await db.query("select set_config('test.actor',$1,false),set_config('test.roles',$2,false)",[id(n),roles]);};
 const workspace=async()=> (await db.query('select public.get_payroll_break_review($1,$2,$3) v',[scope,'2026-08-26','2026-09-10'])).rows[0].v;
 const submit=async(items,hash)=> (await db.query('select public.submit_payroll_break_review($1,$2,$3,$4,$5) v',[scope,'2026-08-26','2026-09-10',hash,JSON.stringify(items)])).rows[0].v;
@@ -20,10 +22,11 @@ await actor(1,'HR Staff');let w=await workspace();assert.equal(w.items[0].blocke
 await assert.rejects(()=>submit([...selected,{employeeId:emp,date:'2026-09-02'}],w.sourceHash),/blocked/);
 assert.equal((await db.query('select count(*) n from private.payroll_break_reviews')).rows[0].n,0);
 const review=await submit(selected,w.sourceHash);assert.equal(await submit(selected,w.sourceHash),review);await assert.rejects(()=>decide(review),/independent/);
-await actor(3,'Board of Director');await assert.rejects(()=>decide(review),/not the approver/);
-await actor(2,'HR Manager');assert.equal(await decide(review),'pending_bod');
+assert.equal((await inbox()).length,0);
+await actor(3,'Board of Director');assert.equal((await inbox()).length,0);await assert.rejects(()=>decide(review),/not the approver/);
+await actor(2,'HR Manager');assert.equal((await inbox()).length,1);assert.equal((await inbox())[0].items.length,1);assert.equal((await inbox())[0].stale,false);assert.equal(await decide(review),'pending_bod');
 await actor(2,'HR Manager,Board of Director');await assert.rejects(()=>decide(review),/independent/);
-await actor(3,'Board of Director');await assert.rejects(()=>decide(review,'reject'),/specific reason/);assert.equal(await decide(review),'approved');assert.equal(await decide(review),'approved');
+await actor(3,'Board of Director');assert.equal((await inbox()).length,1);await assert.rejects(()=>decide(review,'reject'),/specific reason/);assert.equal(await decide(review),'approved');assert.equal(await decide(review),'approved');
 const applied=(await db.query('select private.payroll_time_sources($1,$2,$3) v',[scope,'2026-08-26','2026-09-10'])).rows[0].v;
 assert.notEqual(JSON.stringify(applied),JSON.stringify(src),'source hash changes for stale payroll detection');
 const result=(await db.query('select private.interpret_payroll_time($1,$2,$3) v',[JSON.stringify(applied),'2026-08-26','2026-09-10'])).rows[0].v;
@@ -35,7 +38,7 @@ await actor(2,'HR Manager');w=await workspace();const hr=await submit(selected,w
 await actor(3,'Board of Director');await db.exec(`insert into payroll_schedule_freezes values('${emp}','2026-09-01','2026-09-01')`);await assert.rejects(()=>decide(hr),/locked/);await db.exec('delete from payroll_schedule_freezes');
 await db.query("update fixture set src=jsonb_set(src,'{newVersion}','3')");await assert.rejects(()=>decide(hr),/evidence changed/i);assert.equal(await decide(hr,'return','Attendance changed'),'returned');
 await actor(3,'Board of Director');w=await workspace();const bod=await submit(selected,w.sourceHash);assert.equal((await workspace()).reviews.find(r=>r.id===bod).status,'pending_hr_manager');await actor(2,'HR Manager');await decide(bod);await actor(3,'Board of Director');await assert.rejects(()=>decide(bod),/independent/);await actor(4,'Board of Director');await decide(bod);
-await db.exec("set test.access='no'");await assert.rejects(()=>workspace(),/Scoped/);await db.exec("set test.access='yes'");
-for(const fn of ['public.get_payroll_break_review(uuid,date,date)','public.submit_payroll_break_review(uuid,date,date,text,jsonb)','public.decide_payroll_break_review(uuid,text,text)'])assert.equal((await db.query("select has_function_privilege('anon',$1,'execute') ok",[fn])).rows[0].ok,false);
+await db.exec("set test.access='no'");await assert.rejects(()=>workspace(),/Scoped/);assert.equal((await inbox()).length,0);await db.exec("set test.access='yes'");
+for(const fn of ['public.get_payroll_break_review_inbox()','public.get_payroll_break_review(uuid,date,date)','public.submit_payroll_break_review(uuid,date,date,text,jsonb)','public.decide_payroll_break_review(uuid,text,text)'])assert.equal((await db.query("select has_function_privilege('anon',$1,'execute') ok",[fn])).rows[0].ok,false);
 await assert.rejects(()=>db.query('select public.apply_payroll_attendance_preset($1,$2,$3,$4,$5)',[scope,emp,'2026-09-01','mark_break_compliant','']),/Scheduled times must not replace/);
 console.log('PASS: atomic selection, role routing, self-approval prevention, BOD uploader different BOD, optional approve notes, rejection reason, idempotency, unchanged punches/pay quantities, only break flag cleared, stale source invalidation, locks, ACL, fabricated-preset blocked.');await db.close();
