@@ -8,9 +8,11 @@ const dir=await fs.mkdtemp(path.join(process.cwd(),'node_modules/.attendance-tem
 try{
  const target=path.join(dir,'reader.mjs');await build({entryPoints:['modules/payroll/actualAttendanceImport.ts'],bundle:true,platform:'node',format:'esm',outfile:target,packages:'external'});
  const {readAttendanceFile,prefillAttendanceWorkbook,normalizeAttendance,publishedAttendanceReferences}=await import(pathToFileURL(target));
- const current=await fs.readFile('public/templates/attendance-v5.xlsx');
- assert.deepEqual(Buffer.from((await fs.readFile('public/templates/attendance-v5.xlsx.b64','utf8')).trim(),'base64'),current);
- await assert.rejects(()=>readAttendanceFile(new File([current],'attendance-v5.xlsx'),'Bakebe – SM Aura'),/no attendance records/);
+ const current=await fs.readFile('public/templates/attendance-v6.xlsx');
+ assert.deepEqual(Buffer.from((await fs.readFile('public/templates/attendance-v6.xlsx.b64','utf8')).trim(),'base64'),current);
+ await assert.rejects(()=>readAttendanceFile(new File([current],'attendance-v6.xlsx'),'Bakebe – SM Aura'),/no attendance records/);
+ const previous=await fs.readFile('public/templates/attendance-v5.xlsx');
+ await assert.rejects(()=>readAttendanceFile(new File([previous],'attendance-v5.xlsx'),'Bakebe – SM Aura'),/no attendance records/);
  const refs=publishedAttendanceReferences([{employeeId:'00001',name:'Fixture Employee',businessUnit:'Bakebe – SM Aura',workDate:'2026-08-27',dayStatus:'Rest day',schedule:{published:true,publicationId:'roster-1',version:2,entries:[{name:'Rest Day',kind:'rest'}]}}]);
  assert.equal(refs[0].weekday,'Thursday');assert.equal(refs[0].status,'Rest day');assert.equal(refs[0].rosterVersion,'roster-1 · v2');
  const prefilled=await prefillAttendanceWorkbook(Uint8Array.from(current).buffer,[{code:'00001',name:'Fixture Employee',businessUnit:'Bakebe – SM Aura',date:'2026-08-27',status:'Rest day'}]);
@@ -21,11 +23,14 @@ try{
   if(classification==='Worked')cells[5]='2026-08-27 09:00';
   const result=normalizeAttendance([cells],'Bakebe – SM Aura')[0];assert.equal(result.dayStatus,canonical);assert.equal(result.classification,classification);
  }
- const currentZip=await JSZip.loadAsync(current);const currentEntry='xl/worksheets/sheet2.xml';
+ const currentZip=await JSZip.loadAsync(current);const exampleXml=await currentZip.file('xl/worksheets/sheet3.xml').async('string');
+ for(let n=2;n<=11;n++)assert.match(exampleXml,new RegExp(`<x:row r="${n}"`));
+ assert.match(exampleXml,/Offline manager OT hours/);
+ const currentEntry='xl/worksheets/sheet2.xml';
  const currentXml=await currentZip.file(currentEntry).async('string');
  const populatedRow='<x:row r="2"><x:c r="A2" t="str"><x:v>00001</x:v></x:c><x:c r="B2" t="str"><x:v>Fixture Employee</x:v></x:c><x:c r="C2" t="str"><x:v>Bakebe – SM Aura</x:v></x:c><x:c r="D2" t="str"><x:v>2026-08-27</x:v></x:c><x:c r="E2" t="str"><x:v>Rest day</x:v></x:c></x:row>';
  currentZip.file(currentEntry,currentXml.replace(/<x:row r="2"[\s\S]*?<\/x:row>/,populatedRow));
- const currentRows=await readAttendanceFile(new File([await currentZip.generateAsync({type:'uint8array'})],'prefilled-v5.xlsx'),'Bakebe – SM Aura');
+ const currentRows=await readAttendanceFile(new File([await currentZip.generateAsync({type:'uint8array'})],'prefilled-v6.xlsx'),'Bakebe – SM Aura');
  assert.equal(currentRows[0].employeeId,'00001');assert.equal(currentRows[0].dayStatus,'Rest day');assert.equal(currentRows[0].events.length,0);
  const original=Buffer.from((await fs.readFile('public/templates/attendance-v3.xlsx.b64','utf8')).trim(),'base64');
  await assert.rejects(()=>readAttendanceFile(new File([original],'attendance.xlsx'),'Bakebe – SM Aura'),/no attendance records/);
