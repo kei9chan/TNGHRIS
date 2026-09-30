@@ -20,12 +20,14 @@ export function correctionWorkflow(issue:string){
  if(/employment|inactive employee|hire date/i.test(issue))return {path:'/employees',label:'Review employee record',owner:'HR'};
  if(/rules|holiday calendar|policy|classification/i.test(issue))return {path:'/payroll/attendance-readiness#attendance-references',label:'Review attendance references',owner:'Authorized HR'};
  if(/punch|clock|break end|lunch.*logs/i.test(issue))return {path:'/payroll/historical-corrections',label:'Review actual-time evidence',owner:'Authorized HR'};
+ if(/worked and scheduled|scheduled.*reconcil/i.test(issue))return {path:'/payroll/daily-review',label:'Review scheduled and worked time',owner:'HR / timekeeping reviewer'};
  if(/schedule|shift|roster/i.test(issue)&&!/OT|overtime/i.test(issue))return {path:'/payroll/timekeeping',label:'Review and publish schedule',owner:'Scheduling manager'};
  if(/OT|overtime|worked|rest-day|compensation/i.test(issue))return {path:'/payroll/overtime-requests',label:'Review approved OT / worked time',owner:'OT approver / HR'};
  return {path:'/payroll/daily-review',label:'Open daily time review',owner:'HR / timekeeping reviewer'};
 }
 export function correctionLink(issue:string,row:ReviewTimeRow){
  const target=correctionWorkflow(issue);
+ if(target.path==='/payroll/daily-review')return {...target,path:`${target.path}?employee=${encodeURIComponent(row.employeeId)}&date=${row.date}`};
  if(target.path==='/payroll/historical-corrections')return {...target,path:`${target.path}?employee=${encodeURIComponent(row.employeeId)}&date=${row.date}`};
  if(target.path==='/payroll/timekeeping'){
   const d=new Date(`${row.date}T00:00:00Z`);d.setUTCDate(d.getUTCDate()-(d.getUTCDay()+6)%7);

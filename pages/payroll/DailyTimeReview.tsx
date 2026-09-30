@@ -1,4 +1,5 @@
 
+import {useSearchParams} from 'react-router-dom';
 import React, { useState, useMemo, useEffect } from 'react';
 import { AttendanceRecord, AttendanceStatus, TimeEventSource, Permission } from '../../types';
 import Card from '../../components/ui/Card';
@@ -13,6 +14,9 @@ import {useAttendanceIssues} from '../../services/attendanceIssues';
 import AttendanceIssueBadges from '../../components/attendance/AttendanceIssueBadges';
 
 const DailyTimeReview: React.FC = () => {
+    const [params,setParams]=useSearchParams();
+    const requestedDate=params.get('date')||'';
+    const employeeFilter=params.get('employee')||'';
     const attendance=useAttendanceIssues();
     const { user } = useAuth();
     const { getAccessibleBusinessUnits, getVisibleEmployeeIds, can } = usePermissions();
@@ -21,7 +25,8 @@ const DailyTimeReview: React.FC = () => {
     const [records, setRecords] = useState<AttendanceRecord[]>([]);
     const [businessUnits, setBusinessUnits] = useState<{ id: string; name: string }[]>([]);
     const [employees, setEmployees] = useState<{ id: string; name: string; businessUnit?: string | null }[]>([]);
-    const [filterDate, setFilterDate] = useState(new Date().toISOString().split('T')[0]);
+    const [filterDate, setFilterDate] = useState(/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)?requestedDate:new Date().toISOString().split('T')[0]);
+    useEffect(()=>{if(/^\d{4}-\d{2}-\d{2}$/.test(requestedDate))setFilterDate(requestedDate);},[requestedDate]);
     const [buFilter, setBuFilter] = useState('');
     const [selectedRecord, setSelectedRecord] = useState<AttendanceRecord | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -143,9 +148,9 @@ const DailyTimeReview: React.FC = () => {
     const filteredRecords = useMemo(() => {
         return records.filter(r => {
             const dateMatch = new Date(r.date).toISOString().split('T')[0] === filterDate;
-            return dateMatch;
+            return dateMatch&&(!employeeFilter||r.employeeId===employeeFilter);
         });
-    }, [records, filterDate]);
+    }, [records, filterDate, employeeFilter]);
 
     if (!canView) {
         return (
@@ -179,6 +184,7 @@ const DailyTimeReview: React.FC = () => {
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Daily Timekeeping Review</h1>
             <p className="text-gray-600 dark:text-gray-400">Review daily logs, flag discrepancies, and correct attendance records before payroll.</p>
 
+            {employeeFilter&&<p role="status" className="rounded-lg bg-violet-50 p-3 text-violet-900">Showing {employees.find(employee=>employee.id===employeeFilter)?.name||'the selected employee'} only. <Button variant="secondary" onClick={()=>{const next=new URLSearchParams(params);next.delete('employee');setParams(next);}}>Show all accessible employees</Button></p>}
             <Card>
                 <div className="flex flex-wrap gap-4 p-4 items-end">
                     <Input label="Date" type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} />
