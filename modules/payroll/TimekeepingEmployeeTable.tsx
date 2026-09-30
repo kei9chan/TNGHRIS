@@ -1,15 +1,16 @@
-import React,{useMemo,useState} from 'react';
+import React,{useEffect,useMemo,useRef,useState} from 'react';
 import {Link} from 'react-router-dom';
 import Button from '../../components/ui/Button';
 import type {ReviewTimeRow,TestTimeEvidence} from './attendanceReadiness';
 import {correctionLink,employeeReviews,timeTotals} from './timeReviewModel';
-import {groupEmployeeReadiness,ReadinessCategory,setupDependencies} from './readinessDashboardModel';
+import {groupEmployeeReadiness,ReadinessCategory,EmployeeReadinessCard,setupDependencies} from './readinessDashboardModel';
 import {downloadHistoricalSource,historyDetail} from './historicalAttendance';
 
 const link='text-indigo-700 underline dark:text-indigo-300';
 const num=(value:number)=>value.toLocaleString('en-PH',{maximumFractionDigits:4});
 const stamp=(value:string)=>new Date(value).toLocaleString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
 export const TimekeepingEmployeeTable:React.FC<{rows:ReviewTimeRow[];test:TestTimeEvidence[];saved:boolean;canOpenOffset:boolean;busy:boolean;hasReason:boolean;onOpenOffset:(id:string)=>void;scopeName?:string;from?:string;to?:string}>=({rows,test,saved,canOpenOffset,busy,hasReason,onOpenOffset,scopeName='Selected business unit',from='',to=''})=>{
+ const [review,setReview]=useState<{key:string;issue:string|null}|null>(null);
  const [search,setSearch]=useState('');const [status,setStatus]=useState('');const [expanded,setExpanded]=useState<string|null>(null);const totals=useMemo(()=>timeTotals(rows),[rows]);const cards=useMemo(()=>groupEmployeeReadiness(rows,scopeName,from,to),[rows,scopeName,from,to]);const historical=useMemo(()=>employeeReviews([],test),[test]);
  const shared=setupDependencies(rows).filter(item=>item.key==='payroll_setup:Attendance policy — Needs setup'||item.key==='payroll_setup:Holiday coverage — Not confirmed');
  const sharedLabels=new Set(shared.map(item=>item.label));
@@ -23,15 +24,35 @@ export const TimekeepingEmployeeTable:React.FC<{rows:ReviewTimeRow[];test:TestTi
    <button type="button" className="flex w-full items-center justify-between gap-4 p-5 text-left" onClick={()=>setExpanded(open?null:card.key)} aria-expanded={open}><div className="flex items-center gap-4"><span className="grid h-12 w-12 place-items-center rounded-full bg-violet-100 font-bold text-violet-800">{card.employeeName.split(/\s+/).map(part=>part[0]).slice(0,2).join('')}</span><div><h3 className="text-lg font-bold">{card.employeeName}</h3><p className="text-sm text-slate-500">{card.employeeCode} · {card.businessUnit}</p></div></div><div className="flex items-center gap-3"><span className={`rounded-full px-3 py-1 text-sm font-semibold ${tone}`}>{card.total} {card.total===1?'issue':'issues'} · {card.status}</span><span>{open?'⌃':'⌄'}</span></div></button>
    {open&&<div className="border-t p-5 dark:border-slate-700"><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{categories.map(([category,label,icon])=><div className={`rounded-xl p-3 ${card.counts[category]?'bg-amber-50 dark:bg-amber-950/20':'bg-slate-50 dark:bg-slate-800'}`} key={category}><span className="mr-2">{icon}</span><strong>{card.counts[category]}</strong><span className="ml-2 text-sm">{label}</span></div>)}</div>
     <div className="mt-4 divide-y rounded-xl border dark:divide-slate-700 dark:border-slate-700">{(['attendance','schedule','overtime','payroll_setup'] as ReadinessCategory[]).map(category=>{const setup=(category==='schedule'?card.setup.filter(item=>item.key.startsWith('schedule:')):category==='payroll_setup'?card.setup.filter(item=>!item.key.startsWith('schedule:')):[]).filter(item=>!sharedLabels.has(item.label));const issues=[...grouped.values()].filter(item=>item.issue.category===category);if(!setup.length&&!issues.length)return null;return <section className="p-4" key={category}><div className="flex flex-wrap items-center justify-between gap-3"><div><h4 className="font-bold capitalize">{category.replace('_',' ')}</h4><p className="text-xs text-slate-500">{setup.length+issues.length} grouped {setup.length+issues.length===1?'dependency':'items'}</p></div>{category==='attendance'&&<Link className={link} to={`/payroll/import-attendance?employee=${card.employeeId}`}>Review attendance →</Link>}{category==='schedule'&&<Link className={link} to="/payroll/timekeeping">Review schedules →</Link>}{category==='payroll_setup'&&<Link className={link} to={`/payroll/pay-packages?employee=${card.employeeId}`}>Open employee setup →</Link>}</div>
-     <div className="mt-3 flex flex-wrap gap-2">{setup.map(item=><Link key={item.key} to={item.path} className="rounded-full bg-rose-100 px-3 py-2 text-sm font-medium text-rose-800">● {item.label} · {item.dates.join(', ')}</Link>)}{issues.map(item=><Link key={`${item.issue.label}:${item.dates.join()}`} to={`${item.issue.path}?employee=${card.employeeId}&date=${item.dates[0]}&issue=${encodeURIComponent(item.issue.label)}`} className="rounded-full bg-amber-100 px-3 py-2 text-sm font-medium text-amber-900">● {item.label} · {item.dates.join(', ')}</Link>)}</div>
+     <div className="mt-3 flex flex-wrap gap-2">{setup.map(item=><Link key={item.key} to={item.path} className="rounded-full bg-rose-100 px-3 py-2 text-sm font-medium text-rose-800">● {item.label} · {item.dates.join(', ')}</Link>)}{issues.map(item=><button type="button" key={`${item.issue.label}:${item.dates.join()}`} onClick={()=>setReview({key:card.key,issue:item.label})} className="rounded-full bg-amber-100 px-3 py-2 text-left text-sm font-medium text-amber-900">● {item.label} · {item.dates.join(', ')}</button>)}</div>
      {setup.length>0&&<div className="mt-3 rounded-lg bg-violet-50 p-3 text-sm text-violet-950 dark:bg-violet-950/20 dark:text-violet-100"><strong>This is one setup dependency affecting multiple dates.</strong> Fix it once and the affected payroll dates will refresh automatically.</div>}</section>;})}</div>
-    <div className="mt-4 flex flex-wrap gap-3"><Button onClick={()=>setExpanded(card.key)}>Review all issues</Button>{card.total>0&&<Link className="inline-flex min-h-11 items-center rounded-lg border px-4 font-semibold text-violet-700" to={card.issues[0]?`${card.issues[0].path}?employee=${card.employeeId}&date=${card.issues[0].date}&issue=${encodeURIComponent(card.issues[0].label)}`:card.setup[0]?.path||'/employees'}>Fix next</Link>}</div>
+    <div className="mt-4 flex flex-wrap gap-3"><Button onClick={()=>setReview({key:card.key,issue:null})}>Review all issues</Button>{card.total>0&&<Button variant="secondary" onClick={()=>setReview({key:card.key,issue:card.issues[0]?.label||card.setup[0]?.label||null})}>Fix next</Button>}</div>
     <details className="mt-5"><summary className="cursor-pointer font-semibold text-slate-600">View daily evidence and original source IDs</summary><div className="mt-4 space-y-4">{card.days.map(day=><DayDetail key={day.date} row={day} saved={saved} canOpenOffset={canOpenOffset} busy={busy} hasReason={hasReason} onOpenOffset={onOpenOffset}/>)}{historical.find(item=>item.id===card.employeeId)?.test.length?<HistoricalSources records={historical.find(item=>item.id===card.employeeId)!.test}/>:null}</div></details>
    </div>}
   </article>;})}
+  {review&&cards.find(card=>card.key===review.key)&&<EmployeeIssueReview key={review.key} card={cards.find(card=>card.key===review.key)!} initialIssue={review.issue} saved={saved} onClose={()=>setReview(null)}/>}
   {!filtered.length&&<div className="rounded-xl border border-dashed p-8 text-center text-slate-500">{cards.length?'No employees match these filters.':'No employee records for this payroll cycle.'}</div>}
  </div>;
 };
+
+function EmployeeIssueReview({card,initialIssue,saved,onClose}:{card:EmployeeReadinessCard;initialIssue:string|null;saved:boolean;onClose:()=>void}){
+ const dialog=useRef<HTMLDialogElement>(null);
+ const [selected,setSelected]=useState(initialIssue||'');
+ useEffect(()=>{const node=dialog.current;node?.showModal();return()=>{node?.close();};},[]);
+ const groups=[...new Set([...card.issues.map(issue=>issue.label),...card.setup.map(issue=>issue.label)])];
+ const issues=card.issues.filter(issue=>!selected||issue.label===selected);
+ const setup=card.setup.filter(issue=>!selected||issue.label===selected);
+ const dates=new Set([...issues.map(issue=>issue.date),...setup.flatMap(issue=>issue.dates)]);
+ return <dialog ref={dialog} onCancel={onClose} onClick={event=>{if((event.target as HTMLElement).closest('a'))onClose();}} aria-labelledby="employee-issue-title" className="fixed inset-0 m-auto max-h-[90dvh] w-[min(960px,94vw)] overflow-auto rounded-2xl border bg-white p-5 text-slate-900 shadow-xl backdrop:bg-black/50 dark:bg-slate-900 dark:text-white">
+  <div className="flex items-start justify-between gap-4"><div><h2 id="employee-issue-title" className="text-xl font-bold">Review issues · {card.employeeName}</h2><p>{card.businessUnit} · {card.from} – {card.to}</p></div><Button variant="secondary" onClick={onClose}>Close review</Button></div>
+  <label className="mt-4 block font-semibold">Issue to review<select className="mt-1 block w-full rounded-lg border bg-white p-3 text-slate-900" value={selected} onChange={event=>setSelected(event.target.value)}><option value="">All issues ({groups.length})</option>{groups.map(label=><option key={label} value={label}>{label}</option>)}</select></label>
+  <p className="my-4 text-sm">{dates.size} affected dates. Review the evidence, then open the relevant correction or approval screen. Returning here keeps your selected business unit and payroll cutoff.</p>
+  {saved&&<p role="status">Saved attendance version: evidence is read-only. Open the current readiness version to make corrections.</p>}
+  {!groups.length&&<p>No outstanding issues for this employee.</p>}
+  {setup.map(item=><section key={item.key} className="my-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950"><h3 className="font-bold">{item.label}</h3><p>{item.detail}</p><p className="my-2">Affected dates: {item.dates.join(', ')}</p>{!saved&&<Link className={link} to={item.path} onClick={onClose}>{item.action} →</Link>}</section>)}
+  <div className="space-y-4">{card.days.filter(day=>dates.has(day.date)).map(day=><DayDetail key={day.date} row={{...day,issues:day.issues.filter(raw=>issues.some(issue=>issue.date===day.date&&issue.raw===raw))}} saved={saved} canOpenOffset={false} busy={false} hasReason={false} onOpenOffset={()=>{}}/>)}</div>
+ </dialog>;
+}
 
 const DayDetail:React.FC<{row:ReviewTimeRow;saved:boolean;canOpenOffset:boolean;busy:boolean;hasReason:boolean;onOpenOffset:(id:string)=>void}>=({row:r,saved,canOpenOffset,busy,hasReason,onOpenOffset})=>{
  const evidence=r.evidence;
