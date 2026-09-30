@@ -22,6 +22,10 @@ await actor(1,'HR Staff');let w=await workspace();assert.equal(w.items[0].blocke
 await assert.rejects(()=>submit([...selected,{employeeId:emp,date:'2026-09-02'}],w.sourceHash),/blocked/);
 assert.equal((await db.query('select count(*) n from private.payroll_break_reviews')).rows[0].n,0);
 const review=await submit(selected,w.sourceHash);assert.equal(await submit(selected,w.sourceHash),review);await assert.rejects(()=>decide(review),/independent/);
+// Calendar rollout must preserve an already submitted attendance batch and its reviewer route.
+await db.exec(`create function public.preview_payroll_time(uuid,date,date) returns jsonb language plpgsql as $$declare review jsonb:='{}';begin return jsonb_build_object('holidays',review#>'{source,holidays}');end$$;`);
+await db.exec(fs.readFileSync('supabase/migrations/20260930045717_government_holiday_calendar.sql','utf8'));
+assert.equal((await workspace()).reviews.find(r=>r.id===review).stale,false);
 assert.equal((await inbox()).length,0);
 await actor(3,'Board of Director');assert.equal((await inbox()).length,0);await assert.rejects(()=>decide(review),/not the approver/);
 await actor(2,'HR Manager');assert.equal((await inbox()).length,1);assert.equal((await inbox())[0].items.length,1);assert.equal((await inbox())[0].stale,false);assert.equal(await decide(review),'pending_bod');
