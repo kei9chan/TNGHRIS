@@ -1,7 +1,7 @@
 import { offerServiceChargeTerms } from './serviceChargeTerms';
 import { Offer, OfferBuilderDetails } from '../../types';
 import { mergeAppearance } from './offerBranding';
-import { formatPHP } from './offerCurrency';
+import { formatPHP, offerMonthlyPackage } from './offerCurrency';
 import { DEFAULT_ADDITIONAL_OFFER_TERMS, employmentTypeLabel } from './offerEmployment';
 import regularFontUrl from '../../assets/fonts/TNGSans.ttf?url';
 import boldFontUrl from '../../assets/fonts/TNGSans-Bold.ttf?url';
@@ -224,8 +224,9 @@ export const buildOfferPdf = async (
   const annualSpecified = details.grossAnnualizedSalary !== undefined || monthlySpecified;
   const monthly = details.grossMonthlySalary ?? offer.basePay;
   const annual = details.grossAnnualizedSalary ?? (monthly !== undefined ? monthly * 12 : undefined);
-  card(margin, 55, 'What you earn', money(monthly, monthlySpecified), 'gross monthly salary', palePrimary);
-  card(77.5, 55, 'Annualized', money(annual, annualSpecified), 'annualized salary', tint(accent, 0.93));
+  const packagePay = offerMonthlyPackage(offer, details);
+  card(margin, 55, 'Total fixed package', money(packagePay.total, packagePay.total !== undefined), 'per month including fixed cash benefits', palePrimary);
+  card(77.5, 55, 'Annual fixed', money(packagePay.total === undefined ? undefined : packagePay.total * 12, packagePay.total !== undefined), 'including fixed cash benefits', tint(accent, 0.93));
   card(139, 55, 'Work location', details.workLocation || 'Not specified', employmentLabel, [246, 248, 252]);
   y += 41;
   const serviceChargeTerms = offerServiceChargeTerms(details);
@@ -234,6 +235,10 @@ export const buildOfferPdf = async (
     serviceChargeTerms.forEach(term => paragraph(term, { size: 10, gap: 4 }));
     y += 3;
   }
+  heading('Monthly package breakdown');
+  paragraph(`Basic salary: ${money(monthly, monthlySpecified)}`, { size: 10, gap: 2 });
+  packagePay.allowances.forEach(item => paragraph(`${item.name}: ${money(item.amount, true)} / month`, { size: 10, gap: 2 }));
+  packagePay.benefits.forEach(item => paragraph(`${item.name}: ${money(item.monthlyAmount, true)} / month`, { size: 10, gap: 2 }));
   heading('Your Role');
   twoColumnRows([
     ['Job title', details.jobTitle || 'Not specified'],
