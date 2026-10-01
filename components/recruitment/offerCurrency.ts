@@ -24,3 +24,10 @@ export const offerMonthlyPay = (offer: Partial<Offer>, details?: OfferBuilderDet
   return { value: details?.grossMonthlySalary ?? offer.basePay, specified };
 };
 
+export const offerMonthlyPackage = (offer: Partial<Offer>, details?: OfferBuilderDetails) => {
+  const basic = offerMonthlyPay(offer, details);
+  const allowances = (details?.allowances || []).filter(item => item.guaranteed && item.name?.trim() && Number.isFinite(Number(item.amount)) && Number(item.amount) > 0);
+  const benefits = (details?.benefits || []).filter(item => item.included && item.name?.trim() && Number.isFinite(Number(item.monthlyAmount)) && Number(item.monthlyAmount) > 0);
+  const monthlyBenefits = allowances.reduce((sum, item) => sum + Number(item.amount), 0) + benefits.reduce((sum, item) => sum + Number(item.monthlyAmount), 0);
+  return { basic, allowances, benefits, monthlyBenefits, total: basic.specified ? Number(basic.value || 0) + monthlyBenefits : undefined };
+};

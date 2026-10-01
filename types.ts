@@ -2668,6 +2668,7 @@ export interface OfferBenefit {
   description: string;
   included: boolean;
   value?: string;
+  monthlyAmount?: number;
   eligibility?: string;
   notes?: string;
 }
