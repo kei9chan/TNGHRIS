@@ -69,7 +69,6 @@ const OvertimeRequests: React.FC = () => {
     const [showSuccessToast, setShowSuccessToast] = useState(false);
     const [openedReviewId, setOpenedReviewId] = useState<string | null>(null);
     const [reviewLoadError, setReviewLoadError] = useState('');
-    const [reviewPage,setReviewPage]=useState(0);
 
     const { users: hrUsers } = useUsers();
     const { businessUnits: hrBusinessUnits } = useBusinessUnits();
@@ -310,9 +309,7 @@ const OvertimeRequests: React.FC = () => {
         data=data.filter(r=>`${r.employeeName} ${r.reason}`.toLowerCase().includes(search.toLowerCase()));
         return [...data].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }, [activeTab, viewFilter, myRequests, teamRequests, hrVerificationRequests,buFilteredRequests,search,location.search]);
-    useEffect(()=>setReviewPage(0),[activeTab,viewFilter,selectedBuFilter,search,location.search]);
-    const reviewStart=reviewPage*12;
-    const reviewIds=displayedTableRequests.slice(reviewStart,reviewStart+12).map(r=>r.id);
+    const reviewIds=displayedTableRequests.map(r=>r.id);
 
 
     const handleNewRequest = () => {
@@ -553,7 +550,7 @@ const OvertimeRequests: React.FC = () => {
                 </Card>
             )}
 
-            {activeTab === 'team_approvals' || activeTab === 'all_requests' ? <><div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl bg-slate-50 p-3 text-sm dark:bg-slate-800"><span>Reviewing requests {displayedTableRequests.length?reviewStart+1:0}–{Math.min(reviewStart+12,displayedTableRequests.length)} of {displayedTableRequests.length}</span><button className="rounded border px-3 py-2 disabled:opacity-40" disabled={!reviewPage} onClick={()=>setReviewPage(p=>p-1)}>Previous</button><button className="rounded border px-3 py-2 disabled:opacity-40" disabled={reviewStart+12>=displayedTableRequests.length} onClick={()=>setReviewPage(p=>p+1)}>Next</button></div><OvertimeWeekReview initialRequestId={openedReviewId||undefined} requestIds={reviewIds} onChanged={()=>setReload(n=>n+1)}/></> : activeTab === 'calendar' ? (
+            {activeTab === 'team_approvals' || activeTab === 'all_requests' ? <><div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl bg-slate-50 p-3 text-sm dark:bg-slate-800"><span>{displayedTableRequests.length} requests · select across all displayed weeks</span></div><OvertimeWeekReview initialRequestId={openedReviewId||undefined} requestIds={reviewIds} onChanged={()=>setReload(n=>n+1)}/></> : activeTab === 'calendar' ? (
                  <OTCalendar 
                     requests={calendarRequests} 
                     shifts={relevantShifts}
