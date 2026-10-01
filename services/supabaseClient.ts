@@ -30,7 +30,11 @@ export const isTransientNetworkError = (error: unknown): boolean => {
   const candidate = error as any;
   if (['authorization_timeout', 'network_unavailable'].includes(candidate?.code) || candidate?.isAcquireTimeout === true) return true;
   const status = Number(candidate?.status || candidate?.statusCode || 0);
-  if ([408, 502, 503, 504, 520].includes(status)) return true;
+  // An overloaded or temporarily unavailable auth/database gateway must not
+  // be mistaken for a revoked role and sign the employee out.
+  if ([408, 429, 500, 502, 503, 504, 520, 521, 522, 524].includes(status)) return true;
+  const code = String(candidate?.code || '');
+  if (/^(08|53)/.test(code) || ['57P01', '57P02', '57P03'].includes(code)) return true;
 
   const message = [
     candidate?.name,
