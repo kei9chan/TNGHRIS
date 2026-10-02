@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+import {PGlite} from '@electric-sql/pglite';
+
+const db=new PGlite();
+await db.exec('create schema private;');
+const terms=fs.readFileSync('supabase/migrations/20261002065315_automatic_payroll_review_context.sql','utf8');
+await db.exec(terms.slice(terms.indexOf('create or replace function private.payroll_net_package_terms'),terms.indexOf('revoke all on function private.payroll_net_package_terms')));
+const sql=fs.readFileSync('supabase/migrations/20261002081419_automatic_production_payroll.sql','utf8');
+await db.exec(sql.slice(sql.indexOf('create or replace function private.payroll_automatic_inputs'),sql.indexOf('revoke all on function private.payroll_automatic_inputs')));
+const pkg={id:'approved',employee_id:'person',effective_from:'2026-01-01',rate_type:'Monthly',base_amount:'40000',source_ref:'Approved fixture agreement',components:[],treatment:{payBasis:'gross',tax:'included'}};
+const gross={employees:[{employeeId:'person',employeeName:'Synthetic employee',gross:'20000.00',lines:[{label:'Basic pay',packageId:'approved',amount:'20000.00'}]}]};
+const context={payDate:'2026-09-20',contributionMonth:'2026-09-01',cutoff:'1',allocation:{sss:'0.5',philhealth:'0.5',pagibig:'0.5'},policyRef:'Configured fixture calendar'};
+const prepare=async(saved=null,prior=null,packages=[pkg])=>(await db.query('select private.payroll_automatic_inputs($1::jsonb,$2::jsonb,$3::jsonb,$4::jsonb,$5::jsonb) result',[JSON.stringify(gross),JSON.stringify(packages),JSON.stringify(context),saved&&JSON.stringify(saved),prior&&JSON.stringify(prior)])).rows[0].result;
+const missing=await prepare();
+assert.equal(missing.ready,false);assert.equal(missing.inputs.employees[0].philhealthBase,'40000.00');assert.equal(missing.inputs.employees[0].pagibigBase,'40000.00');assert.equal(missing.inputs.employees[0].sssBase,'40000.00');
+assert.ok(missing.issues[0].items.some(x=>x.code==='prior_payroll'));assert.equal(missing.inputs.employees[0].openingTaxable,undefined,'Unknown paid history is not invented');
+const paid={employees:[{employeeId:'person',openingTaxable:'100000.00',openingWithheld:'8000.00',openingPeriods:'5',previousEmployer:false,cumulativeAlready:false,openingRef:'Actual paid fixture history'}]};
+const ready=await prepare(paid);assert.equal(ready.ready,true);assert.equal(ready.inputs.employees[0].openingWithheld,'8000.00');assert.equal(ready.inputs.payDate,'2026-09-20');
+const future={...pkg,id:'future',effective_from:'2027-01-01',base_amount:'90000'};
+assert.equal((await prepare(paid,null,[pkg,future])).inputs.employees[0].philhealthBase,'40000.00','Only the package in the calculation snapshot applies');
+const linked=await prepare(null,{employees:[{employeeId:'person',ytd:{taxable:'150000',withheld:'9000',periods:6,cumulative:false}}]});assert.equal(linked.ready,true);assert.equal(linked.inputs.employees[0].openingTaxable,'150000');
+await db.close();
+
+const source=fs.readFileSync('modules/payroll/automaticPayroll.ts','utf8');
+const ast=ts.createSourceFile('automatic.ts',source,ts.ScriptTarget.Latest,true);const functions={};
+ast.forEachChild(n=>{if(ts.isFunctionDeclaration(n))functions[n.name.text]=ts.transpileModule(n.getText(ast).replace('export ',''),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;});
+let calls=0;const state={netWorkspace:async()=>({canReview:true,gross:{current:true},review:null}),supabase:{rpc:async()=>{calls++;return {data:{ready:false,inputs:missing.inputs,packageTerms:[],issues:missing.issues},error:null};}}};
+vm.createContext(state);vm.runInContext(functions.automaticPayrollWorkspace+functions.calculateAutomaticPayroll,state);
+const reopened=await state.automaticPayrollWorkspace('gross');assert.equal(reopened.review.inputs.employees[0].sssBase,'40000.00');assert.equal(reopened.automaticIssues[0].employeeId,'person');
+state.netWorkspace=async()=>({canReview:false,gross:{current:true}});await state.automaticPayrollWorkspace('gross');assert.equal(calls,1,'No compensation preparation without reviewer access');
+state.supabase.rpc=async()=>{calls++;return {error:{message:'Connection timed out'}};};await assert.rejects(state.calculateAutomaticPayroll('gross'),/Refresh saved payroll versions/);assert.equal(calls,2,'Uncertain writes are not automatically retried');
+console.log('PASS: recovered production helper loads known package/calendar/bases, preserves unknown history, carries prior payroll, ignores future packages; reopening hydrates approved inputs and uncertain writes are not retried. Synthetic records only.');
