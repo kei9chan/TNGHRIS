@@ -50,7 +50,7 @@ function PayrollWorkspace({scope,setScope,from,to}:{key?:string;scope:string;set
    if(checks.status==='rejected'){setPreflight(null);throw new Error(`Calculation checks could not load: ${checks.reason.message}`);}setPreflight(checks.value);
    const runs=runResult.value;
    const saved=runs.filter(x=>x.from===from&&x.to===to).sort((a,b)=>b.version-a.version)[0];setExisting(saved?.id||'');
-   if(saved&&(selection.grossId||params.get('stage')==='calculate')){const gr=await getGrossRun(params.get('stage')==='calculate'?saved.id:selection.grossId);if(!active)return;if(gr.from===from&&gr.to===to){setGross(gr);const w=await netWorkspace(gr.id);if(active){setFinance(w);setStep(1);}const id=w.runs.filter(n=>n.grossId===gr.id).sort((a,b)=>b.version-a.version)[0]?.id;if(id){const nr=await getNetRun(id);if(active)setNet(nr);}}}
+   if(saved&&(selection.grossId||params.get('stage')==='calculate')){const gr=await getGrossRun(saved.id);if(!active)return;if(gr.from===from&&gr.to===to){setGross(gr);const w=await netWorkspace(gr.id);if(active){setFinance(w);setStep(1);}const id=w.runs.filter(n=>n.grossId===gr.id).sort((a,b)=>b.version-a.version)[0]?.id;if(id){const nr=await getNetRun(id);if(active)setNet(nr);}}}
   })().catch(e=>{if(active)setError(e.message);}).finally(()=>{if(active)setBusy(false);});return()=>{active=false;controller.abort();};
  },[scope,from,to,revision]);
  useEffect(()=>{let active=true;if(!scope||!validCutoff(from,to)||!canImportActualAttendance(user)){setApprovedAttendance(null);return;}
