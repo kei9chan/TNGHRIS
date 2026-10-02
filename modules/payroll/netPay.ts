@@ -8,7 +8,8 @@ export type NetEmployee={payBasis?:string;netTarget?:string;arrangementRef?:stri
 export type NetInputs={ruleset:string;payDate:string;contributionMonth:string;cutoff:string;allocation:Record<string,string>;insufficientNet:string;policyRef:string;previousRunId:string;employees:NetEmployee[]};
 export type Loan={id?:string;employee_id:string;account_ref:string;as_of:string;balance:string;installment:string;source_ref:string;revision?:number};
 export type NetSummary={id:string;grossId:string;version:number;from:string;to:string;payDate:string};
-export type NetWorkspace={gross:GrossRun;canReview:boolean;review:null|{id:string;inputs:NetInputs;sourceRef:string;approvedAt:string};loans:Loan[];runs:NetSummary[]};
+export type PackageTerms={employeeId:string;employeeName:string;payBasis:string;arrangementRef:string;issue:string|null;packages:{id:string;effectiveFrom:string;rateType:string;baseAmount:string;payBasis:string;netTarget:string;sourceRef:string}[];taxLines:{treatment:string;sourceRef:string;isOvertime:boolean}[]};
+export type NetWorkspace={packageTerms?:PackageTerms[];gross:GrossRun;canReview:boolean;review:null|{id:string;inputs:NetInputs;sourceRef:string;approvedAt:string};loans:Loan[];runs:NetSummary[]};
 export type NetResult={payBasis?:string;sourceGross?:string;companyTopUp?:string;netTarget?:string;employerTotalCost?:string;grossUpBasisRef?:string;employeeId:string;employeeName:string;gross:string;mandatory:string;tax:string;other:string;deductions:string;net:string;employer:string;contributions:{label:string;monthly:string;prior:string;amount:string}[];taxExplanation:{regular:string;supplement:string;exempt:string;method:string;priorTaxable:string;priorWithheld:string;priorPeriods:number;amount:string};loans:{account:string;balance:string;installment:string;amount:string;deferred:string;projectedBalance:string;sourceRef:string}[];otherDeductions:{label:string;amount:string;requested:string;deferred:string;sourceRef:string}[]};
 export type NetRun={id:string;version:number;previousId:string|null;grossId:string;current:boolean;staleReason:string|null;from:string;to:string;payDate:string;contributionMonth:string;cutoff:string;sourceHash:string;reviewRef:string;reason:string;result:{employerTotalCost?:string;gross:string;deductions:string;net:string;employer:string;employees:NetResult[]}};
 async function rpc<T>(name:string,args:Record<string,unknown>):Promise<T>{const {data,error}=await supabase.rpc(name,args);if(error)throw new Error(error.message);return data as T;}
@@ -17,5 +18,18 @@ export const saveNetReview=(id:string,inputs:NetInputs,ref:string)=>{inputs.empl
 export const prepareNet=(id:string,reason:string)=>rpc<string>('prepare_payroll_net',{p_gross_id:id,p_reason:reason});
 export const getNetRun=(id:string)=>rpc<NetRun>('get_payroll_net_run',{p_run_id:id});
 export const recordLoan=(l:Loan)=>rpc<string>('record_payroll_loan_balance',{p_employee_id:l.employee_id,p_account_ref:l.account_ref,p_as_of:l.as_of,p_balance:l.balance,p_installment:l.installment,p_source_ref:l.source_ref});
-export function emptyNetInputs(w:NetWorkspace):NetInputs{return {ruleset:'PH-2026-09-06',payDate:'',contributionMonth:'',cutoff:'',allocation:{sss:'',philhealth:'',pagibig:''},insufficientNet:'',policyRef:'',previousRunId:'',employees:w.gross.result.employees.map(e=>({employeeId:e.employeeId,sssBase:'',philhealthBase:'',pagibigBase:'',sssCovered:'',philhealthCovered:'',pagibigCovered:'',coverageRef:'',openingTaxable:'',openingWithheld:'',openingPeriods:'',previousEmployer:'',cumulativeAlready:'',sourceRef:'',openingRef:'',openingContributions:Object.fromEntries(contributionKeys.map(k=>[k,''])),taxLines:e.lines.map(()=>({taxable:'',kind:'',exemptionRef:''})),deductions:[]}))};}
-export function initialNetInputs(w:NetWorkspace):NetInputs{const blank=emptyNetInputs(w);return w.review?{...w.review.inputs,employees:blank.employees.map(e=>w.review!.inputs.employees.find(x=>x.employeeId===e.employeeId)||e)}:blank;}
+export function emptyNetInputs(w:NetWorkspace):NetInputs{return {ruleset:'PH-2026-09-06',payDate:'',contributionMonth:'',cutoff:'',allocation:{sss:'0.5',philhealth:'0.5',pagibig:'0.5'},insufficientNet:'',policyRef:'',previousRunId:'',employees:w.gross.result.employees.map(e=>({employeeId:e.employeeId,sssBase:'',philhealthBase:'',pagibigBase:'',sssCovered:'',philhealthCovered:'',pagibigCovered:'',coverageRef:'',openingTaxable:'',openingWithheld:'',openingPeriods:'',previousEmployer:'',cumulativeAlready:'',sourceRef:'',openingRef:'',openingContributions:Object.fromEntries(contributionKeys.map(k=>[k,''])),taxLines:e.lines.map(()=>({taxable:'',kind:'',exemptionRef:''})),deductions:[]}))};}
+export function initialNetInputs(w:NetWorkspace):NetInputs{
+ const blank=emptyNetInputs(w);const saved=w.review?.inputs;
+ return {...blank,...saved,allocation:{sss:'0.5',philhealth:'0.5',pagibig:'0.5'},employees:blank.employees.map(e=>{
+  const prior=saved?.employees.find(x=>x.employeeId===e.employeeId);const row=prior||e;
+  const terms=w.packageTerms?.find(x=>x.employeeId===e.employeeId);
+  if(!terms)return row;
+  return {...row,payBasis:terms.payBasis,arrangementRef:terms.arrangementRef,
+   sourceRef:row.sourceRef||terms.arrangementRef||'',taxLines:row.taxLines.map((l,i)=>{
+    if(l.taxable!=='')return l;const t=terms.taxLines[i];const gross=w.gross.result.employees.find(x=>x.employeeId===e.employeeId)!.lines[i];
+    return {...l,taxable:t?.treatment==='included'?gross.amount:t?.treatment==='excluded'?'0.00':'',kind:t?.isOvertime?'supplement':'regular',exemptionRef:t?.treatment==='excluded'?t.sourceRef||'':''};
+   })};
+ })};
+}
+export const arrangementLabel=(basis:string)=>basis==='net_tax'?'Net: company pays tax':basis==='net_all'?'Net: company pays tax and employee contributions':basis==='gross'?'Gross salary':'Different dated package terms';

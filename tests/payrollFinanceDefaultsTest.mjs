@@ -1,0 +1,47 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {PGlite} from '@electric-sql/pglite';
+import {build} from 'esbuild';
+import {createRequire} from 'node:module';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+const sql=fs.readFileSync('supabase/migrations/20261002060547_finance_package_defaults.sql','utf8');
+const helper=sql.slice(sql.indexOf('create or replace function private.payroll_net_package_terms'),sql.indexOf('revoke all on function'));
+const db=new PGlite();await db.exec('create schema private;');await db.exec(helper);
+const pkg=(id,basis,date)=>({id,effective_from:date,rate_type:'Monthly',base_amount:'30000',source_ref:'Synthetic approved agreement',stream:'employee_payroll',treatment:{payBasis:basis,tax:'included',netTarget:'30000',arrangementRef:'Synthetic approved agreement'}});
+const result={employees:[{employeeId:'employee',employeeName:'Synthetic employee',gross:'15000.00',lines:[{label:'Basic',packageId:'approved',amount:'15000.00'}]}]};
+const packages=[pkg('approved','net_all','2026-01-01'),pkg('future','gross','2027-01-01')];
+const terms=async(r=result,p=packages)=>(await db.query('select private.payroll_net_package_terms($1::jsonb,$2::jsonb) t',[JSON.stringify(r),JSON.stringify(p)])).rows[0].t;
+const auto=await terms();assert.equal(auto[0].payBasis,'net_all');assert.equal(auto[0].packages.length,1,'Future and unused packages do not override the snapshot');assert.equal(auto[0].taxLines[0].treatment,'included');
+const mixed=structuredClone(result);mixed.employees[0].lines.push({packageId:'changed',amount:'100.00'});const conflict=await terms(mixed,[...packages,pkg('changed','net_tax','2026-09-01')]);assert.equal(conflict[0].payBasis,'mixed');assert.match(conflict[0].issue,/during this cutoff/);
+const dir=mkdtempSync(join(tmpdir(),'finance-defaults-'));
+try{
+ const output=await build({entryPoints:['modules/payroll/netPay.ts'],bundle:true,platform:'node',format:'cjs',write:false,define:{'import.meta.env.VITE_SUPABASE_URL':'"https://example.invalid"','import.meta.env.VITE_SUPABASE_ANON_KEY':'"fixture-only"'}});
+ fs.writeFileSync(join(dir,'test.cjs'),output.outputFiles[0].text);const {initialNetInputs}=createRequire(import.meta.url)(join(dir,'test.cjs'));
+ const w={gross:{result},packageTerms:auto,review:null};const p=initialNetInputs(w);
+ assert.equal(p.employees[0].payBasis,'net_all');assert.equal(p.employees[0].arrangementRef,'Synthetic approved agreement');assert.equal(p.employees[0].taxLines[0].taxable,'15000.00');
+ assert.equal(p.employees[0].openingTaxable,'','Unknown tax history is not fabricated as zero');assert.deepEqual(p.allocation,{sss:'0.5',philhealth:'0.5',pagibig:'0.5'});
+ w.review={inputs:{...p,allocation:{sss:'1',philhealth:'0',pagibig:'1'},employees:[{...p.employees[0],payBasis:'gross'}]}};
+ const reopened=initialNetInputs(w);assert.equal(reopened.employees[0].payBasis,'net_all');assert.equal(reopened.allocation.sss,'0.5');
+}finally{rmSync(dir,{recursive:true,force:true});}
+// Exercise the real save function's canonicalization with minimal persistence fixtures.
+await db.exec(`create schema auth;create table public.payroll_gross_runs(id uuid,scope_id uuid,result jsonb,source_snapshot jsonb);
+create table public.payroll_net_reviews(id uuid default gen_random_uuid(),revision serial,gross_run_id uuid,scope_id uuid,inputs jsonb,source_ref text,approved_by uuid);
+create table public.hris_users(id uuid,sss_no text,philhealth_no text,pagibig_no text,tin text);
+create function private.payroll_net_can_review(uuid) returns boolean language sql as $$ select coalesce(current_setting('test.allowed',true),'yes')='yes' $$;
+create function public.current_hris_user_id() returns uuid language sql as $$select '00000000-0000-0000-0000-000000000099'::uuid$$;
+create function private.payroll_net_review_for_actor(jsonb,jsonb,text) returns jsonb language sql as $$select $1$$;
+create function private.payroll_net_review_validate(uuid,jsonb) returns void language plpgsql as $$begin null;end$$;`);
+const start=sql.indexOf('CREATE OR REPLACE FUNCTION public.save_payroll_net_review');const end=sql.indexOf('CREATE OR REPLACE FUNCTION private.payroll_net_review_validate',start);await db.exec(sql.slice(start,end));
+const eid='00000000-0000-0000-0000-000000000001',gid='00000000-0000-0000-0000-000000000002',sid='00000000-0000-0000-0000-000000000003';
+const r=structuredClone(result);r.employees[0].employeeId=eid;
+await db.query('insert into public.payroll_gross_runs values($1,$2,$3,$4)',[gid,sid,JSON.stringify(r),JSON.stringify({packages})]);await db.query('insert into public.hris_users(id) values($1)',[eid]);
+const payload={allocation:{sss:'1',philhealth:'0',pagibig:'1'},employees:[{employeeId:eid,payBasis:'gross',arrangementRef:'client override'}]};
+const saved=await db.query('select public.save_payroll_net_review($1,$2,$3) id',[gid,JSON.stringify(payload),'Synthetic review']);
+const stored=(await db.query('select inputs from public.payroll_net_reviews where id=$1',[saved.rows[0].id])).rows[0].inputs;
+assert.equal(stored.employees[0].payBasis,'net_all');assert.equal(stored.employees[0].arrangementRef,'Synthetic approved agreement');assert.deepEqual(stored.allocation,{sss:'0.5',philhealth:'0.5',pagibig:'0.5'});
+await db.exec("select set_config('test.allowed','no',false)");
+await assert.rejects(()=>db.query('select public.save_payroll_net_review($1,$2,$3)',[gid,JSON.stringify(payload),'Synthetic']),/authorization/);
+await db.close();
+console.log('PASS: snapshot package selection, mixed-term detection, prefilled approved treatment, fixed 50% client/server allocation, preserved unknown openings and authorization gate. Synthetic data only.');
