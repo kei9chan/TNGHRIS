@@ -9,9 +9,11 @@ const read=p=>fs.readFileSync(p,'utf8');
 // Load the real checked-in engine implementations, including later replacements.
 const wanted=new Set(['private.payroll_audit_immutable','private.validate_payroll_gross_config','private.payroll_gross_intervals','private.payroll_gross_line','private.calculate_payroll_gross_v1','private.payroll_net_money','private.payroll_withholding_2023','private.payroll_contributions_2026','private.validate_payroll_net_arrangement','private.calculate_payroll_net_v1','private.payroll_comparison_rows','private.payroll_compare_values']);
 const definitions=new Map();
-let serviceChargeBase,inputAdditionsBase;
+let serviceChargeBase,inputAdditionsBase,intervalBase,manualIntervalBase;
 for(const file of fs.readdirSync('supabase/migrations').sort()){
  const sql=read(`supabase/migrations/${file}`);
+ if(file==='20260929151000_manual_ot_payroll_evidence.sql')manualIntervalBase=definitions.get('private.payroll_gross_intervals').replace('private.payroll_gross_intervals','private.payroll_gross_intervals_before_manual_ot');
+ if(sql.includes('alter function private.payroll_gross_intervals(jsonb,jsonb,jsonb) rename to payroll_gross_intervals_before_original_decision'))intervalBase=definitions.get('private.payroll_gross_intervals').replace('private.payroll_gross_intervals','private.payroll_gross_intervals_before_original_decision');
  if(sql.includes('alter function private.calculate_payroll_gross_v1(jsonb) rename to calculate_payroll_gross_without_service_charge_phase3'))serviceChargeBase=definitions.get('private.calculate_payroll_gross_v1').replace('private.calculate_payroll_gross_v1','private.calculate_payroll_gross_without_service_charge_phase3');
  if(sql.includes('alter function private.calculate_payroll_gross_v1(jsonb) rename to calculate_payroll_gross_before_input_additions'))inputAdditionsBase=definitions.get('private.calculate_payroll_gross_v1').replace('private.calculate_payroll_gross_v1','private.calculate_payroll_gross_before_input_additions');
  const re=/create\s+(?:or\s+replace\s+)?function\s+([a-z_0-9]+\.[a-z_0-9]+)\s*\(/gi;let m;
@@ -34,6 +36,8 @@ create table payroll_net_runs(id uuid primary key,scope_id uuid,gross_run_id uui
 create table payroll_pay_packages(id uuid primary key,scope_id uuid,employee_id uuid,status text,stream text,engagement_key text,effective_from date,source_ref text,treatment jsonb);
 create function public.get_payroll_gross_run(uuid) returns jsonb language plpgsql as $$declare s uuid;begin select scope_id into s from public.payroll_gross_runs where id=$1;if not coalesce(private.payroll_gross_permission(s,'view'),false) then raise exception 'access denied';end if;return jsonb_build_object('current',coalesce(current_setting('test.stale',true),'')<>'yes');end$$;
 create function public.get_payroll_net_run(uuid) returns jsonb language plpgsql as $$declare s uuid;begin select scope_id into s from public.payroll_net_runs where id=$1;if not coalesce(private.payroll_gross_permission(s,'view'),false) then raise exception 'access denied';end if;return jsonb_build_object('current',coalesce(current_setting('test.stale',true),'')<>'yes');end$$;`);
+if(manualIntervalBase)await db.exec(manualIntervalBase);
+if(intervalBase)await db.exec(intervalBase);
 if(serviceChargeBase)await db.exec(serviceChargeBase);
 if(inputAdditionsBase)await db.exec(inputAdditionsBase);
 for(const name of wanted)await db.exec(definitions.get(name));
