@@ -7,7 +7,7 @@ const db=new PGlite();const id=n=>`00000000-0000-0000-0000-${String(n).padStart(
 const actor=id(9),scope=id(10),employee=id(1);
 const read=p=>fs.readFileSync(p,'utf8');
 // Load the real checked-in engine implementations, including later replacements.
-const wanted=new Set(['private.payroll_audit_immutable','private.validate_payroll_gross_config','private.payroll_gross_intervals','private.payroll_gross_line','private.calculate_payroll_gross_v1','private.payroll_net_money','private.payroll_withholding_2023','private.payroll_contributions_2026','private.validate_payroll_net_arrangement','private.calculate_payroll_net_v1','private.payroll_comparison_rows','private.payroll_compare_values']);
+const wanted=new Set(['private.payroll_time_rate_issue','private.payroll_statutory_gross_config','private.calculate_payroll_gross_without_service_charge_phase3','private.payroll_audit_immutable','private.validate_payroll_gross_config','private.payroll_gross_intervals','private.payroll_gross_line','private.calculate_payroll_gross_v1','private.payroll_net_money','private.payroll_withholding_2023','private.payroll_contributions_2026','private.validate_payroll_net_arrangement','private.calculate_payroll_net_v1','private.payroll_comparison_rows','private.payroll_compare_values']);
 const definitions=new Map();
 let serviceChargeBase,inputAdditionsBase,intervalBase,manualIntervalBase;
 for(const file of fs.readdirSync('supabase/migrations').sort()){
@@ -100,4 +100,28 @@ assert.deepEqual(selectGross({grossId:'a',netId:'b'},'c'),{grossId:'c',netId:''}
 assert.notEqual(calculationKey('u','bu','2026-06-01','2026-06-15'),calculationKey('u','bu','2026-06-16','2026-06-30'));
 assert.equal(consecutiveCutoffs('2026-06-15','2026-06-16'),true);assert.equal(consecutiveCutoffs('2026-06-15','2026-07-01'),false);assert.equal(consecutiveCutoffs('2028-02-29','2028-03-01'),true);
 assert.equal(employeeDifferences([{employeeId:'a',employeeName:'A',key:'gross'}]).length,1);
+// Current approved packages need no second profile salary, dated employee setup,
+// or manual statutory matrix. Exercise the actual replacement engine.
+const statutory=await call('private.payroll_statutory_gross_config',[]);
+await call('private.validate_payroll_gross_config',[statutory]);
+assert.equal(statutory.annualDivisor,'365');
+const auto={dateFrom:'2026-09-01',dateTo:'2026-09-15',approvedPackageDefaults:true,confirmedPolicy:{effective_from:'2026-09-07'},employeeRules:[],packages:[{...packages[0],base_amount:'20000',treatment:{proration:'unreviewed'},components:[{name:'Approved monthly benefit',amount:'5000',recurrence:'recurring',proration:'unreviewed'}]}],rules:[{id:'ph-statutory-v1',revision:0,effective_from:'2000-01-01',effective_to:'9999-12-31',config:statutory}],time:{source:{employees:[{id:employee,name:'Synthetic Employee'}],events:[],holidays:[],leave:[]},result:{rows:Array.from({length:15},(_,i)=>({employeeId:employee,date:`2026-09-${String(i+1).padStart(2,'0')}`,ready:true,restDay:true,holiday:i===0,approvedFullLeave:false,regularMinutes:0,actualOtMinutes:0,actualMinutes:0,scheduledMinutes:0,lateMinutes:0,undertimeMinutes:0,eventIds:[],shiftIds:[],leaveIds:[],ot:[],segments:[]}))}}};
+const automatic=await call('private.calculate_payroll_gross_v1',[auto]);
+assert.equal(automatic.ready,true,JSON.stringify(automatic.issues));
+assert.equal(Number(automatic.gross),12500,'20k base + 5k recurring benefit, half-month; paid rest/holiday included once');
+const missing=structuredClone(auto);missing.packages=[];
+assert.equal((await call('private.calculate_payroll_gross_v1',[missing])).ready,false,'Actual missing approved package still blocks');
+// Manual approved work: the real interval parser partitions 21:00–23:00 at 22:00.
+const ot=structuredClone(auto);const row=ot.time.result.rows[0];row.restDay=false;row.holiday=false;row.actualOtMinutes=120;
+row.ot=[{id:'manual-ot',evidenceMode:'manual',type:'Paid',status:'Approved',start:'21:00',end:'23:00',finalApprovedMinutes:120}];
+const otResult=await call('private.calculate_payroll_gross_v1',[ot]);
+assert.equal(otResult.ready,true,JSON.stringify(otResult.issues));
+assert.equal(Number(otResult.gross),12715.75,'Ordinary 2h OT at 1.25 plus one hour night differential at 0.125');
+const holiday=structuredClone(ot);holiday.time.source.holidays=[{date:'2026-09-01',kind:'regular'}];
+assert.equal(Number((await call('private.calculate_payroll_gross_v1',[holiday])).gross),12948.77,'Regular holiday OT 2.6 and night differential 0.26');
+const partial=structuredClone(ot);partial.time.result.rows[0].employeeName='Synthetic Employee';partial.time.result.rows[0].ot[0].finalApprovedMinutes=60;partial.time.result.rows[0].actualOtMinutes=60;
+const partialResult=await call('private.calculate_payroll_gross_v1',[partial]);assert.equal(partialResult.ready,false);assert.match(JSON.stringify(partialResult.issues),/Synthetic Employee.*2026-09-01.*approved OT duration/);
+const explicit=structuredClone(auto);explicit.time.result.rows[0].holiday=false;explicit.rules.push({...auto.rules[0],revision:1,config:{...statutory,monthlyMethod:'earned_minutes'}});
+assert.equal(Number((await call('private.calculate_payroll_gross_v1',[explicit])).gross),2500,'Existing explicit company policy remains authoritative');
+console.log('PASS: automatic package defaults include approved benefits; monthly holidays paid once; ordinary/holiday OT and night rates calculated; genuine package gaps still block; explicit company overrides retained.');
 await db.close();console.log('PASS: two consecutive cutoffs reuse the actual dated gross/net engines (12771.30 / 13071.30); future salary never substituted; blank openings blocked; explicit historical blockers; exact scope/version lineage; component differences and explanations; immutable idempotent revisions survive refresh; unauthorized reads/writes blocked; processing mode untouched. Synthetic data only.');
