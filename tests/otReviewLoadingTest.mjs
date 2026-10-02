@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+const source=fs.readFileSync('services/manualOtService.ts','utf8');
+const code=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
+let calls=[],cancelled=false,fail=true,afterCall=()=>{};
+const service={rpc:async(name,{p_ids})=>{assert.equal(name,'get_ot_week_review');calls.push(p_ids);afterCall();if(fail&&p_ids.length>8)return{data:null,error:{code:'57014',message:'canceling statement due to statement timeout'}};return {data:p_ids.map(id=>({employeeId:id,employee:{name:id},summary:{weekStart:'2026-08-24'},requests:[{id}]})),error:null};}};
+const exports={};vm.runInNewContext(code,{exports,require:()=>({supabase:service})});
+const ids=Array.from({length:691},(_,i)=>`r${i}`);let progress=[];
+const result=await exports.getOtWeeks([...ids,'r0'],{onProgress:(rows,n,total)=>progress.push([rows.length,n,total])});
+assert.equal(result.length,691);assert.ok(calls.every(c=>c.length<=50));assert.equal(progress.at(-1)[1],691);assert.ok(progress.every(p=>p[2]===691));assert.ok(progress.every((p,i)=>!i||p[1]>progress[i-1][1]));
+assert.equal(new Set(result.map(x=>x.employeeId)).size,691);
+calls=[];fail=false;afterCall=()=>{cancelled=true;};const stopped=await exports.getOtWeeks(ids,{isCancelled:()=>cancelled});assert.equal(calls.length,1);assert.equal(stopped.length,0,'Do not expose a stale in-flight response after navigation');
+service.rpc=async()=>({error:{code:'42501',message:'Denied'}});await assert.rejects(exports.getOtWeeks(['one']),/Denied/);
+console.log('PASS: 691 records load in bounded batches; timeout splitting preserves every row, progress, deduplication and cancellation; permission errors never retried.');

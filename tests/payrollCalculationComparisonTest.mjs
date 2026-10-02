@@ -7,7 +7,7 @@ const db=new PGlite();const id=n=>`00000000-0000-0000-0000-${String(n).padStart(
 const actor=id(9),scope=id(10),employee=id(1);
 const read=p=>fs.readFileSync(p,'utf8');
 // Load the real checked-in engine implementations, including later replacements.
-const wanted=new Set(['private.payroll_time_rate_issue','private.payroll_statutory_gross_config','private.calculate_payroll_gross_without_service_charge_phase3','private.payroll_audit_immutable','private.validate_payroll_gross_config','private.payroll_gross_intervals','private.payroll_gross_line','private.calculate_payroll_gross_v1','private.payroll_net_money','private.payroll_withholding_2023','private.payroll_contributions_2026','private.validate_payroll_net_arrangement','private.calculate_payroll_net_v1','private.payroll_comparison_rows','private.payroll_compare_values']);
+const wanted=new Set(['private.payroll_gross_intervals_before_original_decision','private.payroll_time_rate_issue','private.payroll_statutory_gross_config','private.calculate_payroll_gross_without_service_charge_phase3','private.payroll_audit_immutable','private.validate_payroll_gross_config','private.payroll_gross_intervals','private.payroll_gross_line','private.calculate_payroll_gross_v1','private.payroll_net_money','private.payroll_withholding_2023','private.payroll_contributions_2026','private.validate_payroll_net_arrangement','private.calculate_payroll_net_v1','private.payroll_comparison_rows','private.payroll_compare_values']);
 const definitions=new Map();
 let serviceChargeBase,inputAdditionsBase,intervalBase,manualIntervalBase;
 for(const file of fs.readdirSync('supabase/migrations').sort()){
@@ -120,7 +120,13 @@ assert.equal(Number(otResult.gross),12715.75,'Ordinary 2h OT at 1.25 plus one ho
 const holiday=structuredClone(ot);holiday.time.source.holidays=[{date:'2026-09-01',kind:'regular'}];
 assert.equal(Number((await call('private.calculate_payroll_gross_v1',[holiday])).gross),12948.77,'Regular holiday OT 2.6 and night differential 0.26');
 const partial=structuredClone(ot);partial.time.result.rows[0].employeeName='Synthetic Employee';partial.time.result.rows[0].ot[0].finalApprovedMinutes=60;partial.time.result.rows[0].actualOtMinutes=60;
-const partialResult=await call('private.calculate_payroll_gross_v1',[partial]);assert.equal(partialResult.ready,false);assert.match(JSON.stringify(partialResult.issues),/Synthetic Employee.*2026-09-01.*approved OT duration/);
+const partialResult=await call('private.calculate_payroll_gross_v1',[partial]);assert.equal(partialResult.ready,true,JSON.stringify(partialResult.issues));assert.equal(Number(partialResult.gross),12602.74,'Approved 60 minutes from 21:00 ends at 22:00; requested later time is not paid');
+const cutNight=structuredClone(partial);cutNight.time.result.rows[0].ot[0].start='21:30';cutNight.time.result.rows[0].ot[0].end='23:00';
+const cutNightResult=await call('private.calculate_payroll_gross_v1',[cutNight]);assert.equal(Number(cutNightResult.gross),12607.88,'Approved hour crossing 22:00 pays exactly 30 night minutes');
+const cutMidnight=structuredClone(partial);cutMidnight.time.result.rows[0].ot[0].start='23:30';cutMidnight.time.result.rows[0].ot[0].end='02:00';cutMidnight.time.source.holidays=[{date:'2026-09-02',kind:'regular'}];
+const cutMidnightResult=await call('private.calculate_payroll_gross_v1',[cutMidnight]);assert.equal(Number(cutMidnightResult.gross),12674.04,'Approved hour splits at midnight using the correct date rate');
+const partialBreak=structuredClone(partial);partialBreak.time.result.rows[0].ot[0].unpaidBreakMinutes=30;
+assert.equal((await call('private.calculate_payroll_gross_v1',[partialBreak])).ready,false,'Unknown break allocation across different rates is not invented');
 const explicit=structuredClone(auto);explicit.time.result.rows[0].holiday=false;explicit.rules.push({...auto.rules[0],revision:1,config:{...statutory,monthlyMethod:'earned_minutes'}});
 assert.equal(Number((await call('private.calculate_payroll_gross_v1',[explicit])).gross),2500,'Existing explicit company policy remains authoritative');
 console.log('PASS: automatic package defaults include approved benefits; monthly holidays paid once; ordinary/holiday OT and night rates calculated; genuine package gaps still block; explicit company overrides retained.');
