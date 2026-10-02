@@ -103,6 +103,7 @@ export const NAV_LINKS: NavLink[] = [
             { name: 'Payroll Approvals', path: '/payroll/approvals', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
             { name: 'Take-home Pay Review', path: '/payroll/net-pay', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
             { name: 'Import Attendance', path: '/payroll/import-attendance', requiredPermission: { resource: 'Dashboard', permission: Permission.View }, visibilityRoles: [Role.Admin, Role.BOD, Role.HRManager, Role.HRStaff] },
+            { name: 'Ready for Payroll', path: '/payroll/ready', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
             { name: 'Run Payroll', path: '/payroll/run', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
             { name: 'Attendance Readiness', path: '/payroll/attendance-readiness', requiredPermission: { resource: 'Dashboard', permission: Permission.View } },
             { name: 'Attendance Devices & Punch Station', path: '/payroll/attendance-devices', requiredPermission: { resource: 'Timekeeping', permission: Permission.View }, visibilityRoles: [Role.Admin, Role.HRManager, Role.HRStaff] },
