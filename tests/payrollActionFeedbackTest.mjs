@@ -10,7 +10,7 @@ let calculate,footer;
 function visit(n){if(ts.isFunctionDeclaration(n)&&n.name?.text==='calculate')calculate=n.getText(ast);if(ts.isJsxElement(n)&&n.openingElement.tagName.getText(ast)==='footer')footer=n.getText(ast);ts.forEachChild(n,visit);}visit(ast);
 const compile=s=>ts.transpileModule('('+s+')',{compilerOptions:{jsx:ts.JsxEmit.React,target:ts.ScriptTarget.ES2020}}).outputText;
 let calls=0;
-const state={submitted:null,attendanceCanHandover:true,existing:'previous-draft',gross:null,unit:{gross:{canCalculate:false}},scope:'fixture',from:'2026-08-26',to:'2026-09-10',time:{sourceHash:'verified'},busy:false,error:'',notice:'',setBusy:x=>state.busy=x,setError:x=>state.error=x,setNotice:x=>state.notice=x,setRevision:()=>{},prepareAttendance:async()=>{calls++;throw Error('Attendance fixes still await approval. Complete those decisions before calculating payroll.');}};
+const state={submitted:null,attendanceCanHandover:true,existing:'previous-draft',gross:null,unit:{gross:{canCalculate:false}},scope:'fixture',from:'2026-08-26',to:'2026-09-10',time:{sourceHash:'verified'},busy:false,error:'',notice:'',setBusy:x=>state.busy=x,setError:x=>state.error=x,setNotice:x=>state.notice=x,setRevision:()=>{},setFinance:()=>{},prepareAttendance:async()=>{calls++;throw Error('Attendance fixes still await approval. Complete those decisions before calculating payroll.');}};
 const action=vm.runInNewContext(compile(calculate),state);
 await action();assert.equal(calls,1);assert.match(state.error,/await approval/);assert.equal(state.busy,false);assert.equal(state.notice,'');
 state.prepareAttendance=async()=>{calls++;return 'saved-handover';};
@@ -29,3 +29,8 @@ const financeHtml=renderToStaticMarkup(vm.runInNewContext(compile(footer),props)
 assert.match(financeHtml,/>Calculate draft payroll<\/button>/);
 assert.doesNotMatch(financeHtml,/<button[^>]*disabled=""[^>]*>Calculate draft payroll/);
 console.log('PASS: completed HR handover cannot be sent twice; Finance can proceed to calculation.');
+state.existing='';state.submitted={id:'attendance'};state.time={sourceHash:'verified'};
+state.prepareGross=async()=> 'gross';state.getGrossRun=async()=>({id:'gross'});state.setGross=()=>{};state.remember=()=>{};state.setNet=()=>{};state.setStep=x=>state.step=x;
+state.netWorkspace=async()=>({review:null});await action();assert.equal(state.step,1);assert.match(state.notice,/Finance must review/);
+state.netWorkspace=async()=>({review:{id:'review'}});state.prepareNet=async()=> 'net';state.getNetRun=async()=>({id:'net',current:true});await action();assert.equal(state.step,1);assert.equal(state.error,'');
+console.log('PASS: Finance calculation opens input review when needed, then loads calculated payroll.');
