@@ -109,6 +109,11 @@ const auto={dateFrom:'2026-09-01',dateTo:'2026-09-15',approvedPackageDefaults:tr
 const automatic=await call('private.calculate_payroll_gross_v1',[auto]);
 assert.equal(automatic.ready,true,JSON.stringify(automatic.issues));
 assert.equal(Number(automatic.gross),12500,'20k base + 5k recurring benefit, half-month; paid rest/holiday included once');
+// A later-approved correction wins over an older import with a later effective date.
+const corrected=structuredClone(auto);corrected.packages[0].id='corrected';corrected.packages[0].approved_at='2026-09-25T02:00:00Z';corrected.packages[0].effective_from='2026-01-01';
+corrected.packages.push({...structuredClone(corrected.packages[0]),id:'older-import',approved_at:'2026-09-22T02:00:00Z',effective_from:'2026-09-01',base_amount:'25000'});
+corrected.packages.push({...structuredClone(corrected.packages[0]),id:'future',approved_at:'2026-09-26T02:00:00Z',effective_from:'2027-01-01',base_amount:'50000'});
+const correctionResult=await call('private.calculate_payroll_gross_v1',[corrected]);assert.equal(correctionResult.ready,true);assert.equal(Number(correctionResult.gross),12500);assert.ok(correctionResult.employees[0].lines.filter(l=>l.packageId).every(l=>l.packageId==='corrected'));
 const missing=structuredClone(auto);missing.packages=[];
 assert.equal((await call('private.calculate_payroll_gross_v1',[missing])).ready,false,'Actual missing approved package still blocks');
 // Manual approved work: the real interval parser partitions 21:00–23:00 at 22:00.
