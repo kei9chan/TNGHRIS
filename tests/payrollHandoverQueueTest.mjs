@@ -12,6 +12,6 @@ const exports={};vm.runInNewContext(code,{exports,require(name){if(name==='react
 const tree=exports.default();const html=renderToStaticMarkup(tree);
 assert.match(html,/1 of 2 business units sent attendance/);assert.match(html,/Ready for Finance calculation/);assert.match(html,/Not sent to Finance/);assert.match(html,/10:58/);
 const buttons=[];function visit(n){if(!n||typeof n!=='object')return;if(Array.isArray(n)){n.forEach(visit);return;}if(n.type==='button')buttons.push(n);visit(n.props?.children);}visit(tree);
-buttons.find(b=>b.props.children==='Open payroll').props.onClick();assert.equal(selected,'unit-a');assert.equal(path,'/payroll/run');
+buttons.find(b=>b.props.children==='Calculate / view payroll').props.onClick();assert.equal(selected,'unit-a');assert.equal(path,'/payroll/run?stage=calculate');
 assert.equal(exports.handoverStatus({...rows[0],grossId:'g',netId:'n'}),'Payroll draft calculated');
 console.log('PASS: period queue rendering, Manila submission time, missing handovers, and opening selected business unit.');
