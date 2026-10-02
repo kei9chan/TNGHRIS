@@ -63,4 +63,18 @@ await db.exec(`set test.actor='${id(2)}';set test.roster='published';alter table
 await db.query("insert into ot_requests(id,employee_id,date,start_time,end_time,status,reason) values($1,$2,'2026-09-21','10:00','11:00','Approved','Legacy approved record')",[id(99),id(1)]);
 await db.exec('alter table ot_requests enable trigger a_manual_ot_guard');
 week=(await weeks())[0];assert.equal(week.summary.quantitiesMissing,true);assert.equal(week.summary.approvedMinutes,null);assert.equal(week.summary.projectedMinutes,null);assert.equal(week.summary.knownApprovedMinutes,180);assert.equal(week.summary.quantityIssueIds[0],id(99));
+// The optimized history read must not reopen routing for final approvals.
+await db.exec(`create table private.payroll_ot_handoffs(request_id uuid,sender_id uuid,state text,note text,return_note text);
+create function private.ot_reporting_scope() returns jsonb language sql stable as $$select jsonb_build_object('global',auth.uid()='${id(3)}'::uuid)$$;
+create function private.resolve_ot_manager(uuid) returns uuid language sql stable as $$select '${id(2)}'::uuid$$;
+create function private.is_business_unit_ot_manager(uuid,uuid) returns boolean language sql stable as $$select private.is_direct_reporting_manager($1,$2)$$;
+create function private.can_send_payroll_ot(r public.ot_requests) returns boolean language sql stable as $$select r.status::text in('Submitted','PendingGM')$$;`);
+await db.exec(fs.readFileSync('supabase/migrations/20261002052447_faster_ot_review_loading.sql','utf8'));
+await db.exec(`set test.actor='${id(3)}';create or replace function private.attendance_pre_leave_schedule(uuid,date) returns jsonb language plpgsql stable as $$begin if current_setting('test.roster',true)='must-not-read' then raise exception 'Schedule lookup should not run';end if;return jsonb_build_object('published',true,'entries','[{"kind":"rest"}]'::jsonb);end$$;set test.roster='must-not-read';`);
+const closed=(await weeks([id(20)]))[0];assert.equal(closed.summary.reviewOnly,true);assert.equal(closed.summary.baselineMissing,false);assert.equal(closed.canConfirmBaseline,false);assert.equal(closed.requests[0].canDecide,false);assert.equal(closed.requests[0].canSend,false);assert.equal(closed.version,(await weeks([id(20)]))[0].version);
+await assert.rejects(weeks([id(22)]),/Schedule lookup should not run/,'Pending decisions still evaluate live weekly context');
+await db.exec(`set test.roster='published';set test.actor='${id(2)}';`);const active=(await weeks([id(22)]))[0];assert.equal(active.summary.reviewOnly,undefined);
+await db.exec(`set test.actor='${id(4)}'`);assert.deepEqual(await weeks([id(20)]),[],'Unauthorized viewer cannot read history');
+await db.exec("set test.actor=''");await assert.rejects(weeks([id(20)]),/Authenticated/);
+console.log('PASS optimized history: final approvals skip schedule reconstruction and duplicate confirmations; pending decisions retain live routing; versions stable; scope and authentication preserved.');
 await db.close();console.log('PASS manual OT: exact/overnight/break minutes, no inferred baseline, distinct weekly buckets, adjusted manager amount, atomic batch, stale version, idempotent retry, optional approval note, zero minutes, self-approval denied, return reason, overlap and locked payroll guards; authenticated RPC and private ACLs.');
