@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+import React from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+const rows=[{scopeId:'unit-a',name:'Unit A',packageId:'sent',version:1,submittedAt:'2026-10-02T02:58:52Z',grossId:null,netId:null},{scopeId:'unit-b',name:'Unit B',packageId:null,version:null,submittedAt:null,grossId:null,netId:null}];
+let stateIndex=0,selected='',path='';
+const mockReact={...React,useEffect(){},useState(){return [[rows,false,'',0][stateIndex++],()=>{}];}};
+const code=ts.transpileModule(readFileSync('modules/payroll/ReadyForPayroll.tsx','utf8'),{compilerOptions:{jsx:ts.JsxEmit.React,module:ts.ModuleKind.CommonJS,esModuleInterop:true}}).outputText;
+const exports={};vm.runInNewContext(code,{exports,require(name){if(name==='react')return mockReact;if(name==='react-router-dom')return {Link:({children,to,...p})=>React.createElement('a',{href:to,...p},children),useNavigate:()=>v=>path=v};if(name.endsWith('usePayrollSelection'))return {usePayrollField:field=>[field==='from'?'2026-08-26':field==='to'?'2026-09-10':'',v=>selected=v]};if(name.endsWith('PayrollCycleSelector'))return {__esModule:true,default:()=>React.createElement('div',null,'Period selector')};if(name.endsWith('workspace'))return {validCutoff:()=>true};return {};},Intl,Date});
+const tree=exports.default();const html=renderToStaticMarkup(tree);
+assert.match(html,/1 of 2 business units sent attendance/);assert.match(html,/Ready for Finance calculation/);assert.match(html,/Not sent to Finance/);assert.match(html,/10:58/);
+const buttons=[];function visit(n){if(!n||typeof n!=='object')return;if(Array.isArray(n)){n.forEach(visit);return;}if(n.type==='button')buttons.push(n);visit(n.props?.children);}visit(tree);
+buttons.find(b=>b.props.children==='Open payroll').props.onClick();assert.equal(selected,'unit-a');assert.equal(path,'/payroll/run');
+assert.equal(exports.handoverStatus({...rows[0],grossId:'g',netId:'n'}),'Payroll draft calculated');
+console.log('PASS: period queue rendering, Manila submission time, missing handovers, and opening selected business unit.');

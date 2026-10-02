@@ -75,6 +75,7 @@ const Pipeline = React.lazy(() => import('./pages/feedback/Pipeline'));
 const MyIncidentReports = React.lazy(() => import('./pages/feedback/MyIncidentReports'));
 const MyNTEs = React.lazy(() => import('./pages/feedback/MyNTEs'));
 const PayrollHome = React.lazy(() => import('./modules/payroll/PayrollHome'));
+const ReadyForPayroll = React.lazy(() => import('./modules/payroll/ReadyForPayroll'));
 const RunPayroll = React.lazy(() => import('./modules/payroll/RunPayroll'));
 const ActualAttendancePage = React.lazy(() => import('./modules/payroll/ActualAttendancePage'));
 const PayrollInputImport = React.lazy(() => import('./modules/payroll/PayrollInputImport'));
@@ -421,6 +422,7 @@ const AppRoutes: React.FC = () => {
             <Route path="historical-reconciliation" element={<Navigate to="/payroll/run" replace />} />
             <Route path="historical-corrections" element={<Navigate to="/payroll/run" replace />} />
             <Route path="home" element={<Navigate to="/payroll/run" replace />} />
+            <Route path="ready" element={<ProtectedRoute><ReadyForPayroll /></ProtectedRoute>} />
             <Route path="run" element={<ProtectedRoute><RunPayroll /></ProtectedRoute>} />
             <Route path="import-attendance" element={<ProtectedRoute><ActualAttendancePage /></ProtectedRoute>} />
             <Route path="import/:kind" element={<ProtectedRoute><PayrollInputImport /></ProtectedRoute>} />

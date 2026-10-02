@@ -18,6 +18,7 @@ export function nextPayrollStep(r:Readiness|null){
 export const payrollGroups=[
  {name:'Schedule Builder',path:'/payroll/timekeeping',names:['Schedule Builder','Timekeeping','Import Attendance']},
  {name:'Pay Package Builder',path:'/payroll/pay-packages',names:['Pay Packages','Service Charge Setup']},
+ {name:'Ready for Payroll',path:'/payroll/ready',names:['Ready for Payroll']},
  {name:'Run Payroll',path:'/payroll/run',names:['Run Payroll','Attendance Readiness','Gross Pay Review','Take-home Pay Review','Payroll Approvals','Payments & Reports','Payslips']},
  {name:'Loans & Debt',path:'/payroll/loans',names:['Loans & Debt','Loans & Deductions']},
  {name:'Leaves',path:'/payroll/leave',names:['Leave','Leave Credits','Import Leave Balances']},
