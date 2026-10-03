@@ -193,7 +193,19 @@ const HRDashboard: React.FC = () => {
     const [pendingLeaveApprovals, setPendingLeaveApprovals] = useState<LeaveRequest[]>([]);
     const [pendingWfhApprovals, setPendingWfhApprovals] = useState<WFHRequest[]>([]);
     const [pendingManpowerApprovals, setPendingManpowerApprovals] = useState<ManpowerRequest[]>([]);
+    const [missingPayrollIds, setMissingPayrollIds] = useState<Array<{employeeId:string;employeeName:string;missing:string[]}>>([]);
     const [leaveTypes, setLeaveTypes] = useState<{ id: string; name: string }[]>([]);
+    useEffect(() => {
+        if (user?.role !== Role.HRManager && user?.role !== Role.Admin) { setMissingPayrollIds([]); return; }
+        let active = true;
+        const load = async () => {
+            const {data,error} = await supabase.rpc('get_payroll_missing_government_ids');
+            if (active && !error) setMissingPayrollIds(Array.isArray(data) ? data : []);
+        };
+        void load();
+        window.addEventListener('focus', load);
+        return () => { active = false; window.removeEventListener('focus', load); };
+    }, [user?.role]);
     // Team approval modal state is now handled by the global ApprovalWidget
 
     useEffect(() => {
@@ -1274,6 +1286,19 @@ const HRDashboard: React.FC = () => {
         allItems.push(...notificationItems);
         
         if (isHR) {
+            if (user?.role === Role.HRManager || user?.role === Role.Admin) {
+                missingPayrollIds.forEach(row => allItems.push({
+                    id: 'payroll-government-ids-' + row.employeeId,
+                    icon: <ClipboardCheckIcon {...iconProps} />,
+                    title: 'Update government IDs for payroll',
+                    subtitle: row.employeeName + ' · ' + row.missing.join(', ') + '. Enter verified numbers in the employee profile before remittance.',
+                    date: 'Payroll follow-up',
+                    sortDate: new Date(),
+                    link: '/employees/view/' + row.employeeId,
+                    colorClass: 'bg-amber-500',
+                    priority: 1,
+                }));
+            }
 
             pendingBenefitRequests.forEach(req => {
                 allItems.push({
@@ -1488,7 +1513,7 @@ const HRDashboard: React.FC = () => {
             return String(a.id).localeCompare(String(b.id));
         });
 
-    }, [user, isHR, memos, memoUpdateKey, pendingHrRequisitions, pendingResignations, pendingProfileChanges, pendingUserRegistrations, assignments, assignedTickets, checklists, templates, pendingBenefitRequests, incidentReports, evaluationSubmissions, evaluations, useSupabaseEvaluations, isUserEligibleEvaluator, pans, panApproverId, employeeProfileId]);
+    }, [user, isHR, memos, memoUpdateKey, pendingHrRequisitions, pendingResignations, pendingProfileChanges, pendingUserRegistrations, assignments, assignedTickets, checklists, templates, pendingBenefitRequests, incidentReports, evaluationSubmissions, evaluations, useSupabaseEvaluations, isUserEligibleEvaluator, pans, panApproverId, employeeProfileId, missingPayrollIds]);
 
     return (
         <div className="space-y-6">
