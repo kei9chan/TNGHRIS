@@ -6,6 +6,7 @@ type AppErrorBoundaryProps = {
 
 type AppErrorBoundaryState = {
   error: Error | null;
+  recovering: boolean;
 };
 
 const CHUNK_RETRY_KEY = 'tng-hris-chunk-retry-at';
@@ -40,26 +41,40 @@ export default class AppErrorBoundary extends React.Component<
   AppErrorBoundaryProps,
   AppErrorBoundaryState
 > {
-  state: AppErrorBoundaryState = { error: null };
+  state: AppErrorBoundaryState = { error: null, recovering: false };
 
   static getDerivedStateFromError(error: Error): AppErrorBoundaryState {
-    return { error };
+    // React renders this state before componentDidCatch can schedule the reload.
+    // Keep the transient stale-bundle recovery out of the failure screen.
+    return { error, recovering: isChunkLoadError(error) };
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error('HRIS application failed to render', error, errorInfo);
 
-    if (isChunkLoadError(error) && canRetryStaleBundle()) {
-      window.setTimeout(() => window.location.reload(), 0);
+    if (isChunkLoadError(error)) {
+      if (canRetryStaleBundle()) {
+        window.setTimeout(() => window.location.reload(), 0);
+      } else {
+        this.setState({ recovering: false });
+      }
     }
   }
 
   private reset = () => {
-    this.setState({ error: null });
+    this.setState({ error: null, recovering: false });
   };
 
   render() {
     if (!this.state.error) return this.props.children;
+
+    if (this.state.recovering) {
+      return (
+        <main className="flex min-h-screen items-center justify-center bg-slate-950 px-6 text-white" role="status">
+          <p className="text-sm text-slate-300">Updating HRIS…</p>
+        </main>
+      );
+    }
 
     const isPayrollRoute = window.location.pathname.startsWith('/payroll');
     const title = isPayrollRoute ? 'Payroll could not be loaded' : 'HRIS could not be loaded';
