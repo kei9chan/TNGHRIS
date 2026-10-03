@@ -435,35 +435,16 @@ const Timekeeping: React.FC = () => {
         }
 
         let active = true;
-        let sequence = 0;
+        let inFlight = false;
+        let lastLoaded = 0;
         const loadScheduleData = async () => {
-            if (savingShift.current) return;
-            const request = ++sequence;
+            if (savingShift.current || inFlight) return;
+            inFlight = true;
             const mutation = scheduleMutation.current;
-            const rangeStart = addDays(weekStart, -7);
-            const rangeEnd = addDays(weekStart, 13);
-            const accessibleBuIds = accessibleBus.map(bu => bu.id);
-
-            const leaveQuery = supabase
-                .from('leave_requests')
-                .select('id, employee_id, start_date, end_date, start_time, end_time, status, leave_type_id, leave_types(name,paid), approver_configuration_required')
-                .eq('status', LeaveRequestStatus.Approved)
-                .lte('start_date', toDateOnly(rangeEnd))
-                .gte('end_date', toDateOnly(rangeStart));
-
-            if (complianceManager) {
-                leaveQuery.in('employee_id', employees.filter(e=>e.reportsTo===complianceManager).map(e=>e.id));
-            } else if (selectedBuId === 'all') {
-                if (accessibleBuIds.length > 0) {
-                    leaveQuery.in('business_unit_id', accessibleBuIds);
-                }
-            } else {
-                leaveQuery.eq('business_unit_id', selectedBuId);
-            }
-
-            const [assignmentRes, leaveRes] = await Promise.all([
-                loadBuilder(employeeScope,toDateOnly(weekStart)).then(data=>({data,error:null})).catch(error=>({data:null,error})), leaveQuery]);
-            if (!active || request !== sequence || mutation !== scheduleMutation.current || savingShift.current) return;
+            try {
+            const assignmentRes=await loadBuilder(employeeScope,toDateOnly(weekStart)).then(data=>({data,error:null})).catch(error=>({data:null,error}));
+            if (!active || mutation !== scheduleMutation.current || savingShift.current) return;
+            lastLoaded=Date.now();
             setBuilderLoading(false);
             if(assignmentRes.error){setBuilderError(assignmentRes.error.message);}
             else if(assignmentRes.data){
@@ -475,26 +456,45 @@ const Timekeeping: React.FC = () => {
                 setDayStatuses(snapshot.statuses);
                 if (Array.isArray(snapshot.templates)) setTemplates(snapshot.templates.map(mapShiftTemplate));
             }
-
-            if (!leaveRes.error && leaveRes.data) {
-                setLeaves(leaveRes.data.filter((row:any)=>!row.approver_configuration_required).map((row: any) => ({
-                    id: row.id,
-                    employeeId: row.employee_id,
-                    employeeName: '',
-                    leaveTypeId: row.leave_type_id, paid:row.leave_types?.paid, leaveTypeName:row.leave_types?.name, startTime:row.start_time||undefined, endTime:row.end_time||undefined,
-                    startDate: new Date(row.start_date+'T00:00:00'),
-                    endDate: new Date(row.end_date+'T00:00:00'),
-                    durationDays: 0, approverChain:[],historyLog:[],
-                    reason: '',
-                    status: row.status as LeaveRequestStatus,
-                } as LeaveRequest)));
-            }
+            } finally { inFlight=false; }
         };
 
         if(!savingShift.current){setBuilderLoading(true);void loadScheduleData();}
-        const timer=setInterval(()=>{if(document.visibilityState==='visible')void loadScheduleData();},30000);
-        return()=>{active=false;clearInterval(timer);};
-    }, [selectedBuId, weekStart, accessibleBus, complianceManager, employees,employeeScope,builderRefresh,statusRefresh,user?.id]);
+        const refreshOnReturn=()=>{if(document.visibilityState==='visible'&&Date.now()-lastLoaded>60_000)void loadScheduleData();};
+        const timer=setInterval(()=>{if(document.visibilityState==='visible')void loadScheduleData();},120000);
+        document.addEventListener('visibilitychange',refreshOnReturn);
+        return()=>{active=false;clearInterval(timer);document.removeEventListener('visibilitychange',refreshOnReturn);};
+    }, [weekStart,employeeScope,builderRefresh,statusRefresh,user?.id]);
+
+    // Reference data can arrive after the schedule request. Refresh leave
+    // separately so that it never restarts or holds up the saved roster.
+    useEffect(() => {
+        if (!selectedBuId) { setLeaves([]); return; }
+        let active=true;
+        const rangeStart=addDays(weekStart,-7);
+        const rangeEnd=addDays(weekStart,13);
+        const leaveQuery=supabase.from('leave_requests')
+            .select('id, employee_id, start_date, end_date, start_time, end_time, status, leave_type_id, leave_types(name,paid), approver_configuration_required')
+            .eq('status',LeaveRequestStatus.Approved)
+            .lte('start_date',toDateOnly(rangeEnd))
+            .gte('end_date',toDateOnly(rangeStart));
+        if(complianceManager){
+            leaveQuery.in('employee_id',employees.filter(e=>e.reportsTo===complianceManager).map(e=>e.id));
+        }else if(selectedBuId==='all'){
+            if(accessibleBus.length)leaveQuery.in('business_unit_id',accessibleBus.map(bu=>bu.id));
+        }else leaveQuery.eq('business_unit_id',selectedBuId);
+        void Promise.resolve(leaveQuery).then(({data,error})=>{
+            if(!active||error||!data)return;
+            setLeaves(data.filter((row:any)=>!row.approver_configuration_required).map((row:any)=>({
+                id:row.id,employeeId:row.employee_id,employeeName:'',
+                leaveTypeId:row.leave_type_id,paid:row.leave_types?.paid,leaveTypeName:row.leave_types?.name,
+                startTime:row.start_time||undefined,endTime:row.end_time||undefined,
+                startDate:new Date(row.start_date+'T00:00:00'),endDate:new Date(row.end_date+'T00:00:00'),
+                durationDays:0,approverChain:[],historyLog:[],reason:'',status:row.status as LeaveRequestStatus,
+            } as LeaveRequest)));
+        });
+        return()=>{active=false;};
+    },[selectedBuId,weekStart,accessibleBus,complianceManager,employees,builderRefresh,statusRefresh,user?.id]);
 
     // --- GAP ANALYSIS ENGINE (New in Phase 3) ---
     const gaps = useMemo<Gap[]>(() => {
@@ -1303,7 +1303,7 @@ const Timekeeping: React.FC = () => {
                     {builderLoading&&<p role="status">Loading saved schedules…</p>}
                     {shiftBusy&&<p role="status">Saving schedule…</p>}
                     {builderError&&<p role="alert" className="text-red-500">{builderError} <button className="underline" disabled={shiftBusy} onClick={()=>{if(operationRetry.current)void operationRetry.current();else setBuilderRefresh(v=>v+1);}}>Retry</button></p>}
-                    <p>Viewing: <strong>{scopeLabel(employeeScope,businessUnits)}</strong> · Showing {builderIsCurrent?employeesInBU.length:0} employees{departmentFilter!=='all'?' (department filter applied)':''}. View access does not change edit permissions; employees marked view-only cannot be edited.</p>
+                    <p>Viewing: <strong>{scopeLabel(employeeScope,businessUnits)}</strong> · {builderIsCurrent?`Showing ${employeesInBU.length} employees`:'Loading employee roster'}{departmentFilter!=='all'?' (department filter applied)':''}. View access does not change edit permissions; employees marked view-only cannot be edited.</p>
                     <p className="text-sm font-semibold">{publicationLoading?'Checking publication status…':scheduleStatus==='published'?'PUBLISHED — Employees can now see their schedules':publicationRows.some(r=>r.activeVersion)?'DRAFT CHANGES — Employees still see their last published schedules':'DRAFT — Employees cannot see this yet'}</p>
                      <div className="grid grid-cols-1 items-center gap-4">
                         <span className="font-semibold text-2xl text-gray-800 dark:text-gray-200">
