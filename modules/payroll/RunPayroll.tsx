@@ -1,5 +1,5 @@
 import React,{useEffect,useState} from 'react';
-import {Link,useSearchParams} from 'react-router-dom';
+import {Link,useNavigate,useSearchParams} from 'react-router-dom';
 import {ReviewForm} from './NetPayPage';
 import Modal from '../../components/ui/Modal';
 import {PayrollBreakdown} from './PayrollBreakdown';
@@ -19,6 +19,8 @@ import RecordedBreakApprovals from './RecordedBreakApprovals';
 import AttendanceImportApprovals from './AttendanceImportApprovals';
 import {payrollCycleForCutoff,formatPayrollDate} from './payrollCycle';
 import {downloadText} from './actualAttendanceImport';
+import {getNormalApproval,requestNormalApproval,submitApproval,type Approval} from './approvals';
+import {Role} from '../../types';
 
 const panel='rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900';
 const button='inline-flex min-h-11 items-center justify-center rounded-xl border border-violet-200 px-4 py-3 text-sm font-semibold text-violet-700 disabled:opacity-50 dark:text-violet-300';
@@ -32,6 +34,7 @@ export default function RunPayroll(){
 }
 function PayrollWorkspace({scope,setScope,from,to}:{key?:string;scope:string;setScope:(v:string)=>void;from:string;to:string}){
  const {user}=useAuth();
+ const navigate=useNavigate();
  const [params]=useSearchParams();
  const [preflight,setPreflight]=useState<{code:string;message:string;employeeName?:string;employeeId?:string;canApprove?:boolean;compensationType?:string}[]|null>(null);
  const [finance,setFinance]=useState<NetWorkspace|null>(null);
@@ -40,8 +43,11 @@ function PayrollWorkspace({scope,setScope,from,to}:{key?:string;scope:string;set
  const [gross,setGross]=useState<GrossRun|null>(null),[net,setNet]=useState<NetRun|null>(null),[existing,setExisting]=useState('');
  const [step,setStep]=useState(0),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[revision,setRevision]=useState(0),[onlyIssues,setOnlyIssues]=useState(false),[employee,setEmployee]=useState('');
  const [cycle,setCycle]=useState<ConfiguredPeriod|null>(null);
+ const [approval,setApproval]=useState<Approval|null>(null);
  const [approvedAttendance,setApprovedAttendance]=useState<{employees:number;days:number;fixes:number}|null>(null);
  const unit=scopes.find(s=>s.id===scope),fresh=!!net?.current;
+ const approved=!!approval&&approval.current&&!approval.returned&&approval.step>=6;
+ useEffect(()=>{let active=true;if(!net?.id){setApproval(null);return;}getNormalApproval(net.id).then(a=>{if(active)setApproval(a);}).catch(e=>{if(active)setError('Approval status could not load: '+e.message);});return()=>{active=false;};},[net?.id,revision]);
  useEffect(()=>{let active=true;const controller=new AbortController();setBusy(true);setPreflight(null);setError('');
   (async()=>{const [t,g]=await Promise.all([fetchTimeContext(),grossContext()]);if(!active)return;
    const combined=t.scopes.filter(s=>s.canView).map(s=>({...s,gross:g.scopes.find(x=>x.id===s.id)}));setScopes(combined);
@@ -89,31 +95,55 @@ function PayrollWorkspace({scope,setScope,from,to}:{key?:string;scope:string;set
   const nr=await getNetRun(result.runId);setNet(nr);remember({grossId:gross.id,netId:result.runId});setStep(2);setNotice('Payroll calculated successfully. Draft outputs are ready.');
  }catch(e){setError((e as Error).message);}finally{setBusy(false);}}
  async function saveDraft(){setBusy(true);setError('');try{if(net||gross){setNotice('This calculation is already saved as a persistent draft. No payments or payslips were released.');return;}if(!time||!unit?.canFinalize)throw new Error('Only the assigned HR finalizer can save the timekeeping draft. Your selected business unit and period are retained.');await saveTime(scope,from,to,time.sourceHash,'Saved from Prepare payroll — not submitted');setNotice('Timekeeping draft saved. It has not been submitted for approval or payment.');setRevision(x=>x+1);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
- async function exportDraft(kind:'register'|'contributions'|'deductions'|'payslips'){
+ async function sendForApproval(){
+  if(!net||!fresh)return;
+  setBusy(true);setError('');setNotice('');
+  try{
+   const existingApproval=await getNormalApproval(net.id);
+   if(existingApproval){setApproval(existingApproval);navigate('/payroll/approvals?run='+existingApproval.id);return;}
+   if(user?.role===Role.FinanceStaff){
+    const id=await submitApproval(net.id,null,'Normal payroll · '+net.id,'HR Manager via HRIS payroll approvals');
+    setApproval(await getNormalApproval(net.id));
+    setNotice('Payroll submitted. HR review starts now; both BODs will be notified after Finance authorization.');
+    navigate('/payroll/approvals?run='+id);
+   }else{
+    const request=await requestNormalApproval(net.id);
+    if(request.runId){setApproval(await getNormalApproval(net.id));navigate('/payroll/approvals?run='+request.runId);return;}
+    setNotice('Sent to Finance for submission. Finance will review this saved version, then HR and both BODs approve it.');
+   }
+  }catch(e){setError((e as Error).message);}
+  finally{setBusy(false);}
+ }
+ async function exportDraft(kind:'summary'|'breakdown'|'register'|'contributions'|'deductions'|'payslips'){
   if(!net)return;setBusy(true);setError('');try{const current=await getNetRun(net.id);if(!current.current){setNet(current);throw new Error('Source records changed. Recalculate before generating draft documents.');}
+   const signed=await getNormalApproval(current.id);
+   if(kind!=='summary'&&kind!=='breakdown'&&(!signed||!signed.current||signed.returned||signed.step<6))throw new Error('Payroll outputs become available after all approvals.');
+   const outputLabel=signed&&signed.current&&signed.step>=6?'APPROVED REVIEW COPY — NOT RELEASED':'DRAFT — FOR APPROVAL';
    if(kind==='payslips'){
     const {jsPDF}=await import('jspdf');const pdf=new jsPDF();
-    current.result.employees.forEach((e,i)=>{if(i)pdf.addPage();pdf.setFontSize(19);pdf.text('DRAFT - NOT RELEASED',20,24);pdf.setFontSize(13);pdf.text(e.employeeName,20,40);pdf.setFontSize(10);pdf.text(`${unit?.name||''} | ${from} to ${to}`,20,49);pdf.text(`Pay date: ${current.payDate}`,20,56);
+    current.result.employees.forEach((e,i)=>{if(i)pdf.addPage();pdf.setFontSize(19);pdf.text('APPROVED - NOT RELEASED',20,24);pdf.setFontSize(13);pdf.text(e.employeeName,20,40);pdf.setFontSize(10);pdf.text(`${unit?.name||''} | ${from} to ${to}`,20,49);pdf.text(`Pay date: ${current.payDate}`,20,56);
      const rows=[['Gross pay',e.gross],['Employee deductions',e.deductions],['Take-home pay',e.net],['Withholding tax (included in deductions)',e.tax],['Mandatory deductions (included in deductions)',e.mandatory],...e.loans.map(l=>[`Loan: ${l.account}`,l.amount]),...e.otherDeductions.map(d=>[d.label,d.amount])];
-     let y=73;rows.forEach(([label,value])=>{if(y>265){pdf.addPage();y=25;pdf.text('DRAFT - NOT RELEASED (continued)',20,y);y+=14;}const lines=pdf.splitTextToSize(label,115);pdf.text(lines,20,y);pdf.text(`PHP ${Number(value).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}`,190,y,{align:'right'});y+=Math.max(10,lines.length*5+4);});
-     pdf.setFontSize(9);pdf.text('For review only. No payment or employee payslip release has occurred.',20,285);
-    });pdf.save(`DRAFT-payslips-${from}-${to}.pdf`);return;
+     let y=73;rows.forEach(([label,value])=>{if(y>265){pdf.addPage();y=25;pdf.text('APPROVED - NOT RELEASED (continued)',20,y);y+=14;}const lines=pdf.splitTextToSize(label,115);pdf.text(lines,20,y);pdf.text(`PHP ${Number(value).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}`,190,y,{align:'right'});y+=Math.max(10,lines.length*5+4);});
+     pdf.setFontSize(9);pdf.text('Approved review copy. Payment and employee release are separate actions.',20,285);
+    });pdf.save(`APPROVED-payslips-${from}-${to}.pdf`);return;
    }
-   const rows:string[][]=[['DRAFT — NOT RELEASED'],['Business unit',unit?.name||''],['Cutoff',from,to],['Pay date',current.payDate]];
+   const rows:string[][]=[[outputLabel],['Business unit',unit?.name||''],['Cutoff',from,to],['Pay date',current.payDate]];
+   if(kind==='summary'){rows.push(['Employees',String(current.result.employees.length)],['Total gross',current.result.gross],['Total deductions',current.result.deductions],['Total net',current.result.net],['Employer contributions',current.result.employer],['Total company cost',current.result.employerTotalCost||String(Number(current.result.gross)+Number(current.result.employer))],[],['Employee','Gross','Deductions','Net','Employer contributions','Company cost']);current.result.employees.forEach(e=>rows.push([e.employeeName,e.gross,e.deductions,e.net,e.employer,e.employerTotalCost||String(Number(e.gross)+Number(e.employer))]));}
+   if(kind==='breakdown'){rows.push(['Employee','Category','Item','Amount','Basis']);current.result.employees.forEach(e=>{const grossEmployee=gross?.result.employees.find(g=>g.employeeId===e.employeeId);grossEmployee?.lines.forEach(l=>rows.push([e.employeeName,'Earnings',l.label,l.amount,l.date||'']));e.contributions.forEach(c=>rows.push([e.employeeName,'Government contribution',c.label,c.amount,'Monthly '+c.monthly+'; previous '+c.prior]));rows.push([e.employeeName,'Withholding tax','Tax',e.tax,'']);e.loans.forEach(l=>rows.push([e.employeeName,'Loan',l.account,l.amount,l.sourceRef]));e.otherDeductions.forEach(d=>rows.push([e.employeeName,'Other deduction',d.label,d.amount,d.sourceRef]));rows.push([e.employeeName,'Final','Gross',e.gross,''],[e.employeeName,'Final','Total deductions',e.deductions,''],[e.employeeName,'Final','Net',e.net,''],[e.employeeName,'Final','Employer contributions',e.employer,''],[e.employeeName,'Final','Company cost',e.employerTotalCost||String(Number(e.gross)+Number(e.employer)),'']);});}
    if(kind==='register'){rows.push(['Employee','Gross','Deductions','Net','Employer contributions']);current.result.employees.forEach(e=>rows.push([e.employeeName,e.gross,e.deductions,e.net,e.employer]));}
    if(kind==='contributions'){rows.push(['Employee','Contribution','Monthly due','Previous cutoff','This cutoff']);current.result.employees.forEach(e=>e.contributions.forEach(c=>rows.push([e.employeeName,c.label,c.monthly,c.prior,c.amount])));}
    if(kind==='deductions'){rows.push(['Employee','Deduction','Amount','Source reference']);current.result.employees.forEach(e=>{e.loans.forEach(l=>rows.push([e.employeeName,l.account,l.amount,l.sourceRef]));e.otherDeductions.forEach(d=>rows.push([e.employeeName,d.label,d.amount,d.sourceRef]));});}
-   downloadText(`DRAFT-${kind}-${from}-${to}.csv`,rows.map(r=>r.map(v=>`"${(/^[=+@-]/.test(v)?"'":'')+v.replaceAll('"','""')}"`).join(',')).join('\r\n'));
+   downloadText(`${outputLabel.startsWith('APPROVED')?'APPROVED':'DRAFT'}-${kind}-${from}-${to}.csv`,rows.map(r=>r.map(v=>`"${(/^[=+@-]/.test(v)?"'":'')+v.replaceAll('"','""')}"`).join(',')).join('\r\n'));
   }catch(e){setError((e as Error).message);}finally{setBusy(false);}
  }
  const people=new Map<string,{name:string;issues:{date:string;message:string}[]}>();time?.result.rows.forEach(r=>{if(!people.has(r.employeeId))people.set(r.employeeId,{name:r.employeeName,issues:[]});r.issues.forEach(message=>people.get(r.employeeId)!.issues.push({date:r.date,message}));});
  const pendingEmployees=[...people.values()].filter(p=>p.issues.length).length;
- const titles=['Run Payroll','Review payroll','Generate payroll outputs'];
+ const titles=['Run Payroll','Review payroll','Approved payroll outputs'];
  return <main className="min-h-screen bg-violet-50/40 p-4 pb-28 text-slate-950 dark:bg-slate-950 dark:text-slate-100 sm:p-7 sm:pb-28">
   <header className="mb-6 flex flex-wrap items-start justify-between gap-5"><div><h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{titles[step]}</h1><p className="mt-2 text-slate-500">{step===0?'Select your business unit and payroll period. Existing approved records load automatically.':step===1?'Review the amounts, fix issues, then generate.':'Draft documents do not release payments or publish payslips.'}</p></div><span className={`rounded-full px-4 py-2 text-sm font-semibold ${net&&!fresh?'bg-amber-100 text-amber-900':'bg-violet-100 text-violet-800'}`}>{net?fresh?'Calculated draft':'Needs recalculation':gross?'Gross calculated · Finance review needed':'Draft'}</span></header>
   <div className="mb-5 grid gap-4 lg:grid-cols-2"><label className="text-sm font-semibold">Business unit<select aria-label="Business unit" disabled={busy} className="mt-2 min-h-12 w-full rounded-xl border bg-white p-3 dark:bg-slate-900" value={scope} onChange={e=>setScope(e.target.value)}><option value="">Choose business unit</option>{scopes.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label><NormalPayrollPeriodSelector disabled={busy} onPeriod={setCycle}/></div>
   <Link to="/payroll/ready" className={`${button} mb-5`}>Ready for Payroll · Finance inbox →</Link>
-  <nav aria-label="Payroll steps" className="mb-6 flex gap-3">{['Prepare','Review','Generate outputs'].map((label,i)=><button key={label} disabled={i>0&&!gross||i===2&&!fresh} onClick={()=>setStep(i)} aria-current={step===i?'step':undefined} className={`flex-1 rounded-xl border p-3 text-sm font-semibold disabled:opacity-40 ${step===i?'border-violet-600 bg-violet-600 text-white':'bg-white dark:bg-slate-900'}`}>{i+1}. {label}</button>)}</nav>
+  <nav aria-label="Payroll steps" className="mb-6 flex gap-3">{['Prepare','Review & submit','Approved outputs'].map((label,i)=><button key={label} disabled={i>0&&!gross||i===2&&!approved} onClick={()=>setStep(i)} aria-current={step===i?'step':undefined} className={`flex-1 rounded-xl border p-3 text-sm font-semibold disabled:opacity-40 ${step===i?'border-violet-600 bg-violet-600 text-white':'bg-white dark:bg-slate-900'}`}>{i+1}. {label}</button>)}</nav>
 
   <section id="payroll-feedback" aria-live="polite" className="mb-4 scroll-mt-24">{busy&&<p role="status">Please wait — checking or calculating payroll…</p>}{error&&<p role="alert" className="rounded-xl bg-red-50 p-4 text-red-800">{error}</p>}{notice&&<p role="status" className="rounded-xl bg-blue-50 p-4 text-blue-900">{notice}</p>}</section>
   {step===0&&unit?.gross?.canView&&<section className={`${panel} mb-5`}><h2 className="text-xl font-bold">{preflight?.length?'Attendance detail to resolve':'Ready to calculate'}</h2><p className="mt-3">Pay comes from the approved package, including recurring benefits. Workdays, rest days and payable hours come from your saved schedules and approved attendance. Philippine overtime, holiday and night differential rates are applied automatically.</p>{preflight===null?<p className="mt-3">{busy?'Checking saved attendance and approved pay packages…':'Checks unavailable. Refresh readiness to retry.'}</p>:preflight.length?<><ul className="mt-3 list-disc space-y-2 pl-5">{preflight.map((issue,i)=><li key={i}>{issue.message}</li>)}</ul>{preflight.some(i=>i.code==='package')&&<Link to="/payroll/pay-packages" className={`${button} mt-3`}>Review pay packages</Link>}{preflight.some(i=>i.code==='attendance_details')&&<Link to="/payroll/overtime-requests" className={`${button} mt-3`}>Review approved OT details</Link>}</>:<p className="mt-3 text-emerald-700">Ready. No separate salary confirmation or employee setup is needed.</p>}<details className="mt-3 text-sm text-slate-500"><summary className="cursor-pointer">Calculation basis</summary><p className="mt-2">The package effective on each work date is used. Monthly-paid packages default to half the monthly amount per full cutoff, including paid rest days and holidays, with an hourly conversion of monthly base × 12 ÷ 365 ÷ 8. Existing approved company or employee calculation rules take precedence. Night differential applies from 10 PM to 6 AM. A shortened final OT approval is counted from its recorded start; it does not need another approval.</p></details></section>}
@@ -141,7 +171,7 @@ function PayrollWorkspace({scope,setScope,from,to}:{key?:string;scope:string;set
    {net&&<section className={panel}><h2 className="font-bold">Employer cost</h2><p className="mt-3">Gross employee compensation: {peso(net.result.gross)}</p><p>Employer statutory contributions: {peso(net.result.employer)}</p><p className="mt-3 text-lg font-bold">Total company payroll cost: {peso(net.result.employerTotalCost||String(Number(net.result.gross)+Number(net.result.employer)))}</p><p className="mt-2 text-sm text-slate-500">Employee deductions reduce take-home pay, not employer cost.</p></section>}
   </>}
   </div><aside className="space-y-4"><section className={panel}><h2 className="text-xl font-bold">This payroll</h2><dl className="mt-5 space-y-4 text-sm"><div className="flex justify-between"><dt>Pay date</dt><dd>{cycle?formatPayrollDate(cycle.releaseDate):'Confirm payroll calendar'}</dd></div><div className="flex justify-between gap-3"><dt>Cutoff</dt><dd>{from}–{to}</dd></div><div className="flex justify-between"><dt>Time zone</dt><dd>Asia/Manila</dd></div><div className="flex justify-between"><dt>Employee group</dt><dd>Employee payroll</dd></div><div className="flex justify-between"><dt>Employees</dt><dd>{readiness?.employees??'Not checked'}</dd></div></dl><button className={`${button} mt-5`} disabled={busy} onClick={()=>setRevision(x=>x+1)}>Refresh readiness</button></section>
-   {<section className={panel}><h2 className="text-xl font-bold">Payslips & payroll reports</h2><p className="my-3 text-sm text-slate-500">Calculate payroll and complete Finance review to enable these downloads. Drafts are not released to employees.</p>{[['payslips','Download draft payslips'],['register','Download payroll summary & register'],['contributions','Government-contribution breakdown'],['deductions','View deduction schedule']].map(([kind,label])=><button className={`${button} mt-3 w-full`} disabled={busy||!fresh} key={kind} onClick={()=>void exportDraft(kind as 'register'|'contributions'|'deductions'|'payslips')}>{label}</button>)}</section>}
+   {<section className={panel}><h2 className="text-xl font-bold">Payroll files</h2><p className="my-3 text-sm text-slate-500">{approved?'All approvals are complete. These are approved review copies; payment and employee payslip release remain separate.':'Download the summary and employee breakdown for approval. Final payroll files unlock after HR, Finance and both BOD approvals.'}</p><button className={`${button} w-full`} disabled={busy||!fresh} onClick={()=>void exportDraft('summary')}>Download payroll summary & employee totals</button><button className={`${button} mt-3 w-full`} disabled={busy||!fresh} onClick={()=>void exportDraft('breakdown')}>Download employee payroll breakdown</button>{approved&&[['register','Payroll register'],['payslips','Approved payslips (not released)'],['contributions','Government contribution report'],['deductions','Loan & deduction schedule']].map(([kind,label])=><button className={`${button} mt-3 w-full`} disabled={busy} key={kind} onClick={()=>void exportDraft(kind as 'register'|'payslips'|'contributions'|'deductions')}>{label}</button>)}</section>}
    {scope&&<PreviousPaymentCard scope={scope} from={from} to={to} net={net?.result.net}/>}
    {step===0&&<section className={`${panel} text-sm`}><h2 className="font-bold">{submitted?'Attendance sent to Finance':'Next: send attendance to Finance'}</h2><ol className="mt-3 list-decimal space-y-3 pl-5"><li>{submitted?'Attendance received — handover complete.':'Send the completed attendance using the button below.'}</li><li>Finance calculates gross pay and reviews contributions, tax and deductions.</li><li>Calculate take-home pay to unlock draft payslips, the payroll summary, employee breakdowns and government-contribution reports.</li></ol><p className="mt-3">Government-contribution downloads are breakdowns; they do not submit government filings.</p></section>}
   </aside></div>
@@ -149,7 +179,7 @@ function PayrollWorkspace({scope,setScope,from,to}:{key?:string;scope:string;set
    {error&&<div role="alert" className="rounded-xl bg-red-50 p-4 text-red-800"><p>{error}</p>{/pay differs|pay.package/i.test(error)&&<Link className="mt-2 inline-flex min-h-11 items-center font-semibold underline" to="/payroll/pay-packages">Review the employee’s approved pay package →</Link>}{/attendance fixes.*approval/i.test(error)&&<a className="mt-2 inline-flex min-h-11 items-center font-semibold underline" href="#payroll-attendance-approvals">Review pending attendance approvals ↑</a>}</div>}
    {notice&&<p role="status" className="rounded-xl bg-blue-50 p-4 text-blue-900">{notice}</p>}
    {busy&&<p role="status">Please wait — checking or saving payroll records…</p>}
-   <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-slate-500">Saved drafts do not release payments.</p><div className="flex flex-wrap gap-3"><button className={button} disabled={busy} onClick={()=>void saveDraft()}>Save draft</button>{step===2&&fresh?<Link className={`${button} bg-violet-600 !text-white`} to={`/payroll/approvals?net=${net!.id}`}>Submit for approval</Link>:step===1&&fresh?<button className={`${button} bg-violet-600 !text-white`} onClick={()=>setStep(2)}>Generate payroll outputs</button>:<button className={`${button} bg-violet-600 !text-white`} disabled={busy||calculationBlocked||(!submitted&&!attendanceCanHandover)||(!unit?.gross?.canCalculate&&(!!submitted||!attendanceCanHandover))} onClick={()=>void calculate()}>{busy?'Please wait…':!unit?.gross?.canCalculate?(submitted?'Attendance sent to Finance':'Send ready attendance to Finance'):gross?'Recalculate draft payroll':'Calculate Payroll'}</button>}</div></div></footer>
+   <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-slate-500">Saving or submitting does not release payment.</p><div className="flex flex-wrap gap-3"><button className={button} disabled={busy} onClick={()=>void saveDraft()}>Save draft</button>{fresh?(approved?<button className={`${button} bg-violet-600 !text-white`} disabled={busy} onClick={()=>setStep(2)}>View approved outputs</button>:approval?<Link className={`${button} bg-violet-600 !text-white`} to={'/payroll/approvals?run='+approval.id}>View approval progress</Link>:<button className={`${button} bg-violet-600 !text-white`} disabled={busy} onClick={()=>void sendForApproval()}>{user?.role===Role.FinanceStaff?'Submit payroll for approval':'Send payroll to Finance for approval'}</button>):<button className={`${button} bg-violet-600 !text-white`} disabled={busy||calculationBlocked||(!submitted&&!attendanceCanHandover)||(!unit?.gross?.canCalculate&&(!!submitted||!attendanceCanHandover))} onClick={()=>void calculate()}>{busy?'Please wait…':!unit?.gross?.canCalculate?(submitted?'Attendance sent to Finance':'Send ready attendance to Finance'):gross?'Recalculate draft payroll':'Calculate Payroll'}</button>}</div></div></footer>
  </main>;
 }
 function ReadinessCard({title,status,ready,children}:{title:string;status:string;ready:boolean;children:React.ReactNode}){return <section className={`${panel} flex flex-wrap items-center justify-between gap-4`}><div><h2 className="text-xl font-bold">{title}</h2><p className={`mt-2 font-medium ${ready?'text-emerald-700':'text-amber-700'}`}>{status}</p></div><div className="flex flex-wrap gap-2">{children}</div></section>;}
