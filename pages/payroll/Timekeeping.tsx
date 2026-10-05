@@ -7,6 +7,7 @@ import {mapShiftTemplate} from '../../services/shiftService';
 import {scheduleLabel} from '../../services/schedulePolicy';
 import {reviewScheduleWeek,reviewScheduleOverride} from '../../services/schedulePublicationService';
 import type {SchedulePublication} from '../../services/schedulePublicationService';
+import {schedulePublicationSummary} from '../../services/schedulePublicationSummary';
 import SchedulePublishReview from '../../components/payroll/SchedulePublishReview';
 import SchedulePublicationStatus from '../../components/payroll/SchedulePublicationStatus';
 
@@ -157,10 +158,11 @@ const Timekeeping: React.FC = () => {
     const [viewDate, setViewDate] = useState(() => requestedWeek && /^\d{4}-\d{2}-\d{2}$/.test(requestedWeek) && !Number.isNaN(Date.parse(requestedWeek)) ? new Date(requestedWeek+'T00:00:00') : manilaToday());
     useEffect(()=>{if(requestedWeek&&/^\d{4}-\d{2}-\d{2}$/.test(requestedWeek)&&!Number.isNaN(Date.parse(requestedWeek)))setViewDate(new Date(requestedWeek+'T00:00:00'));},[requestedWeek]);
     const [view, setView] = useState<'grid' | 'role' | 'area' | 'timeline'>('grid');
-    const [scheduleStatus, setScheduleStatus] = useState<'published' | 'dirty'>('dirty');
     const [publicationRows,setPublicationRows]=useState<SchedulePublication[]>([]);
+    const [publicationContext,setPublicationContext]=useState('');
     const [reviewIds,setReviewIds]=useState<string[]|null>(null);
     const [publicationLoading,setPublicationLoading]=useState(false);
+    const [publicationError,setPublicationError]=useState('');
     const [publicationReason,setPublicationReason]=useState('');
     const [publicationBusy,setPublicationBusy]=useState(false);
     const [publicationRefresh,setPublicationRefresh]=useState(0);
@@ -645,9 +647,13 @@ const Timekeeping: React.FC = () => {
 
     const publicationDataKey=JSON.stringify([assignments.map(a=>[a.id,a.shiftTemplateId]),dayStatuses.map(d=>[d.id,d.revision])]);
     const publicationEmployeeKey=employeesInBU.map(e=>e.id).sort().join(',');
-    useEffect(()=>{let active=true;setScheduleStatus('dirty');setPublicationRows([]);setPublicationLoading(true);
+    const publicationTemplateKey=JSON.stringify(templates.map(t=>[t.id,t.name,t.startTime,t.endTime,t.isFlexible,t.minHoursPerDay]));
+    const publicationRequestKey=JSON.stringify([user?.id,publicationEmployeeKey,publicationDataKey,publicationTemplateKey,toDateOnly(weekStart),publicationRefresh,builderRefresh]);
+    const publicationSummary=schedulePublicationSummary(publicationRows,employeesInBU.length);
+    const publicationChecking=publicationLoading||!builderIsCurrent||publicationContext!==publicationRequestKey;
+    useEffect(()=>{let active=true;setPublicationRows([]);setPublicationError('');setPublicationLoading(true);
       const ids=publicationEmployeeKey?publicationEmployeeKey.split(','):[];
-      reviewScheduleWeek(ids,toDateOnly(weekStart)).then(rows=>{if(active){setPublicationRows(rows);setScheduleStatus(rows.length===ids.length&&rows.length>0&&rows.every(r=>r.published)?'published':'dirty');}}).catch(e=>{if(active)setToastInfo({show:true,message:e.message});}).finally(()=>{if(active)setPublicationLoading(false);});return()=>{active=false;};
+      reviewScheduleWeek(ids,toDateOnly(weekStart)).then(rows=>{if(active){setPublicationRows(rows);setPublicationContext(publicationRequestKey);}}).catch(e=>{if(active){setPublicationError(e.message);setPublicationContext(publicationRequestKey);}}).finally(()=>{if(active)setPublicationLoading(false);});return()=>{active=false;};
     },[publicationEmployeeKey,publicationDataKey,weekStart,templates,publicationRefresh,builderRefresh,user?.id]);
     useEffect(()=>{setReviewIds(null);},[publicationEmployeeKey,weekStart]);
     const handleReviewSchedule=async(id:string,approve:boolean)=>{
@@ -739,7 +745,7 @@ const Timekeeping: React.FC = () => {
             if(await operation()===false){operationRetry.current=null;return;}
             const snapshot=await loadBuilder(employeeScope,toDateOnly(weekStart));
             setAssignments(snapshot.assignments.map(mapBuilderAssignment));setDayStatuses(snapshot.statuses);
-            setPublicationRefresh(v=>v+1);setScheduleStatus('dirty');operationRetry.current=null;
+            setPublicationRefresh(v=>v+1);operationRetry.current=null;
             setToastInfo({show:true,message:label});handleCloseDrawer();handleCloseDetailModal();
         }catch(e){setBuilderError((e as Error).message||'Schedule was not saved. Please retry.');setFailedEmployees(ids);}
         finally{savingShift.current=false;setShiftBusy(false);scheduleMutation.current++;}
@@ -805,7 +811,7 @@ const Timekeeping: React.FC = () => {
             const existing=assignments.find(a=>a.employeeId===employeeId&&toDateOnly(new Date(a.date))===toDateOnly(date));
             const snapshot=await saveBuilderShift(scope,week,employeeId,toDateOnly(date),templateId,existing);
             setAssignments(snapshot.assignments.map(mapBuilderAssignment));setDayStatuses(snapshot.statuses);
-            setScheduleStatus('dirty');setPublicationRefresh(v=>v+1);setRetryShift(null);
+            setPublicationRefresh(v=>v+1);setRetryShift(null);
             handleCloseDrawer();setToastInfo({show:true,message:'Schedule saved'});
             void logActivity(user,'UPDATE','ShiftAssignment',employeeId,`Schedule saved for ${toDateOnly(date)}`);
         }catch(error){setShiftSaveError((error as Error).message||'Schedule was not saved. Please retry.');}
@@ -909,7 +915,6 @@ const Timekeeping: React.FC = () => {
 
             if(error || !data || data.length !== payloads.length) throw new Error(error?.message || 'Could not verify all copied shifts. Refresh before retrying.');
 
-            setScheduleStatus('dirty');
             logActivity(user, 'CREATE', 'ShiftAssignment', 'batch', `Copied shift to rest of week for employee ${employeeId}`);
         }
     };
@@ -1106,9 +1111,9 @@ const Timekeeping: React.FC = () => {
 
     const handleAutoFill=()=>runScheduleOperation('Schedule saved',editableEmployees.map(e=>e.id),autoFill);
 
-    const handlePrevWeek = () => { if(shiftBusy||retryShift||operationRetry.current)return; setViewDate(prev => addDays(prev, -7)); setScheduleStatus('dirty'); };
-    const handleNextWeek = () => { if(shiftBusy||retryShift||operationRetry.current)return; setViewDate(prev => addDays(prev, 7)); setScheduleStatus('dirty'); };
-    const handleToday = () => { if(shiftBusy||retryShift||operationRetry.current)return; setViewDate(manilaToday()); setScheduleStatus('dirty'); };
+    const handlePrevWeek = () => { if(shiftBusy||retryShift||operationRetry.current)return; setViewDate(prev => addDays(prev, -7)); };
+    const handleNextWeek = () => { if(shiftBusy||retryShift||operationRetry.current)return; setViewDate(prev => addDays(prev, 7)); };
+    const handleToday = () => { if(shiftBusy||retryShift||operationRetry.current)return; setViewDate(manilaToday()); };
 
     const shiftColorClasses: Record<string, string> = {
         blue: 'bg-blue-100 border-blue-400 text-blue-800 dark:bg-blue-900/50 dark:border-blue-700 dark:text-blue-200',
@@ -1304,7 +1309,12 @@ const Timekeeping: React.FC = () => {
                     {shiftBusy&&<p role="status">Saving schedule…</p>}
                     {builderError&&<p role="alert" className="text-red-500">{builderError} <button className="underline" disabled={shiftBusy} onClick={()=>{if(operationRetry.current)void operationRetry.current();else setBuilderRefresh(v=>v+1);}}>Retry</button></p>}
                     <p>Viewing: <strong>{scopeLabel(employeeScope,businessUnits)}</strong> · {builderIsCurrent?`Showing ${employeesInBU.length} employees`:'Loading employee roster'}{departmentFilter!=='all'?' (department filter applied)':''}. View access does not change edit permissions; employees marked view-only cannot be edited.</p>
-                    <p className="text-sm font-semibold">{publicationLoading?'Checking publication status…':scheduleStatus==='published'?'PUBLISHED — Employees can now see their schedules':publicationRows.some(r=>r.activeVersion)?'DRAFT CHANGES — Employees still see their last published schedules':'DRAFT — Employees cannot see this yet'}</p>
+                    <section role="status" aria-live="polite" className={`rounded-xl border-2 p-4 ${publicationChecking||publicationError||publicationSummary.kind==='unknown'?'border-slate-300 bg-slate-50 text-slate-800 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100':publicationSummary.kind==='live'?'border-emerald-500 bg-emerald-50 text-emerald-950 dark:bg-emerald-950 dark:text-emerald-100':'border-amber-400 bg-amber-50 text-amber-950 dark:bg-amber-950 dark:text-amber-100'}`}>
+                        <p className="text-xs font-bold uppercase tracking-wide">Publication status · {formatDateRange(weekStart,addDays(weekStart,6))}</p>
+                        <h3 className="mt-1 text-xl font-black">{publicationChecking?'CHECKING PUBLICATION…':publicationError?'PUBLICATION CHECK FAILED':publicationSummary.title}</h3>
+                        <p className="mt-1 text-sm font-medium">{publicationChecking?'Checking which schedules employees can see.':publicationError?publicationError:publicationSummary.detail}</p>
+                        {!publicationChecking&&(!!publicationError||publicationSummary.kind==='unknown')&&<button className="mt-2 underline" onClick={()=>setPublicationRefresh(v=>v+1)}>Retry publication check</button>}
+                    </section>
                      <div className="grid grid-cols-1 items-center gap-4">
                         <span className="font-semibold text-2xl text-gray-800 dark:text-gray-200">
                             {formatDateRange(weekStart, addDays(weekStart, 6))}
