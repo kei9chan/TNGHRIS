@@ -22,7 +22,7 @@ export default function SchedulePublishReview({scope,ids,week,label,excluded,cov
    if(ready.some(r=>!confirmed.some(c=>c.employeeId===r.employeeId&&c.draftHash===r.draftHash&&(c.published||c.pending))))throw new Error('The saved publication could not be read back. Retry the review to check its current state.');
    setRows(confirmed);
    const pending=result.filter((r:any)=>r.approval_required).length;
-   setSuccess(pending?`${result.length-pending} schedules published. Schedule submitted successfully for ${pending} employees requiring HR override review; their previous schedules remain visible.`:'Schedules published successfully.');onPublished();
+   setSuccess(pending?`${result.length-pending} schedules published for ${label}. ${pending} employees still need HR override review; their previous schedules remain visible.`:`Schedules published for ${label}. Employees can see this date range in My Published Schedule.`);onPublished();
   }catch(e){console.error('Schedule publication failed',{week,error:e});setError(`The schedules could not be confirmed as published. ${(e as Error).message} Refresh this review before retrying.`);setChecked(false);}
   finally{lock.current=false;setBusy(false);}
  };
