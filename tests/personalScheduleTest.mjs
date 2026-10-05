@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {personalScheduleDays,moveScheduleWeek} from '../services/personalSchedule.ts';
+import {personalScheduleDays,moveScheduleWeek,publishedScheduleForDisplay} from '../services/personalSchedule.ts';
 const entry={date:'2026-09-14',name:'Published shift',kind:'work',start:'08:00:00',end:'19:00:00'};
 const row={activeVersion:1,before:[entry,{...entry,date:'2026-09-19',name:'Rest Day',kind:'rest'},{...entry,date:'2026-09-20',flexible:true,paidMinutes:480}],after:[{...entry,name:'Unapproved change'}]};
 const days=personalScheduleDays(row,'2026-09-14');assert.equal(days.length,7);assert.equal(days[0].entries[0].name,'Published shift');assert.equal(days[0].entries[0].time,'08:00 – 19:00');assert.equal(days[5].entries[0].time,'');assert.match(days[6].entries[0].time,/Flexible shift.*8 working hours/);
@@ -7,4 +7,8 @@ assert.equal(personalScheduleDays({...row,activeVersion:null},'2026-09-14')[0].e
 assert.equal(personalScheduleDays(null,'2026-09-14')[0].entries.length,0);
 assert.equal(personalScheduleDays(row,'2026-09-21')[0].entries.length,0);
 assert.equal(moveScheduleWeek('2026-09-14',-7),'2026-09-07');
+const next=publishedScheduleForDisplay(null,row,'2026-10-05');
+assert.equal(next.week,'2026-10-12');assert.equal(next.row,row);assert.equal(next.upcoming,true);
+assert.equal(publishedScheduleForDisplay(row,null,'2026-10-05').week,'2026-10-05');
+assert.equal(publishedScheduleForDisplay(null,null,'2026-10-05').row,null);
 console.log('PASS: published snapshot only, pending changes hidden, rest/flexible days, empty weeks and week navigation.');
