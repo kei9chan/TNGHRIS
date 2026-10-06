@@ -16,11 +16,35 @@ export interface EnrichedOffer extends Offer {
 
 export const offerStatusLabel = (status: OfferStatus | string) => [OfferStatus.Signed, OfferStatus.AcceptedAndSigned].includes(status as OfferStatus) ? 'Accepted and Signed' : status;
 
+export const offerProcessStatus = (offer: Pick<Offer, 'status' | 'approvalStatus'>) => {
+    if (offer.status !== OfferStatus.Draft) return offerStatusLabel(offer.status);
+    switch (offer.approvalStatus) {
+        case 'Pending Approval': return 'Pending Approval';
+        case 'Approved': return 'Approved — Ready to Send';
+        case 'Rejected': return 'Rejected — Revise Offer';
+        case 'Returned for Revision': return 'Returned for Revision';
+        case 'Cancelled': return 'Approval Cancelled';
+        default: return 'Draft';
+    }
+};
+
+export const offerProcessFilter = (offer: Pick<Offer, 'status' | 'approvalStatus'>) => {
+    if (offer.status !== OfferStatus.Draft) return offer.status;
+    switch (offer.approvalStatus) {
+        case 'Pending Approval': return 'pending-approval';
+        case 'Approved': return 'ready-to-send';
+        case 'Rejected':
+        case 'Returned for Revision': return 'needs-revision';
+        default: return OfferStatus.Draft;
+    }
+};
+
 interface OfferTableProps {
     offers: EnrichedOffer[];
     onViewDetails: (offer: EnrichedOffer) => void;
     onEditDraft?: (offer: EnrichedOffer) => void;
     onOpenLive?: (offer: EnrichedOffer) => void;
+    onSendReady?: (offer: EnrichedOffer) => void;
 }
 
 const getStatusColor = (status: OfferStatus) => {
@@ -41,7 +65,7 @@ const getStatusColor = (status: OfferStatus) => {
     }
 };
 
-const OfferTable: React.FC<OfferTableProps> = ({ offers, onViewDetails, onEditDraft, onOpenLive }) => {
+const OfferTable: React.FC<OfferTableProps> = ({ offers, onViewDetails, onEditDraft, onOpenLive, onSendReady }) => {
     return (
          <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -70,16 +94,17 @@ const OfferTable: React.FC<OfferTableProps> = ({ offers, onViewDetails, onEditDr
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400"><span className="font-medium text-gray-700 dark:text-gray-200">{employmentTypeLabel(offer)}</span><span className="block text-xs">{offer.employmentEndDate ? `Ends ${new Date(offer.employmentEndDate).toLocaleDateString()}` : 'No end date'}</span></td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{(() => { const pay = offerMonthlyPay(offer, offer.offerDetails); return formatPHP(pay.value, pay.specified); })()}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(offer.status)}`}>
-                                    {offerStatusLabel(offer.status)}
+                                <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${offer.status === OfferStatus.Draft && offer.approvalStatus === 'Pending Approval' ? 'bg-amber-100 text-amber-900' : offer.status === OfferStatus.Draft && offer.approvalStatus === 'Approved' ? 'bg-emerald-100 text-emerald-900' : getStatusColor(offer.status)}`}>
+                                    {offerProcessStatus(offer)}
                                 </span>
-                                <span className="block mt-1 text-xs text-violet-700 dark:text-violet-300">Approval: {offer.approvalStatus || 'Not Requested'}</span>
-                                {offer.approvalStatus === 'Pending Approval' && <span className="block text-xs text-gray-500 dark:text-gray-300">HR review, then two BOD approvals</span>}
+                                {offer.status === OfferStatus.Draft && offer.approvalStatus === 'Pending Approval' && <span className="block mt-1 text-xs text-gray-500 dark:text-gray-300">HR review, then two BOD approvals · Not sent to candidate</span>}
+                                {offer.status === OfferStatus.Draft && offer.approvalStatus === 'Approved' && <span className="block mt-1 text-xs text-gray-500 dark:text-gray-300">BOD approved · HR can publish and email</span>}
+                                {offer.status === OfferStatus.Draft && ['Rejected', 'Returned for Revision'].includes(offer.approvalStatus || '') && <span className="block mt-1 text-xs text-gray-500 dark:text-gray-300">Revise and request approval again</span>}
                                 {isPublishedOffer(offer) && offer.secureToken && <span className="ml-2 inline-flex items-center gap-1 text-xs font-semibold text-emerald-700"><span className="h-2 w-2 rounded-full bg-emerald-500"/>Live</span>}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{offer.offerTemplateName || '—'}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                <div className="flex justify-end gap-2">{offer.status === OfferStatus.Draft && onEditDraft && <Button size="sm" onClick={() => onEditDraft(offer)}>Edit Draft</Button>}{isPublishedOffer(offer) && offer.secureToken && onOpenLive && <Button size="sm" onClick={() => onOpenLive(offer)}>Open Live Offer</Button>}<Button size="sm" variant="secondary" onClick={() => onViewDetails(offer)}>View Details</Button></div>
+                                <div className="flex justify-end gap-2">{offer.status === OfferStatus.Draft && offer.approvalStatus !== 'Pending Approval' && offer.approvalStatus !== 'Approved' && onEditDraft && <Button size="sm" onClick={() => onEditDraft(offer)}>{['Rejected', 'Returned for Revision'].includes(offer.approvalStatus || '') ? 'Revise Offer' : 'Edit Draft'}</Button>}{offer.status === OfferStatus.Draft && offer.approvalStatus === 'Approved' && onSendReady && <Button size="sm" onClick={() => onSendReady(offer)}>Publish &amp; Send Offer</Button>}{isPublishedOffer(offer) && offer.secureToken && onOpenLive && <Button size="sm" onClick={() => onOpenLive(offer)}>Open Live Offer</Button>}<Button size="sm" variant="secondary" onClick={() => onViewDetails(offer)}>View Details</Button></div>
                             </td>
                         </tr>
                     ))}
