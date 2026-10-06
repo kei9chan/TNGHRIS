@@ -12,7 +12,7 @@ import OfferTable, { EnrichedOffer, offerStatusLabel } from '../../components/re
 import OfferCreationDrawer from '../../components/recruitment/OfferCreationDrawer';
 import OfferDetailModal from '../../components/recruitment/OfferDetailModal';
 import { logActivity } from '../../services/auditService';
-import { supabase } from '../../services/supabaseClient';
+import { supabase, retryTransientSupabaseRead } from '../../services/supabaseClient';
 import OfferTemplatePicker from '../../components/recruitment/OfferTemplatePicker';
 import { mapOfferTemplate } from './OfferTemplates';
 import { fetchRatingRecordsForCandidate } from '../../services/interviewRatingService';
@@ -37,6 +37,7 @@ const Offers: React.FC = () => {
   const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
   const [businessUnitLogos, setBusinessUnitLogos] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [isCreationDrawerOpen, setIsCreationDrawerOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedOffer, setSelectedOffer] = useState<EnrichedOffer | null>(null);
@@ -54,11 +55,12 @@ const Offers: React.FC = () => {
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
+    setLoadError('');
     try {
       const [offRes, appRes, candRes, reqRes, deptRes, buRes, themeRes, templateRes] = await Promise.all([
-        supabase.from('job_offers').select('*').order('created_at', { ascending: false }),
-        supabase.from('job_applications').select('*'),
-        supabase.from('job_candidates').select('*'),
+        retryTransientSupabaseRead(() => supabase.from('job_offers').select('*').order('created_at', { ascending: false })),
+        retryTransientSupabaseRead(() => supabase.from('job_applications').select('*')),
+        retryTransientSupabaseRead(() => supabase.from('job_candidates').select('*')),
         supabase.from('job_requisitions').select('*'),
         supabase.from('departments').select('id,name,business_unit_id'),
         supabase.from('business_units').select('id,name'),
@@ -66,6 +68,8 @@ const Offers: React.FC = () => {
         supabase.from('job_offer_templates').select('*').neq('status', 'Archived').order('updated_at', { ascending: false }),
       ]);
       if (offRes.error) throw offRes.error;
+      // Keep saved offers visible even if a supporting lookup fails.
+      setOffers((offRes.data || []).map(mapJobOfferRow));
       if (appRes.error) throw appRes.error;
       if (candRes.error) throw candRes.error;
       if (reqRes.error) throw reqRes.error;
@@ -147,7 +151,7 @@ const Offers: React.FC = () => {
       if (!templateRes.error) setTemplates((templateRes.data || []).map(mapOfferTemplate));
     } catch (err) {
       console.error('Failed to load offers', err);
-      alert('Failed to load offers.');
+      setLoadError((err as any)?.message || 'Offers could not be loaded. Please retry.');
     } finally {
       setIsLoading(false);
     }
@@ -182,9 +186,9 @@ const Offers: React.FC = () => {
       const requisition = requisitions.find(r => r.id === application?.requisitionId);
       return {
         ...offer,
-        candidateName: candidate ? `${candidate.firstName} ${candidate.lastName}` : 'N/A',
+        candidateName: candidate ? `${candidate.firstName} ${candidate.lastName}` : offer.recipientEmail || 'Candidate details unavailable',
         candidateEmail: candidate?.email,
-        jobTitle: requisition?.title || 'N/A',
+        jobTitle: requisition?.title || offer.offerDetails?.jobTitle || 'Details unavailable',
         businessUnitId: requisition?.businessUnitId,
         businessUnitName: businessUnits.find(unit => unit.id === requisition?.businessUnitId)?.name || offer.offerDetails?.businessUnit || '—',
         departmentName: departments.find(department => department.id === requisition?.departmentId)?.name || offer.offerDetails?.department || '—',
@@ -352,8 +356,9 @@ const Offers: React.FC = () => {
             </div>
           )}
 
+          {loadError && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-rose-800"><p className="font-semibold">Offer data could not be fully loaded.</p><p className="mt-1 text-sm">{loadError}</p><Button variant="secondary" className="mt-3" onClick={() => void loadData()}>Retry loading offers</Button></div>}
           <Card>
-            {isLoading ? <div className="p-6 text-gray-500">Loading offers...</div> : <OfferTable offers={filteredOffers} onViewDetails={handleOpenModal} onEditDraft={offer => { setEditingOffer(offer); setSelectedOffer(null); setIsDetailModalOpen(false); setIsCreationDrawerOpen(true); }} onOpenLive={offer => window.open(candidateOfferUrl(offer), '_blank', 'noopener,noreferrer')} />}
+            {isLoading ? <div className="p-6 text-gray-500">Loading offers...</div> : loadError && offers.length === 0 ? <div className="p-6 text-gray-500">Retry above to load saved offers.</div> : <OfferTable offers={filteredOffers} onViewDetails={handleOpenModal} onEditDraft={offer => { setEditingOffer(offer); setSelectedOffer(null); setIsDetailModalOpen(false); setIsCreationDrawerOpen(true); }} onOpenLive={offer => window.open(candidateOfferUrl(offer), '_blank', 'noopener,noreferrer')} />}
           </Card>
 
           {isCreationDrawerOpen && (

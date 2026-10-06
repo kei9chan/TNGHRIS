@@ -18,7 +18,7 @@ const responseActions = ['accept', 'decline'];
 const signedStatuses = ['Signed', 'Accepted and Signed'];
 const peso = (value: unknown) => Number.isFinite(Number(value)) ? new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 }).format(Number(value)) : 'Not specified';
 
-const sendConnectedOfferEmail = async (client: SupabaseClient, offer: Record<string, any>, to: string, subject: string, message: string, senderName: string) => {
+const sendConnectedOfferEmail = async (client: SupabaseClient, offer: Record<string, any>, to: string, subject: string, message: string, senderName: string, documentType = 'offer-welcome') => {
   if (!offer.sent_by_user_id) throw new GmailError('The original offer sender is unavailable. HR must resend from a connected Gmail account.', 409, true);
   const { data: hrisUser } = await client.from('hris_users').select('id,auth_user_id,email,full_name,status').eq('id', offer.sent_by_user_id).maybeSingle();
   if (!hrisUser?.auth_user_id || hrisUser.status !== 'Active') throw new GmailError('The original offer sender is not an active HRIS user.', 403);
@@ -34,14 +34,40 @@ const sendConnectedOfferEmail = async (client: SupabaseClient, offer: Record<str
     const sent = await sendGmailMessage(token.accessToken, { senderEmail, senderName: senderName || hrisUser.full_name, to, subject, message });
     const sentAt = new Date().toISOString();
     await client.from('gmail_connections').update({ token_expiry: token.expiresAt, connection_status: 'connected', last_error: null, last_verified_at: sentAt, updated_at: sentAt }).eq('user_id', hrisUser.auth_user_id);
-    const auditRecorded = await recordDeliveryAudit(client, { authUserId: hrisUser.auth_user_id, hrisUserId: hrisUser.id, userEmail: hrisUser.email, senderEmail, recipientEmail: to, subject, documentType: 'offer-welcome', documentId: offer.id, attemptedAt, sentAt, messageId: sent.messageId, threadId: sent.threadId, status: 'sent' });
+    const auditRecorded = await recordDeliveryAudit(client, { authUserId: hrisUser.auth_user_id, hrisUserId: hrisUser.id, userEmail: hrisUser.email, senderEmail, recipientEmail: to, subject, documentType, documentId: offer.id, attemptedAt, sentAt, messageId: sent.messageId, threadId: sent.threadId, status: 'sent' });
     return { ...sent, senderEmail, auditRecorded };
   } catch (reason) {
     const failure = reason instanceof GmailError ? reason : new GmailError('Unable to send the signed acceptance confirmation.', 500);
     await client.from('gmail_connections').update({ connection_status: failure.reconnect ? 'error' : 'connected', last_error: failure.message, updated_at: new Date().toISOString() }).eq('user_id', hrisUser.auth_user_id);
-    await recordDeliveryAudit(client, { authUserId: hrisUser.auth_user_id, hrisUserId: hrisUser.id, userEmail: hrisUser.email, senderEmail, recipientEmail: to, subject, documentType: 'offer-welcome', documentId: offer.id, attemptedAt, status: 'failed', error: failure.message });
+    await recordDeliveryAudit(client, { authUserId: hrisUser.auth_user_id, hrisUserId: hrisUser.id, userEmail: hrisUser.email, senderEmail, recipientEmail: to, subject, documentType, documentId: offer.id, attemptedAt, status: 'failed', error: failure.message });
     throw failure;
   }
+};
+
+const notifyHrOfAcceptedOffer = async (client: SupabaseClient, offer: Record<string, any>, candidateName: string, position: string, businessUnit: string) => {
+  const { data: jobs, error } = await client.from('offer_acceptance_email_queue')
+    .select('recipient_user_id,recipient_email,attempts').eq('offer_id', offer.id).in('status', ['pending', 'failed']).lt('attempts', 3);
+  if (error) throw error;
+  const results = await Promise.all((jobs || []).map(async job => {
+    // One worker owns each delivery; duplicate candidate requests cannot resend.
+    const claim = await client.from('offer_acceptance_email_queue').update({ status: 'sending', attempts: job.attempts + 1 })
+      .eq('offer_id', offer.id).eq('recipient_user_id', job.recipient_user_id).in('status', ['pending', 'failed']).eq('attempts', job.attempts)
+      .select('recipient_user_id').maybeSingle();
+    if (claim.error) throw claim.error;
+    if (!claim.data) return null;
+    const subject = `Offer accepted and signed — ${candidateName} (${position})`;
+    const message = `${candidateName} accepted and signed offer ${offer.offer_number}.\n\nPosition: ${position}\nBusiness unit: ${businessUnit}\nAccepted: ${offer.signed_at}\n\nPlease review the signed offer in HRIS and arrange contract signing and onboarding.\nhttps://hris.thenextperience.com/recruitment/offers`;
+    let status = 'sent'; let failure: string | null = null;
+    try { await sendConnectedOfferEmail(client, offer, job.recipient_email, subject, message, 'TNG Recruitment Team', 'offer-acceptance-hr'); }
+    catch (reason) { status = 'failed'; failure = reason instanceof Error ? reason.message : 'HR acceptance email failed.'; }
+    const saved = await client.from('offer_acceptance_email_queue').update({ status, last_error: failure, sent_at: status === 'sent' ? new Date().toISOString() : null })
+      .eq('offer_id', offer.id).eq('recipient_user_id', job.recipient_user_id);
+    if (saved.error) console.error('Unable to record HR offer email delivery', saved.error);
+    return { recipientUserId: job.recipient_user_id, status, error: failure };
+  }));
+  const summary = await client.from('offer_acceptance_email_queue').select('recipient_user_id,status,last_error').eq('offer_id', offer.id);
+  if (summary.error) throw summary.error;
+  return (summary.data || []).map(job => ({ recipientUserId: job.recipient_user_id, status: job.status, error: job.last_error }));
 };
 
 Deno.serve(async request => {
@@ -84,6 +110,13 @@ Deno.serve(async request => {
     if (offer.logo_path) { const signed = await client.storage.from('offer-assets').createSignedUrl(offer.logo_path, 60 * 30); logoUrl = signed.data?.signedUrl || ''; }
     if (details?.appearance?.backgroundImagePath) { const signed = await client.storage.from('offer-assets').createSignedUrl(details.appearance.backgroundImagePath, 60 * 30); details.appearance.backgroundImageUrl = signed.data?.signedUrl || ''; }
     if (offer.signed_pdf_path) { const signed = await client.storage.from('offer-assets').createSignedUrl(offer.signed_pdf_path, 60 * 15); signedPdfUrl = signed.data?.signedUrl || ''; }
+    if (action === 'retry-hr-email') {
+      if (!signedStatuses.includes(offer.status)) return json({ error: 'HR acceptance email is available after signing.' }, 409);
+      const hrAcceptanceEmails = await notifyHrOfAcceptedOffer(client, offer, candidate ? `${candidate.first_name} ${candidate.last_name}` : offer.signature_name, details.jobTitle || requisition?.title || 'Offered position', details.businessUnit || 'The Nextperience');
+      const update = await client.from('job_offers').update({ offer_details: { ...details, hrAcceptanceEmails }, last_saved_at: respondedAt }).eq('id', offer.id);
+      if (update.error) throw update.error;
+      return json({ ok: true, hrAcceptanceEmails });
+    }
     if (action === 'get') {
       if (offer.status === 'Sent') { const viewedAt = offer.viewed_at || respondedAt; const update = await client.from('job_offers').update({ status: 'Viewed', viewed_at: viewedAt, last_saved_at: respondedAt }).eq('id', offer.id).eq('status', 'Sent').select('status,viewed_at').maybeSingle(); if (update.data) { offer.status = update.data.status; offer.viewed_at = update.data.viewed_at; } }
       return json({ offer: { id: offer.id, offerNumber: offer.offer_number, status: offer.status, basePay: Number(offer.base_pay), startDate: offer.start_date, employmentEndDate: offer.employment_end_date, expirationDate: offer.offer_expiration_date, employmentType: offer.employment_type, employmentTypeCustomName: offer.employment_type_custom_name, details, logoUrl, signedPdfUrl, candidateName: candidate ? `${candidate.first_name} ${candidate.last_name}` : 'Candidate', jobTitle: details.jobTitle || requisition?.title || '', requireSignature: offer.require_signature !== false, viewedAt: offer.viewed_at, acceptedAt: offer.accepted_at, signedAt: offer.signed_at, declinedAt: offer.declined_at, signatureName: offer.signature_name } });
@@ -101,6 +134,8 @@ Deno.serve(async request => {
       const { data: signed, error: signError } = await client.rpc('accept_and_sign_job_offer', { p_offer_id: offer.id, p_signature_name: signatureName, p_signature_type: signatureType, p_signature_path: signaturePath, p_responded_at: respondedAt, p_offer_details: nextDetails });
       if (signError || !signed) throw new Error(signError?.message || 'Unable to finalize the signed offer.');
       const signedOffer = Array.isArray(signed) ? signed[0] : signed;
+      // The RPC returns the existing row on a concurrent duplicate submission.
+      if (new Date(signedOffer.signed_at).getTime() !== new Date(respondedAt).getTime()) return json({ ok: true, status: 'Accepted and Signed', respondedAt: signedOffer.signed_at });
       const firstName = candidate?.first_name || signatureName.split(/\s+/)[0] || 'Candidate';
       const fullName = candidate ? `${candidate.first_name} ${candidate.last_name}` : signatureName;
       const position = details.jobTitle || requisition?.title || 'the offered position';
@@ -120,7 +155,10 @@ Deno.serve(async request => {
       } catch (emailError) {
         confirmationEmail = { ...confirmationEmail, status: 'failed', error: emailError instanceof Error ? emailError.message : 'Unable to send the signed acceptance confirmation.' };
       }
-      const finalDetails = { ...(signedOffer?.offer_details || nextDetails), welcomeEmail: confirmationEmail };
+      let hrAcceptanceEmails: any[] = [];
+      try { hrAcceptanceEmails = await notifyHrOfAcceptedOffer(client, signedOffer, fullName, position, businessUnit); }
+      catch (reason) { console.error('HR offer acceptance notification failed', reason); hrAcceptanceEmails = [{ status: 'failed', error: reason instanceof Error ? reason.message : 'HR notification failed.' }]; }
+      const finalDetails = { ...(signedOffer?.offer_details || nextDetails), welcomeEmail: confirmationEmail, hrAcceptanceEmails };
       const detailUpdate = await client.from('job_offers').update({ offer_details: finalDetails, last_saved_at: new Date().toISOString() }).eq('id', offer.id);
       if (detailUpdate.error) console.error('Unable to store confirmation email status', detailUpdate.error);
       await client.from('audit_logs').insert({ user_id: 'candidate', user_email: null, action: 'UPDATE', entity: 'Offer', entity_id: offer.id, details: `Candidate accepted and signed offer ${offer.offer_number}` });
