@@ -121,6 +121,24 @@ export const saveOfferDraft = async (offer: Offer, userId?: string): Promise<{ o
   return { offer: mapJobOfferRow(data), created: true };
 };
 
+export const getApprovedOfferForSend = async (offerId: string): Promise<Offer> => {
+  const { data, error } = await supabase.from('job_offers').select('*').eq('id', offerId).maybeSingle();
+  if (error || !data) throw new Error(`Unable to load the approved offer: ${error?.message || 'Offer not found.'}`);
+  const approved = mapJobOfferRow(data);
+  if (approved.status !== OfferStatus.Draft || approved.approvalStatus !== 'Approved' || !approved.approvalRequestId) {
+    throw new Error('This offer is no longer approved for sending. Review its current terms and approval status.');
+  }
+  if (!approved.secureToken) throw new Error('The approved offer has no secure candidate link. Contact HRIS support before sending.');
+  if (approved.offerExpirationDate) {
+    const deadline = new Date(approved.offerExpirationDate).toISOString().slice(0, 10);
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+    const part = (type: string) => parts.find(item => item.type === type)?.value || '';
+    const todayInPhilippines = `${part('year')}-${part('month')}-${part('day')}`;
+    if (deadline < todayInPhilippines) throw new Error('The approved response deadline has passed. Update the deadline and request approval for the revised offer before sending.');
+  }
+  return approved;
+};
+
 interface SendOfferInput {
   offer: Offer;
   userId?: string;
@@ -140,30 +158,30 @@ export const sendApprovedOffer = async ({ offer, userId, recipient, subject, mes
     return { offer: existing, provider: delivery?.provider || '', deliveryError: delivery?.status === 'failed' ? delivery.error || 'Email delivery failed.' : '', alreadySent: true };
   }
   if (!recipient) throw new Error('The candidate email address is missing.');
-  if (!offer.jobRequisitionId || String(offer.jobRequisitionSnapshot?.status || '').toLowerCase() !== 'approved') {
+  // The approved database row is the source of truth. Never save the builder's
+  // reconstructed draft here: stale form values can revoke a completed approval.
+  const draft = await getApprovedOfferForSend(offer.id);
+  if (offer.revision !== draft.revision) throw new Error('This offer changed while the email was being prepared. Reopen the approved offer and try again.');
+  if (!draft.jobRequisitionId || String(draft.jobRequisitionSnapshot?.status || '').toLowerCase() !== 'approved') {
     throw new Error('This offer must be linked to an approved Job Order snapshot before it can be sent. Reopen the approved requisition and save the offer draft.');
   }
-  if (String(offer.jobRequisitionSnapshot?.id || '') !== offer.jobRequisitionId) {
+  if (String(draft.jobRequisitionSnapshot?.id || '') !== draft.jobRequisitionId) {
     throw new Error('The Job Order snapshot does not match the requisition selected for this offer. Reopen the approved requisition and save the offer draft.');
   }
   const { data: jobOrder, error: jobOrderError } = await supabase.from('job_requisitions')
-    .select('id,status').eq('id', offer.jobRequisitionId).maybeSingle();
+    .select('id,status').eq('id', draft.jobRequisitionId).maybeSingle();
   if (jobOrderError || !jobOrder || String(jobOrder.status).toLowerCase() !== 'approved') {
     throw new Error('The linked Job Order is no longer approved. No offer was sent.');
   }
   // Fail before activating the secure offer when the sender has no usable
   // Gmail connection. The Edge Function repeats this check server-side.
   await requireConnectedGmail(true);
-  let draft: Offer;
-  ({ offer: draft } = await saveOfferDraft({ ...offer, status: OfferStatus.Draft, recipientEmail: recipient, emailSubject: subject, emailMessage: message }, userId));
-  if (draft.approvalStatus !== 'Approved') throw new Error('This offer must complete the existing approval workflow before it can be sent.');
-  if (!draft.secureToken) throw new Error('Unable to create the secure candidate link. Save the draft and retry.');
 
   const secureLink = candidateOfferUrl(draft);
   const activatedAt = new Date().toISOString();
   const sendingDetails = { ...(draft.offerDetails || {}), emailDelivery: { status: 'sending', attemptedAt: activatedAt } };
   const activationQuery = supabase.from('job_offers').update({
-    status: draft.status === OfferStatus.Draft ? OfferStatus.Sent : draft.status,
+    status: OfferStatus.Sent,
     sent_at: draft.sentAt?.toISOString() || activatedAt,
     sent_by_user_id: userId || null,
     last_saved_at: activatedAt,
@@ -172,10 +190,8 @@ export const sendApprovedOffer = async ({ offer, userId, recipient, subject, mes
     email_message: message.trim(),
     require_signature: draft.requireSignature !== false,
     offer_details: sendingDetails,
-  }).eq('id', draft.id).eq('approval_status', 'Approved');
-  const { data: activatedRow, error: activationError } = draft.status === OfferStatus.Draft
-    ? await activationQuery.eq('status', OfferStatus.Draft).select().single()
-    : await activationQuery.in('status', [OfferStatus.Sent, OfferStatus.Viewed]).select().single();
+  }).eq('id', draft.id).eq('approval_status', 'Approved').eq('approval_request_id', draft.approvalRequestId).eq('revision', draft.revision);
+  const { data: activatedRow, error: activationError } = await activationQuery.eq('status', OfferStatus.Draft).select().single();
   if (activationError || !activatedRow) throw new Error(`Unable to activate the secure offer link: ${activationError?.message || 'The offer is not approved or is no longer a draft.'}`);
 
   const html = `${previewHtml}<p style="margin-top:24px"><a href="${secureLink}" style="background:#6d28d9;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600">View and Respond to Offer</a></p><p style="color:#64748b;font-size:12px">This is a private link intended for the named recipient.</p>`;
