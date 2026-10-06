@@ -8,7 +8,7 @@ import { usePermissions } from '../../hooks/usePermissions';
 import { useAuth } from '../../hooks/useAuth';
 import { useSettings } from '../../context/SettingsContext';
 import EditableDescription from '../../components/ui/EditableDescription';
-import OfferTable, { EnrichedOffer, offerStatusLabel } from '../../components/recruitment/OfferTable';
+import OfferTable, { EnrichedOffer, offerProcessFilter, offerStatusLabel } from '../../components/recruitment/OfferTable';
 import OfferCreationDrawer from '../../components/recruitment/OfferCreationDrawer';
 import OfferDetailModal from '../../components/recruitment/OfferDetailModal';
 import { logActivity } from '../../services/auditService';
@@ -200,7 +200,7 @@ const Offers: React.FC = () => {
     const matchesUnit = businessUnitFilter === 'all' || offer.businessUnitId === businessUnitFilter;
     const matchesStatus = statusFilter === 'all'
       || (statusFilter === OfferStatus.AcceptedAndSigned && [OfferStatus.Signed, OfferStatus.AcceptedAndSigned].includes(offer.status))
-      || offer.status === statusFilter;
+      || offerProcessFilter(offer) === statusFilter;
     return matchesUnit && matchesStatus;
   }), [enrichedOffers, businessUnitFilter, statusFilter]);
 
@@ -348,7 +348,7 @@ const Offers: React.FC = () => {
         <>
           <EditableDescription descriptionKey="recruitmentOffersDesc" />
 
-          <Card><div className="space-y-4 p-4 sm:p-5"><div><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Business unit</p><div className="mt-2 flex flex-wrap gap-2"><button onClick={() => setBusinessUnitFilter('all')} className={`rounded-full border px-4 py-2 text-sm font-semibold ${businessUnitFilter === 'all' ? 'border-violet-600 bg-violet-600 text-white' : 'bg-white text-slate-700'}`}>All Business Units</button>{businessUnits.map(unit => <button key={unit.id} onClick={() => setBusinessUnitFilter(unit.id)} className={`rounded-full border px-4 py-2 text-sm font-semibold ${businessUnitFilter === unit.id ? 'border-violet-600 bg-violet-600 text-white' : 'bg-white text-slate-700'}`}>{unit.name}</button>)}</div></div><div><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Offer status</p><div className="mt-2 flex flex-wrap gap-2">{['all', OfferStatus.Draft, OfferStatus.Sent, OfferStatus.Viewed, OfferStatus.AcceptedAndSigned, OfferStatus.Declined, OfferStatus.Expired].map(status => <button key={status} onClick={() => setStatusFilter(status)} className={`rounded-full border px-3 py-1.5 text-sm font-semibold ${statusFilter === status ? 'border-slate-900 bg-slate-900 text-white' : 'bg-white text-slate-700'}`}>{status === 'all' ? 'All Statuses' : offerStatusLabel(status)}</button>)}</div></div></div></Card>
+          <Card><div className="space-y-4 p-4 sm:p-5"><div><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Business unit</p><div className="mt-2 flex flex-wrap gap-2"><button onClick={() => setBusinessUnitFilter('all')} className={`rounded-full border px-4 py-2 text-sm font-semibold ${businessUnitFilter === 'all' ? 'border-violet-600 bg-violet-600 text-white' : 'bg-white text-slate-700'}`}>All Business Units</button>{businessUnits.map(unit => <button key={unit.id} onClick={() => setBusinessUnitFilter(unit.id)} className={`rounded-full border px-4 py-2 text-sm font-semibold ${businessUnitFilter === unit.id ? 'border-violet-600 bg-violet-600 text-white' : 'bg-white text-slate-700'}`}>{unit.name}</button>)}</div></div><div><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Offer status</p><div className="mt-2 flex flex-wrap gap-2">{['all', OfferStatus.Draft, 'pending-approval', 'ready-to-send', 'needs-revision', OfferStatus.Sent, OfferStatus.Viewed, OfferStatus.AcceptedAndSigned, OfferStatus.Declined, OfferStatus.Expired].map(status => <button key={status} onClick={() => setStatusFilter(status)} className={`rounded-full border px-3 py-1.5 text-sm font-semibold ${statusFilter === status ? 'border-slate-900 bg-slate-900 text-white' : 'bg-white text-slate-700'}`}>{status === 'all' ? 'All Statuses' : status === 'pending-approval' ? 'Pending Approval' : status === 'ready-to-send' ? 'Ready to Send' : status === 'needs-revision' ? 'Needs Revision' : offerStatusLabel(status)}</button>)}</div></div></div></Card>
 
           {successMessage && (
             <div className="p-4 rounded-md bg-green-50 dark:bg-green-900/40 border border-green-400 dark:border-green-800">
@@ -358,7 +358,7 @@ const Offers: React.FC = () => {
 
           {loadError && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-rose-800"><p className="font-semibold">Offer data could not be fully loaded.</p><p className="mt-1 text-sm">{loadError}</p><Button variant="secondary" className="mt-3" onClick={() => void loadData()}>Retry loading offers</Button></div>}
           <Card>
-            {isLoading ? <div className="p-6 text-gray-500">Loading offers...</div> : loadError && offers.length === 0 ? <div className="p-6 text-gray-500">Retry above to load saved offers.</div> : <OfferTable offers={filteredOffers} onViewDetails={handleOpenModal} onEditDraft={offer => { setEditingOffer(offer); setSelectedOffer(null); setIsDetailModalOpen(false); setIsCreationDrawerOpen(true); }} onOpenLive={offer => window.open(candidateOfferUrl(offer), '_blank', 'noopener,noreferrer')} />}
+            {isLoading ? <div className="p-6 text-gray-500">Loading offers...</div> : loadError && offers.length === 0 ? <div className="p-6 text-gray-500">Retry above to load saved offers.</div> : <OfferTable offers={filteredOffers} onViewDetails={handleOpenModal} onEditDraft={canManage ? offer => { setEditingOffer(offer); setSelectedOffer(null); setIsDetailModalOpen(false); setIsCreationDrawerOpen(true); } : undefined} onSendReady={canManage ? offer => { setEditingOffer(offer); setSelectedOffer(null); setIsDetailModalOpen(false); setIsCreationDrawerOpen(true); } : undefined} onOpenLive={offer => window.open(candidateOfferUrl(offer), '_blank', 'noopener,noreferrer')} />}
           </Card>
 
           {isCreationDrawerOpen && (
