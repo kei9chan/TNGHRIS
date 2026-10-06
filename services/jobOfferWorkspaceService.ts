@@ -1,3 +1,4 @@
+import { candidateOfferUrl } from './jobOfferLinks';
 import { Offer, OfferStatus } from '../types';
 import { mapJobOfferRow } from './jobOfferMapper';
 import { supabase } from './supabaseClient';
@@ -40,8 +41,7 @@ export const offerWorkspaceStatus = (offer?: Offer | null) => {
   return offer.status;
 };
 
-export const candidateOfferUrl = (offer: Pick<Offer, 'secureToken'>, origin = window.location.origin) =>
-  offer.secureToken ? `${origin}/offer/${offer.secureToken}` : '';
+export { candidateOfferUrl } from './jobOfferLinks';
 
 export const selectCurrentOffer = (offers: Offer[], applicationId: string) => offers
   .filter(offer => offer.applicationId === applicationId && !TERMINAL_STATUSES.includes(offer.status))

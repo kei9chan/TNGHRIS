@@ -1,3 +1,4 @@
+import { candidateOfferUrl } from '../../services/jobOfferLinks';
 import { offerServiceChargeTerms } from './serviceChargeTerms';
 import { Offer, OfferBuilderDetails } from '../../types';
 import { mergeAppearance } from './offerBranding';
@@ -328,16 +329,39 @@ export const buildOfferPdf = async (
   pdf.text(`Please respond by ${date(offer.offerExpirationDate)}.`, margin + 6, y + 5);
   pdf.setFont('TNGSans', 'normal');
   pdf.setFontSize(9);
-  pdf.text(linesFor('Use the secure offer link from your email to accept and sign, decline, or ask Recruitment a question.', contentWidth - 12), margin + 6, y + 14);
+  pdf.text(linesFor('Use the secure signing link below or in your email to accept and sign, decline, or ask Recruitment a question.', contentWidth - 12), margin + 6, y + 14);
   y += 43;
+  const signingUrl = offer.secureToken ? candidateOfferUrl({ secureToken: offer.secureToken }) : '';
+  if (signingUrl) {
+    heading('Review & Sign Online');
+    pdf.setFont('TNGSans', 'bold');
+    pdf.setFontSize(10);
+    pdf.setTextColor(...primary);
+    pdf.textWithLink('Open your secure offer and sign', margin, y, { url: signingUrl });
+    y += 7;
+    paragraph(signingUrl, { size: 8, gap: 5 });
+    if (offer.status === 'Draft') paragraph('This link becomes available after Recruitment approves and sends this offer.', { size: 8 });
+  }
   heading(signed ? 'Signed Acceptance' : 'Acceptance & Signature');
   const response = (details as OfferBuilderDetails & { candidateResponse?: { signatureName?: string; respondedAt?: string } }).candidateResponse;
   twoColumnRows([
     ['Candidate name', response?.signatureName || offer.signatureName || candidateName || '____________________'],
-    ['Signature date', date(response?.respondedAt || offer.signedAt)],
+    ['Signature date', signed ? date(response?.respondedAt || offer.signedAt) : '____________________'],
     ['Offer status', signed ? 'Accepted and signed' : (offer.status || 'Pending response')],
     ['Offer number', offer.offerNumber || 'Not specified'],
   ]);
+  ensure(27);
+  pdf.setDrawColor(...text);
+  pdf.line(margin, y + 14, margin + 108, y + 14);
+  pdf.line(margin + 122, y + 14, margin + contentWidth, y + 14);
+  pdf.setFont('TNGSans', 'normal');
+  pdf.setFontSize(8);
+  pdf.setTextColor(...text);
+  if (signed) pdf.text(response?.signatureName || offer.signatureName || candidateName, margin, y + 11);
+  pdf.text(signed ? 'Electronically signed by candidate' : 'Candidate signature over printed name', margin, y + 19);
+  pdf.text('Date signed', margin + 122, y + 19);
+  if (signed) pdf.text(date(response?.respondedAt || offer.signedAt), margin + 122, y + 11);
+  y += 27;
   if (signed) paragraph('This document reflects the candidate acceptance and electronic signature securely recorded by TNG HRIS.', { color: [22, 101, 52], size: 9 });
   heading('Questions?');
   paragraph(`Please contact ${companyName} Recruitment using the Ask a Question action in your secure offer link.`);
