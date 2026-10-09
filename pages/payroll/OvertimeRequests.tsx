@@ -88,16 +88,19 @@ const OvertimeRequests: React.FC = () => {
     const canManage = canModule('OT', Permission.Manage);
     // Configured BOD approvers can also approve
     const isBuManager=[user?.role,...(user?.roles||[])].includes('Business Unit Manager' as any);
-    const canApprove = otAccess.canApprove || reporteeIds.length > 0 || isBuManager || isConfiguredBOD;
+    const [assignedOtIds, setAssignedOtIds] = useState<string[]>([]);
+    const canApprove = assignedOtIds.length > 0 || otAccess.canApprove || reporteeIds.length > 0 || isBuManager || isConfiguredBOD;
     const canViewLedger = reportScope.overview || canApprove;
     
     useEffect(() => {
         let active=true;
         setLoadingRequests(true);setLoadError('');
-        Promise.all([fetchOtRequests(),supabase.rpc('get_ot_reporting_scope')]).then(([data,scope])=>{
+        Promise.all([fetchOtRequests(),supabase.rpc('get_ot_reporting_scope'),supabase.rpc('get_my_pending_time_approval_ids')]).then(([data,scope,assigned])=>{
             if(!active)return;if(scope.error)throw scope.error;
             setRequests(data);setReportScope(scope.data);
-            if(!scope.data.overview)setActiveTab('my_ot');
+            const assignedIds = (assigned.data || []).filter((row: any) => row.request_type === 'overtime').map((row: any) => row.request_id);
+            setAssignedOtIds(assignedIds);
+            if(!scope.data.overview)setActiveTab(assignedIds.length ? 'team_approvals' : 'my_ot');
         }).catch(error=>{if(active)setLoadError(error.message||'Unable to load overtime requests.');})
         .finally(()=>{if(active)setLoadingRequests(false);});
         return()=>{active=false;};
@@ -172,12 +175,12 @@ const OvertimeRequests: React.FC = () => {
     const teamRequests = useMemo(() => {
         if (!user || !canApprove) return [];
 
-        let visibleRequests: OTRequest[] = [];
+        let visibleRequests: OTRequest[] = requests.filter(r => assignedOtIds.includes(r.id));
 
         // Direct managers act only on the manager stage.
         if (reporteeIds.length > 0) {
             const reporteeRequests = requests.filter(r =>
-                reporteeIds.includes(r.employeeId) && r.status === OTStatus.Submitted
+                reporteeIds.includes(r.employeeId) && [OTStatus.Submitted, OTStatus.PendingGM].includes(r.status)
             );
             visibleRequests = [...visibleRequests, ...reporteeRequests];
         }
@@ -194,7 +197,7 @@ const OvertimeRequests: React.FC = () => {
         // Deduplicate in case a request is both from a direct report and PendingBOD
         const uniqueRequests = Array.from(new Map(visibleRequests.map(r => [r.id, r])).values());
         return uniqueRequests;
-    }, [requests, reporteeIds, user, canApprove, isConfiguredBOD,isBuManager,reportScope.businessUnits]);
+    }, [requests, reporteeIds, assignedOtIds, user, canApprove, isConfiguredBOD,isBuManager,reportScope.businessUnits]);
 
     // A Review link loads the exact record independently of My OT/team list filters.
     useEffect(() => {
@@ -576,8 +579,9 @@ const OvertimeRequests: React.FC = () => {
                 </Card>
             )}
 
-            <Modal isOpen={!!viewRequest} onClose={()=>setViewRequest(null)} title="Overtime request details">
+            <Modal isOpen={!!viewRequest} onClose={()=>setViewRequest(null)} title="Overtime request details" size="5xl">
                 {viewRequest&&<div className="space-y-4"><h2 className="text-xl font-bold">{viewRequest.employeeName}</h2><p>{new Date(viewRequest.date).toLocaleDateString('en-PH',{weekday:'long',year:'numeric',month:'long',day:'numeric',timeZone:'Asia/Manila'})} · {viewRequest.startTime}–{viewRequest.endTime}</p><p>{accessibleBus.find(b=>b.id===viewRequest.businessUnitId)?.name||'Business unit not recorded'} · {viewRequest.status}</p><p>Requested: {viewRequest.requestedHours??'Not recorded'} hours · Approved: {viewRequest.approvedHours??'Not approved'} hours</p><div className="rounded-xl bg-violet-50 p-4 text-slate-900"><b>Reason</b><p className="whitespace-pre-wrap">{viewRequest.reason}</p></div><p>Manager note: {viewRequest.managerNote||'None'}</p><details><summary>Request history</summary><pre className="whitespace-pre-wrap text-xs">{JSON.stringify(viewRequest.historyLog,null,2)}</pre></details></div>}
+                {viewRequest && viewRequest.employeeId !== user?.id && <OvertimeWeekReview requestIds={[viewRequest.id]} onChanged={() => setReload(n => n + 1)} />}
             </Modal>
             <OTRequestModal
                 isOpen={isModalOpen}
