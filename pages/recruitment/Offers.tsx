@@ -20,6 +20,8 @@ import OfferApprovalPackageModal from '../../components/recruitment/OfferApprova
 import { candidateOfferUrl, createOfferRevision, saveOfferDraft, sendApprovedOffer } from '../../services/jobOfferWorkspaceService';
 import type { HrisEmailAttachment } from '../../services/gmailConnectionService';
 import { mapJobOfferRow } from '../../services/jobOfferMapper';
+import { fetchOfferApprovalProgress } from '../../services/offerApprovalProgressService';
+import type { OfferApprovalProgress } from '../../services/offerApprovalProgress';
 
 
 const Offers: React.FC = () => {
@@ -30,6 +32,18 @@ const Offers: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [offers, setOffers] = useState<Offer[]>([]);
+  const [approvalProgress, setApprovalProgress] = useState<Record<string, OfferApprovalProgress>>({});
+  const [progressError, setProgressError] = useState('');
+
+  const loadApprovalProgress = useCallback(async (rows: Offer[]) => {
+    try {
+      setApprovalProgress(await fetchOfferApprovalProgress(rows));
+      setProgressError('');
+    } catch {
+      setApprovalProgress({});
+      setProgressError('Approval progress could not be loaded. Refresh to retry.');
+    }
+  }, []);
   const [applications, setApplications] = useState<Application[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [requisitions, setRequisitions] = useState<JobRequisition[]>([]);
@@ -70,6 +84,7 @@ const Offers: React.FC = () => {
       if (offRes.error) throw offRes.error;
       // Keep saved offers visible even if a supporting lookup fails.
       setOffers((offRes.data || []).map(mapJobOfferRow));
+      await loadApprovalProgress((offRes.data || []).map(mapJobOfferRow));
       if (appRes.error) throw appRes.error;
       if (candRes.error) throw candRes.error;
       if (reqRes.error) throw reqRes.error;
@@ -155,7 +170,7 @@ const Offers: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [loadApprovalProgress]);
 
   useEffect(() => {
     loadData();
@@ -163,13 +178,19 @@ const Offers: React.FC = () => {
 
   const loadOffers = useCallback(async () => {
     const { data, error } = await supabase.from('job_offers').select('*').order('created_at', { ascending: false });
-    if (!error) setOffers((data || []).map(mapJobOfferRow));
-  }, []);
+    if (!error) {
+      const rows = (data || []).map(mapJobOfferRow);
+      setOffers(rows);
+      await loadApprovalProgress(rows);
+    }
+  }, [loadApprovalProgress]);
 
   useEffect(() => {
     if (!canView) return;
-    const channel = supabase.channel('recruitment-offer-statuses').on('postgres_changes', { event: '*', schema: 'public', table: 'job_offers' }, () => { void loadOffers(); }).subscribe();
-    return () => { void supabase.removeChannel(channel); };
+    const channel = supabase.channel('recruitment-offer-statuses').on('postgres_changes', { event: '*', schema: 'public', table: 'job_offers' }, () => { void loadOffers(); }).on('postgres_changes', { event: '*', schema: 'public', table: 'job_offer_approval_assignments' }, () => { void loadOffers(); }).on('postgres_changes', { event: '*', schema: 'public', table: 'job_offer_approval_requests' }, () => { void loadOffers(); }).subscribe();
+    const refresh = () => { void loadOffers(); };
+    window.addEventListener('focus', refresh);
+    return () => { window.removeEventListener('focus', refresh); void supabase.removeChannel(channel); };
   }, [canView, loadOffers]);
 
   useEffect(() => {
@@ -186,15 +207,16 @@ const Offers: React.FC = () => {
       const requisition = requisitions.find(r => r.id === application?.requisitionId);
       return {
         ...offer,
+        approvalProgress: offer.approvalRequestId ? approvalProgress[offer.approvalRequestId] : undefined,
         candidateName: candidate ? `${candidate.firstName} ${candidate.lastName}` : offer.recipientEmail || 'Candidate details unavailable',
         candidateEmail: candidate?.email,
-        jobTitle: requisition?.title || offer.offerDetails?.jobTitle || 'Details unavailable',
+        jobTitle: offer.offerDetails?.jobTitle || requisition?.title || 'Details unavailable',
         businessUnitId: requisition?.businessUnitId,
         businessUnitName: businessUnits.find(unit => unit.id === requisition?.businessUnitId)?.name || offer.offerDetails?.businessUnit || '—',
         departmentName: departments.find(department => department.id === requisition?.departmentId)?.name || offer.offerDetails?.department || '—',
       };
     }).sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
-  }, [offers, applications, candidates, requisitions, businessUnits, departments]);
+  }, [offers, applications, candidates, requisitions, businessUnits, departments, approvalProgress]);
 
   const filteredOffers = useMemo(() => enrichedOffers.filter(offer => {
     const matchesUnit = businessUnitFilter === 'all' || offer.businessUnitId === businessUnitFilter;
@@ -234,9 +256,10 @@ const Offers: React.FC = () => {
       const allRatings = await fetchRatingRecordsForCandidate(candidate.id);
       setApprovalPackage({ offer: {
         ...offer,
+        approvalProgress: offer.approvalRequestId ? approvalProgress[offer.approvalRequestId] : undefined,
         candidateName: `${candidate.firstName} ${candidate.lastName}`,
         candidateEmail: candidate.email,
-        jobTitle: requisition?.title || offer.offerDetails?.jobTitle || 'N/A',
+        jobTitle: offer.offerDetails?.jobTitle || requisition?.title || 'N/A',
         businessUnitId: requisition?.businessUnitId,
         businessUnitName: businessUnits.find(unit => unit.id === requisition?.businessUnitId)?.name || offer.offerDetails?.businessUnit || '—',
         departmentName: departments.find(department => department.id === requisition?.departmentId)?.name || offer.offerDetails?.department || '—',
@@ -347,6 +370,7 @@ const Offers: React.FC = () => {
       {canView && (
         <>
           <EditableDescription descriptionKey="recruitmentOffersDesc" />
+          <div className="flex flex-wrap items-center gap-3"><Button variant="secondary" onClick={() => void loadOffers()}>Refresh approval status</Button>{progressError && <p role="alert" className="text-sm text-amber-700">{progressError}</p>}</div>
 
           <Card><div className="space-y-4 p-4 sm:p-5"><div><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Business unit</p><div className="mt-2 flex flex-wrap gap-2"><button onClick={() => setBusinessUnitFilter('all')} className={`rounded-full border px-4 py-2 text-sm font-semibold ${businessUnitFilter === 'all' ? 'border-violet-600 bg-violet-600 text-white' : 'bg-white text-slate-700'}`}>All Business Units</button>{businessUnits.map(unit => <button key={unit.id} onClick={() => setBusinessUnitFilter(unit.id)} className={`rounded-full border px-4 py-2 text-sm font-semibold ${businessUnitFilter === unit.id ? 'border-violet-600 bg-violet-600 text-white' : 'bg-white text-slate-700'}`}>{unit.name}</button>)}</div></div><div><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Offer status</p><div className="mt-2 flex flex-wrap gap-2">{['all', OfferStatus.Draft, 'pending-approval', 'ready-to-send', 'needs-revision', OfferStatus.Sent, OfferStatus.Viewed, OfferStatus.AcceptedAndSigned, OfferStatus.Declined, OfferStatus.Expired].map(status => <button key={status} onClick={() => setStatusFilter(status)} className={`rounded-full border px-3 py-1.5 text-sm font-semibold ${statusFilter === status ? 'border-slate-900 bg-slate-900 text-white' : 'bg-white text-slate-700'}`}>{status === 'all' ? 'All Statuses' : status === 'pending-approval' ? 'Pending Approval' : status === 'ready-to-send' ? 'Ready to Send' : status === 'needs-revision' ? 'Needs Revision' : offerStatusLabel(status)}</button>)}</div></div></div></Card>
 
@@ -384,7 +408,7 @@ const Offers: React.FC = () => {
             <OfferDetailModal
               isOpen={isDetailModalOpen}
               onClose={handleCloseModals}
-              offer={selectedOffer}
+              offer={enrichedOffers.find(item => item.id === selectedOffer.id) || selectedOffer}
               onStatusChange={handleStatusChange}
               onConvertToEmployee={handleConvertToEmployee}
               onEdit={offer => { setEditingOffer(offer); setIsDetailModalOpen(false); setIsCreationDrawerOpen(true); }}
@@ -393,7 +417,7 @@ const Offers: React.FC = () => {
               onCreateRevision={offer => void handleCreateRevision(offer)}
             />
           )}
-          {approvalPackage && <OfferApprovalPackageModal isOpen={true} onClose={() => setApprovalPackage(null)} offer={approvalPackage.offer} candidate={approvalPackage.candidate} application={approvalPackage.application} ratings={approvalPackage.ratings} onSubmitted={requestId => { setOffers(current => current.map(item => item.id === approvalPackage.offer.id ? { ...item, approvalStatus: 'Pending Approval', approvalRequestId: requestId } : item)); setIsCreationDrawerOpen(false); setEditingOffer(null); setApprovalPackage(null); setSuccessMessage('Offer approval request submitted successfully.'); setTimeout(() => setSuccessMessage(''), 5000); }} />}
+          {approvalPackage && <OfferApprovalPackageModal isOpen={true} onClose={() => setApprovalPackage(null)} offer={approvalPackage.offer} candidate={approvalPackage.candidate} application={approvalPackage.application} ratings={approvalPackage.ratings} onSubmitted={requestId => { setOffers(current => current.map(item => item.id === approvalPackage.offer.id ? { ...item, approvalStatus: 'Pending Approval', approvalRequestId: requestId } : item)); setIsCreationDrawerOpen(false); setEditingOffer(null); setApprovalPackage(null); void loadOffers(); setSuccessMessage('Offer approval request submitted successfully.'); setTimeout(() => setSuccessMessage(''), 5000); }} />}
         </>
       )}
     </div>

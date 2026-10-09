@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import ts from 'typescript';
+import { PGlite } from '@electric-sql/pglite';
+const db = new PGlite();
+const hr='00000000-0000-4000-8000-000000000001',bod='00000000-0000-4000-8000-000000000002',other='00000000-0000-4000-8000-000000000003',request='00000000-0000-4000-8000-000000000004';
+await db.exec(`create role anon; create role authenticated; create schema private; create schema auth;
+create function auth.uid() returns uuid language sql as $$ select nullif(current_setting('test.actor',true),'')::uuid $$;
+create function public.current_hris_user_id() returns uuid language sql as $$ select auth.uid() $$;
+create table public.hris_users(id uuid primary key,full_name text);
+create table public.job_offer_approval_requests(id uuid primary key,approval_stage text,status text);
+create table public.job_offer_approval_assignments(request_id uuid,approver_user_id uuid,approver_role text,approval_stage text,status text);
+create function private.offer_approval_actor_can_view(r uuid) returns boolean language sql as $$ select exists(select 1 from public.job_offer_approval_assignments a where a.request_id=r and a.approver_user_id=auth.uid()) $$;`);
+await db.exec(fs.readFileSync('supabase/migrations/20261007100843_offer_approval_progress_visibility.sql','utf8'));
+await db.query('insert into hris_users values ($1,$2),($3,$4)',[hr,'HR Manager',bod,'Pending Director']);
+await db.query("insert into job_offer_approval_requests values ($1,'BOD_GM','Pending Approval')",[request]);
+await db.query("insert into job_offer_approval_assignments values ($1,$2,'HR Manager','HR_MANAGER','Approved'),($1,$3,'Board of Director','BOD_GM','Pending'),($1,$4,'Board of Director','BOD_GM','Approved')",[request,hr,bod,other]);
+const get=async()=>(await db.query('select * from public.get_job_offer_approval_progress($1)',[[request]])).rows;
+await db.exec('set role authenticated');
+const ui=ts.transpileModule(fs.readFileSync('services/offerApprovalProgress.ts','utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+const {offerApprovalStageLabel:label,offerApprovalProgressDescription:description}=await import('data:text/javascript;base64,'+Buffer.from(ui).toString('base64'));
+for(const actor of [hr,bod]){
+ await db.query("select set_config('test.actor',$1,false)",[actor]);
+ const rows=await get();assert.equal(rows.length,1);
+ assert.deepEqual(rows[0].progress,{stage:'BOD_GM',hrApproved:true,bodApproved:1,pendingNames:['Pending Director']});
+ assert.equal(label(rows[0].progress),'Pending BOD Approval (1/2)');
+ assert.equal(description(rows[0].progress),'HR approved · Awaiting Pending Director · Not sent to candidate');
+}
+await db.exec("set test.actor='00000000-0000-4000-8000-000000000009'");assert.equal((await get()).length,0,'unassigned actor cannot see progress');
+await db.exec("set test.actor=''");assert.equal((await get()).length,0,'missing session cannot see progress');
+await assert.rejects(()=>db.query('select * from private.job_offer_approval_progress($1)',[[request]]),/permission denied/);
+await db.exec('reset role;set role anon');await assert.rejects(get,/permission denied/);
+assert.equal(label({stage:'HR_MANAGER'}),'Pending HR Manager Approval');assert.match(description(),/unavailable/);
+await db.close();console.log('PASS: HR/BOD see complete counts; unassigned/missing sessions and anonymous access blocked; stage labels match actual decisions.');

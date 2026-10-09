@@ -4,8 +4,10 @@ import Button from '../ui/Button';
 import { formatPHP, offerMonthlyPay } from './offerCurrency';
 import { isPublishedOffer } from '../../services/jobOfferWorkspaceService';
 import { employmentTypeLabel } from './offerEmployment';
+import { OfferApprovalProgress, offerApprovalStageLabel, offerApprovalProgressDescription } from '../../services/offerApprovalProgress';
 
 export interface EnrichedOffer extends Offer {
+  approvalProgress?: OfferApprovalProgress;
   candidateName: string;
   candidateEmail?: string;
   jobTitle: string;
@@ -16,10 +18,10 @@ export interface EnrichedOffer extends Offer {
 
 export const offerStatusLabel = (status: OfferStatus | string) => [OfferStatus.Signed, OfferStatus.AcceptedAndSigned].includes(status as OfferStatus) ? 'Accepted and Signed' : status;
 
-export const offerProcessStatus = (offer: Pick<Offer, 'status' | 'approvalStatus'>) => {
+export const offerProcessStatus = (offer: Pick<Offer, 'status' | 'approvalStatus'> & { approvalProgress?: OfferApprovalProgress }) => {
     if (offer.status !== OfferStatus.Draft) return offerStatusLabel(offer.status);
     switch (offer.approvalStatus) {
-        case 'Pending Approval': return 'Pending Approval';
+        case 'Pending Approval': return offerApprovalStageLabel(offer.approvalProgress);
         case 'Approved': return 'Approved — Ready to Send';
         case 'Rejected': return 'Rejected — Revise Offer';
         case 'Returned for Revision': return 'Returned for Revision';
@@ -97,7 +99,7 @@ const OfferTable: React.FC<OfferTableProps> = ({ offers, onViewDetails, onEditDr
                                 <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${offer.status === OfferStatus.Draft && offer.approvalStatus === 'Pending Approval' ? 'bg-amber-100 text-amber-900' : offer.status === OfferStatus.Draft && offer.approvalStatus === 'Approved' ? 'bg-emerald-100 text-emerald-900' : getStatusColor(offer.status)}`}>
                                     {offerProcessStatus(offer)}
                                 </span>
-                                {offer.status === OfferStatus.Draft && offer.approvalStatus === 'Pending Approval' && <span className="block mt-1 text-xs text-gray-500 dark:text-gray-300">HR review, then two BOD approvals · Not sent to candidate</span>}
+                                {offer.status === OfferStatus.Draft && offer.approvalStatus === 'Pending Approval' && <span className="block mt-1 max-w-xs whitespace-normal text-xs text-gray-500 dark:text-gray-300">{offerApprovalProgressDescription(offer.approvalProgress)}</span>}
                                 {offer.status === OfferStatus.Draft && offer.approvalStatus === 'Approved' && <span className="block mt-1 text-xs text-gray-500 dark:text-gray-300">BOD approved · HR can publish and email</span>}
                                 {offer.status === OfferStatus.Draft && ['Rejected', 'Returned for Revision'].includes(offer.approvalStatus || '') && <span className="block mt-1 text-xs text-gray-500 dark:text-gray-300">Revise and request approval again</span>}
                                 {isPublishedOffer(offer) && offer.secureToken && <span className="ml-2 inline-flex items-center gap-1 text-xs font-semibold text-emerald-700"><span className="h-2 w-2 rounded-full bg-emerald-500"/>Live</span>}
