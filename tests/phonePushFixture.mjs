@@ -11,5 +11,7 @@ export async function createPhoneFixture(dir){
  create function extensions.hmac(input bytea,key bytea,algorithm text) returns bytea language sql stable as $$select coalesce((select result from private.test_hmac h where h.input=$1 and h.key=$2),decode('00','hex'))$$;
  insert into vault.decrypted_secrets values('tng_phone_push_signing','${signingSecret}');
  insert into auth.sessions values('${id(113)}','${id(13)}'),('${id(114)}','${id(14)}'),('${id(111)}','${id(11)}');`);
- await db.exec(fs.readFileSync(phoneMigration,'utf8'));await db.exec("update phone_push_private.configuration set enabled=true,public_key='fixture-public-key';");return db;
+ await db.exec(fs.readFileSync(phoneMigration,'utf8'));
+ await db.exec(fs.readFileSync('supabase/migrations/20261010222828_fix_phone_push_worker_safe_updates.sql','utf8'));
+ await db.exec("update phone_push_private.configuration set enabled=true,public_key='fixture-public-key' where singleton=true;");return db;
 }

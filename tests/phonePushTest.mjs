@@ -17,6 +17,8 @@ try{
  assert.equal((await signed('claim',{job_id:test.job_id})).length,0);
  await signed('finish',{results:[{id:test.job_id,lease:randomUUID(),status:'sent'}]});assert.equal((await count(`select state from phone_push_private.jobs where id='${test.job_id}'`)).state,'sending');
  await signed('finish',{results:[{id:test.job_id,lease:claimed[0].lease,status:'sent'}]});
+ const health=await count('select last_claim_at,last_finish_at from phone_push_private.worker_health where singleton=true');
+ assert.ok(health.last_claim_at);assert.ok(health.last_finish_at);
  await db.exec('set role anon');await rpc('phone_push_receipt',[test.job_id,randomUUID()]);assert.equal((await count(`select displayed_at from phone_push_private.jobs where id='${test.job_id}'`)).displayed_at,null);
  await db.exec('set role anon');await rpc('phone_push_receipt',[test.job_id,claimed[0].payload.receipt]);await actor(13);assert.ok((await rpc('phone_push_status',[sub.endpoint])).last_test.displayed_at);
  await signed('dispatch',{}, {nonce:id(800)});await assert.rejects(()=>signed('dispatch',{}, {nonce:id(800)}),/already processed/);
