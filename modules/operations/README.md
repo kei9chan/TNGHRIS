@@ -56,3 +56,39 @@ The existing Asset Management register now has an opt-in `requires_maintenance` 
 `ops_workspace` returns only flagged assets owned by the selected unit (existing UUID-string and business-unit-name mappings are supported). Every task save/publish/import validates asset eligibility server-side. Task Library uses these assets for linking work. Assign work provides an optional maintenance-asset filter across published tasks and checklist item snapshots; selecting equipment does not change a published version's asset. Removing the flag or transferring the asset removes it from future selectors. Historical versions and already assigned work remain intact. Existing recurring rules continue using their pinned published versions; maintenance plans and asset service histories remain a later phase.
 
 Validation: `node tests/assetMaintenanceTest.mjs` and `TNG_TEST_CHROMIUM_PATH=/path/to/chromium node tests/assetMaintenanceBrowserTest.mjs`. The browser harness mounts the actual asset register, editor, batch import and Operations workspace against the authenticated PostgreSQL fixture; no production data is used.
+
+
+## Maintenance plans and service history
+
+Maintenance is available inside Operations Station, scoped by the existing workspace selector.
+Assets are existing Asset Management records marked Requires maintenance and not Retired.
+Asset editing retains the existing Assets/Manage permission; maintenance assignment does not grant it.
+
+A maintenance plan is an `ops_rules` record with an asset FK and structured `config.maintenance`
+metadata. Each asset can have multiple independent plans. Published generic checklists are reused
+without mutation; contradictory asset-specific templates are rejected. Plans support Draft, Active,
+Paused and Archived, existing optimistic revisions, immutable rule versions and audit events.
+Schedules support daily/weekly/monthly intervals, yearly, explicit dates, and explicit annual
+month/day dates. Upcoming previews contain up to 12 dates within five years. Fixed Manila calendar
+windows include explicit overnight offsets. No assumed manufacturer intervals are supplied.
+
+The existing minute worker generates one occurrence per plan/date and resolves published-shift
+coverage, owner, team, backups and notifications. Maintenance occurrences freeze asset identity,
+original unit, activity, published version, schedule and requirements. Later plan edits affect newly
+generated dates only; existing staffing availability continues to refresh. Handovers and exceptions
+use Coverage / Manage responsibility and keep contributor responses. Completion is submission,
+not independent verification. The maintenance history RPC pages 100 records at a time and builds
+responses/evidence only for that page; CSV export fetches all matching authorized pages. History
+and read policies use original occurrence ownership, so asset transfer does not move old records.
+
+Opt-out, retirement or transfer pauses affected plans, records a block and version/audit entry, and
+notifies the responsible manager with a dedupe key. Re-enabling the asset does not automatically
+restart the plan: authorized review and activation are required. Existing work/history are kept.
+Photos continue to use the existing compressed upload and actual-byte 60-day retention worker;
+expired photo metadata and operational findings remain in history. Manuals are reference URLs.
+
+Verification: `node tests/maintenancePlansTest.mjs` and
+`TNG_TEST_CHROMIUM_PATH=/tmp/tng-chromium node tests/maintenancePlansBrowserTest.mjs`.
+Browser tests mount the real Operations page and route its Supabase calls to the migrated PGlite
+Postgres fixture with authenticated roles; no production employee messages or test assets persist.
+Earlier Phase 2/3/shared execution tests are also run against the combined maintenance schema.

@@ -4,7 +4,7 @@ import {Field,inputClass,primaryClass,buttonClass} from './ui';
 import {operationsRpc} from './service';
 import {compressEvidencePhoto,uploadEvidence,downloadEvidence} from './evidence';
 import {formatDue,safeUrl} from './presentation';
-function Photo({e,editable,onRemove}:{key?:string;e:OpsEvidence;editable:boolean;onRemove:()=>void}){
+export function Photo({e,editable,onRemove}:{key?:string;e:OpsEvidence;editable:boolean;onRemove:()=>void}){
  const [url,setUrl]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false);
  useEffect(()=>()=>{if(url)URL.revokeObjectURL(url);},[url]);
  async function view(){setBusy(true);setError('');try{setUrl(await downloadEvidence(e.path));}catch(x){setError((x as Error).message);}finally{setBusy(false);}}
