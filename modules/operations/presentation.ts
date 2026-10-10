@@ -18,3 +18,6 @@ export function matchesFilter(a: OpsAssignment, filter: OpsFilter, now = new Dat
   return due >= start && due <= day.toISOString().slice(0, 10);
 }
 export const safeUrl = (value?: string) => { try { const url = new URL(value || ''); return ['http:', 'https:'].includes(url.protocol) ? url.href : undefined; } catch { return undefined; } };
+
+export const assignmentTitle = (a: OpsAssignment) => a.maintenance?.activity || a.content.title;
+export const assignmentSearchText = (a: OpsAssignment) => [assignmentTitle(a), a.content.title, a.maintenance?.name, a.maintenance?.asset_tag, a.assignee_name, ...(a.members?.map(m=>m.name)||[]), a.unit_name].filter(Boolean).join(' ').toLowerCase();
