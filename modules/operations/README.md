@@ -92,3 +92,5 @@ Verification: `node tests/maintenancePlansTest.mjs` and
 Browser tests mount the real Operations page and route its Supabase calls to the migrated PGlite
 Postgres fixture with authenticated roles; no production employee messages or test assets persist.
 Earlier Phase 2/3/shared execution tests are also run against the combined maintenance schema.
+
+Assigned maintenance work uses the normal Today / My Tasks cards and checklist execution screen. These lists refresh automatically while visible (30 seconds; 15 seconds during shared execution), and refresh on returning to the tab without discarding unsaved responses. Activity names, asset names and asset tags are searchable; upcoming cards use the maintenance activity title. Maintenance plan management is not required to open or submit assigned work.
