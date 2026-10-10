@@ -57,7 +57,7 @@ const Layout: React.FC = () => {
           <Outlet />
         </div>
       </main>
-      <FaqBot />
+      {!location.pathname.startsWith('/operations') && <FaqBot />}
       {showMobileFooter && <MobileFooter />}
     </div>
   );

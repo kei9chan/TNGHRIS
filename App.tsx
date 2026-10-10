@@ -49,6 +49,7 @@ const ResetPassword = React.lazy(() => import('./pages/ResetPassword'));
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
 const OfficialBusinessPage = React.lazy(() => import('./modules/official-business/OfficialBusinessPage'));
 const ApprovalCenter = React.lazy(() => import('./pages/ApprovalCenter'));
+const OperationsStation = React.lazy(() => import('./pages/OperationsStation'));
 const MyRequests = React.lazy(() => import('./pages/MyRequests'));
 const NotFound = React.lazy(() => import('./pages/NotFound'));
 const Notifications = React.lazy(() => import('./pages/Notifications'));
@@ -355,6 +356,7 @@ const AppRoutes: React.FC = () => {
             <Route path="official-business" element={<ProtectedRoute><OfficialBusinessPage /></ProtectedRoute>} />
             <Route path="approvals" element={<ProtectedRoute><ApprovalCenter /></ProtectedRoute>} />
             <Route path="employee-snapshot" element={<ProtectedRoute><EmployeeSnapshotPage /></ProtectedRoute>} />
+        <Route path="operations" element={<ProtectedRoute><OperationsStation /></ProtectedRoute>} />
         <Route path="my-requests" element={<ProtectedRoute><MyRequests /></ProtectedRoute>} />
         <Route path="my-profile" element={<ProtectedRoute><EmployeeProfile/></ProtectedRoute>} />
         <Route path="notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
