@@ -222,7 +222,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }
         <a className="ml-4 underline" href="/login">Back to sign in</a>
       </div>
     </div>;
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/login" replace state={{from: location.pathname + location.search}} />;
   }
 
   // Old emails and notifications used payroll module URLs. Assigned approvers

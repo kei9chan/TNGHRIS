@@ -2,6 +2,11 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import AppErrorBoundary from './components/AppErrorBoundary';
+import { clearLocalPhoneOwner, startPhoneInstallListener } from './services/phonePushService';
+import {supabase} from './services/supabaseClient';
+
+startPhoneInstallListener();
+supabase.auth.onAuthStateChange(event=>{if(event==='SIGNED_OUT') void clearLocalPhoneOwner().catch(()=>{});});
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';import {randomUUID,createHmac} from 'node:crypto';
+import {signPush,dispatchAuthorized,validPushEndpoint,drainPhonePush} from '../server/phonePush.ts';
+process.env.PHONE_PUSH_SIGNING_SECRET='test-signing';process.env.PHONE_PUSH_PUBLIC_KEY='test-public';process.env.PHONE_PUSH_PRIVATE_KEY='test-private';
+const timestamp=Math.floor(Date.now()/1000),nonce=randomUUID();const signature=signPush(timestamp,nonce,'dispatch','{}');
+assert.equal(signature,createHmac('sha256','test-signing').update(`${timestamp}\n${nonce}\ndispatch\n{}`).digest('hex'));
+assert.ok(dispatchAuthorized({timestamp,nonce,signature}));assert.equal(dispatchAuthorized({timestamp:timestamp-300,nonce,signature}),false);assert.equal(dispatchAuthorized({timestamp,nonce,signature:'0'.repeat(64)}),false);
+for(const endpoint of ['https://fcm.googleapis.com/wp/abc','https://web.push.apple.com/abc','https://updates.push.services.mozilla.com/wpush/v2/abc'])assert.ok(validPushEndpoint(endpoint));
+for(const endpoint of ['http://fcm.googleapis.com/a','https://fcm.googleapis.com.evil.test/a','https://127.0.0.1/a','https://user:pass@web.push.apple.com/a','https://fcm.googleapis.com:8080/a','https://web.push.apple.com/a#secret'])assert.equal(validPushEndpoint(endpoint),false);
+const calls=[];let concurrent=0,peak=0;const jobs=Array.from({length:12},(_,i)=>({id:String(i),lease:randomUUID()}));
+const rpc=async(action,args)=>{calls.push({action,args});if(action==='claim')return jobs;return {ok:true};};
+const send=async job=>{concurrent++;peak=Math.max(peak,concurrent);await new Promise(r=>setTimeout(r,2));concurrent--;return job.id==='3'?'retry':job.id==='5'?'expired':'sent';};
+const result=await drainPhonePush(null,rpc,send);assert.equal(result.accepted,10);assert.equal(result.retrying,1);assert.equal(result.total,12);assert.equal(peak,5);assert.equal(calls.filter(c=>c.action==='finish').length,3);assert.equal(calls.flatMap(c=>c.args.results||[]).length,12);
+console.log('Phone push server passed: signed dispatch, expiry/forgery rejection, push-provider allowlist, bounded parallel sending, leases and provider outcomes.');

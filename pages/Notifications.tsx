@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { fetchNotifications, markNotificationRead, markAllNotificationsRead, resolveNotificationDestination } from '../services/notificationService';
 import { Notification } from '../types';
+import PhoneNotificationSetup from '../components/notifications/PhoneNotificationSetup';
 
 const Notifications: React.FC = () => {
     const { user } = useAuth();
@@ -80,6 +81,7 @@ const Notifications: React.FC = () => {
                 )}
             </div>
 
+            <PhoneNotificationSetup />
             <div className="bg-white shadow overflow-hidden sm:rounded-md">
                 {notifications.length === 0 ? (
                     <div className="px-4 py-12 text-center text-gray-500">
