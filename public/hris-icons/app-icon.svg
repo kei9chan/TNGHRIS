@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+<defs>
+  <linearGradient id="base" x1=".08" y1=".02" x2=".92" y2=".98" objectBoundingBox="true">
+    <stop offset="0" stop-color="#3787dc"/>
+    <stop offset=".43" stop-color="#42c7d6"/>
+    <stop offset="1" stop-color="#d789c7"/>
+  </linearGradient>
+  <radialGradient id="warm" cx=".12" cy=".91" r=".72">
+    <stop offset="0" stop-color="#ffd08a" stop-opacity="1"/>
+    <stop offset=".55" stop-color="#f5a5a5" stop-opacity=".57"/>
+    <stop offset="1" stop-color="#f5a5a5" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="mint" cx=".88" cy=".40" r=".61">
+    <stop offset="0" stop-color="#54dcc5" stop-opacity=".87"/>
+    <stop offset="1" stop-color="#54dcc5" stop-opacity="0"/>
+  </radialGradient>
+  <clipPath id="hex"><path d="M256 63 C263 63 270 66 278 70 L402 142 C411 147 416 156 416 167 L416 322 C416 333 411 342 402 347 L278 419 C264 427 249 427 235 419 L110 347 C101 342 96 333 96 322 L96 167 C96 156 101 147 110 142 L235 70 C243 66 250 63 256 63 Z"/></clipPath>
+</defs>
+<rect width="512" height="512" fill="#071b29"/>
+<g clip-path="url(#hex)">
+  <rect x="96" y="63" width="320" height="364" fill="url(#base)"/>
+  <rect x="96" y="63" width="320" height="364" fill="url(#warm)"/>
+  <rect x="96" y="63" width="320" height="364" fill="url(#mint)"/>
+</g>
+<g fill="none" stroke="#ffffff" stroke-width="19" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M161 290 V210 M161 247 C164 219 179 205 201 205 C226 205 240 221 240 247 V290"/>
+  <path d="M276 210 L350 290 M350 210 L276 290"/>
+</g>
+<text x="256" y="475" fill="#f7fbff" font-family="DejaVu Sans, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="8" text-anchor="middle">HRIS</text>
+</svg>
