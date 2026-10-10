@@ -6,6 +6,7 @@ import TemplateEditor from '../modules/operations/TemplateEditor';
 import AssignmentEditor from '../modules/operations/AssignmentEditor';
 import ChecklistImport from '../modules/operations/ChecklistImport';
 import { exportChecklistSample } from '../modules/operations/checklistImport';
+import AutomationWorkspace from '../modules/operations/AutomationWorkspace';
 import AssignmentDetail from '../modules/operations/AssignmentDetail';
 import { getOperationsWorkspace, operationsRpc } from '../modules/operations/service';
 import { filters, matchesFilter, formatDue, isOpen, manilaDay, safeUrl } from '../modules/operations/presentation';
@@ -64,7 +65,7 @@ export default function OperationsStation() {
     else if(next==='Assign Tasks'){if(canAssign)setAssign('');else {navigate('Tasks');setMessage('Select an authorized business-unit workspace to assign work.');}}
     else navigate(next);
   };
-  const allowedTabs=[...mainTabs,...(hasLibraries?workspaceTools:hasTeam?['Scheduling','Team Progress']:[])];
+  const allowedTabs=['Coverage',...mainTabs,...(hasLibraries?workspaceTools:hasTeam?['Scheduling','Team Progress']:[])];
   const knownTab=allowedTabs.includes(tab);
   return <div className="overflow-hidden rounded-3xl border border-slate-200 bg-[#fdfcfa] text-slate-800 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
     <div className="flex min-h-[calc(100dvh-12rem)]">
@@ -86,8 +87,9 @@ export default function OperationsStation() {
             <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-2xl font-bold">{knownTab?title:'Choose a workspace view'}</h2><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{selection?.name||'All authorized business units'} · {manilaDay(new Date())} · Manila time</p></div>{(canEdit||canAssign)&&<div className="flex flex-wrap gap-2">{canEdit&&<button className={buttonClass} onClick={()=>setEditor({kind:'task'})}>Create task</button>}{canAssign&&<button className={primaryClass} onClick={()=>setAssign('')}>Assign work</button>}</div>}</div>
             {(hasLibraries||hasTeam)&&<nav aria-label="Operations workspace tools" className="flex gap-2 overflow-x-auto pb-1 lg:hidden">{(hasLibraries?workspaceTools:['Scheduling','Team Progress']).map(x=><button className={`${buttonClass} shrink-0 ${tab===x?'border-violet-400 text-violet-700':''}`} key={x} onClick={()=>navigateManager(x)}>{x}</button>)}</nav>}
             {!knownTab&&<button className={primaryClass} onClick={()=>navigate('Today')}>Open Today</button>}
-            {['Today','Tasks','Scheduling'].includes(tab)&&<>
-              {tab==='Scheduling'&&<p className="rounded-xl border border-violet-100 p-4 text-sm dark:border-slate-700">Manual schedule: assigned work ordered by due date. Create assignments with a due date and time. Automatic recurrence and shift-based generation are reserved for Phase 3.</p>}
+            {['Scheduling','Coverage'].includes(tab)&&<AutomationWorkspace workspace={data} unit={unit} rulesView={tab==='Scheduling'} onNavigate={navigate} onOpen={async id=>{const next=await getOperationsWorkspace(unit);setData(next);const row=next.assignments.find(a=>a.id===id);if(!row)throw new Error('Assignment is unavailable; refresh coverage');setDetail(row);}}/>}
+            {tab==='Today'&&<button className={buttonClass} onClick={()=>navigate('Coverage')}>Today’s coverage & responsibility</button>}
+            {['Today','Tasks'].includes(tab)&&<>
               {tab==='Today'&&canMaster&&<section className="rounded-2xl border border-violet-100 bg-violet-50 p-5 dark:border-slate-700 dark:bg-violet-950/30"><h3 className="font-semibold">Work assigned to Business Unit Managers</h3><p className="mt-1 text-sm text-slate-500">{assignments.filter(a=>a.assignee_is_bum&&isOpen(a)).length} outstanding · {assignments.filter(a=>a.assignee_is_bum&&matchesFilter(a,'Overdue')).length} overdue</p><div className="mt-3 space-y-2">{assignments.filter(a=>a.assignee_is_bum&&isOpen(a)).slice(0,5).map(a=><button key={a.id} className="block w-full rounded-xl bg-white p-3 text-left text-sm dark:bg-slate-800" onClick={()=>setDetail(a)}><strong>{a.content.title}</strong><span className="mt-1 block text-slate-500">{a.assignee_name} · {a.unit_name} · {formatDue(a.due_at)}</span></button>)}</div><button className={`${buttonClass} mt-3`} onClick={()=>{setTeam(true);navigate('Tasks');}}>View team assignments</button></section>}
               {hasTeam&&tab!=='Scheduling'&&<div className="flex gap-2"><button className={`${buttonClass} ${!team?'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200':''}`} onClick={()=>setTeam(false)}>My Tasks</button><button className={`${buttonClass} ${team?'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200':''}`} onClick={()=>setTeam(true)}>Team Tasks</button></div>}
               <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-2">{filters.map(x=><button key={x} aria-pressed={filter===x} className={`min-h-11 rounded-full border px-4 text-sm font-semibold ${filter===x?'border-violet-600 bg-violet-600 text-white':'border-slate-200 bg-white text-slate-500 hover:border-violet-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300'}`} onClick={()=>setFilter(x)}>{x}</button>)}</div><input aria-label="Search assignments" className={`${inputClass} sm:max-w-60`} placeholder="Search tasks or assignees" value={query} onChange={e=>setQuery(e.target.value)}/></div>
