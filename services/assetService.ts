@@ -10,6 +10,7 @@ type AssetRow = {
   name: string;
   type: string;
   business_unit_id: string;
+  requires_maintenance?: boolean;
   serial_number?: string | null;
   purchase_date: string;
   value: number;
@@ -76,6 +77,7 @@ const mapAsset = (row: AssetRow): Asset => ({
   name: row.name,
   type: row.type as Asset['type'],
   businessUnitId: row.business_unit_id,
+  requiresMaintenance: row.requires_maintenance ?? false,
   serialNumber: row.serial_number || undefined,
   purchaseDate: new Date(row.purchase_date),
   value: row.value,
@@ -155,6 +157,7 @@ export const saveAsset = async (asset: Partial<Asset>): Promise<Asset> => {
     name: asset.name,
     type: asset.type,
     business_unit_id: asset.businessUnitId,
+    ...(asset.requiresMaintenance !== undefined ? { requires_maintenance: asset.requiresMaintenance } : asset.id ? {} : { requires_maintenance: false }),
     serial_number: asset.serialNumber || null,
     purchase_date: asset.purchaseDate ? new Date(asset.purchaseDate).toISOString().split('T')[0] : null,
     value: asset.value ?? 0,

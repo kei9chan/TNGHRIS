@@ -1,7 +1,7 @@
 // Phase E: mockDataCompat removed from AssetManagement
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Asset, AssetAssignment, AssetStatus, Permission, User, NotificationType, EnrichedAsset } from '../../types';
+import { Asset, ASSET_TYPES, AssetAssignment, AssetStatus, Permission, User, NotificationType, EnrichedAsset } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import { logActivity } from '../../services/auditService';
@@ -42,6 +42,7 @@ type AssetRow = {
     name: string;
     type: string;
     business_unit_id: string;
+    requires_maintenance?: boolean;
     serial_number?: string | null;
     purchase_date: string;
     value?: number | null;
@@ -75,6 +76,7 @@ const mapAssetRow = (row: AssetRow): Asset => ({
     name: row.name,
     type: row.type as Asset['type'],
     businessUnitId: row.business_unit_id,
+    requiresMaintenance: row.requires_maintenance ?? false,
     serialNumber: row.serial_number || undefined,
     purchaseDate: new Date(row.purchase_date),
     value: row.value ?? 0,
@@ -129,6 +131,7 @@ const AssetManagement: React.FC = () => {
         status: '',
         type: '',
         bu: '',
+        maintenance: '',
     });
 
     // Load accessible BUs for the filter dropdown
@@ -214,7 +217,7 @@ const AssetManagement: React.FC = () => {
         return assets.map(asset => {
             const activeAssignment = assignments.find(a => a.assetId === asset.id && !a.dateReturned);
             const assignedTo = activeAssignment ? userLookup[activeAssignment.employeeId] : undefined;
-            const businessUnitName = businessUnits.find(bu => bu.id === asset.businessUnitId)?.name || 'N/A';
+            const businessUnitName = businessUnits.find(bu => bu.id === asset.businessUnitId || bu.name === asset.businessUnitId)?.name || 'N/A';
             return {
                 ...asset,
                 assignedTo,
@@ -223,12 +226,13 @@ const AssetManagement: React.FC = () => {
                 businessUnitName,
             };
         });
-    }, [assets, assignments, employees]);
+    }, [assets, assignments, employees, businessUnits]);
 
     // 2. Apply UI Filters (Search, Status, Type, Specific BU) with dedupe
     const filteredAssets = useMemo(() => {
         const seen = new Set<string>();
         return enrichedAssets.filter(asset => {
+            if (!accessibleBus.some(bu => bu.id === asset.businessUnitId || bu.name === asset.businessUnitId)) return false;
             // de-dupe by asset id to avoid duplicate key rendering
             if (seen.has(asset.id)) return false;
             seen.add(asset.id);
@@ -241,15 +245,16 @@ const AssetManagement: React.FC = () => {
             
             const statusMatch = !filters.status || asset.status === filters.status;
             const typeMatch = !filters.type || asset.type === filters.type;
-            const buMatch = !filters.bu || asset.businessUnitId === filters.bu;
+            const buMatch = !filters.bu || asset.businessUnitId === filters.bu || businessUnits.find(bu => bu.id === filters.bu)?.name === asset.businessUnitId;
+            const maintenanceMatch = !filters.maintenance || !!asset.requiresMaintenance === (filters.maintenance === 'yes');
 
-            return searchMatch && statusMatch && typeMatch && buMatch;
+            return searchMatch && statusMatch && typeMatch && buMatch && maintenanceMatch;
         });
-    }, [enrichedAssets, filters]);
+    }, [enrichedAssets, filters, accessibleBus, businessUnits]);
     
     // CSV Export Function
     const exportToCSV = () => {
-        const headers = ['Asset Tag', 'Name', 'Business Unit', 'Type', 'Status', 'Serial Number', 'Value', 'Assigned To', 'Date Assigned', 'Purchase Date', 'Notes'];
+        const headers = ['Asset Tag', 'Name', 'Business Unit', 'Type', 'Status', 'Serial Number', 'Value', 'Assigned To', 'Date Assigned', 'Purchase Date', 'Notes', 'Requires Maintenance'];
         const csvRows = [headers.join(',')];
 
         // Helper to escape CSV fields
@@ -270,7 +275,8 @@ const AssetManagement: React.FC = () => {
                 escape(asset.assignedTo ? asset.assignedTo.name : 'N/A'),
                 escape(asset.dateAssigned ? new Date(asset.dateAssigned).toLocaleDateString() : ''),
                 escape(asset.purchaseDate ? new Date(asset.purchaseDate).toLocaleDateString() : ''),
-                escape(asset.notes)
+                escape(asset.notes),
+                escape(asset.requiresMaintenance ? 'Yes' : 'No')
             ];
             csvRows.push(values.join(','));
         }
@@ -375,6 +381,7 @@ const AssetManagement: React.FC = () => {
                 name: assetData.name,
                 type: assetData.type,
                 business_unit_id: assetData.businessUnitId,
+                requires_maintenance: assetData.requiresMaintenance ?? false,
                 serial_number: assetData.serialNumber || null,
                 purchase_date: assetData.purchaseDate ? new Date(assetData.purchaseDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
                 value: assetData.value ?? 0,
@@ -478,13 +485,13 @@ const AssetManagement: React.FC = () => {
             });
     };
 
-    const assetTypes = ['Laptop', 'Mobile Phone', 'Monitor', 'Software License', 'Other'];
+    const assetTypes = ASSET_TYPES;
 
     return (
         <div className="space-y-6">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col gap-3 md:flex-row md:justify-between md:items-center">
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Asset Management</h1>
-                <div className="flex space-x-2">
+                <div className="flex flex-wrap gap-2">
                     <Button variant="secondary" onClick={exportToCSV} disabled={filteredAssets.length === 0} title="Download CSV report of currently filtered assets">
                          <DocumentArrowDownIcon /> Export CSV
                     </Button>
@@ -500,7 +507,7 @@ const AssetManagement: React.FC = () => {
             </div>
             
             <Card>
-                <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                     <Input label="Search" name="searchTerm" placeholder="Tag, name, or employee..." value={filters.searchTerm} onChange={handleFilterChange} />
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
@@ -523,6 +530,14 @@ const AssetManagement: React.FC = () => {
                             {accessibleBus.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
                         </select>
                     </div>
+                    <div>
+                        <label htmlFor="asset-maintenance-filter" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Maintenance</label>
+                        <select id="asset-maintenance-filter" name="maintenance" value={filters.maintenance} onChange={handleFilterChange} className="mt-1 block w-full pl-3 pr-10 py-2 border-gray-300 dark:bg-slate-700 dark:border-slate-600 rounded-md">
+                            <option value="">All assets</option>
+                            <option value="yes">Requires maintenance</option>
+                            <option value="no">No maintenance</option>
+                        </select>
+                    </div>
                 </div>
             </Card>
 
@@ -538,13 +553,14 @@ const AssetManagement: React.FC = () => {
                                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Status</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Assigned To</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Date Assigned</th>
+                                {canManage && <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Actions</th>}
                             </tr>
                         </thead>
                         <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-gray-700">
                             {filteredAssets.map(asset => (
                                 <tr key={asset.id} onClick={() => handleViewHistory(asset)} className="hover:bg-gray-50 dark:hover:bg-slate-700/50 cursor-pointer">
                                     <td className="px-6 py-4 whitespace-nowrap font-mono text-sm">{asset.assetTag}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap font-semibold">{asset.name}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap font-semibold">{asset.name}{asset.requiresMaintenance && <div className="mt-1 text-xs font-medium text-violet-600 dark:text-violet-300">Requires maintenance</div>}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm">{asset.businessUnitName}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm">{asset.type}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm">
@@ -557,11 +573,12 @@ const AssetManagement: React.FC = () => {
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm">{asset.assignedTo?.name || 'N/A'}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm">{asset.dateAssigned ? new Date(asset.dateAssigned).toLocaleDateString() : 'N/A'}</td>
+                                    {canManage && <td className="px-6 py-4 whitespace-nowrap text-sm"><Button variant="secondary" aria-label={`Edit ${asset.name}`} onClick={e => { e.stopPropagation(); handleOpenModal(asset); }}>Edit</Button></td>}
                                 </tr>
                             ))}
                              {filteredAssets.length === 0 && (
                                 <tr>
-                                    <td colSpan={7} className="text-center py-10 text-gray-500">No assets found.</td>
+                                    <td colSpan={canManage ? 8 : 7} className="text-center py-10 text-gray-500">No assets found.</td>
                                 </tr>
                             )}
                         </tbody>
@@ -575,6 +592,8 @@ const AssetManagement: React.FC = () => {
                     onClose={() => setIsModalOpen(false)}
                     onSave={handleSaveAsset}
                     asset={editingAsset}
+                    allowedBusinessUnits={accessibleBus}
+                    initialBusinessUnitId={filters.bu}
                 />
             )}
             
@@ -609,7 +628,7 @@ const AssetManagement: React.FC = () => {
                     isOpen={isBatchAssetUploadOpen}
                     onClose={() => setIsBatchAssetUploadOpen(false)}
                     employees={employees}
-                    businessUnits={businessUnits}
+                    businessUnits={accessibleBus}
                     existingAssets={assets}
                     onImported={() => setReloadKey(key => key + 1)}
                 />
