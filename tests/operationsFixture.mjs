@@ -3,7 +3,7 @@ import { PGlite } from '@electric-sql/pglite';
 export const id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
 export async function createOperationsFixture(dataDir){
  const db=new PGlite(dataDir);
- await db.exec(`create schema auth;create schema private;create role authenticated;create role anon;
+ await db.exec(`create schema auth;create schema private;create role authenticated;create role anon;create role service_role bypassrls;
 create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('test.actor',true),'')::uuid$$;
 create function public.current_hris_user_id() returns uuid language plpgsql stable as $$begin return (select id from public.hris_users where auth_user_id=auth.uid() and lower(status)='active');end$$;
 create table public.hris_users(id uuid primary key,auth_user_id uuid,full_name text,employee_id text,status text,business_unit_id uuid,department_id uuid,position text,reports_to text);
@@ -28,5 +28,7 @@ insert into public.user_roles(user_id,role_id,scope_type,allowed_business_unit_i
 ('${id(10)}','Board of Director','GLOBAL','{}'),('${id(11)}','Business Unit Manager','HOME_ONLY','{}'),('${id(12)}','Business Unit Manager','HOME_ONLY','{}'),('${id(13)}','Employee','HOME_ONLY','{}'),('${id(14)}','Employee','HOME_ONLY','{}'),('${id(15)}','Manager','DIRECT_REPORTS','{}'),('${id(16)}','Business Unit Manager','SPECIFIC',array['${id(1)}','${id(2)}']::uuid[]);`);
  await db.exec(fs.readFileSync('supabase/migrations/20261010005116_operations_station_phase1.sql','utf8'));
  await db.exec(fs.readFileSync('supabase/migrations/20261010013747_operations_shared_checklists_import.sql','utf8'));
+ await db.exec(`create schema storage;create table storage.objects(id uuid default gen_random_uuid(),bucket_id text,name text,metadata jsonb,owner uuid);alter table storage.objects enable row level security;grant usage on schema storage to authenticated;grant select,insert,update,delete on storage.objects to authenticated;`);
+ await db.exec(fs.readFileSync('supabase/migrations/20261010021423_operations_phase2_execution_evidence.sql','utf8'));
  return db;
 }
