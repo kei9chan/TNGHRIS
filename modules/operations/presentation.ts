@@ -9,7 +9,7 @@ export function matchesFilter(a: OpsAssignment, filter: OpsFilter, now = new Dat
   if (filter === 'Completed') return a.status === 'Completed';
   if (!isOpen(a)) return false;
   const today = manilaDay(now), due = manilaDay(a.due_at);
-  if (filter === 'Due Today') return today === due;
+  if (filter === 'Due Today') return a.event ? manilaDay(a.event.start) <= today && due >= today : today === due;
   if (filter === 'Overdue') return new Date(a.due_at).getTime() < now.getTime();
   if (filter === 'This Month') return today.slice(0, 7) === due.slice(0, 7);
   const day = new Date(today + 'T00:00:00Z');
@@ -19,5 +19,5 @@ export function matchesFilter(a: OpsAssignment, filter: OpsFilter, now = new Dat
 }
 export const safeUrl = (value?: string) => { try { const url = new URL(value || ''); return ['http:', 'https:'].includes(url.protocol) ? url.href : undefined; } catch { return undefined; } };
 
-export const assignmentTitle = (a: OpsAssignment) => a.maintenance?.activity || a.content.title;
-export const assignmentSearchText = (a: OpsAssignment) => [assignmentTitle(a), a.content.title, a.maintenance?.name, a.maintenance?.asset_tag, a.assignee_name, ...(a.members?.map(m=>m.name)||[]), a.unit_name].filter(Boolean).join(' ').toLowerCase();
+export const assignmentTitle = (a: OpsAssignment) => a.event ? `${a.event.event_title} · ${a.event.stage_title}` : a.maintenance?.activity || a.content.title;
+export const assignmentSearchText = (a: OpsAssignment) => [assignmentTitle(a), a.content.title, a.event?.event_title, a.event?.stage_title, a.maintenance?.name, a.maintenance?.asset_tag, a.assignee_name, ...(a.members?.map(m=>m.name)||[]), a.unit_name].filter(Boolean).join(' ').toLowerCase();
