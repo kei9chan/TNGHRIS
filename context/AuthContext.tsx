@@ -1,5 +1,6 @@
 // src/context/AuthContext.tsx
 import React, { createContext, useCallback, useEffect, useRef, useState, ReactNode } from 'react';
+import { detachPhoneOnLogout } from '../services/phonePushService';
 import { User, Role } from '../types';
 import { boundedAuthRead, isTransientNetworkError, retryTransientSupabaseRead, supabase } from '../services/supabaseClient';
 import { withAuthDeadline } from '../services/authDeadline';
@@ -555,8 +556,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     setUser(null);
     setLoading(false);
     setAuthError(null);
-    supabase.auth
-      .signOut()
+    detachPhoneOnLogout()
+      .then(() => supabase.auth.signOut())
       .catch((err) => console.error('AuthProvider.logout error', err))
       .finally(() => setUser(null));
   };

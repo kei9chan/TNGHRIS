@@ -15,6 +15,7 @@ import FaqBot from '../helpdesk/FaqBot';
 import AssetManagementSubNav from './AssetManagementSubNav';
 import COESubNav from './COESubNav';
 import MobileFooter from './MobileFooter';
+import { PhoneAccountBinding } from '../notifications/PhoneNotificationSetup';
 
 const Layout: React.FC = () => {
   const location = useLocation();
@@ -32,6 +33,7 @@ const Layout: React.FC = () => {
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-gray-100 dark:bg-slate-900">
+      <PhoneAccountBinding />
       {/* Main Header - z-40 to stay above everything */}
       <div className="sticky top-0 z-40">
         <Header />

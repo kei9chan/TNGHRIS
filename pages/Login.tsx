@@ -26,6 +26,10 @@ const Login: React.FC = () => {
   const { user, loading: authLoading, authError, retryAuth, login, forceLogin, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const requestedReturn = typeof location.state?.from === 'string' ? location.state.from : '';
+  // Phone alerts keep their task destination through sign-in; only local HRIS routes are accepted.
+  const afterLogin = /^\/operations(?:[?]|$)/.test(requestedReturn) || requestedReturn === '/notifications'
+    ? requestedReturn : '/dashboard';
   const [successMessage, setSuccessMessage] = useState(location.state?.message || '');
   const formatSupabaseError = (err: SupabaseAuthError) => {
     if (err.code === 'authorization_timeout') return err.message;
@@ -42,9 +46,9 @@ const Login: React.FC = () => {
   useEffect(() => {
     const isActive = (user?.status || '').toString().toLowerCase() === 'active';
     if (user && isActive) {
-      navigate(user.mustChangePassword ? '/reset-password' : '/dashboard', { replace: true });
+      navigate(user.mustChangePassword ? '/reset-password' : afterLogin, { replace: true });
     }
-  }, [user, navigate]);
+  }, [user, navigate, afterLogin]);
 
   useEffect(() => {
     try {

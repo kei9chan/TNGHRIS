@@ -14,6 +14,7 @@ import { Link } from 'react-router-dom';
 import AlertBanner from '../components/dashboard/AlertBanner';
 import AttendancePulse from '../components/dashboard/AttendancePulse';
 import QuickLinks from '../components/dashboard/QuickLinks';
+import PhoneNotificationSetup from '../components/notifications/PhoneNotificationSetup';
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
@@ -39,6 +40,7 @@ const Dashboard: React.FC = () => {
         <h1 className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-white mb-3">Welcome back{greetingName ? `, ${greetingName}` : ''}!</h1>
         <AttendanceMission />
         <QuickLinks />
+        <PhoneNotificationSetup />
         <AttendancePulse />
         <BodScheduleWorkflow />
         <CaseFollowups />
