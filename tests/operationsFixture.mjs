@@ -27,5 +27,6 @@ insert into public.hris_users values
 insert into public.user_roles(user_id,role_id,scope_type,allowed_business_unit_ids) values
 ('${id(10)}','Board of Director','GLOBAL','{}'),('${id(11)}','Business Unit Manager','HOME_ONLY','{}'),('${id(12)}','Business Unit Manager','HOME_ONLY','{}'),('${id(13)}','Employee','HOME_ONLY','{}'),('${id(14)}','Employee','HOME_ONLY','{}'),('${id(15)}','Manager','DIRECT_REPORTS','{}'),('${id(16)}','Business Unit Manager','SPECIFIC',array['${id(1)}','${id(2)}']::uuid[]);`);
  await db.exec(fs.readFileSync('supabase/migrations/20261010005116_operations_station_phase1.sql','utf8'));
+ await db.exec(fs.readFileSync('supabase/migrations/20261010013747_operations_shared_checklists_import.sql','utf8'));
  return db;
 }
