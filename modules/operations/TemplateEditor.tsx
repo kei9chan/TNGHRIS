@@ -12,6 +12,7 @@ export default function TemplateEditor({workspace,unit,kind,template,onClose,onS
   const set = <K extends keyof OpsContent>(key: K, value: OpsContent[K]) => setContent(c=>({...c,[key]:value}));
   const tasks=workspace.templates.filter(t=>t.kind==='task'&&t.status==='Published');
   const items=content.items||[];
+  const maintenanceAssets=unit?workspace.assets:[];
   const taskTitle=(version?: string)=>tasks.flatMap(t=>t.versions).find(v=>v.id===version)?.content.title||'Published task';
   function move(index:number,direction:number) {const next=[...items];[next[index],next[index+direction]]=[next[index+direction],next[index]];set('items',next);}
   async function save(publish: boolean) {
@@ -36,7 +37,7 @@ export default function TemplateEditor({workspace,unit,kind,template,onClose,onS
           <Field label="Suggested frequency"><input className={inputClass} value={content.frequency||''} onChange={e=>set('frequency',e.target.value)} placeholder="Daily, weekly, every 3 months…"/></Field>
           <Field label="Estimated duration (minutes)"><input type="number" min={0} className={inputClass} value={content.duration??0} onChange={e=>set('duration',Number(e.target.value))}/></Field>
           <Field label="Assigned role / position"><input className={inputClass} value={content.position||''} onChange={e=>set('position',e.target.value)}/></Field>
-          <Field label="Linked existing asset"><select className={inputClass} value={content.asset_id||''} onChange={e=>set('asset_id',e.target.value)}><option value="">No linked asset</option>{workspace.assets.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></Field>
+          <Field label="Linked maintenance asset"><select aria-label="Linked maintenance asset" className={inputClass} value={content.asset_id||''} onChange={e=>set('asset_id',e.target.value)}><option value="">No linked asset</option>{content.asset_id&&!maintenanceAssets.some(a=>a.id===content.asset_id)&&<option value={content.asset_id} disabled>Previously linked asset — no longer eligible</option>}{maintenanceAssets.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select><p className="mt-1 text-xs text-slate-500">Only assets marked Requires maintenance in this business unit appear. Add or edit equipment in Asset Management, then refresh this workspace.</p></Field>
           <Field label="Response type / evidence requirement"><select className={inputClass} value={content.evidence} onChange={e=>set('evidence',e.target.value as OpsResponse)}>{['none','yes_no','text','photo','numeric'].map(x=><option key={x}>{x}</option>)}</select></Field>
         </div>
         <EvidenceRules rules={content} numeric={content.evidence==='numeric'} onChange={patch=>setContent(c=>({...c,...patch}))}/>

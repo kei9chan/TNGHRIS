@@ -777,12 +777,15 @@ export enum AssetStatus {
   Retired = 'Retired',
 }
 
+export const ASSET_TYPES = ['Laptop', 'Mobile Phone', 'Monitor', 'Software License', 'Equipment', 'Other'] as const;
+
 export interface Asset {
   id: string;
   assetTag: string;
   name: string;
-  type: 'Laptop' | 'Mobile Phone' | 'Monitor' | 'Software License' | 'Other';
+  type: typeof ASSET_TYPES[number];
   businessUnitId: string;
+  requiresMaintenance?: boolean;
   serialNumber?: string;
   purchaseDate: Date;
   value: number;

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Asset, AssetStatus, BusinessUnit, User } from '../../types';
+import { Asset, ASSET_TYPES, AssetStatus, BusinessUnit, User } from '../../types';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import { supabase } from '../../services/supabaseClient';
@@ -33,6 +33,7 @@ export const ASSET_IMPORT_COLUMNS = [
   'purchase_cost',
   'warranty_expiry',
   'notes',
+  'requires_maintenance',
 ] as const;
 
 type AssetImportRow = ParsedImportRow & {
@@ -94,7 +95,7 @@ const validateAssetRows = (
   businessUnits: BusinessUnit[],
   existingAssets: Asset[],
 ): AssetImportRow[] => {
-  const assetTypes = ['Laptop', 'Mobile Phone', 'Monitor', 'Software License', 'Other'];
+  const assetTypes = ASSET_TYPES;
   const statuses = Object.values(AssetStatus);
   const tagCounts = new Map<string, number>();
   const serialCounts = new Map<string, number>();
@@ -121,6 +122,10 @@ const validateAssetRows = (
     const businessUnit = findBusinessUnit(businessUnitValue, businessUnits);
     const typeValue = assetTypes.find(item => lower(item) === lower(type)) || type;
     const status = statuses.find(item => lower(item) === lower(statusValue)) || statusValue;
+    const maintenance = lower(getImportValue(row.values, 'requires_maintenance'));
+    if (!['', 'yes', 'no', 'true', 'false', '1', '0'].includes(maintenance)) {
+      addError(errors, row, 'requires_maintenance', 'Maintenance must be Yes or No.', 'Use Yes/No, True/False, 1/0, or leave blank for No.');
+    }
 
     if (!tag) addError(errors, row, 'asset_tag', 'Asset tag is required.', 'Enter a unique asset tag.');
     if (!name) addError(errors, row, 'asset_name', 'Asset name is required.', 'Enter the name shown in Asset Management.');
@@ -180,6 +185,7 @@ const validateAssetRows = (
       serial_number: serial || null,
       description: getImportValue(row.values, 'description') || null,
       business_unit_id: businessUnit.id,
+      requires_maintenance: ['yes', 'true', '1'].includes(maintenance),
       assigned_employee_id: employee?.id || null,
       date_assigned: dateAssigned,
       condition,
@@ -251,7 +257,7 @@ const BatchAssetUploadModal: React.FC<BatchAssetUploadModalProps> = ({
     setImportError('');
     setSummary(null);
     try {
-      const parsed = await parseImportFile(file, [...ASSET_IMPORT_COLUMNS]);
+      const parsed = await parseImportFile(file, ASSET_IMPORT_COLUMNS.filter(column => column !== 'requires_maintenance'));
       setHeaderErrors(parsed.headerErrors);
       setRows(validateAssetRows(parsed.rows, employees, businessUnits, existingAssets));
     } catch (error: any) {
@@ -266,7 +272,7 @@ const BatchAssetUploadModal: React.FC<BatchAssetUploadModalProps> = ({
       serial_number: 'DELETE-EXAMPLE', description: 'Delete this example row.', business_unit: businessUnits[0]?.name || '',
       assigned_employee: employees[0]?.employeeId || employees[0]?.email || '', employee_email: '', employee_id: '',
       date_assigned: '2026-08-24', condition: 'New', status: 'Assigned', purchase_date: '2026-08-24', purchase_cost: '0',
-      warranty_expiry: '', notes: '',
+      warranty_expiry: '', notes: '', requires_maintenance: 'No',
   });
 
   const downloadCsvTemplate = () => {
@@ -287,6 +293,7 @@ const BatchAssetUploadModal: React.FC<BatchAssetUploadModalProps> = ({
         ['Duplicate prevention', 'Asset tags and serial numbers must be unique, including within this upload.'],
         ['Status', `Allowed values: ${Object.values(AssetStatus).join(', ')}. An asset with an employee assignment is saved as Assigned automatically.`],
         ['Dates and cost', 'Use YYYY-MM-DD dates and numeric purchase_cost values.'],
+        ['Maintenance', 'Use Equipment for air conditioners, freezers and similar assets. Set requires_maintenance to Yes to make the asset available for Operations tasks in its business unit. No or blank keeps it out of the task selector.'],
       ],
       references: [
         {

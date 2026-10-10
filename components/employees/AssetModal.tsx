@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Asset, AssetStatus, User } from '../../types';
+import { Asset, ASSET_TYPES, AssetStatus, BusinessUnit, User } from '../../types';
 import { useUsers, useBusinessUnits } from '../../hooks/useHRData';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
@@ -11,9 +11,11 @@ interface AssetModalProps {
     onClose: () => void;
     onSave: (assetData: Partial<Asset>, employeeIdToAssign?: string) => void;
     asset: Asset | null;
+    allowedBusinessUnits?: BusinessUnit[];
+    initialBusinessUnitId?: string;
 }
 
-const AssetModal: React.FC<AssetModalProps> = ({ isOpen, onClose, onSave, asset }) => {
+const AssetModal: React.FC<AssetModalProps> = ({ isOpen, onClose, onSave, asset, allowedBusinessUnits, initialBusinessUnitId }) => {
     const [current, setCurrent] = useState<Partial<Asset>>({});
     const [employeeToAssign, setEmployeeToAssign] = useState<string>('');
     const [employeeSearch, setEmployeeSearch] = useState('');
@@ -21,22 +23,24 @@ const AssetModal: React.FC<AssetModalProps> = ({ isOpen, onClose, onSave, asset 
     const searchWrapperRef = useRef<HTMLDivElement>(null);
     const { users } = useUsers();
     const { businessUnits } = useBusinessUnits();
+    const units = allowedBusinessUnits ?? businessUnits;
 
     const isEditing = !!asset;
     const isAvailable = isEditing ? asset?.status === AssetStatus.Available : true;
 
     useEffect(() => {
         if (isOpen) {
-            setCurrent(asset || {
+            setCurrent(asset ? { ...asset, businessUnitId: units.find(bu => bu.id === asset.businessUnitId || bu.name === asset.businessUnitId)?.id || asset.businessUnitId } : {
                 type: 'Laptop',
                 status: AssetStatus.Available,
                 purchaseDate: new Date(),
-                businessUnitId: businessUnits[0]?.id || '',
+                businessUnitId: initialBusinessUnitId || units[0]?.id || '',
+                requiresMaintenance: false,
             });
             setEmployeeToAssign('');
             setEmployeeSearch('');
         }
-    }, [asset, isOpen, businessUnits]);
+    }, [asset, isOpen, units, initialBusinessUnitId]);
 
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
@@ -63,8 +67,8 @@ const AssetModal: React.FC<AssetModalProps> = ({ isOpen, onClose, onSave, asset 
     };
 
     const handleSave = () => {
-        if (!current.assetTag?.trim() || !current.name?.trim()) {
-            alert('Asset Tag and Name are required.');
+        if (!current.assetTag?.trim() || !current.name?.trim() || !units.some(bu => bu.id === current.businessUnitId)) {
+            alert('Asset Tag, Name and an authorized Business Unit are required.');
             return;
         }
         onSave(current, isAvailable ? employeeToAssign : undefined);
@@ -101,23 +105,20 @@ const AssetModal: React.FC<AssetModalProps> = ({ isOpen, onClose, onSave, asset 
             footer={footer}
         >
             <div className="space-y-4">
-                <Input label="Asset Tag" name="assetTag" value={current.assetTag || ''} onChange={handleChange} required />
-                <Input label="Asset Name" name="name" value={current.name || ''} onChange={handleChange} required />
+                <Input label="Asset Tag" id="asset-tag" name="assetTag" value={current.assetTag || ''} onChange={handleChange} required />
+                <Input label="Asset Name" id="asset-name" name="name" value={current.name || ''} onChange={handleChange} required />
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
-                    <select name="businessUnitId" value={current.businessUnitId || ''} onChange={handleChange} className="mt-1 block w-full pl-3 pr-10 py-2 border-gray-300 dark:bg-slate-700 dark:border-slate-600 rounded-md">
-                        {businessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
+                    <label htmlFor="asset-unit" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Business Unit</label>
+                    <select id="asset-unit" name="businessUnitId" value={current.businessUnitId || ''} onChange={handleChange} className="mt-1 block w-full pl-3 pr-10 py-2 border-gray-300 dark:bg-slate-700 dark:border-slate-600 rounded-md">
+                        {!current.businessUnitId && <option value="">Select a business unit</option>}
+                        {units.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
                     </select>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
-                        <select name="type" value={current.type || ''} onChange={handleChange} className="mt-1 block w-full pl-3 pr-10 py-2 border-gray-300 dark:bg-slate-700 dark:border-slate-600 rounded-md">
-                            <option>Laptop</option>
-                            <option>Mobile Phone</option>
-                            <option>Monitor</option>
-                            <option>Software License</option>
-                            <option>Other</option>
+                        <label htmlFor="asset-type" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
+                        <select id="asset-type" name="type" value={current.type || ''} onChange={handleChange} className="mt-1 block w-full pl-3 pr-10 py-2 border-gray-300 dark:bg-slate-700 dark:border-slate-600 rounded-md">
+                            {ASSET_TYPES.map(type => <option key={type}>{type}</option>)}
                         </select>
                     </div>
                     <Input label="Serial Number" name="serialNumber" value={current.serialNumber || ''} onChange={handleChange} />
@@ -125,6 +126,13 @@ const AssetModal: React.FC<AssetModalProps> = ({ isOpen, onClose, onSave, asset 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                      <Input label="Purchase Date" name="purchaseDate" type="date" value={current.purchaseDate ? new Date(current.purchaseDate).toISOString().split('T')[0] : ''} onChange={handleChange} required />
                      <Input label="Value" name="value" type="number" value={current.value || ''} onChange={handleChange} />
+                </div>
+                <div className="rounded-xl border border-violet-200 bg-violet-50 p-4 dark:border-violet-800 dark:bg-violet-950/30">
+                    <label className="flex items-center gap-3 font-medium text-gray-900 dark:text-white">
+                        <input type="checkbox" checked={!!current.requiresMaintenance} onChange={e => setCurrent(prev => ({ ...prev, requiresMaintenance: e.target.checked }))} className="h-4 w-4 accent-violet-600" />
+                        Requires maintenance
+                    </label>
+                    <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">Show this asset in Operations task selection for its business unit. Use Equipment for air conditioners, freezers and similar equipment.</p>
                 </div>
                 <Textarea label="Notes" name="notes" value={current.notes || ''} onChange={handleChange} rows={3} />
                 
