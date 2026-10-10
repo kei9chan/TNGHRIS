@@ -1,0 +1,25 @@
+export type OpsKind = 'task' | 'checklist';
+export type OpsStatus = 'Assigned' | 'In Progress' | 'Completed' | 'Cancelled';
+export type OpsPriority = 'Low' | 'Normal' | 'High' | 'Urgent';
+export type OpsResponse = 'none' | 'text' | 'photo' | 'numeric';
+export interface OpsContent {
+  title: string; description?: string; department_id?: string; category?: string;
+  instructions?: string; sop_url?: string; priority?: OpsPriority; frequency?: string;
+  duration?: number; position?: string; asset_id?: string; evidence?: OpsResponse;
+  safety_critical?: boolean; location?: string; positions?: string; responsible_manager_id?: string;
+  items?: OpsItemDraft[];
+}
+export interface OpsItemDraft { task_version_id?: string; snapshot?: OpsContent; required: boolean; response_type: OpsResponse }
+export interface OpsItem extends OpsItemDraft { id: string; ordinal: number; snapshot: OpsContent }
+export interface OpsVersion { id: string; version: number; content: OpsContent; items: OpsItem[]; published_at: string; published_by: string }
+export interface OpsTemplate { id: string; created_by: string; kind: OpsKind; business_unit_id: string | null; status: 'Draft' | 'Published' | 'Archived'; draft: OpsContent; revision: number; latest_version: number; versions: OpsVersion[] }
+export interface OpsAssignment { id: string; batch_id: string; business_unit_id: string; unit_name: string; template_version_id: string; assignee_id: string; assignee_name: string; assignee_is_bum: boolean; created_by: string; kind: OpsKind; content: OpsContent; version: number; due_at: string; priority: OpsPriority; instructions: string; attachments: {name: string; url: string}[]; requires_verification: boolean; verification_status: string; status: OpsStatus; revision: number; can_cancel: boolean; items: OpsItem[]; history: {id: string; action: string; actor_id: string; created_at: string; detail: {note?: string; from?: string}}[] }
+export interface OpsWorkspace {
+  actor: string; masterAdmin: boolean;
+  units: {id: string; name: string; manage: boolean; edit: boolean; assign: boolean}[];
+  departments: {id: string; name: string}[];
+  people: {id: string; name: string; position: string; roles: string[]; department_id: string; bum: boolean; can_assign: boolean}[];
+  assets: {id: string; name: string}[];
+  templates: OpsTemplate[]; assignments: OpsAssignment[];
+  permissions: {user_id: string; can_create: boolean; can_assign: boolean}[];
+}
