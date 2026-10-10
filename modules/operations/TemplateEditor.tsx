@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import EvidenceRules from './EvidenceRules';
 import Modal from '../../components/ui/Modal';
 import { operationsRpc } from './service';
 import type { OpsContent, OpsKind, OpsTemplate, OpsWorkspace, OpsResponse, OpsPriority } from './types';
@@ -36,8 +37,9 @@ export default function TemplateEditor({workspace,unit,kind,template,onClose,onS
           <Field label="Estimated duration (minutes)"><input type="number" min={0} className={inputClass} value={content.duration??0} onChange={e=>set('duration',Number(e.target.value))}/></Field>
           <Field label="Assigned role / position"><input className={inputClass} value={content.position||''} onChange={e=>set('position',e.target.value)}/></Field>
           <Field label="Linked existing asset"><select className={inputClass} value={content.asset_id||''} onChange={e=>set('asset_id',e.target.value)}><option value="">No linked asset</option>{workspace.assets.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></Field>
-          <Field label="Evidence requirement (configured for Phase 2)"><select className={inputClass} value={content.evidence} onChange={e=>set('evidence',e.target.value as OpsResponse)}>{['none','text','photo','numeric'].map(x=><option key={x}>{x}</option>)}</select></Field>
+          <Field label="Response type / evidence requirement"><select className={inputClass} value={content.evidence} onChange={e=>set('evidence',e.target.value as OpsResponse)}>{['none','yes_no','text','photo','numeric'].map(x=><option key={x}>{x}</option>)}</select></Field>
         </div>
+        <EvidenceRules rules={content} numeric={content.evidence==='numeric'} onChange={patch=>setContent(c=>({...c,...patch}))}/>
         <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={!!content.safety_critical} onChange={e=>set('safety_critical',e.target.checked)}/>Safety-critical task</label>
       </>:<>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -52,7 +54,8 @@ export default function TemplateEditor({workspace,unit,kind,template,onClose,onS
           <div className="mt-4 space-y-3">{items.map((item,i)=><section key={i} className="rounded-xl bg-slate-50 p-4 dark:bg-slate-800">
             <div className="flex flex-wrap items-center justify-between gap-2"><strong>{i+1}. {item.snapshot?.title||taskTitle(item.task_version_id)}</strong><div className="flex gap-1"><button type="button" className={buttonClass} aria-label={`Move task ${i+1} up`} disabled={i===0} onClick={()=>move(i,-1)}>↑</button><button type="button" className={buttonClass} aria-label={`Move task ${i+1} down`} disabled={i===items.length-1} onClick={()=>move(i,1)}>↓</button><button type="button" className={buttonClass} onClick={()=>set('items',items.filter((_,index)=>i!==index))}>Remove</button></div></div>
             {item.snapshot&&<div className="mt-3 grid gap-3"><Field label="Custom instructions"><textarea className={inputClass} value={item.snapshot.instructions||''} onChange={e=>set('items',items.map((x,j)=>j===i?{...x,snapshot:{...x.snapshot!,instructions:e.target.value}}:x))}/></Field><Field label="Custom SOP URL"><input type="url" className={inputClass} value={item.snapshot.sop_url||''} onChange={e=>set('items',items.map((x,j)=>j===i?{...x,snapshot:{...x.snapshot!,sop_url:e.target.value}}:x))}/></Field><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!item.snapshot.safety_critical} onChange={e=>set('items',items.map((x,j)=>j===i?{...x,snapshot:{...x.snapshot!,safety_critical:e.target.checked}}:x))}/>Safety-critical</label></div>}
-            <div className="mt-3 flex flex-wrap items-center gap-4"><label className="flex gap-2 text-sm"><input type="checkbox" checked={item.required} onChange={e=>set('items',items.map((x,j)=>j===i?{...x,required:e.target.checked}:x))}/>Required</label><select aria-label={`Response type for task ${i+1}`} className={`${inputClass} w-auto`} value={item.response_type} onChange={e=>set('items',items.map((x,j)=>j===i?{...x,response_type:e.target.value as OpsResponse}:x))}>{['none','text','photo','numeric'].map(x=><option key={x}>{x}</option>)}</select></div>
+            <div className="mt-3 flex flex-wrap items-center gap-4"><label className="flex gap-2 text-sm"><input type="checkbox" checked={item.required} onChange={e=>set('items',items.map((x,j)=>j===i?{...x,required:e.target.checked}:x))}/>Required</label><select aria-label={`Response type for task ${i+1}`} className={`${inputClass} w-auto`} value={item.response_type} onChange={e=>set('items',items.map((x,j)=>j===i?{...x,response_type:e.target.value as OpsResponse}:x))}>{['none','yes_no','text','photo','numeric'].map(x=><option key={x}>{x}</option>)}</select></div>
+            <EvidenceRules prefix={`Task ${i+1}`} rules={item.rules||item.snapshot||tasks.flatMap(t=>t.versions).find(v=>v.id===item.task_version_id)?.content||{}} numeric={item.response_type==='numeric'} onChange={patch=>set('items',items.map((x,j)=>j===i?{...x,rules:{...(x.rules||x.snapshot||tasks.flatMap(t=>t.versions).find(v=>v.id===x.task_version_id)?.content||{}),...patch}}:x))}/>
           </section>)}</div>
         </div>
       </>}
