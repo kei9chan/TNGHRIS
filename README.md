@@ -50,3 +50,19 @@ Validation:
 - Historical compatibility: `operationsStationTest.mjs`, `operationsSharedChecklistTest.mjs`, and `operationsStationBrowserTest.mjs`.
 
 Browser tests execute the real UI and photo compressor against an authenticated PostgreSQL/RLS fixture and Storage HTTP fixture, covering phone, tablet and desktop. Live smoke tests should use rolled-back records, check service-only cleanup permissions, and verify the scheduled worker and private bucket before publishing the UI.
+
+
+### Operations event checklists
+
+Managers and BOD/admin users can use **Operations Station → Events** to plan one event per authorized business unit, with preparation, event operations and closing stages. Each stage pins a published checklist version, uses either a fixed Manila start or an offset before/after event start/end, and accepts a duration or fixed deadline. Preparation windows may span multiple days and event/closing work may cross midnight.
+
+Drafts create no employee work. Publishing atomically creates one-time Operations occurrences and normal task assignments. Shared execution has one responsible owner, multiple helpers and the existing per-response actor audit; individual execution keeps separate employee runs. Published shifts, approved leave/absence, attendance and ordered backups determine coverage. Missing staffing produces visible warnings and is re-evaluated by the existing minute worker when schedules change. Event work appears in normal Tasks/Today and retains Snooze/Confirm. No attendance/payroll/schedule writers are changed.
+
+Event revisions and published checklist versions remain immutable. Editing unstarted work updates relative stage dates together, while fixed dates/deadlines stay fixed and need review when duplicating. Started or manually managed stages cannot be rewritten; use existing responsibility handover to preserve responses. Saved stages cannot be removed. Cancellation stops open assignments and reminders while retaining answers, evidence and audit records; archiving requires completed/cancelled work. Event planning tables are private, deny direct client access and are accessed only by guarded authenticated RPCs.
+
+Validation:
+```
+node tests/operationsEventTest.mjs
+TNG_TEST_CHROMIUM_PATH=/path/to/chromium node tests/operationsEventBrowserTest.mjs
+```
+These cover multi-day/overnight staffing, fixed/relative timing and deadlines, drafts/publishing, shared/individual runs, normal task completion/progress, absence backups, department changes, cancellation, stale revisions, business-unit isolation, anonymous/employee denial, duplication, browser layouts and disk persistence.
