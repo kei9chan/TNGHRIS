@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import {reviewModes} from './reviewTypes';
 import EvidenceRules from './EvidenceRules';
 import Modal from '../../components/ui/Modal';
 import { operationsRpc } from './service';
@@ -24,6 +25,7 @@ export default function TemplateEditor({workspace,unit,kind,template,onClose,onS
     <form onSubmit={e=>{e.preventDefault();void save(false);}} className="space-y-5">
       <p className="text-sm text-slate-500">Saving a draft preserves the current published version. Publishing creates a new immutable version; existing assignments keep their original instructions.</p>
       <Field label="Title"><input className={inputClass} required minLength={3} maxLength={180} value={content.title} onChange={e=>set('title',e.target.value)}/></Field>
+      <Field label="Verification policy"><select aria-label="Verification policy" className={inputClass} value={content.review_mode||'Daily Summary'} onChange={e=>set('review_mode',e.target.value as OpsContent['review_mode'])}>{reviewModes.map(m=><option key={m}>{m}</option>)}</select><p className="mt-1 text-xs text-slate-500">Routine work uses a daily summary with spot checks. Maintenance, events, linked assets and safety-critical items always require individual verification. BOD adds a separate second reviewer. Policy is frozen when assigned.</p></Field>
       <Field label="Description"><textarea className={inputClass} value={content.description||''} onChange={e=>set('description',e.target.value)}/></Field>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Department"><select className={inputClass} value={content.department_id||''} onChange={e=>set('department_id',e.target.value)}><option value="">All departments</option>{workspace.departments.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>

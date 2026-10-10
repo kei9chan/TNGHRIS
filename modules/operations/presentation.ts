@@ -21,3 +21,5 @@ export const safeUrl = (value?: string) => { try { const url = new URL(value || 
 
 export const assignmentTitle = (a: OpsAssignment) => a.event ? `${a.event.event_title} · ${a.event.stage_title}` : a.maintenance?.activity || a.content.title;
 export const assignmentSearchText = (a: OpsAssignment) => [assignmentTitle(a), a.content.title, a.event?.event_title, a.event?.stage_title, a.maintenance?.name, a.maintenance?.asset_tag, a.assignee_name, ...(a.members?.map(m=>m.name)||[]), a.unit_name].filter(Boolean).join(' ').toLowerCase();
+
+export const assignmentStatus=(a:OpsAssignment)=>a.review?.state==='Historical'?'Historical · unverified':a.review?.state==='Confirmed'?'Confirmed · daily summary':a.review?.state==='Executing'?a.status:a.review?.state||a.status;
