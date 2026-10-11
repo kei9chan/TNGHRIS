@@ -11,7 +11,9 @@ vm.runInNewContext(source, {
   exports,
   require: name => name === '@supabase/supabase-js'
     ? { createClient: () => ({}) }
-    : name === './authDeadline'
+    : name === './authSessionLock'
+      ? { authSessionLock: async (_name, _wait, operation) => operation() }
+      : name === './authDeadline'
       ? { withAuthDeadline: promise => promise, fetchWithAuthTimeout: () => {} }
       : { recordRequestTiming() {} },
   window: { setTimeout: callback => setTimeout(callback, 0) },
