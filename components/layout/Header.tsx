@@ -12,6 +12,8 @@ import { useTheme } from '../../context/ThemeContext';
 import { useGmailConnection } from '../../hooks/useGmailConnection';
 import { disconnectGmail } from '../../services/gmailConnectionService';
 import OperationsMenu from './OperationsMenu';
+import { OpsIcon } from '../../modules/operations/ui';
+import { restoreHelpWidget } from '../../services/helpWidgetPreferences';
 import { isBod } from '../../modules/employeeSnapshot/model';
 
 const UserIcon = () => (
@@ -208,6 +210,12 @@ const Header: React.FC = () => {
                             ) : null}
                             <span className="truncate">{settings.appName}</span>
                         </Link>
+                        {can('Dashboard', Permission.View) && <nav aria-label="Section navigation" className="ml-auto flex shrink-0 items-center lg:hidden">
+                            <Link to="/dashboard" title="Home" aria-label="Home" aria-current={!location.pathname.startsWith('/operations')?'true':undefined} className={`inline-flex h-11 w-11 items-center justify-center rounded-xl ${!location.pathname.startsWith('/operations')?'bg-indigo-600 text-white':'text-slate-300 hover:bg-slate-800 hover:text-white'}`}>
+                                <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1V10Z"/></svg>
+                            </Link>
+                            <RouterNavLink to="/operations" title="Operations" aria-label="Operations" className={({isActive})=>`inline-flex h-11 w-11 items-center justify-center rounded-xl ${isActive?'bg-indigo-600 text-white':'text-slate-300 hover:bg-slate-800 hover:text-white'}`}><OpsIcon name="Tasks" className="h-6 w-6"/></RouterNavLink>
+                        </nav>}
                         <div className="hidden min-w-0 flex-1 lg:block">
                             <div className="flex items-baseline space-x-4 overflow-x-auto scrollbar-hide">
                                 {NAV_LINKS.map((link) => (
@@ -237,6 +245,7 @@ const Header: React.FC = () => {
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
                                         My Profile
                                     </RouterNavLink>
+                                    <button type="button" onClick={()=>{restoreHelpWidget(user?.id);setProfileMenuOpen(false);}} className="flex min-h-11 w-full items-center px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-slate-100 dark:hover:bg-slate-700">Show help button</button>
                                     {gmailConnection.connected ? (
                                         <button
                                             type="button"

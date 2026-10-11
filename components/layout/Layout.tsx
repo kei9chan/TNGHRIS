@@ -29,7 +29,7 @@ const Layout: React.FC = () => {
   const isAnalyticsSection = location.pathname.startsWith('/employees/analytics');
   const isHelpdeskSection = location.pathname.startsWith('/helpdesk');
   const isAdminSection = location.pathname.startsWith('/admin');
-  const showMobileFooter = ['/dashboard', '/approvals', '/my-requests', '/my-profile', '/payroll/clock-in-out'].includes(location.pathname) || location.pathname.startsWith('/operations');
+  const showMobileFooter = ['/dashboard', '/approvals', '/my-requests', '/my-profile', '/payroll/clock-in-out'].includes(location.pathname);
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-gray-100 dark:bg-slate-900">
@@ -53,7 +53,7 @@ const Layout: React.FC = () => {
         {isAdminSection && <AdminSubNav />}
       </div>
 
-      <main className={showMobileFooter ? 'relative z-0 pb-24 lg:pb-0' : 'relative z-0'}>
+      <main className={showMobileFooter || location.pathname.startsWith('/operations') ? 'relative z-0 pb-24 lg:pb-0' : 'relative z-0'}>
         <div className="max-w-screen-2xl mx-auto py-6 px-4 sm:px-6 xl:px-10">
           <ApprovalNavigation />
           <Outlet />
