@@ -11,6 +11,7 @@ import { useEvaluationAssignmentAccess } from '../../hooks/useEvaluationAssignme
 import { useTheme } from '../../context/ThemeContext';
 import { useGmailConnection } from '../../hooks/useGmailConnection';
 import { disconnectGmail } from '../../services/gmailConnectionService';
+import OperationsMenu from './OperationsMenu';
 import { isBod } from '../../modules/employeeSnapshot/model';
 
 const UserIcon = () => (
@@ -57,7 +58,9 @@ const GmailIcon = () => (
 
 const MobileNavTree: React.FC<{ links: NavLink[]; depth?: number; onNavigate: () => void }> = ({ links, depth = 0, onNavigate }) => (
     <div className={depth ? 'ml-3 border-l border-slate-200 pl-3 dark:border-slate-700' : 'space-y-4'}>
-        {links.map(link => link.children?.length ? (
+        {links.map(link => link.path === '/operations' ? (
+            <OperationsMenu key={`${depth}-${link.name}`} onNavigate={onNavigate} />
+        ) : link.children?.length ? (
             <section key={`${depth}-${link.name}`} className={depth ? 'mb-3' : ''}>
                 <h3 className={`${depth ? 'text-xs' : 'text-sm'} mb-2 font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400`}>{link.name}</h3>
                 <MobileNavTree links={link.children} depth={depth + 1} onNavigate={onNavigate} />
@@ -135,7 +138,7 @@ const Header: React.FC = () => {
             return [{ ...link, children: children.length ? children : undefined }];
         });
         return filterLinks(NAV_LINKS);
-    }, [can, hasEvaluationAccess]);
+    }, [can, hasEvaluationAccess, user]);
 
     const handleLogout = () => {
         logout();
