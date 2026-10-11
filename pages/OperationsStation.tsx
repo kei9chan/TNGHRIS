@@ -136,6 +136,9 @@ export default function OperationsStation() {
         </div>
       </section>
     </div>
+    <nav data-mobile-footer aria-label="Operations bottom navigation" className="fixed bottom-0 left-0 right-0 z-30 grid grid-cols-4 border-t border-slate-200 bg-white lg:hidden dark:border-slate-700 dark:bg-slate-900" style={{paddingBottom:'env(safe-area-inset-bottom)'}}>
+      {mainTabs.map(view=><button key={view} type="button" aria-current={tab===view?'page':undefined} onClick={()=>navigate(view)} className={`flex min-h-16 flex-col items-center justify-center gap-1 text-[11px] font-semibold ${tab===view?'text-violet-700 dark:text-violet-300':'text-slate-500 dark:text-slate-400'}`}><OpsIcon name={view} className="h-6 w-6"/>{view}</button>)}
+    </nav>
     {canEdit&&!loading&&<button aria-label="Create an operational task" title="Create task" className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 z-30 flex h-12 w-12 items-center justify-center rounded-full bg-[#3d1952] text-3xl font-light text-white shadow-xl hover:bg-violet-800 lg:bottom-28" onClick={()=>setEditor({kind:'task'})}>+</button>}
     {data&&importing&&<ChecklistImport unit={unit} unitName={selection?.name||'TNG Master Library'} onClose={()=>setImporting(false)} onSaved={()=>load()}/>}
     {data&&editor&&<TemplateEditor workspace={data} unit={editor.template?(editor.template.business_unit_id||''):unit} kind={editor.kind} template={editor.template} onClose={()=>setEditor(null)} onSaved={()=>load()}/>}

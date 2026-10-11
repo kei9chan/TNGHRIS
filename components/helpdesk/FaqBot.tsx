@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import Button from '../ui/Button';
+import FloatingHelpLauncher from './FloatingHelpLauncher';
 import { fetchKBArticles } from '../../services/helpdeskService';
 import { fetchMemos } from '../../services/memoService';
 import { fetchCodeOfDiscipline } from '../../services/disciplineService';
@@ -53,8 +54,8 @@ const FaqBot: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages]);
+        if (isOpen) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages, isOpen]);
 
     const handleSendMessage = (e: React.FormEvent) => {
         e.preventDefault();
@@ -151,21 +152,13 @@ const FaqBot: React.FC = () => {
 
     return (
         <>
-            <div className={`fixed bottom-4 right-4 z-40 transition-all duration-300 md:bottom-8 md:right-8 ${(location.pathname === '/approvals' || location.pathname === '/dashboard') ? 'hidden md:block' : ''} ${isOpen ? 'opacity-0 scale-75' : 'opacity-100 scale-100'}`}>
-                <button
-                    onClick={() => setIsOpen(true)}
-                    className="bg-indigo-600 text-white p-4 rounded-full shadow-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                    aria-label="Open FAQ Bot"
-                >
-                    <QuestionMarkCircleIcon />
-                </button>
-            </div>
+            <FloatingHelpLauncher open={isOpen} onOpen={() => setIsOpen(true)}><QuestionMarkCircleIcon /></FloatingHelpLauncher>
             
-            <div className={`fixed bottom-4 right-4 md:bottom-8 md:right-8 z-50 w-[calc(100%-2rem)] max-w-sm h-[70vh] max-h-[600px] bg-white dark:bg-slate-800 rounded-lg shadow-2xl flex flex-col transition-all duration-300 origin-bottom-right ${isOpen ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'}`}>
+            {isOpen && <div role="dialog" aria-label="FAQ Bot" className={`fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 lg:bottom-8 md:right-8 z-50 w-[calc(100%-2rem)] max-w-sm h-[70vh] max-h-[min(600px,calc(100dvh-10rem))] bg-white dark:bg-slate-800 rounded-lg shadow-2xl flex flex-col transition-all duration-300 origin-bottom-right ${isOpen ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'}`}>
                 {/* Header */}
                 <div className="flex justify-between items-center p-4 border-b border-gray-200 dark:border-slate-700 bg-indigo-600 rounded-t-lg">
                     <h3 className="font-semibold text-white">FAQ Bot</h3>
-                    <button onClick={() => setIsOpen(false)} className="p-1 rounded-full text-white hover:bg-indigo-700"><XIcon /></button>
+                    <button type="button" aria-label="Close FAQ Bot" onClick={() => setIsOpen(false)} className="flex h-11 w-11 items-center justify-center rounded-full text-white hover:bg-indigo-700"><XIcon /></button>
                 </div>
                 {/* Messages */}
                 <div className="flex-grow p-4 overflow-y-auto space-y-4">
@@ -193,7 +186,7 @@ const FaqBot: React.FC = () => {
                         </Button>
                     </form>
                 </div>
-            </div>
+            </div>}
         </>
     );
 };
