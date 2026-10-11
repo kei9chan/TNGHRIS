@@ -24,7 +24,7 @@ async function pageFor(actor=10,scope='',viewport={width:1440,height:1000}){cons
  else throw new Error('Unhandled mutation '+name);
  await route.fulfill({status:200,headers,contentType:'application/json',body:JSON.stringify(result)});
  }catch(e){await route.fulfill({status:400,headers,contentType:'application/json',body:JSON.stringify({message:e.message,code:e.code})});}});await queue;});return page;}
-async function nav(p,label){const desktop=p.getByRole('navigation',{name:'Operations desktop navigation'});if(await desktop.isVisible())await desktop.getByRole('button',{name:label,exact:true}).click();else await p.getByRole('navigation',{name:'Operations workspace tools'}).getByRole('button',{name:label,exact:true}).click();}
+async function nav(page,name){const desktop=page.getByRole('navigation',{name:'Operations desktop navigation'});if(await desktop.isVisible())await desktop.getByRole('button',{name,exact:true}).click();else {const url=new URL(page.url());url.searchParams.set('view',name);await page.goto(url.href);await page.getByRole('heading',{name:'Operations Station',exact:true}).waitFor();await page.waitForFunction(()=>!document.body.textContent.includes('Loading your authorized workspace'));}}
 try{
  const today=(await db.query("select (now() at time zone 'Asia/Manila')::date::text d")).rows[0].d;
  const day=n=>new Date(new Date(today+'T00:00:00Z').getTime()+n*86400000).toISOString().slice(0,10);

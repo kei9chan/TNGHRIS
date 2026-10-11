@@ -3,6 +3,8 @@ import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import Modal from '../components/ui/Modal';
 import LibraryView from '../modules/operations/LibraryView';
+import TodayList from '../modules/operations/TodayList';
+import { operationsMainViews, operationsToolViews } from '../modules/operations/navigation';
 import {latestVersion} from '../modules/operations/creation';
 import TemplateEditor from '../modules/operations/TemplateEditor';
 import AssignmentEditor from '../modules/operations/AssignmentEditor';
@@ -19,8 +21,7 @@ import type { OpsFilter } from '../modules/operations/presentation';
 import type { OpsWorkspace, OpsTemplate, OpsKind, OpsAssignment } from '../modules/operations/types';
 import { OpsIcon, buttonClass, primaryClass, inputClass } from '../modules/operations/ui';
 
-const mainTabs=['Today','Progress','Tasks','Settings'];
-const managerTabs=['Task Library','Checklist Library','Create Checklist','Assign Tasks','Scheduling','Events','Review','Team Progress'];
+const mainTabs=operationsMainViews;
 export default function OperationsStation() {
   const {user}=useAuth();
   const [searchParams,setSearchParams]=useSearchParams();
@@ -29,6 +30,7 @@ export default function OperationsStation() {
   const [collapsed,setCollapsed]=useState(false),[filter,setFilter]=useState<OpsFilter>('Due Today'),[team,setTeam]=useState(false),[query,setQuery]=useState(''),[libraryFilter,setLibraryFilter]=useState('All');
   const [editor,setEditor]=useState<{kind:OpsKind;template?:OpsTemplate}|null>(null),[assign,setAssign]=useState<string|null>(null),[detail,setDetail]=useState<OpsAssignment|null>(null),[versionHistory,setVersionHistory]=useState<OpsTemplate|null>(null),[busy,setBusy]=useState(false);
   const [importing,setImporting]=useState(false);
+  useEffect(()=>{setQuery('');setFilter(tab==='Today'?'Due Today':'All');},[tab]);
   const [delegateId,setDelegateId]=useState(''),[delegateCreate,setDelegateCreate]=useState(false),[delegateAssign,setDelegateAssign]=useState(false);
   const loadSeq=useRef(0);
   const initialActor=useRef('');
@@ -42,9 +44,7 @@ export default function OperationsStation() {
   const canAssign=!!(unit&&selection?.assign);
   const canManage=!!(unit&&selection?.manage);
   const hasTeam=!!data?.assignments.some(a=>a.assignee_id!==data.actor)||!!selection?.manage||!!selection?.assign;
-  const hasCreationAccess=!!data?.masterAdmin||!!data?.units.some(u=>u.edit);
-  const hasAssignmentAccess=!!data?.units.some(u=>u.assign);
-  const workspaceTools=managerTabs.filter(x=>(x!=='Create Checklist'||hasCreationAccess)&&(x!=='Assign Tasks'||hasAssignmentAccess)&&(x!=='Review'||data?.units.some(u=>u.review))&&(x!=='Events'||data?.units.some(u=>u.manage&&u.edit&&u.assign)));
+  const workspaceTools=operationsToolViews(data);
   const hasLibraries=!!data?.masterAdmin||!!data?.units.some(u=>u.edit||u.assign);
   const canMaster=!!data?.masterAdmin;
   const load=useCallback(async(silent=false)=>{
@@ -67,48 +67,58 @@ export default function OperationsStation() {
   const completion=total?Math.round(completed.length/total*100):0;
   const libraryKind:OpsKind=tab==='Checklist Library'?'checklist':'task';
   const library=(data?.templates||[]).filter(t=>t.kind===libraryKind&&(libraryFilter==='All'||t.status===libraryFilter)&&((latestVersion(t)?.content.title||'')+' '+t.draft.title).toLowerCase().includes(query.toLowerCase()));
-  const title=tab==='Today'?'Let’s get things done.':tab;
+  const title=tab==='Today'?'Today’s to-do list':tab;
   const navigateManager=(next:string)=>{
     if(next==='Create Checklist'){if(canEdit)setEditor({kind:'checklist'});else {navigate('Checklist Library');setMessage('Select an authorized business-unit workspace to create a checklist.');}}
     else if(next==='Assign Tasks'){if(canAssign)setAssign('');else {navigate('Tasks');setMessage('Select an authorized business-unit workspace to assign work.');}}
     else navigate(next);
   };
-  const allowedTabs=['Maintenance','Coverage',...mainTabs,...(hasLibraries?workspaceTools:hasTeam?['Scheduling',...(data?.units.some(u=>u.review)?['Review']:[]),'Team Progress']:[])];
+  useEffect(()=>{
+    if(loading||!data)return;
+    if(tab==='Create Checklist'){
+      navigate('Checklist Library');
+      if(canEdit)setEditor({kind:'checklist'});
+      else setMessage('Select an authorized business-unit workspace to create a checklist.');
+    }else if(tab==='Assign Tasks'){
+      navigate('Tasks');
+      if(canAssign)setAssign('');
+      else setMessage('Select an authorized business-unit workspace to assign work.');
+    }
+  },[tab,loading,data,canEdit,canAssign]);
+  const allowedTabs=[...mainTabs,...workspaceTools];
   const knownTab=allowedTabs.includes(tab);
   return <div className="overflow-hidden rounded-3xl border border-slate-200 bg-[#fdfcfa] text-slate-800 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
     <div className="flex min-h-[calc(100dvh-12rem)]">
       <aside className={`hidden shrink-0 border-r border-slate-200 bg-white px-3 py-6 transition-all lg:block dark:border-slate-700 dark:bg-slate-900 ${collapsed?'w-20':'w-56'}`}>
         <button type="button" aria-label={collapsed?'Expand workspace sidebar':'Collapse workspace sidebar'} className={`${buttonClass} mb-7`} onClick={()=>setCollapsed(!collapsed)}><OpsIcon name="menu"/></button>
         <nav aria-label="Operations desktop navigation" className="space-y-2">{mainTabs.map(x=><button key={x} title={collapsed?x:undefined} aria-current={tab===x?'page':undefined} className={`flex min-h-12 w-full items-center gap-3 rounded-2xl px-4 text-sm font-semibold ${tab===x?'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200':'hover:bg-slate-50 dark:hover:bg-slate-800'}`} onClick={()=>navigate(x)}><OpsIcon name={x}/>{!collapsed&&x}</button>)}
-          {(hasLibraries||hasTeam)&&<div className="!mt-8 space-y-1 border-t border-slate-100 pt-5 dark:border-slate-700">{!collapsed&&<p className="mb-3 px-4 text-[10px] font-bold uppercase tracking-[.2em] text-slate-400">Workspace tools</p>}{(hasLibraries?workspaceTools:['Scheduling',...(data.units.some(u=>u.review)?['Review']:[]),'Team Progress']).map(x=><button key={x} title={collapsed?x:undefined} className={`flex min-h-11 w-full items-center gap-3 rounded-xl px-4 text-left text-sm ${tab===x?'bg-violet-50 font-semibold text-violet-800 dark:bg-violet-900/40 dark:text-violet-200':'hover:bg-slate-50 dark:hover:bg-slate-800'}`} onClick={()=>navigateManager(x)}><OpsIcon name={x.includes('Library')?'library':'Tasks'}/>{!collapsed&&x}</button>)}</div>}
-          <button title="Maintenance" className={`${buttonClass} mt-4 flex w-full items-center gap-3 text-left`} onClick={()=>navigate('Maintenance')}><OpsIcon name="Tasks"/>{!collapsed&&'Maintenance'}</button>
+          {workspaceTools.length>0&&<div className="!mt-8 space-y-1 border-t border-slate-100 pt-5 dark:border-slate-700">{!collapsed&&<p className="mb-3 px-4 text-[10px] font-bold uppercase tracking-[.2em] text-slate-400">Workspace tools</p>}{workspaceTools.map(x=><button key={x} title={collapsed?x:undefined} className={`flex min-h-11 w-full items-center gap-3 rounded-xl px-4 text-left text-sm ${tab===x?'bg-violet-50 font-semibold text-violet-800 dark:bg-violet-900/40 dark:text-violet-200':'hover:bg-slate-50 dark:hover:bg-slate-800'}`} onClick={()=>navigateManager(x)}><OpsIcon name={x.includes('Library')?'library':'Tasks'}/>{!collapsed&&x}</button>)}</div>}
         </nav>
       </aside>
       <section className="min-w-0 flex-1 pb-24 lg:pb-10">
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 px-5 py-6 sm:px-8 dark:border-slate-700">
-          <div><p className="text-xs font-semibold uppercase tracking-[.2em] text-violet-600 dark:text-violet-300">The Nextperience Group</p><h1 className="mt-1 text-2xl font-bold tracking-tight text-violet-800 sm:text-3xl dark:text-violet-200">Operations Station</h1></div>
-          <div className="flex flex-wrap gap-2"><select aria-label="Business-unit workspace" className={`${inputClass} max-w-60`} value={unit} onChange={e=>switchUnit(e.target.value)}><option value="">All workspaces</option>{data?.units.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select><button className={buttonClass} disabled={loading||busy} onClick={()=>void load()}>Refresh</button></div>
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4 sm:px-8 sm:py-6 dark:border-slate-700">
+          <div><p className="text-xs font-semibold uppercase tracking-[.2em] text-violet-600 dark:text-violet-300">The Nextperience Group</p><h1 className="mt-1 text-xl font-bold tracking-tight text-violet-800 sm:text-3xl dark:text-violet-200">Operations Station</h1></div>
+          <div className="flex w-full min-w-0 gap-2 sm:w-auto"><select aria-label="Business-unit workspace" className={`${inputClass} min-w-0 flex-1 sm:max-w-60`} value={unit} onChange={e=>switchUnit(e.target.value)}><option value="">All workspaces</option>{data?.units.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select><button className={buttonClass} disabled={loading||busy} onClick={()=>void load()}>Refresh</button></div>
         </header>
         <div className="space-y-6 px-5 py-6 sm:px-8">
           {message&&<p role="status" className="rounded-xl bg-violet-50 p-3 text-sm text-violet-800 dark:bg-violet-950/40 dark:text-violet-200">{message}</p>}
           {error&&<div role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-800 dark:bg-red-950/30 dark:text-red-200"><p>{error}</p><button className="mt-2 underline" onClick={()=>unit?switchUnit(''):void load()}>Retry / reset workspace</button></div>}
           {loading?<p role="status" className="py-16 text-center text-slate-500">Loading your authorized workspace…</p>:data&&<>
-            <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-2xl font-bold">{knownTab?title:'Choose a workspace view'}</h2><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{selection?.name||'All authorized business units'} · {manilaDay(new Date())} · Manila time</p></div>{(canEdit||canAssign)&&<div className="flex flex-wrap gap-2">{canEdit&&<button className={buttonClass} onClick={()=>setEditor({kind:'task'})}>Create task</button>}{canAssign&&<button className={primaryClass} onClick={()=>setAssign('')}>Assign work</button>}</div>}</div>
-            {(hasLibraries||hasTeam)&&<nav aria-label="Operations workspace tools" className="flex gap-2 overflow-x-auto pb-1 lg:hidden">{(hasLibraries?workspaceTools:['Scheduling',...(data.units.some(u=>u.review)?['Review']:[]),'Team Progress']).map(x=><button className={`${buttonClass} shrink-0 ${tab===x?'border-violet-400 text-violet-700':''}`} key={x} onClick={()=>navigateManager(x)}>{x}</button>)}</nav>}
+            <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-2xl font-bold">{knownTab?title:'Choose a workspace view'}</h2><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{selection?.name||'All authorized business units'} · {manilaDay(new Date())} · Manila time</p></div>{tab!=='Today'&&(canEdit||canAssign)&&<div className="flex flex-wrap gap-2">{canEdit&&<button className={buttonClass} onClick={()=>setEditor({kind:'task'})}>Create task</button>}{canAssign&&<button className={primaryClass} onClick={()=>setAssign('')}>Assign work</button>}</div>}</div>
             {!knownTab&&<button className={primaryClass} onClick={()=>navigate('Today')}>Open Today</button>}
             {['Scheduling','Coverage'].includes(tab)&&<AutomationWorkspace workspace={data} unit={unit} rulesView={tab==='Scheduling'} onNavigate={navigate} onOpen={async id=>{const next=await getOperationsWorkspace(unit);setData(next);const row=next.assignments.find(a=>a.id===id);if(!row)throw new Error('Assignment is unavailable; refresh coverage');setDetail(row);}}/>}
             {tab==='Review'&&data.units.some(u=>u.review)&&<ReviewWorkspace key={unit} workspace={data} unit={unit} onRefresh={()=>load(true)} onExecution={async id=>{const next=await getOperationsWorkspace(unit);setData(next);const row=next.assignments.find(a=>a.id===id);if(row)setDetail(row);else setError('Assignment unavailable in this workspace. Select its business unit.');}}/>}
             {tab==='Events'&&<EventWorkspace key={unit} workspace={data} unit={unit} onRefresh={()=>load(true)} onOpen={async id=>{const next=await getOperationsWorkspace(unit);setData(next);const row=next.assignments.find(a=>a.id===id);if(!row)throw new Error('Assignment is unavailable; refresh events');setDetail(row);}}/>}
             {tab==='Maintenance'&&<MaintenanceWorkspace key={unit} workspace={data} unit={unit} onNavigate={navigateManager} onRefresh={()=>load(true)} onOpen={async id=>{const next=await getOperationsWorkspace(unit);setData(next);const row=next.assignments.find(a=>a.id===id);if(!row)throw new Error('Assignment is unavailable; refresh maintenance');setDetail(row);}}/>}
-            {tab!=='Maintenance'&&<button className={`${buttonClass} lg:hidden`} onClick={()=>navigate('Maintenance')}>Maintenance</button>}
-            {tab==='Today'&&<button className={buttonClass} onClick={()=>navigate('Coverage')}>Today’s coverage & responsibility</button>}
             {['Today','Tasks'].includes(tab)&&<>
-              {tab==='Today'&&canMaster&&<section className="rounded-2xl border border-violet-100 bg-violet-50 p-5 dark:border-slate-700 dark:bg-violet-950/30"><h3 className="font-semibold">Work assigned to Business Unit Managers</h3><p className="mt-1 text-sm text-slate-500">{assignments.filter(a=>a.assignee_is_bum&&isOpen(a)).length} outstanding · {assignments.filter(a=>a.assignee_is_bum&&matchesFilter(a,'Overdue')).length} overdue</p><div className="mt-3 space-y-2">{assignments.filter(a=>a.assignee_is_bum&&isOpen(a)).slice(0,5).map(a=><button key={a.id} className="block w-full rounded-xl bg-white p-3 text-left text-sm dark:bg-slate-800" onClick={()=>setDetail(a)}><strong>{assignmentTitle(a)}</strong><span className="mt-1 block text-slate-500">{a.assignee_name} · {a.unit_name} · {formatDue(a.due_at)}</span></button>)}</div><button className={`${buttonClass} mt-3`} onClick={()=>{setTeam(true);navigate('Tasks');}}>View team assignments</button></section>}
+              {tab==='Tasks'&&canMaster&&<section className="rounded-2xl border border-violet-100 bg-violet-50 p-5 dark:border-slate-700 dark:bg-violet-950/30"><h3 className="font-semibold">Work assigned to Business Unit Managers</h3><p className="mt-1 text-sm text-slate-500">{assignments.filter(a=>a.assignee_is_bum&&isOpen(a)).length} outstanding · {assignments.filter(a=>a.assignee_is_bum&&matchesFilter(a,'Overdue')).length} overdue</p><div className="mt-3 space-y-2">{assignments.filter(a=>a.assignee_is_bum&&isOpen(a)).slice(0,5).map(a=><button key={a.id} className="block w-full rounded-xl bg-white p-3 text-left text-sm dark:bg-slate-800" onClick={()=>setDetail(a)}><strong>{assignmentTitle(a)}</strong><span className="mt-1 block text-slate-500">{a.assignee_name} · {a.unit_name} · {formatDue(a.due_at)}</span></button>)}</div><button className={`${buttonClass} mt-3`} onClick={()=>{setTeam(true);navigate('Tasks');}}>View team assignments</button></section>}
               {hasTeam&&tab!=='Scheduling'&&<div className="flex gap-2"><button className={`${buttonClass} ${!team?'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200':''}`} onClick={()=>setTeam(false)}>My Tasks</button><button className={`${buttonClass} ${team?'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200':''}`} onClick={()=>setTeam(true)}>Team Tasks</button></div>}
+              {tab==='Today'&&<TodayList assignments={scoped} showAssignee={team} allUnits={!unit} onOpen={setDetail} onAll={()=>navigate('Tasks')}/>}
+              {tab==='Tasks'&&<>
               <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-2">{filters.map(x=><button key={x} aria-pressed={filter===x} className={`min-h-11 rounded-full border px-4 text-sm font-semibold ${filter===x?'border-violet-600 bg-violet-600 text-white':'border-slate-200 bg-white text-slate-500 hover:border-violet-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300'}`} onClick={()=>setFilter(x)}>{x}</button>)}</div><input aria-label="Search assignments" className={`${inputClass} sm:max-w-60`} placeholder="Search tasks, assets or assignees" value={query} onChange={e=>setQuery(e.target.value)}/></div>
               <div className="grid grid-cols-3 gap-2 sm:gap-4">{[['Outstanding',scoped.filter(isOpen).length],['Due today',scoped.filter(a=>matchesFilter(a,'Due Today')).length],['Completed',scoped.filter(a=>a.status==='Completed').length]].map(([label,value])=><div className="rounded-2xl border border-slate-100 bg-white p-3 sm:p-5 dark:border-slate-700 dark:bg-slate-800" key={label}><p className="text-sm text-slate-500">{label}</p><strong className="mt-2 block text-3xl">{value}</strong></div>)}</div>
-              {tab==='Today'&&scoped.some(a=>isOpen(a)&&manilaDay(a.event?.start||a.due_at)>manilaDay(new Date()))&&<section className="rounded-2xl border border-slate-100 bg-white p-5 dark:border-slate-700 dark:bg-slate-800"><div className="flex items-center justify-between"><h3 className="font-semibold">Upcoming</h3><button className="text-sm font-semibold text-violet-700 underline dark:text-violet-300" onClick={()=>navigate('Tasks')}>View all</button></div>{scoped.filter(a=>isOpen(a)&&manilaDay(a.event?.start||a.due_at)>manilaDay(new Date())).slice(0,3).map(a=><button key={a.id} className="mt-3 flex w-full flex-wrap justify-between gap-2 text-left text-sm" onClick={()=>setDetail(a)}><span>{assignmentTitle(a)}</span><span className="text-slate-500">{formatDue(a.due_at)}</span></button>)}</section>}
               {!visible.length?<div className="rounded-2xl border border-dashed border-slate-200 py-20 text-center dark:border-slate-700"><OpsIcon name="Tasks" className="mx-auto h-10 w-10 text-violet-300"/><h3 className="mt-4 text-xl font-semibold">{scoped.length?'No tasks match this view':'No assignments yet'}</h3><p className="mx-auto mt-2 max-w-sm text-sm text-slate-500">{scoped.length?'Try another filter to see your other assignments.':canAssign?'Assign a published task or checklist from your library.':'Your assigned work and instructions will appear here.'}</p>{filter!=='All'&&<button className={`${buttonClass} mt-4`} onClick={()=>setFilter('All')}>Show all tasks</button>}</div>:<div className="space-y-5">{data.units.filter(u=>visible.some(a=>a.business_unit_id===u.id)).map(u=><section key={u.id}><h3 className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">{u.name}</h3><div className="grid gap-3 xl:grid-cols-2">{visible.filter(a=>a.business_unit_id===u.id).map(a=><button key={a.id} className="flex gap-4 rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-violet-300 hover:shadow-md dark:border-slate-700 dark:bg-slate-800" onClick={()=>setDetail(a)}><span className={`mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${a.status==='Completed'?'border-violet-600 bg-violet-600 text-white':'border-violet-200 text-violet-500'}`}>{a.status==='Completed'?'✓':<OpsIcon name="Tasks"/>}</span><span className="min-w-0 flex-1"><span className="block font-semibold">{assignmentTitle(a)}</span>{a.event&&<span className="mt-1 block text-sm text-violet-700">{a.event.event_title} · starts {formatDue(a.event.start)}</span>}{a.maintenance&&<span className="mt-1 block text-sm text-violet-700">{a.maintenance.name} · {a.maintenance.asset_tag}</span>}<span className="mt-1 block text-sm text-slate-500 dark:text-slate-400">{(a.execution?a.execution.shared:!!a.checklist_run_id)?`Shared team · ${a.members?.length||0} staff`:a.assignee_name} · {a.kind} v{a.version}</span><span className={`mt-2 block text-xs ${matchesFilter(a,'Overdue')?'font-semibold text-red-600':'text-slate-500 dark:text-slate-400'}`}>{formatDue(a.due_at)} · {a.priority}</span>{a.snooze?.state==='Queued'&&new Date(a.snooze.until_at)>new Date()&&isOpen(a)&&<span className="mt-2 block text-xs text-violet-700 dark:text-violet-300">Your reminders snoozed until {formatDue(a.snooze.until_at)}</span>}{a.review&&a.review.mode!=='Daily Summary'&&<span className="mt-2 block text-xs text-amber-700 dark:text-amber-300">{a.review?.mode}</span>}</span>{a.execution?.outcome==='Issues'&&<span className="text-xs font-semibold text-amber-700">Issues flagged</span>}<span className="h-fit rounded-full bg-violet-50 px-2 py-1 text-[10px] font-bold text-violet-800 dark:bg-violet-950 dark:text-violet-200">{assignmentStatus(a)}</span></button>)}</div></section>)}</div>}
+              </>}
             </>}
             {['Progress','Team Progress'].includes(tab)&&<>
               <div className="rounded-3xl border border-violet-100 bg-white p-7 dark:border-slate-700 dark:bg-slate-800"><div className="flex items-end justify-between"><div><p className="text-sm text-slate-500">Completion · all visible assignments</p><strong className="mt-2 block text-5xl text-violet-800 dark:text-violet-200">{completion}%</strong></div><p className="text-sm text-slate-500">{completed.length} of {total} completed</p></div><div className="mt-6 h-3 overflow-hidden rounded-full bg-violet-100"><div className="h-full rounded-full bg-violet-600" style={{width:`${completion}%`}}/></div><p className="mt-3 text-xs text-slate-500">Cancelled assignments are excluded. Completion is employee confirmation; independent verification is tracked separately in Review.</p></div>
@@ -126,8 +136,7 @@ export default function OperationsStation() {
         </div>
       </section>
     </div>
-    {canEdit&&!loading&&<button aria-label="Create an operational task" title="Create task" className="fixed bottom-24 right-6 z-30 flex h-16 w-16 items-center justify-center rounded-full bg-[#3d1952] text-4xl font-light text-white shadow-xl hover:bg-violet-800 lg:bottom-28" onClick={()=>setEditor({kind:'task'})}>+</button>}
-    <nav aria-label="Operations bottom navigation" className="fixed bottom-0 left-0 right-0 z-30 grid grid-cols-4 border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] lg:hidden dark:border-slate-700 dark:bg-slate-900">{mainTabs.map(x=><button key={x} aria-current={tab===x?'page':undefined} className={`flex min-h-20 flex-col items-center justify-center gap-1 text-sm ${tab===x?'font-semibold text-violet-800 dark:text-violet-200':'text-slate-500'}`} onClick={()=>navigate(x)}><OpsIcon name={x} className="h-6 w-6"/>{x}</button>)}</nav>
+    {canEdit&&!loading&&<button aria-label="Create an operational task" title="Create task" className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 z-30 flex h-12 w-12 items-center justify-center rounded-full bg-[#3d1952] text-3xl font-light text-white shadow-xl hover:bg-violet-800 lg:bottom-28" onClick={()=>setEditor({kind:'task'})}>+</button>}
     {data&&importing&&<ChecklistImport unit={unit} unitName={selection?.name||'TNG Master Library'} onClose={()=>setImporting(false)} onSaved={()=>load()}/>}
     {data&&editor&&<TemplateEditor workspace={data} unit={editor.template?(editor.template.business_unit_id||''):unit} kind={editor.kind} template={editor.template} onClose={()=>setEditor(null)} onSaved={()=>load()}/>}
     {data&&assign!==null&&<AssignmentEditor workspace={data} unit={unit} initialVersion={assign} onClose={()=>setAssign(null)} onSaved={()=>load()}/>}
