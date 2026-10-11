@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import { getOperationsWorkspace } from '../../modules/operations/service';
+import { getOperationsOverview } from '../../modules/operations/service';
 import { operationsMainViews, operationsToolViews } from '../../modules/operations/navigation';
 import { OpsIcon } from '../../modules/operations/ui';
 import type { OpsWorkspace } from '../../modules/operations/types';
@@ -21,7 +21,7 @@ export default function OperationsMenu({ onNavigate }: { key?: React.Key; onNavi
     let current = true;
     setWorkspace(null);
     setError('');
-    getOperationsWorkspace('').then(data => { if (current) setWorkspace(data); })
+    getOperationsOverview('').then(data => { if (current) setWorkspace(data); })
       .catch(reason => { if (current) setError(reason.message || 'Unable to load workspace tools.'); });
     return () => { current = false; };
   }, [expanded, user?.id, attempt]);

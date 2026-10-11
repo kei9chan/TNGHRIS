@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {createReviewFixture,id,workspacePlanMigration,workspaceAssemblyMigration} from './operationsReviewFixture.mjs';
 
 const dir=mkdtempSync(join(tmpdir(),'tng-workspace-plans-'));
-const db=await createReviewFixture(dir,undefined,[workspacePlanMigration,workspaceAssemblyMigration]);
+const db=await createReviewFixture(dir,undefined,[workspacePlanMigration,workspaceAssemblyMigration,'20261011070931_operations_fast_overview_and_detail.sql','20261011071609_operations_overview_payload_trim.sql']);
 const actor=n=>db.exec(`reset role;set test.actor='${id(n)}';set role authenticated`);
 const rpc=async(name,args=[]) => (await db.query(`select public.${name}(${args.map((_,i)=>'$'+(i+1)).join(',')}) result`,args)).rows[0].result;
 const normalize=value=>Array.isArray(value)?value.map(normalize).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b))):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,normalize(v)])):value;
@@ -43,8 +43,12 @@ try {
  await db.exec('reset role');
  await db.exec(readFileSync('supabase/migrations/'+workspacePlanMigration,'utf8'));
  await db.exec(readFileSync('supabase/migrations/'+workspaceAssemblyMigration,'utf8'));
+ await db.exec(readFileSync('supabase/migrations/20261011070931_operations_fast_overview_and_detail.sql','utf8'));
+ await db.exec(readFileSync('supabase/migrations/20261011071609_operations_overview_payload_trim.sql','utf8'));
  for(let i=0;i<cases.length;i++){const [user,unit]=cases[i];await actor(user);assert.deepEqual(normalize(await rpc('ops_workspace',[unit])),before[i],`Workspace fields and permissions changed for user ${user}`);}
+ for(let i=0;i<cases.length;i++){const [user,unit]=cases[i];await actor(user);const overview=await rpc('ops_workspace_overview',[unit]);assert.equal(overview.assignments.length,before[i].assignments.length);assert.equal(overview.summary,true);assert.deepEqual(normalize(overview.units),before[i].units);for(const a of before[i].assignments){const full=await rpc('ops_assignment_detail',[a.id]);assert.deepEqual(normalize(full),a);const summary=overview.assignments.find(x=>x.id===a.id);for(const key of ['id','status','due_at','assignee_id','checklist_run_id','unit_name','kind','members','snooze'])assert.deepEqual(normalize(summary[key]),a[key],key);assert.equal(summary.execution?.items.length||0,0);assert.equal(summary.history.length,0);assert.equal(summary.content.title,a.content.title);assert.equal(summary.review?.state,a.review?.state);assert.equal(summary.review?.mode,a.review?.mode);assert.equal(summary.instructions,'');assert.equal(summary.content.creation,undefined);}}
+ await actor(12);await assert.rejects(()=>rpc('ops_assignment_detail',[before[0].assignments[0].id]),/unavailable/);await assert.rejects(()=>rpc('ops_workspace_overview',[id(1)]),/authorized/);
  await actor(12);await assert.rejects(()=>rpc('ops_workspace',[id(1)]),/authorized/);
- await db.exec('reset role;set role anon');await assert.rejects(()=>rpc('ops_workspace',[null]),/permission/);
+ await db.exec('reset role;set role anon');await assert.rejects(()=>rpc('ops_workspace',[null]),/permission/);await assert.rejects(()=>rpc('ops_workspace_overview',[null]),/permission/);await assert.rejects(()=>rpc('ops_assignment_detail',[before[0].assignments[0].id]),/permission/);
  console.log('Workspace query plans passed: identical complete JSON for global BOD, unit managers, staff, delegate and multi-unit manager across 54 shared daily/event/maintenance assignments, responses, audit history, snoozes and active/retired assets; cross-unit and anonymous denial preserved.');
 } catch(e) {console.error(e.message,e.where);process.exitCode=1;} finally {await db.close();rmSync(dir,{recursive:true,force:true});}
