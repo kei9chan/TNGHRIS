@@ -1,11 +1,13 @@
 import { recordRequestTiming } from './performanceTelemetry';
 import { createClient } from '@supabase/supabase-js';
 import { fetchWithAuthTimeout, withAuthDeadline } from './authDeadline';
+import { authSessionLock } from './authSessionLock';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL!;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY!;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: { lock: authSessionLock },
   global: { fetch: async (input, init) => {
     const started = performance.now();
     let response: Response;

@@ -24,6 +24,7 @@ function fixture() {
   const module={exports:{}};
   vm.runInNewContext(transpile(process.env.AUTH_CONTEXT_SOURCE || 'context/AuthContext.tsx'),{...common,exports:module.exports,require:name=>{
     if(name==='react')return {...react,default:react};
+    if(name.endsWith('/phonePushService'))return {detachPhoneOnLogout:async()=>{}};
     if(name.endsWith('/types'))return {Role:{Employee:'Employee',Admin:'Admin'}};
     if(name.endsWith('/performanceTelemetry'))return {recordAuthStageTiming(){}};
     if(name.endsWith('/authDeadline'))return deadline.exports;
