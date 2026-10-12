@@ -1,6 +1,6 @@
 import ApprovalNavigation from '../approvals/ApprovalNavigation';
 
-import React from 'react';
+import React, {useLayoutEffect} from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import Header from './Header';
 import EmployeeSubNav from './EmployeeSubNav';
@@ -19,6 +19,13 @@ import { PhoneAccountBinding } from '../notifications/PhoneNotificationSetup';
 
 const Layout: React.FC = () => {
   const location = useLocation();
+  useLayoutEffect(() => {
+    // Dashboard and footer links open the pending queue, never the previous
+    // page's retained scroll offset in the decision history below it.
+    if (location.pathname === '/approvals') {
+      window.scrollTo({top: 0, left: 0, behavior: 'instant'});
+    }
+  }, [location.pathname, location.search, location.key]);
   const isEmployeeSection = location.pathname.startsWith('/employees');
   const isAssetManagementSection = location.pathname.startsWith('/employees/asset-management');
   const isCOESection = location.pathname.startsWith('/employees/coe');
