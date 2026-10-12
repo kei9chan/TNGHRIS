@@ -32,4 +32,4 @@ export interface OpsWorkspace {
   permissions: {user_id: string; can_create: boolean; can_assign: boolean}[];
 }
 
-export interface OpsMaintenanceContext {id:string;name:string;asset_tag:string;type:string;brand?:string;model?:string;serial_number?:string;business_unit_id:string;unit_name:string;plan_id:string;activity:string;maintenance:{description?:string;category:string;sop_url?:string;estimated_minutes:number;responsible_manager_id:string}}
+export interface OpsMaintenanceContext {group?:import('./EquipmentGroups').EquipmentGroup|null;id:string;name:string;asset_tag:string;type:string;brand?:string;model?:string;serial_number?:string;business_unit_id:string;unit_name:string;plan_id:string;activity:string;maintenance:{description?:string;category:string;sop_url?:string;estimated_minutes:number;responsible_manager_id:string}}
