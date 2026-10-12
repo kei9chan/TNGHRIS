@@ -48,7 +48,8 @@ const ForgotPassword = React.lazy(() => import('./pages/ForgotPassword'));
 const ResetPassword = React.lazy(() => import('./pages/ResetPassword'));
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
 const OfficialBusinessPage = React.lazy(() => import('./modules/official-business/OfficialBusinessPage'));
-const ApprovalCenter = React.lazy(() => import('./pages/ApprovalCenter'));
+import { preloadApprovalPage } from './services/approvalPageLoader';
+const ApprovalCenter = React.lazy(preloadApprovalPage);
 const OperationsStation = React.lazy(() => import('./pages/OperationsStation'));
 const MyRequests = React.lazy(() => import('./pages/MyRequests'));
 const NotFound = React.lazy(() => import('./pages/NotFound'));
@@ -354,7 +355,7 @@ const AppRoutes: React.FC = () => {
             <Route path="acknowledgments" element={<ProtectedRoute><EmployeeAcknowledgments /></ProtectedRoute>} />
             <Route path="acknowledgments/manage" element={<ProtectedRoute><AcknowledgmentAdmin /></ProtectedRoute>} />
             <Route path="official-business" element={<ProtectedRoute><OfficialBusinessPage /></ProtectedRoute>} />
-            <Route path="approvals" element={<ProtectedRoute><ApprovalCenter /></ProtectedRoute>} />
+            <Route path="approvals" element={<ProtectedRoute><React.Suspense fallback={<section id="pending-approvals" className="space-y-3" aria-busy="true"><h1 className="text-2xl font-bold">Pending approvals</h1><p role="status">Loading pending requests…</p></section>}><ApprovalCenter /></React.Suspense></ProtectedRoute>} />
             <Route path="employee-snapshot" element={<ProtectedRoute><EmployeeSnapshotPage /></ProtectedRoute>} />
         <Route path="operations" element={<ProtectedRoute><OperationsStation /></ProtectedRoute>} />
         <Route path="my-requests" element={<ProtectedRoute><MyRequests /></ProtectedRoute>} />
