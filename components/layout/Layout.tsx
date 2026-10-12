@@ -1,6 +1,7 @@
 import ApprovalNavigation from '../approvals/ApprovalNavigation';
 
-import React, {useLayoutEffect} from 'react';
+import React, {useEffect, useLayoutEffect} from 'react';
+import { warmApprovalPage } from '../../services/approvalPageLoader';
 import { Outlet, useLocation } from 'react-router-dom';
 import Header from './Header';
 import EmployeeSubNav from './EmployeeSubNav';
@@ -20,12 +21,25 @@ import { PhoneAccountBinding } from '../notifications/PhoneNotificationSetup';
 const Layout: React.FC = () => {
   const location = useLocation();
   useLayoutEffect(() => {
-    // Dashboard and footer links open the pending queue, never the previous
-    // page's retained scroll offset in the decision history below it.
     if (location.pathname === '/approvals') {
+      // Late queue content must not anchor the viewport to the previous page.
+      const previousRestoration = window.history.scrollRestoration;
+      const roots = [document.documentElement, document.body];
+      const anchors = roots.map(root => root.style.overflowAnchor);
+      window.history.scrollRestoration = 'manual';
+      roots.forEach(root => { root.style.overflowAnchor = 'none'; });
       window.scrollTo({top: 0, left: 0, behavior: 'instant'});
+      return () => {
+        window.history.scrollRestoration = previousRestoration;
+        roots.forEach((root, index) => { root.style.overflowAnchor = anchors[index]; });
+      };
     }
   }, [location.pathname, location.search, location.key]);
+  useEffect(() => {
+    if (location.pathname !== '/dashboard') return;
+    const timer = window.setTimeout(warmApprovalPage, 300);
+    return () => window.clearTimeout(timer);
+  }, [location.pathname]);
   const isEmployeeSection = location.pathname.startsWith('/employees');
   const isAssetManagementSection = location.pathname.startsWith('/employees/asset-management');
   const isCOESection = location.pathname.startsWith('/employees/coe');
