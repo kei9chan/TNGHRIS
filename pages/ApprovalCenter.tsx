@@ -2,25 +2,17 @@ import PayrollAttendanceInbox from '../modules/payroll/PayrollAttendanceInbox';
 import OvertimeWeekReview from '../components/overtime/OvertimeWeekReview';
 import OBApprovalQueue from '../modules/official-business/OBApprovalQueue';
 import { ApprovalOutcome } from '../components/approvals/ApprovalNavigation';
-import RecentDecisions from '../components/approvals/RecentDecisions';
 import BulkDisapprovalDialog from '../components/approvals/BulkDisapprovalDialog';
 import {useAttendanceIssues,issueLabels,shiftText} from '../services/attendanceIssues';
-import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import React, { useEffect, useLayoutEffect, useMemo, useState, useRef } from 'react';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../services/supabaseClient';
 import { useAuth } from '../hooks/useAuth';
 import { useApprovals } from '../hooks/useApprovals';
 import { useAdditionalApprovals } from '../hooks/useAdditionalApprovals';
 import { OTStatus, Role } from '../types';
 import Button from '../components/ui/Button';
-import LeaveRequestModal from '../components/payroll/LeaveRequestModal';
-import OTRequestModal from '../components/payroll/OTRequestModal';
-import WFHReviewModal from '../components/payroll/WFHReviewModal';
-import ManpowerReviewModal from '../components/payroll/ManpowerReviewModal';
 import { requestManpowerClarification } from '../services/manpowerService';
-import OfferApprovalReviewModal from '../components/recruitment/OfferApprovalReviewModal';
-import AssetRequestApprovalModal from '../components/employees/AssetRequestApprovalModal';
-import PayPackageApprovalModal from '../components/payroll/PayPackageApprovalModal';
 import { useSettings } from '../context/SettingsContext';
 import { ApprovalRequestKind, getApprovalRequestId, getApprovalReviewUrl } from '../services/approvalDeepLinks';
 import {
@@ -34,6 +26,14 @@ import {
   getTimeApprovalReason,
   isBodApprovalStatus,
 } from '../utils/approvalPresentation';
+
+const RecentDecisions = React.lazy(() => import('../components/approvals/RecentDecisions'));
+const LeaveRequestModal = React.lazy(() => import('../components/payroll/LeaveRequestModal'));
+const WFHReviewModal = React.lazy(() => import('../components/payroll/WFHReviewModal'));
+const ManpowerReviewModal = React.lazy(() => import('../components/payroll/ManpowerReviewModal'));
+const OfferApprovalReviewModal = React.lazy(() => import('../components/recruitment/OfferApprovalReviewModal'));
+const AssetRequestApprovalModal = React.lazy(() => import('../components/employees/AssetRequestApprovalModal'));
+const PayPackageApprovalModal = React.lazy(() => import('../components/payroll/PayPackageApprovalModal'));
 
 type Kind = ApprovalRequestKind;
 type EmployeeMeta = { employeeId?: string; position?: string; businessUnitId?: string; businessUnit: string; departmentId?: string; department: string; active: boolean };
@@ -133,6 +133,8 @@ const ApprovalMobileCard: React.FC<{
 };
 
 export default function ApprovalCenter() {
+  const location = useLocation();
+  const pendingSection = useRef<HTMLDivElement>(null);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -157,6 +159,12 @@ export default function ApprovalCenter() {
   // are explicit; stale session filters and scroll positions must not hide requests.
   const [filters, setFilters] = useState(() => ({ ...DEFAULT_FILTERS }));
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [showRecentDecisions, setShowRecentDecisions] = useState(false);
+  useLayoutEffect(() => {
+    setShowRecentDecisions(false);
+    // Run after the lazy page mounts as well as on repeated footer visits.
+    pendingSection.current?.scrollIntoView({ block: 'start', behavior: 'instant' });
+  }, [location.key]);
   const approvals = useApprovals({ user, isHR: roles.has(Role.HRStaff), reporteeIds });
   const additional = useAdditionalApprovals(user);
   const attendance = useAttendanceIssues();
@@ -438,7 +446,7 @@ export default function ApprovalCenter() {
   const loading = approvals.approvalsLoading || additional.additionalApprovalsLoading || attendance.loading;
   const error = approvals.approvalError || additional.additionalApprovalError || attendance.error || loadError;
   const controlClasses = 'rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 dark:border-slate-500 dark:bg-slate-700 dark:text-white dark:placeholder:text-slate-300 dark:focus:border-indigo-400 dark:focus:ring-indigo-900';
-  return <div id="pending-approvals" className="space-y-5 pb-12 text-slate-900 dark:text-slate-100">
+  return <div ref={pendingSection} id="pending-approvals" className="scroll-mt-24 space-y-5 pb-12 text-slate-900 dark:text-slate-100" style={{overflowAnchor: 'none'}}>
     {disapproving&&<BulkDisapprovalDialog kind={disapproving.kind} items={disapproving.items} onClose={()=>setDisapproving(null)} onDone={async()=>{setSelected(new Set());await approvals.refreshApprovals();}} />}
     {decisionMessage && <ApprovalOutcome message={decisionMessage} onReturn={() => { setDecisionMessage(''); closeRequestedReview(); }} />}
     <div className="flex flex-wrap items-end justify-between gap-3"><div><h1 className="text-3xl font-bold text-slate-900 dark:text-white">Approval Center</h1><p className="mt-1 text-slate-500 dark:text-slate-300">The single queue for every approval requiring your action.</p></div><Link to="/dashboard" className="font-semibold text-indigo-600 dark:text-indigo-300">← Dashboard</Link></div>
@@ -527,7 +535,8 @@ export default function ApprovalCenter() {
       })}{!groups.length && !error && !loading && <div className="rounded-xl border border-slate-200 bg-white p-10 text-center dark:border-slate-600 dark:bg-slate-800"><p className="text-lg font-bold text-slate-900 dark:text-white">{items.length ? 'No pending approvals match your filters.' : 'No pending approvals'}</p><p className="mt-1 text-sm text-slate-500 dark:text-slate-300">{items.length ? 'Try clearing a filter to see the active queues.' : 'You are all caught up.'}</p></div>}</div>
     </div>
     {confirming && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"><div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-600 dark:bg-slate-800 dark:text-white"><h2 className="text-xl font-bold">Approve {confirming.ids.length} {KIND_META[confirming.kind].title} request{confirming.ids.length === 1 ? '' : 's'}?</h2><ul className="mt-4 list-disc space-y-2 pl-5 text-sm text-slate-600 dark:text-slate-200"><li>{confirming.ids.length} requests currently shown in your assigned scope will be processed.</li><li>Requests that changed, are no longer assigned to you, or require another approver are safely skipped.</li><li>Each request keeps its own history and audit record.</li>{confirming.kind==='leave'&&<li>Insufficient-credit requests at the BOD stage are approved as BOD exceptions. No additional earned credits will be granted. Approval notes are optional.</li>}<li>Employees are notified using existing settings.</li></ul><label className="mt-5 flex gap-3 rounded-lg bg-slate-50 p-4 font-semibold dark:bg-slate-700 dark:text-white"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} /> I confirm these requests meet policy.</label>{result?.error && <p role="alert" className="mt-4 text-red-700 dark:text-red-300">{result.error}</p>}{result && !result.error && <div className={`mt-4 rounded-lg p-4 text-sm ${result.failed ? 'bg-red-50 text-red-800' : result.skipped ? 'bg-amber-50 text-amber-900' : 'bg-emerald-50 text-emerald-800'}`}><div><b>{result.succeeded} approved</b> · {result.skipped} skipped · {result.failed} failed</div>{result.skippedItems?.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5">{Array.from(new Set(result.skippedItems.map((item: any) => item.reason))).map((reason: any) => <li key={String(reason)}>{String(reason)}</li>)}</ul>}{result.failures?.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5">{Array.from(new Set(result.failures.map((item: any) => item.error))).map((failure: any) => <li key={String(failure)}>{String(failure)}</li>)}</ul>}</div>}<div className="mt-6 flex justify-end gap-3"><Button variant="secondary" onClick={() => { setConfirming(null); setResult(null); }}>{result && !result.error ? 'Close' : 'Cancel'}</Button><Button disabled={!confirmed || busy || !!(result && !result.error)} isLoading={busy} onClick={runBulk}>Approve {confirming.ids.length} requests</Button></div></div></div>}
-    <LeaveRequestModal
+    <React.Suspense fallback={<p role="status">Loading review…</p>}>
+    {requestedLeave && <LeaveRequestModal
       isOpen={Boolean(requestedLeave)}
       onClose={closeRequestedReview}
       request={requestedLeave}
@@ -538,8 +547,8 @@ export default function ApprovalCenter() {
         setDecisionMessage((approved ? 'Your leave approval was recorded.' : 'Your leave rejection was recorded.') + ' Any other required decisions remain pending.');
         closeRequestedReview();
       }}
-    />
-    <WFHReviewModal
+    />}
+    {requestedWfh && <WFHReviewModal
       isOpen={Boolean(requestedWfh)}
       onClose={closeRequestedReview}
       request={requestedWfh}
@@ -553,8 +562,8 @@ export default function ApprovalCenter() {
         setDecisionMessage(('Your WFH rejection was recorded.') + ' Any other required decisions remain pending.');
         closeRequestedReview();
       }}
-    />
-    <ManpowerReviewModal
+    />}
+    {requestedManpower && <ManpowerReviewModal
       isOpen={Boolean(requestedManpower)}
       onClose={closeRequestedReview}
       request={requestedManpower}
@@ -574,21 +583,20 @@ export default function ApprovalCenter() {
         closeRequestedReview();
       }}
       canApprove={Boolean(requestedManpower)}
-    />
-    <RecentDecisions userId={user.id} refreshKey={`${items.length}:${decisionMessage}:${JSON.stringify(result)}`} />
-    <OfferApprovalReviewModal
+    />}
+    {requestedType === 'offer' && requestedItem && <OfferApprovalReviewModal
       isOpen={requestedType === 'offer' && Boolean(requestedItem)}
       requestId={requestedType === 'offer' ? requestedItem : null}
       onClose={closeRequestedReview}
       onProcessed={() => { void additional.refreshAdditionalApprovals(); }}
-    />
-    <AssetRequestApprovalModal
+    />}
+    {requestedType === 'asset' && requestedItem && <AssetRequestApprovalModal
       isOpen={requestedType === 'asset' && Boolean(requestedItem)}
       requestId={requestedType === 'asset' ? requestedItem : null}
       onClose={closeRequestedReview}
       onProcessed={() => { void additional.refreshAdditionalApprovals(); }}
-    />
-    <PayPackageApprovalModal
+    />}
+    {requestedPayPackage && <PayPackageApprovalModal
       isOpen={Boolean(requestedPayPackage)}
       item={requestedPayPackage}
       onClose={closeRequestedReview}
@@ -597,6 +605,11 @@ export default function ApprovalCenter() {
         setDecisionMessage(`Your pay-package ${approved ? 'approval' : 'rejection'} was recorded. Any other required decisions remain pending.`);
         closeRequestedReview();
       }}
-    />
+    />}
+    </React.Suspense>
+    <section className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-600 dark:bg-slate-800">
+      <button type="button" className="min-h-11 font-semibold text-indigo-600 dark:text-indigo-300" aria-expanded={showRecentDecisions} aria-controls="approval-decision-history" onClick={() => setShowRecentDecisions(show => !show)}>{showRecentDecisions ? 'Hide decision history' : 'Decision history'}</button>
+      {showRecentDecisions && <div id="approval-decision-history"><React.Suspense fallback={<p role="status">Loading decision history…</p>}><RecentDecisions userId={user.id} refreshKey={`${items.length}:${decisionMessage}:${JSON.stringify(result)}`} /></React.Suspense></div>}
+    </section>
   </div>;
 }

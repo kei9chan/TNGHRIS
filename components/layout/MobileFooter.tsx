@@ -2,6 +2,8 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { usePermissions } from '../../hooks/usePermissions';
 import { Permission } from '../../types';
+import { PENDING_APPROVALS_LINK } from '../../services/approvalNavigation';
+import { warmApprovalPage } from '../../services/approvalPageLoader';
 
 // Icons
 const ClockIcon: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>);
@@ -17,7 +19,7 @@ const MobileFooter: React.FC = () => {
 
     const navItems = [
         { name: 'Dashboard', path: '/dashboard', icon: HomeIcon, permission: can('Dashboard', Permission.View) },
-        { name: 'Approvals', path: '/approvals', icon: ApprovalIcon, permission: true },
+        { name: 'Approvals', path: PENDING_APPROVALS_LINK, icon: ApprovalIcon, permission: true },
         { name: 'My Requests', path: '/my-requests', icon: RequestsIcon, permission: true },
         { name: 'Clock-In', path: '/payroll/clock-in-out', icon: ClockIcon, permission: can('Clock', Permission.View) },
         { name: 'My Profile', path: '/my-profile', icon: UserCircleIcon, permission: true },
@@ -31,6 +33,8 @@ const MobileFooter: React.FC = () => {
                     <NavLink
                         key={item.name}
                         to={item.path}
+                        onPointerEnter={item.name === 'Approvals' ? warmApprovalPage : undefined}
+                        onFocus={item.name === 'Approvals' ? warmApprovalPage : undefined}
                         className={({ isActive }) => 
                             `flex flex-col items-center justify-center space-y-1 min-h-16 min-w-0 w-full transition-colors
                             ${isActive 
