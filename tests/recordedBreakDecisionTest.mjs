@@ -13,6 +13,7 @@ set test.access='yes';`);
 const src={rows:[{employeeId:emp,employeeName:'Employee A',date:'2026-09-01',breakMinutes:57,scheduledMinutes:480,actualMinutes:544,regularMinutes:483,approvedOtMinutes:0,ready:false,issues:[issue,'Worked and scheduled minutes need reconciliation']},{employeeId:emp,employeeName:'Employee A',date:'2026-09-02',breakMinutes:0,ready:false,issues:[issue,'Missing punch']}],events:['CLOCK_IN','START_BREAK','END_BREAK','CLOCK_OUT'].map((type,i)=>({id:`event-${i}`,employeeId:emp,importWorkDate:'2026-09-01',type,timestamp:`2026-09-01T0${i}:00:00Z`}))};
 await db.query('insert into fixture values($1)',[JSON.stringify(src)]);await db.exec(fs.readFileSync('supabase/migrations/20260930034839_attendance_break_batch_decisions.sql','utf8'));
 await db.exec(fs.readFileSync('supabase/migrations/20260930042837_payroll_break_inbox_and_standing_defaults.sql','utf8'));
+await db.exec(fs.readFileSync('supabase/migrations/20261012221507_hide_resolved_break_batches.sql','utf8'));
 const inbox=async()=> (await db.query('select public.get_payroll_break_review_inbox() v')).rows[0].v;
 const actor=async(n,roles)=>{await db.query("select set_config('test.actor',$1,false),set_config('test.roles',$2,false)",[id(n),roles]);};
 const workspace=async()=> (await db.query('select public.get_payroll_break_review($1,$2,$3) v',[scope,'2026-08-26','2026-09-10'])).rows[0].v;
@@ -45,4 +46,30 @@ await actor(3,'Board of Director');w=await workspace();const bod=await submit(se
 await db.exec("set test.access='no'");await assert.rejects(()=>workspace(),/Scoped/);assert.equal((await inbox()).length,0);await db.exec("set test.access='yes'");
 for(const fn of ['public.get_payroll_break_review_inbox()','public.get_payroll_break_review(uuid,date,date)','public.submit_payroll_break_review(uuid,date,date,text,jsonb)','public.decide_payroll_break_review(uuid,text,text)'])assert.equal((await db.query("select has_function_privilege('anon',$1,'execute') ok",[fn])).rows[0].ok,false);
 await assert.rejects(()=>db.query('select public.apply_payroll_attendance_preset($1,$2,$3,$4,$5)',[scope,emp,'2026-09-01','mark_break_compliant','']),/Scheduled times must not replace/);
-console.log('PASS: atomic selection, role routing, self-approval prevention, BOD uploader different BOD, optional approve notes, rejection reason, idempotency, unchanged punches/pay quantities, only break flag cleared, stale source invalidation, locks, ACL, fabricated-preset blocked.');await db.close();
+// A later policy/attendance update can make the old batch unnecessary. Hide it
+// only when the exact original punches and break duration still match, and all
+// current checks pass. Never turn this queue cleanup into a recorded approval.
+await db.query('update fixture set src=$1',[JSON.stringify({...src,newVersion:4})]);
+await actor(1,'HR Staff');w=await workspace();const oldBatch=await submit(selected,w.sourceHash);
+await actor(2,'HR Manager');assert.equal((await inbox()).length,1);
+const cleared={...src,newVersion:5,rows:src.rows.map((r,i)=>i===0?{...r,issues:[],ready:true}:r)};
+await db.query('update fixture set src=$1',[JSON.stringify(cleared)]);
+const auditBefore=(await db.query('select count(*) n from private.payroll_break_review_audit')).rows[0].n;
+assert.equal((await inbox()).length,0,'Already-resolved dates no longer clutter pending approvals');
+const archived=(await workspace()).reviews.find(r=>r.id===oldBatch);
+assert.equal(archived.status,'resolved');assert.equal(archived.canAct,false);
+assert.equal((await db.query('select status from private.payroll_break_reviews where id=$1',[oldBatch])).rows[0].status,'pending_hr_manager','Original batch and approval status are preserved');
+assert.equal((await db.query('select count(*) n from private.payroll_break_review_audit')).rows[0].n,auditBefore);
+for(const changed of [
+ {...cleared,events:cleared.events.map((e,i)=>i===0?{...e,timestamp:'2026-09-01T00:05:00Z'}:e)},
+ {...cleared,rows:cleared.rows.map((r,i)=>i===0?{...r,breakMinutes:58}:r)},
+ {...cleared,rows:cleared.rows.slice(1)},
+ {...cleared,rows:cleared.rows.map((r,i)=>i===0?{...r,issues:['Missing punch'],ready:false}:r)},
+ {...cleared,rows:cleared.rows.map((r,i)=>i===0?{...r,issues:[issue],ready:false}:r)},
+]){
+ await db.query('update fixture set src=$1',[JSON.stringify(changed)]);
+ assert.equal((await inbox()).length,1,'Changed/missing/unresolved evidence remains visible');
+ await assert.rejects(()=>decide(oldBatch),/evidence changed/i);
+}
+assert.equal((await db.query("select has_function_privilege('authenticated','private.payroll_break_batch_resolved(jsonb,jsonb,jsonb)','execute') ok")).rows[0].ok,false);
+console.log('PASS: break decision roles, routing, stale/locked evidence, resolved-batch hiding and history, unchanged decisions/audit, changed/missing evidence remains visible, and helper ACL.');await db.close();
