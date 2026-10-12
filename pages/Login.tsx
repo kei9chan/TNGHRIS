@@ -499,6 +499,7 @@ const Login: React.FC = () => {
           </div>
 
           <div className="mt-8 text-center">
+            <a href="/install" className="mb-3 inline-block min-h-11 py-3 text-sm font-semibold text-violet-600 underline">Add HRIS to your phone · iPhone / Android</a>
             <p className="text-gray-500 text-sm">
               New Employee?{' '}
               <Link
