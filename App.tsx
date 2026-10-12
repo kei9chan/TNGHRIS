@@ -542,7 +542,9 @@ import { PermissionsProvider } from './context/PermissionsContext';
 
 const OffboardingAccessPortal = React.lazy(() => import('./pages/employees/OffboardingAccessPortal'));
 const PunchStation = React.lazy(() => import('./pages/payroll/PunchStation'));
+const InstallHris = React.lazy(() => import('./pages/InstallHris'));
 const App: React.FC = () => {
+  if (window.location.pathname.replace(/\/$/,'') === '/install') return <React.Suspense fallback={<p>Loading installation steps…</p>}><InstallHris /></React.Suspense>;
   if (window.location.pathname.replace(/\/$/,'') === '/punch-station') {
     if (!window.location.pathname.endsWith('/')) { window.location.replace('/punch-station/'); return null; }
     return <React.Suspense fallback={<p>Loading Punch Station…</p>}><PunchStation /></React.Suspense>;
