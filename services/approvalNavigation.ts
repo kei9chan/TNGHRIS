@@ -1,5 +1,6 @@
 /** Only the canonical internal destination is used; external return URLs are never consumed. */
 export const APPROVAL_CENTER = '/approvals';
+export const PENDING_APPROVALS_LINK = `${APPROVAL_CENTER}#pending-approvals`;
 export const approvalViewKey = (userId: string) => `approval-view-v1:${userId}`;
 export function readApprovalView(userId: string) {
   try {
