@@ -18,13 +18,17 @@ function load(path,deps,globals={}){
 // Real layout effect: dashboard-to-queue and repeated footer navigation reset
 // the scroll, while schedule anchors on other routes retain their behavior.
 let route={pathname:'/approvals',search:'?type=overtime',key:'first'},effects=[],scroll=[];
+const history={scrollRestoration:'auto'};
+const document={documentElement:{style:{overflowAnchor:'auto'}},body:{style:{overflowAnchor:''}}};
 const layout=load('components/layout/Layout.tsx',new Proxy({
- react:{...React,useLayoutEffect:fn=>effects.push(fn)},
+ react:{...React,useEffect:noop,useLayoutEffect:fn=>effects.push(fn)},
  'react-router-dom':{useLocation:()=>route,Outlet:()=>null},
  '../notifications/PhoneNotificationSetup':{PhoneAccountBinding:()=>null},
-},{has:()=>true,get:(target,name)=>name in target?target[name]:component(()=>null)}),{window:{scrollTo:options=>scroll.push(options)}});
-renderToStaticMarkup(React.createElement(layout.default));effects.pop()();
+},{has:()=>true,get:(target,name)=>name in target?target[name]:component(()=>null)}),{document,window:{history,scrollTo:options=>scroll.push(options)}});
+renderToStaticMarkup(React.createElement(layout.default));const restore=effects.pop()();
 assert.deepEqual(JSON.parse(JSON.stringify(scroll[0])),{top:0,left:0,behavior:'instant'});
+assert.equal(history.scrollRestoration,'manual');assert.equal(document.body.style.overflowAnchor,'none');
+restore();assert.equal(history.scrollRestoration,'auto');assert.equal(document.documentElement.style.overflowAnchor,'auto');assert.equal(document.body.style.overflowAnchor,'');
 route={...route,key:'second'};renderToStaticMarkup(React.createElement(layout.default));effects.pop()();assert.equal(scroll.length,2);
 route={pathname:'/dashboard',search:'',hash:'#schedule-approvals',key:'third'};
 renderToStaticMarkup(React.createElement(layout.default));effects.pop()();assert.equal(scroll.length,2);
@@ -51,11 +55,12 @@ failure=true;await listeners.focus();assert.match(renderOb(),/Fixture load faile
 // pending schedule and OB count; summary precedes every queue and history.
 let index=0;
 const approvalHooks=new Proxy({}, {get:(_,name)=>String(name).startsWith('pending')?[]:false});
-const ReactFixture={...React,useEffect:noop,useMemo:fn=>fn(),useState:initial=>{
+let pendingScroll=0,pageEffects=[];
+const ReactFixture={...React,useRef:()=>({current:{scrollIntoView:()=>pendingScroll++}}),useLayoutEffect:fn=>pageEffects.push(fn),useEffect:noop,useMemo:fn=>fn(),useState:initial=>{
  const n=index++;return[n===13?[{id:'schedule-one',employeeName:'Test schedule',week:'2026-10-19'}]:n===14?1:typeof initial==='function'?initial():initial,noop];
 }};
 const pageDeps={
- react:ReactFixture,'react-router-dom':{Link:link,useNavigate:()=>noop,useSearchParams:()=>[new URLSearchParams()]},
+ react:ReactFixture,'react-router-dom':{Link:link,useLocation:()=>route,useNavigate:()=>noop,useSearchParams:()=>[new URLSearchParams()]},
  '../hooks/useAuth':{useAuth:()=>({user:{id:'fixture',role:'Board of Director',roles:[]}})},
  '../hooks/useApprovals':{useApprovals:()=>approvalHooks},
  '../hooks/useAdditionalApprovals':{useAdditionalApprovals:()=>approvalHooks},
@@ -71,7 +76,10 @@ const approval=load('pages/ApprovalCenter.tsx',new Proxy(pageDeps,{has:()=>true,
 const pageHtml=renderToStaticMarkup(React.createElement(approval.default));
 assert.ok(pageHtml.indexOf('Pending approvals')<pageHtml.indexOf('Official Business fixture'));
 assert.ok(pageHtml.indexOf('Pending approvals')<pageHtml.indexOf('Employee schedules'));
-assert.ok(pageHtml.indexOf('Employee schedules')<pageHtml.indexOf('Recent decisions fixture'));
+assert.ok(pageHtml.indexOf('Employee schedules')<pageHtml.indexOf('Decision history'));
+assert.ok(!pageHtml.includes('Recent decisions fixture'),'History is not fetched or mounted on entry');
+assert.match(pageHtml,/aria-expanded="false"/);
+pageEffects.pop()();assert.equal(pendingScroll,1,'Lazy page mount also resets the viewport after loading');
 assert.match(pageHtml,/text-2xl font-bold bg-blue-50 text-blue-700">2<\/div>/,'Pending summary includes schedule and OB requests');
 
 // BOD rows expose the cost directly below manager-approved minutes on mobile.
