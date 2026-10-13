@@ -3,6 +3,7 @@ import {Link} from 'react-router-dom';
 import OvertimeWeekReview from '../../components/overtime/OvertimeWeekReview';
 import RecordedBreakApprovals from './RecordedBreakApprovals';
 import ShiftVarianceDecision from './ShiftVarianceDecision';
+import EmployeeReviewBoundary from './EmployeeReviewBoundary';
 import Button from '../../components/ui/Button';
 import type {ReviewTimeRow,TestTimeEvidence} from './attendanceReadiness';
 import {correctionLink,employeeReviews,timeTotals} from './timeReviewModel';
@@ -33,7 +34,7 @@ export const TimekeepingEmployeeTable:React.FC<{rows:ReviewTimeRow[];test:TestTi
     <details className="mt-5"><summary className="cursor-pointer font-semibold text-slate-600">View daily evidence and original source IDs</summary><div className="mt-4 space-y-4">{card.days.map(day=><DayDetail key={day.date} row={day} saved={saved} canOpenOffset={canOpenOffset} busy={busy} hasReason={hasReason} onOpenOffset={onOpenOffset}/>)}{historical.find(item=>item.id===card.employeeId)?.test.length?<HistoricalSources records={historical.find(item=>item.id===card.employeeId)!.test}/>:null}</div></details>
    </div>}
   </article>;})}
-  {review&&cards.find(card=>card.key===review.key)&&<EmployeeIssueReview key={review.key} card={cards.find(card=>card.key===review.key)!} initialIssue={review.issue} scopeId={scopeId} onApplied={onApplied} saved={saved} onClose={()=>setReview(null)}/>}
+  {review&&cards.find(card=>card.key===review.key)&&<EmployeeReviewBoundary key={`${review.key}:${review.issue}`} onClose={()=>setReview(null)}><EmployeeIssueReview card={cards.find(card=>card.key===review.key)!} initialIssue={review.issue} scopeId={scopeId} onApplied={onApplied} saved={saved} onClose={()=>setReview(null)}/></EmployeeReviewBoundary>}
   {!filtered.length&&<div className="rounded-xl border border-dashed p-8 text-center text-slate-500">{cards.length?'No employees match these filters.':'No employee records for this payroll cycle.'}</div>}
  </div>;
 };

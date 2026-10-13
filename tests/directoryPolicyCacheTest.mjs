@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';import fs from 'node:fs';import {PGlite} from '@electric-sql/pglite';
+const db=new PGlite();const id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
+await db.exec(`create schema private;create role authenticated;
+create table hris_users(id uuid primary key,business_unit_id uuid,department_id uuid,reports_to text,auth_user_id uuid,employee_id text,full_name text);
+insert into hris_users values('${id(1)}','${id(10)}','${id(20)}',null,'${id(101)}','CODE-1','Fixture viewer'),('${id(2)}','${id(10)}','${id(21)}','${id(1)}',null,null,'Fixture two'),('${id(3)}','${id(11)}','${id(20)}','CODE-1',null,null,'Fixture three'),('${id(4)}','${id(11)}','${id(21)}',null,null,null,'Fixture four');
+create function public.current_hris_user_id() returns uuid language sql stable security definer set search_path='' as $$select id from public.hris_users where id=nullif(current_setting('test.actor',true),'')::uuid$$;
+create function public.has_active_role(text) returns boolean language sql stable as $$select $1=current_setting('test.role',true)$$;
+create function public.has_feature_permission(text,text) returns boolean language sql stable as $$select $1=any(string_to_array(current_setting('test.features',true),','))$$;
+create function public.current_data_scope() returns jsonb language sql stable as $$select current_setting('test.scope')::jsonb$$;
+create function public.can_access_hris_user(p_target_user_id uuid) returns boolean language plpgsql stable security definer set search_path='' as $$
+declare viewer public.hris_users;target_user public.hris_users;scope jsonb;scope_type text;begin
+select * into viewer from public.hris_users where id=public.current_hris_user_id();select * into target_user from public.hris_users where id=p_target_user_id;
+if viewer.id is null or target_user.id is null then return false;end if;if viewer.id=target_user.id then return true;end if;
+if public.has_active_role('Admin') and public.has_feature_permission('UserManagement','view') then return true;end if;
+if not public.has_feature_permission('Employees','view') and not public.has_feature_permission('EmployeeList','view') and not public.has_feature_permission('UserManagement','view') then return false;end if;
+scope:=public.current_data_scope();scope_type:=scope->>'type';
+if scope_type='GLOBAL' then return true;end if;
+if scope_type='SPECIFIC' then return target_user.business_unit_id::text in(select jsonb_array_elements_text(scope->'allowedBuIds'));end if;
+if scope_type='HOME_ONLY' then return viewer.business_unit_id is not null and viewer.business_unit_id=target_user.business_unit_id;end if;
+if scope_type='DEPARTMENT' then return viewer.department_id is not null and viewer.department_id=target_user.department_id;end if;
+if scope_type='DIRECT_REPORTS' then return target_user.reports_to in(viewer.id::text,viewer.auth_user_id::text,viewer.employee_id,viewer.full_name);end if;
+return false;end$$;
+alter table hris_users enable row level security;create policy hris_users_central_select on hris_users for select to authenticated using(public.can_access_hris_user(id));grant select on hris_users to authenticated;
+set role authenticated;`);
+const cases=[];for(const actor of [id(1),id(999)])for(const role of ['Employee','HR Manager','Admin'])for(const features of ['', 'Employees','EmployeeList','UserManagement'])for(const scope of [{type:'GLOBAL'},{type:'HOME_ONLY'},{type:'SPECIFIC',allowedBuIds:[id(10)]},{type:'DEPARTMENT'},{type:'DIRECT_REPORTS'},{type:'NONE'}])cases.push({actor,role,features,scope});
+const rows=async fixture=>{await db.query("select set_config('test.actor',$1,false),set_config('test.role',$2,false),set_config('test.features',$3,false),set_config('test.scope',$4,false)",[fixture.actor,fixture.role,fixture.features,JSON.stringify(fixture.scope)]);return(await db.query('select id from hris_users order by id')).rows.map(r=>r.id);};
+const expected=[];for(const fixture of cases)expected.push(await rows(fixture));
+await db.exec('reset role');await db.exec(fs.readFileSync('supabase/migrations/20261013085952_directory_global_view_initplan_cache.sql','utf8'));await db.exec('set role authenticated');
+for(let n=0;n<cases.length;n++)assert.deepEqual(await rows(cases[n]),expected[n],JSON.stringify(cases[n]));
+console.log(`PASS: cached global directory branch preserves exactly the same visible rows across ${cases.length} role/feature/scope/missing-account combinations.`);await db.close();
