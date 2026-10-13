@@ -31,5 +31,19 @@ export async function decideOtWeek(ids:string[],minutes:Record<string,number|{mi
 export async function confirmOtBaseline(employee:string,week:string,minutes:number,evidence:string){const {error}=await supabase.rpc('confirm_ot_week_baseline',{p_employee:employee,p_week:week,p_minutes:minutes,p_evidence:evidence});if(error)throw new Error(error.message);}
 export async function verifyLegacyOtHours(amounts:Record<string,number>,note:string){const {data,error}=await supabase.rpc('verify_legacy_ot_hours',{p_amounts:amounts,p_note:note||null});if(error)throw new Error(error.message);return data;}
 
-export async function getPayrollOtWeeks(employee:string,from:string,to:string):Promise<OtWeek[]> {const {data,error}=await supabase.rpc('get_payroll_ot_review',{p_employee:employee,p_from:from,p_to:to});if(error)throw new Error(error.message);return data||[];}
+export function payrollOtWeeks(data:unknown):OtWeek[] {
+ if(data==null)return [];
+ if(!Array.isArray(data))throw new Error('Overtime review details are incomplete. Refresh this employee’s review.');
+ const validDate=(date:unknown)=>typeof date==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(date)&&Number.isFinite(new Date(`${date}T12:00:00+08:00`).getTime());
+ for(const week of data){
+  if(!week||typeof week!=='object'||!week.employee||typeof week.employee.name!=='string'||!week.summary||!validDate(week.summary.weekStart)||!validDate(week.summary.weekEnd)||!Array.isArray(week.requests)||typeof week.version!=='string'||!week.employeeId)
+   throw new Error('Overtime employee or week details are incomplete. Refresh this employee’s review or ask HR to check the record.');
+  for(const row of week.requests){
+   if(!row||!row.id||!validDate(row.date)||(row.history_log!=null&&(!Array.isArray(row.history_log)||row.history_log.some((h:unknown)=>!h||typeof h!=='object'))))
+    throw new Error('An overtime date or history record is incomplete. Ask HR to check the request, then retry this review.');
+  }
+ }
+ return data as OtWeek[];
+}
+export async function getPayrollOtWeeks(employee:string,from:string,to:string):Promise<OtWeek[]> {const {data,error}=await supabase.rpc('get_payroll_ot_review',{p_employee:employee,p_from:from,p_to:to});if(error)throw new Error(error.message);return payrollOtWeeks(data);}
 export async function sendPayrollOt(rows:OtWeekRow[],operation:string,note:string){const {data,error}=await supabase.rpc('send_payroll_ot_to_manager',{p_ids:rows.map(r=>r.id),p_versions:Object.fromEntries(rows.map(r=>[r.id,r.updated_at])),p_operation:operation,p_note:note.trim()||null});if(error)throw new Error(error.message);return data;}
