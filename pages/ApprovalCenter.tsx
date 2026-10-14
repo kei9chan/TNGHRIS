@@ -137,6 +137,7 @@ export default function ApprovalCenter() {
   const location = useLocation();
   const pendingSection = useRef<HTMLDivElement>(null);
   const [searchParams] = useSearchParams();
+  const queueKind = GROUP_ORDER.includes(searchParams.get('type') as Kind) ? searchParams.get('type') as Kind : null;
   const navigate = useNavigate();
   const { user } = useAuth();
   const { approverConfigs } = useSettings();
@@ -146,7 +147,7 @@ export default function ApprovalCenter() {
   const [businessUnitLabels, setBusinessUnitLabels] = useState<Record<string, string>>({});
   const [departmentLabels, setDepartmentLabels] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [expanded, setExpanded] = useState<Kind | null>(null);
+  const [expanded, setExpanded] = useState<Kind | null>(() => queueKind);
   const [decisionMessage, setDecisionMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState<{ kind: Kind; ids: string[] } | null>(null);
@@ -156,9 +157,8 @@ export default function ApprovalCenter() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [schedulePending, setSchedulePending] = useState<any[]>([]);
   const [obPendingCount, setObPendingCount] = useState(0);
-  // Every fresh visit starts with the complete authorized queue. URL category links
-  // are explicit; stale session filters and scroll positions must not hide requests.
-  const [filters, setFilters] = useState(() => ({ ...DEFAULT_FILTERS }));
+  // Explicit category links open a focused queue; general navigation opens all pending.
+  const [filters, setFilters] = useState(() => ({ ...DEFAULT_FILTERS, kind: queueKind || '' }));
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [showRecentDecisions, setShowRecentDecisions] = useState(false);
   useLayoutEffect(() => {
@@ -189,9 +189,9 @@ export default function ApprovalCenter() {
     const kind = GROUP_ORDER.includes(requestedType as Kind) ? requestedType as Kind : '';
     const requestedReview = searchParams.get('review');
     const quick = requestedReview === 'exceptions' ? 'exceptions' : undefined;
-    // A category link opens its row without hiding the other pending categories.
     setExpanded(kind || null);
-    setFilters({ ...DEFAULT_FILTERS, quick: quick || 'all' });
+    setFilters({ ...DEFAULT_FILTERS, kind, quick: quick || 'all' });
+    setFiltersOpen(false);
     setSelected(new Set());
   }, [searchParams]);
 
@@ -398,6 +398,7 @@ export default function ApprovalCenter() {
   }, [approvals, additional, attendance.rows, employeeMeta, businessUnitLabels, departmentLabels]);
 
   const filtered = useMemo(() => items.filter(item => {
+    if (queueKind && item.kind !== queueKind) return false;
     const query = filters.search.trim().toLowerCase(), age = dayAge(item.start);
     if (query && !`${item.employee} ${item.employeeCode || ''} ${item.reference} ${item.details || ''} ${item.reason || ''}`.toLowerCase().includes(query)) return false;
     if (filters.businessUnit && item.businessUnitId !== filters.businessUnit) return false;
@@ -409,7 +410,7 @@ export default function ApprovalCenter() {
     if ((filters.age === 'overdue' || filters.quick === 'overdue') && age < 3) return false;
     if (filters.quick === 'exceptions' && !needsIndividualReview(item)) return false;
     return true;
-  }).sort((a, b) => filters.sort === 'newest' ? b.start.getTime() - a.start.getTime() : a.start.getTime() - b.start.getTime()), [items, filters]);
+  }).sort((a, b) => filters.sort === 'newest' ? b.start.getTime() - a.start.getTime() : a.start.getTime() - b.start.getTime()), [items, filters, queueKind]);
 
   const activeGroupKinds = useMemo(() => GROUP_ORDER.filter(kind => filtered.some(item => item.kind === kind)), [filtered]);
   const groups = useMemo(() => activeGroupKinds.map(kind => ({ kind, items: filtered.filter(item => item.kind === kind) })), [activeGroupKinds, filtered]);
@@ -451,12 +452,12 @@ export default function ApprovalCenter() {
   return <div ref={pendingSection} id="pending-approvals" className="scroll-mt-24 space-y-5 pb-12 text-slate-900 dark:text-slate-100" style={{overflowAnchor: 'none'}}>
     {disapproving&&<BulkDisapprovalDialog kind={disapproving.kind} items={disapproving.items} onClose={()=>setDisapproving(null)} onDone={async()=>{setSelected(new Set());await approvals.refreshApprovals();}} />}
     {decisionMessage && <ApprovalOutcome message={decisionMessage} onReturn={() => { setDecisionMessage(''); closeRequestedReview(); }} />}
-    <div className="flex flex-wrap items-end justify-between gap-3"><div><h1 className="text-3xl font-bold text-slate-900 dark:text-white">Approval Center</h1><p className="mt-1 text-slate-500 dark:text-slate-300">The single queue for every approval requiring your action.</p></div><Link to="/dashboard" className="font-semibold text-indigo-600 dark:text-indigo-300">← Dashboard</Link></div>
+    <div className="flex flex-wrap items-end justify-between gap-3"><div><h1 className="text-3xl font-bold text-slate-900 dark:text-white">{queueKind ? `${KIND_META[queueKind].title} · Pending` : 'Approval Center'}</h1>{!queueKind && <p className="mt-1 text-slate-500 dark:text-slate-300">The single queue for every approval requiring your action.</p>}</div><Link to="/dashboard" className="font-semibold text-indigo-600 dark:text-indigo-300">← Dashboard</Link></div>
     {loading && <p role="status" className="text-sm text-slate-500 dark:text-slate-300">Updating approval queues…</p>}
     {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-800"><b>Some approval data could not be loaded.</b> {error} <button onClick={() => Promise.all([approvals.refreshApprovals(), additional.refreshAdditionalApprovals(), attendance.load()])} className="min-h-11 font-semibold underline">Retry loading approvals</button></div>}
     {requestedItem && !['offer', 'asset'].includes(requestedType || '') && !loading && !items.some(item => item.id === requestedItem) && !error && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"><b>This request is no longer awaiting your action.</b> It may already be processed, reassigned, or outside your authorized scope.</div>}
     {!approverConfigs.conditionalTimeApprovals.valid && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900"><b>Conditional approval routing needs an Admin.</b> {approverConfigs.conditionalTimeApprovals.invalid_reason || 'At least one active BOD approver must be selected.'}</div>}
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">{[['Pending approvals', items.length + schedulePending.length + obPendingCount, 'bg-blue-50 text-blue-700'], ['Manager only', managerOnlyCount, 'bg-emerald-50 text-emerald-700'], ['BOD required', bodRequiredCount, 'bg-violet-50 text-violet-700'], ['Due today', dueTodayCount, 'bg-orange-50 text-orange-700'], ['Overdue', overdueCount, 'bg-red-50 text-red-700'], ['High risk / exceptions', exceptionCount, 'bg-amber-50 text-amber-700']].map(([label, value, color]) => <div key={String(label)} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-600 dark:bg-slate-800 sm:p-5"><div className={`inline-flex rounded-lg px-3 py-1 text-2xl font-bold ${color}`}>{value}</div><p className="mt-2 text-sm text-slate-600 dark:text-slate-200">{label}</p></div>)}</div>
+    {!queueKind && <><div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">{[['Pending approvals', items.length + schedulePending.length + obPendingCount, 'bg-blue-50 text-blue-700'], ['Manager only', managerOnlyCount, 'bg-emerald-50 text-emerald-700'], ['BOD required', bodRequiredCount, 'bg-violet-50 text-violet-700'], ['Due today', dueTodayCount, 'bg-orange-50 text-orange-700'], ['Overdue', overdueCount, 'bg-red-50 text-red-700'], ['High risk / exceptions', exceptionCount, 'bg-amber-50 text-amber-700']].map(([label, value, color]) => <div key={String(label)} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-600 dark:bg-slate-800 sm:p-5"><div className={`inline-flex rounded-lg px-3 py-1 text-2xl font-bold ${color}`}>{value}</div><p className="mt-2 text-sm text-slate-600 dark:text-slate-200">{label}</p></div>)}</div>
     <OBApprovalQueue key={user.id} onCountChange={setObPendingCount} />
     {schedulePending.length > 0 && <section className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-indigo-950 shadow-sm dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-100">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -465,8 +466,9 @@ export default function ApprovalCenter() {
       </div>
       <ul className="mt-3 space-y-1 text-sm">{schedulePending.map(row => <li key={row.id}>{row.employeeName} · week of {row.week} · {row.reason || 'No note provided'}</li>)}</ul>
     </section>}
-    <PayrollAttendanceInbox/>
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-600 dark:bg-slate-800">
+    <PayrollAttendanceInbox/></>}
+    {queueKind && <button type="button" onClick={() => setFiltersOpen(open => !open)} aria-expanded={filtersOpen} aria-controls="approval-filters" className="min-h-11 rounded-lg border border-slate-300 px-4 text-sm font-semibold">{filtersOpen ? 'Hide filters' : 'Filter requests'}</button>}
+    {(!queueKind || filtersOpen) && <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-600 dark:bg-slate-800">
       <div className="flex items-center justify-between gap-3 lg:hidden"><div><h2 className="font-bold">Filter requests</h2><p className="text-sm text-slate-500 dark:text-slate-300">{appliedFilterCount ? `${appliedFilterCount} filter${appliedFilterCount === 1 ? '' : 's'} applied` : 'Showing all pending requests'}</p></div><button type="button" onClick={() => setFiltersOpen(open => !open)} aria-expanded={filtersOpen} aria-controls="approval-filters" className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 dark:border-slate-500 dark:text-white">{filtersOpen ? 'Hide filters' : 'Open filters'}</button></div>
       <div id="approval-filters" className={`${filtersOpen ? 'mt-4 block' : 'hidden'} lg:block`}>
         <div className="mb-3 grid gap-3 sm:grid-cols-3"><label className="text-sm font-semibold text-slate-700 dark:text-slate-100">Date from<input type="date" aria-label="Date from" value={filters.dateFrom} onChange={event => setFilters({ ...filters, dateFrom: event.target.value })} className={`mt-1 block w-full font-normal ${controlClasses}`} /></label><label className="text-sm font-semibold text-slate-700 dark:text-slate-100">Date to<input type="date" aria-label="Date to" value={filters.dateTo} onChange={event => setFilters({ ...filters, dateTo: event.target.value })} className={`mt-1 block w-full font-normal ${controlClasses}`} /></label><label className="text-sm font-semibold text-slate-700 dark:text-slate-100">Approver scope<select aria-label="Approver scope" disabled className={`mt-1 block w-full font-normal disabled:cursor-not-allowed disabled:opacity-100 dark:disabled:bg-slate-600 dark:disabled:text-slate-100 ${controlClasses}`}><option>My authorized scope</option></select></label></div>
@@ -474,11 +476,11 @@ export default function ApprovalCenter() {
         <div className="mt-3 flex flex-wrap gap-2">{[['all', 'All pending'], ['exceptions', 'Exceptions'], ['today', 'Due today'], ['overdue', 'Overdue']].map(([id, label]) => <button key={id} onClick={() => id === 'all' ? showAllPending() : setFilters({ ...filters, quick: id })} className={`min-h-10 rounded-full px-3 py-1.5 text-sm font-semibold ${filters.quick === id && (id !== 'all' || !appliedFilterCount) ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 dark:bg-slate-600 dark:text-white'}`}>{label}</button>)}</div>
         <div className="mt-4 flex flex-wrap justify-end gap-2 lg:hidden"><button type="button" onClick={showAllPending} className="min-h-11 rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold dark:border-slate-500">Clear filters</button><button type="button" onClick={() => setFiltersOpen(false)} className="min-h-11 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white">Apply filters</button></div>
       </div>
-    </div>
+    </div>}
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3" role="status">
-        <p className="text-sm text-slate-600 dark:text-slate-300">Showing {filtered.length} of {items.length} pending approvals{filters.kind ? ` · ${KIND_META[filters.kind as Kind]?.title || filters.kind}` : ' · All request types'}</p>
-        {appliedFilterCount > 0 && <button onClick={showAllPending} className="min-h-11 rounded-lg border border-indigo-400 px-4 text-sm font-semibold text-indigo-700 dark:text-indigo-300">Show all pending / Clear filters</button>}
+        <p className="text-sm text-slate-600 dark:text-slate-300">{queueKind ? `${filtered.length} pending` : `Showing ${filtered.length} of ${items.length} pending approvals · All request types`}</p>
+        {(queueKind || appliedFilterCount > 0) && <button onClick={showAllPending} className="min-h-11 rounded-lg border border-indigo-400 px-4 text-sm font-semibold text-indigo-700 dark:text-indigo-300">{queueKind ? 'All pending approvals' : 'Show all pending / Clear filters'}</button>}
       </div>
 
       <div className="space-y-3">{groups.map(group => {
