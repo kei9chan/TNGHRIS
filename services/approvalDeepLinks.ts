@@ -11,7 +11,8 @@ export type ApprovalRequestKind =
   | 'offer'
   | 'asset'
   | 'benefit'
-  | 'pay_package';
+  | 'pay_package'
+  | 'account_deletion';
 
 const approvalPaths: Record<ApprovalRequestKind, string> = {
   attendance: '/payroll/attendance-requests',
@@ -27,6 +28,7 @@ const approvalPaths: Record<ApprovalRequestKind, string> = {
   asset: '/approvals',
   benefit: '/employees/benefits',
   pay_package: '/approvals',
+  account_deletion: '/admin/users',
 };
 
 /** Build a direct link to one request, never merely to a module landing page. */

@@ -1,6 +1,7 @@
 type DecisionDetails = Record<string, unknown>;
 
 const ENTITY_NAMES: Record<string, string> = {
+  EmailAccountDeletion: 'Email-account deletion',
   AssetRequest: 'Asset request', BenefitRequest: 'Benefit request', COERequest: 'Certificate request',
   JobRequisition: 'Job requisition', LeaveRequest: 'Leave request', ManpowerRequest: 'Manpower request',
   NTE: 'Notice to Explain', OTRequest: 'Overtime request', PAN: 'Personnel Action Notice',

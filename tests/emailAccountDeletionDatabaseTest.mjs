@@ -1,0 +1,43 @@
+import assert from 'node:assert/strict';
+import {createEmailDeletionFixture,id} from './emailAccountDeletionFixture.mjs';
+const {db,actor,rpc}=await createEmailDeletionFixture();
+const workspace=()=>rpc('get_email_account_deletion_workspace');
+const request=(n,email,r,reason='Old email is inaccessible; replacement registered')=>rpc('request_email_account_deletion',[id(n),reason,email,id(r)]);
+try{
+ await actor(11);let w=await workspace();assert.equal(w.canRequest,true);assert.equal(w.canApprove,false);assert.ok(w.targets.some(x=>x.id===id(13)));assert.ok(!w.targets.some(x=>[10,11,12,14,15].includes(Number(x.id.slice(-12)))));
+ assert.equal(await request(13,'old@example.invalid',100),id(100));assert.equal(await request(13,'old@example.invalid',100),id(100));
+ await assert.rejects(()=>request(13,'wrong@example.invalid',101),/email changed/);
+ await assert.rejects(()=>request(14,'admin@example.invalid',102),/protected/);
+ await assert.rejects(()=>rpc('decide_email_account_deletion',[id(100),'approve','']),/Only.*BOD/);
+ await assert.rejects(()=>rpc('finish_email_account_deletion',[id(100),id(900),true,null]),/permission denied/);
+ await db.exec('reset role');assert.equal((await db.query('select status from hris_users where id=$1',[id(13)])).rows[0].status,'Active');assert.equal((await db.query('select count(*) n from notifications')).rows[0].n,1);
+ for(const n of [12,13,15]){await actor(n);w=await workspace();assert.equal(w.canRequest,false);assert.equal(w.canApprove,false);assert.equal(w.requests.length,0);await assert.rejects(()=>rpc('decide_email_account_deletion',[id(100),'approve','']),/Only.*BOD/);}
+ await actor(10);w=await workspace();assert.equal(w.canApprove,true);assert.equal(w.requests[0].isActionable,true);
+ assert.equal((await db.query('select * from get_my_actionable_approval_tasks()')).rows.filter(r=>r.request_type==='account_deletion').length,1);
+ await assert.rejects(()=>rpc('decide_email_account_deletion',[id(100),null,'']),/Choose approve/);
+ await actor(11);await request(20,'rejected@example.invalid',110);
+ await actor(10);await assert.rejects(()=>rpc('decide_email_account_deletion',[id(110),'reject','']),/rejection reason/);await rpc('decide_email_account_deletion',[id(110),'reject','Replacement is not verified']);
+ await db.exec('reset role');assert.equal((await db.query('select status from hris_users where id=$1',[id(20)])).rows[0].status,'Active');
+ await actor(11);await request(30,'stale@example.invalid',120);
+ await db.exec('reset role');await db.query('update hris_users set email=$2 where id=$1',[id(30),'new@example.invalid']);
+ await actor(10);await assert.rejects(()=>rpc('decide_email_account_deletion',[id(120),'approve','']),/account changed/);
+ const lease=await rpc('decide_email_account_deletion',[id(100),'approve','Verified old email']);assert.ok(lease.executionToken);assert.equal(lease.authUserId,id(13));
+ await actor(13);assert.equal(await rpc('current_hris_user_id'),null,'Existing HRIS access fails closed after approval');
+ await db.exec('reset role');await assert.rejects(()=>db.query("update hris_users set status='Active' where id=$1",[id(13)]),/approved login deletion/);
+ await actor(10);await assert.rejects(()=>rpc('decide_email_account_deletion',[id(100),'approve','']),/already being completed/);
+ await actor(null,'service_role');await assert.rejects(()=>rpc('finish_email_account_deletion',[id(100),id(900),true,null]),/lease is invalid/);await rpc('finish_email_account_deletion',[id(100),lease.executionToken,false,'Provider unavailable']);
+ await actor(10);w=await workspace();assert.equal(w.requests.find(r=>r.id===id(100)).isActionable,true);const retry=await rpc('decide_email_account_deletion',[id(100),'approve','']);assert.notEqual(retry.executionToken,lease.executionToken);
+ await actor(null,'service_role');await assert.rejects(()=>rpc('finish_email_account_deletion',[id(100),lease.executionToken,true,null]),/lease is invalid/);
+ await db.exec('reset role');await db.query('update auth.users set deleted_at=now(),email=null where id=$1',[id(13)]);
+ await actor(null,'service_role');await rpc('finish_email_account_deletion',[id(100),retry.executionToken,false,'Finalization needs retry']);
+ await actor(10);const final=await rpc('decide_email_account_deletion',[id(100),'approve','']);assert.equal(final.authDeleted,true);
+ await actor(null,'service_role');await rpc('finish_email_account_deletion',[id(100),final.executionToken,true,null]);
+ await actor(10);w=await workspace();assert.equal(w.requests.find(r=>r.id===id(100)).status,'Completed');assert.equal(w.requests.find(r=>r.id===id(100)).isActionable,false);
+ const tasks=(await db.query('select * from get_my_actionable_approval_tasks()')).rows;assert.ok(tasks.some(r=>r.request_type==='leave'),'Existing approval projection retained');
+ await db.exec('reset role');const profile=(await db.query('select * from hris_users where id=$1',[id(13)])).rows[0];assert.equal(profile.auth_user_id,null);assert.equal(profile.email,'old@example.invalid');assert.equal(profile.status,'Inactive');
+ assert.equal(Number((await db.query('select amount from payroll_history where employee_id=$1',[id(13)])).rows[0].amount),15000);assert.equal((await db.query('select count(*) n from attendance_history where employee_id=$1',[id(13)])).rows[0].n,1);
+ assert.equal((await db.query("select count(*) n from audit_logs where entity_id=$1 and action='APPROVE'",[id(100)])).rows[0].n,1,'Execution retries do not repeat approval');
+ await actor(11);await assert.rejects(()=>db.query('select * from private.email_account_deletion_requests'),/permission denied/);w=await workspace();assert.equal(w.requests.find(r=>r.id===id(100)).status,'Completed');
+ await actor(null,'anon');await assert.rejects(()=>workspace(),/permission denied/);
+ console.log('PASS: named HR/BOD routing, unapproved login unchanged, protected identities, wrong/anonymous actors denied, rejection, stale email guard, immediate access revocation, execution lease/retry/idempotency, approval inbox, and employee history retained.');
+}finally{await db.close();}

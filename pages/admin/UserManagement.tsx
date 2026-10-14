@@ -9,11 +9,15 @@ import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { usePermissionsContext } from '../../context/PermissionsContext';
 import AccountLifecycleModal from '../../components/admin/AccountLifecycleModal';
+import EmailAccountDeletionPanel from '../../components/admin/EmailAccountDeletionPanel';
+import {useEmailAccountDeletions} from '../../hooks/useEmailAccountDeletions';
 import PasswordManagementModal from '../../components/admin/PasswordManagementModal';
 
 const UserManagement: React.FC = () => {
     const { user: currentUser } = useAuth();
     const { can } = usePermissions();
+    const deletions = useEmailAccountDeletions(currentUser?.id);
+    const [deletionTarget,setDeletionTarget] = useState<User|null>(null);
     const { refreshPermissions } = usePermissionsContext();
     const canView = can('UserManagement', Permission.View);
     const canManage = can('UserManagement', Permission.Manage);
@@ -184,6 +188,8 @@ const UserManagement: React.FC = () => {
                 <p className="mt-1 text-sm text-gray-500">Server-resolved roles, scope, sensitive access, workflow authority, and audit metadata.</p>
             </header>
             {error && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"><span><strong>User Management could not be loaded.</strong> {error}</span><Button size="sm" variant="secondary" onClick={loadData}>Retry</Button></div>}
+            {deletions.error && <div role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">Email deletion requests could not be loaded. {deletions.error} <Button size="sm" variant="secondary" onClick={()=>void deletions.refresh()}>Retry deletion access</Button></div>}
+            <EmailAccountDeletionPanel workspace={deletions.workspace} target={deletionTarget} onClose={()=>setDeletionTarget(null)} onSaved={async()=>{await Promise.all([deletions.refresh(),loadData()]);}}/>
             {success && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800"><strong>Access updated.</strong> {success}</div>}
             <div className="rounded-lg border border-gray-200 bg-white shadow dark:border-slate-700 dark:bg-slate-800">
                 <div className="grid gap-3 border-b p-4 md:grid-cols-3">
@@ -214,7 +220,7 @@ const UserManagement: React.FC = () => {
                                 <td className="px-4 py-3 text-sm"><span className="font-medium">{user.accessScope?.type || 'SELF'}</span><br /><span className="text-xs text-gray-500">{scopeSummary(user)}</span></td>
                                 <td className="px-4 py-3 text-xs text-gray-600">{Object.keys(user.effectiveFeaturePermissions || {}).length} feature resources<br />{Object.keys(user.sensitivePermissions || {}).length} sensitive · {Object.keys(user.workflowPermissions || {}).length} workflows</td>
                                 <td className="px-4 py-3 text-xs text-gray-500">{user.permissionUpdatedAt?.toLocaleString() || 'Legacy assignment'}<br />{user.permissionUpdatedByName ? `by ${user.permissionUpdatedByName}` : user.permissionUpdatedBy ? `by ${user.permissionUpdatedBy}` : 'by system / legacy migration'}</td>
-                                <td className="px-4 py-3 text-right"><div className="flex flex-wrap justify-end gap-2">{canManage && <Button size="sm" variant="secondary" disabled={saving || user.id === currentUser?.id} onClick={() => setSelectedUser(user)}>{user.id === currentUser?.id ? 'Self change blocked' : 'Edit access'}</Button>}{canManageLifecycle && user.id !== currentUser?.id && <Button size="sm" variant="secondary" disabled={saving} onClick={() => setPasswordUser(user)}>Password</Button>}{canManageLifecycle && user.id !== currentUser?.id && <Button size="sm" variant="secondary" disabled={saving} onClick={() => setLifecycleUser(user)}>{user.status === 'Inactive' ? 'Reactivate' : 'Inactivate'}</Button>}</div></td>
+                                <td className="px-4 py-3 text-right"><div className="flex flex-wrap justify-end gap-2">{deletions.workspace.canRequest && deletions.workspace.targets.some(t=>t.id===user.id) && <Button size="sm" variant="secondary" disabled={saving||deletions.loading} onClick={()=>setDeletionTarget(user)}>Request email-account deletion</Button>}{canManage && <Button size="sm" variant="secondary" disabled={saving || user.id === currentUser?.id} onClick={() => setSelectedUser(user)}>{user.id === currentUser?.id ? 'Self change blocked' : 'Edit access'}</Button>}{canManageLifecycle && user.id !== currentUser?.id && <Button size="sm" variant="secondary" disabled={saving} onClick={() => setPasswordUser(user)}>Password</Button>}{canManageLifecycle && user.id !== currentUser?.id && <Button size="sm" variant="secondary" disabled={saving} onClick={() => setLifecycleUser(user)}>{user.status === 'Inactive' ? 'Reactivate' : 'Inactivate'}</Button>}</div></td>
                             </tr>)}
                             {!loading && !error && filteredUsers.length === 0 && <tr><td colSpan={8} className="p-10 text-center text-gray-500">No users found for the selected filters.</td></tr>}
                         </tbody>

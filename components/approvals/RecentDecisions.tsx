@@ -14,6 +14,7 @@ interface Decision {
 }
 
 const ENTITY_KINDS: Record<string, ApprovalRequestKind> = {
+  EmailAccountDeletion: 'account_deletion',
   AssetRequest: 'asset', BenefitRequest: 'benefit', JobRequisition: 'requisition', LeaveRequest: 'leave',
   ManpowerRequest: 'manpower', NTE: 'nte', OTRequest: 'overtime', PAN: 'pan', WFHRequest: 'wfh',
 };
