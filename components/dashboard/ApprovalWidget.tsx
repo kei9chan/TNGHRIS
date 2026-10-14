@@ -10,7 +10,7 @@ import { PENDING_APPROVALS_LINK } from '../../services/approvalNavigation';
 import { warmApprovalPage } from '../../services/approvalPageLoader';
 
 type Item = { id: string; kind: ApprovalRequestKind; employee: string; details: string; submitted?: Date | string; relevantDate?: Date | string };
-const labels: Record<ApprovalRequestKind,string> = {attendance:'Attendance',leave:'Leave',wfh:'WFH',overtime:'Overtime',manpower:'On-call',nte:'NTE',pan:'PAN',requisition:'Job Requisition',award:'Award',offer:'Offer',asset:'Asset Requests',benefit:'Benefit',pay_package:'Pay Packages'};
+const labels: Record<ApprovalRequestKind,string> = {attendance:'Attendance',leave:'Leave',wfh:'WFH',overtime:'Overtime',manpower:'On-call',nte:'NTE',pan:'PAN',requisition:'Job Requisition',award:'Award',offer:'Offer',asset:'Asset Requests',benefit:'Benefit',pay_package:'Pay Packages',account_deletion:'Email Account Deletions'};
 const dateText = (v?: Date | string) => v && Number.isFinite(new Date(v).getTime()) ? new Date(v).toLocaleDateString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric'}) : '';
 export default function ApprovalWidget() {
   const {user}=useAuth();
@@ -18,6 +18,7 @@ export default function ApprovalWidget() {
   const b=useAdditionalApprovals(user);
   const attendance=useAttendanceIssues();
   const items: Item[] = [
+    ...(b.pendingAccountDeletionApprovals || []).map(r=>({id:r.id,kind:'account_deletion' as const,employee:r.employeeName,details:r.email+' · '+r.reason,submitted:r.createdAt})),
     ...attendance.pending.map(r=>({id:r.id,kind:'attendance' as const,employee:r.employeeName,details:issueLabels[r.kind]+' · '+r.work_date+' · '+shiftText(r.schedule),submitted:r.submitted_at,relevantDate:r.due_at})),
     ...a.pendingLeaveApprovals.map(r=>({id:r.id,kind:'leave' as const,employee:r.employeeName,details:'Leave · '+dateText(r.startDate)+'–'+dateText(r.endDate)+' · '+r.durationDays+' days',submitted:r.createdAt,relevantDate:r.startDate})),
     ...a.pendingWfhApprovals.map(r=>({id:r.id,kind:'wfh' as const,employee:r.employeeName,details:'Work from home · '+dateText(r.date)+(r.endDate?'–'+dateText(r.endDate):''),submitted:r.createdAt,relevantDate:r.date})),

@@ -50,6 +50,7 @@ type ApprovalItem = {
 const DEFAULT_FILTERS = { search: '', businessUnit: '', department: '', kind: '', status: '', age: '', dateFrom: '', dateTo: '', quick: 'all', sort: 'newest' };
 
 const KIND_META: Record<Kind, { title: string; badge: string; rule: string }> = {
+  account_deletion: {title:'Email Account Deletions',badge:'bg-rose-100 text-rose-800',rule:'Old HRIS email logins awaiting Kay Lacap’s BOD decision.'},
   attendance: {title:'Attendance',badge:'bg-violet-100 text-violet-800',rule:'Attendance reports awaiting direct-manager or authorized HR action.'},
   nte: { title: 'NTE Approval', badge: 'bg-red-100 text-red-800', rule: 'Notices to Explain awaiting your assigned approval step.' },
   pan: { title: 'PAN', badge: 'bg-purple-100 text-purple-800', rule: 'Personnel Action Notices awaiting your assigned routing step.' },
@@ -65,7 +66,7 @@ const KIND_META: Record<Kind, { title: string; badge: string; rule: string }> = 
   pay_package: { title: 'Pay Packages', badge: 'bg-fuchsia-100 text-fuchsia-800', rule: 'Compensation packages awaiting your assigned independent approval.' },
 };
 
-const GROUP_ORDER: Kind[] = ['pay_package','attendance','nte', 'pan', 'benefit', 'award', 'offer', 'asset', 'wfh', 'leave', 'overtime', 'requisition', 'manpower'];
+const GROUP_ORDER: Kind[] = ['account_deletion','pay_package','attendance','nte', 'pan', 'benefit', 'award', 'offer', 'asset', 'wfh', 'leave', 'overtime', 'requisition', 'manpower'];
 const BULK_KINDS = new Set<Kind>(['leave', 'wfh', 'overtime']);
 const TIME_KINDS = new Set<Kind>(['leave', 'wfh', 'overtime']);
 const TIME_DESKTOP_HEADINGS = ['Select', 'Request / Employee', 'Business unit / Department', 'Request details', 'Submitted / Pending', 'Approval step', 'Eligibility', 'Action'];
@@ -389,9 +390,10 @@ export default function ApprovalCenter() {
       bulkSelectable: false,
       reviewUrl: getApprovalReviewUrl('pay_package', row.id),
     }));
+    const accountDeletionItems: ApprovalItem[] = (additional.pendingAccountDeletionApprovals || []).map(row=>({id:row.id,canonicalKey:`account_deletion:${row.id}`,kind:'account_deletion',reference:`DEL-${row.id.slice(0,8).toUpperCase()}`,employeeId:row.targetId,employee:row.employeeName,businessUnit:'HRIS account',department:'Account access',start:new Date(row.createdAt),end:new Date(row.createdAt),duration:row.email,status:row.status,currentStep:'Kay Lacap · BOD approval',reason:row.reason,details:row.email,bulkSelectable:false,reviewUrl:getApprovalReviewUrl('account_deletion',row.id)}));
     const canonical = new Map<string, ApprovalItem>();
     attendance.pending.forEach(r=>canonical.set('attendance:'+r.id,{id:r.id,canonicalKey:'attendance:'+r.id,kind:'attendance',reference:'ATT-'+r.id.slice(0,8).toUpperCase(),employeeId:r.employee_id,employee:r.employeeName,employeeCode:r.employeeCode,businessUnit:r.businessUnit||'Not assigned',department:r.department||'Not assigned',start:new Date(r.submitted_at),end:new Date(r.due_at),duration:r.work_date,status:'Pending approval',currentStep:'Direct manager / HR review',details:issueLabels[r.kind]+' · '+shiftText(r.schedule),reason:r.category,exception:new Date(r.due_at).getTime()<Date.now()?'Overdue attendance response':undefined,bulkSelectable:false,reviewUrl:getApprovalReviewUrl('attendance',r.id)}));
-    [...payPackageItems, ...ntes, ...pans, ...benefitItems, ...awardItems, ...offerItems, ...assetItems, ...wfh, ...leave, ...overtime, ...requisitions, ...manpower].forEach(item => { if (!canonical.has(item.canonicalKey)) canonical.set(item.canonicalKey, item); });
+    [...accountDeletionItems, ...payPackageItems, ...ntes, ...pans, ...benefitItems, ...awardItems, ...offerItems, ...assetItems, ...wfh, ...leave, ...overtime, ...requisitions, ...manpower].forEach(item => { if (!canonical.has(item.canonicalKey)) canonical.set(item.canonicalKey, item); });
     return Array.from(canonical.values());
   }, [approvals, additional, attendance.rows, employeeMeta, businessUnitLabels, departmentLabels]);
 

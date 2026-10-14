@@ -1,3 +1,4 @@
+import {fetchEmailAccountDeletionWorkspace,type EmailAccountDeletionRequest} from '../services/emailAccountDeletionService';
 import { fetchActionableApprovalTasks } from '../services/actionableApprovalService';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../services/supabaseClient';
@@ -133,6 +134,7 @@ export function useAdditionalApprovals(user: User | null) {
   const [pendingOfferApprovals, setPendingOfferApprovals] = useState<PendingOfferApproval[]>([]);
   const [pendingAssetApprovals, setPendingAssetApprovals] = useState<PendingAssetApproval[]>([]);
   const [pendingBenefitApprovals, setPendingBenefitApprovals] = useState<PendingBenefitApproval[]>([]);
+  const [pendingAccountDeletionApprovals,setPendingAccountDeletionApprovals] = useState<EmailAccountDeletionRequest[]>([]);
   const [pendingPayPackageApprovals, setPendingPayPackageApprovals] = useState<PendingPayPackageApproval[]>([]);
   const [additionalApprovalError, setAdditionalApprovalError] = useState<string | null>(null);
   const [additionalApprovalsLoading, setAdditionalApprovalsLoading] = useState(true);
@@ -153,6 +155,7 @@ export function useAdditionalApprovals(user: User | null) {
       setPendingAssetApprovals([]);
       setPendingBenefitApprovals([]);
       setPendingPayPackageApprovals([]);
+      setPendingAccountDeletionApprovals([]);
     }
     if (!user?.id) {
       setPendingNTEApprovals([]);
@@ -163,6 +166,7 @@ export function useAdditionalApprovals(user: User | null) {
       setPendingAssetApprovals([]);
       setPendingBenefitApprovals([]);
       setPendingPayPackageApprovals([]);
+      setPendingAccountDeletionApprovals([]);
       setAdditionalApprovalError(null);
       return;
     }
@@ -187,7 +191,9 @@ export function useAdditionalApprovals(user: User | null) {
       payPackageLoadError = error;
       return [] as PendingPayPackageApproval[];
     });
-    const [nteResult, [panResult, requisitionResult, awardResult], offerIds, assetQueue, benefitQueue, payPackageQueue, taskResult] = await Promise.all([
+    let accountDeletionError: any = null;
+    const accountDeletionPromise = fetchEmailAccountDeletionWorkspace().catch(error=>{accountDeletionError=error;return {requests:[]};});
+    const [nteResult, [panResult, requisitionResult, awardResult], offerIds, assetQueue, benefitQueue, payPackageQueue, accountDeletionWorkspace, taskResult] = await Promise.all([
       supabase.rpc('get_my_pending_nte_approvals'),
       Promise.all([
       supabase
@@ -207,6 +213,7 @@ export function useAdditionalApprovals(user: User | null) {
       assetQueuePromise,
       benefitQueuePromise,
       payPackageQueuePromise,
+      accountDeletionPromise,
       fetchActionableApprovalTasks(user.id).then(data => ({ data, error: null as any })).catch(error => ({ data: [], error })),
     ]);
 
@@ -221,7 +228,7 @@ export function useAdditionalApprovals(user: User | null) {
     if (sequence !== refreshSequence.current) return;
     const actionable = (type: string, id: string) => taskResult.data.some(t => t.request_type === type && t.request_id === id);
     const nteRows = (nteResult.data || []).filter((r: any) => actionable('nte', r.id));
-    const errors = [taskResult.error, nteResult.error, panResult.error, requisitionResult.error, awardResult.error, offerLoadError, assetLoadError, benefitLoadError, payPackageLoadError, ...offerPackageErrors].filter(Boolean);
+    const errors = [taskResult.error, nteResult.error, panResult.error, requisitionResult.error, awardResult.error, offerLoadError, assetLoadError, benefitLoadError, payPackageLoadError, accountDeletionError, ...offerPackageErrors].filter(Boolean);
     setAdditionalApprovalError(errors.length ? errors.map(error => error!.message).join(' · ') : null);
     // A failed refresh is not an empty queue. Keep the last successful result
     // with a visible error; decisions still require backend authorization.
@@ -347,6 +354,7 @@ export function useAdditionalApprovals(user: User | null) {
       canonicalKey: `asset:${row.requestId}:${row.approvalStage}:${row.viewerActionStatus || 'READ_ONLY'}`,
     })));
     if (!benefitLoadError) setPendingBenefitApprovals(benefitQueue);
+    if (!accountDeletionError) setPendingAccountDeletionApprovals(accountDeletionWorkspace.requests.filter(row=>row.isActionable));
     if (!payPackageLoadError) setPendingPayPackageApprovals(payPackageQueue.filter(row => row.isActionable));
     } catch (error: any) {
       if (sequence === refreshSequence.current) setAdditionalApprovalError(error?.message || 'Approval requests could not be loaded. Please retry.');
@@ -402,6 +410,7 @@ export function useAdditionalApprovals(user: User | null) {
     pendingAssetApprovals,
     pendingBenefitApprovals,
     pendingPayPackageApprovals,
+    pendingAccountDeletionApprovals,
     additionalApprovalError,
     additionalApprovalsLoading,
     refreshAdditionalApprovals,
