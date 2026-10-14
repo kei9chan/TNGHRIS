@@ -1,3 +1,5 @@
+import {parseLocalCalendarDate} from '../../utils/calendarDate';
+import {leaveDateFields} from '../../utils/leaveDates';
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
@@ -118,8 +120,8 @@ const Leave: React.FC = () => {
           employeeId: r.employee_id,
           employeeName: r.employee_name,
           leaveTypeId: r.leave_type_id,
-          startDate: new Date(r.start_date),
-          endDate: new Date(r.end_date),
+          startDate: parseLocalCalendarDate(r.start_date),
+          endDate: parseLocalCalendarDate(r.end_date),
           startTime: r.start_time || undefined,
           endTime: r.end_time || undefined,
           durationDays: Number(r.duration_days),
@@ -309,8 +311,7 @@ const Leave: React.FC = () => {
       employee_id: user.id,
       employee_name: user.name,
       leave_type_id: requestToSave.leaveTypeId,
-      start_date: requestToSave.startDate,
-      end_date: requestToSave.endDate,
+      ...leaveDateFields(requestToSave),
       start_time: requestToSave.startTime,
       end_time: requestToSave.endTime,
       duration_days: requestToSave.durationDays || 1,

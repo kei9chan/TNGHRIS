@@ -1,3 +1,5 @@
+import {isInLeavePeriod} from '../../utils/leaveDates';
+import {normalizeCalendarDate,toLocalCalendarDate} from '../../utils/calendarDate';
 // Phase 2 Migration: mockLeaveTypes removed — name read from leaveForDay.leaveTypeName
 import React, { useState, useMemo } from 'react';
 import { AttendanceRecord, AttendanceException, OTRequest, LeaveRequest, User } from '../../types';
@@ -27,7 +29,7 @@ const ExceptionChip: React.FC<{ exception: AttendanceException, leaveTypeName?: 
 };
 
 const AttendanceTable: React.FC<AttendanceTableProps> = ({ records, approvedOvertimes, approvedLeaves, allUsers }) => {
-  const [filterDate, setFilterDate] = useState(new Date().toISOString().split('T')[0]);
+  const [filterDate, setFilterDate] = useState(toLocalCalendarDate());
   const [filterName, setFilterName] = useState('');
   const [buFilter, setBuFilter] = useState('');
 
@@ -41,7 +43,7 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ records, approvedOver
 
   const filteredRecords = useMemo(() => {
     return records
-      .filter(r => new Date(r.date).toISOString().split('T')[0] === filterDate)
+      .filter(r => normalizeCalendarDate(r.date) === filterDate)
       .filter(r => r.employeeName.toLowerCase().includes(filterName.toLowerCase()))
       .filter(r => {
         if (!buFilter) return true;
@@ -108,8 +110,7 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ records, approvedOver
               
               const leaveForDay = approvedLeaves.find(leave => 
                 leave.employeeId === record.employeeId &&
-                new Date(record.date) >= new Date(leave.startDate) &&
-                new Date(record.date) <= new Date(leave.endDate)
+                isInLeavePeriod(record.date,leave.startDate,leave.endDate)
               );
               
               const isOnLeave = record.exceptions.includes(AttendanceException.OnLeave) || !!leaveForDay;
