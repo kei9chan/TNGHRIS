@@ -3,6 +3,7 @@ import { fetchActionableApprovalTasks } from '../services/actionableApprovalServ
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { User } from '../types';
+import type { ApprovalRequestKind } from '../services/approvalDeepLinks';
 import { fetchOfferApprovalPackage, fetchPendingOfferApprovalIds } from '../services/offerApprovalService';
 import { fetchMyAssetApprovalQueue } from '../services/assetApprovalService';
 import { fetchMyPendingBenefitApprovals } from '../services/benefitApprovalService';
@@ -123,10 +124,12 @@ const actionLabel = (action: Record<string, unknown> | null | undefined) => {
   return labels.join(', ') || 'Personnel action';
 };
 
-export function useAdditionalApprovals(user: User | null) {
+export function useAdditionalApprovals(user: User | null, kind?: ApprovalRequestKind | null) {
+  const enabled = !kind || ['nte', 'pan', 'requisition', 'award', 'offer', 'asset', 'benefit', 'pay_package', 'account_deletion'].includes(kind);
   const refreshSequence = useRef(0);
   const pendingRefreshes = useRef(new Map<string | undefined, number>());
   const lastViewer = useRef(user?.id);
+  const lastKind = useRef(kind);
   const [pendingNTEApprovals, setPendingNTEApprovals] = useState<PendingNTEApproval[]>([]);
   const [pendingPANApprovals, setPendingPANApprovals] = useState<PendingPANApproval[]>([]);
   const [pendingRequisitionApprovals, setPendingRequisitionApprovals] = useState<PendingRequisitionApproval[]>([]);
@@ -137,7 +140,7 @@ export function useAdditionalApprovals(user: User | null) {
   const [pendingAccountDeletionApprovals,setPendingAccountDeletionApprovals] = useState<EmailAccountDeletionRequest[]>([]);
   const [pendingPayPackageApprovals, setPendingPayPackageApprovals] = useState<PendingPayPackageApproval[]>([]);
   const [additionalApprovalError, setAdditionalApprovalError] = useState<string | null>(null);
-  const [additionalApprovalsLoading, setAdditionalApprovalsLoading] = useState(true);
+  const [additionalApprovalsLoading, setAdditionalApprovalsLoading] = useState(enabled);
 
   const refreshAdditionalApprovals = useCallback(async () => {
     const viewer = user?.id;
@@ -145,8 +148,9 @@ export function useAdditionalApprovals(user: User | null) {
     const sequence = ++refreshSequence.current;
     setAdditionalApprovalsLoading(true);
     try {
-    if (lastViewer.current !== user?.id) {
+    if (lastViewer.current !== user?.id || lastKind.current !== kind) {
       lastViewer.current = user?.id;
+      lastKind.current = kind;
       setPendingNTEApprovals([]);
       setPendingPANApprovals([]);
       setPendingRequisitionApprovals([]);
@@ -157,7 +161,7 @@ export function useAdditionalApprovals(user: User | null) {
       setPendingPayPackageApprovals([]);
       setPendingAccountDeletionApprovals([]);
     }
-    if (!user?.id) {
+    if (!user?.id || !enabled) {
       setPendingNTEApprovals([]);
       setPendingPANApprovals([]);
       setPendingRequisitionApprovals([]);
@@ -171,43 +175,45 @@ export function useAdditionalApprovals(user: User | null) {
       return;
     }
 
+    const needs = (type: ApprovalRequestKind) => !kind || kind === type;
+    const emptyResult = { data: [], error: null };
     let offerLoadError: any = null;
-    const offerIdsPromise = fetchPendingOfferApprovalIds().catch((error: any) => {
+    const offerIdsPromise = (needs('offer') ? fetchPendingOfferApprovalIds() : Promise.resolve([])).catch((error: any) => {
       offerLoadError = error;
       return [] as Awaited<ReturnType<typeof fetchPendingOfferApprovalIds>>;
     });
     let assetLoadError: any = null;
-    const assetQueuePromise = fetchMyAssetApprovalQueue().catch((error: any) => {
+    const assetQueuePromise = (needs('asset') ? fetchMyAssetApprovalQueue() : Promise.resolve([])).catch((error: any) => {
       assetLoadError = error;
       return [] as Awaited<ReturnType<typeof fetchMyAssetApprovalQueue>>;
     });
     let benefitLoadError: any = null;
-    const benefitQueuePromise = fetchMyPendingBenefitApprovals().catch((error: any) => {
+    const benefitQueuePromise = (needs('benefit') ? fetchMyPendingBenefitApprovals() : Promise.resolve([])).catch((error: any) => {
       benefitLoadError = error;
       return [] as Awaited<ReturnType<typeof fetchMyPendingBenefitApprovals>>;
     });
     let payPackageLoadError: any = null;
-    const payPackageQueuePromise = fetchPendingPayPackageApprovals().catch((error: any) => {
+    const payPackageQueuePromise = (needs('pay_package') ? fetchPendingPayPackageApprovals() : Promise.resolve([])).catch((error: any) => {
       payPackageLoadError = error;
       return [] as PendingPayPackageApproval[];
     });
     let accountDeletionError: any = null;
-    const accountDeletionPromise = fetchEmailAccountDeletionWorkspace().catch(error=>{accountDeletionError=error;return {requests:[]};});
+    const accountDeletionPromise = (needs('account_deletion') ? fetchEmailAccountDeletionWorkspace() : Promise.resolve({requests:[]})).catch(error=>{accountDeletionError=error;return {requests:[]};});
     const [nteResult, [panResult, requisitionResult, awardResult], offerIds, assetQueue, benefitQueue, payPackageQueue, accountDeletionWorkspace, taskResult] = await Promise.all([
-      supabase.rpc('get_my_pending_nte_approvals'),
+      needs('nte') ? supabase.rpc('get_my_pending_nte_approvals') : Promise.resolve(emptyResult),
       Promise.all([
-      supabase
+      needs('pan') ? supabase
         .from('pans')
         .select('id,employee_id,employee_name,effective_date,status,action_taken,routing_steps,created_at,updated_at')
         .eq('status', 'Pending Approval')
-        .order('updated_at', { ascending: false }),
-      supabase
-        .rpc('get_my_pending_job_requisition_approvals'),
-      supabase
+        .order('updated_at', { ascending: false }) : Promise.resolve(emptyResult),
+      needs('requisition') ? supabase
+        .rpc('get_my_pending_job_requisition_approvals') : Promise.resolve(emptyResult),
+      needs('award') ? supabase
         .from('employee_awards')
         .select('id,employee_id,business_unit_id,department_id,status,submitted_at,approver_id,approver_steps,hris_users:employee_id(full_name),award_templates(title)')
         .in('status', [...AWARD_PENDING_STATUSES])
-        .order('submitted_at', { ascending: false }),
+        .order('submitted_at', { ascending: false }) : Promise.resolve(emptyResult),
       ]),
       offerIdsPromise,
       assetQueuePromise,
@@ -364,10 +370,11 @@ export function useAdditionalApprovals(user: User | null) {
       else pendingRefreshes.current.delete(viewer);
       if (sequence === refreshSequence.current) setAdditionalApprovalsLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, kind, enabled]);
 
   useEffect(() => {
     refreshAdditionalApprovals();
+    if (!enabled) return;
     const interval = window.setInterval(() => {
       if (document.visibilityState === 'visible' && !pendingRefreshes.current.get(user?.id)) void refreshAdditionalApprovals();
     }, 30000);
@@ -378,28 +385,24 @@ export function useAdditionalApprovals(user: User | null) {
     return () => {
       window.clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibility);
+      refreshSequence.current++;
     };
-  }, [refreshAdditionalApprovals]);
+  }, [refreshAdditionalApprovals, enabled]);
 
   useEffect(() => {
-    if (!user?.id) return;
-    const channel = supabase
-      .channel(`asset-approval-queue-${user.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'pans' }, () => {
-        void refreshAdditionalApprovals();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'asset_requests' }, () => {
-        void refreshAdditionalApprovals();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'benefit_requests' }, () => {
-        void refreshAdditionalApprovals();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'payroll_pay_packages' }, () => {
-        void refreshAdditionalApprovals();
-      })
-      .subscribe();
+    if (!user?.id || !enabled) return;
+    const tables = [
+      ['pan', 'pans'], ['asset', 'asset_requests'],
+      ['benefit', 'benefit_requests'], ['pay_package', 'payroll_pay_packages'],
+    ].filter(([type]) => !kind || type === kind);
+    if (!tables.length) return;
+    const channel = supabase.channel(`approval-queue-${user.id}-${kind || 'all'}`);
+    for (const [, table] of tables) channel.on('postgres_changes', { event: '*', schema: 'public', table }, () => {
+      void refreshAdditionalApprovals();
+    });
+    channel.subscribe();
     return () => { void supabase.removeChannel(channel); };
-  }, [refreshAdditionalApprovals, user?.id]);
+  }, [refreshAdditionalApprovals, user?.id, kind, enabled]);
 
   return {
     pendingNTEApprovals,

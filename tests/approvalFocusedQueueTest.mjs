@@ -11,6 +11,7 @@ function load(path,deps={}) {
 }
 const noop=()=>{}, component=fn=>({__esModule:true,default:fn});
 let params=new URLSearchParams('type=nte'),states=[],cursor=0,effects=[],navigation=[];
+let timeScope,additionalScope,attendanceEnabled;
 const hooks={...React,useState:initial=>{const i=cursor++;if(!(i in states))states[i]=typeof initial==='function'?initial():initial;return[states[i],v=>{states[i]=typeof v==='function'?v(states[i]):v;}];},useMemo:fn=>fn(),useEffect:fn=>effects.push(fn),useLayoutEffect:noop,useRef:()=>({current:null}),lazy:()=>()=>React.createElement('div',null,'Exact request review dialog')};
 const queueValues={};
 const queues=new Proxy(queueValues,{get:(target,name)=>name in target?target[name]:String(name).startsWith('pending')?[]:false});
@@ -20,8 +21,8 @@ queueValues.pendingRequisitionApprovals=[{id:'job-one',canonicalKey:'requisition
 const dependencies={
  react:hooks,'react-router-dom':{Link:({to,children,...props})=>React.createElement('a',{href:to,...props},children),useLocation:()=>({key:params.toString()}),useNavigate:()=>url=>navigation.push(url),useSearchParams:()=>[params]},
  '../hooks/useAuth':{useAuth:()=>({user:{id:'fixture',role:'HR Staff',roles:[]}})},
- '../hooks/useApprovals':{useApprovals:()=>queues},'../hooks/useAdditionalApprovals':{useAdditionalApprovals:()=>queues},
- '../services/attendanceIssues':{useAttendanceIssues:()=>({pending:[],loading:false,error:null})},
+ '../hooks/useApprovals':{useApprovals:options=>{timeScope=options.kind;return queues;}},'../hooks/useAdditionalApprovals':{useAdditionalApprovals:(_user,kind)=>{additionalScope=kind;return queues;}},
+ '../services/attendanceIssues':{useAttendanceIssues:options=>{attendanceEnabled=options.enabled;return{pending:[],loading:false,error:null};}},
  '../context/SettingsContext':{useSettings:()=>({approverConfigs:{conditionalTimeApprovals:{valid:true}}})},
  '../types':{Role:{HRStaff:'HR Staff'},OTStatus:{}},
  '../services/approvalDeepLinks':load('services/approvalDeepLinks.ts'),
@@ -34,6 +35,7 @@ const dependencies={
 const page=load('pages/ApprovalCenter.tsx',new Proxy(dependencies,{get:(target,name)=>name in target?target[name]:component(({children})=>React.createElement('button',null,children))})).default;
 const render=()=>{cursor=0;effects=[];return renderToStaticMarkup(React.createElement(page));};
 let html=render();
+assert.equal(timeScope,'nte');assert.equal(additionalScope,'nte');assert.equal(attendanceEnabled,false);
 assert.match(html,/NTE Approval · Pending/);
 assert.match(html,/NTE employee 1/);assert.match(html,/NTE employee 2/);
 assert.match(html,/href="\/feedback\/nte\/nte-1"/);
@@ -61,6 +63,7 @@ assert.ok(!html.includes('NTE employee'));assert.ok(!html.includes('Unrelated pa
 // General Approvals navigation restores all pending categories and the summary,
 // and does not mount decision history or an old request dialog.
 params=new URLSearchParams();render();effects[0]();html=render();
+assert.equal(timeScope,null);assert.equal(additionalScope,null);assert.equal(attendanceEnabled,true);
 assert.match(html,/Approval Center/);assert.match(html,/Unrelated OB queue/);
 assert.match(html,/Toggle NTE Approval/);assert.match(html,/Toggle Leave/);
 assert.ok(!html.includes('Exact request review dialog'));
