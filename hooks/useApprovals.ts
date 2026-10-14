@@ -1,6 +1,7 @@
 import {parseLocalCalendarDate} from '../utils/calendarDate';
 import { fetchActionableApprovalTasks } from '../services/actionableApprovalService';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import type { ApprovalRequestKind } from '../services/approvalDeepLinks';
 import { supabase } from '../services/supabaseClient';
 import { createNotification } from '../services/notificationService';
 import { processTimeRequestApproval, sendConditionalApprovalEmails } from '../services/approverConfigService';
@@ -25,18 +26,22 @@ interface UseApprovalsOptions {
     user: User | null;
     isHR?: boolean;
     reporteeIds?: string[];
+    kind?: ApprovalRequestKind | null;
 }
 
-export function useApprovals({ user }: UseApprovalsOptions) {
+export function useApprovals({ user, kind }: UseApprovalsOptions) {
+    const enabled = !kind || ['leave', 'wfh', 'overtime', 'manpower'].includes(kind);
+    const generation = useRef(0);
     const [pendingLeaveApprovals, setPendingLeaveApprovals] = useState<LeaveRequest[]>([]);
     const [pendingWfhApprovals, setPendingWfhApprovals] = useState<WFHRequest[]>([]);
     const [pendingOtApprovals, setPendingOtApprovals] = useState<OTRequest[]>([]);
     const [pendingManpowerApprovals, setPendingManpowerApprovals] = useState<ManpowerRequest[]>([]);
     const [leaveTypes, setLeaveTypes] = useState<{ id: string; name: string }[]>([]);
     const [approvalError, setApprovalError] = useState<string | null>(null);
-    const [approvalsLoading, setApprovalsLoading] = useState(true);
+    const [approvalsLoading, setApprovalsLoading] = useState(enabled);
 
     useEffect(() => {
+        if (kind && kind !== 'leave') return;
         const loadLeaveTypes = async () => {
             const { data, error } = await supabase
                 .from('leave_types')
@@ -47,10 +52,11 @@ export function useApprovals({ user }: UseApprovalsOptions) {
             }
         };
         loadLeaveTypes();
-    }, []);
+    }, [kind]);
 
     const fetchApprovals = useCallback(async () => {
-        if (!user) {
+        const sequence = ++generation.current;
+        if (!user || !enabled) {
             setPendingLeaveApprovals([]);
             setPendingWfhApprovals([]);
             setPendingOtApprovals([]);
@@ -78,12 +84,10 @@ export function useApprovals({ user }: UseApprovalsOptions) {
 
         // Leave/WFH/OT are scoped to direct reports plus explicit escalation
         // assignments. A broad BOD or HR role no longer creates a global queue.
-        const [timeAssignments, manpowerAssignments] = await Promise.all([
-            fetchActionableApprovalTasks(user.id).then(data => ({ data, error: null as any })).catch(error => ({ data: [], error })),
-            fetchActionableApprovalTasks(user.id).then(rows => rows.filter(r => r.request_type === 'manpower').map(r => r.request_id)).then(data => ({ data, error: null as any })).catch(error => ({ data: [], error })),
-        ]);
-        if (timeAssignments.error || manpowerAssignments.error) {
-            const error = timeAssignments.error || manpowerAssignments.error;
+        const timeAssignments = await fetchActionableApprovalTasks(user.id).then(data => ({ data, error: null as any })).catch(error => ({ data: [], error }));
+        if (sequence !== generation.current) return;
+        if (timeAssignments.error) {
+            const error = timeAssignments.error;
             setApprovalError(`Approval assignments could not be loaded. ${error.message}`);
             setApprovalsLoading(false);
             return; // Preserve the last successful queue; a failed load is not an empty inbox.
@@ -99,16 +103,12 @@ export function useApprovals({ user }: UseApprovalsOptions) {
         const assignedLeaveIds = assignedIds('leave');
         const assignedWfhIds = assignedIds('wfh');
         const assignedOtIds = assignedIds('overtime');
-        const manpowerAssignmentError = manpowerAssignments.error;
-        if (manpowerAssignmentError) {
-            setApprovalError(`On-call approval assignments could not be loaded. ${manpowerAssignmentError.message}`);
-        }
-        const assignedManpowerIds = manpowerAssignments.data;
+        const assignedManpowerIds = assignedIds('manpower');
 
-        let skipLeave = false;
-        let skipWfh = false;
-        let skipOt = false;
-        let skipManpower = false;
+        let skipLeave = !!kind && kind !== 'leave';
+        let skipWfh = !!kind && kind !== 'wfh';
+        let skipOt = !!kind && kind !== 'overtime';
+        let skipManpower = !!kind && kind !== 'manpower';
 
         let leaveQuery = supabase
             .from('leave_requests')
@@ -147,6 +147,7 @@ export function useApprovals({ user }: UseApprovalsOptions) {
             skipOt       ? Promise.resolve(emptyResult) : otQuery,
             skipManpower ? Promise.resolve(emptyResult) : manpowerQuery,
         ]);
+        if (sequence !== generation.current) return;
 
         const requestEmployeeIds = Array.from(new Set([
             ...(leaveRes.data || []).map((row: any) => row.employee_id),
@@ -154,10 +155,13 @@ export function useApprovals({ user }: UseApprovalsOptions) {
             ...(otRes.data || []).map((row: any) => row.employee_id),
         ].filter(Boolean)));
         const positionByEmployee: Record<string, string> = {};
-        if (requestEmployeeIds.length) {
+        // Focused Leave/OT views load profile details in the review itself.
+        // Preserve position enrichment for WFH and the complete dashboard inbox.
+        if (requestEmployeeIds.length && (!kind || kind === 'wfh')) {
             const { data: employeeRows } = await supabase.from('hris_users').select('id,position').in('id', requestEmployeeIds);
             (employeeRows || []).forEach((row: any) => { if (row.position) positionByEmployee[row.id] = row.position; });
         }
+        if (sequence !== generation.current) return;
 
         const queryFailures = [
             ['Leave', leaveRes.error],
@@ -257,9 +261,13 @@ export function useApprovals({ user }: UseApprovalsOptions) {
             );
         }
         setApprovalsLoading(false);
-    }, [user?.id]);
+    }, [user?.id, kind, enabled]);
 
     useEffect(() => {
+        setPendingLeaveApprovals([]);
+        setPendingWfhApprovals([]);
+        setPendingOtApprovals([]);
+        setPendingManpowerApprovals([]);
         let active = true;
         const load = async () => {
             if (active) {
@@ -267,6 +275,7 @@ export function useApprovals({ user }: UseApprovalsOptions) {
             }
         };
         load();
+        if (!enabled) return () => { active = false; generation.current++; };
         
         // Optional polling for approvals
         const interval = setInterval(() => {
@@ -277,10 +286,11 @@ export function useApprovals({ user }: UseApprovalsOptions) {
 
         return () => {
             active = false;
+            generation.current++;
             clearInterval(interval);
             window.removeEventListener('focus', handleFocus);
         };
-    }, [fetchApprovals]);
+    }, [fetchApprovals, enabled]);
 
     // ===================================================================
     // Approval Handlers

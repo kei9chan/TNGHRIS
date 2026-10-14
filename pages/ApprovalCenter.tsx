@@ -166,9 +166,9 @@ export default function ApprovalCenter() {
     // Run after the lazy page mounts as well as on repeated footer visits.
     pendingSection.current?.scrollIntoView({ block: 'start', behavior: 'instant' });
   }, [location.key]);
-  const approvals = useApprovals({ user, isHR: roles.has(Role.HRStaff), reporteeIds });
-  const additional = useAdditionalApprovals(user);
-  const attendance = useAttendanceIssues();
+  const approvals = useApprovals({ user, isHR: roles.has(Role.HRStaff), reporteeIds, kind: queueKind });
+  const additional = useAdditionalApprovals(user, queueKind);
+  const attendance = useAttendanceIssues({enabled: !queueKind || queueKind === 'attendance'});
   const requestedItem = getApprovalRequestId(searchParams);
   const requestedType = searchParams.get('type');
   const requestedLeave = requestedType === 'leave' ? approvals.pendingLeaveApprovals.find(request => request.id === requestedItem) || null : null;
@@ -196,18 +196,18 @@ export default function ApprovalCenter() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || queueKind) return;
     supabase.rpc('get_my_direct_report_ids').then(({ data, error }) => {
       if (error) setLoadError(`Approver scope could not be loaded: ${error.message}`);
       else setReporteeIds((data || []).map((row: any) => row.id));
     });
-  }, [user]);
+  }, [user?.id, queueKind]);
 
   // Schedule proposals use their existing, separately scoped workflow. Surface
   // the same pending records in the central queue so a GM/BOD does not have to
   // discover them only from the dashboard card.
   useEffect(() => {
-    if (!user) return;
+    if (!user || queueKind) return;
     let active = true;
     const load = async () => {
       const { data, error } = await supabase.rpc('get_bod_schedule_workflow', { p_week: null });
@@ -219,7 +219,7 @@ export default function ApprovalCenter() {
     const onFocus = () => { void load(); };
     window.addEventListener('focus', onFocus);
     return () => { active = false; window.removeEventListener('focus', onFocus); };
-  }, [user?.id]);
+  }, [user?.id, queueKind]);
 
   useEffect(() => {
     Promise.all([supabase.from('business_units').select('id,name'), supabase.from('departments').select('id,name')]).then(([businessUnits, departments]) => {
