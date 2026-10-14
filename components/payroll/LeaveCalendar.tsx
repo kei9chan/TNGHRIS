@@ -1,3 +1,5 @@
+import {isInLeavePeriod} from '../../utils/leaveDates';
+import {toLocalCalendarDate} from '../../utils/calendarDate';
 
 import React, { useState, useMemo } from 'react';
 import { LeaveRequest, User } from '../../types';
@@ -59,15 +61,7 @@ const LeaveCalendar: React.FC<LeaveCalendarProps> = ({ leaves, currentUser }) =>
     };
 
     const getLeavesForDay = (date: Date) => {
-        return leaves.filter(leave => {
-            const start = new Date(leave.startDate);
-            const end = new Date(leave.endDate);
-            // Normalize times to avoid timezone issues for simple day comparison
-            start.setHours(0,0,0,0);
-            end.setHours(23,59,59,999);
-            date.setHours(12,0,0,0); // Check midday to be safe
-            return date >= start && date <= end;
-        });
+        return leaves.filter(leave => isInLeavePeriod(date, leave.startDate, leave.endDate));
     };
 
     const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -106,7 +100,7 @@ const LeaveCalendar: React.FC<LeaveCalendarProps> = ({ leaves, currentUser }) =>
                     const isToday = isSameDate(day, new Date());
 
                     return (
-                        <div key={day.toISOString()} className={`bg-white dark:bg-slate-800 min-h-[100px] p-2 relative hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors`}>
+                        <div key={toLocalCalendarDate(day)} data-date={toLocalCalendarDate(day)} className={`bg-white dark:bg-slate-800 min-h-[100px] p-2 relative hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors`}>
                             <div className="flex justify-between items-start">
                                 <span className={`text-sm font-medium w-7 h-7 flex items-center justify-center rounded-full ${isToday ? 'bg-indigo-600 text-white' : 'text-gray-700 dark:text-gray-300'}`}>
                                     {day.getDate()}

@@ -1,3 +1,5 @@
+import {parseLocalCalendarDate} from '../utils/calendarDate';
+import {leaveDateFields} from '../utils/leaveDates';
 import { supabase } from './supabaseClient';
 import { LeaveRequest, LeaveRequestStatus, LeaveType, LeavePolicy, AccrualTier, User, Role, MANAGER_ROLES } from '../types';
 
@@ -57,8 +59,8 @@ const mapLeaveRequest = (row: LeaveRequestRow): LeaveRequest => ({
   businessUnitId: row.business_unit_id || undefined,
   departmentId: row.department_id || undefined,
   leaveTypeId: row.leave_type_id,
-  startDate: new Date(row.start_date),
-  endDate: new Date(row.end_date),
+  startDate: parseLocalCalendarDate(row.start_date),
+  endDate: parseLocalCalendarDate(row.end_date),
   startTime: row.start_time || undefined,
   endTime: row.end_time || undefined,
   durationDays: row.duration_days,
@@ -139,8 +141,7 @@ export const createLeaveRequest = async (request: Partial<LeaveRequest>, user: U
     employee_id: user.id,
     employee_name: user.name,
     leave_type_id: request.leaveTypeId,
-    start_date: request.startDate ? new Date(request.startDate).toISOString().split('T')[0] : null,
-    end_date: request.endDate ? new Date(request.endDate).toISOString().split('T')[0] : null,
+    ...leaveDateFields(request),
     start_time: request.startTime || null,
     end_time: request.endTime || null,
     duration_days: request.durationDays || 1,

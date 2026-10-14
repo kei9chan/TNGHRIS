@@ -1,3 +1,4 @@
+import {parseLocalCalendarDate} from '../../utils/calendarDate';
 import ApprovalWidget from './ApprovalWidget';
 import ShiftVarianceInbox from './ShiftVarianceInbox';
 // Phase 2 Migration: All data now fetched from Supabase — mockDataCompat import removed
@@ -702,8 +703,8 @@ const ManagerDashboard: React.FC = () => {
                     employeeId: row.employee_id,
                     employeeName: row.employee_name,
                     leaveTypeId: row.leave_type_id,
-                    startDate: new Date(row.start_date),
-                    endDate: new Date(row.end_date),
+                    startDate: parseLocalCalendarDate(row.start_date),
+                    endDate: parseLocalCalendarDate(row.end_date),
                     startTime: row.start_time || undefined,
                     endTime: row.end_time || undefined,
                     durationDays: Number(row.duration_days),

@@ -1,3 +1,4 @@
+import {isInLeavePeriod} from '../utils/leaveDates';
 import {supabase} from './supabaseClient';
 import type {LeaveRequest,ShiftAssignment,ShiftTemplate} from '../types';
 export type DayTag='rest'|'skeletal'|'company_holiday'|'absence'|'suspended';
@@ -6,5 +7,5 @@ export const statusPresets=[{tag:'rest',label:'Rest Day',color:'bg-gray-200 text
 export const dateKey=(date:Date)=>`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
 export async function getDayStatuses(ids:string[],from:string,to:string){if(!ids.length)return [];const {data,error}=await supabase.rpc('get_schedule_day_statuses',{p_employees:ids,p_from:from,p_to:to});if(error)throw error;return data as DayStatus[];}
 export async function setDayStatus(employee:string,date:string,tag:DayTag|null,reason?:string){const {error}=await supabase.rpc('set_schedule_day_status',{p_employee:employee,p_date:date,p_tag:tag,p_reason:reason||(tag?`Manager assigned ${tag} in the weekly roster`:'Manager restored the underlying shift')});if(error)throw error;}
-export function leaveForDay(leaves:LeaveRequest[],employee:string,date:Date){return leaves.find(l=>l.employeeId===employee&&l.status==='Approved'&&dateKey(date)>=dateKey(new Date(l.startDate))&&dateKey(date)<=dateKey(new Date(l.endDate)));}
+export function leaveForDay(leaves:LeaveRequest[],employee:string,date:Date){return leaves.find(l=>l.employeeId===employee&&l.status==='Approved'&&isInLeavePeriod(date,l.startDate,l.endDate));}
 export function leaveLabel(l:LeaveRequest){return `${(l as any).paid===true?'Paid':(l as any).paid===false?'Unpaid':'Pay status unconfirmed'} Leave${l.startTime||l.endTime?' · partial day':''}`;}

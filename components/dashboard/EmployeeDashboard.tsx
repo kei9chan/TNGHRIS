@@ -1,3 +1,4 @@
+import {parseLocalCalendarDate} from '../../utils/calendarDate';
 import ApprovalWidget from './ApprovalWidget';
 
 
@@ -703,8 +704,8 @@ const EmployeeDashboard: React.FC = () => {
                         .filter((row: any) => row.status === LeaveRequestStatus.Approved)
                         .map((row: any) => ({
                             id: row.id,
-                            startDate: new Date(row.start_date),
-                            endDate: new Date(row.end_date),
+                            startDate: parseLocalCalendarDate(row.start_date),
+                            endDate: parseLocalCalendarDate(row.end_date),
                             decisionDate: getLeaveDecisionDate(row, 'Approved'),
                         }))
                     : []
@@ -715,8 +716,8 @@ const EmployeeDashboard: React.FC = () => {
                         .filter((row: any) => row.status === LeaveRequestStatus.Rejected)
                         .map((row: any) => ({
                             id: row.id,
-                            startDate: new Date(row.start_date),
-                            endDate: new Date(row.end_date),
+                            startDate: parseLocalCalendarDate(row.start_date),
+                            endDate: parseLocalCalendarDate(row.end_date),
                             reason: (() => {
                                 const history = Array.isArray(row.history_log) ? row.history_log : [];
                                 const rejected = history.filter((h: any) => h.action === 'Rejected');

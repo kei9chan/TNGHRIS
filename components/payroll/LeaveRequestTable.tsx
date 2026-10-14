@@ -1,3 +1,4 @@
+import {formatLeaveDate} from '../../utils/leaveDates';
 
 import React from 'react';
 import { LeaveRequest, LeaveRequestStatus } from '../../types';
@@ -60,7 +61,7 @@ const LeaveRequestTable: React.FC<LeaveRequestTableProps> = ({ requests, leaveTy
                             {isManagerView && <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{req.employeeName}</td>}
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{getLeaveTypeName(req.leaveTypeId)}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                                {new Date(req.startDate).toLocaleDateString()} - {new Date(req.endDate).toLocaleDateString()}
+                                {formatLeaveDate(req.startDate,{year:"numeric",month:"numeric",day:"numeric"})} - {formatLeaveDate(req.endDate,{year:"numeric",month:"numeric",day:"numeric"})}
                             </td>
                             <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate" title={req.reason}>{req.reason}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm">

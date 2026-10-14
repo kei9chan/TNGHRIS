@@ -1,3 +1,4 @@
+import {parseLocalCalendarDate} from '../utils/calendarDate';
 import { fetchActionableApprovalTasks } from '../services/actionableApprovalService';
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../services/supabaseClient';
@@ -180,8 +181,8 @@ export function useApprovals({ user }: UseApprovalsOptions) {
             employeeName: row.employee_name,
             employeePosition: positionByEmployee[row.employee_id] || undefined,
                 leaveTypeId: row.leave_type_id,
-                startDate: new Date(row.start_date),
-                endDate: new Date(row.end_date),
+                startDate: parseLocalCalendarDate(row.start_date),
+                endDate: parseLocalCalendarDate(row.end_date),
                 startTime: row.start_time || undefined,
                 endTime: row.end_time || undefined,
                 durationDays: Number(row.duration_days),
