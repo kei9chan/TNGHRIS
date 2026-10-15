@@ -6,6 +6,12 @@ const importKey=(value?:string)=>normalizedKey(value||'');
 // deleted or inserted employee columns. Join on the actual employee code.
 const codeKey=(value:string)=>importKey(value).replace(/[^a-z0-9]/g,'');
 const example=(value:string)=>/^(?:EX-|EXAMPLE-|DEMO-)/i.test(value.trim());
+const nameKey=(value:string)=>cleanImportText(value).toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim().split(/\s+/).sort().join(' ');
+export function completionIdentityIssue(row:ImportRow,employee:{name:string}){
+ if(row.values['Import format']!=='completion')return '';
+ const name=row.values['Employee name'];
+ return !name||nameKey(name)!==nameKey(employee.name)?'Needs review: the workbook name does not match the HRIS employee for this code. Confirm the employee code and legal name before importing.':'';
+}
 function text(sheet:Worksheet,row:number,column:number){
  const cell=sheet.getCell(row,column),value=cell.value;
  if(value==null)return '';
@@ -63,6 +69,7 @@ export function readPayPackageCompletion(workbook:Workbook):ImportRow[]|null{
   const profile=profileFor(p['Employee ID']);
   const values=Object.fromEntries(packageHeaders.map(header=>[header,'']));
   Object.assign(values,{
+   'Import format':'completion',
    'Package key':p['Package ID / version']||`COMPLETION-${column}`,
    'Employee code':profile?.['Employee ID']||p['Employee ID'],
    'Employee name':profile?.['Legal full name']||'',
@@ -99,7 +106,7 @@ export function readPayPackageCompletion(workbook:Workbook):ImportRow[]|null{
  if(consultant)for(const {column,values:c} of columns(consultant,'Employee ID / payee ID')){
   const profile=profileFor(c['Employee ID / payee ID']);
   const values=Object.fromEntries(packageHeaders.map(header=>[header,'']));
-  Object.assign(values,{'Package key':c['Consultant attachment ID']||`CONSULTANT-${column}`,'Employee code':profile?.['Employee ID']||c['Employee ID / payee ID'],'Employee name':c['Payee legal name / entity'],'Business unit / payroll group':profile?.['Business unit']||'','Pay stream':'professional_fee','Effective from':c['Effective from / to'],'Amount unit':c['Fee basis'],'Basic pay / fee amount':(c['Fee amount (PHP)']||'').replace(/,/g,''),'Salary source':'Consultant agreement','Source reference':c['Contract / authorization link'],Reason:c['Services / deliverables'],'Engagement reference':c['Contract / authorization link'],'Tax profile reference':c['Applicable withholding policy'],'Salary arrangement':'Custom - needs review','Arrangement document':c['Contract / authorization link'],Notes:['Separate consultant fee',c['Gross / net fee terms'],c['Relationship / classification review']].filter(Boolean).join('; ')});
+  Object.assign(values,{'Import format':'completion','Package key':c['Consultant attachment ID']||`CONSULTANT-${column}`,'Employee code':profile?.['Employee ID']||c['Employee ID / payee ID'],'Employee name':c['Payee legal name / entity'],'Business unit / payroll group':profile?.['Business unit']||'','Pay stream':'professional_fee','Effective from':c['Effective from / to'],'Amount unit':c['Fee basis'],'Basic pay / fee amount':(c['Fee amount (PHP)']||'').replace(/,/g,''),'Salary source':'Consultant agreement','Source reference':c['Contract / authorization link'],Reason:c['Services / deliverables'],'Engagement reference':c['Contract / authorization link'],'Tax profile reference':c['Applicable withholding policy'],'Salary arrangement':'Custom - needs review','Arrangement document':c['Contract / authorization link'],Notes:['Separate consultant fee',c['Gross / net fee terms'],c['Relationship / classification review']].filter(Boolean).join('; ')});
   for(const [field,value] of Object.entries(values))values[field]=value??'';
   imports.push({row:packages.columnCount+column,values,components:[]});
  }

@@ -1,7 +1,7 @@
 import {parseDelimited} from '../../services/biometricImport';
 import {downloadText} from './actualAttendanceImport';
 import {readImportWorkbook} from './readImportWorkbook';
-import {readPayPackageCompletion} from './payPackageCompletionImport';
+import {completionIdentityIssue,readPayPackageCompletion} from './payPackageCompletionImport';
 import React,{useEffect,useMemo,useRef,useState} from 'react';
 import Button from '../../components/ui/Button';
 import Card from '../../components/ui/Card';
@@ -24,6 +24,7 @@ const PayPackageBatchUpload:React.FC<{directory:PayDirectoryEntry[];onSubmitted:
   try{
    if(/^DEMO-/i.test(employeeCode))throw new Error('Example-only Employee ID. Use an actual HRIS employee.');
    if(!employee)throw new Error('Employee code: no unique accessible HRIS record matches this code.');
+   const identityIssue=completionIdentityIssue(source,employee);if(identityIssue)throw new Error(identityIssue);
    assertArrangementLive((arrangements as Record<string,string>)[source.values['Salary arrangement']||'Gross salary']);
    const context=await fetchPayPackages(employee.id);if(context.employeeId!==employee.id)throw new Error('Approved salary source conflicts with the selected employee.');
    const prepared=prepareImport(source,context);

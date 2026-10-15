@@ -11,7 +11,7 @@ function load(path,deps={}){
  const exports={};vm.runInNewContext(code,{exports,Date,require:name=>{assert.ok(name in deps,name);return deps[name];}});return exports;
 }
 const base=load('modules/payroll/payPackageImport.ts');
-const {readPayPackageCompletion}=load('modules/payroll/payPackageCompletionImport.ts',{'./payPackageImport':base});
+const {readPayPackageCompletion,completionIdentityIssue}=load('modules/payroll/payPackageCompletionImport.ts',{'./payPackageImport':base});
 function columnSheet(workbook,name,records,idField='Employee ID'){
  const s=workbook.addWorksheet(name),fields=[idField,...new Set(records.flatMap(record=>Object.keys(record)).filter(key=>key!==idField))];
  s.addRow(['Field','Requirement','Owner','How to complete',...records.map((_,i)=>`Employee ${i+1}`)]);
@@ -35,6 +35,8 @@ assert.equal(rows.length,3);assert.equal(rows[0].values['Employee code'],'TNG-S-
 assert.equal(rows[0].values['Business unit / payroll group'],'Unit A','Join by ID, not source column order');
 assert.equal(rows[0].values['Effective from'],'2026-10-01');assert.equal(rows[0].values['Basic pay / fee amount'],'25000');
 assert.equal(rows[1].values['Amount unit'],'Daily');assert.equal(rows[2].values['Pay stream'],'professional_fee');assert.equal(rows[2].values['Basic pay / fee amount'],'30000');
+assert.equal(completionIdentityIssue(rows[0],{name:'A, Employee'}),'');
+assert.match(completionIdentityIssue(rows[0],{name:'Different Person'}),/workbook name does not match/);
 const context={employeeId:'employee-a',sourceHash:'source-hash',scopes:[{id:'unit-a',name:'Unit A',canEdit:true}],packages:[],sources:[{id:null,baseAmount:25000,conflict:false}]};
 const prepared=base.prepareImport(rows[0],context);
 assert.equal(prepared.payload.treatment.submissionIntent,'draft');
@@ -63,7 +65,7 @@ const hooks={...React,useMemo:fn=>fn(),useEffect:()=>{},useRef:value=>{const i=c
 const component=tag=>({__esModule:true,default:({children,...props})=>React.createElement(tag,props,children)});
 const uploader=load('modules/payroll/PayPackageBatchUpload.tsx',{
  react:hooks,'./readImportWorkbook':{readImportWorkbook:async()=>workbook},'./payPackageImport':base,
- './payPackageCompletionImport':{readPayPackageCompletion},'../../services/biometricImport':{},'./actualAttendanceImport':{},
+ './payPackageCompletionImport':{readPayPackageCompletion,completionIdentityIssue},'../../services/biometricImport':{},'./actualAttendanceImport':{},
  '../../components/ui/Button':component('button'),'../../components/ui/Card':component('section'),
  './payPackages':{fetchPayPackages:async employeeId=>{fetching++;peakFetching=Math.max(peakFetching,fetching);await new Promise(setImmediate);fetching--;return{...context,employeeId};},savePayPackage:async()=>{writes++;},submitPayPackageDraft:async()=>{writes++;}},
 }).default;
