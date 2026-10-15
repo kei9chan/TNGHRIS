@@ -67,11 +67,12 @@ export function simpleImportRows(input:{row:number;values:Record<string,string>}
   return {row,values,components};
  });
 }
-export type ImportRow={row:number;values:Record<string,string>;components:Record<string,string>[]};
+export type ImportRow={row:number;values:Record<string,string>;components:Record<string,string>[];issues?:{field:string;value:string;message:string;fixed?:boolean}[]};
 const treatment=()=>Object.fromEntries(['tax','sss','philhealth','pagibig','thirteenthMonth','proration'].map(k=>[k,'unreviewed']));
 const date=(s:string)=>/^\d{4}-\d{2}-\d{2}$/.test(s)&&!isNaN(Date.parse(s))&&new Date(s).toISOString().slice(0,10)===s;
 const amount=(s:string)=>/^\d+(\.\d{1,6})?$/.test(s)&&Number.isFinite(Number(s));
 export function prepareImport(row:ImportRow,context:PayContext){
+ for(const issue of row.issues||[])if(issue.fixed||row.values[issue.field]===issue.value)throw new Error(issue.message);
  const v=Object.fromEntries(Object.entries(row.values).map(([k,value])=>[k,cleanImportText(value)]));
  v['Salary arrangement']=choice(v['Salary arrangement']||'',Object.keys(arrangements));
  v['Amount unit']=choice(v['Amount unit'],['Monthly','Daily','Hourly','Per invoice','Other approved frequency']);
@@ -114,7 +115,7 @@ export function prepareImport(row:ImportRow,context:PayContext){
   const receiptRequired=importKey(c['Receipt required']||'')==='yes'||category==='reimbursable_allowance';
   const taxDetail=c['Tax treatment detail']||'';
   const taxTreatment=taxDetail?importKey(taxDetail).replaceAll(' ','_'):category==='de_minimis'?'non_taxable':category==='reimbursable_allowance'?'reimbursable':'taxable';
-  return {...treatment(),name:c['Component name'],amount:c.Amount,recurrence:c.Frequency,payableDate:c['Payable date'],legacyField:c['Legacy field'],category,frequency:c.Frequency==='one_time'?'One time':v['Pay frequency']||v['Amount unit'],taxTreatment,tax:taxTreatment==='non_taxable'?'excluded':taxTreatment==='taxable'?'included':'unreviewed',receiptRequired,receiptStatus:receiptRequired?(c['Receipt or document reference']?'receipt_submitted':'receipt_required'):undefined,documentRef:c['Receipt or document reference']||'',policyRef:c['Policy reference']||'',notes:c.Notes||''};
+  return {...treatment(),name:c['Component name'],amount:c.Amount,recurrence:c.Frequency,payableDate:c['Payable date'],legacyField:c['Legacy field'],category,frequency:c.Frequency==='one_time'?'One time':c['Pay frequency']||v['Pay frequency']||v['Amount unit'],taxTreatment,tax:taxTreatment==='non_taxable'?'excluded':taxTreatment==='taxable'?'included':'unreviewed',receiptRequired,receiptStatus:receiptRequired?(c['Receipt or document reference']?'receipt_submitted':'receipt_required'):undefined,documentRef:c['Receipt or document reference']||'',policyRef:c['Policy reference']||'',notes:c.Notes||''};
  });
  if(components.length>30)fail('Maximum 30 components per package.');
  const responsibility=(value:string|undefined,fallback:string)=>({'employee':'employee','employer':'employer','split':'split'} as Record<string,string>)[importKey(value||'')]||fallback;
@@ -126,6 +127,7 @@ export type ImportValidationStatus='ready'|'draft'|'review'|'blocked'|'skipped';
 export function classifyImportIssue(error:string,row?:ImportRow):ImportValidationStatus{
  if(!error){const components=row?.components||[];if(components.some(component=>(importKey(component['Receipt required']||'')==='yes'||component['Legacy field']==='reimbursable')&&!component['Receipt or document reference']))return 'review';return 'ready';}
  const normalized=importKey(error);
+ if(normalized.startsWith('needs review:'))return 'review';
  if(normalized.includes('invoice')||normalized.includes('supporting document')||normalized.includes('receipt')||normalized.includes('custom arrangements'))return 'review';
  return 'blocked';
 }
