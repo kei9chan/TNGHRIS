@@ -10,6 +10,7 @@ import { supabase } from '../services/supabaseClient';
 import { useAuth } from '../hooks/useAuth';
 import { useApprovals } from '../hooks/useApprovals';
 import { useAdditionalApprovals } from '../hooks/useAdditionalApprovals';
+import NTEApprovalPreview from '../components/approvals/NTEApprovalPreview';
 import { OTStatus, Role } from '../types';
 import Button from '../components/ui/Button';
 import { requestManpowerClarification } from '../services/manpowerService';
@@ -45,6 +46,7 @@ type ApprovalItem = {
   reason?: string; exception?: string; nextStep?: string; bulkSelectable: boolean; reviewUrl: string;
   route?: 'MANAGER_ONLY' | 'BOD_REQUIRED';
   approvalContext?: Record<string, unknown>;
+  ntePreview?: { category: string; details?: string };
 };
 
 const DEFAULT_FILTERS = { search: '', businessUnit: '', department: '', kind: '', status: '', age: '', dateFrom: '', dateTo: '', quick: 'all', sort: 'newest' };
@@ -72,6 +74,7 @@ const TIME_KINDS = new Set<Kind>(['leave', 'wfh', 'overtime']);
 const TIME_DESKTOP_HEADINGS = ['Select', 'Request / Employee', 'Business unit / Department', 'Request details', 'Submitted / Pending', 'Approval step', 'Eligibility', 'Action'];
 const OVERTIME_DESKTOP_HEADINGS = ['Select', 'Request / Employee', 'Business unit / Department', 'Request details', 'Week of', 'Submitted / Pending', 'Approval step', 'Eligibility', 'Action'];
 const GENERIC_DESKTOP_HEADINGS = ['Select', 'Request / Employee', 'Business unit / Department', 'Submitted / Aging', 'Current step', 'Status', 'Exception / Reason', 'Action'];
+const NTE_DESKTOP_HEADINGS = GENERIC_DESKTOP_HEADINGS.map(heading => heading === 'Exception / Reason' ? 'NTE summary' : heading);
 const fmtDate = (date: Date) => date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
 const fmtDateRange = (start?: Date, end?: Date) => {
   if (!start) return '—';
@@ -117,6 +120,7 @@ const ApprovalMobileCard: React.FC<{
       <div className="col-span-2"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Approval step</dt><dd className="mt-1"><span className="inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200">{item.approvalStep || item.currentStep}</span></dd></div>
       {!isTimeRequest && <div className="col-span-2"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Status</dt><dd className="mt-1"><span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-100">{statusLabel}</span></dd></div>}
       {isTimeRequest && <div className={`col-span-2 rounded-lg border p-3 ${reasonTone(item)}`}><dt className="text-xs font-bold uppercase tracking-wide">{eligibilityLabel(item)}</dt><dd className="mt-1 font-medium">{eligibilityReason(item)}</dd></div>}
+      {item.kind === 'nte' && <div className="col-span-2 rounded-lg border border-slate-200 p-3 dark:border-slate-600"><dt className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">NTE summary</dt><dd><NTEApprovalPreview category={item.ntePreview?.category} details={item.ntePreview?.details} /></dd></div>}
       {item.kind === 'overtime' && week.range && <div className="col-span-2 border-t border-slate-200 pt-3 dark:border-slate-600"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Week of</dt><dd className="mt-0.5 font-semibold">{week.range}</dd>{week.workweekNote && <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{week.workweekNote}</p>}</div>}
       {item.kind === 'wfh' && month && <div className="col-span-2 border-t border-slate-200 pt-3 dark:border-slate-600"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Month covered</dt><dd className="mt-0.5 font-semibold">{month}</dd></div>}
       {detail && <div className="col-span-2"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Details</dt><dd className="mt-0.5 break-words">{detail}</dd></div>}
@@ -282,7 +286,7 @@ export default function ApprovalCenter() {
     });
     const ntes: ApprovalItem[] = additional.pendingNTEApprovals.map(row => {
       const meta = metaFor(row.employeeId);
-      return { id: row.id, canonicalKey: row.canonicalKey, kind: 'nte', reference: row.reference, employeeId: row.employeeId, employee: row.employeeName, employeeCode: meta.employeeId, businessUnitId: row.businessUnitId || meta.businessUnitId, businessUnit: row.businessUnit || meta.businessUnit, departmentId: meta.departmentId, department: meta.department, start: row.createdAt, end: row.deadline || row.createdAt, duration: `${dayAge(row.createdAt)} day${dayAge(row.createdAt) === 1 ? '' : 's'} pending`, status: row.status, currentStep: row.currentStep, details: `${row.caseReference} · ${row.category} · Handler: ${row.assignedHandler}`, bulkSelectable: false, reviewUrl: getApprovalReviewUrl('nte', row.id) };
+      return { id: row.id, canonicalKey: row.canonicalKey, kind: 'nte', reference: row.reference, employeeId: row.employeeId, employee: row.employeeName, employeeCode: meta.employeeId, businessUnitId: row.businessUnitId || meta.businessUnitId, businessUnit: row.businessUnit || meta.businessUnit, departmentId: meta.departmentId, department: meta.department, start: row.createdAt, end: row.deadline || row.createdAt, duration: `${dayAge(row.createdAt)} day${dayAge(row.createdAt) === 1 ? '' : 's'} pending`, status: row.status, currentStep: row.currentStep, details: `${row.caseReference} · ${row.category} · Handler: ${row.assignedHandler}`, ntePreview: { category: row.category, details: row.allegationDetails }, bulkSelectable: false, reviewUrl: getApprovalReviewUrl('nte', row.id) };
     });
     const pans: ApprovalItem[] = additional.pendingPANApprovals.map(row => {
       const meta = metaFor(row.employeeId);
@@ -492,7 +496,7 @@ export default function ApprovalCenter() {
         const individualOnly = !BULK_KINDS.has(group.kind);
         const displayTitle = KIND_META[group.kind].title;
         const isTimeGroup = TIME_KINDS.has(group.kind);
-        const desktopHeadings = group.kind === 'overtime' ? OVERTIME_DESKTOP_HEADINGS : isTimeGroup ? TIME_DESKTOP_HEADINGS : GENERIC_DESKTOP_HEADINGS;
+        const desktopHeadings = group.kind === 'overtime' ? OVERTIME_DESKTOP_HEADINGS : isTimeGroup ? TIME_DESKTOP_HEADINGS : group.kind === 'nte' ? NTE_DESKTOP_HEADINGS : GENERIC_DESKTOP_HEADINGS;
         return <section key={group.kind} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-600 dark:bg-slate-800">
           <div className="flex flex-wrap items-center gap-3 p-4">
             <button aria-label={`Toggle ${displayTitle}`} aria-expanded={expanded === group.kind} onClick={() => setExpanded(current => current === group.kind ? null : group.kind)} className="flex min-h-14 min-w-0 flex-[1_1_20rem] items-center gap-4 rounded-lg text-left hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500 dark:hover:bg-slate-700">
@@ -528,7 +532,7 @@ export default function ApprovalCenter() {
                     <td className="whitespace-nowrap px-4 py-4">{fmtDate(item.start)}<div className={`text-xs ${dayAge(item.start) >= 3 ? 'font-semibold text-red-600 dark:text-red-300' : 'text-slate-500 dark:text-slate-300'}`}>{dayAge(item.start)} day{dayAge(item.start) === 1 ? '' : 's'} pending · {item.duration}</div></td>
                     <td className="px-4 py-4 font-medium">{item.currentStep}</td>
                     <td className="px-4 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${isBodApprovalStatus(item.status) ? 'bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-200' : 'bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200'}`}>{item.kind === 'manpower' ? item.currentStep : getApprovalStatusLabel(item.status)}</span></td>
-                    <td className="max-w-xs px-4 py-4"><div className={`rounded-lg border px-3 py-2 text-sm ${reasonTone(item)}`}><span aria-hidden="true" className="mr-2">{needsIndividualReview(item) ? '⚠' : '✓'}</span>{reason}</div></td>
+                    <td className={`${item.kind === 'nte' ? 'min-w-80 max-w-xl' : 'max-w-xs'} px-4 py-4`}>{item.kind === 'nte' ? <NTEApprovalPreview category={item.ntePreview?.category} details={item.ntePreview?.details} /> : <div className={`rounded-lg border px-3 py-2 text-sm ${reasonTone(item)}`}><span aria-hidden="true" className="mr-2">{needsIndividualReview(item) ? '⚠' : '✓'}</span>{reason}</div>}</td>
                   </>}
                   <td className="sticky right-0 z-10 bg-white px-4 py-4 shadow-[-10px_0_12px_-12px_rgba(15,23,42,0.45)] dark:bg-slate-800"><Link className="inline-flex min-h-11 whitespace-nowrap items-center font-semibold text-indigo-600 dark:text-indigo-300" to={item.reviewUrl}>Review request →</Link></td>
                 </tr>;
