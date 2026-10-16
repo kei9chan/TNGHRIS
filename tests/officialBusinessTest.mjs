@@ -48,6 +48,7 @@ const migration=fs.readdirSync('supabase/migrations').find(x=>x.endsWith('_offic
 await db.exec(fs.readFileSync('supabase/migrations/'+migration,'utf8'));
 await db.exec(fs.readFileSync('supabase/migrations/'+fs.readdirSync('supabase/migrations').find(x=>x.endsWith('_ob_preserve_changed_punch_review.sql')),'utf8'));
 await db.exec(fs.readFileSync('supabase/migrations/'+fs.readdirSync('supabase/migrations').find(x=>x.endsWith('_ob_payroll_review_alias.sql')),'utf8'));
+await db.exec(fs.readFileSync('supabase/migrations/'+fs.readdirSync('supabase/migrations').find(x=>x.endsWith('_ob_conflicts_stop_retrying.sql')),'utf8'));
 const actor=async(n,role='Employee')=>{await db.exec('reset role');await db.query("select set_config('test.actor',$1,false),set_config('test.role',$2,false)",[id(n),role]);await db.exec('set role authenticated');};
 const admin=async(sql,args=[])=>{await db.exec('reset role');return db.query(sql,args);};
 const revision=async()=>scalar('select revision v from public.official_business_requests where id=$1',[id(100)]);
@@ -57,6 +58,15 @@ const now=new Date();const ph=new Date(now.getTime()+8*3600000).toISOString().sl
 const start=new Date(now.getTime()-60000).toISOString(),end=new Date(now.getTime()+3*3600000).toISOString();
 const draft={work_date:ph,starts_at:start,ends_at:end,destination:'Fixture client office',latitude:14.55,longitude:121.02,radius_metres:150,purpose:'Fixture client meeting',client_event:'Fixture',travel_minutes:30,override_schedule:true,supporting_required:true,documents:[]};
 await actor(1);await command('save',draft,'',0);
+// Business conflicts must return once as HTTP 409, not SQLSTATE 40001:
+// PostgREST 14 treats 40001 as retryable and can keep the request running forever.
+const beforeConflict=await scalar('select to_jsonb(r) v from public.official_business_requests r where id=$1',[id(100)]);
+const auditCount=await scalar('select count(*)::int v from public.official_business_audit');
+await assert.rejects(()=>command('save',{...draft,purpose:'Stale overwrite'},'',0),e=>e.code==='PT409'&&/Request changed/.test(e.message));
+await assert.rejects(()=>scalar('select public.act_on_official_business($1,$2,$3,$4,$5) v',[id(999),'submit',1,{},'']),e=>e.code==='PT409'&&/Request unavailable/.test(e.message));
+assert.deepEqual(await scalar('select to_jsonb(r) v from public.official_business_requests r where id=$1',[id(100)]),beforeConflict);
+assert.equal(await scalar('select count(*)::int v from public.official_business_audit'),auditCount);
+assert.equal(await scalar('select count(*)::int v from public.official_business_requests where id=$1',[id(999)]),0);
 await fail(()=>command('submit'),/Supporting documents/);
 const doc=`${id(1)}/${id(100)}/documents/fixture.pdf`;
 await db.query("insert into storage.objects(bucket_id,name,metadata) values('official-business',$1,'{\"mimetype\":\"application/pdf\"}')",[doc]);
@@ -91,7 +101,7 @@ assert.match(await scalar('select notes v from time_events'),/Official Business/
 await actor(3,'HR Staff');await fail(()=>command('amend',draft),/reason/);await command('amend',draft,'Client moved meeting');
 await actor(1);const changed=await punch('CLOCK_OUT',204,1);assert.equal(changed.recorded,false);assert.match(changed.error,/not currently approved/);
 await actor(2);await command('approve');await actor(3,'HR Staff');await command('approve');await actor(1);
-await fail(()=>punch('CLOCK_OUT',205,0),/Attendance changed/);
+await assert.rejects(()=>punch('CLOCK_OUT',205,0),e=>e.code==='PT409'&&/Attendance changed/.test(e.message));
 assert.equal((await punch('CLOCK_OUT',205,1)).state,'completed');
 await actor(3,'HR Staff');await fail(()=>command('cancel'),/reason/);await command('cancel',{},'Fixture cancellation');
 await actor(1);assert.equal((await punch('CLOCK_IN',206,2)).recorded,false);
