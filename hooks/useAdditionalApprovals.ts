@@ -27,6 +27,7 @@ export type PendingNTEApproval = {
   reference: string;
   caseReference: string;
   category: string;
+  allegationDetails?: string;
   businessUnitId?: string;
   businessUnit: string;
   assignedHandler: string;
@@ -234,7 +235,15 @@ export function useAdditionalApprovals(user: User | null, kind?: ApprovalRequest
     if (sequence !== refreshSequence.current) return;
     const actionable = (type: string, id: string) => taskResult.data.some(t => t.request_type === type && t.request_id === id);
     const nteRows = (nteResult.data || []).filter((r: any) => actionable('nte', r.id));
-    const errors = [taskResult.error, nteResult.error, panResult.error, requisitionResult.error, awardResult.error, offerLoadError, assetLoadError, benefitLoadError, payPackageLoadError, accountDeletionError, ...offerPackageErrors].filter(Boolean);
+    // Fetch only recipient-specific allegations for the already-scoped queue.
+    // The existing NTE SELECT policies still enforce assigned-approver access.
+    const ntePreviewResults = await Promise.all(Array.from({ length: Math.ceil(nteRows.length / 100) }, (_, index) =>
+      supabase.from('ntes').select('id,details').in('id', nteRows.slice(index * 100, (index + 1) * 100).map((row: any) => row.id))
+    ));
+    if (sequence !== refreshSequence.current) return;
+    const nteDetails = new Map<string, string>(ntePreviewResults.flatMap(result => (result.data || []).map(row => [row.id, row.details] as [string, string])));
+    const ntePreviewError = ntePreviewResults.some(result => result.error) ? { message: 'Some NTE previews could not be loaded. Use Review request to read the notice.' } : null;
+    const errors = [taskResult.error, nteResult.error, ntePreviewError, panResult.error, requisitionResult.error, awardResult.error, offerLoadError, assetLoadError, benefitLoadError, payPackageLoadError, accountDeletionError, ...offerPackageErrors].filter(Boolean);
     setAdditionalApprovalError(errors.length ? errors.map(error => error!.message).join(' · ') : null);
     // A failed refresh is not an empty queue. Keep the last successful result
     // with a visible error; decisions still require backend authorization.
@@ -251,6 +260,7 @@ export function useAdditionalApprovals(user: User | null, kind?: ApprovalRequest
         reference,
         caseReference,
         category: row.category || 'Notice to Explain',
+        allegationDetails: nteDetails.get(row.id),
         businessUnitId: row.business_unit_id || undefined,
         businessUnit: row.business_unit_name || 'Not assigned',
         assignedHandler: row.assigned_to_name || 'Not assigned',
