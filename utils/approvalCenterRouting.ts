@@ -15,6 +15,10 @@ export const isCentralizedApprovalActionItem = (item: ActionItemLike) => {
 
   if (title.includes('acknowledgement') || title.includes('acknowledgment')) return false;
 
+  // BOD and manager dashboards open this approval in a modal, so its link
+  // is "#" rather than the manpower route. Keep it in the approval queue only.
+  if (title === 'on-call staff request') return true;
+
   const centralizedLink = (
     link.startsWith('/approvals') ||
     link.includes('/payroll/leave') ||
