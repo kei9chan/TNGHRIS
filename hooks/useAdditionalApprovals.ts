@@ -21,6 +21,8 @@ type PendingStep = {
 
 export type PendingNTEApproval = {
   id: string;
+  approvalId: string;
+  updatedAt: string;
   incidentReportId: string;
   employeeId: string;
   employeeName: string;
@@ -254,6 +256,8 @@ export function useAdditionalApprovals(user: User | null, kind?: ApprovalRequest
       const caseReference = row.case_number ? `TNGIR-${String(row.case_number).padStart(5, '0')}` : row.incident_report_id;
       return {
         id: row.id,
+        approvalId: row.approval_id,
+        updatedAt: row.updated_at,
         incidentReportId: row.incident_report_id,
         employeeId: row.recipient_employee_id || '',
         employeeName: row.recipient_name || 'Employee',
@@ -268,7 +272,7 @@ export function useAdditionalApprovals(user: User | null, kind?: ApprovalRequest
         createdAt: new Date(row.created_at || row.updated_at || Date.now()),
         deadline: row.response_deadline ? new Date(row.response_deadline) : undefined,
         currentStep: row.approval_role || 'Required NTE approval',
-        canonicalKey: `nte:${row.id}:${row.approval_id}`,
+        canonicalKey: `nte:${row.id}:${row.approval_id}:${row.updated_at}`,
       };
     }));
 
