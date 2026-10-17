@@ -11,6 +11,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useApprovals } from '../hooks/useApprovals';
 import { useAdditionalApprovals } from '../hooks/useAdditionalApprovals';
 import NTEApprovalPreview from '../components/approvals/NTEApprovalPreview';
+import { approveNTEBatch, type NTEBatchItem } from '../services/nteBatchApproval';
 import { OTStatus, Role } from '../types';
 import Button from '../components/ui/Button';
 import { requestManpowerClarification } from '../services/manpowerService';
@@ -46,6 +47,7 @@ type ApprovalItem = {
   reason?: string; exception?: string; nextStep?: string; bulkSelectable: boolean; reviewUrl: string;
   route?: 'MANAGER_ONLY' | 'BOD_REQUIRED';
   approvalContext?: Record<string, unknown>;
+  nteBatchItem?: NTEBatchItem;
   ntePreview?: { category: string; details?: string };
 };
 
@@ -69,7 +71,7 @@ const KIND_META: Record<Kind, { title: string; badge: string; rule: string }> = 
 };
 
 const GROUP_ORDER: Kind[] = ['account_deletion','pay_package','attendance','nte', 'pan', 'benefit', 'award', 'offer', 'asset', 'wfh', 'leave', 'overtime', 'requisition', 'manpower'];
-const BULK_KINDS = new Set<Kind>(['leave', 'wfh', 'overtime']);
+const BULK_KINDS = new Set<Kind>(['leave', 'wfh', 'overtime', 'nte']);
 const TIME_KINDS = new Set<Kind>(['leave', 'wfh', 'overtime']);
 const TIME_DESKTOP_HEADINGS = ['Select', 'Request / Employee', 'Business unit / Department', 'Request details', 'Submitted / Pending', 'Approval step', 'Eligibility', 'Action'];
 const OVERTIME_DESKTOP_HEADINGS = ['Select', 'Request / Employee', 'Business unit / Department', 'Request details', 'Week of', 'Submitted / Pending', 'Approval step', 'Eligibility', 'Action'];
@@ -154,7 +156,7 @@ export default function ApprovalCenter() {
   const [expanded, setExpanded] = useState<Kind | null>(() => queueKind);
   const [decisionMessage, setDecisionMessage] = useState('');
   const [busy, setBusy] = useState(false);
-  const [confirming, setConfirming] = useState<{ kind: Kind; ids: string[] } | null>(null);
+  const [confirming, setConfirming] = useState<{ kind: Kind; ids: string[]; nteItems?: NTEBatchItem[] } | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [disapproving,setDisapproving]=useState<{kind:'leave'|'wfh'|'overtime';items:ApprovalItem[]}|null>(null);
   const [result, setResult] = useState<any>(null);
@@ -286,7 +288,7 @@ export default function ApprovalCenter() {
     });
     const ntes: ApprovalItem[] = additional.pendingNTEApprovals.map(row => {
       const meta = metaFor(row.employeeId);
-      return { id: row.id, canonicalKey: row.canonicalKey, kind: 'nte', reference: row.reference, employeeId: row.employeeId, employee: row.employeeName, employeeCode: meta.employeeId, businessUnitId: row.businessUnitId || meta.businessUnitId, businessUnit: row.businessUnit || meta.businessUnit, departmentId: meta.departmentId, department: meta.department, start: row.createdAt, end: row.deadline || row.createdAt, duration: `${dayAge(row.createdAt)} day${dayAge(row.createdAt) === 1 ? '' : 's'} pending`, status: row.status, currentStep: row.currentStep, details: `${row.caseReference} · ${row.category} · Handler: ${row.assignedHandler}`, ntePreview: { category: row.category, details: row.allegationDetails }, bulkSelectable: false, reviewUrl: getApprovalReviewUrl('nte', row.id) };
+      return { id: row.id, canonicalKey: row.canonicalKey, kind: 'nte', reference: row.reference, employeeId: row.employeeId, employee: row.employeeName, employeeCode: meta.employeeId, businessUnitId: row.businessUnitId || meta.businessUnitId, businessUnit: row.businessUnit || meta.businessUnit, departmentId: meta.departmentId, department: meta.department, start: row.createdAt, end: row.deadline || row.createdAt, duration: `${dayAge(row.createdAt)} day${dayAge(row.createdAt) === 1 ? '' : 's'} pending`, status: row.status, currentStep: row.currentStep, details: `${row.caseReference} · ${row.category} · Handler: ${row.assignedHandler}`, ntePreview: { category: row.category, details: row.allegationDetails }, nteBatchItem: { id: row.id, approvalId: row.approvalId, updatedAt: row.updatedAt, reference: row.reference, employee: row.employeeName, category: row.category, details: row.allegationDetails }, bulkSelectable: Boolean(row.approvalId && row.updatedAt), reviewUrl: getApprovalReviewUrl('nte', row.id) };
     });
     const pans: ApprovalItem[] = additional.pendingPANApprovals.map(row => {
       const meta = metaFor(row.employeeId);
@@ -438,15 +440,28 @@ export default function ApprovalCenter() {
     navigate('/approvals', { replace: true });
   };
 
-  const openConfirm = (kind: Kind, ids: string[]) => { setConfirmed(false); setResult(null); setConfirming({ kind, ids }); };
+  const openConfirm = (kind: Kind, ids: string[]) => {
+    if (busy) return;
+    const nteItems = kind === 'nte' ? items.filter(item => item.kind === 'nte' && item.bulkSelectable && ids.includes(item.id)).map(item => ({ ...item.nteBatchItem! })) : undefined;
+    setConfirmed(false); setResult(null);
+    setConfirming({ kind, ids: nteItems ? nteItems.map(item => item.id) : ids, nteItems });
+  };
   const runBulk = async () => {
-    if (!confirming || !confirmed || !BULK_KINDS.has(confirming.kind)) return;
+    if (!confirming || !confirmed || busy || !confirming.ids.length || !BULK_KINDS.has(confirming.kind)) return;
     setBusy(true); setResult(null);
-    const { data, error } = await supabase.rpc('bulk_approve_requests', { p_request_type: confirming.kind, p_request_ids: confirming.ids, p_idempotency_key: crypto.randomUUID(), p_confirm_policy: true });
-    setBusy(false);
-    if (error) return setResult({ error: error.message });
-    setResult(data); setSelected(new Set());
-    await Promise.all([approvals.refreshApprovals(), additional.refreshAdditionalApprovals()]);
+    try {
+      if (confirming.kind === 'nte') {
+        await approveNTEBatch(confirming.nteItems || [], setResult);
+      } else {
+        const { data, error } = await supabase.rpc('bulk_approve_requests', { p_request_type: confirming.kind, p_request_ids: confirming.ids, p_idempotency_key: crypto.randomUUID(), p_confirm_policy: true });
+        if (error) throw new Error(error.message);
+        setResult(data);
+      }
+      setSelected(new Set());
+      await Promise.all([approvals.refreshApprovals(), additional.refreshAdditionalApprovals()]);
+    } catch (error) {
+      setResult({ error: error instanceof Error ? error.message : 'Could not complete the batch. Refresh before retrying.' });
+    } finally { setBusy(false); }
   };
 
   if (!user) return null;
@@ -505,10 +520,10 @@ export default function ApprovalCenter() {
               <span className="min-w-0"><span className="block font-bold">{group.items.length} pending</span><span className="block text-xs text-slate-500 dark:text-slate-300">Oldest {dayAge(oldest.start)} days · Click to {expanded === group.kind ? 'collapse' : 'expand'}</span></span>
             </button>
             {!!exceptions.length && <button onClick={() => navigate(exceptions[0].reviewUrl)} className="min-h-11 font-semibold text-indigo-600 dark:text-indigo-300">Review exceptions ({exceptions.length})</button>}
-            {individualOnly ? <button onClick={() => navigate(group.items[0].reviewUrl)} className="min-h-11 rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white">Review queue</button> : <Button variant="success" disabled={!selectableRequests.length} onClick={() => openConfirm(group.kind, selectableRequests.map(item => item.id))}>Approve all pending — {selectableRequests.length}</Button>}
+            {individualOnly ? <button onClick={() => navigate(group.items[0].reviewUrl)} className="min-h-11 rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white">Review queue</button> : <Button variant="success" disabled={busy || loading || !selectableRequests.length} onClick={() => openConfirm(group.kind, selectableRequests.map(item => item.id))}>{group.kind === 'nte' ? 'Approve all shown' : 'Approve all pending'} — {selectableRequests.length}</Button>}
           </div>
           {expanded === group.kind && <div className="border-t border-slate-200 dark:border-slate-600">
-            {!individualOnly && <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 px-4 py-3 text-sm dark:bg-slate-700 dark:text-slate-100"><label className="flex min-h-11 items-center gap-2"><input type="checkbox" checked={selectableRequests.length > 0 && checked.length === selectableRequests.length} onChange={event => { const next = new Set(selected); selectableRequests.forEach(item => event.target.checked ? next.add(item.canonicalKey) : next.delete(item.canonicalKey)); setSelected(next); }} /> Select all pending requests ({selectableRequests.length})</label><div className="flex flex-wrap gap-2"><Button size="sm" disabled={!checked.length} onClick={() => openConfirm(group.kind, checked.map(item => item.id))}>Approve selected — {checked.length}</Button>{(group.kind==='leave'||group.kind==='wfh'||group.kind==='overtime')&&<Button variant="danger" size="sm" disabled={!checked.length||checked.length>100} onClick={()=>setDisapproving({kind:group.kind as 'leave'|'wfh'|'overtime',items:[...checked]})}>Disapprove selected — {checked.length}</Button>}</div></div>}
+            {!individualOnly && <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 px-4 py-3 text-sm dark:bg-slate-700 dark:text-slate-100"><label className="flex min-h-11 items-center gap-2"><input type="checkbox" checked={selectableRequests.length > 0 && checked.length === selectableRequests.length} onChange={event => { const next = new Set(selected); selectableRequests.forEach(item => event.target.checked ? next.add(item.canonicalKey) : next.delete(item.canonicalKey)); setSelected(next); }} /> {group.kind === 'nte' ? 'Select all shown NTEs' : 'Select all pending requests'} ({selectableRequests.length})</label><div className="flex flex-wrap gap-2"><Button size="sm" disabled={busy || loading || !checked.length} onClick={() => openConfirm(group.kind, checked.map(item => item.id))}>Approve selected — {checked.length}</Button>{(group.kind==='leave'||group.kind==='wfh'||group.kind==='overtime')&&<Button variant="danger" size="sm" disabled={!checked.length||checked.length>100} onClick={()=>setDisapproving({kind:group.kind as 'leave'|'wfh'|'overtime',items:[...checked]})}>Disapprove selected — {checked.length}</Button>}</div></div>}
             <div className="space-y-3 bg-slate-50 p-3 dark:bg-slate-900/40 lg:hidden">{group.items.map(item => <ApprovalMobileCard key={item.canonicalKey} item={item} requested={requestedItem === item.id} selected={selected.has(item.canonicalKey)} onSelect={checkedItem => { const next = new Set(selected); checkedItem ? next.add(item.canonicalKey) : next.delete(item.canonicalKey); setSelected(next); }} />)}</div>
             <div className="hidden overflow-x-auto lg:block"><table className={`${group.kind === 'overtime' ? 'min-w-[1320px]' : isTimeGroup ? 'min-w-[1120px]' : 'min-w-full'} text-sm`}>
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-700 dark:text-slate-200"><tr>{desktopHeadings.map((heading, index) => <th key={heading} className={`${index === 0 ? 'w-16' : ''} ${heading === 'Action' ? 'sticky right-0 z-20 bg-slate-50 shadow-[-10px_0_12px_-12px_rgba(15,23,42,0.45)] dark:bg-slate-700' : ''} px-4 py-3`}>{heading}</th>)}</tr></thead>
@@ -542,7 +557,7 @@ export default function ApprovalCenter() {
         </section>;
       })}{!groups.length && !error && !loading && <div className="rounded-xl border border-slate-200 bg-white p-10 text-center dark:border-slate-600 dark:bg-slate-800"><p className="text-lg font-bold text-slate-900 dark:text-white">{items.length ? 'No pending approvals match your filters.' : 'No pending approvals'}</p><p className="mt-1 text-sm text-slate-500 dark:text-slate-300">{items.length ? 'Try clearing a filter to see the active queues.' : 'You are all caught up.'}</p></div>}</div>
     </div>
-    {confirming && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"><div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-600 dark:bg-slate-800 dark:text-white"><h2 className="text-xl font-bold">Approve {confirming.ids.length} {KIND_META[confirming.kind].title} request{confirming.ids.length === 1 ? '' : 's'}?</h2><ul className="mt-4 list-disc space-y-2 pl-5 text-sm text-slate-600 dark:text-slate-200"><li>{confirming.ids.length} requests currently shown in your assigned scope will be processed.</li><li>Requests that changed, are no longer assigned to you, or require another approver are safely skipped.</li><li>Each request keeps its own history and audit record.</li>{confirming.kind==='leave'&&<li>Insufficient-credit requests at the BOD stage are approved as BOD exceptions. No additional earned credits will be granted. Approval notes are optional.</li>}<li>Employees are notified using existing settings.</li></ul><label className="mt-5 flex gap-3 rounded-lg bg-slate-50 p-4 font-semibold dark:bg-slate-700 dark:text-white"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} /> I confirm these requests meet policy.</label>{result?.error && <p role="alert" className="mt-4 text-red-700 dark:text-red-300">{result.error}</p>}{result && !result.error && <div className={`mt-4 rounded-lg p-4 text-sm ${result.failed ? 'bg-red-50 text-red-800' : result.skipped ? 'bg-amber-50 text-amber-900' : 'bg-emerald-50 text-emerald-800'}`}><div><b>{result.succeeded} approved</b> · {result.skipped} skipped · {result.failed} failed</div>{result.skippedItems?.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5">{Array.from(new Set(result.skippedItems.map((item: any) => item.reason))).map((reason: any) => <li key={String(reason)}>{String(reason)}</li>)}</ul>}{result.failures?.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5">{Array.from(new Set(result.failures.map((item: any) => item.error))).map((failure: any) => <li key={String(failure)}>{String(failure)}</li>)}</ul>}</div>}<div className="mt-6 flex justify-end gap-3"><Button variant="secondary" onClick={() => { setConfirming(null); setResult(null); }}>{result && !result.error ? 'Close' : 'Cancel'}</Button><Button disabled={!confirmed || busy || !!(result && !result.error)} isLoading={busy} onClick={runBulk}>Approve {confirming.ids.length} requests</Button></div></div></div>}
+    {confirming && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"><div role="dialog" aria-modal="true" aria-labelledby="bulk-approval-title" aria-busy={busy} className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-600 dark:bg-slate-800 dark:text-white"><h2 id="bulk-approval-title" className="text-xl font-bold">Approve {confirming.ids.length} {KIND_META[confirming.kind].title} request{confirming.ids.length === 1 ? '' : 's'}?</h2><ul className="mt-4 list-disc space-y-2 pl-5 text-sm text-slate-600 dark:text-slate-200"><li>{confirming.ids.length} requests currently shown in your assigned scope will be processed.</li><li>{confirming.kind === 'nte' ? 'Revised, reassigned, or already processed notices are skipped. Only your assigned step is approved; other required approvals remain pending.' : 'Requests that changed, are no longer assigned to you, or require another approver are safely skipped.'}</li><li>Each request keeps its own history and audit record.</li>{confirming.kind==='leave'&&<li>Insufficient-credit requests at the BOD stage are approved as BOD exceptions. No additional earned credits will be granted. Approval notes are optional.</li>}<li>Employees are notified using existing settings.</li></ul>{confirming.nteItems && <ul aria-label="NTEs selected for approval" className="mt-4 max-h-64 space-y-3 overflow-y-auto rounded-lg border border-slate-200 p-3 dark:border-slate-600">{confirming.nteItems.map(item => <li key={item.id} className="text-sm"><p className="font-semibold">{item.reference} · {item.employee}</p><p className="text-xs text-slate-500 dark:text-slate-300">{item.category}</p></li>)}</ul>}{busy && confirming.kind === 'nte' && <p role="status" className="mt-3 text-sm">Processing {result?.processed || 0} of {confirming.ids.length} NTE approvals…</p>}<label className="mt-5 flex gap-3 rounded-lg bg-slate-50 p-4 font-semibold dark:bg-slate-700 dark:text-white"><input type="checkbox" disabled={busy || Boolean(result && !result.error)} checked={confirmed} onChange={event => setConfirmed(event.target.checked)} /> {confirming.kind === 'nte' ? 'I confirm approval of my assigned step for the listed NTEs.' : 'I confirm these requests meet policy.'}</label>{result?.error && <p role="alert" className="mt-4 text-red-700 dark:text-red-300">{result.error}</p>}{result && !result.error && <div className={`mt-4 rounded-lg p-4 text-sm ${result.failed ? 'bg-red-50 text-red-800' : result.skipped ? 'bg-amber-50 text-amber-900' : 'bg-emerald-50 text-emerald-800'}`}><div><b>{result.succeeded} approved</b> · {result.skipped} skipped · {result.failed} failed</div>{result.skippedItems?.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5">{Array.from(new Set(result.skippedItems.map((item: any) => item.reason))).map((reason: any) => <li key={String(reason)}>{String(reason)}</li>)}</ul>}{result.failures?.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5">{Array.from(new Set(result.failures.map((item: any) => item.error))).map((failure: any) => <li key={String(failure)}>{String(failure)}</li>)}</ul>}</div>}<div className="mt-6 flex justify-end gap-3"><Button variant="secondary" disabled={busy} onClick={() => { setConfirming(null); setResult(null); }}>{result && !result.error ? 'Close' : 'Cancel'}</Button><Button disabled={!confirmed || !confirming.ids.length || busy || !!(result && !result.error)} isLoading={busy} onClick={runBulk}>Approve {confirming.ids.length} requests</Button></div></div></div>}
     <React.Suspense fallback={<p role="status">Loading review…</p>}>
     {requestedLeave && <LeaveRequestModal
       isOpen={Boolean(requestedLeave)}
