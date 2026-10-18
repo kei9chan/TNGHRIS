@@ -597,6 +597,7 @@ export interface ManpowerRequest {
   approvalRouteSnapshot?: Array<{ approverUserId: string; approverName?: string; organizationalLevel?: string; authorityKind?: string }>;
   approvalRouteStep?: number;
   routingBasis?: string;
+  approvalSnapshot?: Record<string, unknown>;
   createdAt: Date;
   approvedBy?: string;
   approvedAt?: Date;

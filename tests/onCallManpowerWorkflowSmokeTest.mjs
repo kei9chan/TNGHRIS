@@ -43,7 +43,7 @@ const checks = [
   [grantMigration.includes('grant execute on function private.is_manpower_active_approver') && grantMigration.includes('grant execute on function private.is_manpower_request_owner'), 'RLS helper execution grant'],
   [service.includes("rpc('get_my_pending_manpower_approval_ids'") && service.includes("rpc('process_manpower_request_approval'") && !service.includes(".from('manpower_requests')\n    .update"), 'client uses audited RPCs'],
   [deepLinks.includes("type=manpower&item=") && approvalCenter.includes('<ManpowerReviewModal'), 'canonical direct review link'],
-  [approvalCenter.includes("const BULK_KINDS = new Set<Kind>(['leave', 'wfh', 'overtime'])") && approvalCenter.includes("bulkSelectable: false"), 'on-call queue is individually reviewable'],
+  [approvalCenter.includes("approveOnCallBatch") && approvalCenter.includes("<ManpowerReviewModal"), 'on-call batch approvals retain individual review'],
   [planning.includes('fetchMyPendingManpowerApprovalIds') && planning.includes('This on-call request is no longer assigned to you'), 'planning deep-link authorization'],
   [managerDashboard.includes('fetchMyPendingManpowerApprovalIds') && managerDashboard.includes('assignment-based'), 'manager dashboard follows active assignment'],
   [review.includes('Approval history') && review.includes('Pending Board of Director Approval') && review.includes('Required FTE'), 'review modal shows BOD stage and request detail'],
