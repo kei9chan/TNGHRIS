@@ -6,7 +6,7 @@ import React from 'react';
 const load=(path,deps={})=>{const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText,{exports,Date,Error,require:name=>deps[name]});return exports;};
 const base=load('modules/payroll/payPackageImport.ts');
 const source=base.simpleImportRows([{row:2,values:{'Employee code':'E-1','Employee name':'Fixture Employee','Business unit':'Fixture Unit','Pay type':'Employee salary','Effective date':'2026-10-01','Amount unit':'Monthly','Approved basic pay / fee':'25000','Existing reimbursable':'1000','Salary source':'Current HRIS record','Source document / note':'Approved salary source','Reason for this record':'Fixture setup'}}])[0];
-assert.equal(base.classifyImportIssue('',source),'review');
+assert.equal(base.classifyImportIssue('',source),'ready','Standing allowance setup must not require cutoff receipts.');
 assert.equal(base.classifyImportIssue('',source,true),'ready');
 assert.equal(base.classifyImportIssue('',{...source,values:{...source.values,'Receipt or document reference':'https://example.com/receipt.pdf'}}),'ready');
 assert.equal(base.classifyImportIssue('Pay-package editing is not allowed.',source,true),'blocked');
@@ -28,9 +28,9 @@ const text=node=>typeof node==='string'?node:React.isValidElement(node)?React.Ch
 const settle=async()=>{for(let i=0;i<8;i++)await new Promise(setImmediate);};
 async function chooseReceipt(){
   all(render(),e=>e.type==='input'&&e.props.type==='file')[0].props.onChange({target:{files:[{name:'fixture.xlsx',size:100,arrayBuffer:async()=>new ArrayBuffer(0)}],value:''}});await settle();
-  let tree=render();assert.ok(text(tree).includes('Needs review'));assert.equal(calls.length,0);
-  all(tree,e=>e.type==='button'&&text(e)==='Fix row')[0].props.onClick();
-  tree=render();assert.ok(text(tree).includes('requires receipt'),text(tree));all(tree,e=>e.type==='input'&&e.props.type==='file'&&!e.props.accept)[0].props.onChange({target:{files:[{name:'receipt.pdf'}]}});
+  let tree=render();assert.ok(text(tree).includes('Ready to submit'));assert.equal(calls.length,0);
+  all(tree,e=>e.type==='button'&&text(e)==='View')[0].props.onClick();
+  tree=render();assert.ok(!text(tree).includes('Reimbursable allowance requires receipt')); all(tree,e=>e.type==='input'&&e.props.type==='file'&&!e.props.accept)[0].props.onChange({target:{files:[{name:'receipt.pdf'}]}});
   tree=render();assert.ok(text(tree).includes('receipt.pdf'));
   all(tree,e=>e.type===Button&&text(e)==='Revalidate and submit')[0].props.onClick();await settle();
 }
@@ -42,4 +42,4 @@ states=[];refs=[];calls=[];rejectUpload=true;
 await chooseReceipt();
 assert.deepEqual(calls,['save','upload:receipt.pdf'],'Failed upload must prevent submission.');
 assert.ok(text(render()).includes('Receipt upload failed'));
-console.log('PASS receipt upload: missing evidence, file/reference recognition, fix-row flow, save/upload/submit order, failed-upload block, independent approval retained.');
+console.log('PASS: standing reimbursable allowance needs no receipt at package setup; optional documents still save/upload/submit in order; upload failure blocks submission; independent approval retained.');

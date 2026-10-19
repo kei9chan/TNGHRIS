@@ -125,7 +125,7 @@ export function prepareImport(row:ImportRow,context:PayContext){
 
 export type ImportValidationStatus='ready'|'draft'|'review'|'blocked'|'skipped';
 export function classifyImportIssue(error:string,row?:ImportRow,documentSelected=false):ImportValidationStatus{
- if(!error){const components=row?.components||[];const sharedEvidence=documentSelected||Boolean(row?.values['Receipt or document reference']?.trim());if(!sharedEvidence&&components.some(component=>(importKey(component['Receipt required']||'')==='yes'||component['Legacy field']==='reimbursable')&&!component['Receipt or document reference']?.trim()))return 'review';return 'ready';}
+ if(!error)return 'ready';
  const normalized=importKey(error);
  if(normalized.startsWith('needs review:'))return 'review';
  if(normalized.includes('invoice')||normalized.includes('supporting document')||normalized.includes('receipt')||normalized.includes('custom arrangements'))return 'review';
