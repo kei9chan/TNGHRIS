@@ -24,6 +24,7 @@ await db.exec(fs.readFileSync('supabase/migrations/20261019063033_reimbursement_
 await db.exec(fs.readFileSync('supabase/migrations/20261019063637_reimbursement_requirement_fast_path.sql','utf8'));
 await db.exec(fs.readFileSync('supabase/migrations/20261019065305_quarterly_reimbursement_receipts.sql','utf8'));
 await db.exec(fs.readFileSync('supabase/migrations/20261019070521_early_quarterly_receipt_review.sql','utf8'));
+await db.exec(fs.readFileSync('supabase/migrations/20261019074931_quarterly_receipt_standing_requirements.sql','utf8'));
 const ids={scope:'00000000-0000-0000-0000-000000000001',employee:'00000000-0000-0000-0000-000000000002',finance:'00000000-0000-0000-0000-000000000003',preparer:'00000000-0000-0000-0000-000000000004',time:'00000000-0000-0000-0000-000000000005'};
 const authId=key=>ids[key].replace('00000000-','10000000-');
 await db.query('insert into public.payroll_access_scopes(id,business_unit_id) values($1,$1)',[ids.scope]);
@@ -76,4 +77,15 @@ await actor('','finance');await assert.rejects(workspace(),/signed-in/);
 await actor('preparer','none');await assert.rejects(workspace(),/Forbidden|Scoped payroll/);
 const acl=(await db.query("select has_function_privilege('anon','public.confirm_payroll_reimbursement_quarter_target(uuid,uuid,text,numeric,text,bigint)','execute') anon,has_table_privilege('authenticated','private.payroll_reimbursement_quarter_targets','select') direct")).rows[0];assert.deepEqual(acl,{anon:false,direct:false});
 await assert.rejects(db.query('delete from private.payroll_reimbursement_target_audit'),/Immutable/);await assert.rejects(db.query('delete from private.payroll_reimbursement_evidence_audit'),/Immutable/);
+// An approved standing amount repeats across quarters without carrying evidence forward.
+await db.query('insert into private.payroll_reimbursement_standing_requirements(employee_id,effective_from,required_amount,basis_reference,approved_by) values($1,$2,1234.01,$3,$4)',[ids.employee,'2026-01-01','Approved standing quarterly requirement',ids.finance]);
+await actor('finance','finance');snap.dateFrom='2027-07-11';snap.dateTo='2027-07-25';await db.query('update public.fixture set snap=$1',[snap]);w=await workspace();
+assert.equal(w.rows[0].requiredAmount,'1234.01');assert.ok(Number(w.rows[0].targetRevision)<0);assert.equal(w.rows[0].evidence,null);assert.equal(w.rows[0].verified,false);await assert.rejects(gate(),/requires PHP/);
+await save(w,'1234.00');w=await workspace();await assert.rejects(verify(w),/must meet/);await save(w,'1234.01');w=await workspace();await verify(w);assert.equal((await workspace()).rows[0].verified,true);
+await target(w,'1300.01');w=await workspace();assert.equal(w.rows[0].requiredAmount,'1300.01');assert.ok(Number(w.rows[0].targetRevision)>0);assert.equal(w.rows[0].verified,false,'Quarter override invalidates the old default verification');
+// A future effective amount does not change the earlier receipt quarter.
+await db.query('insert into private.payroll_reimbursement_standing_requirements(employee_id,effective_from,required_amount,basis_reference,approved_by) values($1,$2,1500.01,$3,$4)',[ids.employee,'2027-07-01','Approved future quarterly requirement',ids.finance]);
+assert.equal((await workspace()).rows[0].requiredAmount,'1300.01');snap.dateFrom='2027-10-11';snap.dateTo='2027-10-25';await db.query('update public.fixture set snap=$1',[snap]);w=await workspace();assert.equal(w.rows[0].requiredAmount,'1500.01');assert.equal(w.rows[0].evidence,null);assert.equal(w.rows[0].verified,false);
+await assert.rejects(db.query('delete from private.payroll_reimbursement_standing_requirements'),/Immutable/);
+assert.equal((await db.query("select has_table_privilege('authenticated','private.payroll_reimbursement_standing_requirements','select') access")).rows[0].access,false);
 await db.close();console.log('PASS: exact four quarterly periods/deadlines, unaffected cutoff preservation, Finance-confirmed whole-quarter targets, shortfall, source/target/evidence revisions, distinct auth/HRIS actor IDs, self review denial, authenticated wrapper ACL and immutable audits.');
