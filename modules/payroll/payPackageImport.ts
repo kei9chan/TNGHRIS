@@ -17,6 +17,15 @@ export function assertArrangementLive(basis:string='gross'){
 // Normalize comparisons, while retaining the original uploaded row for corrections/audit.
 export const cleanImportText=(s:string)=>s.normalize('NFKC').replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/g,'').replace(/\s+/g,' ').trim();
 export const importKey=(s:string)=>cleanImportText(s).toLowerCase();
+// Normalize visual separators only; preserve prefixes and all leading zeroes.
+export const employeeCodeKey=(value:string)=>cleanImportText(value).toUpperCase().replace(/[\s\-\u2010-\u2015\u2212]/g,'');
+export function resolveImportEmployee<T extends {id:string;employeeCode:string}>(code:string,directory:T[]):T{
+ const key=employeeCodeKey(code);const matches=directory.filter(person=>key&&employeeCodeKey(person.employeeCode||'')===key);
+ if(!matches.length)throw new Error('Employee code: no accessible HRIS record matches this code. The current directory was refreshed; verify the code and payroll access.');
+ if(matches.length!==1)throw new Error('Employee code: multiple accessible HRIS records match this code. Resolve the duplicate employee record before importing.');
+ return matches[0];
+}
+
 const choice=(s:string,options:string[])=>options.find(x=>importKey(x)===importKey(s))||cleanImportText(s);
 export function readImportSheet(workbook:import('exceljs').Workbook,name:string,headers:string[],optionalHeaders:string[]=optionalSimpleHeaders){
  const sheets=workbook.worksheets.filter(s=>importKey(s.name)===importKey(name));
