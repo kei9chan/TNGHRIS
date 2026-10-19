@@ -67,7 +67,7 @@ const uploader=load('modules/payroll/PayPackageBatchUpload.tsx',{
  react:hooks,'./readImportWorkbook':{readImportWorkbook:async()=>workbook},'./payPackageImport':base,
  './payPackageCompletionImport':{readPayPackageCompletion,completionIdentityIssue},'../../services/biometricImport':{},'./actualAttendanceImport':{},
  '../../components/ui/Button':component('button'),'../../components/ui/Card':component('section'),
- './payPackages':{fetchPayPackages:async employeeId=>{fetching++;peakFetching=Math.max(peakFetching,fetching);await new Promise(setImmediate);fetching--;return{...context,employeeId};},savePayPackage:async()=>{writes++;},submitPayPackageDraft:async()=>{writes++;}},
+ './payPackages':{fetchPayDirectory:async()=>directory,fetchPayPackages:async employeeId=>{fetching++;peakFetching=Math.max(peakFetching,fetching);await new Promise(setImmediate);fetching--;return{...context,employeeId};},savePayPackage:async()=>{writes++;},submitPayPackageDraft:async()=>{writes++;}},
 }).default;
 const directory=[{id:'employee-a',employeeCode:'TNG-S-001',name:'Employee A'},{id:'employee-b',employeeCode:'TNG-002',name:'Employee B'}];
 const renderUploader=()=>{cursor=0;return uploader({directory,onSubmitted:()=>{writes++;}});};
