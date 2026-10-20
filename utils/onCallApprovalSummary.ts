@@ -5,17 +5,20 @@ const text = (value?: string) => String(value || '').replace(/\s+/g, ' ').trim()
 const number = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : 0;
 const dateText = (value: string) => {
   const date = new Date(value + 'T12:00:00+08:00');
-  return /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(date.getTime())
-    ? new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }).format(date) : 'Date not recorded';
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value
+    ? new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' }).format(date) : 'Date not recorded';
 };
+const paxCount = (value: unknown): number | null => value == null || String(value).trim() === '' || !Number.isInteger(Number(value)) || Number(value) < 0 ? null : Number(value);
+const paxText = (value: number) => new Intl.NumberFormat('en-PH').format(value);
 export const onCallPeso = (value: number) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 }).format(value);
 
 export function getOnCallApprovalSummary(request: ManpowerRequest) {
-  const source = request.coverageDays?.length ? request.coverageDays : [{ date: request.startDate || '', coverageRequired: true, items: request.items, totalStaff: 0, totalCost: request.grandTotal, reason: request.generalNote }];
+  const source = request.coverageDays?.length ? request.coverageDays : [{ date: request.startDate || '', coverageRequired: true, forecastedPax: request.forecastedPax, items: request.items, totalStaff: 0, totalCost: request.grandTotal, reason: request.generalNote }];
   const days = source.filter(day => day.coverageRequired !== false).map(day => {
     const count = day.items?.length ? day.items.reduce((sum, item) => sum + number(item.onCallNeeded ?? item.requestedCount), 0) : number(day.totalStaff);
     const reasons = [day.reason, ...(day.items || []).map(item => item.justification || (item.reason === 'Other' ? item.otherReason : item.reason))].map(text).filter(Boolean);
-    return { date: day.date, dateLabel: dateText(day.date), staff: count, cost: number(day.totalCost), reason: [...new Set(reasons)].join('; ') };
+    const expectedPax = paxCount(day.forecastedPax ?? (source.length === 1 ? request.forecastedPax : undefined));
+    return { date: day.date, dateLabel: dateText(day.date), staff: count, expectedPax, paxLabel: expectedPax === null ? 'Not recorded' : `${paxText(expectedPax)} pax`, cost: number(day.totalCost), reason: [...new Set(reasons)].join('; ') };
   }).sort((a, b) => a.date.localeCompare(b.date));
   const counts = days.map(day => day.staff);
   const low = counts.length ? Math.min(...counts) : 0, high = counts.length ? Math.max(...counts) : 0;
@@ -25,5 +28,9 @@ export function getOnCallApprovalSummary(request: ManpowerRequest) {
   const first = days[0]?.date || request.startDate || '', last = days.at(-1)?.date || request.endDate || first;
   const dateLabel = first === last ? dateText(first) : `${dateText(first)} – ${dateText(last)}`;
   const totalCost = number(request.grandTotal);
-  return { days, dateLabel, staffLabel, staffDays, reason, totalCost, costLabel: totalCost > 0 ? onCallPeso(totalCost) : 'Cost not recorded', complete: days.length > 0 && days.every(day => day.dateLabel !== 'Date not recorded') && counts.every(count => count > 0) && totalCost > 0 && reason !== 'Reason not recorded' };
+  const knownPax = days.flatMap(day => day.expectedPax === null ? [] : [day.expectedPax]);
+  const paxLow = knownPax.length ? Math.min(...knownPax) : 0, paxHigh = knownPax.length ? Math.max(...knownPax) : 0;
+  const missingPax = days.length - knownPax.length;
+  const paxLabel = knownPax.length === 0 ? 'Not recorded' : days.length === 1 ? `${paxText(paxHigh)} pax` : `${paxLow === paxHigh ? paxText(paxHigh) : `${paxText(paxLow)}–${paxText(paxHigh)}`} pax / day${missingPax ? ` · ${missingPax} date${missingPax === 1 ? '' : 's'} not recorded` : ''}`;
+  return { days, dateLabel, staffLabel, staffDays, paxLabel, reason, totalCost, costLabel: totalCost > 0 ? onCallPeso(totalCost) : 'Cost not recorded', complete: days.length > 0 && days.every(day => day.dateLabel !== 'Date not recorded') && counts.every(count => count > 0) && totalCost > 0 && reason !== 'Reason not recorded' };
 }
