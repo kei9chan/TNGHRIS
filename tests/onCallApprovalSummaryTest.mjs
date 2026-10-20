@@ -5,15 +5,18 @@ const require = createRequire(import.meta.url);
 const bundle = await build({ stdin: { contents: `import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Summary from './components/approvals/OnCallApprovalSummary';export {getOnCallApprovalSummary} from './utils/onCallApprovalSummary';export const render = summary => renderToStaticMarkup(<Summary summary={summary}/>);`, resolveDir: process.cwd(), loader: 'tsx' }, bundle: true, write: false, platform: 'node', format: 'esm', packages: 'external' });
 const code = bundle.outputFiles[0].text.replace(/from "(react(?:-dom\/server|\/jsx-runtime)?)"/g, (_, pkg) => `from ${JSON.stringify('file://' + require.resolve(pkg))}`);
 const { getOnCallApprovalSummary: summarize, render } = await import('data:text/javascript;base64,' + Buffer.from(code).toString('base64'));
-const day = (date, count, cost, reason = 'Coverage shortage') => ({ date, coverageRequired: true, items: [{ onCallNeeded: count, justification: reason }], totalStaff: count, totalCost: cost, reason });
+const day = (date, count, cost, reason = 'Coverage shortage', forecastedPax = 120) => ({ date, coverageRequired: true, forecastedPax, items: [{ onCallNeeded: count, justification: reason }], totalStaff: count, totalCost: cost, reason });
 const single = summarize({ coverageDays: [day('2026-10-19', 1, 800, 'Maintenance coverage')], grandTotal: 800 });
 assert.equal(single.staffLabel, '1 on-call staff'); assert.match(single.dateLabel, /Oct 19, 2026/); assert.match(single.costLabel, /800/); assert.equal(single.reason, 'Maintenance coverage');
-assert.equal(single.complete, true);
-const days = Array.from({ length: 7 }, (_, index) => day(`2026-10-${19 + index}`, index < 5 ? 3 : 4, index < 5 ? 2100 : 2800));
+assert.equal(single.complete, true);assert.match(single.dateLabel,/Monday/);assert.equal(single.paxLabel,'120 pax');
+const wednesday=summarize({coverageDays:[day('2026-10-21',4,3200,'Fixture event',150)],grandTotal:3200});assert.equal(wednesday.dateLabel,'Wednesday, Oct 21, 2026');assert.equal(wednesday.paxLabel,'150 pax');const preview=render(wednesday);assert.ok(preview.includes('Expected pax'));assert.ok(preview.includes('150 pax'));assert.ok(!preview.includes('<details'));
+
+const days = Array.from({ length: 7 }, (_, index) => day(`2026-10-${19 + index}`, index < 5 ? 3 : 4, index < 5 ? 2100 : 2800, 'Coverage shortage',index<5?120:180));
 const range = summarize({ coverageDays: days, grandTotal: 16100, generalNote: 'Operational need' });
+assert.equal(range.paxLabel,'120–180 pax / day');assert.match(range.dateLabel,/Monday.*Sunday/);
 assert.equal(range.staffLabel, '3–4 staff / day'); assert.equal(range.staffDays, 23); assert.equal(range.totalCost, 16100); assert.equal(range.reason, 'Coverage shortage');
 const html = render(range);
-for (const label of ['Date needed', 'On-call staff', 'Reason', 'Total request cost', '23 staff-days', '16,100', 'Daily staff and cost breakdown']) assert.ok(html.includes(label), label);
+for (const label of ['Date needed', 'Expected pax', '120 pax', '180 pax', 'Wednesday', 'On-call staff', 'Reason', 'Total request cost', '23 staff-days', '16,100', 'Daily staff and cost breakdown']) assert.ok(html.includes(label), label);
 assert.doesNotMatch(html, /23 on-call staff|Assigned approval required|Additional BOD approval/);
 const gaps = summarize({ coverageDays: [day('2026-10-19', 2, 1000), { ...day('2026-10-20', 0, 0), coverageRequired: false }, day('2026-10-22', 2, 1000)], grandTotal: 2000 });
 assert.equal(gaps.days.length, 2); assert.equal(gaps.staffDays, 4);
@@ -21,3 +24,9 @@ assert.equal(summarize({ coverageDays: [], startDate: '', items: [], grandTotal:
 assert.equal(summarize({ coverageDays: [day('invalid', 2, 1000)], grandTotal: 1000 }).complete, false);
 assert.doesNotMatch(render(summarize({ coverageDays: [day('2026-10-19', 1, 800, '<script>test</script>')], grandTotal: 800 })), /<script>/);
 console.log('PASS on-call summary: exact single/range dates, varying headcount, staff-days, full cost, gaps, invalid data, safe rendering.');
+
+assert.equal(summarize({startDate:'2026-10-21',forecastedPax:1250,items:[{requestedCount:4}],grandTotal:3200}).paxLabel,'1,250 pax');
+assert.equal(summarize({coverageDays:[day('2026-10-21',4,3200,'Fixture event',0)],forecastedPax:500,grandTotal:3200}).paxLabel,'0 pax','Explicit zero must not inherit the header forecast');
+const partial=summarize({coverageDays:[day('2026-10-21',4,3200),{...day('2026-10-22',4,3200),forecastedPax:undefined}],forecastedPax:999,grandTotal:6400});assert.equal(partial.paxLabel,'120 pax / day · 1 date not recorded');
+assert.equal(summarize({coverageDays:[{...day('2026-10-21',4,3200),forecastedPax:undefined}],grandTotal:3200}).paxLabel,'Not recorded');
+assert.equal(summarize({coverageDays:[day('2026-02-30',1,800)],grandTotal:800}).complete,false);

@@ -120,7 +120,7 @@ export const mapManpowerRequestRow = (row: ManpowerRequestRow): ManpowerRequest 
   routingBasis: row.routing_basis || undefined,
   // Preserve raw values and timestamp-independent content for the atomic
   // approval guard. A changed cost, coverage day or route requires a refresh.
-  approvalSnapshot: Object.fromEntries(['date_needed','date_mode','start_date','end_date','coverage_days','items','grand_total','general_note','revision','approval_stage','approval_route_step','approval_route_snapshot','clarification_status'].map(key => [key, (row as any)[key] ?? null])),
+  approvalSnapshot: Object.fromEntries(['date_needed','date_mode','start_date','end_date','coverage_days','forecasted_pax','items','grand_total','general_note','revision','approval_stage','approval_route_step','approval_route_snapshot','clarification_status'].map(key => [key, (row as any)[key] ?? null])),
   createdAt: new Date(row.created_at),
   approvedBy: row.approved_by || undefined,
   approvedAt: row.approved_at ? new Date(row.approved_at) : undefined,
