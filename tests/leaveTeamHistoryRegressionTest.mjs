@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import { build } from 'esbuild';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const bundle = await build({stdin:{contents:`import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Table from './components/payroll/LeaveRequestTable';export {formatLeaveHistoryDetails,leaveHistoryEntries} from './utils/leaveHistory';export const render = requests => renderToStaticMarkup(<Table requests={requests} leaveTypes={[{id:'leave',name:'Vacation Leave'}]} isManagerView onSelectRequest={()=>{}}/>);`,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,platform:'node',format:'esm',packages:'external'});
+const code=bundle.outputFiles[0].text.replace(/from "(react(?:-dom\/server|\/jsx-runtime)?)"/g,(_,pkg)=>`from ${JSON.stringify('file://'+require.resolve(pkg))}`);
+const {render,formatLeaveHistoryDetails:format,leaveHistoryEntries:entries}=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
+const request=(historyLog,status='Rejected')=>({id:'fixture',employeeName:'Fixture Employee',leaveTypeId:'leave',startDate:new Date('2026-10-27T00:00:00'),endDate:new Date('2026-10-27T00:00:00'),reason:'Fixture leave',status,historyLog});
+assert.match(render([request([{action:'BOD leave exception rejected',details:{note:'Please revise the dates.',outcome:'rejected',creditShortfall:1}},{action:'Notification sent',details:'Later administrative entry'}])]),/Please revise the dates\./);
+assert.doesNotMatch(render([request([{action:'Rejected',details:{note:'<script>alert(1)</script>'}}])]),/<script>/);
+assert.match(render([request([{action:'Rejected',details:'Legacy decision note'}])]),/Legacy decision note/);
+assert.match(render([request([{action:'Rejected',details:{note:null,outcome:'rejected'}}])]),/Rejected/);
+for(const history of [null,{},'legacy',[],[null,'invalid',{action:'Cancelled',details:{reason:'Cancelled by employee'}}]]) assert.doesNotThrow(()=>render([request(history,'Cancelled')]));
+assert.equal(format({details:{note:null,outcome:'lwop'}}),'Leave Without Pay');
+assert.equal(format({details:{note:'Clarified note',outcome:'lwop'}}),'Clarified note');
+assert.deepEqual(entries([null,[],1,{},'text']),[{}]);
+console.log('PASS: Team Requests renders structured/legacy decisions, picks the latest rejection, escapes notes, and handles missing history.');

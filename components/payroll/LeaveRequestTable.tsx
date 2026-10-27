@@ -4,6 +4,7 @@ import React from 'react';
 import { LeaveRequest, LeaveRequestStatus } from '../../types';
 import Button from '../ui/Button';
 import { getApprovalStatusLabel } from '../../utils/approvalPresentation';
+import { formatLeaveHistoryDetails, leaveHistoryEntries } from '../../utils/leaveHistory';
 
 interface LeaveRequestTableProps {
     requests: LeaveRequest[];
@@ -34,10 +35,10 @@ const LeaveRequestTable: React.FC<LeaveRequestTableProps> = ({ requests, leaveTy
     
     const getLeaveTypeName = (id: string) => leaveTypes.find(lt => lt.id === id)?.name || 'Unknown';
     const getRejectionNote = (req: LeaveRequest) => {
-        const history = req.historyLog || [];
-        const rejected = history.filter(h => h.action === 'Rejected');
+        const history = leaveHistoryEntries(req.historyLog);
+        const rejected = history.filter(h => /reject/i.test(h.action || ''));
         const latest = rejected.length > 0 ? rejected[rejected.length - 1] : history[history.length - 1];
-        return latest?.details || '';
+        return formatLeaveHistoryDetails(latest);
     };
 
     return (
