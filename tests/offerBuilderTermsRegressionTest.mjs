@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+const bundle=await build({entryPoints:['utils/offerBuilderTerms.ts'],bundle:true,write:false,platform:'node',format:'esm'});
+const {offerBuilderTermsSnapshot:snapshot}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
+const offer={id:'fixture',startDate:new Date('2026-11-01'),employmentType:'Regular',basePay:25000,approvalStatus:'Approved',revision:2};
+const details={jobTitle:'Fixture role',grossMonthlySalary:25000,responsibilities:[{id:'task',label:'Support operations'}],termsReviewed:false,requireSignature:true};
+const baseline=snapshot('application',offer,details);
+assert.equal(snapshot('application',offer,{...details,termsReviewed:true}),baseline,'Review checkbox must not revise approved terms');
+assert.equal(snapshot('application',{...offer,revision:3,lastSavedAt:new Date(),approvalStatus:'Approved'},details),baseline,'Workflow metadata must not change terms');
+assert.equal(snapshot('application',offer,{...details,emailDelivery:{status:'failed'},welcomeEmail:{status:'sent'}}),baseline);
+assert.equal(snapshot('application',{...offer,startDate:'2026-11-01T00:00:00.000Z'},details),baseline,'Serialized dates compare equally');
+assert.notEqual(snapshot('application',offer,{...details,grossMonthlySalary:26000}),baseline,'Salary edit requires reapproval');
+for(const changed of [{jobTitle:'Different role'},{workScheduleDays:'Sunday'},{additionalTerms:'Updated clause'},{requireSignature:false},{benefits:[{id:'hmo',included:true}]},{responsibilities:[{id:'task',label:'Different duties'}]},{appearance:{primaryColor:'#000000'}}]) assert.notEqual(snapshot('application',offer,{...details,...changed}),baseline);
+for(const changed of [{startDate:new Date('2026-11-02')},{employmentType:'Probationary'},{employmentEndDate:new Date('2027-04-30')},{offerExpirationDate:new Date('2026-12-01')},{logoUrl:'https://example.com/changed-logo.png'}]) assert.notEqual(snapshot('application',{...offer,...changed},details),baseline);
+const edited={...details,grossMonthlySalary:26000};edited.grossMonthlySalary=25000;assert.equal(snapshot('application',offer,edited),baseline,'Undoing edit restores original terms');
+assert.notEqual(snapshot('other-application',offer,details),baseline);
+assert.equal(snapshot('application',Object.fromEntries(Object.entries(offer).reverse()),Object.fromEntries(Object.entries(details).reverse())),baseline,'Object key order is immaterial');
+console.log('PASS: review-only and metadata changes keep approval; actual salary, dates, role, benefits and document changes are detected; reverted edits are clean.');
