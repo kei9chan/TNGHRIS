@@ -89,6 +89,15 @@ export const createOfferRevision = async (offerId: string): Promise<Offer> => {
   return mapJobOfferRow(data);
 };
 
+export const extendOfferDeadline = async (offer: Pick<Offer, 'id' | 'revision'>, deadline: string): Promise<Offer> => {
+  const { data, error } = await supabase.rpc('extend_job_offer_deadline', {
+    p_offer_id: offer.id, p_deadline: deadline, p_revision: offer.revision,
+  });
+  if (error) throw error;
+  if (!data) throw new Error('The response deadline could not be extended.');
+  return mapJobOfferRow(data);
+};
+
 export const saveOfferDraft = async (offer: Offer, userId?: string): Promise<{ offer: Offer; created: boolean }> => {
   if (offer.id && isPublishedOffer(offer)) {
     throw new Error('Published offer content cannot be edited. Create a revised version instead.');
