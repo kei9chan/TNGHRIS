@@ -415,6 +415,7 @@ const Offers: React.FC = () => {
               onSend={offer => { setEditingOffer(offer); setIsDetailModalOpen(false); setIsCreationDrawerOpen(true); }}
               onRequestApproval={offer => void handleRequestOfferApproval(offer)}
               onCreateRevision={offer => void handleCreateRevision(offer)}
+              onDeadlineExtended={updated => { setOffers(current => current.map(item => item.id === updated.id ? { ...item, ...updated } : item)); setSelectedOffer(current => current?.id === updated.id ? { ...current, ...updated } : current); }}
             />
           )}
           {approvalPackage && <OfferApprovalPackageModal isOpen={true} onClose={() => setApprovalPackage(null)} offer={approvalPackage.offer} candidate={approvalPackage.candidate} application={approvalPackage.application} ratings={approvalPackage.ratings} onSubmitted={requestId => { setOffers(current => current.map(item => item.id === approvalPackage.offer.id ? { ...item, approvalStatus: 'Pending Approval', approvalRequestId: requestId } : item)); setIsCreationDrawerOpen(false); setEditingOffer(null); setApprovalPackage(null); void loadOffers(); setSuccessMessage('Offer approval request submitted successfully.'); setTimeout(() => setSuccessMessage(''), 5000); }} />}
