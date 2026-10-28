@@ -108,7 +108,7 @@ Deno.serve(async request => {
     ]);
     const details = offer.offer_details || {}; let logoUrl = ''; let signedPdfUrl = '';
     if (offer.logo_path) { const signed = await client.storage.from('offer-assets').createSignedUrl(offer.logo_path, 60 * 30); logoUrl = signed.data?.signedUrl || ''; }
-    if (details?.appearance?.backgroundImagePath) { const signed = await client.storage.from('offer-assets').createSignedUrl(details.appearance.backgroundImagePath, 60 * 30); details.appearance.backgroundImageUrl = signed.data?.signedUrl || ''; }
+    if (action === 'get' && details?.appearance?.backgroundImagePath) { const signed = await client.storage.from('offer-assets').createSignedUrl(details.appearance.backgroundImagePath, 60 * 30); details.appearance.backgroundImageUrl = signed.data?.signedUrl || ''; }
     if (offer.signed_pdf_path) { const signed = await client.storage.from('offer-assets').createSignedUrl(offer.signed_pdf_path, 60 * 15); signedPdfUrl = signed.data?.signedUrl || ''; }
     if (action === 'retry-hr-email') {
       if (!signedStatuses.includes(offer.status)) return json({ error: 'HR acceptance email is available after signing.' }, 409);
@@ -121,6 +121,8 @@ Deno.serve(async request => {
       if (offer.status === 'Sent') { const viewedAt = offer.viewed_at || respondedAt; const update = await client.from('job_offers').update({ status: 'Viewed', viewed_at: viewedAt, last_saved_at: respondedAt }).eq('id', offer.id).eq('status', 'Sent').select('status,viewed_at').maybeSingle(); if (update.data) { offer.status = update.data.status; offer.viewed_at = update.data.viewed_at; } }
       return json({ offer: { id: offer.id, offerNumber: offer.offer_number, status: offer.status, basePay: Number(offer.base_pay), startDate: offer.start_date, employmentEndDate: offer.employment_end_date, expirationDate: offer.offer_expiration_date, employmentType: offer.employment_type, employmentTypeCustomName: offer.employment_type_custom_name, details, logoUrl, signedPdfUrl, candidateName: candidate ? `${candidate.first_name} ${candidate.last_name}` : 'Candidate', jobTitle: details.jobTitle || requisition?.title || '', requireSignature: offer.require_signature !== false, viewedAt: offer.viewed_at, acceptedAt: offer.accepted_at, signedAt: offer.signed_at, declinedAt: offer.declined_at, signatureName: offer.signature_name } });
     }
+    // A retry after a committed signature returns its original result without resending emails.
+    if (action === 'accept' && signedStatuses.includes(offer.status)) return json({ ok: true, status: offer.status, respondedAt: offer.signed_at || offer.accepted_at });
     if (!activeStatuses.includes(offer.status)) return json({ error: `This offer is already ${offer.status}.` }, 409);
     if (!responseActions.includes(action)) return json({ error: 'Choose accept or decline.' }, 400);
     if (action === 'accept') {
