@@ -12,15 +12,18 @@ function OtCostDetails({row,className=''}:{row:OtWeekRow;className?:string}){
  if(typeof cost.total!=='number')return null;
  return <div className={`mt-2 space-y-1 text-sm text-slate-700 dark:text-slate-200 ${className}`}>
   <b className="block">OT cost est. {php(cost.total,cost.currency)}</b>
+  {cost.requiresPayReview&&<span className="block font-semibold text-amber-700 dark:text-amber-300">Reference estimate · Pay package needs correction</span>}
+  {typeof cost.hourlyRate==='number'&&typeof cost.otFactor==='number'&&<span className="block text-xs">{minutesLabel(cost.minutes)} × {new Intl.NumberFormat('en-PH',{style:'currency',currency:cost.currency||'PHP',maximumFractionDigits:4}).format(cost.hourlyRate)}/hour × {Number((cost.otFactor*100).toFixed(2))}%</span>}
+  {cost.rateType==='Daily'&&typeof cost.baseAmount==='number'&&<span className="block text-xs text-slate-500">{php(cost.baseAmount,cost.currency)}/day ÷ {cost.hoursPerDay} hours · {cost.requiresPayReview?'Employee profile':'Approved pay package'}</span>}
   {!!cost.nightPremium&&<span className="block text-xs">Includes night premium {php(cost.nightPremium,cost.currency)} · {minutesLabel(cost.nightMinutes)}</span>}
-  <span className="block text-xs text-slate-500">{cost.estimated?'Estimate; final amount may change.':cost.note}</span>
+  <span className="block text-xs text-slate-500">{cost.requiresPayReview?cost.note:cost.estimated?'Estimate; final amount may change.':cost.note}</span>
  </div>;
 }
 function CostSummary({rows}:{rows:OtWeekRow[]}){
  const estimates=rows.map(r=>r.costEstimate).filter((c):c is OtCostEstimate=>!!c?.available&&typeof c.total==='number');
  if(!estimates.length)return null;
  const total=estimates.reduce((sum,c)=>sum+(c.total||0),0),partial=estimates.length<rows.length;
- return <span className="mt-1 block text-xs text-slate-600 dark:text-slate-300">OT cost est. {php(total,estimates[0].currency)}{partial?' · partial pay details':''}</span>;
+ return <span className="mt-1 block text-xs text-slate-600 dark:text-slate-300">OT cost est. {php(total,estimates[0].currency)}{partial?' · partial pay details':''}{estimates.some(c=>c.requiresPayReview)?' · pay package review needed':''}</span>;
 }
 export const statusLabel=(r:OtWeekRow)=>r.status==='Approved'&&r.finalMinutes==null?'Needs manager hours':r.status==='Draft'&&r.handoff?.state==='Returned'?'Returned for details':r.status==='PendingBOD'?'Waiting for BOD':['Submitted','PendingGM'].includes(r.status)?'Waiting for manager':r.status;
 function offlineOt(r:OtWeekRow){

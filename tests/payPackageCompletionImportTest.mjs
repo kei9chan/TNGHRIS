@@ -42,6 +42,10 @@ const prepared=base.prepareImport(rows[0],context);
 assert.equal(prepared.payload.treatment.submissionIntent,'draft');
 assert.equal(prepared.payload.components[0].frequency,'Per cutoff');
 assert.equal(prepared.payload.components[0].tax,'unreviewed','Missing tax treatment must never silently become a tax exemption');
+const dailySource={...context,sources:[{id:null,baseAmount:750,rateType:'Daily',conflict:false}]};
+assert.throws(()=>base.prepareImport({...rows[0],values:{...rows[0].values,'Amount unit':'Daily','Basic pay / fee amount':'22500'}},dailySource),/salary amount or basis differs/,'A monthly-size amount cannot be accepted under a daily HRIS source');
+assert.throws(()=>base.prepareImport({...rows[0],values:{...rows[0].values,'Amount unit':'Monthly','Basic pay / fee amount':'750'}},dailySource),/salary amount or basis differs/,'Matching numbers with different periods still conflict');
+assert.equal(base.prepareImport({...rows[0],values:{...rows[0].values,'Amount unit':'Daily','Basic pay / fee amount':'750'}},dailySource).payload.baseAmount,'750');
 assert.throws(()=>base.prepareImport(rows[1],context),/Gross pay conflicts/);
 assert.equal(base.classifyImportIssue(rows[1].issues[0].message),'review');
 

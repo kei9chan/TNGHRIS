@@ -99,5 +99,10 @@ assert.match(cells[3],/hidden lg:table-cell/,'Duplicate reviewed column is hidde
 assert.match(otHtml,/grid grid-cols-1 gap-y-3/,'Mobile requests stack without horizontal scrolling');
 assert.match(otHtml,/lg:min-w-\[720px\]/,'Desktop retains the review table');
 assert.match(renderOt({...request,costEstimate:{available:false}}),/Cost pending pay details/);
+const referenceHtml=renderOt({...request,costEstimate:{available:true,total:328.13,currency:'PHP',estimated:true,requiresPayReview:true,hourlyRate:75,baseAmount:600,rateType:'Daily',hoursPerDay:8,otFactor:1.25,minutes:210,note:'Review the imported rate before payroll.'}});
+assert.match(referenceHtml,/Reference estimate · Pay package needs correction/);
+assert.match(referenceHtml,/3h 30m × ₱75\.00\/hour × 125%/);
+assert.match(referenceHtml,/₱600\.00\/day ÷ 8 hours · Employee profile/);
+assert.match(referenceHtml,/Review the imported rate before payroll\./);
 assert.match(renderOt({...request,status:'Submitted',reviewedMinutes:null,costEstimate:{available:false}}),/aria-label="Approved OT hours/,'Manager quantity editing remains available');
 console.log('PASS: pending-entry scroll reset, schedule anchors preserved, OB zero hiding/refresh/count/error, summary-before-queues, mobile approved-hours/cost/night premium, missing pay details, and manager editing.');
