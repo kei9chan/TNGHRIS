@@ -108,7 +108,11 @@ export function prepareImport(row:ImportRow,context:PayContext){
  if(!date(v['Effective from']))fail('Effective from must be a real YYYY-MM-DD date.');
  if(!['Monthly','Daily','Hourly',...(stream==='professional_fee'?['Per invoice','Other approved frequency']:[])].includes(v['Amount unit']))fail(stream==='professional_fee'?'Amount unit must be Monthly, Daily, Hourly, Per invoice, or Other approved frequency.':'Amount unit must be Monthly, Daily or Hourly.');
  if(!amount(v['Basic pay / fee amount']))fail('Basic amount must be a nonnegative number with up to 6 decimals.');
- resolveSalarySource(v,context);
+ const salarySource=resolveSalarySource(v,context);
+ if(v['Import format']==='completion'&&stream==='employee_payroll'&&salarySource&&
+   (Number(v['Basic pay / fee amount'])!==Number(salarySource.baseAmount)||
+    (salarySource.rateType&&v['Amount unit']!==salarySource.rateType)))
+   fail('Needs review: completion-workbook salary amount or basis differs from the Current HRIS record. Reconcile the rate before importing; monthly pay must not be entered as a daily rate.');
  for(const k of ['Source reference','Reason'])if(v[k].trim().length<3)fail(`${k} needs at least 3 characters.`);
  const engagement=stream==='employee_payroll'?'employee':v['Engagement reference'];
  if(stream==='professional_fee'&&(!engagement||engagement==='employee'||v['Tax profile reference'].length<3))fail('Consultant invoice or supporting document required, including a distinct engagement and tax-profile reference.');
