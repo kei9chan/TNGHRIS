@@ -19,12 +19,12 @@ const NTEWorkflowPanel:React.FC<{nte:NTE;onChanged:()=>void}>=({nte,onChanged})=
   let path:string|null=null;if(file){if(uploaded.current?.file!==file)uploaded.current={file,path:await uploadResponse(nte.id,file)};path=uploaded.current.path;}
   await workflowRpc('submit_nte_explanation',{p_nte_id:nte.id,p_explanation:text,p_signature:signature.current?.getSignatureDataUrl(),p_link:link.trim()||null,p_attachment:path});
  });
- return <div className="space-y-5">
+ return <div id="nte-receipt" className="space-y-5 scroll-mt-6">
   <Card title="Receipt and written explanation">
    {error&&<p role="alert" className="mb-3 text-red-600 dark:text-red-300">{error}</p>}
    {!w?<p>Loading response window…</p>:<div className="space-y-4">
     {!w.published?<p>Pending issuance. No employee response period has started.</p>:!w.receipt?<>
-     <p>The five-calendar-day response period starts only when receipt or valid service is documented.</p>
+     <p><strong>Awaiting receipt.</strong> The response period starts only when receipt or valid service is documented.</p>
      {w.isRecipient&&<><p>Acknowledging receipt confirms that you received this notice. It does not mean you admit the allegations.</p><Button disabled={busy} onClick={acknowledge}>Acknowledge receipt and reply</Button></>}
      {w.canRecordService&&<details><summary className="cursor-pointer font-semibold">Record documented service</summary><div className="mt-3 space-y-3">
       <label className="block">Actual receipt date and time — Philippine time<input type="datetime-local" className={inputClass} value={receiptTime} onChange={e=>setReceiptTime(e.target.value)}/></label>
@@ -48,7 +48,7 @@ const NTEWorkflowPanel:React.FC<{nte:NTE;onChanged:()=>void}>=({nte,onChanged})=
      {nte.employeeResponseEvidenceUrl&&<a className="block break-all text-violet-600 underline" href={nte.employeeResponseEvidenceUrl} target="_blank" rel="noreferrer">Open linked attachment</a>}
      {w.receipt?.response_attachment&&<Button variant="secondary" onClick={()=>openResponseAttachment(w.receipt.response_attachment).catch(e=>setError(e.message))}>Download attachment</Button>}
     </section>}
-    <details><summary className="cursor-pointer font-semibold">Receipt, reminders and submission timeline</summary><ol className="mt-3 space-y-2">{w.events.map((e:any)=><li key={e.id}>{phTime(e.occurred_at)} — {e.event}</li>)}</ol></details>
+    <details><summary className="cursor-pointer font-semibold">Receipt, reminders and submission timeline</summary><ol className="mt-3 space-y-2">{w.events.map((e:any)=><li key={e.id}>{phTime(e.occurred_at)} — {e.event==='Employee dashboard notification delivered'?'Notification posted in HRIS (not proof of receipt)':e.event}</li>)}</ol></details>
    </div>}
   </Card>
   {w?.published&&<NoticeDecision key={nte.id} nteId={nte.id} refresh={refresh}/>}

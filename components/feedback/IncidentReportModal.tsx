@@ -1,3 +1,4 @@
+import { nteReceiptStatusLabel } from '../../utils/nteReceiptStatus';
 import {CaseQuestions} from '../../modules/caseQuestions';
 import { fetchBusinessUnits } from '../../services/userService';
 import { fetchCodeOfDiscipline } from '../../services/disciplineService';
@@ -509,13 +510,13 @@ const IncidentReportModal: React.FC<IncidentReportModalProps> = ({ isOpen, onClo
                         : employeeNte.status === NTEStatus.ResponseSubmitted
                           ? 'Response submitted'
                           : employeeNte.status === NTEStatus.Issued
-                            ? 'Awaiting response'
+                            ? employeeNte.receiptRecordedAt ? 'Awaiting response' : 'Awaiting receipt'
                             : 'Not yet issued';
                       return (
                         <tr key={employeeId}>
                           <td className="px-4 py-3"><p className="font-semibold text-gray-900 dark:text-white">{employee?.name || report.involvedEmployeeNames[index] || 'Employee'}</p><p className="text-xs text-gray-500">{employee?.position || 'Position not recorded'} · {employee?.department || 'Department not recorded'} · {employee?.businessUnit || report.businessUnitName || 'Business unit not recorded'}</p></td>
                           <td className="px-4 py-3 font-medium">{employeeNte ? formatNTEDisplayId(employeeNte.nteNumber) || employeeNte.id : 'No NTE Created'}</td>
-                          <td className="px-4 py-3">{employeeNte?.status || 'No NTE Created'}</td>
+                          <td className="px-4 py-3">{employeeNte ? nteReceiptStatusLabel(employeeNte) : 'No NTE Created'}</td>
                           <td className="px-4 py-3 text-gray-500">{responseStatus}</td>
                           <td className="px-4 py-3 text-right">
                             {employeeNte ? (

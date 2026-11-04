@@ -44,7 +44,7 @@ const KanbanCard: React.FC<KanbanCardProps> = ({ report, onCardClick, onDragStar
         
         // Existing Logic
         if (report.pipelineStage === 'nte-sent') {
-            return { text: 'Awaiting Response', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-200' };
+            return { text: 'NTE receipt / response', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-200' };
         }
         if (report.pipelineStage === 'hr-review-response') {
              return { text: 'HR Review', color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-200' };
