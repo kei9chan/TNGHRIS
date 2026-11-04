@@ -268,10 +268,10 @@ const CaseWorkflow: React.FC = () => {
     return users.filter(u => relevantRoles.includes(u.role)).sort((a, b) => a.name.localeCompare(b.name));
   }, [users]);
 
-  const statusOptions = ['New', 'Awaiting Response', 'HR Review', 'Rejected'];
+  const statusOptions = ['New', 'NTE receipt / response', 'HR Review', 'Rejected'];
 
   const getStatusText = (report: IncidentReport): string => {
-    if (report.pipelineStage === 'nte-sent') return 'Awaiting Response';
+    if (report.pipelineStage === 'nte-sent') return 'NTE receipt / response';
     if (report.pipelineStage === 'hr-review-response') return 'HR Review';
     if (report.status === IRStatus.HRReview) return 'HR Review';
     if (report.status === IRStatus.Submitted) return 'New';

@@ -1,3 +1,4 @@
+import { isNteAwaitingReceipt, nteReceiptStatusLabel } from '../../utils/nteReceiptStatus';
 import {CaseQuestions} from '../../modules/caseQuestions';
 import { decisionSaved } from '../../services/approvalNavigation';
 import NTEWorkflowPanel from '../../modules/nte/NTEWorkflowPanel';
@@ -149,8 +150,8 @@ const NTEDetail: React.FC = () => {
         try {
             const saved = await processNTEApproval(nte.id, 'approve');
             setNte(saved);
-            setApprovalActionMessage(saved.status === NTEStatus.Issued ? 'Approved and issued to the employee.' : 'Your approval was recorded.');
-            decisionSaved(saved.status === NTEStatus.Issued ? 'All required approvals are saved. The NTE is issued.' : 'Your approval was recorded. Other required approvals remain pending.');
+            setApprovalActionMessage(saved.status === NTEStatus.Issued ? 'Approved and published in HRIS. Receipt is not yet confirmed.' : 'Your approval was recorded.');
+            decisionSaved(saved.status === NTEStatus.Issued ? 'All approvals are recorded. The NTE is published and awaiting receipt.' : 'Your approval was recorded. Other required approvals remain pending.');
         } catch (err: any) {
             const message = err?.message || 'Failed to approve NTE.';
             setApprovalActionMessage(message);
@@ -385,16 +386,12 @@ const NTEDetail: React.FC = () => {
     const pendingApproverRole = pendingApprover?.roleSnapshot || pendingApprover?.role || 'Approver';
     const approvalStatusLabel = nte.status === NTEStatus.PendingApproval
         ? `Pending ${pendingApproverRole.replace(/\s*approver\s*$/i, '')} Approval`
-        : nte.status === NTEStatus.Issued
-            ? 'Issued to employee'
-            : nte.status === NTEStatus.Closed
-                ? 'Case closed'
-                : nte.responseStage || nte.status;
+        : nteReceiptStatusLabel(nte);
     const approvalStatusClass = nte.status === NTEStatus.Rejected
         ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200'
-        : nte.status === NTEStatus.Issued || nte.status === NTEStatus.Approved
+        : (nte.status === NTEStatus.Issued && !isNteAwaitingReceipt(nte)) || nte.status === NTEStatus.Approved
             ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
-            : nte.status === NTEStatus.PendingApproval
+            : nte.status === NTEStatus.PendingApproval || isNteAwaitingReceipt(nte)
                 ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200'
                 : 'bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-100';
 
@@ -445,6 +442,14 @@ const NTEDetail: React.FC = () => {
                 </div>
             </div>
 
+            {isNteAwaitingReceipt(nte) && (
+                <div role="status" className="rounded-lg bg-amber-50 p-4 text-amber-950 dark:bg-amber-950 dark:text-amber-100">
+                    <strong>Receipt not confirmed. No response deadline is running.</strong>
+                    <p>{user?.id === nte.employeeId ? 'Review the notice, then acknowledge receipt below when you have received it.' : 'Ask the employee to open their notice in HRIS and acknowledge receipt, or have authorized HR record the actual service time and proof.'}</p>
+                    <a href="#nte-receipt" className="font-semibold underline">Go to receipt and written explanation</a>
+                </div>
+            )}
+
             {/* 1. Approval status and NTE document */}
             <section aria-labelledby="nte-status-heading" className="grid items-start gap-6 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
                 <Card className="h-full border border-slate-200 dark:border-slate-700">
@@ -457,13 +462,13 @@ const NTEDetail: React.FC = () => {
                         <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${approvalStatusClass}`}>{approvalStatusLabel}</span>
                     </div>
                     <dl className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Date issued</dt><dd className="mt-1 font-semibold text-slate-900 dark:text-white">{formatPHT(nte.issuedDate)}</dd></div>
+                        <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Date created</dt><dd className="mt-1 font-semibold text-slate-900 dark:text-white">{formatPHT(nte.issuedDate)}</dd></div>
                         <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Linked incident</dt><dd className="mt-1 font-mono font-semibold text-slate-900 dark:text-white">{formatIRDisplayId(incidentReport.caseNumber) || nte.incidentReportId}</dd></div>
                         <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Department</dt><dd className="mt-1 font-semibold text-slate-900 dark:text-white">{recipient?.department || '—'}</dd></div>
                         <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Position</dt><dd className="mt-1 font-semibold text-slate-900 dark:text-white">{recipient?.position || '—'}</dd></div>
                     </dl>
                     <div className="mt-5 rounded-lg bg-slate-50 p-3 text-sm text-slate-600 dark:bg-slate-900/60 dark:text-slate-300">
-                        <span className="font-semibold text-slate-900 dark:text-white">What you are reviewing:</span> the Notice to Explain issued to {recipient?.name || nte.employeeName} for {incidentReport.category || 'the linked incident report'}.
+                        <span className="font-semibold text-slate-900 dark:text-white">What you are reviewing:</span> the Notice to Explain for {recipient?.name || nte.employeeName} for {incidentReport.category || 'the linked incident report'}.
                     </div>
                     <div className="mt-6 border-t border-slate-200 pt-5 dark:border-slate-700" aria-labelledby="original-case-summary-heading">
                         <p id="original-case-summary-heading" className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Original case summary</p>

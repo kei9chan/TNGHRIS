@@ -1,3 +1,4 @@
+import { nteReceiptStatusLabel } from '../../utils/nteReceiptStatus';
 import { fetchBusinessUnits } from '../../services/userService';
 import { fetchMemos } from '../../services/memoService';
 import { logActivity } from '../../services/auditService';
@@ -571,7 +572,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
         )}
         <div className="grid grid-cols-2 gap-4">
           <div><strong>Employee:</strong> {nte.employeeName}</div>
-          <div><strong>Status:</strong> {nte.status}</div>
+          <div><strong>Status:</strong> {nteReceiptStatusLabel(nte)}</div>
           <div><strong>Issued:</strong> {new Date(nte.issuedDate).toLocaleDateString()}</div>
           <div><strong>Deadline:</strong> Five calendar days from documented receipt, at 11:59 PM Philippine time.</div>
         </div>

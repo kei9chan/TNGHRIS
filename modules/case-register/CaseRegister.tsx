@@ -9,7 +9,7 @@ const input='w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-wh
 const button='rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm disabled:opacity-40';
 const panel='rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4';
 const filterFields=[['buId','Business Unit','businessUnit'],['stage','Workflow stage','stage'],['employeeId','Employee','employee'],['department','Department','department'],['offense','Type of offense','offense'],['offenseCategory','Offense category','offenseCategory'],['handlerId','Case handler','handler'],['action','Action implemented','action']] as const;
-const cardDefinitions:[string,string,Filters][]=[['total','Total cases',{}],['open','Open cases',{status:'Open'}],['closed','Closed cases',{stage:'Closed'}],['overdue','Overdue cases',{overdue:'true'}],['awaiting','Awaiting employee response',{stage:'Awaiting employee response'}],['approval','For approval',{stage:'For approval'}],['hr','For HR review',{stage:'For HR review'}],['hearing','Conference / hearing',{stage:'Scheduled for conference/hearing'}]];
+const cardDefinitions:[string,string,Filters][]=[['total','Total cases',{}],['open','Open cases',{status:'Open'}],['closed','Closed cases',{stage:'Closed'}],['overdue','Overdue cases',{overdue:'true'}],['awaitingReceipt','Awaiting NTE receipt',{stage:'Awaiting NTE receipt'}],['awaiting','Awaiting employee response',{stage:'Awaiting employee response'}],['approval','For approval',{stage:'For approval'}],['hr','For HR review',{stage:'For HR review'}],['hearing','Conference / hearing',{stage:'Scheduled for conference/hearing'}]];
 
 export default function CaseRegister({mode}:{mode:'register'|'reports'|'archived'}){
  const {user}=useAuth();

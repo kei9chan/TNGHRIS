@@ -124,7 +124,7 @@ const AssignedCasesWidget: React.FC<AssignedCasesWidgetProps> = ({ userId }) => 
             case 'ir-review': return "New Incident Review";
             case 'nte-for-approval': return "NTE Review Required";
             case 'hr-review-response': return "Review Employee Response";
-            case 'nte-sent': return "Awaiting NTE Response";
+            case 'nte-sent': return "NTE receipt / response";
             default: return "Assigned Case Review";
         }
     };
