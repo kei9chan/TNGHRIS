@@ -15,6 +15,7 @@ import AlertBanner from '../components/dashboard/AlertBanner';
 import AttendancePulse from '../components/dashboard/AttendancePulse';
 import QuickLinks from '../components/dashboard/QuickLinks';
 import PhoneNotificationSetup from '../components/notifications/PhoneNotificationSetup';
+import PersonalNTECard from '../components/dashboard/PersonalNTECard';
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
@@ -39,6 +40,7 @@ const Dashboard: React.FC = () => {
     <div>
         <h1 className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-white mb-3">Welcome back{greetingName ? `, ${greetingName}` : ''}!</h1>
         <AttendanceMission />
+        <PersonalNTECard />
         <QuickLinks />
         <PhoneNotificationSetup />
         <AttendancePulse />
