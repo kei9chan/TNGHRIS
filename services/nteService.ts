@@ -243,6 +243,29 @@ export const fetchNTEs = async (): Promise<NTE[]> => {
   return (data as NTERow[]).map(mapRow);
 };
 
+// Personal notices must not depend on notification read state, incident-report
+// access, or the dashboard selected for the employee's role. RLS still applies.
+export const fetchPersonalNTEPage = async (
+  employeeId: string,
+  { pendingOnly = false, page = 0, pageSize = 20 } = {}
+): Promise<{ items: NTE[]; total: number }> => {
+  if (!employeeId) throw new Error('Sign in to view your NTEs.');
+  if (!Number.isInteger(page) || page < 0 || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) {
+    throw new Error('Invalid NTE page.');
+  }
+  const statuses = [NTEStatus.Issued, NTEStatus.ResponseSubmitted, NTEStatus.HearingScheduled, NTEStatus.Waiver];
+  if (!pendingOnly) statuses.push(NTEStatus.Closed);
+  const { data, count, error } = await supabase.from('ntes')
+    .select('id,incident_report_id,recipient_employee_id,recipient_name_snapshot,nte_number,status,created_at,response_deadline,receipt_recorded_at,response_stage', { count: 'exact' })
+    .eq('recipient_employee_id', employeeId)
+    .in('status', statuses)
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .range(page * pageSize, (page + 1) * pageSize - 1);
+  if (error) throw new Error(error.message || 'Failed to load your NTEs.');
+  return { items: (data || []).map((row: NTERow) => mapRow(row)), total: count ?? 0 };
+};
+
 export const fetchNTEsByIncidentReportId = async (incidentReportId: string): Promise<NTE[]> => {
   const { data, error } = await supabase.from('ntes').select('*').eq('incident_report_id', incidentReportId);
   if (error) throw new Error(error.message || 'Failed to fetch NTEs');
