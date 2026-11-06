@@ -1,9 +1,10 @@
 import React, {useEffect, useState} from 'react';
 import {Link} from 'react-router-dom';
 import {supabase} from '../../services/supabaseClient';
+import ScheduleTaskCard, {ScheduleTaskData} from '../../components/payroll/ScheduleTaskCard';
+import {useAuth} from '../../hooks/useAuth';
 
-type Person={id:string;name:string;businessUnit:string;businessUnitId:string;department:string;exempt:boolean;complete:boolean;missingDates:string[];publication:string;days:{date:string;status:string}[]};
-type Task={managerId:string;managerName:string;week:string;deadline:string;required:number;completed:number;remaining:number;exempt:number;percentage:number;status:string;employees:Person[];hr:boolean;overdueTasks?:Task[]};
+type Task=ScheduleTaskData;
 const box='mb-5 rounded-2xl border border-slate-200 bg-white p-5 text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
 const input='min-h-11 rounded-lg border border-slate-300 bg-white p-2 text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-white';
 const button='inline-flex min-h-11 items-center justify-center rounded-lg bg-violet-600 px-4 py-2 font-semibold text-white disabled:opacity-50';
@@ -12,29 +13,20 @@ const deadline=(s:string)=>new Intl.DateTimeFormat('en-PH',{timeZone:'Asia/Manil
 const scheduleLink=(t:Task)=>`/payroll/timekeeping?week=${t.week}&manager=${t.managerId}`;
 async function call(name:string,args:Record<string,unknown>={}){const {data,error}=await supabase.rpc(name,args);if(error)throw new Error(error.message);return data;}
 
-export function ScheduleTask({week,manager,refresh=0,details=false}:{week?:string;manager?:string;refresh?:number;details?:boolean}){
- const [task,setTask]=useState<Task|null>(null),[error,setError]=useState(''),[retry,setRetry]=useState(0);
- useEffect(()=>{let active=true;const load=()=>{void call('get_schedule_compliance',{p_week:week||null,p_manager:manager||null}).then(x=>{if(active){setTask(x);setError('');}}).catch(e=>{if(active)setError(e.message);});};load();window.addEventListener('focus',load);return()=>{active=false;window.removeEventListener('focus',load);};},[week,manager,refresh,retry]);
- if(error)return <div className={box} role="alert">Schedule task could not be checked: {error} <button className="underline" onClick={()=>setRetry(v=>v+1)}>Retry</button></div>;
- if(!task)return null;
- const hasOverdueAction=Boolean(task.overdueTasks?.some(t=>t.remaining>0));
- const unpublished=task.employees.filter(e=>!e.exempt&&e.complete&&e.publication!=='Published').length;
- const hasCurrentAction=task.required>0&&task.remaining>0;
- // Completed schedule tasks should leave the dashboard. Keep the card only when
- // this week's work is still outstanding or an older overdue week needs action.
- if(!hasCurrentAction&&!hasOverdueAction&&unpublished>0)return <p className="mb-3 text-sm font-semibold text-violet-700">{unpublished} employees have saved draft schedules awaiting publication. <Link className="underline" to={scheduleLink(task)}>Review and publish</Link></p>;
- if(!hasCurrentAction&&!hasOverdueAction)return <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 font-semibold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">✓ All required schedules are complete{task.hr&&<> · <Link className="underline" to="/payroll/schedule-compliance">Schedule Compliance</Link></>}</div>;
- const urgent=['Overdue','Due Today','Due Tomorrow'].includes(task.status)||Boolean(task.overdueTasks?.some(t=>t.remaining>0));
- const overdue=task.status==='Overdue'||Boolean(task.overdueTasks?.some(t=>t.remaining>0));
- return <section id="schedule-task" className={urgent?'mb-5 rounded-2xl border-2 border-red-500 bg-red-50 p-5 text-slate-900 dark:border-red-400 dark:bg-red-950/30 dark:text-white':box}>
-  <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-bold">{urgent&&<span aria-label="Urgent" className="mr-2 text-red-600 dark:text-red-300">⚠</span>}{details?'Employee Schedule Progress':'Complete Next Week’s Employee Schedules'}</h2><p className="mt-1">Week of {date(task.week)} · Monday–Sunday</p></div><span className={`rounded-full px-3 py-1 text-sm font-semibold ${urgent?'bg-red-100 text-red-900 dark:bg-red-900 dark:text-red-100':'bg-violet-100 text-violet-900'}`}>{urgent?(overdue?'OVERDUE':'URGENT'):task.status}</span></div>
-  {task.overdueTasks?.filter(t=>t.remaining>0).map(t=><p className="mt-3 font-semibold text-orange-700 dark:text-orange-300" key={t.week}>Overdue: week of {date(t.week)} · {t.remaining} employees remaining. <Link className="underline" to={scheduleLink(t)}>Complete schedules</Link></p>)}
-  <p className="mt-4 text-xl font-semibold">{task.remaining} employee{task.remaining===1?'':'s'} remaining</p>
-  <progress className="mt-3 h-3 w-full accent-violet-600" max={100} value={task.percentage} aria-label="Saved schedule completion"/>
-  <p className="mt-2">{task.percentage}% complete · {task.exempt} exempt employees excluded</p><p className={urgent?"mt-2 text-red-800 dark:text-red-200":"mt-2"}>Deadline: <strong>{deadline(task.deadline)} Philippine time</strong></p>
-  <div className="mt-4 flex flex-wrap items-center gap-4"><Link className={button} to={scheduleLink(task)}>Complete pending schedules</Link>{task.hr&&<Link className="underline" to="/payroll/schedule-compliance">Schedule Compliance</Link>}<button className="underline" onClick={()=>setRetry(v=>v+1)}>Refresh progress</button>{details&&task.hr&&<Link className="underline" to="/payroll/clocking-exceptions">Clock-in exemptions</Link>}</div>
-  {details&&task.hr&&<p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Employees exempt from clock-in/out are also excluded from scheduling requirements for their exempt dates.</p>}
- </section>;
+export function ScheduleTask({week,manager,refresh=0,details=false,onReviewPublish,reviewDisabled=false}:{week?:string;manager?:string;refresh?:number;details?:boolean;onReviewPublish?:()=>void;reviewDisabled?:boolean}){
+ const {user}=useAuth();
+ const key=JSON.stringify([user?.id,week,manager]);
+ const [result,setResult]=useState<{key:string;task:Task|null;error:string}|null>(null),[retry,setRetry]=useState(0);
+ useEffect(()=>{let active=true,sequence=0;
+  const load=async()=>{const request=++sequence;try{const task=await call('get_schedule_compliance',{p_week:week||null,p_manager:manager||null});if(active&&request===sequence)setResult({key,task,error:''});}catch(e){if(active&&request===sequence)setResult({key,task:null,error:(e as Error).message});}};
+  if(user?.id){void load();window.addEventListener('focus',load);}
+  return()=>{active=false;window.removeEventListener('focus',load);};
+ },[key,refresh,retry]);
+ if(!user)return null;
+ const current=result?.key===key?result:null;
+ if(current?.error)return <div className={box} role="alert">Schedule task could not be checked: {current.error} <button className="min-h-11 underline" onClick={()=>setRetry(v=>v+1)}>Retry</button></div>;
+ if(!current?.task)return <p role="status">Checking this week’s schedule progress…</p>;
+ return <ScheduleTaskCard task={current.task} details={details} onRefresh={()=>setRetry(v=>v+1)} onReviewPublish={onReviewPublish} reviewDisabled={reviewDisabled}/>;
 }
 
 export default function CompliancePage(){
