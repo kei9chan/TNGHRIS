@@ -24,12 +24,12 @@ await db.exec(`
 create schema private; create schema auth; create role anon; create role authenticated;
 create table hris_users(id uuid primary key,email text,status text,employment_status text,reports_to text,auth_user_id uuid,employee_id text,full_name text);
 create table leave_types(id uuid primary key,name text);
-create table leave_requests(id uuid primary key,employee_id uuid,employee_name text,leave_type_id uuid,selected_leave_type_id uuid,status text,duration_days numeric,start_date date,end_date date,final_classification text,paid_days numeric,approver_id uuid,approval_route text,approval_reason text,approval_context jsonb,approval_routed_at timestamptz,history_log jsonb default '[]');
+create table leave_requests(id uuid primary key,employee_id uuid,employee_name text,leave_type_id uuid,selected_leave_type_id uuid,status text,duration_days numeric,start_date date,end_date date,final_classification text,paid_days numeric,unpaid_days numeric not null default 0,credit_shortfall numeric not null default 0,approver_id uuid,approval_route text,approval_reason text,approval_context jsonb,approval_routed_at timestamptz,history_log jsonb default '[]');
 create table time_request_approval_assignments(id uuid primary key default gen_random_uuid(),request_type text,request_id uuid,approver_user_id uuid,is_bod boolean,is_required boolean,status text,decision_note text,decided_at timestamptz,updated_at timestamptz default now(),unique(request_type,request_id,approver_user_id));
 create table payroll_leave_ledger(employee_id uuid,leave_kind text,amount numeric,credit_date date,source text,event_key text unique,approved_by uuid);
 create table audit_logs(user_id text,user_email text,action text,entity text,entity_id text,details text);
 create table private.time_approval_decisions(request_type text,request_id uuid,stage text,approver_id uuid,decision text,decided_at timestamptz,result jsonb,primary key(request_type,request_id,stage,approver_id));
-create table private.leave_credit_overrides(request_id uuid,credit_snapshot jsonb,created_at timestamptz);
+create table private.leave_credit_overrides(request_id uuid,approver_id uuid,credit_snapshot jsonb,note text,created_at timestamptz default now(),primary key(request_id,approver_id));
 create function auth.uid() returns uuid language sql as $$select nullif(current_setting('test.actor',true),'')::uuid$$;
 create function current_hris_user_id() returns uuid language sql as $$select auth.uid()$$;
 create function has_active_role(text) returns boolean language sql as $$select $1='Board of Director' and auth.uid()='${bod}'::uuid$$;
@@ -57,13 +57,16 @@ const engine = await read('supabase/migrations/20260910022947_bod_approval_idemp
 await db.exec(functionSql(engine, 'private.process_time_request_approval_core'));
 await db.exec(functionSql(engine, 'public.process_time_request_approval'));
 const accounting = await read('supabase/migrations/20260922000731_leave_management_redesign_and_balance_migration.sql');
+const auditTable=accounting.match(/create table if not exists private\.leave_exception_decisions\([\s\S]*?\n\);/);
+assert.ok(auditTable,'Exercise the actual audit table and its NOT NULL constraints');
+await db.exec(auditTable[0]);
 await db.exec(functionSql(accounting, 'private.confirmed_leave_request_accounting'));
 const guard = await read('supabase/migrations/20260824130000_repair_conditional_bulk_approvals.sql');
 await db.exec(functionSql(guard, 'public.guard_conditional_time_approval_transition'));
 await db.exec(`create trigger confirmed_leave_accounting before insert or update on leave_requests for each row execute function private.confirmed_leave_request_accounting();
 create trigger enforce_conditional_leave_approval before update of status on leave_requests for each row execute function guard_conditional_time_approval_transition('leave');`);
 const reset = async (balance = 1, days = 1, classification = 'paid', status = 'Pending') => {
-  await db.exec('truncate leave_requests,payroll_leave_ledger,time_request_approval_assignments,audit_logs,private.time_approval_decisions');
+  await db.exec('truncate leave_requests,payroll_leave_ledger,time_request_approval_assignments,audit_logs,private.time_approval_decisions,private.leave_exception_decisions,private.leave_credit_overrides');
   await db.query(`insert into payroll_leave_ledger(employee_id,leave_kind,amount,credit_date,event_key) values($1,'sick',$2,current_date,'opening')`,[employee,balance]);
   await db.query(`insert into leave_requests(id,employee_id,employee_name,leave_type_id,selected_leave_type_id,status,duration_days,start_date,end_date,final_classification,paid_days) values($1,$2,'Fixture Employee',$3,$3,$4,$5::numeric,'2026-10-28','2026-10-28'::date+($5::numeric::integer-1),$6,$5::numeric)`,[requestId,employee,leaveType,status,days,classification]);
   await db.exec(`set test.actor='${manager}'`);
@@ -96,5 +99,44 @@ await reset(0,1,'lwop','PendingBOD');
 await db.exec(`insert into time_request_approval_assignments(request_type,request_id,approver_user_id,is_bod,is_required,status) values('leave','${requestId}','${bod}',true,true,'Pending');set test.actor='${bod}';`);
 assert.equal((await decide()).status,'Approved'); assert.equal(await usageCount(),0,'LWOP must not consume paid credits');
 await reset(0); await assert.rejects(db.exec("update leave_requests set status='Approved'"),/configured threshold/,'Direct writes cannot bypass BOD routing'); assert.equal(await usageCount(),0);
+
+// The dedicated exception RPC has its own immutable audit insert. The ordinary
+// approval engine tests above did not exercise it for untracked leave types.
+const workflow=await read('supabase/migrations/20260924080000_fix_hris_workflow_integrity.sql');
+await db.exec(functionSql(workflow,'public.process_leave_exception_approval'));
+const lwopType='00000000-0000-4000-8000-000000000007';
+await db.query("insert into leave_types values($1,'Without Pay')",[lwopType]);
+const setupException=async({days=3,balance=0,tracked=false,shortfall=days}={})=>{
+  await reset(balance,days,'lwop','PendingBOD');
+  await db.query('update leave_requests set leave_type_id=$1,selected_leave_type_id=$1,paid_days=0,unpaid_days=$2,credit_shortfall=$3',[tracked?leaveType:lwopType,days,shortfall]);
+  await db.exec(`set test.actor='${bod}'`);
+};
+const exceptionDecision=(action='approve',outcome='lwop',note='')=>db.query('select public.process_leave_exception_approval($1,$2,$3,$4) as result',[requestId,action,outcome,note]);
+const exceptionAudit=async()=>(await db.query('select credit_shortfall,available_credits,requested_days,outcome,note from private.leave_exception_decisions')).rows;
+const requestStatus=async()=>(await db.query('select status,paid_days,unpaid_days from leave_requests')).rows[0];
+await setupException();
+await assert.rejects(exceptionDecision(),/null value in column "credit_shortfall"/,'Reproduce the actual LWOP approval error');
+assert.equal((await requestStatus()).status,'PendingBOD','The failed audit insert must roll back the decision');
+assert.equal((await exceptionAudit()).length,0);assert.equal(await usageCount(),0);
+
+await db.exec(await read('supabase/migrations/20261109103643_leave_exception_audit_credit_values.sql'));
+// Approval without a note is supported for both reported durations and a half-day.
+for(const days of [3,2,0.5]){
+  await setupException({days});
+  const result=(await exceptionDecision()).rows[0].result;
+  assert.equal(result.status,'Approved');assert.equal(Number(result.creditShortfall),days);
+  const audit=(await exceptionAudit())[0];assert.equal(Number(audit.credit_shortfall),days);assert.equal(Number(audit.available_credits),0);assert.equal(Number(audit.requested_days),days);assert.equal(audit.note,null);
+  assert.equal((await requestStatus()).status,'Approved');assert.equal(Number((await requestStatus()).paid_days),0);assert.equal(Number((await requestStatus()).unpaid_days),days);
+  assert.equal(await usageCount(),0,'LWOP must never consume paid credits');
+  assert.equal((await exceptionDecision()).rows[0].result.alreadyDecided,true);assert.equal((await exceptionAudit()).length,1,'A retry must not create a duplicate decision');
+}
+await setupException({tracked:true,days:3,balance:2,shortfall:1});
+await exceptionDecision('approve','paid_exception','Approved paid exception');
+let audit=(await exceptionAudit())[0];assert.equal(Number(audit.credit_shortfall),1);assert.equal(Number(audit.available_credits),2);assert.equal(Number(audit.requested_days),3);assert.equal(await ledger(),-1);assert.equal(await usageCount(),1,'Paid exception accounting stays intact');
+await setupException({tracked:true,days:3,balance:2,shortfall:1});await exceptionDecision();assert.equal(await ledger(),2);assert.equal(await usageCount(),0);
+await setupException();await assert.rejects(exceptionDecision('reject'),/rejection reason/);await exceptionDecision('reject','lwop','Please revise');assert.equal((await requestStatus()).status,'Rejected');assert.equal((await exceptionAudit()).length,0);
+await setupException();await db.exec(`set test.actor='${manager}'`);await assert.rejects(exceptionDecision(),/Board of Director role/);assert.equal((await requestStatus()).status,'PendingBOD');
+await setupException();await db.query('update leave_requests set employee_id=$1',[bod]);await assert.rejects(exceptionDecision(),/own leave/);
+await setupException();await db.exec(`set test.actor=''`);await assert.rejects(exceptionDecision(),/Board of Director role/);
 await db.close();
-console.log('PASS: reproduced trigger-order failure; last-credit manager approval; single debit, retry and cancellation; genuine threshold/credit escalation; BOD paid exception and LWOP; unauthorized/self/anonymous denial.');
+console.log('PASS: reproduced trigger-order and LWOP audit failures; last-credit approval; complete numeric audit for untracked leave; optional approval notes; tracked paid exceptions; no LWOP credit debit; idempotent retry; rejection and authorization guards.');
