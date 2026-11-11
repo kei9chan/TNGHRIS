@@ -23,6 +23,8 @@ import { mapJobOfferRow } from '../../services/jobOfferMapper';
 import { candidateOfferUrl, isPublishedOffer, offerWorkspaceStatus, saveOfferDraft, selectCurrentOffer, sendApprovedOffer } from '../../services/jobOfferWorkspaceService';
 import { loadBusinessUnitLogos } from '../../services/businessUnitLogoService';
 import type { HrisEmailAttachment } from '../../services/gmailConnectionService';
+import { fetchApplications, fetchCandidates } from '../../services/recruitmentService';
+import { careerSourceSlug, fetchRecruitmentRows } from '../../services/recruitmentRows';
 import { employmentTypeLabel } from '../../components/recruitment/offerEmployment';
 
 const CandidateProfileModal = React.lazy(() => import('../../components/recruitment/CandidateProfileModal'));
@@ -158,40 +160,39 @@ const Applicants: React.FC = () => {
     const handleEditDesc = () => { setEditText(description); setIsEditingDesc(true); };
     const handleSaveDesc = () => { updateSettings({ [descriptionKey]: editText }); setIsEditingDesc(false); };
 
+    const [careerUnits, setCareerUnits] = useState<Record<string, string>>({});
+    const [loadError, setLoadError] = useState('');
     const loadData = useCallback(async () => {
         setIsLoading(true);
+        setLoadError('');
         try {
-            const [buRes, deptRes, reqRes, postRes, candRes, appRes, userRes, offerRes, themeRes, permanentLogoRes] = await Promise.all([
+            const [buRes, deptRes, requisitionRows, postRows, candidateRows, applicationRows, userRes, offerRes, themeRes, permanentLogoRes] = await Promise.all([
                 supabase.from('business_units').select('id,name'),
                 supabase.from('departments').select('id,name,business_unit_id'),
-                supabase.from('job_requisitions').select('*'),
-                supabase.from('job_posts').select('*'),
-                supabase.from('job_candidates').select('*'),
-                supabase.from('job_applications').select('*'),
+                fetchRecruitmentRows('job_requisitions'),
+                fetchRecruitmentRows('job_posts'),
+                fetchCandidates(),
+                fetchApplications(),
                 supabase.from('hris_users').select('id,full_name,role,email,department,position,business_unit,business_unit_id,department_id,status'),
                 supabase.from('job_offers').select('*').order('updated_at', { ascending: false }),
-                supabase.from('applicant_page_themes').select('business_unit_id,logo_url').not('business_unit_id', 'is', null).order('updated_at', { ascending: false }),
+                supabase.from('applicant_page_themes').select('business_unit_id,logo_url,slug').not('business_unit_id', 'is', null).order('updated_at', { ascending: false }),
                 loadBusinessUnitLogos().catch(() => ({})),
             ]);
             if (buRes.error) throw buRes.error;
             if (deptRes.error) throw deptRes.error;
-            if (reqRes.error) throw reqRes.error;
-            if (postRes.error) throw postRes.error;
-            if (candRes.error) throw candRes.error;
-            if (appRes.error) throw appRes.error;
             if (userRes.error) throw userRes.error;
             if (offerRes.error) throw offerRes.error;
 
             setBusinessUnits(buRes.data || []);
             setDepartments((deptRes.data || []).map((d: any) => ({ id: d.id, name: d.name, businessUnitId: d.business_unit_id })));
-            setJobRequisitions((reqRes.data || []).map((r: any) => ({
+            setJobRequisitions(requisitionRows.map((r: any) => ({
                 ...r,
                 createdAt: r.created_at ? new Date(r.created_at) : new Date(),
                 updatedAt: r.updated_at ? new Date(r.updated_at) : new Date(),
                 departmentId: r.department_id,
                 businessUnitId: r.business_unit_id,
             } as JobRequisition)));
-            const postsMapped = (postRes.data || []).map((p: any) => {
+            const postsMapped = postRows.map((p: any) => {
                 const statusRaw = (p.status || '').toString().toLowerCase();
                 const status =
                     statusRaw === 'published' ? JobPostStatus.Published :
@@ -217,48 +218,9 @@ const Applicants: React.FC = () => {
                 } as JobPost;
             });
             setJobPosts(postsMapped);
-            setCandidates((candRes.data || []).map((c: any) => ({
-                id: c.id,
-                firstName: c.first_name,
-                lastName: c.last_name,
-                email: c.email,
-                phone: c.phone ?? '',
-                source: c.source as CandidateSource,
-                tags: c.tags || [],
-                portfolioUrl: c.portfolio_url || '',
-                consentAt: c.consent_at ? new Date(c.consent_at) : undefined,
-                currentCity: c.current_city || undefined,
-                currentEmployer: c.current_employer || undefined,
-                yearsRelevantExperience: c.years_relevant_experience || undefined,
-                earliestStartDate: c.earliest_start_date || undefined,
-                linkedinUrl: c.linkedin_url || undefined,
-            } as Candidate)));
-            const appsMapped = (appRes.data || []).map((a: any) => ({
-                id: a.id,
-                candidateId: a.candidate_id,
-                jobPostId: a.job_post_id,
-                requisitionId: a.requisition_id,
-                stage: a.stage as ApplicationStage,
-                notes: a.notes || '',
-                createdAt: a.created_at ? new Date(a.created_at) : new Date(),
-                updatedAt: a.updated_at ? new Date(a.updated_at) : new Date(),
-                roleId: a.role_id || undefined,
-                roleSlug: a.role_slug || undefined,
-                roleTitleSnapshot: a.role_title_snapshot || undefined,
-                departmentSnapshot: a.department_snapshot || undefined,
-                locationSnapshot: a.location_snapshot || undefined,
-                employmentTypeSnapshot: a.employment_type_snapshot || undefined,
-                workArrangementSnapshot: a.work_arrangement_snapshot || undefined,
-                roleAnswers: a.role_answers || undefined,
-                sourceApplicationPage: a.source_application_page || undefined,
-                applicationReference: a.application_reference || undefined,
-                submissionToken: a.submission_token || undefined,
-                resumeLink: a.resume_link || undefined,
-                resumeFileUrl: a.resume_file_url || undefined,
-                resumeFilePath: a.resume_file_path || undefined,
-                coverLetter: a.cover_letter || undefined,
-            } as Application));
-            setApplications(appsMapped);
+            setCandidates(candidateRows);
+            setApplications(applicationRows);
+            if (!themeRes.error) setCareerUnits(Object.fromEntries((themeRes.data || []).map(row => [row.slug, row.business_unit_id])));
             setUsers((userRes.data || []).map((u: any) => ({
                 id: u.id,
                 name: formatEmployeeName(u.full_name || u.email || 'User'),
@@ -280,7 +242,7 @@ const Applicants: React.FC = () => {
             }, {}), ...permanentLogoRes });
         } catch (err) {
             console.error('Failed to load applicants', err);
-            alert('Failed to load applicant data.');
+            setLoadError('Applicant records could not be fully loaded. Refresh to try again.');
         } finally {
             setIsLoading(false);
         }
@@ -301,15 +263,16 @@ const Applicants: React.FC = () => {
     }, [loadOffers]);
 
     const enrichedApplications: EnrichedApplication[] = useMemo(() => {
+        const candidateById = new Map(candidates.map(candidate => [candidate.id, candidate]));
         return applications.map(app => {
-            const candidate = candidates.find(c => c.id === app.candidateId);
+            const candidate = candidateById.get(app.candidateId);
             const jobPost = jobPosts.find(p => p.id === app.jobPostId);
             const requisition = jobRequisitions.find(r => r.id === app.requisitionId);
-            const businessUnit = businessUnits.find(bu => bu.id === (jobPost?.businessUnitId || requisition?.businessUnitId));
+            const businessUnit = businessUnits.find(bu => bu.id === (jobPost?.businessUnitId || requisition?.businessUnitId || careerUnits[careerSourceSlug(app.sourceApplicationPage) || '']));
             const department = departments.find(d => d.id === requisition?.departmentId);
             return {
                 ...app,
-                candidateName: candidate ? `${candidate.firstName} ${candidate.lastName}` : 'Unknown',
+                candidateName: candidate ? `${candidate.firstName} ${candidate.lastName}` : 'Candidate details unavailable',
                 candidateEmail: candidate?.email,
                 candidateFirstName: candidate?.firstName,
                 candidateLastName: candidate?.lastName,
@@ -324,7 +287,7 @@ const Applicants: React.FC = () => {
                 applicationReference: app.applicationReference,
             };
         }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    }, [applications, candidates, jobPosts, jobRequisitions, businessUnits, departments]);
+    }, [applications, candidates, jobPosts, jobRequisitions, businessUnits, departments, careerUnits]);
 
     const interviewCandidateOptions = useMemo(() => enrichedApplications.map((application) => {
         const candidate = candidates.find((item) => item.id === application.candidateId);
@@ -353,11 +316,10 @@ const Applicants: React.FC = () => {
 
     const filteredApplications = useMemo(() => {
         return enrichedApplications.filter(app => {
-            const buName = businessUnits.find(b => b.id === buFilter)?.name;
             const deptName = departments.find(d => d.id === departmentFilter)?.name;
             
             const appDate = new Date(app.createdAt);
-            const buMatch = !buFilter || app.businessUnitName === buName;
+            const buMatch = !buFilter || app.businessUnitId === buFilter;
             const deptMatch = !departmentFilter || app.departmentName === deptName;
             const yearMatch = yearFilter === 'all' || appDate.getFullYear().toString() === yearFilter;
             const monthMatch = monthFilter === 'all' || (appDate.getMonth() + 1).toString() === monthFilter;
@@ -526,7 +488,7 @@ const Applicants: React.FC = () => {
                 email: candidateData.email,
                 phone: candidateData.phone,
                 source: candidateData.source,
-                portfolio_url: resumeUrl || candidateData.portfolioUrl || null,
+                portfolio_url: candidateData.portfolioUrl || resumeUrl || null,
                 tags: candidateData.tags || [],
                 consent_at: candidateData.consentAt || new Date(),
             }).select().single();
@@ -561,7 +523,9 @@ const Applicants: React.FC = () => {
                 jobPostId: insertedApp.job_post_id,
                 requisitionId: insertedApp.requisition_id,
                 stage: insertedApp.stage as ApplicationStage,
-                notes: insertedApp.cover_letter || '',
+                notes: insertedApp.notes || '',
+                coverLetter: insertedApp.cover_letter || undefined,
+                resumeUrl: insertedApp.resume_url || undefined,
                 createdAt: insertedApp.created_at ? new Date(insertedApp.created_at) : new Date(),
                 updatedAt: insertedApp.updated_at ? new Date(insertedApp.updated_at) : new Date(),
             };
@@ -673,6 +637,8 @@ const Applicants: React.FC = () => {
                 </div>
             </Card>
 
+            {loadError ? <p role="alert" className="mb-3 rounded-lg bg-red-50 p-3 text-red-800">{loadError} <button type="button" className="underline" onClick={() => void loadData()}>Retry</button></p>
+              : !isLoading && <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm"><span>{filteredApplications.length} of {applications.length} applications</span><button type="button" className="underline" onClick={() => void loadData()}>Refresh applications</button></div>}
             {isLoading ? (
                 <Card><div className="p-6 text-gray-500">Loading applicants...</div></Card>
             ) : view === 'kanban' ? (

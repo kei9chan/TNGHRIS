@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Candidate, Application, ApplicationStage, JobPost, InterviewRatingRecord, Permission } from '../../types';
 import Modal from '../ui/Modal';
+import ApplicantDocuments from './ApplicantDocuments';
 import Button from '../ui/Button';
 import Card from '../ui/Card';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -139,6 +140,8 @@ const CandidateProfileModal: React.FC<CandidateProfileModalProps> = ({ isOpen, o
               <div><dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Tags</dt><dd className="mt-1 text-sm text-gray-900 dark:text-white">{candidate.tags?.length ? candidate.tags.map(tag => <span key={tag} className="mr-1 inline-block rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-800">{tag}</span>) : 'N/A'}</dd></div>
             </dl>
           </section>
+
+          <ApplicantDocuments applications={applicationHistory} portfolio={candidate.portfolioUrl} linkedin={candidate.linkedinUrl} />
 
           <section>
             <div className="mb-2 flex flex-wrap items-center justify-between gap-3 border-b pb-2 dark:border-slate-700"><h3 className="text-lg font-medium text-gray-900 dark:text-white">Application History</h3>{canRequestOfferApproval && primaryApplication && <Button size="sm" variant="secondary" onClick={() => void handleRequestOfferApproval()} isLoading={isLoadingApprovalPackage}>Request Offer Approval</Button>}</div>

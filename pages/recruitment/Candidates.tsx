@@ -1,6 +1,7 @@
+import { fetchApplications, fetchCandidates } from '../../services/recruitmentService';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Candidate, Role, Application, JobPost, ApplicationStage, Permission } from '../../types';
+import { Candidate, Role, Application, JobPost, Permission } from '../../types';
 import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
 import CandidateTable from '../../components/recruitment/CandidateTable';
@@ -47,37 +48,15 @@ const Candidates: React.FC = () => {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-        const [candRes, appRes, postRes] = await Promise.all([
-            supabase.from('job_candidates').select('*'),
-            supabase.from('job_applications').select('*'),
+        const [candidateRows, applicationRows, postRes] = await Promise.all([
+            fetchCandidates(),
+            fetchApplications(),
             supabase.from('job_posts').select('*'),
         ]);
-        if (candRes.error) throw candRes.error;
-        if (appRes.error) throw appRes.error;
         if (postRes.error) throw postRes.error;
 
-        setCandidates((candRes.data || []).map((c: any) => ({
-            id: c.id,
-            firstName: c.first_name,
-            lastName: c.last_name,
-            email: c.email,
-            phone: c.phone ?? '',
-            source: c.source,
-            tags: c.tags || [],
-            portfolioUrl: c.portfolio_url || '',
-            consentAt: c.consent_at ? new Date(c.consent_at) : undefined,
-        } as Candidate)));
-
-        setApplications((appRes.data || []).map((a: any) => ({
-            id: a.id,
-            candidateId: a.candidate_id,
-            jobPostId: a.job_post_id,
-            requisitionId: a.requisition_id,
-            stage: a.stage as ApplicationStage,
-            notes: a.cover_letter || a.notes || '',
-            createdAt: a.created_at ? new Date(a.created_at) : new Date(),
-            updatedAt: a.updated_at ? new Date(a.updated_at) : new Date(),
-        } as Application)));
+        setCandidates(candidateRows);
+        setApplications(applicationRows);
 
         setJobPosts((postRes.data || []).map((p: any) => ({
             id: p.id,

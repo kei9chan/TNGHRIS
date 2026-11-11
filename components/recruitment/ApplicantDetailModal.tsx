@@ -2,6 +2,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { EnrichedApplication } from '../../pages/recruitment/Applicants';
 import Modal from '../ui/Modal';
+import ApplicantDocuments from './ApplicantDocuments';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
@@ -104,7 +105,6 @@ const ApplicantDetailModal: React.FC<ApplicantDetailModalProps> = ({ isOpen, onC
                         <DetailItem label="Email" value={application.candidateEmail ? <a href={`mailto:${application.candidateEmail}`} className="text-indigo-600 dark:text-indigo-400">{application.candidateEmail}</a> : 'N/A'} />
                         <DetailItem label="Phone" value={application.candidatePhone} />
                         <DetailItem label="Source" value={application.candidateSource} />
-                        <DetailItem label="Portfolio" value={application.candidatePortfolioUrl ? <a href={application.candidatePortfolioUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400">View Portfolio</a> : 'N/A'} />
                         <DetailItem label="Tags" value={application.candidateTags?.join(', ')} />
                     </dl>
                 </section>
@@ -118,13 +118,12 @@ const ApplicantDetailModal: React.FC<ApplicantDetailModalProps> = ({ isOpen, onC
                         <DetailItem label="Current Stage" value={<span className="px-2 py-1 text-sm font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300">{application.stage}</span>} />
                         <DetailItem label="Application Date" value={new Date(application.createdAt).toLocaleString()} />
                         <DetailItem label="Last Updated" value={new Date(application.updatedAt).toLocaleString()} />
-                        <DetailItem label="Resume link" value={application.resumeLink ? <a href={application.resumeLink} target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400">View resume link</a> : 'N/A'} />
-                        <DetailItem label="Uploaded resume" value={application.resumeFileUrl ? <a href={application.resumeFileUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400">View uploaded resume</a> : application.resumeFilePath || 'N/A'} />
                         <div className="sm:col-span-2">
                             <DetailItem label="Notes" value={application.notes || 'No notes added yet.'} />
                         </div>
                     </dl>
                 </section>
+                <ApplicantDocuments applications={[application]} portfolio={application.candidatePortfolioUrl} />
             </div>
         </Modal>
 

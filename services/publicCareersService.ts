@@ -117,6 +117,7 @@ export const mapPublicJobPost = (row: any): JobPost => ({
 
 export const isJobCurrentlyOpen = (job: JobPost, now = new Date()): boolean => {
   if (job.status !== JobPostStatus.Published) return false;
+  if (String(job.channels?.careerSite ?? true) !== 'true') return false;
   if (job.isActive === false || job.isArchived === true) return false;
   if (job.applicationOpenAt && now < job.applicationOpenAt) return false;
   if (job.applicationCloseAt && now > job.applicationCloseAt) return false;
