@@ -2281,6 +2281,7 @@ export interface Application {
   applicationReference?: string;
   submissionToken?: string;
   resumeLink?: string;
+  resumeUrl?: string;
   resumeFileUrl?: string;
   resumeFilePath?: string;
   coverLetter?: string;

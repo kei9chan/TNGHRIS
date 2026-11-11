@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient';
+import { fetchRecruitmentRows } from './recruitmentRows';
 import {
   JobRequisition, JobPost, Candidate, Application, Interview, InterviewFeedback, Offer,
   JobPostVisualTemplate, ApplicantPageTheme,
@@ -40,7 +41,7 @@ type ApplicationRow = {
   role_title_snapshot?: string | null; department_snapshot?: string | null; location_snapshot?: string | null;
   employment_type_snapshot?: string | null; work_arrangement_snapshot?: string | null; role_answers?: any;
   source_application_page?: string | null; application_reference?: string | null; submission_token?: string | null;
-  resume_link?: string | null; resume_file_url?: string | null; resume_file_path?: string | null; cover_letter?: string | null;
+  resume_url?: string | null; resume_link?: string | null; resume_file_url?: string | null; resume_file_path?: string | null; cover_letter?: string | null;
 };
 
 type InterviewRow = {
@@ -139,6 +140,7 @@ const mapApplication = (r: ApplicationRow): Application => ({
   applicationReference: r.application_reference || undefined,
   submissionToken: r.submission_token || undefined,
   resumeLink: r.resume_link || undefined,
+  resumeUrl: r.resume_url || undefined,
   resumeFileUrl: r.resume_file_url || undefined,
   resumeFilePath: r.resume_file_path || undefined,
   coverLetter: r.cover_letter || undefined,
@@ -252,15 +254,11 @@ export const saveJobPost = async (post: Partial<JobPost>): Promise<JobPost> => {
 };
 
 export const fetchCandidates = async (): Promise<Candidate[]> => {
-  const { data, error } = await supabase.from('job_candidates').select('*').order('last_name', { ascending: true });
-  if (error) throw new Error(error.message);
-  return (data as CandidateRow[]).map(mapCandidate);
+  return (await fetchRecruitmentRows<CandidateRow>('job_candidates')).map(mapCandidate).sort((a, b) => a.lastName.localeCompare(b.lastName));
 };
 
 export const fetchApplications = async (): Promise<Application[]> => {
-  const { data, error } = await supabase.from('job_applications').select('*').order('created_at', { ascending: false });
-  if (error) throw new Error(error.message);
-  return (data as ApplicationRow[]).map(mapApplication);
+  return (await fetchRecruitmentRows<ApplicationRow>('job_applications')).map(mapApplication).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 };
 
 export const saveApplication = async (app: Partial<Application>): Promise<Application> => {

@@ -1,10 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import FileUploader from '../ui/FileUploader';
 import {
   ApplicantPageTheme,
-  ApplicationStage,
-  CandidateSource,
   JobPost,
   RoleApplicationQuestion,
 } from '../../types';
@@ -80,12 +78,11 @@ const initialForm: FormState = {
 
 const newId = (): string => {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
-  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-};
-
-const createApplicationReference = (): string => {
-  const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  return `APP-${stamp}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 15) | 64;
+  bytes[8] = (bytes[8] & 63) | 128;
+  const hex = Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 };
 
 const isValidUrl = (value: string): boolean => {
@@ -372,7 +369,10 @@ const CareerApplicationPage: React.FC = () => {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (hasSubmitted || isSubmitting || submitLock.current || !validateStep(totalSteps as 1 | 2)) return;
+    if (!theme || roleClosed || hasSubmitted || isSubmitting || submitLock.current) return;
+    if (hasRoleQuestions && step === 1) { goToNextStep(); return; }
+    if (!validateStep(1)) { setStep(1); return; }
+    if (hasRoleQuestions && !validateStep(2)) return;
     submitLock.current = true;
     setSubmitError('');
     setIsSubmitting(true);
@@ -397,7 +397,7 @@ const CareerApplicationPage: React.FC = () => {
 
 
       const { data, error } = await supabase.rpc('submit_public_career_application', {
-        p_slug: theme!.slug, p_job: liveJob?.id || null, p_token: submissionToken.current,
+        p_slug: theme.slug, p_job: liveJob?.id || null, p_token: submissionToken.current,
         p_candidate: {
           first_name: firstName, last_name: lastName, email: form.email.trim(), phone: form.mobile.trim(),
           portfolio_url: (collectLinkedIn ? form.linkedinUrl.trim() : '') || resumeLinkValue || resumeValue,
@@ -411,6 +411,8 @@ const CareerApplicationPage: React.FC = () => {
           role_answers: form.roleAnswers},
       });
       if (error) throw error;
+      const expectedReference = `APP-${submissionToken.current.replaceAll('-', '').toUpperCase()}`;
+      if (data?.reference !== expectedReference) throw new Error('We could not confirm your application was saved. Your details are still here; please retry.');
       setSubmission({ reference: data.reference, roleTitle: liveJob?.title || 'General Application' });
       setHasSubmitted(true);
     } catch (error: any) {
@@ -574,4 +576,7 @@ const CareerApplicationPage: React.FC = () => {
   );
 };
 
-export default CareerApplicationPage;
+export default function CareerApplicationRoute() {
+  const location = useLocation();
+  return <CareerApplicationPage key={location.pathname + location.search} />;
+}
