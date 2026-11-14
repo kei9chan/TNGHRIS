@@ -35,8 +35,9 @@ const BreakdownItem: React.FC<BreakdownItemProps> = ({ item, businessUnits, depa
 
     const renderConfigName = (config: EvaluatorConfig) => {
         if (config.type === EvaluatorType.Individual) {
+            if (config.isAnonymous) return 'Anonymous individual evaluator';
             const rater = users.find(u => u.id === config.userId);
-            return rater ? `Individual: ${rater.name}` : 'Unknown Individual';
+            return rater ? `Individual: ${rater.name}` : 'Individual evaluator';
         } else {
             const buName = businessUnits.find(b => b.id === config.groupFilter?.businessUnitId)?.name || 'All BUs';
             const deptName = departments.find(d => d.id === config.groupFilter?.departmentId)?.name || 'All Depts';
@@ -442,7 +443,6 @@ const EvaluationResult: React.FC = () => {
             // Distribute submissions to their matching config
             submissionsForEmployee.forEach(sub => {
                 const rater = allUsers.find(u => u.id === sub.raterId);
-                if (!rater) return;
 
                 // Calculate raw average for this specific submission
                 const ratingScores = sub.scores.filter(s => s.score !== undefined);
@@ -450,15 +450,16 @@ const EvaluationResult: React.FC = () => {
                     ? ratingScores.reduce((sum, s) => sum + s.score!, 0) / ratingScores.length 
                     : 0;
 
-                const enrichedSubmission = { ...sub, raterName: rater.name, submissionAverage };
+                const enrichedSubmission = { ...sub, raterName: rater?.name || 'Assigned evaluator', submissionAverage };
 
                 // Find which config this rater belongs to.
-                // Priority: Individual Assignment > Group Assignment
+                // An individual assignment is matched by ID, even if the employee
+                // cannot read the evaluator's staff directory profile.
                 
                 let matchedConfig = evaluation.evaluators.find(e => e.type === EvaluatorType.Individual && e.userId === sub.raterId);
 
-                if (!matchedConfig) {
-                    // Check groups
+                if (!matchedConfig && rater) {
+                    // Group matching still requires the rater's visible profile.
                     matchedConfig = evaluation.evaluators.find(e => {
                         if (e.type !== EvaluatorType.Group) return false;
                         if (e.excludeSubject && sub.raterId === employee.id) return false; // Skip self in group if excluded
