@@ -1106,6 +1106,7 @@ export enum ApproverStatus {
   ReturnedForRevision = 'Returned for Revision',
   Rejected = 'Rejected',
   Cancelled = 'Cancelled',
+  Waiting = 'Waiting',
 }
 
 export interface ApproverStep {
@@ -1122,6 +1123,7 @@ export interface ApproverStep {
   timestamp?: Date;
   comments?: string;
   rejectionReason?: string;
+  routeStep?: number;
 }
 
 export interface Resolution {

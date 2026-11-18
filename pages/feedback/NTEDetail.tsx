@@ -43,7 +43,8 @@ const CalendarIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-
 const ApproverStatusIcon: React.FC<{status: ApproverStatus}> = ({status}) => {
     switch (status) {
         case ApproverStatus.Approved: return <CheckCircleIcon />;
-        case ApproverStatus.Pending: return <ClockIcon />;
+        case ApproverStatus.Pending:
+        case ApproverStatus.Waiting: return <ClockIcon />;
         case ApproverStatus.ReturnedForRevision:
         case ApproverStatus.Rejected: return <XCircleIcon />;
         case ApproverStatus.Cancelled: return <span className="h-5 w-5 rounded-full bg-gray-300 dark:bg-gray-600" aria-label="Cancelled" />;
@@ -383,7 +384,7 @@ const NTEDetail: React.FC = () => {
         ? new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) + ' PHT'
         : '—';
     const pendingApprover = nte.approverSteps?.find(step => step.status === ApproverStatus.Pending);
-    const pendingApproverRole = pendingApprover?.roleSnapshot || pendingApprover?.role || 'Approver';
+    const pendingApproverRole = pendingApprover?.routeStep === 3 ? 'Final' : pendingApprover?.roleSnapshot || pendingApprover?.role || 'Approver';
     const approvalStatusLabel = nte.status === NTEStatus.PendingApproval
         ? `Pending ${pendingApproverRole.replace(/\s*approver\s*$/i, '')} Approval`
         : nteReceiptStatusLabel(nte);
@@ -531,12 +532,15 @@ const NTEDetail: React.FC = () => {
                             {nte.approverSteps.map((step, index) => {
                                 const isApproved = step.status === ApproverStatus.Approved;
                                 const isPending = step.status === ApproverStatus.Pending;
-                                const badge = isApproved ? 'Approved' : isPending ? 'Pending' : step.status;
+                                const isWaiting = step.status === ApproverStatus.Waiting;
+                                const badge = isApproved ? 'Approved' : isPending ? 'Pending' : isWaiting ? 'Waiting for prior approval' : step.status;
                                 const badgeClass = isApproved
                                     ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
                                     : isPending
                                         ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200'
-                                        : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200';
+                                        : isWaiting
+                                            ? 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200'
+                                            : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200';
                                 return <div key={step.approvalId || step.userId} className="relative rounded-lg border border-slate-200 p-4 dark:border-slate-700">
                                     {index < nte.approverSteps!.length - 1 && <span aria-hidden="true" className="absolute -right-3 top-1/2 hidden h-px w-3 bg-slate-300 md:block dark:bg-slate-600" />}
                                     <div className="flex items-start justify-between gap-2"><div className="flex items-center gap-2"><ApproverStatusIcon status={step.status} /><span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Step {index + 1}</span></div><span className={`rounded-full px-2 py-1 text-xs font-bold ${badgeClass}`}>{badge}</span></div>

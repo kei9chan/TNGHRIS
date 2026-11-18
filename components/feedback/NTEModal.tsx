@@ -15,7 +15,6 @@ import SearchableMultiSelect, { SearchableItem } from '../ui/SearchableMultiSele
 import Input from '../ui/Input';
 import NTEPreview from './NTEPreview';
 import { useAuth } from '../../hooks/useAuth';
-import NTEApproverPicker from './NTEApproverPicker';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { EligibleNTEApprover, fetchEligibleNTEApprovers, NTEApproverSelection } from '../../services/nteService';
@@ -46,8 +45,8 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
   const [allegations, setAllegations] = useState('');
   const [evidenceUrl, setEvidenceUrl] = useState('');
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
-  const [selectedApprovers, setSelectedApprovers] = useState<NTEApproverSelection[]>([]);
   const [eligibleApprovers, setEligibleApprovers] = useState<EligibleNTEApprover[]>([]);
+  const selectedApprovers: NTEApproverSelection[] = eligibleApprovers.map(approver => ({ approver, roleId: approver.preferredRoleId }));
   const [approverLoading, setApproverLoading] = useState(false);
   const [approverError, setApproverError] = useState<string | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);
@@ -167,7 +166,6 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
         setDisciplineCodeIds([]);
         setEvidenceUrl('');
         setSelectedTemplateId(feedbackTemplates[0]?.id || '');
-        setSelectedApprovers([]);
         setManualNteNumber('');
       } else {
         setCurrentNTE(nte);
@@ -184,7 +182,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
     let cancelled = false;
     setApproverLoading(true);
     setApproverError(null);
-    setSelectedApprovers([]);
+    setEligibleApprovers([]);
     fetchEligibleNTEApprovers(incidentReport.id, selectedEmployeeId)
       .then(rows => { if (!cancelled) setEligibleApprovers(rows); })
       .catch(error => { if (!cancelled) setApproverError(error?.message || 'Failed to load eligible NTE approvers.'); })
@@ -235,8 +233,8 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
     if (!deadline) {
       errors.push('Set a response deadline.');
     }
-    if (selectedApprovers.length === 0 || !selectedApprovers.some(item => item.roleId === Role.BOD)) {
-      errors.push('Select at least one approver whose selected role is Board of Director.');
+    if (selectedApprovers.length !== 3 || approverLoading || Boolean(approverError)) {
+      errors.push('Wait for the three required approvers to load before submitting.');
     }
 
 
@@ -352,7 +350,7 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
             <Button
               className="w-full sm:w-auto"
               onClick={handleIssueNTE}
-              disabled={selectedEmployeeIds.length === 0 || approverLoading || !selectedApprovers.some(item => item.roleId === Role.BOD)}
+              disabled={selectedEmployeeIds.length === 0 || approverLoading || selectedApprovers.length !== 3 || Boolean(approverError)}
             >{buttonText}</Button>
           </div>
         }
@@ -507,14 +505,14 @@ const NTEModal: React.FC<NTEModalProps> = ({ isOpen, onClose, incidentReport, nt
 
           <div className="p-3 border rounded-md dark:border-gray-600">
             <h4 className="font-semibold text-gray-800 dark:text-gray-200">Approvals:</h4>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">Select who must approve this NTE (at least one BOD required).</p>
-            <NTEApproverPicker
-              approvers={eligibleApprovers}
-              selected={selectedApprovers}
-              onChange={setSelectedApprovers}
-              loading={approverLoading}
-              error={approverError}
-            />
+            <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">Each approver reviews in order. The NTE cannot be issued before the final approval.</p>
+            {approverLoading && <p role="status">Loading the required approval route…</p>}
+            {approverError && <p role="alert" className="text-red-700 dark:text-red-300">{approverError}</p>}
+            <ol className="list-decimal space-y-1 pl-5">
+              {eligibleApprovers.map((approver, index) => <li key={approver.id}>
+                {approver.name} <span className="text-sm text-gray-500 dark:text-gray-400">· {index === 2 ? 'Final approval' : approver.eligibleRoleLabels[0]}</span>
+              </li>)}
+            </ol>
           </div>
         </div>
       </Modal>
