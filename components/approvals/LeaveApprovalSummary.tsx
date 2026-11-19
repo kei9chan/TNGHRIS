@@ -13,6 +13,7 @@ function load(id:string) {
 }
 export default function LeaveApprovalSummary({requestId,outcome}:{requestId:string;outcome?:'paid_exception'|'lwop'}) {
  const [data,setData]=useState<Summary|null>(null),[error,setError]=useState(false),[retry,setRetry]=useState(0);
+ useEffect(()=>{const refresh=()=>{inflight.delete(requestId);setRetry(n=>n+1);};window.addEventListener('focus',refresh);window.addEventListener('tng-leave-decision',refresh);return()=>{window.removeEventListener('focus',refresh);window.removeEventListener('tng-leave-decision',refresh);};},[requestId]);
  useEffect(()=>{let active=true;setData(null);setError(false);load(requestId).then(value=>{if(active)setData(value);}).catch(()=>{if(active)setError(true);});return()=>{active=false;};},[requestId,retry]);
  if(error)return <div role="alert" className="rounded-lg border border-amber-300 p-3 text-sm">Leave summary unavailable. <button type="button" className="font-semibold underline" onClick={()=>setRetry(n=>n+1)}>Retry</button></div>;
  if(!data)return <p role="status" className="p-3 text-sm text-slate-500">Loading calendar-year leave summary…</p>;
