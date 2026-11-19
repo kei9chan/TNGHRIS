@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { JobRequisition, JobRequisitionStatus, User, Role, JobRequisitionRole, JobRequisitionStepStatus, ApplicationStage } from '../../types';
 import Modal from '../ui/Modal';
+import { HIRING_EMPLOYMENT_TYPES, seasonalMonthsError } from '../../utils/hiringEmployment';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
 import Button from '../ui/Button';
@@ -84,6 +85,7 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
     const { user } = useAuth();
     const { getAccessibleBusinessUnits } = usePermissions();
     const [current, setCurrent] = useState<Partial<JobRequisition>>({});
+    const [durationError, setDurationError] = useState('');
     const [finalApprovers, setFinalApprovers] = useState<User[]>([]);
     const [businessUnits, setBusinessUnits] = useState<{ id: string; name: string; code?: string }[]>([]);
     const [departments, setDepartments] = useState<{ id: string; name: string; businessUnitId: string }[]>([]);
@@ -141,6 +143,7 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
             businessUnitId: !requisition && buOptions.length > 0 ? buOptions[0].id : undefined
         };
         setCurrent(initialData);
+        setDurationError('');
         setFinalApprovers([]);
         initializedRef.current = true;
     }, [requisition, isOpen, user, buOptions.length]);
@@ -188,6 +191,17 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
             return;
         }
 
+        if (name === 'employmentType') {
+            setCurrent(prev => ({ ...prev, employmentType: value as JobRequisition['employmentType'], seasonalMonths: value === 'Seasonal' ? prev.seasonalMonths : undefined }));
+            setDurationError('');
+            return;
+        }
+        if (name === 'seasonalMonths') {
+            setCurrent(prev => ({ ...prev, seasonalMonths: value === '' ? undefined : Number(value) }));
+            setDurationError('');
+            return;
+        }
+
         // Changing BU should clear department to avoid mismatched options
         if (name === 'businessUnitId') {
             setCurrent(prev => ({
@@ -210,10 +224,15 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
             return;
         }
 
+        const error = seasonalMonthsError(current.employmentType, current.seasonalMonths);
+        setDurationError(error);
+        if (error) return;
+
         let payload: Partial<JobRequisition> = {
             ...current,
             status,
             updatedAt: new Date(),
+            seasonalMonths: current.employmentType === 'Seasonal' ? current.seasonalMonths : undefined,
         };
 
         if (!payload.reqCode) {
@@ -340,14 +359,16 @@ const RequisitionModal: React.FC<RequisitionModalProps> = ({ isOpen, onClose, re
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                      <Input label="Headcount" name="headcount" type="number" min="1" value={current.headcount || 1} onChange={handleChange} disabled={isReadOnly} required />
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Employment Type</label>
-                        <select name="employmentType" value={current.employmentType || ''} onChange={handleChange} disabled={isReadOnly} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                            <option>Full-Time</option>
-                            <option>Part-Time</option>
-                            <option>Contract</option>
+                        <label htmlFor="requisition-employment-type" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Employment Type</label>
+                        <select id="requisition-employment-type" name="employmentType" value={current.employmentType || ''} onChange={handleChange} disabled={isReadOnly} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                            {HIRING_EMPLOYMENT_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
                         </select>
                     </div>
                 </div>
+                {current.employmentType === 'Seasonal' && <div className="space-y-1">
+                    <Input id="requisition-seasonal-months" label="Seasonal duration (months)" name="seasonalMonths" type="number" min="1" step="1" inputMode="numeric" placeholder="e.g. 3 or 5" value={current.seasonalMonths ?? ''} onChange={handleChange} disabled={isReadOnly} required error={durationError} aria-invalid={!!durationError} />
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Enter the number of months requested for this seasonal hire.</p>
+                </div>}
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Location Type</label>

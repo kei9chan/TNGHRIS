@@ -1,3 +1,4 @@
+import { seasonalMonthsError } from '../utils/hiringEmployment';
 import { supabase } from './supabaseClient';
 import { fetchRecruitmentRows } from './recruitmentRows';
 import {
@@ -11,7 +12,7 @@ import {
 // ---------------------------------------------------------------------------
 type JobRequisitionRow = {
   id: string; req_code: string; title: string; department_id: string; business_unit_id: string;
-  headcount: number; employment_type: string; location_type: string; work_location: string;
+  headcount: number; seasonal_months?: number | null; employment_type: string; location_type: string; work_location: string;
   budgeted_salary_min: number; budgeted_salary_max: number; justification: string;
   created_by_user_id: string; status: string; created_at: string; updated_at: string;
   is_urgent?: boolean | null; routing_steps: any;
@@ -82,7 +83,7 @@ type OfferRow = {
 const mapJobRequisition = (r: JobRequisitionRow): JobRequisition => ({
   id: r.id, reqCode: r.req_code, title: r.title, departmentId: r.department_id,
   businessUnitId: r.business_unit_id, headcount: r.headcount,
-  employmentType: r.employment_type as any, locationType: r.location_type as any,
+  employmentType: r.employment_type as any, seasonalMonths: r.seasonal_months ?? undefined, locationType: r.location_type as any,
   workLocation: r.work_location, budgetedSalaryMin: r.budgeted_salary_min,
   budgetedSalaryMax: r.budgeted_salary_max, justification: r.justification,
   createdByUserId: r.created_by_user_id, status: r.status as JobRequisitionStatus,
@@ -207,10 +208,12 @@ export const fetchJobRequisitions = async (): Promise<JobRequisition[]> => {
 };
 
 export const saveJobRequisition = async (req: Partial<JobRequisition>): Promise<JobRequisition> => {
+  const durationError = seasonalMonthsError(req.employmentType, req.seasonalMonths);
+  if (durationError) throw new Error(durationError);
   const payload = {
     req_code: req.reqCode, title: req.title, department_id: req.departmentId,
     business_unit_id: req.businessUnitId, headcount: req.headcount,
-    employment_type: req.employmentType, location_type: req.locationType,
+    employment_type: req.employmentType, seasonal_months: req.employmentType === 'Seasonal' ? req.seasonalMonths : null, location_type: req.locationType,
     work_location: req.workLocation, budgeted_salary_min: req.budgetedSalaryMin,
     budgeted_salary_max: req.budgetedSalaryMax, justification: req.justification,
     created_by_user_id: req.createdByUserId, status: req.status,
