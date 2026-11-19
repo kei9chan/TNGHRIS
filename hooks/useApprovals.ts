@@ -326,6 +326,7 @@ export function useApprovals({ user, kind }: UseApprovalsOptions) {
             type: approved ? NotificationType.LEAVE_APPROVED : NotificationType.LEAVE_DECISION,
             link: `/approvals?type=leave&item=${request.id}`,
         }).catch(error => console.error('Leave notification failed', error));
+        window.dispatchEvent(new Event('tng-leave-decision'));
         setPendingLeaveApprovals(prev => prev.filter(r => r.id !== request.id));
     };
 
