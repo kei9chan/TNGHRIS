@@ -1,3 +1,4 @@
+import { seasonalMonthsError } from '../utils/hiringEmployment';
 import { supabase } from './supabaseClient';
 import { JobRequisition, JobRequisitionStatus, Role, User } from '../types';
 
@@ -8,7 +9,8 @@ type JobRequisitionRow = {
   department_id: string;
   business_unit_id: string;
   headcount: number;
-  employment_type: 'Full-Time' | 'Part-Time' | 'Contract';
+  employment_type: JobRequisition['employmentType'];
+  seasonal_months?: number | null;
   location_type: 'Onsite' | 'Hybrid' | 'Remote';
   work_location?: string | null;
   budgeted_salary_min?: number | null;
@@ -54,6 +56,7 @@ const mapRow = (row: JobRequisitionRow): JobRequisition => ({
   businessUnitId: row.business_unit_id,
   headcount: row.headcount || 0,
   employmentType: row.employment_type,
+  seasonalMonths: row.seasonal_months ?? undefined,
   locationType: row.location_type,
   workLocation: row.work_location || '',
   budgetedSalaryMin: row.budgeted_salary_min || 0,
@@ -110,6 +113,8 @@ export const fetchJobRequisitionApprovalDirectory = async (): Promise<User[]> =>
 };
 
 export const saveJobRequisition = async (req: Partial<JobRequisition>): Promise<JobRequisition> => {
+  const durationError = seasonalMonthsError(req.employmentType, req.seasonalMonths);
+  if (durationError) throw new Error(durationError);
   const payload: Partial<JobRequisitionRow> = {
     req_code: req.reqCode,
     title: req.title,
@@ -117,6 +122,7 @@ export const saveJobRequisition = async (req: Partial<JobRequisition>): Promise<
     business_unit_id: req.businessUnitId,
     headcount: req.headcount,
     employment_type: req.employmentType,
+    seasonal_months: req.employmentType === 'Seasonal' ? req.seasonalMonths : null,
     location_type: req.locationType,
     work_location: req.workLocation,
     budgeted_salary_min: req.budgetedSalaryMin,

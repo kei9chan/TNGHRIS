@@ -15,6 +15,8 @@ export const normalizeOfferEmploymentType = (value?: string): {
   customName?: string;
 } => {
   if (OFFER_EMPLOYMENT_TYPES.includes(value as OfferEmploymentType)) return { type: value as OfferEmploymentType };
+  if (value === 'Seasonal') return { type: 'Seasonal / Fixed-Term' };
+  if (value === 'Weekender') return { type: 'Custom', customName: 'Weekender' };
   if (value === 'Contract') return { type: 'Consultant / Contractor' };
   if (value === 'Part-Time') return { type: 'Custom', customName: 'Part-Time' };
   return { type: 'Regular' };

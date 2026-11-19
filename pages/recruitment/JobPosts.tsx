@@ -77,6 +77,7 @@ const JobPosts: React.FC = () => {
     businessUnitId: row.business_unit_id,
     headcount: row.headcount,
     employmentType: row.employment_type,
+    seasonalMonths: row.seasonal_months ?? undefined,
     locationType: row.location_type,
     workLocation: row.work_location,
     budgetedSalaryMin: row.budgeted_salary_min,

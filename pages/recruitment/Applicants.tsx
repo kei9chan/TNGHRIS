@@ -189,6 +189,8 @@ const Applicants: React.FC = () => {
                 ...r,
                 createdAt: r.created_at ? new Date(r.created_at) : new Date(),
                 updatedAt: r.updated_at ? new Date(r.updated_at) : new Date(),
+                employmentType: r.employment_type,
+                seasonalMonths: r.seasonal_months ?? undefined,
                 departmentId: r.department_id,
                 businessUnitId: r.business_unit_id,
             } as JobRequisition)));

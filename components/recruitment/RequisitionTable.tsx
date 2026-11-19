@@ -1,5 +1,6 @@
 // Phase D complete: mockDataCompat removed from RequisitionTable
 import React from 'react';
+import { hiringEmploymentLabel } from '../../utils/hiringEmployment';
 import { JobRequisition, JobRequisitionStatus, ApplicationStage } from '../../types';
 import Button from '../ui/Button';
 
@@ -52,6 +53,7 @@ const RequisitionTable: React.FC<RequisitionTableProps> = ({ requisitions, onEdi
                                         <span>{req.title}</span>
                                         {req.isUrgent && <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300">Urgent</span>}
                                     </div>
+                                    <p className="mt-1 text-xs font-normal text-gray-500 dark:text-gray-400">{hiringEmploymentLabel(req)}</p>
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{getBuName(req.businessUnitId)}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{getDepartmentName(req.departmentId)}</td>

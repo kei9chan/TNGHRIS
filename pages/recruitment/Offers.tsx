@@ -143,6 +143,7 @@ const Offers: React.FC = () => {
         businessUnitId: r.business_unit_id,
         headcount: r.headcount,
         employmentType: r.employment_type,
+        seasonalMonths: r.seasonal_months ?? undefined,
         locationType: r.location_type,
         workLocation: r.work_location,
         budgetedSalaryMin: r.budgeted_salary_min,

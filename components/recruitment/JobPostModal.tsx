@@ -1,3 +1,4 @@
+import { hiringEmploymentLabel } from '../../utils/hiringEmployment';
 import React, { useState, useEffect, useMemo } from 'react';
 import { JobPost, JobPostStatus, JobRequisitionStatus, JobRequisition, BusinessUnit, RoleApplicationQuestion, RoleApplicationQuestionType, RoleDetails, RoleFAQ } from '../../types';
 import Modal from '../ui/Modal';
@@ -109,7 +110,7 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
                 setCurrent(prev => ({
                     ...prev,
                     title: requisition.title,
-                    employmentType: requisition.employmentType,
+                    employmentType: hiringEmploymentLabel(requisition),
                     locationLabel: requisition.workLocation,
                     businessUnitId: requisition.businessUnitId,
                 }));
@@ -134,7 +135,9 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
             requirements: lookingFor || previous.requirements,
             benefits: perks || previous.benefits,
             locationLabel: location || previous.locationLabel,
-            employmentType: normalizedEmployment,
+            employmentType: approvedRequisitions.find(req => req.id === previous.requisitionId)
+                ? hiringEmploymentLabel(approvedRequisitions.find(req => req.id === previous.requisitionId)!)
+                : normalizedEmployment,
         }));
     };
 
@@ -250,6 +253,7 @@ const JobPostModal: React.FC<JobPostModalProps> = ({ isOpen, onClose, jobPost, o
         const payload: JobPost = {
             ...current,
             businessUnitId: requisition.businessUnitId,
+            employmentType: hiringEmploymentLabel(requisition),
             status,
             publishedAt: status === JobPostStatus.Published && !current.publishedAt ? new Date() : current.publishedAt,
             channels: current.channels || { careerSite: isNewPost, qr: false, social: false, jobBoards: false },

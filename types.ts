@@ -2122,7 +2122,8 @@ export interface JobRequisition {
   departmentId: string;
   businessUnitId: string;
   headcount: number;
-  employmentType: 'Full-Time' | 'Part-Time' | 'Contract';
+  employmentType: 'Full-Time' | 'Part-Time' | 'Contract' | 'Seasonal' | 'Weekender';
+  seasonalMonths?: number;
   locationType: 'Onsite' | 'Hybrid' | 'Remote';
   workLocation: string;
   budgetedSalaryMin: number;
@@ -2165,7 +2166,7 @@ export interface JobPost {
   requirements: string;
   benefits: string;
   locationLabel: string;
-  employmentType: 'Full-Time' | 'Part-Time' | 'Contract';
+  employmentType: JobRequisition['employmentType'] | `Seasonal (${number} ${'month' | 'months'})`;
   status: JobPostStatus;
   publishedAt?: Date;
   channels: {

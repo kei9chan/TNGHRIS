@@ -68,6 +68,7 @@ const approvedJobOrderSnapshot = (requisition: JobRequisition, previous?: Record
   departmentId: requisition.departmentId,
   headcount: requisition.headcount,
   employmentType: requisition.employmentType,
+  ...(requisition.employmentType === 'Seasonal' ? { seasonalMonths: requisition.seasonalMonths } : {}),
   workLocation: requisition.workLocation,
   budgetedSalaryMin: requisition.budgetedSalaryMin,
   budgetedSalaryMax: requisition.budgetedSalaryMax,
