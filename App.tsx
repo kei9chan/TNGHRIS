@@ -50,6 +50,7 @@ const Dashboard = React.lazy(() => import('./pages/Dashboard'));
 const OfficialBusinessPage = React.lazy(() => import('./modules/official-business/OfficialBusinessPage'));
 import { preloadApprovalPage } from './services/approvalPageLoader';
 const ApprovalCenter = React.lazy(preloadApprovalPage);
+const GuestCard = React.lazy(() => import("./pages/GuestPulse").then(m=>({default:m.GuestCard})));
 const OperationsStation = React.lazy(() => import('./pages/OperationsStation'));
 const MyRequests = React.lazy(() => import('./pages/MyRequests'));
 const NotFound = React.lazy(() => import('./pages/NotFound'));
@@ -332,6 +333,7 @@ const AppRoutes: React.FC = () => {
       <Route path="/apply" element={<Apply />} />
       <Route path="/apply/:jobPostId/:jobSlug?" element={<Apply />} />
         <Route path="/thank-you" element={<ThankYou />} />
+        <Route path="/guest-pulse/:code" element={<GuestCard />} />
         <Route path="/offer/:token" element={<OfferResponse />} />
         {/* Public Career Pages */}
         <Route path="/careers/:slug/apply/:roleSlug" element={<CareerApplicationPage />} />
