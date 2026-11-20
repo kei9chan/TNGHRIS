@@ -1,3 +1,4 @@
+import { fetchRecruitmentRows } from '../../services/recruitmentRows';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -73,9 +74,9 @@ const Offers: React.FC = () => {
     try {
       const [offRes, appRes, candRes, reqRes, deptRes, buRes, themeRes, templateRes] = await Promise.all([
         retryTransientSupabaseRead(() => supabase.from('job_offers').select('*').order('created_at', { ascending: false })),
-        retryTransientSupabaseRead(() => supabase.from('job_applications').select('*')),
-        retryTransientSupabaseRead(() => supabase.from('job_candidates').select('*')),
-        supabase.from('job_requisitions').select('*'),
+        fetchRecruitmentRows<any>('job_applications').then(data => ({ data, error: null })),
+        fetchRecruitmentRows<any>('job_candidates').then(data => ({ data, error: null })),
+        fetchRecruitmentRows<any>('job_requisitions').then(data => ({ data, error: null })),
         supabase.from('departments').select('id,name,business_unit_id'),
         supabase.from('business_units').select('id,name'),
         supabase.from('applicant_page_themes').select('business_unit_id,logo_url').not('business_unit_id', 'is', null).order('updated_at', { ascending: false }),
