@@ -1,3 +1,4 @@
+import GuestPulse from './GuestPulse';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
@@ -49,7 +50,8 @@ export default function OperationsStation() {
   const canAssign=!!(unit&&selection?.assign);
   const canManage=!!(unit&&selection?.manage);
   const hasTeam=!!data?.assignments.some(a=>a.assignee_id!==data.actor)||!!selection?.manage||!!selection?.assign;
-  const workspaceTools=operationsToolViews(data);
+  const pulseAccess=user?.position?.trim().toLowerCase()==='operations director'||[user?.role,...(user?.roles||[])].some(r=>['Business Unit Manager','GeneralManager','Operations Director','Board of Director','Admin'].includes(String(r)));
+  const workspaceTools=[...operationsToolViews(data),...(pulseAccess?['Guest Pulse']:[])];
   const hasLibraries=!!data?.masterAdmin||!!data?.units.some(u=>u.edit||u.assign);
   const canMaster=!!data?.masterAdmin;
   const load=useCallback(async(silent=false)=>{
@@ -108,6 +110,7 @@ export default function OperationsStation() {
           <div><p className="text-xs font-semibold uppercase tracking-[.2em] text-violet-600 dark:text-violet-300">The Nextperience Group</p><h1 className="mt-1 text-xl font-bold tracking-tight text-violet-800 sm:text-3xl dark:text-violet-200">Operations Station</h1></div>
           <div className="flex w-full min-w-0 gap-2 sm:w-auto"><select aria-label="Business-unit workspace" className={`${inputClass} min-w-0 flex-1 sm:max-w-60`} value={unit} onChange={e=>switchUnit(e.target.value)}><option value="">All workspaces</option>{data?.units.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select><button className={buttonClass} disabled={loading||busy} onClick={()=>void load()}>Refresh</button></div>
         </header>
+        {pulseAccess&&<nav aria-label="Guest feedback workspace" className="flex gap-2 px-5 pt-4"><button className={tab==='Guest Pulse'?buttonClass:primaryClass} onClick={()=>navigate('Today')}>Operations Station</button><button className={tab==='Guest Pulse'?primaryClass:buttonClass} onClick={()=>navigate('Guest Pulse')}>Guest Pulse</button></nav>}
         <div className="space-y-6 px-5 py-6 sm:px-8">
           {message&&<p role="status" className="rounded-xl bg-violet-50 p-3 text-sm text-violet-800 dark:bg-violet-950/40 dark:text-violet-200">{message}</p>}
           {error&&<div role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-800 dark:bg-red-950/30 dark:text-red-200"><p>{error}</p><button className="mt-2 underline" onClick={()=>unit?switchUnit(''):void load()}>Retry / reset workspace</button></div>}
@@ -117,6 +120,7 @@ export default function OperationsStation() {
             {['Scheduling','Coverage'].includes(tab)&&<AutomationWorkspace workspace={data} unit={unit} rulesView={tab==='Scheduling'} onNavigate={navigate} onOpen={openAssignment}/>}
             {tab==='Review'&&data.units.some(u=>u.review)&&<ReviewWorkspace key={unit} workspace={data} unit={unit} onRefresh={()=>load(true)} onExecution={openAssignment}/>}
             {tab==='Events'&&<EventWorkspace key={unit} workspace={data} unit={unit} onRefresh={()=>load(true)} onOpen={openAssignment}/>}
+            {tab==='Guest Pulse'&&pulseAccess&&<GuestPulse unit={unit}/>}
             {tab==='Maintenance'&&<MaintenanceWorkspace key={unit} workspace={data} unit={unit} onNavigate={navigateManager} onRefresh={()=>load(true)} onOpen={openAssignment}/>}
             {['Today','Tasks'].includes(tab)&&<>
               {tab==='Tasks'&&canMaster&&<section className="rounded-2xl border border-violet-100 bg-violet-50 p-5 dark:border-slate-700 dark:bg-violet-950/30"><h3 className="font-semibold">Work assigned to Business Unit Managers</h3><p className="mt-1 text-sm text-slate-500">{assignments.filter(a=>a.assignee_is_bum&&isOpen(a)).length} outstanding · {assignments.filter(a=>a.assignee_is_bum&&matchesFilter(a,'Overdue')).length} overdue</p><div className="mt-3 space-y-2">{assignments.filter(a=>a.assignee_is_bum&&isOpen(a)).slice(0,5).map(a=><button key={a.id} className="block w-full rounded-xl bg-white p-3 text-left text-sm dark:bg-slate-800" onClick={()=>void openAssignment(a.id)}><strong>{assignmentTitle(a)}</strong><span className="mt-1 block text-slate-500">{a.assignee_name} · {a.unit_name} · {formatDue(a.due_at)}</span></button>)}</div><button className={`${buttonClass} mt-3`} onClick={()=>{setTeam(true);navigate('Tasks');}}>View team assignments</button></section>}
