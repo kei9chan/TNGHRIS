@@ -1,3 +1,4 @@
+import ChecklistResults from '../modules/operations/ChecklistResults';
 import GuestPulse from './GuestPulse';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -51,7 +52,7 @@ export default function OperationsStation() {
   const canManage=!!(unit&&selection?.manage);
   const hasTeam=!!data?.assignments.some(a=>a.assignee_id!==data.actor)||!!selection?.manage||!!selection?.assign;
   const pulseAccess=user?.position?.trim().toLowerCase()==='operations director'||[user?.role,...(user?.roles||[])].some(r=>['Business Unit Manager','GeneralManager','Operations Director','Board of Director','Admin'].includes(String(r)));
-  const workspaceTools=[...operationsToolViews(data),...(pulseAccess?['Guest Pulse']:[])];
+  const workspaceTools=[...operationsToolViews(data),...(pulseAccess?['Checklist Results','Guest Pulse']:[])];
   const hasLibraries=!!data?.masterAdmin||!!data?.units.some(u=>u.edit||u.assign);
   const canMaster=!!data?.masterAdmin;
   const load=useCallback(async(silent=false)=>{
@@ -108,7 +109,7 @@ export default function OperationsStation() {
       <section className="min-w-0 flex-1 pb-24 lg:pb-10">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4 sm:px-8 sm:py-6 dark:border-slate-700">
           <div><p className="text-xs font-semibold uppercase tracking-[.2em] text-violet-600 dark:text-violet-300">The Nextperience Group</p><h1 className="mt-1 text-xl font-bold tracking-tight text-violet-800 sm:text-3xl dark:text-violet-200">Operations Station</h1></div>
-          <div className="flex w-full min-w-0 gap-2 sm:w-auto"><select aria-label="Business-unit workspace" className={`${inputClass} min-w-0 flex-1 sm:max-w-60`} value={unit} onChange={e=>switchUnit(e.target.value)}><option value="">All workspaces</option>{data?.units.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select><button className={buttonClass} disabled={loading||busy} onClick={()=>void load()}>Refresh</button></div>
+          <div className="flex w-full min-w-0 gap-2 sm:w-auto">{tab!=='Checklist Results'&&<select aria-label="Business-unit workspace" className={`${inputClass} min-w-0 flex-1 sm:max-w-60`} value={unit} onChange={e=>switchUnit(e.target.value)}><option value="">All workspaces</option>{data?.units.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select>}<button className={buttonClass} disabled={loading||busy} onClick={()=>void load()}>Refresh</button></div>
         </header>
         {pulseAccess&&<nav aria-label="Guest feedback workspace" className="flex gap-2 px-5 pt-4"><button className={tab==='Guest Pulse'?buttonClass:primaryClass} onClick={()=>navigate('Today')}>Operations Station</button><button className={tab==='Guest Pulse'?primaryClass:buttonClass} onClick={()=>navigate('Guest Pulse')}>Guest Pulse</button></nav>}
         <div className="space-y-6 px-5 py-6 sm:px-8">
@@ -118,6 +119,7 @@ export default function OperationsStation() {
             <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-2xl font-bold">{knownTab?title:'Choose a workspace view'}</h2><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{selection?.name||'All authorized business units'} · {manilaDay(new Date())} · Manila time</p></div>{tab!=='Today'&&(canEdit||canAssign)&&<div className="flex flex-wrap gap-2">{canEdit&&<button className={buttonClass} onClick={()=>void openEditor('task')}>Create task</button>}{canAssign&&<button className={primaryClass} onClick={()=>void openAssign('')}>Assign work</button>}</div>}</div>
             {!knownTab&&<button className={primaryClass} onClick={()=>navigate('Today')}>Open Today</button>}
             {['Scheduling','Coverage'].includes(tab)&&<AutomationWorkspace workspace={data} unit={unit} rulesView={tab==='Scheduling'} onNavigate={navigate} onOpen={openAssignment}/>}
+            {tab==='Checklist Results'&&pulseAccess&&<ChecklistResults key={user?.id}/>}
             {tab==='Review'&&data.units.some(u=>u.review)&&<ReviewWorkspace key={unit} workspace={data} unit={unit} onRefresh={()=>load(true)} onExecution={openAssignment}/>}
             {tab==='Events'&&<EventWorkspace key={unit} workspace={data} unit={unit} onRefresh={()=>load(true)} onOpen={openAssignment}/>}
             {tab==='Guest Pulse'&&pulseAccess&&<GuestPulse unit={unit}/>}
