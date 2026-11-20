@@ -16,7 +16,38 @@ export function GuestCard(){
  useEffect(()=>{rpc('card',{code}).then(c=>{if(!c)throw Error('This feedback form is closed.');setCard(c);setAnswers(c.questions.map(()=>({tags:[],note:'',value:''})));}).catch(e=>setError(e.message));},[code]);
  function update(i:number,change:object){setAnswers(current=>current.map((a,k)=>k===i?{...a,...change}:a));}
  async function send(e:React.FormEvent){e.preventDefault();setBusy(true);setError('');try{await rpc('submit',{code,request_id:key,visit_day:date,questions:card.questions,answers,manager,contact});setDone(true);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
- return <main className="gp guest"><article><header><small>{card?.unit}</small><h1>{card?.title||'Guest Pulse'}</h1><p>{done?'Salamat! Your feedback has been recorded.':card?.table}</p></header>{error&&<p role="alert">{error}</p>}{done?manager&&<p>Please tell a team member if you would like help during your visit.</p>:card?<form onSubmit={send}><label>Visit date <input required type="date" value={date} max={today()} onChange={e=>setDate(e.target.value)}/></label>{card.questions.map((q:any,i:number)=><fieldset key={i}><legend>{q.label}</legend>{q.type==='rating'&&<small>1 Poor · 2 Fair · 3 Okay · 4 Good · 5 Excellent</small>}<div className="chips">{(q.type==='rating'?['1','2','3','4','5']:q.options||[]).map((v:string)=><button key={v} type="button" aria-pressed={q.type==='tags'?answers[i].tags.includes(v):answers[i].value===v} onClick={()=>update(i,q.type==='tags'?{tags:answers[i].tags.includes(v)?answers[i].tags.filter((t:string)=>t!==v):[...answers[i].tags,v]}:{value:v})}>{v}</button>)}</div>{['tags','text'].includes(q.type)&&<textarea aria-label={q.label+' comment'} placeholder="Add a comment (optional)" maxLength={2000} value={answers[i].note} onChange={e=>update(i,{note:e.target.value})}/>}</fieldset>)}<label><input type="checkbox" checked={manager} onChange={e=>setManager(e.target.checked)}/> I’d like to speak with a manager today.</label><input placeholder="Name or contact (optional)" aria-label="Name or contact" value={contact} onChange={e=>setContact(e.target.value)}/><button className="primary" disabled={busy}>Submit feedback</button>{error&&<p role="alert">{error}</p>}</form>:!error&&<p>Loading feedback form…</p>}</article></main>;
+ const labels=['Poor','Fair','Okay','Good','Excellent'];
+ const isBalay=card?.title==='Balay Balay Restaurant';
+ return <main className="gp guest seaside"><article>
+   <header><small>{card?.unit}</small><h1>{card?.title||'Guest Pulse'}</h1>
+     {isBalay&&<p>Good food. Beach days. Your say.</p>}
+   </header>
+   {done?<section className="guest-paper" role="status"><h2>Salamat for sharing!</h2><p>Your feedback has been recorded.{manager&&' For help during your visit, please tell a team member.'}</p></section>
+   :card?<form className="guest-paper" onSubmit={send}>
+     <div><small className="guest-time">About 60 seconds</small><h2>How was your {isBalay?'meal':'visit'}?</h2><p>A quick rating helps. A little detail tells us what to keep or change.</p></div>
+     <div className="visit-info"><label>Visit date<input required type="date" value={date} max={today()} onChange={e=>setDate(e.target.value)}/></label><div>Your table<strong>{card.table}</strong><small>From your QR code</small></div></div>
+     {card.questions.map((q:any,i:number)=>{
+       const rating=q.type==='rating', tags=q.type==='tags', required=rating||q.type==='choice';
+       const choices=rating?['1','2','3','4','5']:tags||q.type==='choice'?q.options||[]:[];
+       const prompt=/love/i.test(q.label)?(isBalay?'A favorite dish or someone who made your day?':'Who or what made your day?'):/better|improv/i.test(q.label)?'What would make your next visit better?':'What would you like us to know?';
+       return <fieldset key={i}><legend>{q.label} {required&&<span aria-label="required">*</span>}</legend>
+         {tags&&<small>Choose any that fit, or tell us in your own words.</small>}
+         <div className={rating?'guest-ratings':'chips'}>{choices.map((v:string,k:number)=>{
+           const selected=tags?answers[i].tags.includes(v):answers[i].value===v;
+           return <button key={v} type="button" aria-pressed={selected} onClick={()=>update(i,tags?{tags:selected?answers[i].tags.filter((t:string)=>t!==v):[...answers[i].tags,v]}:{value:v})}>
+             {rating?<><svg aria-hidden="true" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="16" cy="16" r="13"/><circle cx="11" cy="13" r="1" fill="currentColor"/><circle cx="21" cy="13" r="1" fill="currentColor"/><path d={['M10 23 Q16 15 22 23','M11 21 Q16 18 21 21','M11 20 H21','M10 19 Q16 27 22 19','M9 18 H23 Q20 29 13 24 Q10 22 9 18Z'][k]}/></svg><b>{v}</b><small>{labels[k]}</small></>:v}
+           </button>;
+         })}</div>
+         {(tags||q.type==='text')&&<label className="guest-comment">Add a comment <small>(optional)</small><textarea aria-label={q.label+' comment'} placeholder={prompt} maxLength={2000} value={answers[i].note} onChange={e=>update(i,{note:e.target.value})}/></label>}
+       </fieldset>;
+     })}
+     <label className="guest-manager"><input type="checkbox" checked={manager} onChange={e=>setManager(e.target.checked)}/> I’d like to speak with a manager today.<small>For immediate help, please tell a team member.</small></label>
+     <details><summary>Leave your name or contact details (optional)</summary><input aria-label="Name or contact" placeholder="Name, phone or email" maxLength={300} value={contact} onChange={e=>setContact(e.target.value)}/></details>
+     {error&&<p role="alert">{error}</p>}<button className="primary" disabled={busy}>{busy?'Sending…':'Share my feedback ♡'}</button>
+     <small className="guest-footer">Shared with our management team. Contact details are optional.</small>
+   </form>:<p role="status">{error||'Loading feedback form…'}</p>}
+ </article></main>;
+
 }
 function TableCard({table,onEdit}:{table:any,onEdit?:()=>void}){
  const url=location.origin+'/guest-pulse/'+table.token;const [src,setSrc]=useState('');

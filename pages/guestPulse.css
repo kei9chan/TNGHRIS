@@ -1,1 +1,27 @@
 .gp{background:#fbfaf5;color:#193e35;border:1px solid #dce5da;border-radius:22px;padding:clamp(16px,3vw,32px);display:grid;gap:18px}.gp header{background:linear-gradient(115deg,#104d40,#23644c);color:#fff;padding:24px;border-radius:16px}.gp h1{font:700 clamp(30px,5vw,44px)/1.12 Georgia,serif;margin:6px 0}.gp h2,.gp legend{font-weight:750}.gp small{letter-spacing:.03em}.gp form,.gp fieldset,.gp article{display:grid;gap:14px}.gp fieldset,.gp .qr,.gp .metrics section{padding:16px;border:1px solid #cddbd0;background:white;border-radius:14px}.gp input:not([type=checkbox]),.gp select,.gp textarea,.gp button{padding:9px 12px;border:1px solid #a9c0b5;border-radius:10px;color:#173a30;background:white;max-width:100%}.gp button{min-height:42px}.gp button[aria-pressed=true],.gp .primary{background:#155340;color:white}.gp .chips,.gp .metrics{display:flex;gap:8px;flex-wrap:wrap}.gp .metrics section{flex:1;min-width:120px}.gp .metrics b{display:block;font-size:28px}.gp label{display:block}.gp .gridqr{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:12px}.gp .qr img{max-width:155px;width:100%}.gp a{text-decoration:underline}.gp.guest{max-width:620px;margin:16px auto}.gp [role=alert]{color:#952e20}.gp textarea{width:100%}.gp button:disabled{opacity:.55}
+
+.gp.guest.seaside{min-height:100svh;max-width:none;margin:0;border:0;border-radius:0;align-items:start;padding:clamp(16px,4vw,48px);background:radial-gradient(ellipse at 0 0,#e7eddc,transparent 35rem),#f8f6ec;color:#233f34;color-scheme:light}
+.seaside article{width:100%;max-width:780px;min-width:0;margin:auto;gap:24px}
+.seaside header{text-align:center;background:transparent;color:#18523f;padding:22px 0 10px;border:0}
+.seaside header small,.guest-time{font-weight:700;text-transform:uppercase;letter-spacing:.16em}
+.seaside header h1{font:700 clamp(38px,6vw,66px)/1 Georgia,serif;letter-spacing:-.045em;margin:12px 0}
+.seaside header p{font:italic 19px Georgia,serif;color:#546d55}
+.seaside .guest-paper{background:white;border:1px solid #dedfce;border-radius:24px;box-shadow:0 16px 50px #3245320d;padding:clamp(18px,5vw,46px);gap:24px;min-width:0}
+.seaside .guest-time{display:inline-block;border-radius:100px;background:#faf1d4;color:#775b1d;font-size:10px;padding:7px 13px}
+.seaside h2{font-size:clamp(26px,4vw,38px);letter-spacing:-.04em;margin:12px 0 4px}
+.seaside .visit-info{display:grid;grid-template-columns:1fr 1fr;gap:14px;background:#f5f7f0;border-radius:14px;padding:14px;font-size:13px;color:#52674f}
+.seaside .visit-info input,.seaside .visit-info strong,.seaside details input{display:block;margin-top:5px;width:100%;min-width:0}
+.seaside .visit-info strong{font-size:20px;color:#244836}
+.seaside fieldset{min-width:0;border:0;border-bottom:1px solid #e3e6db;border-radius:0;padding:8px 0 22px;gap:10px}
+.seaside legend{font-size:18px;color:#244337}.seaside legend span{color:#946f28}
+.guest-ratings{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:clamp(3px,1vw,10px)}
+.seaside .guest-ratings button{display:grid;justify-items:center;gap:2px;padding:9px 0;background:#fafbf6;border-color:#d7ddce;color:#476444}
+.guest-ratings svg{width:27px;height:27px}.guest-ratings small{font-size:clamp(9px,2.7vw,13px)}
+.seaside .chips button{border-radius:99px;padding:8px 15px;min-height:44px}
+.seaside button[aria-pressed=true]{background:#195a43;color:white;border-color:#195a43}
+.seaside .guest-comment{font-weight:600;font-size:14px}.guest-comment small,.guest-footer{font-weight:400;color:#536755}
+.seaside textarea{margin-top:6px;min-height:82px;background:#fcfcf8;font-size:16px;font-weight:400}
+.seaside .guest-manager{background:#fff6dc;color:#655020;padding:16px;border-radius:14px;font-weight:650}
+.guest-manager small{display:block;margin:5px 0 0 22px;font-weight:400}.seaside input[type=checkbox]{accent-color:#195a43}
+.seaside summary{cursor:pointer}.seaside .primary{width:100%;font-size:18px;font-weight:700;min-height:52px}.guest-footer{text-align:center}
+.seaside :focus-visible{outline:3px solid #b98630;outline-offset:2px}
