@@ -4,6 +4,7 @@ export type OpsStatus = 'Assigned' | 'In Progress' | 'Completed' | 'Cancelled';
 export type OpsPriority = 'Low' | 'Normal' | 'High' | 'Urgent';
 export type OpsResponse = 'none' | 'text' | 'photo' | 'numeric' | 'yes_no';
 export interface OpsContent {
+ department_ids?:string[];
   creation?: {enabled:boolean;config:import('./schedule').Config;rule_id?:string;pending?:boolean};
   flexible_timing?: boolean;
   title: string; review_mode?:ReviewMode; allow_na?: boolean; photo_required?: boolean; unit?: string; min?: number | null; max?: number | null; description?: string; department_id?: string; category?: string;
