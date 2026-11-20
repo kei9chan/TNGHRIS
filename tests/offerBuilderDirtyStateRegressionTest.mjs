@@ -44,3 +44,21 @@ button('← Back to Offers').props.onClick();render();props={...props,isOpen:tru
 nodes(tree).find(n=>n.type==='button'&&text(n).includes('Compensation')).props.onClick();render();salary().props.onChange({target:{value:'27000'}});render();assert.equal(button('Save Draft').props.disabled,false);
 await button('Save Draft').props.onClick();render();assert.equal(saves,1);assert.doesNotMatch(text(header()),/Changes require new approval/);assert.match(text(header()),/Request Offer Approval/,'Saving real edits returns to approval workflow');
 console.log('PASS: actual drawer open, review checkbox, approved read, edit/revert, material-change block, close/reopen, and saved revision lifecycle. No real sends or approvals.');
+
+// A profile-launched new offer wins over an unrelated locally cached draft.
+props={...props,isOpen:false};render();
+const lateCandidate={id:'late-candidate',firstName:'Later',lastName:'Applicant',email:'later@example.test'};
+const lateApplication={id:'late-application',candidateId:lateCandidate.id,requisitionId:'missing-job-order',stage:'New',roleTitleSnapshot:'Kitchen Assistant'};
+props={...props,isOpen:true,initialOffer:null,initialApplicationId:lateApplication.id,applications:[lateApplication],candidates:[...Array.from({length:1100},(_,i)=>({id:`candidate-${i}`,firstName:'Other',lastName:String(i)})),lateCandidate],requisitions:[],departments:[],businessUnits:[],businessUnitLogos:{}};
+render();assert.ok(button('Later Applicant — Kitchen Assistant'),'Profile launch retains the exact candidate even without a requisition');
+assert.match(text(tree),/Link an approved Job Order/);
+button('Later Applicant — Kitchen Assistant').props.onClick();render();
+const searchInput=nodes(tree).find(n=>n.type==='input'&&n.props.placeholder==='Search by name, position, or email');
+searchInput.props.onChange({target:{value:'  later@example.test  '}});render();
+assert.ok(nodes(tree).some(n=>n.type==='button'&&text(n).replace(/\s+/g,' ').includes('Later Applicant')&&text(n).includes('New')),'New-stage applicants without requisitions remain searchable');
+searchInput.props.onChange({target:{value:'No such applicant'}});render();assert.match(text(tree),/No matching active applicants/);
+props={...props,candidates:[]};render();assert.match(text(tree),/Linked candidate unavailable/,'Missing records never silently clear the selected application');
+console.log('PASS: profile candidate preselection, >1000 loaded candidates, New stage, unlinked requisition, trimmed email search, empty results and missing-record feedback.');
+props={...props,isOpen:false};render();storage.clear();props={...props,isOpen:true,initialApplicationId:undefined,candidates:[lateCandidate]};render();
+assert.ok(nodes(tree).some(n=>n.type==='button'&&text(n).replace(/\s+/g,' ').includes('Later Applicant')&&text(n).includes('New')),'Unselected New applicants appear in a fresh picker');
+console.log('PASS: a fresh offer can search New applicants before any application is selected.');
