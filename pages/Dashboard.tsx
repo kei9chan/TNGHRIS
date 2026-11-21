@@ -1,3 +1,4 @@
+import OperationsTasksCard from '../components/dashboard/OperationsTasksCard';
 import {CaseFollowups} from '../modules/caseQuestions';
 import ApprovalFollowupCard from '../components/dashboard/ApprovalFollowupCard';
 import AttendanceFollowups from '../components/dashboard/AttendanceFollowups';
@@ -40,6 +41,7 @@ const Dashboard: React.FC = () => {
     <div>
         <h1 className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-white mb-3">Welcome back{greetingName ? `, ${greetingName}` : ''}!</h1>
         <AttendanceMission />
+        {user?.id&&<OperationsTasksCard key={user.id} userId={user.id}/>}
         <PersonalNTECard />
         <QuickLinks />
         <PhoneNotificationSetup />

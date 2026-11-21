@@ -1,3 +1,4 @@
+import {deliverChecklistMail} from '../../server/checklistMail.js';
 import {noticeHtml} from '../../server/noticeEmail.js';
 import {configured,cronAuthorized,env,rpc,sendResend,serviceClient,validEmail} from '../../server/approvalEmail.js';
 export const config={maxDuration:300};
@@ -6,7 +7,7 @@ export default async function handler(req:any,res:any){
  if(!cronAuthorized(req.headers.authorization))return res.status(401).json({error:'Unauthorized'});
  if(req.method!=='GET')return res.status(405).json({error:'Method not allowed'});
  if(!configured())return res.status(503).json({error:'Existing email configuration is incomplete'});
- const db=serviceClient();let sent=0,failed=0;const end=Date.now()+240000;
+ const db=serviceClient();const checklistDelivery=deliverChecklistMail(db);let sent=0,failed=0;const end=Date.now()+240000;
  try{
   await rpc(db,'queue_schedule_compliance_reminders');
   while(Date.now()<end){
@@ -29,6 +30,7 @@ export default async function handler(req:any,res:any){
    await rpc(db,'finish_schedule_compliance_email',{p_id:c.id,p_token:c.token,p_provider:provider,p_error:error});
    if(provider)sent++;else {failed++;await new Promise(resolve=>setTimeout(resolve,1500));}
   }
-  return res.status(failed?503:200).json({sent,failed});
- }catch{return res.status(503).json({error:'Schedule reminder run failed; review delivery audit',sent,failed});}
+  const checklists=await checklistDelivery;
+  return res.status(failed||checklists.failed?503:200).json({sent,failed,checklists});
+ }catch{await checklistDelivery;return res.status(503).json({error:'Schedule reminder run failed; review delivery audit',sent,failed});}
 }
