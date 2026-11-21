@@ -10,7 +10,7 @@
     { "source": "/manifest.webmanifest", "headers": [ { "key": "Content-Type", "value": "application/manifest+json" }, { "key": "Cache-Control", "value": "no-cache" } ] }
   ],
   "crons": [
-    { "path": "/api/cron/operations-checklists", "schedule": "0 * * * *" },
+    { "path": "/api/cron/operations-checklists", "schedule": "0 0 * * *" },
     {
       "path": "/api/cron/schedule-compliance",
       "schedule": "0 0 * * *"
