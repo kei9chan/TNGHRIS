@@ -7,6 +7,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import Modal from '../components/ui/Modal';
 import LibraryView from '../modules/operations/LibraryView';
+import ChecklistAccountability from '../modules/operations/ChecklistAccountability';
 import TodayList from '../modules/operations/TodayList';
 import { operationsMainViews, operationsToolViews } from '../modules/operations/navigation';
 import {latestVersion} from '../modules/operations/creation';
@@ -55,15 +56,15 @@ export default function OperationsStation() {
   const canManage=!!(unit&&selection?.manage);
   const hasTeam=!!data?.assignments.some(a=>a.assignee_id!==data.actor)||!!selection?.manage||!!selection?.assign;
   const pulseAccess=user?.position?.trim().toLowerCase()==='operations director'||[user?.role,...(user?.roles||[])].some(r=>['Business Unit Manager','GeneralManager','Operations Director','Board of Director','Admin'].includes(String(r)));
-  const workspaceTools=[...operationsToolViews(data),...(pulseAccess?['Checklist Results','Guest Pulse']:[])];
+  const workspaceTools=['Checklist history',...(pulseAccess?['Needs attention']:[]),...operationsToolViews(data),...(pulseAccess?['Checklist Results','Guest Pulse']:[])];
   const hasLibraries=!!data?.masterAdmin||!!data?.units.some(u=>u.edit||u.assign);
   const canMaster=!!data?.masterAdmin;
   const load=useCallback(async(silent=false)=>{
     const seq=++loadSeq.current;if(!silent){setLoading(true);setError('');}
-    try {const id=detailIdRef.current;const [next,updated]=await Promise.all([summaryView?getOperationsOverview(unit):getOperationsWorkspace(unit),id?getAssignmentDetail(id):Promise.resolve(null)]);if(seq===loadSeq.current){setData(next);setUpdatedAt(new Date());if(updated&&detailIdRef.current===id)setDetail(updated);setError('');if(initialActor.current!==next.actor){initialActor.current=next.actor;if(next.masterAdmin)setTeam(true);}}}
+    try {const id=detailIdRef.current;const [next,updated]=await Promise.all([summaryView?getOperationsOverview(unit):getOperationsWorkspace(unit),id?getAssignmentDetail(id):Promise.resolve(null)]);if(seq===loadSeq.current){setData(['Progress','Team Progress'].includes(tab)?{...next,assignments:next.assignments.filter(a=>!a.accountability_test)}:next);setUpdatedAt(new Date());if(updated&&detailIdRef.current===id)setDetail(updated);setError('');if(initialActor.current!==next.actor){initialActor.current=next.actor;if(next.masterAdmin)setTeam(true);}}}
     catch(e){if(seq===loadSeq.current){setError((e as Error).message);if(!silent)setData(null);}}
     finally{if(seq===loadSeq.current)setLoading(false);}
-  },[unit,user?.id,summaryView]);
+  },[unit,user?.id,summaryView,tab]);
   useEffect(()=>{setData(null);void load();return()=>{loadSeq.current++;};},[load]);
   useEffect(()=>{const refresh=()=>{if(document.visibilityState==='visible')void load(true);};window.addEventListener('focus',refresh);document.addEventListener('visibilitychange',refresh);return()=>{window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',refresh);};},[load]);
   useEffect(()=>{if(!detailRun&&!['Today','Tasks','Progress','Team Progress'].includes(tab))return;const timer=window.setInterval(()=>{if(document.visibilityState==='visible')void load(true);},detailRun||tab==='Team Progress'?15000:30000);return()=>window.clearInterval(timer);},[detailRun,tab,load]);
@@ -122,6 +123,7 @@ export default function OperationsStation() {
             <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-2xl font-bold">{knownTab?title:'Choose a workspace view'}</h2><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{selection?.name||'All authorized business units'} · {manilaDay(new Date())} · Manila time</p></div>{tab!=='Today'&&(canEdit||canAssign)&&<div className="flex flex-wrap gap-2">{canEdit&&<button className={buttonClass} onClick={()=>void openEditor('task')}>Create task</button>}{canAssign&&<button className={primaryClass} onClick={()=>void openAssign('')}>Assign work</button>}</div>}</div>
             {!knownTab&&<button className={primaryClass} onClick={()=>navigate('Today')}>Open Today</button>}
             {['Scheduling','Coverage'].includes(tab)&&<AutomationWorkspace workspace={data} unit={unit} rulesView={tab==='Scheduling'} onNavigate={navigate} onOpen={openAssignment}/>}
+            {['Needs attention','Checklist history'].includes(tab)&&<ChecklistAccountability key={unit+tab} unit={unit} history={tab==='Checklist history'} onOpen={openAssignment}/>}
             {tab==='Checklist Results'&&pulseAccess&&<ChecklistResults key={user?.id}/>}
             {tab==='Review'&&data.units.some(u=>u.review)&&<ReviewWorkspace key={unit} workspace={data} unit={unit} onRefresh={()=>load(true)} onExecution={openAssignment}/>}
             {tab==='Events'&&<EventWorkspace key={unit} workspace={data} unit={unit} onRefresh={()=>load(true)} onOpen={openAssignment}/>}
@@ -163,7 +165,7 @@ export default function OperationsStation() {
     {canEdit&&!loading&&<button aria-label="Create an operational task" title="Create task" className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 z-30 flex h-12 w-12 items-center justify-center rounded-full bg-[#3d1952] text-3xl font-light text-white shadow-xl hover:bg-violet-800 lg:bottom-28" onClick={()=>void openEditor('task')}>+</button>}
     {data&&importing&&<ChecklistImport unit={unit} unitName={selection?.name||'TNG Master Library'} onClose={()=>setImporting(false)} onSaved={()=>load()}/>}
     {data&&editor&&<TemplateEditor workspace={resources||data} unit={editor.template?(editor.template.business_unit_id||''):unit} kind={editor.kind} template={editor.template} onClose={()=>{setEditor(null);setResources(null);}} onSaved={()=>load()}/>}
-    {data&&assign!==null&&<AssignmentEditor workspace={resources||data} unit={unit} initialVersion={assign} onClose={()=>{setAssign(null);setResources(null);}} onSaved={()=>load()}/>}
+    {data&&assign!==null&&<AssignmentEditor allowTest={[user?.role,...(user?.roles||[])].some(r=>String(r)==='Admin')} workspace={resources||data} unit={unit} initialVersion={assign} onClose={()=>{setAssign(null);setResources(null);}} onSaved={()=>load()}/>}
     {opening&&!detail&&<Modal isOpen onClose={closeDetail} title="Opening checklist…" viewportFit><p role="status" className="py-8 text-center text-slate-500">Loading checklist…</p></Modal>}
     {data&&detail&&<AssignmentDetail assignment={detail} workspace={data} onClose={closeDetail} onSaved={()=>load(true)}/>}
     {versionHistory&&<Modal isOpen onClose={()=>setVersionHistory(null)} title={`${versionHistory.draft.title} · published versions`} size="3xl" viewportFit><div className="space-y-4">{versionHistory.versions.map(v=><details key={v.id} className="rounded-xl border p-4 dark:border-slate-700"><summary className="cursor-pointer font-semibold">Version {v.version} · {formatDue(v.published_at)}</summary><h3 className="mt-3 font-semibold">{v.content.title}</h3><p className="mt-2 whitespace-pre-wrap text-sm">{v.content.description}</p><p className="mt-2 whitespace-pre-wrap text-sm">{v.content.instructions}</p>{safeUrl(v.content.sop_url)&&<a className="text-violet-700 underline" href={safeUrl(v.content.sop_url)} target="_blank" rel="noopener noreferrer">Open SOP ↗</a>}{v.items.map(i=><div key={i.id} className="mt-3 rounded-xl bg-slate-50 p-3 text-sm dark:bg-slate-800"><strong>{i.ordinal+1}. {i.snapshot.title}</strong><p className="mt-1 whitespace-pre-wrap">{i.snapshot.instructions}</p><span className="text-xs text-slate-500">{i.required?'Required':'Optional'} · {i.response_type}</span></div>)}</details>)}</div></Modal>}
