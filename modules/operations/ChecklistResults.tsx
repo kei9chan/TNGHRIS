@@ -1,3 +1,4 @@
+import UnitPicker from './UnitPicker';
 import React, {useEffect, useState} from 'react';
 import {operationsRpc} from './service';
 import {manilaDay, formatDue} from './presentation';
@@ -26,14 +27,14 @@ export default function ChecklistResults(){
   return <section className="space-y-4">
     <div className="flex flex-wrap gap-3">
       <Field label="Submission date"><input type="date" className={inputClass} value={date} onChange={e=>e.target.value&&setDate(e.target.value)}/></Field>
-      <Field label="Business unit"><select className={inputClass} value={unit} onChange={e=>setUnit(e.target.value)}><option value="">All authorized business units</option>{units.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></Field>
+      <UnitPicker units={units} value={unit} onChange={setUnit}/>
     </div>
     {error?<p role="alert">{error}</p>:rows===null?<p role="status">Loading results…</p>:rows.length===0?<p>No checklists were submitted for this selection.</p>:rows.map(r=>
       <details key={r.id} className="rounded-xl border p-4">
         <summary className="cursor-pointer"><strong>{r.title}</strong> · {r.unit} · {r.outcome}</summary>
         <p className="my-3 text-sm">{formatDue(r.submitted_at)}{r.submitted_by&&' · '+r.submitted_by}</p>
         <ul className="divide-y">{r.items?.map((i,n)=><li key={n} className="py-2">
-          <strong>{i.title}</strong> · {i.value===true?'Completed':i.value===false?'Unchecked':String(i.value??'Skipped')}{i.issue&&' · Issue flagged'}
+          <strong>{i.title}</strong> · {i.value==='na'?'Not applicable':i.value==='no'&&i.issue?'Issue found':i.value===true?'Done':i.value===false?'Unchecked':String(i.value??'Skipped')}{i.issue&&' · Issue flagged'}
           {i.remarks&&<p className="whitespace-pre-wrap">{i.remarks}</p>}
         </li>)}</ul>
       </details>)}
