@@ -22,7 +22,7 @@ export default function ChecklistResponseFields({snapshot,type,value,change,rema
          {id:'na',label:'Not applicable',icon:'⊖'},
        ].map(choice=><button type="button" key={choice.id} aria-pressed={selected===choice.id}
          className={'flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border px-1 py-2 text-center text-sm font-semibold '+(selected===choice.id?'border-violet-700 bg-violet-700 text-white':'border-slate-300 bg-white hover:border-violet-400 dark:border-slate-600 dark:bg-slate-800')}
-         onClick={()=>{const next=choice.id==='done'?(type==='none'?true:'yes'):choice.id;const flagged=choice.id==='no';if(onPick)onPick(next,flagged);else{change(next);setIssue(flagged);}}}>
+         onClick={()=>{const next=choice.id==='done'?(type==='none'?true:'yes'):choice.id;const flagged=choice.id==='no';if(flagged)setNoteOpen(true);if(onPick)onPick(next,flagged);else{change(next);setIssue(flagged);}}}>
          <span className="text-xl leading-none" aria-hidden="true">{choice.icon}</span>{choice.label}
        </button>)}
      </div>
