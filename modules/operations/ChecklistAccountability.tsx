@@ -3,7 +3,8 @@ import {operationsRpc} from './service';
 import {formatDue,manilaDay} from './presentation';
 import {buttonClass,primaryClass,inputClass} from './ui';
 
-type Row={work_id:string;unit:string;title:string;owner:string|null;contributors:string|null;due_at:string;submitted_at:string|null;
+type Audit={action:string;at:string;reason:string|null;actor:string|null};
+type Row={events:Audit[]|null;work_id:string;unit:string;title:string;owner:string|null;contributors:string|null;due_at:string;submitted_at:string|null;
   state:string;reason:string;manage:boolean;admin:boolean;test:boolean;discarded_at:string|null;incident_id:string|null;assignment:string|null};
 const pending=['Overdue','Missed — needs review','Completion requested'];
 export default function ChecklistAccountability({unit,history,onOpen}:{unit:string;history:boolean;onOpen:(id:string)=>void}){
@@ -30,7 +31,7 @@ export default function ChecklistAccountability({unit,history,onOpen}:{unit:stri
  {visible.map(r=><article key={r.work_id} className="rounded-2xl border p-4 space-y-2">
  <div className="flex flex-wrap items-center gap-3">{r.admin&&!r.discarded_at&&<input aria-label={'Select '+r.title} type="checkbox" checked={selected.includes(r.work_id)} onChange={e=>setSelected(s=>e.target.checked?[...s,r.work_id]:s.filter(x=>x!==r.work_id))}/>}<strong>{r.title}</strong><span className="rounded-full bg-violet-100 px-3 py-1 text-sm text-violet-900">{r.test?'Test · ':''}{r.state}</span></div>
  <p className="text-sm">{r.unit} · Due {formatDue(r.due_at)}{r.submitted_at?' · Submitted '+formatDue(r.submitted_at):''}</p>
- <p className="text-sm">Owner · {r.owner||'Unrecorded'}{r.contributors?' · Contributors · '+r.contributors:''}</p>{r.reason&&<p>{r.reason}</p>}
+ <p className="text-sm">Owner · {r.owner||'Unrecorded'}{r.contributors?' · Contributors · '+r.contributors:''}</p>{r.reason&&<p>{r.reason}</p>}{history&&r.events?.length?<details><summary className="cursor-pointer">Review history</summary><ul>{r.events.map((e,i)=><li key={i} className="mt-1 text-sm">{formatDue(e.at)} · {e.action}{e.actor?' · '+e.actor:''}{e.reason?' · '+e.reason:''}</li>)}</ul></details>:null}
  <div className="flex flex-wrap gap-2">{r.assignment&&!r.discarded_at&&!['Missed','Excused'].includes(r.state)&&<button className={buttonClass} onClick={()=>onOpen(r.assignment!)}>Open checklist</button>}
  {r.manage&&pending.includes(r.state)&&<>{r.state!=='Completion requested'&&<button className={buttonClass} disabled={busy} onClick={()=>void act([r.work_id],'Request')}>Request completion</button>}{r.state!=='Overdue'&&<button className={buttonClass} disabled={busy} onClick={()=>void act([r.work_id],'Close')}>Close as missed</button>}<button className={buttonClass} disabled={busy} onClick={()=>void act([r.work_id],'Excuse')}>Excuse / Not required</button></>}
  {r.manage&&r.state==='Missed'&&!r.test&&(r.incident_id?<span>Submitted to HR</span>:<button className={primaryClass} disabled={busy} onClick={()=>void act([r.work_id],'Refer')}>Submit incident report to HR</button>)}</div></article>)}</section>;
