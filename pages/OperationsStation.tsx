@@ -1,3 +1,4 @@
+import UnitPicker from '../modules/operations/UnitPicker';
 import BalayKitchenSetup,{balayUnit} from '../modules/operations/BalayKitchenSetup';
 import ChecklistResults from '../modules/operations/ChecklistResults';
 import GuestPulse from './GuestPulse';
@@ -111,7 +112,7 @@ export default function OperationsStation() {
       <section className="min-w-0 flex-1 pb-24 lg:pb-10">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4 sm:px-8 sm:py-6 dark:border-slate-700">
           <div><p className="text-xs font-semibold uppercase tracking-[.2em] text-violet-600 dark:text-violet-300">The Nextperience Group</p><h1 className="mt-1 text-xl font-bold tracking-tight text-violet-800 sm:text-3xl dark:text-violet-200">Operations Station</h1></div>
-          <div className="flex w-full min-w-0 gap-2 sm:w-auto">{tab!=='Checklist Results'&&<select aria-label="Business-unit workspace" className={`${inputClass} min-w-0 flex-1 sm:max-w-60`} value={unit} onChange={e=>switchUnit(e.target.value)}><option value="">All workspaces</option>{data?.units.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select>}<button className={buttonClass} disabled={loading||busy} onClick={()=>void load()}>Refresh</button></div>
+          <div className="flex w-full min-w-0 items-center gap-4 lg:flex-1 lg:border-l lg:pl-6">{tab!=='Checklist Results'&&<UnitPicker units={data?.units||[]} value={unit} onChange={switchUnit}/>}<button className={buttonClass} disabled={loading||busy} onClick={()=>void load()}>Refresh</button></div>
         </header>
         {pulseAccess&&<nav aria-label="Guest feedback workspace" className="flex gap-2 px-5 pt-4"><button className={tab==='Guest Pulse'?buttonClass:primaryClass} onClick={()=>navigate('Today')}>Operations Station</button><button className={tab==='Guest Pulse'?primaryClass:buttonClass} onClick={()=>navigate('Guest Pulse')}>Guest Pulse</button></nav>}
         <div className="space-y-6 px-5 py-6 sm:px-8">
