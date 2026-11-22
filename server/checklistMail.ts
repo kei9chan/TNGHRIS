@@ -11,7 +11,7 @@ export async function deliverChecklistMail(db:Parameters<typeof rpc>[0]){
       try {
         if(!validEmail(mail.email))throw new Error('Invalid recipient');
         const url=new URL('/operations',env('APP_BASE_URL'));
-        url.searchParams.set('view',mail.unit?'Review':'Checklist Results');
+        url.searchParams.set('view',mail.subject.startsWith('Checklist summary')?'Needs attention':'Checklist history');
         if(mail.unit)url.searchParams.set('unit',mail.unit);
         const provider=await sendResend({from:env('APPROVAL_EMAIL_FROM'),to:[mail.email],subject:mail.subject,
           text:mail.message+'\n\nOpen Operations Station: '+url.toString()},'ops-checklist-'+mail.id);
