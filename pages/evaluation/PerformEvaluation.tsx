@@ -10,6 +10,7 @@ import { logActivity } from '../../services/auditService';
 import { supabase } from '../../services/supabaseClient';
 import { fetchMyEvaluationWorkspace } from '../../services/evaluationService';
 import { hasEvaluationOversightAccess, isEvaluationSubject } from '../../utils/evaluationAccess';
+import { isEvaluationDeadlinePassed } from '../../utils/evaluationDeadline';
 
 // Icons
 const ArrowLeftIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>;
@@ -109,12 +110,7 @@ const PerformEvaluation: React.FC = () => {
     const submittedEmployeeIds = useMemo(() => new Set(submissions.map(s => s.subjectEmployeeId)), [submissions]);
     const selectedEmployee = useMemo(() => eligibleTargets.find(u => u.id === selectedEmployeeId), [selectedEmployeeId, eligibleTargets]);
     
-    const isDeadlinePassed = useMemo(() => {
-        if (!evaluation?.dueDate) return false;
-        const deadline = new Date(evaluation.dueDate);
-        deadline.setHours(23, 59, 59, 999);
-        return new Date() > deadline;
-    }, [evaluation]);
+    const isDeadlinePassed = isEvaluationDeadlinePassed(evaluation?.dueDate);
 
     if (isLoading) {
         return (
@@ -201,6 +197,10 @@ const PerformEvaluation: React.FC = () => {
     };
 
     const handleSubmit = async () => {
+        if (isEvaluationDeadlinePassed(evaluation.dueDate)) {
+            alert('The deadline has passed. Ask HR to extend it, then reload this evaluation.');
+            return;
+        }
         if (!raterProfileId) {
             alert('Your HRIS evaluator profile could not be resolved. Refresh and try again.');
             return;

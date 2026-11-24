@@ -1,6 +1,19 @@
 import { supabase } from './supabaseClient';
 import { Evaluation, EvaluationSubmission, EvaluationTimeline, QuestionSet, EvaluationQuestion, EvaluatorConfig, EvaluatorType, RaterGroup, User } from '../types';
 import { formatEmployeeName } from './formatEmployeeName';
+import { evaluationDeadlineDay } from '../utils/evaluationDeadline';
+
+export const extendEvaluationDeadline = async (evaluation: Evaluation, dueDate: string, reason: string): Promise<string> => {
+  const { data, error } = await supabase.rpc('extend_evaluation_deadline', {
+    p_evaluation_id: evaluation.id,
+    p_due_date: dueDate,
+    p_expected_due_date: evaluation.dueDate ? evaluationDeadlineDay(evaluation.dueDate) : null,
+    p_reason: reason.trim(),
+  });
+  if (error) throw new Error(error.message || 'Unable to extend the evaluation deadline.');
+  if (!data?.due_date) throw new Error('The new deadline could not be confirmed. Reload evaluations to check it.');
+  return data.due_date;
+};
 
 // ---------------------------------------------------------------------------
 // Row Types
@@ -203,7 +216,7 @@ export const fetchMyEvaluationWorkspace = async (evaluationId: string): Promise<
     status: row.status || 'InProgress',
     createdAt: row.created_at ? new Date(row.created_at) : new Date(),
     updatedAt: row.updated_at ? new Date(row.updated_at) : undefined,
-    dueDate: row.due_date ? new Date(`${String(row.due_date).slice(0, 10)}T00:00:00`) : undefined,
+    dueDate: row.due_date ? new Date(`${String(row.due_date).slice(0, 10)}T00:00:00+08:00`) : undefined,
     isEmployeeVisible: !!row.is_employee_visible,
     acknowledgedBy: Array.isArray(row.acknowledged_by) ? row.acknowledged_by : [],
   };
@@ -248,7 +261,7 @@ export const fetchMyEvaluationWorkspace = async (evaluationId: string): Promise<
     evaluationId: assignment.evaluation_id,
     employeeId: assignment.employee_id,
     timelineId: assignment.timeline_id || undefined,
-    dueDate: assignment.due_date ? new Date(`${String(assignment.due_date).slice(0, 10)}T00:00:00`) : undefined,
+    dueDate: assignment.due_date ? new Date(`${String(assignment.due_date).slice(0, 10)}T00:00:00+08:00`) : undefined,
     status: assignment.status,
   }));
 
