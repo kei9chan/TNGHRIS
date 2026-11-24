@@ -7,11 +7,13 @@ import { Evaluation, EvaluatorType, User, Permission, EvaluatorConfig } from '..
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import ComplianceModal from '../../components/evaluation/ComplianceModal';
+import ExtendEvaluationDeadlineModal from '../../components/evaluation/ExtendEvaluationDeadlineModal';
 import { supabase } from '../../services/supabaseClient';
 import { formatEmployeeName } from '../../services/formatEmployeeName';
 import { resolveCurrentHrisUserId } from '../../services/evaluationService';
 import { useEvaluationAssignmentAccess } from '../../hooks/useEvaluationAssignmentAccess';
-import { hasEvaluationOversightAccess, isEvaluationSubject } from '../../utils/evaluationAccess';
+import { canExtendEvaluationDeadline, hasEvaluationOversightAccess, isEvaluationSubject } from '../../utils/evaluationAccess';
+import { formatEvaluationDeadline, isEvaluationDeadlinePassed } from '../../utils/evaluationDeadline';
 
 const Evaluations: React.FC = () => {
     const { user } = useAuth();
@@ -21,6 +23,7 @@ const Evaluations: React.FC = () => {
     const canAssign = can('Evaluation', Permission.Assign);
     const canManage = can('Evaluation', Permission.Manage);
     const isEvaluationOversight = hasEvaluationOversightAccess(user);
+    const canExtendDeadline = canExtendEvaluationDeadline(user);
     const { hasAssignment, loading: assignmentAccessLoading } = useEvaluationAssignmentAccess(!canView && !isEvaluationOversight);
     
     const [yearFilter, setYearFilter] = useState<string>('all');
@@ -40,6 +43,8 @@ const Evaluations: React.FC = () => {
     const [employeeProfileId, setEmployeeProfileId] = useState<string | null>(null);
     const [profileLoading, setProfileLoading] = useState(true);
     const [isLoading, setIsLoading] = useState(true);
+    const [deadlineEvaluation, setDeadlineEvaluation] = useState<Evaluation | null>(null);
+    const [deadlineSuccess, setDeadlineSuccess] = useState<string | null>(null);
 
     // Compliance Modal State
     const [isComplianceModalOpen, setIsComplianceModalOpen] = useState(false);
@@ -430,6 +435,7 @@ const Evaluations: React.FC = () => {
                     {error}
                 </div>
             )}
+            {deadlineSuccess && <p role="status" className="rounded-md bg-green-50 p-3 text-sm text-green-800 dark:bg-green-950/40 dark:text-green-200">{deadlineSuccess}</p>}
             
             <Card>
                 <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -461,7 +467,7 @@ const Evaluations: React.FC = () => {
                 <div className="space-y-4">
                     {viewableEvaluations.map(evaluation => {
                         const { completed, total, percentage, configurationIncomplete } = calculateProgress(evaluation);
-                        const isOverdue = evaluation.dueDate && new Date() > new Date(evaluation.dueDate) && percentage < 100;
+                        const isOverdue = isEvaluationDeadlinePassed(evaluation.dueDate) && percentage < 100;
                         const evaluatorUser = { ...user!, id: employeeProfileId! };
                         const isTarget = isEvaluationSubject(evaluatorUser.id, evaluation.targetEmployeeIds);
                         const canEvaluate = evaluation.status === 'InProgress'
@@ -494,12 +500,18 @@ const Evaluations: React.FC = () => {
                                             )}
                                         </div>
                                         <p className="text-sm text-gray-500 dark:text-gray-400">Status: {evaluation.status} | Created: {new Date(evaluation.createdAt).toLocaleDateString()}</p>
+                                        {evaluation.dueDate && <p className="text-sm text-gray-500 dark:text-gray-400">Deadline: {formatEvaluationDeadline(evaluation.dueDate)} · 11:59 PM PHT</p>}
                                     </div>
                                     <div 
-                                        className="mt-4 md:mt-0 md:ml-6 flex items-center space-x-2"
+                                        className="mt-4 md:mt-0 md:ml-6 flex flex-wrap items-center gap-2"
                                         onClick={(e) => e.stopPropagation()}
                                     >
                                         <span className="text-sm font-semibold text-gray-700 dark:text-gray-300 mr-2">{completed} / {total} Completed</span>
+                                        {canExtendDeadline && evaluation.status === 'InProgress' && evaluation.dueDate && (
+                                            <Button size="sm" variant="secondary" onClick={() => { setDeadlineSuccess(null); setDeadlineEvaluation(evaluation); }}>
+                                                Extend deadline
+                                            </Button>
+                                        )}
                                         {isAdminView && evaluation.status === 'InProgress' && !configurationIncomplete && (
                                             <Button size="sm" variant="secondary" onClick={(e) => { e.preventDefault(); handleViewCompliance(evaluation); }}>
                                                 Compliance Report
@@ -547,6 +559,19 @@ const Evaluations: React.FC = () => {
                     dueDate={selectedEvaluationForCompliance.dueDate || new Date()}
                     missingUsers={missingEvaluators}
                     type="Evaluation"
+                />
+            )}
+            {deadlineEvaluation && (
+                <ExtendEvaluationDeadlineModal
+                    key={deadlineEvaluation.id}
+                    evaluation={deadlineEvaluation}
+                    onClose={() => setDeadlineEvaluation(null)}
+                    onSaved={dueDate => {
+                        setEvaluations(current => current.map(item => item.id === deadlineEvaluation.id
+                            ? { ...item, dueDate: new Date(`${dueDate}T00:00:00+08:00`) } : item));
+                        setDeadlineSuccess(`Deadline extended to ${formatEvaluationDeadline(dueDate)}, 11:59 PM Philippine time. Assigned evaluators can reopen the evaluation to continue.`);
+                        setDeadlineEvaluation(null);
+                    }}
                 />
             )}
         </div>

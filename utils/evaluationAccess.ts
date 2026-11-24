@@ -25,3 +25,11 @@ export const isEvaluationSubject = (
   userId: string | null | undefined,
   targetEmployeeIds: string[] | null | undefined,
 ): boolean => Boolean(userId && (targetEmployeeIds || []).includes(userId));
+
+export const canExtendEvaluationDeadline = (
+  user: Pick<User, 'role' | 'roles'> | null | undefined,
+): boolean => {
+  if (!user) return false;
+  const roles = user.roles?.length ? user.roles : [user.role];
+  return roles.some(role => role === Role.Admin || role === Role.HRManager);
+};
