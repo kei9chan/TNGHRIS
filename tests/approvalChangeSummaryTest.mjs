@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 const load = (path, deps={}) => {
   const exports={};
-  vm.runInNewContext(ts.transpileModule(fs.readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:name=>deps[name],Map,Set,Error});
+  vm.runInNewContext(ts.transpileModule(fs.readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:name=>deps[name],Map,Set,Error,setTimeout,clearTimeout,AbortController});
   return exports;
 };
 const {getApprovalChangeSummary:summary}=load('utils/approvalChangeSummary.ts');
@@ -35,7 +35,7 @@ assert.match(fresh.note,/No earlier approved/);
 assert.equal(fresh.lines[0].before,undefined);
 
 let reads=[];
-const {approveChangeBatch,fetchApprovalChangePreviews}=load('services/changeApprovalBatch.ts',{'./supabaseClient':{supabase:{rpc:async(name,args)=>{reads.push({name,args});return {data:args.p_ids.map(id=>({id})),error:null};}}}});
+const {approveChangeBatch,fetchApprovalChangePreviews,waitForApprovalResponse,ApprovalResponseUnknownError}=load('services/changeApprovalBatch.ts',{'./supabaseClient':{supabase:{rpc:async(name,args)=>{reads.push({name,args});return {data:args.p_ids.map(id=>({id})),error:null};}}}});
 assert.equal((await fetchApprovalChangePreviews('pan',Array.from({length:601},(_,i)=>String(i)))).length,601);
 assert.deepEqual(reads.map(r=>r.args.p_ids.length),[250,250,101]);
 const items=['pan','requisition','pay_package'].map((kind,i)=>({id:String(i),kind,snapshot:'v',reference:kind,employee:'Fixture'}));
@@ -48,4 +48,14 @@ const result=await approveChangeBatch([...items,items[0]],r=>progress.push(r),as
 assert.equal(result.succeeded,1);assert.equal(result.skipped,1);assert.equal(result.failed,1);assert.equal(result.processed,3);
 assert.deepEqual(progress.map(r=>r.processed),[1,2,3]);
 assert.equal(progress[0].failures.length,0,'Progress snapshots are immutable.');
-console.log('Approval change summaries and batch processing passed.');
+const controller = new AbortController();
+await assert.rejects(()=>waitForApprovalResponse(new Promise(()=>{}),controller,5),error=>error.code==='approval_response_unconfirmed');
+assert.equal(controller.signal.aborted,true,'Timeout aborts the underlying transport.');
+let attempts=0;
+const uncertain=await approveChangeBatch(items,()=>{},async()=>{attempts++;throw new ApprovalResponseUnknownError();});
+assert.equal(attempts,1,'An uncertain write is never automatically retried or followed by more approvals.');
+assert.equal(uncertain.failed,0);assert.equal(uncertain.unconfirmedItems.length,1);assert.equal(uncertain.notStarted,2);assert.equal(uncertain.paused,true);
+let stop=false;
+const stopped=await approveChangeBatch(items,()=>{},async()=>{stop=true;return {outcome:'approved'};},()=>stop);
+assert.equal(stopped.succeeded,1);assert.equal(stopped.notStarted,2);assert.equal(stopped.paused,true);assert.equal(stopped.unconfirmedItems.length,0);
+console.log('Approval summaries, bounded confirmation, uncertain-write handling and safe stopping passed.');
