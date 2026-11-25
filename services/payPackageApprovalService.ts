@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient';
+import type { ChangePreview } from '../utils/approvalChangeSummary';
 
 export type PayPackageApprovalStep = {
   userId: string;
@@ -10,6 +11,7 @@ export type PayPackageApprovalStep = {
 };
 
 export type PendingPayPackageApproval = {
+  changePreview?: ChangePreview;
   id: string;
   employeeId: string;
   employeeName: string;
