@@ -9,6 +9,8 @@ import { fetchMyAssetApprovalQueue } from '../services/assetApprovalService';
 import { fetchMyPendingBenefitApprovals } from '../services/benefitApprovalService';
 import type { PendingBenefitApproval } from '../services/benefitApprovalService';
 import {fetchPendingPayPackageApprovals,PendingPayPackageApproval} from '../services/payPackageApprovalService';
+import { fetchApprovalChangePreviews } from '../services/changeApprovalBatch';
+import type { ChangePreview, ChangeApprovalKind } from '../utils/approvalChangeSummary';
 
 type PendingStep = {
   userId?: string;
@@ -41,6 +43,7 @@ export type PendingNTEApproval = {
 };
 
 export type PendingPANApproval = {
+  changePreview?: ChangePreview;
   id: string;
   employeeId: string;
   employeeName: string;
@@ -54,6 +57,7 @@ export type PendingPANApproval = {
 };
 
 export type PendingRequisitionApproval = {
+  changePreview?: ChangePreview;
   id: string;
   title: string;
   reference: string;
@@ -127,7 +131,7 @@ const actionLabel = (action: Record<string, unknown> | null | undefined) => {
   return labels.join(', ') || 'Personnel action';
 };
 
-export function useAdditionalApprovals(user: User | null, kind?: ApprovalRequestKind | null) {
+export function useAdditionalApprovals(user: User | null, kind?: ApprovalRequestKind | null, includeChangePreviews = false) {
   const enabled = !kind || ['nte', 'pan', 'requisition', 'award', 'offer', 'asset', 'benefit', 'pay_package', 'account_deletion'].includes(kind);
   const refreshSequence = useRef(0);
   const pendingRefreshes = useRef(new Map<string | undefined, number>());
@@ -236,6 +240,19 @@ export function useAdditionalApprovals(user: User | null, kind?: ApprovalRequest
 
     if (sequence !== refreshSequence.current) return;
     const actionable = (type: string, id: string) => taskResult.data.some(t => t.request_type === type && t.request_id === id);
+    const previewErrors: Error[] = [];
+    const loadPreviews = async (type: ChangeApprovalKind, ids: string[]) => {
+      if (!includeChangePreviews) return [] as ChangePreview[];
+      try { return await fetchApprovalChangePreviews(type, ids); }
+      catch (error: any) { previewErrors.push(new Error(`${type} summaries: ${error?.message || 'Could not load summaries.'}`)); return [] as ChangePreview[]; }
+    };
+    const changePreviews = (await Promise.all([
+      loadPreviews('pan', (panResult.data || []).filter((row: any) => actionable('pan', row.id)).map((row: any) => row.id)),
+      loadPreviews('requisition', (requisitionResult.data || []).filter((row: any) => actionable('requisition', row.id)).map((row: any) => row.id)),
+      loadPreviews('pay_package', payPackageQueue.filter(row => row.isActionable).map(row => row.id)),
+    ])).flat();
+    if (sequence !== refreshSequence.current) return;
+    const previewByKey = new Map(changePreviews.map(preview => [`${preview.kind}:${preview.id}`, preview]));
     const nteRows = (nteResult.data || []).filter((r: any) => actionable('nte', r.id));
     // Fetch only recipient-specific allegations for the already-scoped queue.
     // The existing NTE SELECT policies still enforce assigned-approver access.
@@ -245,7 +262,7 @@ export function useAdditionalApprovals(user: User | null, kind?: ApprovalRequest
     if (sequence !== refreshSequence.current) return;
     const nteDetails = new Map<string, string>(ntePreviewResults.flatMap(result => (result.data || []).map(row => [row.id, row.details] as [string, string])));
     const ntePreviewError = ntePreviewResults.some(result => result.error) ? { message: 'Some NTE previews could not be loaded. Use Review request to read the notice.' } : null;
-    const errors = [taskResult.error, nteResult.error, ntePreviewError, panResult.error, requisitionResult.error, awardResult.error, offerLoadError, assetLoadError, benefitLoadError, payPackageLoadError, accountDeletionError, ...offerPackageErrors].filter(Boolean);
+    const errors = [taskResult.error, nteResult.error, ntePreviewError, panResult.error, requisitionResult.error, awardResult.error, offerLoadError, assetLoadError, benefitLoadError, payPackageLoadError, accountDeletionError, ...offerPackageErrors, ...previewErrors].filter(Boolean);
     setAdditionalApprovalError(errors.length ? errors.map(error => error!.message).join(' · ') : null);
     // A failed refresh is not an empty queue. Keep the last successful result
     // with a visible error; decisions still require backend authorization.
@@ -288,6 +305,7 @@ export function useAdditionalApprovals(user: User | null, kind?: ApprovalRequest
         employeeName: row.employee_name || 'Employee',
         reference: `PAN-${String(row.id).slice(0, 8).toUpperCase()}`,
         action: actionLabel(row.action_taken),
+        changePreview: previewByKey.get(`pan:${row.id}`),
         status: row.status,
         createdAt: new Date(row.updated_at || row.created_at || Date.now()),
         effectiveDate: new Date(row.effective_date || row.updated_at || Date.now()),
@@ -301,6 +319,7 @@ export function useAdditionalApprovals(user: User | null, kind?: ApprovalRequest
       return [{
         id: row.id,
         title: row.title,
+        changePreview: previewByKey.get(`requisition:${row.id}`),
         reference: row.req_code || `REQ-${String(row.id).slice(0, 8).toUpperCase()}`,
         businessUnitId: row.business_unit_id || undefined,
         departmentId: row.department_id || undefined,
@@ -375,7 +394,7 @@ export function useAdditionalApprovals(user: User | null, kind?: ApprovalRequest
     })));
     if (!benefitLoadError) setPendingBenefitApprovals(benefitQueue);
     if (!accountDeletionError) setPendingAccountDeletionApprovals(accountDeletionWorkspace.requests.filter(row=>row.isActionable));
-    if (!payPackageLoadError) setPendingPayPackageApprovals(payPackageQueue.filter(row => row.isActionable));
+    if (!payPackageLoadError) setPendingPayPackageApprovals(payPackageQueue.filter(row => row.isActionable).map(row => ({ ...row, changePreview: previewByKey.get(`pay_package:${row.id}`) })));
     } catch (error: any) {
       if (sequence === refreshSequence.current) setAdditionalApprovalError(error?.message || 'Approval requests could not be loaded. Please retry.');
     } finally {
@@ -384,7 +403,7 @@ export function useAdditionalApprovals(user: User | null, kind?: ApprovalRequest
       else pendingRefreshes.current.delete(viewer);
       if (sequence === refreshSequence.current) setAdditionalApprovalsLoading(false);
     }
-  }, [user?.id, kind, enabled]);
+  }, [user?.id, kind, enabled, includeChangePreviews]);
 
   useEffect(() => {
     refreshAdditionalApprovals();
