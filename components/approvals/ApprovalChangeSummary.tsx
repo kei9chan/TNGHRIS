@@ -6,6 +6,7 @@ export default function ApprovalChangeSummary({ preview }: { preview?: ChangePre
   if (!preview) return <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">Summary unavailable. Refresh or open Review request.</p>;
   const summary = getApprovalChangeSummary(preview);
   return <section className="rounded-lg border border-indigo-100 bg-indigo-50/50 p-3 dark:border-indigo-900 dark:bg-indigo-950/30">
+    {preview.approvalIssue && <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">Needs HR refresh · {preview.approvalIssue}</p>}
     <h4 className="font-bold text-indigo-900 dark:text-indigo-200">{summary.title}</h4>
     <dl className="mt-2 space-y-2">{summary.lines.slice(0, 4).map((line, i) => <Line key={i} line={line} />)}</dl>
     {summary.lines.length > 4 && <details className="mt-2"><summary className="cursor-pointer text-sm font-semibold text-indigo-700 dark:text-indigo-300">{summary.lines.length - 4} more details</summary><dl className="mt-2 space-y-2">{summary.lines.slice(4).map((line, i) => <Line key={i} line={line} />)}</dl></details>}

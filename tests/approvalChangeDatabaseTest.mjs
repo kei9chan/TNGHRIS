@@ -10,6 +10,10 @@ await db.exec(`
  create table pans(id uuid primary key,status text,routing_steps jsonb,particulars jsonb,action_taken jsonb,notes text,effective_date date);
  create table job_requisitions(id uuid primary key,status text,routing_steps jsonb,headcount int,employment_type text,seasonal_months int,budgeted_salary_min numeric,budgeted_salary_max numeric,work_location text,location_type text,justification text,is_urgent boolean);
  create table payroll_pay_packages(id uuid primary key,employee_id uuid,scope_id uuid,engagement_key text,stream text,effective_from date,rate_type text,base_amount numeric,components jsonb,treatment jsonb,reason text,status text,approval_state text,source_kind text,created_by uuid,approval_steps jsonb,approved_at timestamptz,created_at timestamptz,correction_of_id uuid,replaces_id uuid);
+ create table hris_users(id uuid primary key);
+ insert into hris_users values ('${id(50)}');
+ alter table payroll_pay_packages add column source_hash text default 'hash';
+ create function private.payroll_source_hash(p_employee uuid) returns text language sql stable as $$select 'hash'::text$$;
  create table decisions(kind text,id uuid,actor uuid);
  -- Canonical decision fixtures only record delegation. The migration must never
  -- implement or replace the domain workflow; those APIs retain their own rules.
@@ -25,6 +29,7 @@ await db.exec(`
  create function public.review_payroll_pay_package(p_id uuid,p_approve boolean,p_reason text) returns void language plpgsql as $$begin
    if not p_approve then raise exception 'Incorrect delegation';end if;
    insert into public.decisions values('pay_package',p_id,public.current_hris_user_id());
+   if nullif(current_setting('test.decision_error',true),'') is not null then raise exception 'Fixture downstream error' using errcode=current_setting('test.decision_error');end if;
    update public.payroll_pay_packages set approval_steps=jsonb_set(approval_steps,'{0,status}','"Approved"') where id=p_id;
  end$$;
  insert into pans values('${id(10)}','Pending Approval','[{"userId":"${id(1)}","status":"Pending"},{"userId":"${id(2)}","status":"Pending"}]','{"from":{"position":"Assistant"},"to":{"position":"Supervisor"}}','{"promotion":true}','Promotion','2026-12-01');
@@ -36,6 +41,7 @@ await db.exec(`
  ('${id(15)}','${id(50)}','${id(60)}','main','primary','2027-01-01','Daily',900,'[]','{}','approved','approved','direct_entry','${id(3)}','[]',now());
 `);
 await db.exec(fs.readFileSync('supabase/migrations/20261125001446_approval_change_previews_batch.sql','utf8'));
+await db.exec(fs.readFileSync('supabase/migrations/20261125003632_bounded_change_approval_waits.sql','utf8'));
 const actor=async n=>{await db.exec(`reset role;select set_config('test.actor','${n?id(n):''}',false);set role authenticated;`);};
 const previews=async(kind,ids)=> (await db.query('select public.get_approval_change_previews($1,$2) result',[kind,ids])).rows[0].result;
 const approve=async(kind,item,snapshot)=> (await db.query('select public.approve_change_queue_item($1,$2,$3) result',[kind,item,snapshot])).rows[0].result;
@@ -66,6 +72,22 @@ assert.equal((await db.query(`select approval_steps->1->>'status' status from pa
 assert.equal((await db.query(`select routing_steps->1->>'status' status from job_requisitions where id='${id(11)}'`)).rows[0].status,'Waiting','Later requisition stage is not bypassed.');
 await actor(2);
 assert.equal((await previews('pay_package',[id(12)])).length,1,'Second approver retains own pending task.');
+// An outdated source is visible before approval, and is skipped without writing.
+await db.exec(`reset role;update payroll_pay_packages set source_hash='old' where id='${id(12)}';`);
+await actor(2);
+let stale=(await previews('pay_package',[id(12)]))[0];
+assert.match(stale.approvalIssue,/HR must refresh/);
+assert.equal((await approve('pay_package',id(12),stale.snapshot)).outcome,'skipped');
+await db.exec(`reset role;update payroll_pay_packages set source_hash='hash' where id='${id(12)}';`);
+for (const code of ['55P03','40P01','40001']) {
+ await actor(2);
+ const fresh=(await previews('pay_package',[id(12)]))[0];
+ await db.query("select set_config('test.decision_error',$1,false)",[code]);
+ assert.equal((await approve('pay_package',id(12),fresh.snapshot)).outcome,'skipped');
+ await db.exec("reset role;");
+ assert.equal((await db.query('select count(*)::int n from decisions')).rows[0].n,3,'Failed delegated writes roll back atomically.');
+}
+await db.exec("reset role;select set_config('test.decision_error','',false);");
 await db.exec(`reset role;update payroll_pay_packages set source_kind='approved_pan' where id='${id(12)}';`);
 await actor(2);assert.deepEqual(await previews('pay_package',[id(12)]),[],'PAN-derived packages do not get a second approval.');
 await db.exec('reset role;set role anon;');

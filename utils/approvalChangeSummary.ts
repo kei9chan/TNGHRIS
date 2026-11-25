@@ -1,5 +1,5 @@
 export type ChangeApprovalKind = 'pan' | 'requisition' | 'pay_package';
-export type ChangePreview = { id: string; kind: ChangeApprovalKind; snapshot: string; data: Record<string, any> };
+export type ChangePreview = { id: string; kind: ChangeApprovalKind; snapshot: string; data: Record<string, any>; approvalIssue?: string | null };
 export type SummaryLine = { label: string; value?: string; before?: string; after?: string };
 export type ChangeSummary = { title: string; lines: SummaryLine[]; note?: string; reason?: string };
 const numeric = (value: unknown): number | undefined => value === null || value === undefined || value === '' || !Number.isFinite(Number(value)) ? undefined : Number(value);

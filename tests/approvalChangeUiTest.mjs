@@ -15,7 +15,7 @@ const Button=()=>null,Component=()=>null;
 const preview=(kind,id)=>({id,kind,snapshot:'original-'+id,data:kind==='requisition'?{headcount:2,salaryMin:20000,salaryMax:25000,employmentType:'Full-time'}:kind==='pan'?{action:{promotion:true},particulars:{from:{position:'Associate'},to:{position:'Manager'}}}:{proposed:{base_amount:600,rate_type:'Daily',components:[]}}});
 const rows=()=>['Alice','Bea'].map(id=>({id,employeeId:id,employeeName:id,title:id,reference:kind+'-'+id,action:'Promotion',createdAt:new Date('2026-11-01T00:00:00Z'),effectiveDate:new Date('2026-12-01T00:00:00Z'),effectiveFrom:'2026-12-01',baseAmount:600,rateType:'Daily',pendingApprovers:['Reviewer'],businessUnit:'Fixture unit',department:'Operations',status:'Pending Approval',currentStep:'BOD',canonicalKey:kind+':'+id,changePreview:preview(kind,id)}));
 const additional=new Proxy({refreshAdditionalApprovals:async()=>{}},{get:(t,k)=>k in t?t[k]:k===({pan:'pendingPANApprovals',requisition:'pendingRequisitionApprovals',pay_package:'pendingPayPackageApprovals'})[kind]?rows():String(k).startsWith('pending')?[]:undefined});
-const approvals={pendingLeaveApprovals:[],pendingWfhApprovals:[],pendingOtApprovals:[],pendingManpowerApprovals:[],refreshApprovals:async()=>{}};
+const approvals={pendingLeaveApprovals:[],pendingWfhApprovals:[],pendingOtApprovals:[],pendingManpowerApprovals:[],refreshApprovals:()=>new Promise(()=>{})};
 const deps=new Proxy({
  react:hooks,'react-router-dom':{useLocation:()=>({key:'test'}),useNavigate:()=>noop,useSearchParams:()=>[new URLSearchParams('type='+kind)],Link:Component},
  '../types':load('types.ts',{}),'../hooks/useAuth':{useAuth:()=>({user:{id:'reviewer',role:'Board of Director',roles:[]}})},
@@ -46,7 +46,9 @@ for(kind of ['pan','requisition','pay_package']){
  all(dialog,e=>e.type==='input'&&e.props.type==='checkbox')[0].props.onChange({target:{checked:true}});
  tree=render();const running=all(all(tree,e=>e.props.role==='dialog')[0],e=>e.type===Button&&text(e).startsWith('Approve '))[0].props.onClick();
  tree=render();assert.equal(button(tree,'Approve all shown').props.disabled,true);assert.equal(calls[0].length,1);assert.equal(calls[0][0].snapshot,'original-Alice');
- release();await running;
+ const stopButton=button(tree,'Stop after current request');assert.ok(stopButton);stopButton.props.onClick();
+ tree=render();assert.ok(button(tree,'Stopping after current request'));
+ release();await running;tree=render();assert.equal(all(tree,e=>e.props.role==='dialog')[0].props['aria-busy'],false,'A hung queue refresh cannot leave a completed batch spinning.');
  // Filtering changes the exact approve-all scope, including for pay packages.
  state=[];tree=render();all(tree,e=>e.type==='button'&&text(e)==='Filter requests')[0].props.onClick();
  tree=render();all(tree,e=>e.type==='input'&&e.props['aria-label']==='Approval search')[0].props.onChange({target:{value:'Bea'}});
